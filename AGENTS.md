@@ -34,13 +34,17 @@ the authoring baseline; its creation is not admission or dispatch.
 
 For an owner-launched manual session, rename the current Codex task at startup
 to the exact title resolved from live task/Change Request authority above.
-Use the native task-title tool once with only `title` (omit `threadId`); search deferred tools if it is not
-initially visible. Recording the title only in a prompt, PR or Outcome is
-insufficient. Record the result; an unavailable/failed rename is non-blocking
-and must be reported honestly, without an indefinite retry loop. Preserve the
-supplied Task/Step identity; never infer a new Step from history. Automatic
-runtime execution already passes its resolved title to Codex and does not
-require a worker to discover or invoke the UI rename tool.
+Use the native task-title tool once with only `title` (omit `threadId`); search
+deferred tools if it is not initially visible. Recording the title only in a
+prompt, PR or Outcome is insufficient. When the current native tool surface can
+read back the persisted title, compare it with the exact requested title. A
+successful rename call alone does not prove persisted state. Report the call
+result and any read-back mismatch, truncation or unavailable verification
+truthfully. An unavailable/failed rename or unverified exact title is
+non-blocking; do not repeat the rename to chase a match. Preserve the supplied
+Task/Step identity; never infer a new Step from history. Automatic runtime
+execution already passes its resolved title to Codex and does not require a
+worker to discover or invoke the UI rename tool.
 
 ## Canonical checkout and safe Git handoff
 
@@ -64,6 +68,33 @@ If a safe commit/push or clean handoff is impossible, report exactly what stays
 local and the authority, branch, permission or security boundary. Never create
 empty or metadata-only commits merely to record status. Explain material
 execution warnings even when the result is green.
+
+## Execution context and shells
+
+Identify the actual execution environment before choosing command syntax and
+paths. Use the shortest qualified parser/transport path that preserves the
+admitted boundary. From Windows, use `wsl.exe --distribution <distro> --exec`
+with the Linux executable and its arguments when Linux execution is needed.
+When already inside Debian/Linux, execute directly; do not add a WSL hop or an
+unnecessary shell. Use native Linux paths there. Runtime/filesystem boundary
+checks need a native Linux filesystem as described in
+[CONTRIBUTING.md](CONTRIBUTING.md#local-validation).
+
+Use PowerShell Core (`pwsh`) for PowerShell-oriented work on Windows or
+WSL/Linux when Bash is not the implementation boundary. Use Bash when a
+source-controlled `.sh` entrypoint or Bash-specific behavior requires it.
+Prefer direct argument passing or a script file (`pwsh -File` or `bash <script>`)
+over nested command strings. Do not carry non-trivial commands, JSON, patches
+or Markdown through multiple shells for reinterpretation; use files, structured
+tool arguments or a single native parser. This routing rule does not replace
+an admitted entrypoint or authorize a different credential/security boundary.
+
+For material PowerShell-to-native calls, propagate failure immediately before
+dependent work. `$ErrorActionPreference = 'Stop'` alone does not establish that
+native nonzero exits stop execution. Use supported native error propagation or
+capture `$LASTEXITCODE` immediately and throw/exit on unexpected failure.
+Handle intentionally expected nonzero results explicitly; do not let a later
+successful command hide the material command's failure.
 
 ## Work within the admitted goal
 
@@ -96,6 +127,12 @@ entrypoint, identifier, shell or execution context. Deterministic PASS does not
 replace independent judgment. Keep inner corrections within the admitted goal
 and the progress-bounded stops above.
 
+Promote accepted reusable decisions through the next suitable authorized,
+bounded Task/Change Request when the correction is independently useful.
+Do not require completion of the unrelated remainder of a later backlog item
+or create a separate ceremony-only task. Keep the correction within the
+admitted goal and put it in the existing policy or component contract.
+
 Optional [developer hooks](.codex/hooks/README.md) provide bounded diagnostic
 reads, session-owned recovery and a bounded Stop reminder. They are not Relay
 runtime authority. A missing checkpoint is silent and nonblocking. When useful,
@@ -107,8 +144,13 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
 
 - Keep consumer policy, model defaults, credentials, runner configuration and
   operations in consumer-owned configuration. Use synthetic examples here.
-- Resolve model/effort once at admission. Do not silently substitute profiles
-  or consult a moving external recommendation during execution.
+- Resolve model, reasoning effort and Subagents once at admission. These are
+  the execution-profile fields for launch cards, task metadata and handoffs;
+  an effort identifier does not imply an additional capability switch. Do not
+  silently substitute profiles or consult a moving external recommendation
+  during execution. Record actual model/effort only when runtime evidence
+  exposes them, otherwise `UNAVAILABLE`; requested values are not actual-value
+  proof. Record whether subagents were used within the admitted permission.
 - Keep owner, worker, Writer and Reviewer responsibilities separate. Review
   acceptance is independent and bound to the exact candidate head.
 - Preserve reservation-before-mutation, replay suppression, non-force Git
