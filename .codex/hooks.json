@@ -1,0 +1,56 @@
+{
+  "description": "Optional bounded recovery and diagnosis for Codex Relay development; requires PowerShell Core and hook trust.",
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "^auto$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/long-session-checkpoint.ps1') -Mode Refresh\"",
+            "timeout": 10,
+            "statusMessage": "Refreshing the bounded checkpoint before automatic compaction"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/long-session-checkpoint.ps1') -Mode Announce\"",
+            "timeout": 10,
+            "statusMessage": "Binding optional recovery to the active Codex session",
+            "additionalContextLimit": 1000
+          }
+        ]
+      },
+      {
+        "matcher": "^compact$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/long-session-checkpoint.ps1') -Mode Recover\"",
+            "timeout": 10,
+            "statusMessage": "Restoring the bounded diagnostic checkpoint",
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/decision-boundary-stop.ps1')\"",
+            "timeout": 10,
+            "statusMessage": "Checking the diagnostic frontier before stopping"
+          }
+        ]
+      }
+    ]
+  }
+}

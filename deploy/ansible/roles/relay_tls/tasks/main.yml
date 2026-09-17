@@ -1,0 +1,572 @@
+---
+- name: Validate the bounded TLS preparation phase
+  ansible.builtin.assert:
+    that:
+      - relay_tls_manage | bool
+      - ansible_facts.distribution == relay_required_distribution
+      - ansible_facts.distribution_major_version == relay_required_version_id
+      - relay_tls_phase in ['prerequisites', 'dry_run', 'issue']
+    fail_msg: 'TLS preparation requires the admitted Debian host and an explicit prerequisites, dry_run, or issue phase'
+
+- name: Ensure the Reviewer credential group exists for the client CA boundary
+  ansible.builtin.group:
+    name: '{{ relay_reviewer_group }}'
+    system: true
+
+- name: Create relay-owned TLS preparation namespaces
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: '{{ relay_config_root }}', mode: '0751'}
+    - {path: '{{ relay_tls_preparation_root }}', mode: '0750'}
+    - {path: '{{ relay_config_root }}/certs', group: '{{ relay_reviewer_group }}', mode: '0750'}
+
+- name: Check for existing shared Certbot tooling
+  ansible.builtin.command:
+    argv: [sh, -c, 'command -v certbot']
+  register: relay_tls_certbot_command
+  changed_when: false
+  failed_when: false
+
+- name: Install Certbot from the admitted Debian package source when absent
+  ansible.builtin.apt:
+    name: '{{ relay_tls_certbot_package }}'
+    state: present
+    update_cache: false
+  when:
+    - relay_tls_certbot_command.rc != 0
+    - not ansible_check_mode
+
+- name: Plan Certbot installation without mutating in check-mode
+  ansible.builtin.debug:
+    msg: 'TLS_CERTBOT_CHECK_MODE_PLAN=install-if-absent; shared-tooling-ownership=preserved'
+  when:
+    - relay_tls_certbot_command.rc != 0
+    - ansible_check_mode
+
+- name: Validate the existing or newly prepared Certbot executable
+  ansible.builtin.command: '{{ relay_tls_certbot_executable }} --version'
+  register: relay_tls_certbot_version
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Fail closed when Certbot is unavailable or incompatible
+  ansible.builtin.assert:
+    that:
+      - relay_tls_certbot_version.rc == 0
+      - relay_tls_certbot_version.stdout is search('certbot [12]\\.')
+    fail_msg: 'TLS_CERTBOT_UNAVAILABLE_OR_INCOMPATIBLE'
+  when: not ansible_check_mode
+
+- name: Validate the configured Debian package source has Certbot metadata
+  ansible.builtin.command: apt-cache policy '{{ relay_tls_certbot_package }}'
+  register: relay_tls_certbot_policy
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Fail closed when the approved Certbot package metadata is unavailable
+  ansible.builtin.assert:
+    that:
+      - relay_tls_certbot_policy.rc == 0
+      - relay_tls_certbot_policy.stdout is search('Candidate:')
+      - relay_tls_certbot_policy.stdout is not search('Candidate:\\s*\\(none\\)')
+    fail_msg: 'TLS_CERTBOT_APPROVED_PACKAGE_METADATA_UNAVAILABLE'
+  when: not ansible_check_mode
+
+- name: Validate the admitted Certbot executable provenance
+  ansible.builtin.shell: |
+    set -eu
+    resolved=$(readlink -f '{{ relay_tls_certbot_executable }}')
+    test "$resolved" = '{{ relay_tls_certbot_executable }}'
+    package_owner=$(dpkg-query -S '{{ relay_tls_certbot_executable }}')
+    printf '%s\n' "$package_owner" | grep -q '^{{ relay_tls_certbot_package }}:'
+    status=$(dpkg-query -W -f='${Status}|${Package}|${Version}|${Architecture}\n' '{{ relay_tls_certbot_package }}')
+    printf '%s\n' "$status" | grep -q '^install ok installed|{{ relay_tls_certbot_package }}|'
+    printf '%s\n' TLS_CERTBOT_PROVENANCE_OK
+  args:
+    executable: /bin/sh
+  register: relay_tls_certbot_provenance_check
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Fail closed when Certbot provenance is not the admitted Debian package
+  ansible.builtin.assert:
+    that:
+      - relay_tls_certbot_provenance_check.rc == 0
+      - relay_tls_certbot_provenance_check.stdout is search('TLS_CERTBOT_PROVENANCE_OK')
+    fail_msg: 'TLS_CERTBOT_PROVENANCE_INVALID'
+  when: not ansible_check_mode
+
+- name: Inspect existing relay-owned OpenAI CA paths without following links
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_tls_openai_root_file }}'
+    - '{{ relay_tls_openai_intermediate_file }}'
+    - '{{ relay_tls_client_ca_file }}'
+  register: relay_tls_existing_ca_files
+  changed_when: false
+
+- name: Refuse unsafe existing relay-owned OpenAI CA paths
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.stat.exists or
+        (item.stat.isreg and item.stat.pw_name == 'root' and
+        ((item.item == relay_tls_client_ca_file and item.stat.gr_name == relay_reviewer_group) or
+        (item.item != relay_tls_client_ca_file and item.stat.gr_name == 'root')))
+    fail_msg: 'TLS_OPENAI_CA_UNSAFE_EXISTING_PATH={{ item.item }}'
+  loop: '{{ relay_tls_existing_ca_files.results }}'
+
+- name: Refuse unsafe permissions on existing relay-owned OpenAI CA files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.item == relay_tls_client_ca_file or item.stat.mode in ['0600', '0640', '0644']
+      - not item.stat.exists or item.item != relay_tls_client_ca_file or item.stat.mode == '0640'
+    fail_msg: 'TLS_OPENAI_CA_UNSAFE_EXISTING_PERMISSIONS={{ item.item }}'
+  loop: '{{ relay_tls_existing_ca_files.results }}'
+
+- name: Create a fresh root-owned temporary directory for OpenAI CA downloads
+  ansible.builtin.tempfile:
+    state: directory
+    path: '{{ relay_tls_preparation_root }}'
+    prefix: '.openai-ca-download-'
+  register: relay_tls_openai_download_dir
+  when: not ansible_check_mode
+
+- name: Set fresh OpenAI CA staging paths
+  ansible.builtin.set_fact:
+    relay_tls_openai_root_staging_file: '{{ relay_tls_openai_download_dir.path }}/openai-root-ca.pem'
+    relay_tls_openai_intermediate_staging_file: '{{ relay_tls_openai_download_dir.path }}/openai-connectors-mtls-ca.pem'
+  when: not ansible_check_mode
+
+- name: Download the official OpenAI Root CA into the fresh temporary path
+  ansible.builtin.get_url:
+    url: '{{ relay_tls_openai_root_url }}'
+    dest: '{{ relay_tls_openai_root_staging_file }}'
+    owner: root
+    group: root
+    mode: '0600'
+  when: not ansible_check_mode
+
+- name: Download the official OpenAI Connectors mTLS CA into the fresh temporary path
+  ansible.builtin.get_url:
+    url: '{{ relay_tls_openai_intermediate_url }}'
+    dest: '{{ relay_tls_openai_intermediate_staging_file }}'
+    owner: root
+    group: root
+    mode: '0600'
+  when: not ansible_check_mode
+
+- name: Plan official OpenAI CA preparation in check-mode
+  ansible.builtin.debug:
+    msg: 'TLS_OPENAI_CA_CHECK_MODE_PLAN=download-validate-bundle; no certificate body retained'
+  when: ansible_check_mode
+
+- name: Collect sanitized OpenAI CA metadata
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - '{{ item.path }}'
+      - -noout
+      - -subject
+      - -issuer
+      - -dates
+      - -fingerprint
+      - -sha256
+  loop:
+    - {name: root, path: '{{ relay_tls_openai_root_staging_file }}', fingerprint: '{{ relay_tls_openai_root_fingerprint }}'}
+    - {name: intermediate, path: '{{ relay_tls_openai_intermediate_staging_file }}', fingerprint: '{{ relay_tls_openai_intermediate_fingerprint }}'}
+  register: relay_tls_openai_metadata
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Fail closed on malformed or rotated official OpenAI CA identity
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - (item.stdout | upper) is search(item.item.fingerprint)
+    fail_msg: 'OPENAI_CA_IDENTITY_MISMATCH name={{ item.item.name }} metadata={{ item.stdout | replace("\\n", "; ") }}'
+  loop: '{{ relay_tls_openai_metadata.results }}'
+  when: not ansible_check_mode
+
+- name: Validate OpenAI CA validity and CA signing constraints
+  ansible.builtin.shell: |
+    set -eu
+    openssl x509 -in '{{ item.path }}' -noout -checkend 0 >/dev/null
+    openssl x509 -in '{{ item.path }}' -noout -text | grep -q 'CA:TRUE'
+    openssl x509 -in '{{ item.path }}' -noout -text | grep -q 'Certificate Sign'
+  args:
+    executable: /bin/sh
+  loop:
+    - {name: root, path: '{{ relay_tls_openai_root_staging_file }}'}
+    - {name: intermediate, path: '{{ relay_tls_openai_intermediate_staging_file }}'}
+  register: relay_tls_openai_constraints
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Validate OpenAI Root self-issuance and intermediate chain role
+  ansible.builtin.shell: |
+    set -eu
+    root_subject=$(openssl x509 -in '{{ relay_tls_openai_root_staging_file }}' -noout -subject -nameopt RFC2253 | sed 's/^subject=//')
+    root_issuer=$(openssl x509 -in '{{ relay_tls_openai_root_staging_file }}' -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//')
+    intermediate_issuer=$(openssl x509 -in '{{ relay_tls_openai_intermediate_staging_file }}' -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//')
+    test "$root_subject" = "$root_issuer"
+    test "$intermediate_issuer" = "$root_subject"
+    openssl verify -CAfile '{{ relay_tls_openai_root_staging_file }}' '{{ relay_tls_openai_intermediate_staging_file }}' >/dev/null
+  args:
+    executable: /bin/sh
+  register: relay_tls_openai_chain
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Install validated OpenAI Root CA into the relay-owned destination atomically
+  ansible.builtin.copy:
+    src: '{{ relay_tls_openai_root_staging_file }}'
+    remote_src: true
+    dest: '{{ relay_tls_openai_root_file }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Install validated OpenAI Connectors mTLS CA into the relay-owned destination atomically
+  ansible.builtin.copy:
+    src: '{{ relay_tls_openai_intermediate_staging_file }}'
+    remote_src: true
+    dest: '{{ relay_tls_openai_intermediate_file }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Assemble the relay-owned OpenAI client CA bundle idempotently
+  ansible.builtin.shell: |
+    set -eu
+    tmp=$(mktemp '{{ relay_tls_preparation_root }}/client-ca.XXXXXX')
+    trap 'rm -f "$tmp"' EXIT
+    cat '{{ relay_tls_openai_root_file }}' '{{ relay_tls_openai_intermediate_file }}' > "$tmp"
+    if test -f '{{ relay_tls_client_ca_file }}' && cmp -s "$tmp" '{{ relay_tls_client_ca_file }}'; then
+      printf '%s\n' TLS_OPENAI_CA_BUNDLE_UNCHANGED
+    else
+      install -o root -g '{{ relay_reviewer_group }}' -m 0640 "$tmp" '{{ relay_tls_client_ca_file }}'
+      printf '%s\n' TLS_OPENAI_CA_BUNDLE_UPDATED
+    fi
+  args:
+    executable: /bin/sh
+  register: relay_tls_bundle
+  changed_when: relay_tls_bundle.stdout is search('UPDATED')
+  when: not ansible_check_mode
+
+- name: Validate relay-owned OpenAI client CA bundle metadata
+  ansible.builtin.command: stat -Lc '%U:%G:%a:%F' '{{ relay_tls_client_ca_file }}'
+  register: relay_tls_bundle_stat
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Enforce relay-owned OpenAI client CA bundle permissions
+  ansible.builtin.assert:
+    that:
+      - relay_tls_bundle_stat.stdout == 'root:' ~ relay_reviewer_group ~ ':640:regular file'
+    fail_msg: 'TLS_OPENAI_CA_BUNDLE_UNSAFE_PERMISSIONS={{ relay_tls_bundle_stat.stdout }}'
+  when: not ansible_check_mode
+
+- name: Require an explicit exact PR head for ACME phases
+  ansible.builtin.assert:
+    that:
+      - relay_tls_exact_head | length == 40
+      - relay_tls_exact_head is match('^[0-9a-fA-F]{40}$')
+    fail_msg: 'TLS_ACME_EXACT_HEAD_REQUIRED'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Inspect the currently qualified exact-head artifact manifest
+  ansible.builtin.stat:
+    path: '{{ relay_tls_qualified_manifest_file }}'
+    follow: true
+  register: relay_tls_qualified_manifest_stat
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Refuse ACME when the qualified exact-head manifest is absent or unsafe
+  ansible.builtin.assert:
+    that:
+      - relay_tls_qualified_manifest_stat.stat.exists
+      - relay_tls_qualified_manifest_stat.stat.isreg
+      - relay_tls_qualified_manifest_stat.stat.pw_name == 'root'
+      - relay_tls_qualified_manifest_stat.stat.gr_name in ['root', relay_group]
+    fail_msg: 'TLS_ACME_QUALIFIED_MANIFEST_UNAVAILABLE'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Read the non-secret qualified exact-head manifest
+  ansible.builtin.slurp:
+    src: '{{ relay_tls_qualified_manifest_file }}'
+  register: relay_tls_qualified_manifest_raw
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Bind ACME preparation to the currently qualified exact head
+  ansible.builtin.assert:
+    that:
+      - (relay_tls_qualified_manifest_raw.content | b64decode | from_json).commit == relay_tls_exact_head
+    fail_msg: 'TLS_ACME_QUALIFIED_HEAD_MISMATCH'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Validate qualification DNS immediately before the ACME gate
+  ansible.builtin.shell: |
+    set -eu
+    resolved=$(getent ahostsv4 '{{ relay_tls_acme_hostname }}' | awk '{print $1}' | sort -u)
+    test "$resolved" = '{{ relay_tls_acme_admitted_ip }}'
+    printf '%s\n' TLS_QUALIFICATION_DNS_OK
+  args:
+    executable: /bin/sh
+  register: relay_tls_dns
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Inspect current TCP/80 and TCP/443 ownership before standalone ACME
+  ansible.builtin.command: ss -ltnpH '( sport = :80 or sport = :443 )'
+  register: relay_tls_public_listeners
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Fail closed when standalone HTTP-01 cannot own TCP/80 or TCP/443
+  ansible.builtin.assert:
+    that:
+      - relay_tls_public_listeners.rc == 0
+      - relay_tls_public_listeners.stdout | trim == ''
+    fail_msg: 'TLS_ACME_PUBLIC_LISTENER_NOT_FREE={{ relay_tls_public_listeners.stdout | replace("\\n", "; ") }}'
+  when: not ansible_check_mode
+
+- name: Stop at the explicit owner ACME email gate
+  ansible.builtin.debug:
+    msg: 'TLS_PREPARATION_PREREQUISITES_READY=certbot-shared;openai-ca-ready;dns-ready;http01-ports-free;ACME_EMAIL_REQUIRED'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'prerequisites'
+
+- name: Require owner email only for an explicit ACME phase
+  ansible.builtin.assert:
+    that:
+      - relay_tls_acme_email | length > 0
+    fail_msg: 'TLS_ACME_OWNER_EMAIL_REQUIRED'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Inspect the relay-owned dry-run authorization path
+  ansible.builtin.stat:
+    path: '{{ relay_tls_acme_dry_run_marker }}'
+    follow: false
+  register: relay_tls_dry_run_marker_path
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Refuse unsafe existing dry-run authorization state
+  ansible.builtin.assert:
+    that:
+      - not relay_tls_dry_run_marker_path.stat.exists or (relay_tls_dry_run_marker_path.stat.isreg and relay_tls_dry_run_marker_path.stat.pw_name == 'root' and relay_tls_dry_run_marker_path.stat.gr_name == 'root' and relay_tls_dry_run_marker_path.stat.mode == '0640')
+    fail_msg: 'TLS_ACME_DRY_RUN_MARKER_UNSAFE'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Recheck standalone HTTP-01 preconditions immediately before issuance
+  ansible.builtin.shell: |
+    set -eu
+    resolved=$(getent ahostsv4 '{{ relay_tls_acme_hostname }}' | awk '{print $1}' | sort -u)
+    test "$resolved" = '{{ relay_tls_acme_admitted_ip }}'
+    test -z "$(ss -ltnpH '( sport = :80 or sport = :443 )')"
+    test -r '{{ relay_tls_client_ca_file }}'
+    printf '%s\n' TLS_ACME_PRECONDITIONS_RECHECK_PASS
+  args:
+    executable: /bin/sh
+  register: relay_tls_acme_recheck
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase in ['dry_run', 'issue']
+
+- name: Invalidate any prior dry-run authorization before a new staging run
+  ansible.builtin.copy:
+    content: '{"schema_version":"1","status":"TLS_ACME_DRY_RUN_INVALIDATED"}\n'
+    dest: '{{ relay_tls_acme_dry_run_marker }}'
+    owner: root
+    group: root
+    mode: '0640'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'dry_run'
+
+- name: Run Certbot standalone HTTP-01 staging dry-run
+  ansible.builtin.command:
+    argv:
+      - '{{ relay_tls_certbot_executable }}'
+      - certonly
+      - --standalone
+      - --dry-run
+      - --preferred-challenges
+      - http
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - '{{ relay_tls_acme_email }}'
+      - --keep-until-expiring
+      - -d
+      - '{{ relay_tls_acme_hostname }}'
+  register: relay_tls_acme_dry_run
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'dry_run'
+
+- name: Record successful ACME staging dry-run without email or certificate material
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'schema_version': '1',
+        'status': 'TLS_ACME_DRY_RUN_PASSED',
+        'exact_head': relay_tls_exact_head,
+        'hostname': relay_tls_acme_hostname,
+        'certbot_executable': relay_tls_certbot_executable,
+        'certbot_version': relay_tls_certbot_version.stdout | trim,
+        'certbot_provenance': relay_tls_certbot_provenance,
+        'openai_root_fingerprint': relay_tls_openai_root_fingerprint,
+        'openai_intermediate_fingerprint': relay_tls_openai_intermediate_fingerprint,
+        'client_ca_file': relay_tls_client_ca_file
+      } | to_nice_json }}
+    dest: '{{ relay_tls_acme_dry_run_marker }}'
+    owner: root
+    group: root
+    mode: '0640'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'dry_run'
+    - relay_tls_acme_dry_run.rc == 0
+
+- name: Require the relay-owned dry-run marker before live issuance
+  ansible.builtin.stat:
+    path: '{{ relay_tls_acme_dry_run_marker }}'
+  register: relay_tls_dry_run_marker
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+
+- name: Read the current dry-run authorization binding
+  ansible.builtin.slurp:
+    src: '{{ relay_tls_acme_dry_run_marker }}'
+  register: relay_tls_dry_run_binding_raw
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+
+- name: Fail closed when live issuance lacks a successful staging dry-run
+  ansible.builtin.assert:
+    that:
+      - relay_tls_dry_run_marker.stat.exists
+      - relay_tls_dry_run_marker.stat.isreg
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).status == 'TLS_ACME_DRY_RUN_PASSED'
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).exact_head == relay_tls_exact_head
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).hostname == relay_tls_acme_hostname
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).certbot_executable == relay_tls_certbot_executable
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).certbot_version == relay_tls_certbot_version.stdout | trim
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).openai_root_fingerprint == relay_tls_openai_root_fingerprint
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).openai_intermediate_fingerprint == relay_tls_openai_intermediate_fingerprint
+      - (relay_tls_dry_run_binding_raw.content | b64decode | from_json).client_ca_file == relay_tls_client_ca_file
+    fail_msg: 'TLS_ACME_DRY_RUN_BINDING_INVALID_OR_STALE'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+
+- name: Run Certbot standalone HTTP-01 live issuance
+  ansible.builtin.command:
+    argv:
+      - '{{ relay_tls_certbot_executable }}'
+      - certonly
+      - --standalone
+      - --preferred-challenges
+      - http
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - '{{ relay_tls_acme_email }}'
+      - --keep-until-expiring
+      - -d
+      - '{{ relay_tls_acme_hostname }}'
+  register: relay_tls_acme_issue
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+
+- name: Validate the issued ACME certificate and host-local private key
+  ansible.builtin.shell: |
+    set -eu
+    cert='{{ relay_nginx_server_certificate_file }}'
+    chain='{{ relay_nginx_server_certificate_file }}'
+    key='{{ relay_nginx_server_private_key_file }}'
+    test -r "$cert"
+    test -r "$chain"
+    test -r "$key"
+    openssl x509 -in "$cert" -noout -checkend 0 -checkhost '{{ relay_tls_acme_hostname }}' >/dev/null
+    leaf=$(mktemp)
+    trap 'rm -f "$leaf"' EXIT
+    awk 'BEGIN {n=0} /-----BEGIN CERTIFICATE-----/ {n++} n==1 {print} /-----END CERTIFICATE-----/ && n==1 {exit}' "$chain" > "$leaf"
+    openssl verify -CApath /etc/ssl/certs -untrusted "$chain" "$leaf" >/dev/null
+    cert_pub=$(openssl x509 -in "$cert" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')
+    key_pub=$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | awk '{print $1}')
+    test "$cert_pub" = "$key_pub"
+    test "$(stat -Lc '%U:%G:%a:%F' "$chain")" = 'root:root:644:regular file'
+    test "$(stat -Lc '%U:%G:%a:%F' "$key")" = root:root:600:regular\ file
+    printf '%s\n' TLS_CERTIFICATE_KEY_VALIDATED
+  args:
+    executable: /bin/sh
+  register: relay_tls_certificate_validation
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+
+- name: Record TLS preparation readiness without private material
+  ansible.builtin.copy:
+    content: 'TLS_PREPARATION_READY\n'
+    dest: '{{ relay_tls_acme_live_marker }}'
+    owner: root
+    group: root
+    mode: '0640'
+  when:
+    - not ansible_check_mode
+    - relay_tls_phase == 'issue'
+    - relay_tls_certificate_validation.rc == 0
+
+- name: Report check-mode TLS preparation boundary
+  ansible.builtin.debug:
+    msg: 'TLS_PREPARATION_CHECK_MODE_PASS=certbot-install-plan;openai-ca-download-plan;no-acme-issuance;no-nginx-enablement'
+  when: ansible_check_mode

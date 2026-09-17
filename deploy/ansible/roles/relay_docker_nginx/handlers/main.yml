@@ -1,0 +1,14 @@
+---
+- name: Reload Docker nginx with docker exec, never host nginx.service
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - '{{ relay_docker_nginx_container_name }}'
+      - nginx
+      - -s
+      - reload
+  when:
+    - relay_docker_nginx_service_enabled | bool
+    - relay_docker_nginx_validation_mode == 'active'
+    - not ansible_check_mode | bool

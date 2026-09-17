@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This helper is invoked by Reviewer's ExecStopPost with full systemd
+# privileges. PartOf= already propagates explicit Reviewer stop/restart to the
+# runner. Only a non-success service result is an unexpected Reviewer failure;
+# planned stop/restart therefore does not launch a competing runner stop.
+service_result="${SERVICE_RESULT:-unknown}"
+if [[ "$service_result" == "success" ]]; then
+  exit 0
+fi
+
+# Unknown results fail safe as failure: the runner must not remain active when
+# systemd cannot prove that Reviewer stopped through a planned operation.
+/bin/systemctl stop '{{ relay_runner_service_name }}'

@@ -1,0 +1,24 @@
+[package]
+name = "reviewer-mcp-http"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+axum = "0.7.9"
+clap = { version = "4.5.27", features = ["derive", "env"] }
+jsonwebtoken = "9.3.0"
+reqwest = { version = "0.12.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+sha2 = "0.10.8"
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "net"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+unicode-normalization = "0.1.24"
+x509-parser = { version = "0.16.0", features = ["verify"] }
+
+[dev-dependencies]
+minijinja = "2.12"
+rcgen = "0.13.2"

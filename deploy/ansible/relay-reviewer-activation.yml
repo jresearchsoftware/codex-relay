@@ -1,0 +1,373 @@
+---
+- name: Activate Reviewer only after the owner credential gate
+  hosts: relay
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Establish or inspect the durable production operation state
+      ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Require the admitted production Reviewer activation profile
+      ansible.builtin.assert:
+        that:
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - relay_reviewer_bind_mode in ['nexus_gateway', 'a_only_loopback']
+        fail_msg: 'REVIEWER_ACTIVATION_PROFILE_INVALID'
+
+    - name: Resolve the validated Reviewer nexus gateway before activation
+      ansible.builtin.include_role:
+        name: relay_docker_network_gateway
+      when: relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Require explicit Reviewer activation authorization
+      ansible.builtin.assert:
+        that:
+          - relay_service_activation_authorized | bool
+          - relay_service_enabled | bool
+        fail_msg: 'REVIEWER_ACTIVATION_AUTHORIZATION_REQUIRED'
+
+    - name: Require an exact activation head
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_exact_head is defined
+          - relay_reviewer_activation_exact_head | length == 40
+          - relay_reviewer_activation_exact_head is match('^[0-9a-fA-F]{40}$')
+        fail_msg: 'REVIEWER_ACTIVATION_EXACT_HEAD_REQUIRED'
+
+    - name: >-
+        Resolve the checked-out activation head on the Ansible controller
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - '{{ relay_review_root }}'
+          - rev-parse
+          - HEAD
+      delegate_to: localhost
+      become: false
+      register: relay_reviewer_activation_checkout_head
+      changed_when: false
+      check_mode: false
+
+    - name: Bind Reviewer activation to the checked-out exact head
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_checkout_head.stdout == relay_reviewer_activation_exact_head
+        fail_msg: >-
+          REVIEWER_ACTIVATION_CHECKOUT_HEAD_MISMATCH
+
+    - name: Resolve the reviewed artifact identity before Reviewer activation bind refresh
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
+
+    - name: Inspect the deployed Reviewer release and non-secret manifest
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - '{{ relay_install_root }}/current'
+        - '{{ relay_install_root }}/current/artifact-manifest.json'
+        - '{{ relay_install_root }}/current/bin/reviewer-mcp-http'
+      register: relay_reviewer_activation_release_paths
+      changed_when: false
+
+    - name: Require a valid deployed release before Reviewer activation
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_release_paths.results[0].stat.exists
+          - relay_reviewer_activation_release_paths.results[0].stat.islnk | default(false)
+          - relay_reviewer_activation_release_paths.results[0].stat.lnk_source.startswith(relay_release_root + '/')
+          - relay_reviewer_activation_release_paths.results[1].stat.exists
+          - relay_reviewer_activation_release_paths.results[1].stat.isreg
+          - not relay_reviewer_activation_release_paths.results[1].stat.islnk | default(false)
+          - relay_reviewer_activation_release_paths.results[1].stat.pw_name == 'root'
+          - relay_reviewer_activation_release_paths.results[2].stat.exists
+          - relay_reviewer_activation_release_paths.results[2].stat.isreg
+          - not relay_reviewer_activation_release_paths.results[2].stat.islnk | default(false)
+          - relay_reviewer_activation_release_paths.results[2].stat.pw_name == 'root'
+        fail_msg: 'REVIEWER_ACTIVATION_RELEASE_OR_MANIFEST_UNAVAILABLE'
+
+    - name: Read only the deployed Reviewer release manifest
+      ansible.builtin.slurp:
+        src: '{{ relay_install_root }}/current/artifact-manifest.json'
+      register: relay_reviewer_activation_manifest_raw
+
+    - name: Parse the deployed Reviewer release manifest without protected content
+      ansible.builtin.set_fact:
+        relay_reviewer_activation_manifest: '{{ relay_reviewer_activation_manifest_raw.content | b64decode | from_json }}'
+
+    - name: Bind Reviewer activation to the deployed reviewed release
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_manifest.schemaVersion == '1.0'
+          - relay_reviewer_activation_manifest.commit == relay_reviewer_activation_exact_head
+        fail_msg: 'REVIEWER_ACTIVATION_RELEASE_HEAD_MISMATCH'
+
+    - name: Inspect the staged Reviewer service unit
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_service_unit_path }}'
+        follow: false
+      register: relay_reviewer_activation_unit
+      changed_when: false
+
+    - name: Require a staged Reviewer service unit before activation
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_unit.stat.exists
+          - relay_reviewer_activation_unit.stat.isreg
+          - not relay_reviewer_activation_unit.stat.islnk | default(false)
+          - relay_reviewer_activation_unit.stat.pw_name == 'root'
+          - relay_reviewer_activation_unit.stat.gr_name == 'root'
+        fail_msg: 'REVIEWER_ACTIVATION_UNIT_UNAVAILABLE'
+
+    - name: Inspect the persisted Reviewer activation marker before transition
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_activation_marker }}'
+        follow: false
+      register: relay_reviewer_activation_marker_stat
+      changed_when: false
+
+    - name: Validate the persisted Reviewer activation marker before transition
+      ansible.builtin.assert:
+        that:
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.isreg
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or not relay_reviewer_activation_marker_stat.stat.islnk | default(false)
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.pw_name == 'root'
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.gr_name == 'root'
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.mode == '0600'
+        fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+    - name: Read the non-secret Reviewer activation marker before transition
+      ansible.builtin.slurp:
+        src: '{{ relay_reviewer_activation_marker }}'
+      register: relay_reviewer_activation_marker_raw
+      when: relay_reviewer_activation_marker_stat.stat.exists | default(false)
+
+    - name: Require the durable Reviewer activation marker before transition
+      ansible.builtin.assert:
+        that:
+          - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_raw.content | b64decode | trim == 'authorized'
+        fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+    - name: Inspect the explicit reactivation requirement marker
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_recovery_off_marker }}'
+        follow: false
+      register: relay_reviewer_recovery_off_marker_stat
+      changed_when: false
+
+    - name: Validate the explicit reactivation requirement marker
+      ansible.builtin.assert:
+        that:
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.isreg
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or not relay_reviewer_recovery_off_marker_stat.stat.islnk | default(false)
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.pw_name == 'root'
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.gr_name == 'root'
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.mode == '0600'
+        fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+    - name: Read the explicit reactivation requirement marker
+      ansible.builtin.slurp:
+        src: '{{ relay_reviewer_recovery_off_marker }}'
+      register: relay_reviewer_recovery_off_marker_raw
+      when: relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)
+
+    - name: Require the explicit reactivation requirement value
+      ansible.builtin.assert:
+        that:
+          - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_raw.content | b64decode | trim == 'requires-activation'
+        fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+    - name: Inspect the Reviewer activation prestate
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item.operation }}', '{{ relay_reviewer_service_name }}']
+      loop:
+        - {operation: is-active}
+        - {operation: is-enabled}
+      register: relay_reviewer_activation_prestate
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Require an initial or already-converged Reviewer activation prestate
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              not (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+              relay_reviewer_activation_prestate.results[0].stdout in ['inactive', 'failed'] and
+              relay_reviewer_activation_prestate.results[1].stdout == 'disabled'
+            ) or
+            (
+              (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+              not (relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)) and
+              relay_reviewer_activation_prestate.results[0].stdout == 'active' and
+              relay_reviewer_activation_prestate.results[1].stdout in ['enabled', 'enabled-runtime']
+            ) or
+            (
+              relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) and
+              (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+              relay_reviewer_activation_prestate.results[0].stdout in ['inactive', 'failed'] and
+              relay_reviewer_activation_prestate.results[1].stdout == 'disabled'
+            ) or
+            (
+              relay_production_operation_recovery_matching | default(false) | bool and
+              relay_production_operation_recovery_phase == 'activate' and
+              not (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+              not (relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)) and
+              relay_reviewer_activation_prestate.results[0].stdout in ['inactive', 'failed'] and
+              relay_reviewer_activation_prestate.results[1].stdout in ['enabled', 'enabled-runtime']
+            ) or
+            (
+              relay_production_operation_recovery_matching | default(false) | bool and
+              relay_production_operation_recovery_phase == 'activate' and
+              not (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+              not (relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)) and
+              relay_reviewer_activation_prestate.results[0].stdout == 'active' and
+              relay_reviewer_activation_prestate.results[1].stdout in ['enabled', 'enabled-runtime']
+            )
+        fail_msg: 'REVIEWER_ACTIVATION_PRESTATE_INVALID'
+
+    - name: Verify Reviewer credential readiness before service activation
+      ansible.builtin.shell: >-
+        set -eu;
+        set -a;
+        . '{{ relay_reviewer_credential_env_file }}';
+        set +a;
+        runuser -u '{{ relay_reviewer_user }}' --preserve-environment
+        '{{ relay_install_root }}/relay-reviewer-credential-check'
+      args:
+        executable: /bin/sh
+      register: relay_reviewer_activation_credential_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Require the owner-provisioned Reviewer credential gate
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_credential_check.rc == 0
+        fail_msg: 'REVIEWER_ACTIVATION_CREDENTIAL_GATE_FAILED'
+
+    - name: Begin or retain the exact Reviewer activation operation
+      ansible.builtin.include_tasks: tasks/production-operation-state-begin.yml
+
+    - name: Apply only the matching Reviewer recovery disposition
+      ansible.builtin.include_tasks: tasks/production-operation-recovery-reset.yml
+      when: relay_production_operation_recovery_matching | default(false) | bool
+
+    - name: Refresh and prove the current Reviewer bind state before activation
+      ansible.builtin.include_tasks: tasks/production-reviewer-bind-state.yml
+      vars:
+        relay_production_reviewer_bind_refresh: false
+      when: not ansible_check_mode | bool
+
+    - name: Record the read-only Reviewer activation plan
+      ansible.builtin.debug:
+        msg: >-
+          REVIEWER_ACTIVATION_CHECK_MODE_PLAN=credential_ready_then_enable_and_start;
+          exact_head={{ relay_reviewer_activation_exact_head }}
+      when: ansible_check_mode | bool
+
+  tasks:
+    - name: Enable and start Reviewer through the explicit activation transition window
+      ansible.builtin.command:
+        argv:
+          - '{{ relay_reviewer_activation_start_path }}'
+      changed_when: true
+      check_mode: false
+      when: not ansible_check_mode | bool
+
+    - name: Verify the activated Reviewer service state
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item.operation }}', '{{ relay_reviewer_service_name }}']
+      loop:
+        - {operation: is-active}
+        - {operation: is-enabled}
+      register: relay_reviewer_activation_post_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: not ansible_check_mode | bool
+
+    - name: Verify the expected private Reviewer TCP listener after activation
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:8787$/ { print }'
+      register: relay_reviewer_activation_listener
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      retries: 10
+      delay: 1
+      until: >-
+        relay_reviewer_activation_listener.stdout is search(
+          (relay_reviewer_bind_address ~ ':8787') | regex_escape
+        )
+      when: not ansible_check_mode | bool
+
+    - name: Require healthy enabled Reviewer and expected private listener
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_post_services.results[0].stdout == 'active'
+          - relay_reviewer_activation_post_services.results[1].stdout in ['enabled', 'enabled-runtime']
+          - relay_reviewer_activation_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+        fail_msg: 'REVIEWER_ACTIVATION_POSTCHECK_FAILED'
+      when: not ansible_check_mode | bool
+
+    - name: Record the durable authorized Reviewer activation marker
+      ansible.builtin.copy:
+        content: authorized
+        dest: '{{ relay_reviewer_activation_marker }}'
+        owner: root
+        group: root
+        mode: '0600'
+      when: not ansible_check_mode | bool
+
+    - name: Verify the durable authorized Reviewer activation marker
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_activation_marker }}'
+        follow: false
+      register: relay_reviewer_activation_marker_post
+      changed_when: false
+      when: not ansible_check_mode | bool
+
+    - name: Read the durable authorized Reviewer activation marker after transition
+      ansible.builtin.slurp:
+        src: '{{ relay_reviewer_activation_marker }}'
+      register: relay_reviewer_activation_marker_post_raw
+      when: not ansible_check_mode | bool
+
+    - name: Require the final durable Reviewer activation marker
+      ansible.builtin.assert:
+        that:
+          - relay_reviewer_activation_marker_post.stat.isreg
+          - not relay_reviewer_activation_marker_post.stat.islnk | default(false)
+          - relay_reviewer_activation_marker_post.stat.pw_name == 'root'
+          - relay_reviewer_activation_marker_post.stat.gr_name == 'root'
+          - relay_reviewer_activation_marker_post.stat.mode == '0600'
+          - relay_reviewer_activation_marker_post_raw.content | b64decode | trim == 'authorized'
+        fail_msg: 'REVIEWER_ACTIVATION_MARKER_POSTCHECK_FAILED'
+      when: not ansible_check_mode | bool
+
+    - name: Clear the explicit reactivation requirement after successful activation
+      ansible.builtin.file:
+        path: '{{ relay_reviewer_recovery_off_marker }}'
+        state: absent
+      when: not ansible_check_mode | bool
+
+    - name: Clear activation recovery evidence after complete validation
+      ansible.builtin.include_tasks: tasks/production-operation-state-clear.yml
+      vars:
+        relay_production_operation_clear_phase: '{{ relay_production_operation_active_phase }}'
+        relay_production_operation_clear_head: '{{ relay_production_operation_active_head }}'
+      when: not ansible_check_mode | bool
+
+    - name: Record successful Reviewer activation
+      ansible.builtin.debug:
+        msg: >-
+          REVIEWER_ACTIVATION_PASS=credential_gate_verified;release={{ relay_reviewer_activation_manifest.commit }};
+          listener={{ relay_reviewer_bind_address }}:8787;
+          service={{ relay_reviewer_service_name }}
+      when: not ansible_check_mode | bool

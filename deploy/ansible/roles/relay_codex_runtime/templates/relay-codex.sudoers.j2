@@ -1,0 +1,3 @@
+# managed-by: codex-relay
+Defaults:{{ relay_runner_user }} !setenv
+{{ relay_runner_user }} ALL=({{ relay_codex_user }}) NOPASSWD: {{ relay_codex_launcher_path }}

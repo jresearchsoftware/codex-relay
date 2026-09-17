@@ -1,0 +1,247 @@
+---
+- name: Inspect existing protected namespace parents before installation
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_install_root }}'
+    - '{{ relay_release_root }}'
+    - '{{ relay_config_root }}'
+    - '{{ relay_state_root }}'
+  register: relay_preflight_parent_paths
+  changed_when: false
+
+- name: Refuse symlinked writable or foreign protected parents before mutation
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.stat.exists or
+        (item.stat.isdir and not item.stat.islnk and item.stat.pw_name == 'root'
+         and item.stat.mode[-2] in ['0', '1', '4', '5']
+         and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: RELAY_INSTALL_PARENT_UNSAFE
+  loop: '{{ relay_preflight_parent_paths.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Validate execution mode
+  ansible.builtin.assert:
+    that:
+      - relay_mode in ['clean', 'reconcile']
+      - relay_deployment_profile in ['qualification', 'production']
+      - relay_nexus_ownership_root is string
+      - relay_nexus_ownership_root is match('^/[A-Za-z0-9._/-]+$')
+      - relay_nexus_ownership_root != '/'
+      - "'..' not in relay_nexus_ownership_root"
+      - "'//' not in relay_nexus_ownership_root"
+    fail_msg: 'relay_mode must be clean or reconcile'
+
+- name: Enforce Docker ownership boundary
+  ansible.builtin.assert:
+    that:
+      - not relay_manage_docker | bool
+    fail_msg: 'Task 099W relay roles must not manage the Nexus-owned Docker daemon'
+
+- name: Require the production TCP gateway profile before any ordinary reconciliation
+  ansible.builtin.assert:
+    that:
+      - relay_reviewer_bind_mode in ['a_only_loopback', 'nexus_gateway']
+      - relay_reviewer_bind_mode != 'nexus_gateway' or relay_reviewer_gateway_validated | bool
+    fail_msg: 'Production Reviewer reconciliation is fail-closed unless the validated nexus_gateway TCP profile is explicit'
+  when: relay_deployment_profile == 'production'
+
+- name: Validate admitted Debian baseline
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == relay_required_distribution
+      - ansible_facts.distribution_version is version(relay_required_version_id, '>=')
+      - ansible_facts.distribution_major_version == relay_required_version_id
+      - ansible_facts.lsb.codename | default(relay_required_codename) == relay_required_codename
+    fail_msg: 'Task 099W Part 5 requires Debian 12/bookworm'
+
+- name: Collect Reviewer listening sockets with process ownership metadata
+  ansible.builtin.command:
+    argv: >-
+      {{ [relay_preflight_listener_command] + relay_preflight_listener_args + ['sport', '=', ':8787'] }}
+  register: relay_preflight_listeners
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the admitted Reviewer service state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - '{{ relay_preflight_reviewer_service_name }}'
+  register: relay_preflight_reviewer_service
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the admitted Reviewer main PID
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - '--property=MainPID'
+      - '--value'
+      - '{{ relay_preflight_reviewer_service_name }}'
+  register: relay_preflight_reviewer_pid
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Derive the expected relay listener ownership markers
+  ansible.builtin.set_fact:
+    relay_preflight_expected_listener: '{{ relay_reviewer_bind_address }}:8787'
+    relay_preflight_reviewer_pid_marker: 'pid={{ relay_preflight_reviewer_pid.stdout | trim }},'
+
+- name: Enforce the admitted TCP-only Reviewer bind modes
+  ansible.builtin.assert:
+    that:
+      - relay_reviewer_bind_mode in ['a_only_loopback', 'nexus_gateway']
+      - >-
+        relay_reviewer_bind_mode != 'a_only_loopback' or
+        (
+          relay_reviewer_bind_address == '127.0.0.1' and
+          relay_reviewer_bind_network == '' and
+          not relay_reviewer_gateway_validated | bool
+        )
+      - >-
+        relay_reviewer_bind_mode != 'nexus_gateway' or
+        (
+          relay_reviewer_bind_network == relay_docker_network_name and
+          relay_reviewer_gateway_validated | bool and
+          relay_reviewer_bind_address != '127.0.0.1' and
+          relay_reviewer_bind_address != '0.0.0.0'
+        )
+    fail_msg: 'Reviewer bind mode/address is outside the admitted TCP-only loopback or validated nexus-gateway contract'
+
+- name: Select listeners demonstrably owned by the admitted Reviewer
+  ansible.builtin.set_fact:
+    relay_preflight_discovered_listener_lines: '{{ relay_preflight_listeners.stdout_lines }}'
+    relay_preflight_owned_listener_lines: >-
+      {{
+        relay_preflight_listeners.stdout_lines
+        | select('search', relay_preflight_reviewer_pid_marker)
+        | select('search', relay_preflight_expected_listener | regex_escape)
+        | list
+      }}
+    relay_preflight_planned_transition_listener_lines: >-
+      {{
+        relay_preflight_listeners.stdout_lines
+        | select('search', '127.0.0.1:8787' | regex_escape)
+        | select('search', relay_preflight_reviewer_pid_marker)
+        | list
+      }}
+
+- name: Count discovered and owned listeners
+  ansible.builtin.set_fact:
+    relay_preflight_listener_count: '{{ relay_preflight_discovered_listener_lines | length }}'
+    relay_preflight_owned_listener_count: >-
+      {{
+        (
+          relay_preflight_owned_listener_lines
+          if relay_reviewer_bind_mode != 'nexus_gateway'
+          else relay_preflight_owned_listener_lines + relay_preflight_planned_transition_listener_lines
+        ) | unique | length
+      }}
+
+- name: Check protected paths
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop: '{{ relay_nexus_protected_paths }}'
+  register: relay_preflight_protected_paths
+  changed_when: false
+
+- name: Validate relay-owned paths do not overlap Nexus-owned paths
+  ansible.builtin.assert:
+    that:
+      - pair.0 != pair.1
+      - not (pair.0.startswith(pair.1 + '/') or pair.1.startswith(pair.0 + '/'))
+    fail_msg: 'Relay path {{ pair.0 }} overlaps Nexus-owned path {{ pair.1 }}'
+  loop: "{{ query('nested', relay_preflight_owned_paths, relay_nexus_protected_paths) }}"
+  loop_control:
+    loop_var: pair
+
+- name: Validate every protected path is outside the relay namespace
+  ansible.builtin.assert:
+    that:
+      - not (item.item.startswith(relay_install_root + '/') or relay_install_root.startswith(item.item + '/'))
+      - not (item.item.startswith(relay_config_root + '/') or relay_config_root.startswith(item.item + '/'))
+      - not (item.item.startswith(relay_state_root + '/') or relay_state_root.startswith(item.item + '/'))
+      - not (item.item.startswith(relay_log_root + '/') or relay_log_root.startswith(item.item + '/'))
+      - not (item.item.startswith(relay_runtime_root + '/') or relay_runtime_root.startswith(item.item + '/'))
+    fail_msg: 'Configured relay namespace overlaps protected path {{ item.item }}'
+  loop: '{{ relay_preflight_protected_paths.results }}'
+
+- name: Preserve the Reviewer loopback boundary
+  ansible.builtin.assert:
+    that:
+      - 8787 not in relay_nexus_protected_ports
+    fail_msg: 'Reviewer loopback port must remain outside protected public ports'
+
+- name: Require a listener inventory before mutation
+  ansible.builtin.assert:
+    that:
+      - relay_preflight_listeners.rc == 0
+    fail_msg: 'Cannot verify listener ownership because ss failed; install iproute2 or stop before mutation'
+
+- name: Reject occupied relay ports unless ownership is demonstrably valid
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_preflight_listener_count | int) == 0 or
+        (
+          relay_preflight_reviewer_service.rc == 0 and
+          (relay_preflight_reviewer_pid.stdout | trim | int) > 0 and
+          (relay_preflight_owned_listener_count | int) ==
+            (relay_preflight_listener_count | int)
+        )
+    fail_msg: >-
+      Reviewer listener is absent, foreign, ambiguous, or publicly bound; stop and resolve ownership before applying
+      (discovered={{ relay_preflight_listener_count }}, owned={{ relay_preflight_owned_listener_count }},
+      planned_loopback={{ relay_preflight_planned_transition_listener_lines | length }})
+
+- name: Inspect optional Docker/Nexus protected markers
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop:
+    - /var/run/docker.sock
+    - /var/lib/docker
+    - '{{ relay_nexus_ownership_root }}'
+    - '/etc/systemd/system/{{ relay_docker_nginx_service_name }}'
+  register: relay_preflight_optional_foreign_markers
+  changed_when: false
+
+- name: Classify optional Docker/Nexus state without claiming ownership
+  ansible.builtin.set_fact:
+    relay_preflight_optional_foreign_paths: >-
+      {{
+        relay_preflight_optional_foreign_markers.results
+        | selectattr('stat.exists', 'equalto', true)
+        | map(attribute='item')
+        | list
+      }}
+    relay_preflight_topology_state: >-
+      {{
+        'A_ONLY_STANDALONE_NO_DOCKER_NO_NEXUS'
+        if (
+          relay_preflight_optional_foreign_markers.results
+          | selectattr('stat.exists', 'equalto', true)
+          | list
+          | length
+        ) == 0
+        else 'FOREIGN_PROTECTED_DOCKER_OR_NEXUS_STATE_PRESENT'
+      }}
+
+- name: Preserve optional Docker/Nexus ownership boundary
+  ansible.builtin.assert:
+    that:
+      - not relay_manage_docker | bool
+      - relay_preflight_topology_state in [
+          'A_ONLY_STANDALONE_NO_DOCKER_NO_NEXUS',
+          'FOREIGN_PROTECTED_DOCKER_OR_NEXUS_STATE_PRESENT'
+        ]
+    fail_msg: 'Relay must treat Docker/Nexus as optional foreign state and must not claim its ownership'

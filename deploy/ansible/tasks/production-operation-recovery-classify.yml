@@ -1,0 +1,598 @@
+---
+# Read-only classification for a trusted unfinished operation.  This path is
+# intentionally separate from the ordinary stable-state assertions: expected
+# partial states are classified by the recorded phase and never treated as a
+# normal steady-state combination.
+
+- name: Inspect Reviewer and runner service states for recovery classification
+  ansible.builtin.command:
+    argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+  loop:
+    - {name: reviewer_active, operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+    - {name: reviewer_enabled, operation: is-enabled, unit: '{{ relay_reviewer_service_name }}'}
+    - {name: runner_active, operation: is-active, unit: '{{ relay_runner_service_name }}'}
+    - {name: runner_enabled, operation: is-enabled, unit: '{{ relay_runner_service_name }}'}
+  register: relay_production_recovery_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Inspect recovery service unit and non-secret lifecycle evidence
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+  loop:
+    - {name: reviewer_unit, path: '{{ relay_reviewer_service_unit_path }}'}
+    - {name: runner_unit, path: '{{ relay_runner_service_unit_path }}'}
+    - {name: activation_marker, path: '{{ relay_reviewer_activation_marker }}'}
+    - {name: recovery_off_marker, path: '{{ relay_reviewer_recovery_off_marker }}'}
+    - {name: registration_marker, path: '{{ relay_runner_registration_marker }}'}
+    - {name: credentials_marker, path: '{{ relay_runner_credentials_marker }}'}
+  register: relay_production_recovery_paths
+  changed_when: false
+
+- name: Inspect the private Reviewer listener for recovery classification
+  ansible.builtin.shell: >-
+    ss -ltnH |
+    awk '$4 ~ /:8787$/ { print }'
+  register: relay_production_recovery_listener
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Admit runner registration evidence by metadata before content access
+  ansible.builtin.set_fact:
+    relay_production_recovery_registration_metadata_trusted: >-
+      {{
+        (
+          not (relay_production_recovery_paths.results[4].stat.exists | default(false) | bool) and
+          not (relay_production_recovery_paths.results[5].stat.exists | default(false) | bool)
+        ) or
+        (
+          relay_production_recovery_paths.results[4].stat.exists | default(false) | bool and
+          relay_production_recovery_paths.results[4].stat.isreg | default(false) | bool and
+          not (relay_production_recovery_paths.results[4].stat.islnk | default(false) | bool) and
+          (relay_production_recovery_paths.results[4].stat.pw_name | default('')) == relay_runner_user and
+          (relay_production_recovery_paths.results[4].stat.gr_name | default('')) == relay_runner_group and
+          relay_production_recovery_paths.results[4].stat.mode == '0600' and
+          relay_production_recovery_paths.results[5].stat.exists | default(false) | bool and
+          relay_production_recovery_paths.results[5].stat.isreg | default(false) | bool and
+          not (relay_production_recovery_paths.results[5].stat.islnk | default(false) | bool) and
+          (relay_production_recovery_paths.results[5].stat.pw_name | default('')) == relay_runner_user and
+          (relay_production_recovery_paths.results[5].stat.gr_name | default('')) == relay_runner_group and
+          relay_production_recovery_paths.results[5].stat.mode == '0600'
+        )
+      }}
+  changed_when: false
+
+- name: Refuse untrusted runner registration evidence before content access
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_registration_metadata_trusted | bool
+    fail_msg: 'PRODUCTION_RECOVERY_EVIDENCE_UNTRUSTED'
+
+- name: Read only the non-secret authorization and registration evidence
+  ansible.builtin.slurp:
+    src: '{{ item.path }}'
+  loop:
+    - {name: activation_marker, path: '{{ relay_reviewer_activation_marker }}'}
+    - {name: recovery_off_marker, path: '{{ relay_reviewer_recovery_off_marker }}'}
+  register: relay_production_recovery_evidence_raw
+  when: >-
+    relay_production_recovery_paths.results
+    | selectattr('item.name', 'equalto', item.name)
+    | map(attribute='stat')
+    | selectattr('exists', 'equalto', true)
+    | selectattr('isreg', 'equalto', true)
+    | selectattr('islnk', 'defined')
+    | selectattr('islnk', 'equalto', false)
+    | list
+    | length == 1
+    and (
+      item.name != 'registration_marker' or
+      relay_production_recovery_registration_metadata_trusted | bool
+    )
+
+- name: Capture sanitized recovery classification facts
+  ansible.builtin.set_fact:
+    relay_production_recovery_reviewer_active: '{{ relay_production_recovery_services.results[0].stdout | trim }}'
+    relay_production_recovery_reviewer_enabled: '{{ relay_production_recovery_services.results[1].stdout | trim }}'
+    relay_production_recovery_runner_active: '{{ relay_production_recovery_services.results[2].stdout | trim }}'
+    relay_production_recovery_runner_enabled: '{{ relay_production_recovery_services.results[3].stdout | trim }}'
+    relay_production_recovery_reviewer_unit_exists: '{{ relay_production_recovery_paths.results[0].stat.exists | default(false) | bool }}'
+    relay_production_recovery_runner_unit_exists: '{{ relay_production_recovery_paths.results[1].stat.exists | default(false) | bool }}'
+    relay_production_recovery_activation_present: '{{ relay_production_recovery_paths.results[2].stat.exists | default(false) | bool }}'
+    relay_production_recovery_off_present: '{{ relay_production_recovery_paths.results[3].stat.exists | default(false) | bool }}'
+    relay_production_recovery_registration_present: '{{ relay_production_recovery_paths.results[4].stat.exists | default(false) | bool }}'
+    relay_production_recovery_credentials_present: '{{ relay_production_recovery_paths.results[5].stat.exists | default(false) | bool }}'
+    relay_production_recovery_listener_present: >-
+      {{ relay_production_recovery_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape) }}
+  changed_when: false
+
+- name: Validate and classify root-owned Reviewer recovery evidence
+  ansible.builtin.set_fact:
+    relay_production_recovery_activation_valid: >-
+      {{
+        (not relay_production_recovery_activation_present | bool) or
+        (
+          relay_production_recovery_paths.results[2].stat.isreg | default(false) and
+          not relay_production_recovery_paths.results[2].stat.islnk | default(false) and
+          relay_production_recovery_paths.results[2].stat.pw_name == 'root' and
+          relay_production_recovery_paths.results[2].stat.gr_name == 'root' and
+          relay_production_recovery_paths.results[2].stat.mode == '0600' and
+          (relay_production_recovery_evidence_raw.results[0].content | default('') | b64decode | trim == 'authorized')
+        )
+      }}
+    relay_production_recovery_off_valid: >-
+      {{
+        (not relay_production_recovery_off_present | bool) or
+        (
+          relay_production_recovery_paths.results[3].stat.isreg | default(false) and
+          not relay_production_recovery_paths.results[3].stat.islnk | default(false) and
+          relay_production_recovery_paths.results[3].stat.pw_name == 'root' and
+          relay_production_recovery_paths.results[3].stat.gr_name == 'root' and
+          relay_production_recovery_paths.results[3].stat.mode == '0600' and
+          (relay_production_recovery_evidence_raw.results[1].content | default('') | b64decode | trim == 'requires-activation')
+        )
+      }}
+  changed_when: false
+
+- name: Read and validate runner registration JSON from one admitted file object
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |-
+        import grp
+        import json
+        import os
+        import pwd
+        import stat
+        import sys
+
+        UNTRUSTED = 'PRODUCTION_RECOVERY_EVIDENCE_UNTRUSTED'
+        MALFORMED = 'PRODUCTION_RECOVERY_EVIDENCE_MALFORMED'
+
+        def fail(token):
+            print(token, file=sys.stderr)
+            raise SystemExit(1)
+
+        path, expected_user, expected_group = sys.argv[1:]
+        if not hasattr(os, 'O_NOFOLLOW'):
+            fail(UNTRUSTED)
+        try:
+            expected_uid = pwd.getpwnam(expected_user).pw_uid
+            expected_gid = grp.getgrnam(expected_group).gr_gid
+            fd = os.open(
+                path,
+                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0),
+            )
+        except (KeyError, OSError):
+            fail(UNTRUSTED)
+
+        try:
+            metadata = os.fstat(fd)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != expected_uid
+                or metadata.st_gid != expected_gid
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+            ):
+                fail(UNTRUSTED)
+            with os.fdopen(fd, 'rb') as stream:
+                fd = None
+                raw = stream.read()
+        except OSError:
+            fail(UNTRUSTED)
+        finally:
+            if fd is not None:
+                os.close(fd)
+
+        try:
+            record = json.loads(raw.decode('utf-8-sig'))
+        except (UnicodeDecodeError, ValueError):
+            fail(MALFORMED)
+        if not isinstance(record, dict):
+            fail(MALFORMED)
+
+        print(
+            json.dumps(
+                {
+                    'gitHubUrl': record.get('gitHubUrl'),
+                    'agentName': record.get('agentName'),
+                    'workFolder': record.get('workFolder'),
+                },
+                sort_keys=True,
+            )
+        )
+      - '{{ relay_runner_registration_marker }}'
+      - '{{ relay_runner_user }}'
+      - '{{ relay_runner_group }}'
+  register: relay_production_recovery_registration_json_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_production_recovery_registration_present | bool
+    and relay_production_recovery_registration_metadata_trusted | bool
+
+- name: Refuse registration evidence whose opened object is no longer trusted
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_registration_json_check.rc == 0 or
+        'PRODUCTION_RECOVERY_EVIDENCE_UNTRUSTED' not in (
+          relay_production_recovery_registration_json_check.stderr | default('')
+        )
+    fail_msg: 'PRODUCTION_RECOVERY_EVIDENCE_UNTRUSTED'
+  when: relay_production_recovery_registration_present | bool
+    and relay_production_recovery_registration_metadata_trusted | bool
+
+- name: Refuse malformed runner registration evidence with a controlled result
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_registration_json_check.rc == 0
+    fail_msg: 'PRODUCTION_RECOVERY_EVIDENCE_MALFORMED'
+  when: relay_production_recovery_registration_present | bool
+    and relay_production_recovery_registration_metadata_trusted | bool
+
+- name: Parse the sanitized registration snapshot returned from the admitted object
+  ansible.builtin.set_fact:
+    relay_production_recovery_registration: '{{ relay_production_recovery_registration_json_check.stdout | from_json }}'
+  when:
+    - relay_production_recovery_registration_present | bool
+    - relay_production_recovery_registration_metadata_trusted | bool
+    - relay_production_recovery_registration_json_check.rc == 0
+
+- name: Validate non-secret runner registration evidence without reading credentials
+  ansible.builtin.set_fact:
+    relay_production_recovery_registration_valid: >-
+      {{
+        (
+          not relay_production_recovery_registration_present | bool and
+          not relay_production_recovery_credentials_present | bool
+        ) or
+        (
+          relay_production_recovery_registration_present | bool and
+          relay_production_recovery_credentials_present | bool and
+          relay_production_recovery_registration_metadata_trusted | bool and
+          (relay_production_recovery_registration_json_check.rc | default(1)) == 0 and
+          (relay_production_recovery_registration | default({})).get('gitHubUrl', '') == ('https://github.com/' ~ relay_github_repository.split('/')[0]) and
+          (relay_production_recovery_registration | default({})).get('agentName', '') == relay_production_runner_name and
+          (relay_production_recovery_registration | default({})).get('workFolder', '') == relay_runner_work_root
+        )
+      }}
+  changed_when: false
+
+- name: Identify the narrowly scoped partial Reviewer activation recovery state
+  ansible.builtin.set_fact:
+    relay_production_recovery_partial_activation: >-
+      {{
+        relay_production_operation_recovery_phase == 'activate' and
+        not relay_production_recovery_activation_present | bool and
+        not relay_production_recovery_off_present | bool and
+        relay_production_recovery_reviewer_active in ['inactive', 'failed'] and
+        relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime']
+      }}
+  changed_when: false
+
+- name: Classify expected service states for the recorded recovery phase
+  ansible.builtin.set_fact:
+    relay_production_recovery_reviewer_state: >-
+      reviewer={{ relay_production_recovery_reviewer_active }}/{{ relay_production_recovery_reviewer_enabled }}
+    relay_production_recovery_runner_state: >-
+      runner={{ relay_production_recovery_runner_active }}/{{ relay_production_recovery_runner_enabled }}
+    relay_production_recovery_evidence_safe: >-
+      {{
+        relay_production_recovery_activation_valid | bool and
+        relay_production_recovery_off_valid | bool and
+        relay_production_recovery_registration_valid | bool and
+        (
+          not relay_production_recovery_reviewer_unit_exists | bool or
+          (
+            relay_production_recovery_paths.results[0].stat.isreg | default(false) and
+            not relay_production_recovery_paths.results[0].stat.islnk | default(false) and
+            relay_production_recovery_paths.results[0].stat.pw_name == 'root' and
+            relay_production_recovery_paths.results[0].stat.gr_name == 'root'
+          )
+        ) and
+        (
+          not relay_production_recovery_runner_unit_exists | bool or
+          (
+            relay_production_recovery_paths.results[1].stat.isreg | default(false) and
+            not relay_production_recovery_paths.results[1].stat.islnk | default(false) and
+            relay_production_recovery_paths.results[1].stat.pw_name == 'root' and
+            relay_production_recovery_paths.results[1].stat.gr_name == 'root'
+          )
+        )
+      }}
+    relay_production_recovery_reviewer_safe: >-
+      {{
+        (
+          not relay_production_recovery_activation_present | bool and
+          not relay_production_recovery_off_present | bool and
+          relay_production_recovery_reviewer_active in ['inactive', 'failed'] and
+          relay_production_recovery_reviewer_enabled == 'disabled'
+        ) or
+        (
+          relay_production_recovery_activation_valid | bool and
+          not relay_production_recovery_off_present | bool and
+          (
+            (
+              relay_production_recovery_activation_present | bool and
+              (
+                (
+                  relay_production_recovery_reviewer_active == 'active' and
+                  relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime'] and
+                  relay_production_recovery_listener_present | bool
+                ) or
+                (
+                  relay_production_recovery_reviewer_active in ['inactive', 'failed'] and
+                  relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime']
+                )
+              )
+            ) or
+            (
+              not relay_production_recovery_activation_present | bool and
+              relay_production_recovery_reviewer_active == 'active' and
+              relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime'] and
+              relay_production_recovery_listener_present | bool
+            )
+          )
+        ) or
+        (
+          relay_production_recovery_partial_activation | bool
+        ) or
+        (
+          relay_production_recovery_activation_valid | bool and
+          relay_production_recovery_off_valid | bool and
+          relay_production_recovery_off_present | bool and
+          relay_production_recovery_reviewer_active in ['inactive', 'failed'] and
+          relay_production_recovery_reviewer_enabled == 'disabled'
+        )
+      }}
+    relay_production_recovery_runner_safe: >-
+      {{
+        (
+          relay_production_recovery_runner_active in ['inactive', 'failed'] and
+          relay_production_recovery_runner_enabled in ['disabled', 'enabled', 'enabled-runtime']
+        ) or
+        (
+          relay_production_recovery_runner_active == 'active' and
+          relay_production_recovery_runner_enabled in ['enabled', 'enabled-runtime'] and
+          relay_production_recovery_activation_present | bool and
+          relay_production_recovery_activation_valid | bool and
+          relay_production_recovery_registration_present | bool and
+          relay_production_recovery_credentials_present | bool and
+          relay_production_recovery_registration_valid | bool
+        )
+      }}
+  changed_when: false
+
+- name: Inspect the current release binding for apply recovery evidence
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_install_root }}/current'
+    - '{{ relay_install_root }}/current/artifact-manifest.json'
+  register: relay_production_recovery_apply_release_paths
+  changed_when: false
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Require the current release to be the recorded apply target
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_apply_release_paths.results[0].stat.exists | default(false)
+      - relay_production_recovery_apply_release_paths.results[0].stat.islnk | default(false)
+      - relay_production_recovery_apply_release_paths.results[0].stat.lnk_source == relay_release_root ~ '/' ~ relay_production_operation_recovery_target_head
+      - relay_production_recovery_apply_release_paths.results[1].stat.exists | default(false)
+      - relay_production_recovery_apply_release_paths.results[1].stat.isreg | default(false)
+      - not relay_production_recovery_apply_release_paths.results[1].stat.islnk | default(false)
+      - relay_production_recovery_apply_release_paths.results[1].stat.pw_name == 'root'
+      - relay_production_recovery_apply_release_paths.results[1].stat.gr_name in ['root', relay_group]
+    fail_msg: 'PRODUCTION_RECOVERY_APPLY_RELEASE_BINDING_INVALID'
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Read the current non-secret apply release manifest
+  ansible.builtin.slurp:
+    src: '{{ relay_install_root }}/current/artifact-manifest.json'
+  register: relay_production_recovery_apply_manifest_raw
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Parse and validate the current apply release manifest
+  ansible.builtin.set_fact:
+    relay_production_recovery_apply_manifest: '{{ relay_production_recovery_apply_manifest_raw.content | b64decode | from_json }}'
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Require the current apply manifest to match the durable operation head
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_apply_manifest is mapping
+      - relay_production_recovery_apply_manifest.schemaVersion == '1.0'
+      - relay_production_recovery_apply_manifest.commit == relay_production_operation_recovery_target_head
+    fail_msg: 'PRODUCTION_RECOVERY_APPLY_MANIFEST_MISMATCH'
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Classify the exact fresh-owner partial apply recovery shape
+  ansible.builtin.set_fact:
+    relay_production_recovery_apply_state_safe: >-
+      {{
+        relay_production_recovery_evidence_safe | bool and
+        relay_production_recovery_apply_release_paths.results[0].stat.lnk_source == relay_release_root ~ '/' ~ relay_production_operation_recovery_target_head and
+        relay_production_recovery_apply_manifest.commit == relay_production_operation_recovery_target_head and
+        relay_production_recovery_activation_present | bool and
+        relay_production_recovery_activation_valid | bool and
+        not relay_production_recovery_off_present | bool and
+        relay_production_recovery_reviewer_active == 'active' and
+        relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime'] and
+        relay_production_recovery_listener_present | bool and
+        relay_production_recovery_runner_active == 'active' and
+        relay_production_recovery_runner_enabled in ['enabled', 'enabled-runtime'] and
+        relay_production_recovery_registration_present | bool and
+        relay_production_recovery_credentials_present | bool and
+        relay_production_recovery_registration_valid | bool
+      }}
+  changed_when: false
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Require the bounded apply recovery shape for fresh-owner disposition
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_apply_state_safe | bool
+    fail_msg: >-
+      PRODUCTION_RECOVERY_APPLY_STATE_UNSAFE;
+      target_head={{ relay_production_operation_recovery_target_head }};
+      reviewer={{ relay_production_recovery_reviewer_state }};
+      runner={{ relay_production_recovery_runner_state }};
+      listener={{ relay_production_recovery_listener_present | bool }}
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - (relay_production_operation_phase | default('')) == 'stale-dispose'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Compute the non-secret current apply recovery state hash
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |-
+        import hashlib
+        import json
+        import sys
+
+        (
+            phase,
+            release_link,
+            manifest_commit,
+            reviewer_active,
+            reviewer_enabled,
+            runner_active,
+            runner_enabled,
+            listener_present,
+            activation_marker,
+            recovery_off_marker,
+            registration_evidence,
+        ) = sys.argv[1:]
+        state = {
+            'activationMarker': activation_marker,
+            'listenerPresent': listener_present == 'true',
+            'manifestCommit': manifest_commit,
+            'phase': phase,
+            'recoveryOffMarker': recovery_off_marker,
+            'registrationEvidence': registration_evidence == 'true',
+            'releaseLink': release_link,
+            'reviewerActive': reviewer_active,
+            'reviewerEnabled': reviewer_enabled,
+            'runnerActive': runner_active,
+            'runnerEnabled': runner_enabled,
+        }
+        canonical = json.dumps(state, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        print(hashlib.sha256(canonical).hexdigest())
+      - apply
+      - '{{ relay_production_recovery_apply_release_paths.results[0].stat.lnk_source }}'
+      - '{{ relay_production_recovery_apply_manifest.commit }}'
+      - '{{ relay_production_recovery_reviewer_active }}'
+      - '{{ relay_production_recovery_reviewer_enabled }}'
+      - '{{ relay_production_recovery_runner_active }}'
+      - '{{ relay_production_recovery_runner_enabled }}'
+      - '{{ "true" if relay_production_recovery_listener_present | bool else "false" }}'
+      - '{{ "authorized" if (relay_production_recovery_activation_present | bool and relay_production_recovery_activation_valid | bool) else "absent" }}'
+      - '{{ "requires-activation" if (relay_production_recovery_off_present | bool and relay_production_recovery_off_valid | bool) else "absent" }}'
+      - '{{ "true" if (relay_production_recovery_registration_present | bool and relay_production_recovery_credentials_present | bool and relay_production_recovery_registration_valid | bool) else "false" }}'
+  register: relay_production_recovery_apply_state_hash_result
+  changed_when: false
+  check_mode: false
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Record the non-secret current apply recovery state hash
+  ansible.builtin.set_fact:
+    relay_production_recovery_apply_state_hash: '{{ relay_production_recovery_apply_state_hash_result.stdout | trim }}'
+  changed_when: false
+  when:
+    - relay_production_operation_recovery_phase == 'apply'
+    - relay_production_recovery_apply_release_binding_required | default(false) | bool
+
+- name: Classify the recorded recovery phase from inspected facts
+  ansible.builtin.set_fact:
+    relay_production_recovery_phase_classifiable: >-
+      {{
+        (
+          relay_production_operation_recovery_phase == 'activate' and
+          relay_production_recovery_evidence_safe | bool and
+          relay_production_recovery_runner_safe | bool and
+          relay_production_recovery_reviewer_safe | bool
+        ) or
+        (
+          relay_production_operation_recovery_phase == 'runner-enable' and
+          relay_production_recovery_evidence_safe | bool and
+          relay_production_recovery_activation_valid | bool and
+          relay_production_recovery_activation_present | bool and
+          not relay_production_recovery_off_present | bool and
+          relay_production_recovery_reviewer_active in ['active', 'inactive', 'failed'] and
+          relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime'] and
+          (
+            relay_production_recovery_reviewer_active != 'active' or
+            relay_production_recovery_listener_present | bool
+          ) and
+          relay_production_recovery_registration_present | bool and
+          relay_production_recovery_credentials_present | bool and
+          relay_production_recovery_runner_safe | bool
+        ) or
+        (
+          relay_production_operation_recovery_phase == 'apply' and
+          relay_production_recovery_evidence_safe | bool and
+          relay_production_recovery_reviewer_safe | bool and
+          relay_production_recovery_runner_safe | bool
+        )
+      }}
+    relay_production_recovery_planned_scope: >-
+      {{
+        'reviewer-only' if relay_production_operation_recovery_phase == 'activate' else
+        'runner-only-preserve-reviewer' if relay_production_operation_recovery_phase == 'runner-enable' else
+        'preserve-reviewer-and-runner'
+      }}
+  changed_when: false
+
+- name: Refuse unsafe or contradictory trusted recovery evidence
+  ansible.builtin.assert:
+    that:
+      - relay_production_recovery_phase_classifiable | bool
+    fail_msg: >-
+      PRODUCTION_RECOVERY_CLASSIFICATION_BLOCKED;
+      phase={{ relay_production_operation_recovery_phase }};
+      target_head={{ relay_production_operation_recovery_target_head }};
+      reviewer={{ relay_production_recovery_reviewer_state }};
+      runner={{ relay_production_recovery_runner_state }}
+
+- name: Emit one coherent phase-scoped recovery classification
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_CLASSIFICATION=phase={{ relay_production_operation_recovery_phase }};
+      target_head={{ relay_production_operation_recovery_target_head }};
+      reviewer={{ relay_production_recovery_reviewer_state }};
+      runner={{ relay_production_recovery_runner_state }};
+      listener={{ relay_production_recovery_listener_present | bool }};
+      activation_authorized={{ relay_production_recovery_activation_present | bool }};
+      reactivation_required={{ relay_production_recovery_off_present | bool }};
+      partial_activation={{ relay_production_recovery_partial_activation | bool }};
+      registration_evidence={{ relay_production_recovery_registration_present | bool and relay_production_recovery_credentials_present | bool }};
+      apply_state_hash={{ relay_production_recovery_apply_state_hash | default('not-applicable') }};
+      planned_scope={{ relay_production_recovery_planned_scope }};
+      mutation_boundary=matching-phase-and-exact-head-only
+
+- name: Mark the read-only recovery classification complete
+  ansible.builtin.set_fact:
+    relay_production_recovery_check_classified: true

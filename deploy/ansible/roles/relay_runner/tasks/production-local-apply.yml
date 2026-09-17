@@ -1,0 +1,119 @@
+---
+- name: Validate the fixed production local-apply boundary inputs
+  ansible.builtin.assert:
+    that:
+      - relay_deployment_profile == 'production'
+      - relay_production_local_apply_helper_path == (relay_install_root ~ '/relay-production-local-apply')
+      - relay_production_local_apply_sudoers_file == ('/etc/sudoers.d/' ~ relay_namespace ~ '-production-apply')
+      - relay_production_local_apply_checkout_root == (relay_state_root ~ '/runner/work/' ~ relay_github_repository.split('/')[-1] ~ '/' ~ relay_github_repository.split('/')[-1])
+      - relay_production_local_apply_stage_root == (relay_state_root ~ '/production-apply')
+      - relay_runner_user == relay_production_runner_user
+    fail_msg: 'PRODUCTION_LOCAL_APPLY_BOUNDARY_INPUT_INVALID'
+
+- name: Create root-owned disposable local-apply staging namespace
+  ansible.builtin.file:
+    path: '{{ relay_production_local_apply_stage_root }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+# Install the sandbox configuration now. An executing runner adopts a changed
+# mount namespace only at an owner-authorized lifecycle transition after its job.
+- name: Inspect the runner unit before planning a sandbox refresh
+  ansible.builtin.stat:
+    path: /etc/systemd/system/relay-runner.service
+  register: relay_production_local_apply_runner_unit
+  changed_when: false
+
+- name: Create the root-owned production runner drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/relay-runner.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Reconcile the production runner sandbox for local apply
+  ansible.builtin.template:
+    src: relay-runner-production-local-apply.conf.j2
+    dest: /etc/systemd/system/relay-runner.service.d/production-local-apply.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload runner unit
+
+- name: Install the fixed root-owned local production apply helper
+  ansible.builtin.template:
+    src: relay-production-local-apply.j2
+    dest: '{{ relay_production_local_apply_helper_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install and validate the narrow production runner sudoers rule
+  ansible.builtin.template:
+    src: relay-production-local-apply.sudoers.j2
+    dest: '{{ relay_production_local_apply_sudoers_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+
+- name: Inspect the fixed production local-apply boundary
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_production_local_apply_helper_path }}'
+    - '{{ relay_production_local_apply_sudoers_file }}'
+    - '{{ relay_production_local_apply_stage_root }}'
+  register: relay_production_local_apply_paths
+  changed_when: false
+
+- name: Require fixed production local-apply ownership and modes
+  ansible.builtin.assert:
+    that:
+      - relay_production_local_apply_paths.results[0].stat.exists
+      - relay_production_local_apply_paths.results[0].stat.isreg
+      - not relay_production_local_apply_paths.results[0].stat.islnk | default(false)
+      - relay_production_local_apply_paths.results[0].stat.pw_name == 'root'
+      - relay_production_local_apply_paths.results[0].stat.gr_name == 'root'
+      - relay_production_local_apply_paths.results[0].stat.mode == '0750'
+      - relay_production_local_apply_paths.results[1].stat.exists
+      - relay_production_local_apply_paths.results[1].stat.isreg
+      - not relay_production_local_apply_paths.results[1].stat.islnk | default(false)
+      - relay_production_local_apply_paths.results[1].stat.pw_name == 'root'
+      - relay_production_local_apply_paths.results[1].stat.gr_name == 'root'
+      - relay_production_local_apply_paths.results[1].stat.mode == '0440'
+      - relay_production_local_apply_paths.results[2].stat.exists
+      - relay_production_local_apply_paths.results[2].stat.isdir
+      - not relay_production_local_apply_paths.results[2].stat.islnk | default(false)
+      - relay_production_local_apply_paths.results[2].stat.pw_name == 'root'
+      - relay_production_local_apply_paths.results[2].stat.gr_name == 'root'
+      - relay_production_local_apply_paths.results[2].stat.mode == '0700'
+    fail_msg: 'PRODUCTION_LOCAL_APPLY_BOUNDARY_OWNERSHIP_INVALID'
+  when:
+    - >-
+      not ansible_check_mode | bool or (
+        relay_production_local_apply_paths.results[0].stat.exists and
+        relay_production_local_apply_paths.results[1].stat.exists and
+        relay_production_local_apply_paths.results[2].stat.exists
+      )
+
+- name: Record the local-apply boundary check-mode installation plan
+  ansible.builtin.debug:
+    msg: 'PRODUCTION_LOCAL_APPLY_CHECK_MODE_PLAN=install-root-owned-helper-and-narrow-sudoers'
+  when:
+    - ansible_check_mode | bool
+    - >-
+      not (
+        relay_production_local_apply_paths.results[0].stat.exists and
+        relay_production_local_apply_paths.results[1].stat.exists and
+        relay_production_local_apply_paths.results[2].stat.exists
+      )
+
+- name: Record the fixed production local-apply boundary
+  ansible.builtin.debug:
+    msg: 'PRODUCTION_LOCAL_APPLY_BOUNDARY_VALIDATED=helper={{ relay_production_local_apply_helper_path }};sudoers={{ relay_production_local_apply_sudoers_file }};checkout={{ relay_production_local_apply_checkout_root }};stage={{ relay_production_local_apply_stage_root }}'

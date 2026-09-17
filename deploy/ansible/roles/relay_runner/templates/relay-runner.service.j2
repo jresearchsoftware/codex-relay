@@ -1,0 +1,49 @@
+[Unit]
+Description=Docs evolution self-hosted runner boundary
+{% if relay_deployment_profile == 'production' %}
+After=network-online.target {{ relay_reviewer_service_name }}
+PartOf={{ relay_reviewer_service_name }}
+{% else %}
+After=network-online.target
+{% endif %}
+Wants=network-online.target
+ConditionPathExists={{ relay_install_root }}/current
+{% if relay_deployment_profile == 'production' %}
+ConditionPathExists={{ relay_reviewer_activation_marker }}
+{% endif %}
+
+[Service]
+Type=simple
+User={{ relay_runner_user }}
+Group={{ relay_runner_group }}
+EnvironmentFile=-{{ relay_config_root }}/relay.env
+Environment=HOME={{ relay_runner_home }}
+Environment=RUNNER_REGISTRATION=owner-mediated-repository-token
+Environment=RUNNER_LABELS={{ relay_runner_labels | join(',') }}
+Environment=RUNNER_ALLOW_RUNASROOT=0
+WorkingDirectory={{ relay_runner_root }}
+{% if relay_deployment_profile == 'production' %}
+# The readiness gate is a fixed root-owned preflight.  The leading + permits
+# only this evidence check to read root-only operation/activation state; the
+# runner itself remains under its dedicated non-root identity.
+ExecStartPre=+{{ relay_reviewer_readiness_path }}
+{% endif %}
+ExecStart={{ relay_runner_exec_start }}
+Restart=on-failure
+{% if relay_deployment_profile == 'production' %}
+RestartSec=10s
+{% endif %}
+UMask=0077
+# The runner is still unprivileged; it must be able to invoke exactly one
+# root-owned helper through sudo. Unix ownership and the fixed sudoers rule
+# remain the authority boundary, so NoNewPrivileges would make the accepted
+# path fail before the helper can enforce its own typed contract.
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ relay_runner_root }} {{ relay_runner_work_root }} {{ relay_runner_home }} {{ relay_log_root }} {{ relay_writer_claim_root }} {{ relay_diagnostics_root }} {{ relay_codex_home }} {{ relay_dispatch_state_root }} {{ relay_dispatch_work_root }} {{ relay_dispatch_home }} {{ relay_dispatch_remediation_root }} {{ relay_dispatch_evidence_root }}
+ReadOnlyPaths={{ relay_writer_credential_root }}
+
+[Install]
+WantedBy=multi-user.target

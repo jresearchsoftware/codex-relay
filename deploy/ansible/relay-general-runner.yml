@@ -1,0 +1,163 @@
+---
+# Only the owner-mediated lifecycle transition lives here. Installation belongs
+# to site.yml through Manual main production deploy.
+- name: Enable the already installed and owner-registered general runner
+  hosts: relay
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Require the owner-authorized fixed general instance
+      ansible.builtin.assert:
+        that:
+          - relay_general_runner_authorized | default(false) | bool
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '12'
+          - relay_production_operation_phase == 'general-runner-enable'
+          - relay_production_exact_head is match('^[0-9a-f]{40}$')
+          - relay_runner_name == relay_general_runner_name
+          - relay_runner_registration_scope == 'repository'
+          - relay_runner_user == relay_general_runner_user
+          - relay_runner_group == relay_general_runner_user
+          - relay_runner_root == (relay_install_root ~ '/general-runner')
+          - relay_runner_work_root == (relay_state_root ~ '/general-runner/work')
+          - relay_runner_home == (relay_state_root ~ '/general-runner/home')
+          - relay_runner_service_name == 'relay-general-runner.service'
+          - relay_runner_service_unit_path == '/etc/systemd/system/relay-general-runner.service'
+          - relay_runner_registration_helper_path == (relay_install_root ~ '/relay-general-runner-registration')
+          - relay_runner_service_state_management == 'preserve'
+          - not relay_runner_service_enabled | bool
+        fail_msg: GENERAL_RUNNER_BOUNDARY_INVALID
+
+    - name: Require an idle production operation boundary
+      ansible.builtin.stat:
+        path: '{{ relay_production_operation_record_path }}'
+      register: general_runner_operation
+
+    - name: Refuse to overlap an unfinished production operation
+      ansible.builtin.assert:
+        that: [not general_runner_operation.stat.exists]
+        fail_msg: GENERAL_RUNNER_PRODUCTION_OPERATION_PENDING
+
+    - name: Inspect the installed non-secret release manifest before enablement
+      ansible.builtin.slurp:
+        src: '{{ relay_install_root }}/current/artifact-manifest.json'
+      register: general_runner_installed_manifest
+
+    - name: Require current main installation before general lifecycle activation
+      ansible.builtin.assert:
+        that:
+          - (general_runner_installed_manifest.content | b64decode | from_json).commit == relay_production_exact_head
+        fail_msg: GENERAL_RUNNER_INSTALL_CURRENT_MAIN_FIRST
+
+    - name: Snapshot the production runner lifecycle
+      ansible.builtin.command:
+        argv: [systemctl, '{{ item }}', relay-runner.service]
+      loop: [is-active, is-enabled]
+      register: general_runner_production_before
+      changed_when: false
+
+    - name: Require the existing Reviewer and Codex runtime readiness
+      ansible.builtin.command:
+        argv: ['{{ relay_codex_dispatch_path }}', '--check-runtime']
+      changed_when: false
+
+    - name: Require the existing Reviewer readiness gate
+      ansible.builtin.command:
+        argv: ['{{ relay_reviewer_readiness_path }}']
+      changed_when: false
+
+    - name: Inspect the existing production registration without reading credentials
+      ansible.builtin.slurp:
+        src: '{{ relay_install_root }}/runner/.runner'
+      register: general_runner_production_marker
+
+    - name: Require unchanged organization production registration
+      ansible.builtin.assert:
+        that:
+          - production_marker.gitHubUrl == ('https://github.com/' ~ relay_github_repository.split('/')[0])
+          - production_marker.agentName == 'relay-production-relay'
+          - production_marker.workFolder == (relay_state_root ~ '/runner/work')
+        fail_msg: GENERAL_RUNNER_PRODUCTION_REGISTRATION_INVALID
+      vars:
+        production_marker: '{{ general_runner_production_marker.content | b64decode(encoding="utf-8-sig") | from_json }}'
+
+    - name: Verify effective general and production privilege boundaries
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: general-validation.yml
+
+    - name: Inspect general registration files without reading credentials
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop: ['{{ relay_runner_registration_marker }}', '{{ relay_runner_credentials_marker }}']
+      register: general_runner_registration_files
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Require owner-completed regular general registration files
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+          - not item.stat.islnk
+          - item.stat.pw_name == relay_runner_user
+          - item.stat.gr_name == relay_runner_group
+          - item.stat.mode == '0600'
+        fail_msg: GENERAL_RUNNER_REGISTRATION_FILES_INVALID
+      loop: '{{ general_runner_registration_files.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Inspect owner-completed general registration before enablement
+      ansible.builtin.slurp:
+        src: '{{ relay_runner_registration_marker }}'
+      register: general_runner_marker
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Require repository registration for the exact general runner
+      ansible.builtin.assert:
+        that:
+          - general_marker.gitHubUrl == ('https://github.com/' ~ relay_github_repository)
+          - general_marker.agentName == relay_runner_name
+          - general_marker.workFolder == relay_runner_work_root
+        fail_msg: GENERAL_RUNNER_REGISTRATION_INVALID
+      vars:
+        general_marker: '{{ general_runner_marker.content | b64decode(encoding="utf-8-sig") | from_json }}'
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Enable and start only the owner-registered general service
+      ansible.builtin.systemd:
+        name: '{{ relay_runner_service_name }}'
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Verify the enabled general service is active
+      ansible.builtin.command:
+        argv: [systemctl, '{{ item }}', '{{ relay_runner_service_name }}']
+      loop: [is-active, is-enabled]
+      changed_when: false
+      when: relay_production_operation_phase == 'general-runner-enable'
+
+    - name: Snapshot production lifecycle after the general-only operation
+      ansible.builtin.command:
+        argv: [systemctl, '{{ item }}', relay-runner.service]
+      loop: [is-active, is-enabled]
+      register: general_runner_production_after
+      changed_when: false
+
+    - name: Require the production lifecycle to be preserved
+      ansible.builtin.assert:
+        that:
+          - general_runner_production_before.results | map(attribute='stdout') | list == general_runner_production_after.results | map(attribute='stdout') | list
+        fail_msg: GENERAL_RUNNER_PRODUCTION_LIFECYCLE_CHANGED
+
+    - name: Record the bounded general runner result
+      ansible.builtin.debug:
+        msg: 'GENERAL_RUNNER_VALIDATED={{ relay_production_exact_head }};phase={{ relay_production_operation_phase }};production=preserved;registration=owner-mediated'

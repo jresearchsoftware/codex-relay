@@ -1,0 +1,45 @@
+---
+- name: Require the exact token rotation head
+  ansible.builtin.assert:
+    that:
+      - relay_codex_token_exact_head | length == 40
+      - relay_codex_token_exact_head is match('^[0-9a-fA-F]{40}$')
+      - relay_codex_access_token_file == (relay_config_root ~ '/codex-credentials/access-token')
+    fail_msg: 'CODEX_TOKEN_TARGET_REQUIRED'
+
+- name: Require the protected controller token input
+  ansible.builtin.assert:
+    that:
+      - lookup('env', 'CODEX_ACCESS_TOKEN') | length > 0
+    fail_msg: 'CODEX_ACCESS_TOKEN_REQUIRED'
+
+- name: Rotate only the protected Codex access token file
+  ansible.builtin.copy:
+    content: "{{ lookup('env', 'CODEX_ACCESS_TOKEN') }}\n"
+    dest: '{{ relay_codex_access_token_file }}'
+    owner: '{{ relay_codex_user }}'
+    group: '{{ relay_codex_group }}'
+    mode: '0600'
+  no_log: true
+
+- name: Verify the rotated token file metadata without reading its contents
+  ansible.builtin.stat:
+    path: '{{ relay_codex_access_token_file }}'
+    follow: false
+  register: relay_codex_rotated_token
+  changed_when: false
+
+- name: Require the rotated token file boundary
+  ansible.builtin.assert:
+    that:
+      - relay_codex_rotated_token.stat.exists
+      - relay_codex_rotated_token.stat.isreg
+      - relay_codex_rotated_token.stat.pw_name == relay_codex_user
+      - relay_codex_rotated_token.stat.gr_name == relay_codex_group
+      - relay_codex_rotated_token.stat.mode == '0600'
+      - relay_codex_rotated_token.stat.size > 0
+    fail_msg: 'CODEX_TOKEN_ROTATION_BOUNDARY_INVALID'
+
+- name: Record safe Codex token rotation success
+  ansible.builtin.debug:
+    msg: 'CODEX_TOKEN_ROTATION_PASS=exact_head={{ relay_codex_token_exact_head }}; token_contents=not-read'

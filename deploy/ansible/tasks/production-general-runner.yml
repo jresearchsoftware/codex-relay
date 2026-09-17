@@ -1,0 +1,53 @@
+---
+# Load as a mapping, not host facts overriding the production instance.
+- name: Load the source-controlled general instance contract
+  ansible.builtin.include_vars:
+    file: '{{ playbook_dir }}/vars/general-runner.yml'
+    name: relay_general_instance
+
+- name: Reconcile isolated general software without registration or activation
+  vars:
+    relay_runner_name: '{{ relay_general_instance.relay_runner_name }}'
+    relay_runner_registration_scope: '{{ relay_general_instance.relay_runner_registration_scope }}'
+    relay_runner_user: '{{ relay_general_instance.relay_runner_user }}'
+    relay_runner_group: '{{ relay_general_instance.relay_runner_group }}'
+    relay_runner_root: '{{ relay_general_instance.relay_runner_root }}'
+    relay_runner_work_root: '{{ relay_general_instance.relay_runner_work_root }}'
+    relay_runner_home: '{{ relay_general_instance.relay_runner_home }}'
+    relay_runner_service_name: '{{ relay_general_instance.relay_runner_service_name }}'
+    relay_runner_registration_helper_path: '{{ relay_general_instance.relay_runner_registration_helper_path }}'
+    relay_runner_service_state_management: preserve
+    relay_runner_service_enabled: false
+    relay_runner_registration_enabled: false
+    relay_runner_registration_authorized: false
+    relay_runner_registration_completed: false
+  when: >-
+    not ansible_check_mode | bool or
+    (relay_dispatch_identity_materialized | default(true) | bool and
+     not relay_codex_work_group_planned | default(false) | bool)
+  block:
+    - name: Reconcile general identity and generic runtime access
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: general-runtime.yml
+
+    - name: Install or reconcile the unregistered or registered general instance
+      ansible.builtin.include_role:
+        name: relay_runner
+
+    - name: Prove the installed general and production privilege separation
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: general-validation.yml
+      when: not ansible_check_mode | bool
+
+    - name: Record the credential-free general runner reconciliation
+      ansible.builtin.debug:
+        msg: 'GENERAL_RUNNER_INSTALLED_STATE={{ relay_production_exact_head }};registration=preserved;service=preserved;credentials=not-required'
+
+- name: Report installation planned behind not-yet-materialized check-mode dependencies
+  ansible.builtin.debug:
+    msg: 'GENERAL_RUNNER_CHECK_MODE_PLAN=identity-runtime-package-unit-sudo;registration=not-required;service=preserved'
+  when:
+    - ansible_check_mode | bool
+    - not relay_dispatch_identity_materialized | default(true) | bool or relay_codex_work_group_planned | default(false) | bool

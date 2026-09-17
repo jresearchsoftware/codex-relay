@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "repository": "harmless-lab/relay-canary",
+  "owner": "canary-owner",
+  "baseBranch": "trunk",
+  "taskBranchPrefix": "work/",
+  "routingWorkflow": ".github/workflows/canary-route.yaml",
+  "recoveryWorkflow": ".github/workflows/canary-recover.yaml",
+  "writerApp": {
+    "slug": "canary-writer",
+    "appId": "701",
+    "installationId": "801",
+    "expectedActor": "canary-writer[bot]"
+  },
+  "reviewerApp": {
+    "slug": "canary-reviewer",
+    "appId": "702",
+    "installationId": "802",
+    "expectedActor": "canary-reviewer[bot]"
+  },
+  "writerIdentity": {
+    "name": "canary-writer",
+    "email": "canary-writer@example.invalid"
+  },
+  "remediationIdentity": {
+    "name": "canary-remediation",
+    "email": "canary-remediation@example.invalid"
+  },
+  "defaultProfile": {
+    "cliModelId": "fixture-model",
+    "effort": "high"
+  },
+  "runtimeUser": "canary-worker",
+  "paths": {
+    "workRoot": "/var/lib/relay-canary/dispatch-work",
+    "attemptRoot": "/var/lib/relay-canary/dispatch/attempts-v2",
+    "dispatch": "/opt/relay-canary/relay-codex-dispatch",
+    "writerHelper": "/opt/relay-canary/relay-writer-controller",
+    "launcher": "/opt/relay-canary/relay-codex",
+    "diagnosticsConfig": "/etc/relay-canary/diagnostics.json",
+    "diagnosticsStore": "/opt/relay-canary/relay-diagnostics-store",
+    "diagnosticsRoot": "/var/lib/relay-canary/debug",
+    "credentialEnv": "/etc/relay-canary/writer-credentials/github-app.env",
+    "credentialKeyFile": "/etc/relay-canary/writer-credentials/github-app-private-key.pem",
+    "claimRoot": "/var/lib/relay-canary/writer-claims"
+  },
+  "validationWorkflow": ".github/workflows/canary-validation.yaml"
+}

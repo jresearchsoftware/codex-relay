@@ -1,0 +1,26 @@
+---
+# Source-controlled stale-operation disposition; this playbook does not invoke
+# the old phase implementation or the generic operation-state clear path.
+- name: Dispose a trusted superseded production operation explicitly through stale-dispose
+  hosts: relay
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Establish or inspect the durable production operation state
+      ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Require the admitted production Reviewer bind profile for stale disposition
+      ansible.builtin.assert:
+        that:
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - relay_reviewer_bind_mode in ['nexus_gateway', 'a_only_loopback']
+        fail_msg: 'PRODUCTION_STALE_DISPOSITION_BIND_PROFILE_INVALID'
+
+    - name: Resolve the validated Reviewer nexus gateway before stale disposition classification
+      ansible.builtin.include_role:
+        name: relay_docker_network_gateway
+      when: relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Execute the source-controlled stale-operation disposition contract
+      ansible.builtin.include_tasks: tasks/production-operation-stale-disposition.yml

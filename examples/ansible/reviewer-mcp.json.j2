@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "repository": "{{ relay_github_repository }}",
+  "baseBranch": {{ relay_github_base_branch | to_json }},
+  "reviewCheckName": {{ relay_review_check_name | to_json }},
+  "writerActor": {{ relay_writer_expected_actor | to_json }},
+  "artifact": {
+    "commit": "{{ relay_release_commit }}",
+    "sha256": "{{ relay_release_sha256 }}"
+  },
+  "service": {
+    "name": "reviewer-mcp",
+    "execBoundary": "{{ relay_reviewer_exec_start }}",
+    "bind_mode": "{{ relay_reviewer_bind_mode }}",
+    "bind_address": "{{ relay_reviewer_bind_address }}",
+    "bind_network": "{{ relay_reviewer_bind_network }}",
+    "gateway_validated": {{ relay_reviewer_gateway_validated | bool | lower }},
+    "bind_port": 8787,
+    "mount_path": "/mcp",
+    "credentials": "owner_provisioned_reviewer_app_key_short_lived_installation_tokens",
+    "evidenceRoot": "{{ relay_evidence_root }}/reviewer",
+    "rollback": "previous_release_symlink"
+  },
+  "githubApp": {
+    "slug": "{{ relay_reviewer_app_slug }}",
+    "appId": "{{ relay_reviewer_app_id }}",
+    "installationId": "{{ relay_reviewer_app_installation_id }}",
+    "expectedActor": "{{ relay_reviewer_expected_actor }}"
+  }
+}

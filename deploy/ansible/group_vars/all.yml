@@ -1,0 +1,336 @@
+---
+# Admitted host baseline from the sanitized inventory.
+relay_required_distribution: Debian
+relay_required_version_id: '12'
+relay_required_codename: bookworm
+
+# clean creates only the namespaced relay state; reconcile preserves unknown
+# state and converges only the same namespaced paths.
+relay_mode: reconcile
+relay_manage_base_packages: true
+relay_manage_docker: false
+relay_apt_metadata_cache_valid_time: 3600
+
+relay_user: relay
+relay_group: relay
+relay_reviewer_user: relay-reviewer
+relay_reviewer_group: relay-reviewer
+relay_reviewer_proxy_group: www-data
+relay_reviewer_service_name: reviewer-mcp.service
+relay_reviewer_service_unit_path: '/etc/systemd/system/{{ relay_reviewer_service_name }}'
+relay_reviewer_activation_marker: '{{ relay_config_root }}/reviewer-activation-authorized'
+relay_reviewer_recovery_off_marker: '{{ relay_config_root }}/reviewer-recovery-requires-activation'
+relay_reviewer_readiness_path: '{{ relay_install_root }}/relay-reviewer-readiness'
+relay_reviewer_start_guard_path: '{{ relay_install_root }}/relay-reviewer-start-guard'
+relay_reviewer_activation_start_path: '{{ relay_install_root }}/relay-reviewer-activation-start'
+relay_reviewer_operation_restart_path: '{{ relay_install_root }}/relay-reviewer-operation-restart'
+relay_reviewer_stop_runner_path: '{{ relay_install_root }}/relay-reviewer-stop-runner'
+relay_reviewer_recovery_service_name: reviewer-mcp-recovery.service
+relay_reviewer_recovery_timer_name: reviewer-mcp-recovery.timer
+relay_reviewer_recovery_interval: 30s
+relay_runner_user: relay-runner
+relay_runner_group: relay-runner
+relay_runner_service_name: relay-runner.service
+relay_runner_service_unit_path: '/etc/systemd/system/{{ relay_runner_service_name }}'
+relay_runner_enable_start_path: '{{ relay_install_root }}/relay-runner-enable-start'
+
+relay_install_root: /opt/codex-relay
+relay_config_root: /etc/codex-relay
+relay_state_root: /var/lib/codex-relay
+relay_evidence_root: '{{ relay_state_root }}/evidence'
+relay_log_root: /var/log/codex-relay
+relay_runtime_root: /run/codex-relay
+relay_production_operation_record_path: /var/lib/codex-relay-production-operation.json
+relay_production_operation_schema_version: '1'
+relay_production_operation_state_path: '{{ relay_install_root }}/relay-production-operation-state'
+relay_production_operation_lock_path: '{{ relay_runtime_root }}/production-operation.lock'
+relay_production_operation_stale_disposition_path: '{{ relay_install_root }}/relay-production-operation-stale-disposition'
+relay_production_operation_superseded_root: '{{ relay_state_root }}/superseded-operations'
+# The wrapper supplies these for production site/activate/runner-enable runs.
+# An absent value is invalid for a direct production invocation, while qualification
+# remains outside this production-only operation-state contract.
+relay_production_operation_phase: ''
+relay_production_operation_target_head: ''
+relay_production_operation_stale_phase: ''
+relay_production_operation_stale_target_head: ''
+relay_production_operation_stale_authorized: false
+# Fresh-owner apply recovery is an evidence-bound disposition, not a generic
+# operation reset. The wrapper supplies both values only for that typed path.
+relay_production_operation_stale_actual_completed_phase: ''
+relay_production_operation_stale_expected_state_hash: ''
+relay_release_root: '{{ relay_install_root }}/releases'
+relay_review_root: '{{ playbook_dir }}/../..'
+relay_deployment_profile: qualification
+relay_production_host: 192.0.2.10
+relay_production_reviewer_server_name: reviewer.example.invalid
+relay_production_runner_name: relay-production-relay
+relay_production_nexus_ownership_root: /srv/shared
+relay_rust_toolchain_version: 1.90.0
+relay_rust_toolchain_host: x86_64-unknown-linux-gnu
+relay_rust_toolchain_archive: 'rust-{{ relay_rust_toolchain_version }}-{{ relay_rust_toolchain_host }}.tar.xz'
+relay_rust_toolchain_archive_sha256: bff8974f2d3ee6c0e6ac926b533f65bbdd3697d2c2b925bdae5f45b9eed10a67
+relay_rust_toolchain_url: 'https://static.rust-lang.org/dist/{{ relay_rust_toolchain_archive }}'
+relay_rust_toolchain_root: '{{ relay_state_root }}/toolchains/rust-{{ relay_rust_toolchain_version }}-{{ relay_rust_toolchain_host }}'
+relay_rust_toolchain_unpack_root: '{{ relay_state_root }}/toolchains/unpack'
+relay_rust_toolchain_cargo_home: '{{ relay_state_root }}/cargo-home'
+
+# Nexus-owned workload state is data, not a relay target. nginx packages and
+# daemon state are shared infrastructure; only foreign workload-specific files
+# and containers remain protected.
+relay_nexus_ownership_root: /srv/nexus
+relay_nexus_compose_file: '{{ relay_nexus_ownership_root }}/docker-compose.yml'
+relay_nexus_data_root: '{{ relay_nexus_ownership_root }}/nexus-data'
+relay_nexus_web_root: '{{ relay_nexus_ownership_root }}/web-root'
+relay_nexus_protected_paths:
+  - '{{ relay_nexus_ownership_root }}'
+  - /etc/systemd/system/nexus-docker.service
+  - /etc/letsencrypt
+  - /var/lib/docker
+  - /var/run/docker.sock
+relay_nexus_protected_ports: [80, 443]
+relay_nexus_protected_services: [docker.service, containerd.service, nexus-docker.service]
+
+# Public mTLS is nginx-owned. It remains deliberately disabled until a later
+# qualification public-ingress gate validates these host-local ACME/CA references.
+relay_nginx_manage: false
+relay_nginx_service_enabled: false
+relay_nginx_package: nginx
+relay_nginx_service_name: nginx
+relay_nginx_fragment: /etc/nginx/conf.d/codex-relay.conf
+relay_nginx_backup_root: '{{ relay_state_root }}/nginx'
+relay_nginx_server_name: relay.example.invalid
+relay_nexus_b_server_name: other.example.invalid
+relay_nexus_b_server_aliases: []
+relay_nginx_public_port: 443
+relay_nginx_upstream: '{{ relay_reviewer_bind_address }}:8787'
+# Reviewer transport is TCP-only project-wide. The fixture default is an
+# explicit loopback TCP bind; production pins nexus_gateway in run-production.sh
+# and derives the address only from validated live Docker/Nexus state.
+relay_reviewer_bind_mode: a_only_loopback
+relay_reviewer_bind_address: 127.0.0.1
+relay_reviewer_bind_network: ''
+relay_reviewer_gateway_validated: false
+relay_docker_nginx_reviewer_upstream: '{{ relay_reviewer_bind_address }}:8787'
+relay_nginx_certificate_ready: false
+relay_nginx_server_certificate_file: /etc/letsencrypt/live/relay.example.invalid/fullchain.pem
+relay_nginx_server_private_key_file: /etc/letsencrypt/live/relay.example.invalid/privkey.pem
+relay_nginx_client_ca_file: '{{ relay_config_root }}/certs/openai-client-ca.pem'
+relay_nginx_client_verify_depth: 2
+
+# The Docker-nginx adapter is a separate production coexistence gate. It is
+# disabled by default and never manages Docker/Nexus installation or
+# application state. The production profile enables it only together with the
+# validated nexus_gateway bind.
+relay_docker_nginx_manage: false
+relay_docker_nginx_service_enabled: false
+relay_docker_nginx_validation_mode: active
+relay_docker_nginx_container_name: nginx
+relay_docker_nginx_expected_image: nginx:latest
+relay_docker_nginx_service_name: nexus-docker.service
+relay_docker_nginx_compose_root: '{{ relay_nexus_ownership_root }}'
+relay_docker_nginx_conf_root: '{{ relay_nexus_ownership_root }}/nginx-conf'
+relay_docker_nginx_fragment: '{{ relay_nexus_ownership_root }}/nginx-conf/codex-relay.conf'
+relay_docker_nginx_foreign_config: '{{ relay_nexus_ownership_root }}/nginx-conf/nginx.conf'
+relay_docker_nginx_letsencrypt_root: '{{ relay_nexus_ownership_root }}/letsencrypt'
+relay_docker_nginx_dhparam_file: '{{ relay_nexus_ownership_root }}/dhparam/dhparam-2048.pem'
+relay_docker_nginx_projection_root: '{{ relay_nexus_ownership_root }}/letsencrypt/codex-relay/{{ relay_nginx_server_name }}'
+relay_docker_nginx_projected_certificate_file: '{{ relay_docker_nginx_projection_root }}/fullchain.pem'
+relay_docker_nginx_projected_private_key_file: '{{ relay_docker_nginx_projection_root }}/privkey.pem'
+relay_docker_nginx_projected_client_ca_file: '{{ relay_docker_nginx_projection_root }}/openai-client-ca.pem'
+relay_docker_nginx_image: nginx:latest
+relay_docker_nginx_host_native_service_name: nginx.service
+
+# TLS preparation is a separate, explicit playbook gate. It may install/reuse
+# shared Debian Certbot tooling and prepare only the relay-owned OpenAI CA
+# bundle. ACME dry-run/live issuance is never implicit and requires an owner
+# supplied email plus an explicit phase.
+relay_tls_manage: true
+relay_tls_certbot_package: certbot
+relay_tls_certbot_executable: /usr/bin/certbot
+relay_tls_certbot_provenance: debian-package
+relay_tls_acme_hostname: relay.example.invalid
+relay_tls_acme_admitted_ip: 192.0.2.10
+relay_tls_acme_email: ''
+relay_tls_phase: prerequisites
+relay_tls_exact_head: ''
+relay_tls_qualified_manifest_file: '{{ relay_install_root }}/current/artifact-manifest.json'
+relay_tls_openai_root_url: https://developers.openai.com/plugins/mtls/openai-root-ca.pem
+relay_tls_openai_intermediate_url: https://developers.openai.com/plugins/mtls/openai-connectors-mtls-ca.pem
+relay_tls_openai_root_fingerprint: '49:3D:9A:1E:DC:48:D5:58:F5:A2:87:64:B2:06:05:20:5A:50:E1:DF:48:40:23:1E:34:2F:2E:0E:8C:DD:5B:E9'
+relay_tls_openai_intermediate_fingerprint: 'DA:3D:8E:2E:32:EE:49:81:EA:11:52:C1:45:6F:86:6C:86:3D:BD:E2:FB:F4:F8:EB:A8:85:0D:F7:4B:65:68:16'
+relay_tls_preparation_root: '{{ relay_state_root }}/tls-preparation'
+relay_tls_openai_root_file: '{{ relay_tls_preparation_root }}/openai-root-ca.pem'
+relay_tls_openai_intermediate_file: '{{ relay_tls_preparation_root }}/openai-connectors-mtls-ca.pem'
+relay_tls_openai_root_download_file: '{{ relay_tls_preparation_root }}/.openai-root-ca.download.pem'
+relay_tls_openai_intermediate_download_file: '{{ relay_tls_preparation_root }}/.openai-connectors-mtls-ca.download.pem'
+relay_tls_client_ca_file: '{{ relay_config_root }}/certs/openai-client-ca.pem'
+relay_tls_acme_dry_run_marker: '{{ relay_tls_preparation_root }}/acme-http01-dry-run-passed'
+relay_tls_acme_live_marker: '{{ relay_tls_preparation_root }}/TLS_PREPARATION_READY'
+
+# GitHub App credentials are owner-provisioned host-local files. Ansible creates
+# only these isolated directories and the verification contract; it never
+# renders, copies, reads, or logs a key or an installation token. The reviewer
+# identity has a dedicated Unix account so other relay processes cannot replace
+# or read its App key. The Controller is the bounded root-only Writer boundary.
+relay_reviewer_credential_root: '{{ relay_config_root }}/reviewer-credentials'
+relay_reviewer_credential_env_file: '{{ relay_reviewer_credential_root }}/github-app.env'
+relay_reviewer_credential_key_file: '{{ relay_reviewer_credential_root }}/github-app-private-key.pem'
+relay_reviewer_app_slug: example-reviewer
+relay_reviewer_app_id: '1001'
+relay_reviewer_app_installation_id: '2001'
+relay_reviewer_expected_actor: example-reviewer[bot]
+relay_writer_credential_root: '{{ relay_config_root }}/writer-credentials'
+relay_writer_credential_env_file: '{{ relay_writer_credential_root }}/github-app.env'
+relay_writer_credential_key_file: '{{ relay_writer_credential_root }}/github-app-private-key.pem'
+relay_writer_app_slug: example-writer
+relay_writer_app_id: '1002'
+relay_writer_app_installation_id: '2002'
+relay_writer_expected_actor: example-writer[bot]
+relay_github_repository: example/relay-consumer
+relay_credential_cleanup_authorized: false
+relay_reviewer_relay_enabled: true
+
+relay_reviewer_exec_start: '{{ relay_install_root }}/current/bin/reviewer-mcp-http --config {{ relay_config_root }}/reviewer-mcp.json'
+relay_writer_helper_path: '{{ relay_install_root }}/relay-writer-controller'
+# The fixed root-owned wrapper follows the root-owned current release. This
+# keeps a release transition atomic for Writer without embedding an older
+# concrete release path in the wrapper.
+relay_writer_helper_release_path: '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs'
+relay_codex_dispatch_path: '{{ relay_install_root }}/relay-codex-dispatch'
+relay_codex_dispatch_release_path: '{{ relay_install_root }}/current/bin/relay-codex-dispatch.mjs'
+relay_codex_user: relay-codex
+relay_codex_group: relay-codex
+relay_codex_work_group: relay-codex-work
+relay_codex_runtime_root: '{{ relay_install_root }}/codex-runtime'
+relay_codex_install_dir: '{{ relay_codex_runtime_root }}/bin'
+relay_codex_home: '{{ relay_state_root }}/codex-home'
+relay_codex_cli_version: '0.154.0'
+relay_codex_installer_url: https://chatgpt.com/codex/install.sh
+relay_codex_installer_path: '{{ relay_runner_package_cache_root }}/codex-install.sh'
+relay_codex_binary_path: '{{ relay_codex_install_dir }}/codex'
+relay_codex_launcher_path: '{{ relay_install_root }}/relay-codex'
+relay_codex_diagnostic_path: '{{ relay_codex_runtime_root }}/relay-codex-diagnostic.mjs'
+relay_codex_access_token_root: '{{ relay_config_root }}/codex-credentials'
+relay_codex_access_token_file: '{{ relay_codex_access_token_root }}/access-token'
+relay_codex_token_required: true
+relay_codex_sudoers_file: /etc/sudoers.d/codex-relay-codex
+relay_diagnostics_mode: normal
+relay_diagnostics_config_path: '{{ relay_config_root }}/diagnostics.json'
+relay_diagnostics_control_path: '{{ relay_install_root }}/relay-diagnostics-control'
+relay_diagnostics_root: '{{ relay_state_root }}/debug'
+relay_diagnostics_store_path: '{{ relay_install_root }}/relay-diagnostics-store'
+relay_diagnostics_store_release_path: '{{ relay_release_path }}/bin/relay-diagnostics-store.mjs'
+relay_diagnostics_sudoers_file: /etc/sudoers.d/codex-relay-diagnostics
+relay_diagnostics_retention_count: 8
+relay_dispatch_state_root: '{{ relay_state_root }}/dispatch'
+relay_dispatch_work_root: '{{ relay_state_root }}/dispatch-work'
+relay_dispatch_home: '{{ relay_state_root }}/dispatch-home'
+relay_dispatch_remediation_root: '{{ relay_dispatch_state_root }}/remediation'
+relay_dispatch_evidence_root: '{{ relay_dispatch_state_root }}/evidence'
+relay_writer_claim_root: '{{ relay_state_root }}/writer-claims'
+relay_writer_sudoers_file: /etc/sudoers.d/codex-relay-writer
+relay_runner_package_version: '2.336.0'
+relay_runner_package_platform: linux-x64
+relay_runner_package_url: 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
+relay_runner_package_sha256: '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+relay_runner_package_cache_root: /var/cache/codex-relay
+relay_runner_package_archive: '{{ relay_runner_package_cache_root }}/actions-runner-linux-x64-2.336.0.tar.gz'
+relay_runner_root: '{{ relay_install_root }}/runner'
+relay_runner_exec_start: '{{ relay_runner_root }}/run.sh'
+relay_runner_work_root: '{{ relay_state_root }}/runner/work'
+relay_runner_home: '{{ relay_state_root }}/runner/home'
+relay_runner_registration_marker: '{{ relay_runner_root }}/.runner'
+relay_runner_credentials_marker: '{{ relay_runner_root }}/.credentials'
+relay_runner_registration_helper_path: '{{ relay_install_root }}/relay-runner-registration'
+# An instance may register repository-scoped on a production host. Host
+# lifecycle and GitHub registration authority are separate concerns.
+relay_runner_registration_scope: "{{ 'organization' if relay_deployment_profile == 'production' else 'repository' }}"
+relay_production_local_apply_helper_path: '{{ relay_install_root }}/relay-production-local-apply'
+relay_production_local_apply_sudoers_file: /etc/sudoers.d/codex-relay-production-apply
+# GitHub Actions checks out this repository in the runner's canonical
+# <work>/<repository>/<repository> workspace.  The helper never accepts this
+# path from the caller.
+relay_production_local_apply_checkout_root: "{{ relay_runner_work_root }}/{{ relay_github_repository.split('/')[-1] }}/{{ relay_github_repository.split('/')[-1] }}"
+relay_production_local_apply_stage_root: '{{ relay_state_root }}/production-apply'
+relay_runner_name: "{{ relay_production_runner_name if relay_deployment_profile == 'production' else 'relay-general' }}"
+relay_runner_labels: [codex-relay]
+# Registration is an explicitly authorized later transition. Qualification is
+# repository-scoped; production requires the restricted organization runner group
+# documented in README.md, with access only to this repository's main deploy.
+# These defaults keep the verified package present but unregistered, stopped,
+# and disabled. Registration completion is detected from runner state.
+relay_runner_repository: example/relay-consumer
+relay_runner_registration_enabled: false
+relay_runner_registration_authorized: false
+relay_runner_registration_completed: false
+relay_runner_service_enabled: false
+relay_runner_start_via_operation_helper: false
+# Service-state management is explicit rather than inferred from the desired
+# activation boolean.  Ordinary production reconciliation passes `preserve`
+# so its false baseline means "do not perform an activation transition" and
+# does not undo a separately authorized runner-enable transition. The
+# non-production qualification fixture and the explicit production runner-enable
+# phase retain the default `enforce` behavior.
+relay_runner_service_state_management: enforce
+# Only the fixed local-apply marker makes the wrapper defer live transitions.
+# Installable state still reconciles; no caller-selectable deployment scope.
+relay_production_defer_lifecycle: false
+relay_dispatch_user: "{{ relay_general_runner_user if relay_deployment_profile == 'production' else relay_runner_user }}"
+relay_dispatch_group: "{{ relay_general_runner_user if relay_deployment_profile == 'production' else relay_runner_group }}"
+# Runtime and unit materialization are part of the bootstrap path. Reviewer
+# activation remains a separate owner-authorized post-credential transition.
+relay_service_state_management: enforce
+relay_service_activation_authorized: false
+relay_service_enabled: true
+# Docker-nginx bind reconciliation may restart Reviewer only after a separate
+# owner-authorized activation and an observed active service. The default keeps
+# the adapter unable to start or restart the pre-credential service.
+relay_reviewer_bind_post_activation_authorized: false
+# Declarative shared contract used by every admitted entrypoint. This must not
+# be a runtime-role fact because relay-docker-nginx.yml can run bind handlers
+# without executing relay_runtime first.
+relay_service_effective_enabled: >-
+  {{ relay_service_enabled | bool and relay_service_activation_authorized | bool }}
+relay_healthcheck_command: '{{ relay_install_root }}/current/bin/relay-healthcheck'
+
+relay_base_packages:
+  - build-essential
+  - ca-certificates
+  - curl
+  - git
+  - iproute2
+  - nodejs
+  - openssl
+  - python3
+  - sudo
+
+# Consumer policy defaults. The reusable modules have no identity/path defaults.
+relay_consumer_config_path: '{{ relay_config_root }}/consumer.json'
+relay_github_base_branch: main
+relay_owner_actor: example-owner
+relay_task_branch_prefix: codex/
+relay_routing_workflow: .github/workflows/codex-relay-routing.yml
+relay_recovery_workflow: .github/workflows/manual-writer-publication-recovery.yml
+relay_review_check_name: chatgpt-review
+relay_default_model: gpt-6-astra
+relay_default_effort: max
+relay_writer_commit_name: example-writer
+relay_writer_commit_email: '100001+example-writer[bot]@users.noreply.github.com'
+relay_remediation_commit_name: example-remediation
+relay_remediation_commit_email: '100001+example-remediation[bot]@users.noreply.github.com'
+relay_validation_workflow: .github/workflows/relay-exact-head-validation.yml
+
+# Private backend defaults for synthetic qualification. Production values are
+# compiled exclusively from deploy/config.py's versioned consumer inputs.
+relay_namespace: codex-relay
+relay_general_runner_user: relay-general-runner
+relay_general_runner_name: relay-general
+relay_production_runner_user: relay-runner
+relay_runner_registration_group: relay-production
+relay_docker_network_name: nexus
+relay_consumer_deployment_config_relative: deploy/relay.json
+relay_compatibility_links: []
+relay_reviewer_publication_enabled: false
+relay_requested_revision: main
+relay_consumer_revision: ''
+relay_source_archive: ''

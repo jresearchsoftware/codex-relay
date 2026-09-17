@@ -1,0 +1,112 @@
+---
+- name: Require the explicit Reviewer Docker-gateway coexistence mode
+  ansible.builtin.assert:
+    that:
+      - relay_reviewer_bind_mode == 'nexus_gateway'
+    fail_msg: 'Docker network gateway discovery is only valid for the admitted nexus-gateway Reviewer mode'
+
+- name: Inspect the exact admitted Nexus Docker network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - '{{ relay_docker_network_name }}'
+  register: relay_nexus_network_inspect_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Parse the exact Nexus Docker network state
+  ansible.builtin.set_fact:
+    relay_nexus_network: >-
+      {{ (relay_nexus_network_inspect_command.stdout | from_json | first)
+         if relay_nexus_network_inspect_command.rc == 0 else {} }}
+
+- name: Require one expected bridge network with one gateway declaration
+  ansible.builtin.assert:
+    that:
+      - relay_nexus_network_inspect_command.rc == 0
+      - relay_nexus_network.Name == relay_docker_network_name
+      - relay_nexus_network.Driver == 'bridge'
+      - relay_nexus_network.IPAM.Config | length == 1
+      - relay_nexus_network.IPAM.Config[0].Gateway is string
+      - relay_nexus_network.IPAM.Config[0].Gateway is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+    fail_msg: 'The exact nexus Docker network or its gateway is absent, ambiguous, or malformed'
+
+- name: Validate the discovered gateway as a host-local IPv4 address
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -o
+      - -4
+      - addr
+      - show
+  register: relay_nexus_host_addresses
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Validate the discovered gateway route on the host
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -4
+      - route
+      - get
+      - '{{ relay_nexus_network.IPAM.Config[0].Gateway }}'
+  register: relay_nexus_gateway_route
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Inspect the pinned nginx container network membership
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - '{{ relay_docker_nginx_container_name }}'
+  register: relay_nexus_nginx_inspect_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Parse pinned nginx container network state
+  ansible.builtin.set_fact:
+    relay_nexus_nginx_inspect: >-
+      {{ (relay_nexus_nginx_inspect_command.stdout | from_json | first)
+         if relay_nexus_nginx_inspect_command.rc == 0 else {} }}
+
+- name: Derive the validated host-side Nexus gateway
+  ansible.builtin.set_fact:
+    relay_reviewer_bind_address: '{{ relay_nexus_network.IPAM.Config[0].Gateway }}'
+    relay_reviewer_bind_network: '{{ relay_docker_network_name }}'
+    relay_reviewer_gateway_validated: true
+    relay_docker_nginx_reviewer_upstream: '{{ relay_nexus_network.IPAM.Config[0].Gateway }}:8787'
+
+- name: Require the gateway to be local, routed, and attached to the pinned nginx network
+  ansible.builtin.assert:
+    that:
+      - relay_nexus_host_addresses.rc == 0
+      - >-
+        relay_nexus_host_addresses.stdout_lines
+        | select('search', '\\s' ~ relay_reviewer_bind_address ~ '/')
+        | list | length == 1
+      - relay_nexus_gateway_route.rc == 0
+      - relay_nexus_gateway_route.stdout is search('dev\\s+')
+      - relay_nexus_nginx_inspect_command.rc == 0
+      - relay_nexus_nginx_inspect.Name == '/' ~ relay_docker_nginx_container_name
+      - relay_nexus_nginx_inspect.NetworkSettings.Networks[relay_docker_network_name] is defined
+      - relay_nexus_nginx_inspect.NetworkSettings.Networks[relay_docker_network_name].NetworkID == relay_nexus_network.Id
+      - >-
+        (
+          relay_nexus_nginx_inspect.NetworkSettings.Networks[relay_docker_network_name].Gateway == relay_reviewer_bind_address
+          if relay_docker_nginx_validation_mode == 'active'
+          else relay_nexus_nginx_inspect.NetworkSettings.Networks[relay_docker_network_name].NetworkID == relay_nexus_network.Id
+        )
+      - relay_reviewer_bind_address not in ['0.0.0.0', '127.0.0.1', '255.255.255.255']
+    fail_msg: 'The nexus gateway is not uniquely host-local, routed, and attached to the admitted nginx network'
+
+- name: Record the validated Reviewer gateway without exposing unrelated Docker state
+  ansible.builtin.debug:
+    msg: 'REVIEWER_NEXUS_GATEWAY_VALIDATED=network={{ relay_docker_network_name }}; gateway={{ relay_reviewer_bind_address }}; upstream={{ relay_docker_nginx_reviewer_upstream }}'

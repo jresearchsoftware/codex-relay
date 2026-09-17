@@ -1,0 +1,77 @@
+---
+# sudo -l checks the effective host policy, including any other sudoers files;
+# it does not execute the production helper or read a registration credential.
+- name: Prove the general user cannot invoke production local apply through sudo
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sudo
+      - -n
+      - -l
+      - -U
+      - '{{ relay_runner_user }}'
+      - -u
+      - root
+      - --
+      - '{{ relay_production_local_apply_helper_path }}'
+      - '{{ relay_production_exact_head }}'
+  register: general_runner_apply_policy
+  changed_when: false
+  failed_when: general_runner_apply_policy.rc != 1
+  check_mode: false
+
+- name: Inspect all effective sudo grants for the general identity
+  ansible.builtin.command:
+    argv: [/usr/bin/sudo, -n, -l, -U, '{{ relay_runner_user }}']
+  environment:
+    LC_ALL: C
+  register: general_runner_effective_sudo
+  changed_when: false
+  check_mode: false
+
+- name: Reject additional sudo commands or run-as identities including indirect root shells
+  ansible.builtin.assert:
+    that:
+      - general_runner_effective_sudo.stdout_lines | select('match', '^\s+\(') | map('trim') | sort | list == general_runner_expected_sudo | sort
+    fail_msg: GENERAL_RUNNER_SUDO_POLICY_UNEXPECTED
+  vars:
+    general_runner_expected_sudo:
+      - '(root) NOPASSWD: {{ relay_writer_helper_path }}'
+      - '(root) NOPASSWD: {{ relay_diagnostics_store_path }}'
+      - '({{ relay_codex_user }}) NOPASSWD: {{ relay_codex_launcher_path }}'
+
+- name: Prove the production user retains the same narrow helper permission
+  ansible.builtin.command:
+    argv: [/usr/bin/sudo, -n, -l, -U, '{{ relay_production_runner_user }}', -u, root, --, '{{ relay_production_local_apply_helper_path }}', '{{ relay_production_exact_head }}']
+  changed_when: false
+  check_mode: false
+
+- name: Prove the general identity can invoke the required existing relay entrypoints
+  ansible.builtin.command:
+    argv: [/usr/bin/sudo, -n, -l, -U, '{{ relay_runner_user }}', -u, '{{ item.user }}', --, '{{ item.path }}']
+  loop:
+    - {user: root, path: '{{ relay_writer_helper_path }}'}
+    - {user: root, path: '{{ relay_diagnostics_store_path }}'}
+    - {user: '{{ relay_codex_user }}', path: '{{ relay_codex_launcher_path }}'}
+  changed_when: false
+  check_mode: false
+
+- name: Prove the general identity can write the existing routing namespaces
+  ansible.builtin.command:
+    argv: [/usr/sbin/runuser, -u, '{{ relay_runner_user }}', --, /usr/bin/test, -w, '{{ item }}']
+  loop: ['{{ relay_dispatch_state_root }}', '{{ relay_dispatch_work_root }}', '{{ relay_dispatch_home }}']
+  changed_when: false
+  check_mode: false
+
+- name: Prove the general identity cannot read protected production and credential namespaces
+  ansible.builtin.command:
+    argv: [/usr/sbin/runuser, -u, '{{ relay_runner_user }}', --, /usr/bin/test, -r, '{{ item }}']
+  loop:
+    - '{{ relay_install_root }}/runner'
+    - '{{ relay_state_root }}/runner'
+    - '{{ relay_production_local_apply_helper_path }}'
+    - '{{ relay_writer_credential_root }}'
+    - '{{ relay_codex_access_token_root }}'
+  register: general_runner_protected_access
+  changed_when: false
+  failed_when: general_runner_protected_access.rc != 1
+  check_mode: false

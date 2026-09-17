@@ -1,0 +1,18 @@
+---
+- name: Validate and reconcile the bounded Docker-nginx relay adapter
+  hosts: relay
+  become: true
+  gather_facts: true
+  pre_tasks:
+    # relay_reviewer_bind renders the shared Reviewer config directly, so the
+    # artifact identity must be resolved before the adapter role runs.
+    - name: Resolve reviewed artifact identity before Docker-nginx bind render
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
+      when: relay_docker_nginx_manage | bool
+  roles:
+    - role: relay_docker_network_gateway
+      when: relay_docker_nginx_manage | bool
+    - role: relay_reviewer_bind
+      when: relay_docker_nginx_manage | bool
+    - role: relay_preflight
+    - role: relay_docker_nginx

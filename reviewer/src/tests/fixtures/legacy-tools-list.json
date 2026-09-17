@@ -1,0 +1,388 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "tools": [
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check an allowlisted PR review target without mutation.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_head_sha": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            "pr_number": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repository": {
+              "const": "example-org/sample-project",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repository",
+            "pr_number",
+            "expected_head_sha"
+          ],
+          "type": "object"
+        },
+        "name": "check_pr_review_target"
+      },
+      {
+        "annotations": {
+          "destructiveHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": false
+        },
+        "description": "Publish an exact-head GitHub review and SHA-bound check. REQUEST_CHANGES requires structured change_request; Reviewer validates and renders all executable data. APPROVE uses review_body only (optional non-executable structured_findings).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "change_request"
+                ]
+              },
+              "properties": {
+                "action": {
+                  "const": "APPROVE"
+                }
+              },
+              "required": [
+                "review_body"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "review_body"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "structured_findings"
+                    ]
+                  }
+                ]
+              },
+              "properties": {
+                "action": {
+                  "const": "REQUEST_CHANGES"
+                }
+              },
+              "required": [
+                "change_request"
+              ]
+            }
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "APPROVE",
+                "REQUEST_CHANGES"
+              ]
+            },
+            "change_request": {
+              "additionalProperties": false,
+              "properties": {
+                "blocked_outcome": {
+                  "maxLength": 1000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "blocked_token": {
+                  "format": "completion-token",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "change_request_id": {
+                  "format": "stable-id",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "codex_effort": {
+                  "format": "codex-argument",
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "codex_model": {
+                  "format": "codex-argument",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "completion_requirements": {
+                  "items": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "findings": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "acceptance_criteria": {
+                        "items": {
+                          "maxLength": 1000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "evidence": {
+                        "items": {
+                          "maxLength": 500,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 10,
+                        "minItems": 0,
+                        "type": "array"
+                      },
+                      "id": {
+                        "format": "stable-id",
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "impact": {
+                        "maxLength": 3000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "problem": {
+                        "maxLength": 3000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "remediation": {
+                        "maxLength": 3000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "severity": {
+                        "enum": [
+                          "blocker",
+                          "major",
+                          "minor",
+                          "suggestion"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "severity",
+                      "problem",
+                      "impact",
+                      "remediation",
+                      "acceptance_criteria"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 30,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "owner_policy_reconciliation": {
+                  "items": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "protected_boundaries": {
+                  "items": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "remediation_thread_title": {
+                  "description": "Remediation thread name. Task identity comes from the linked Issue; a later launch supplies its own Step.",
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "required_validation": {
+                  "description": "Native checks to run; supply at least one. Free-form validation prose is not executable data.",
+                  "items": {
+                    "enum": [
+                      "routing-tests",
+                      "dispatcher-worker-integration",
+                      "issue-writer-tests",
+                      "remediation-tests",
+                      "diagnostics-tests",
+                      "workflow-static",
+                      "ansible-tests",
+                      "rust-reviewer-tests-format",
+                      "rust-format",
+                      "diff-check",
+                      "secret-scan",
+                      "github-test-validate"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "starting_state_requirements": {
+                  "description": "Additional requirements only; repository, PR and starting head are bound by the top-level target fields. May be empty.",
+                  "items": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "step": {
+                  "description": "Caller-supplied display Step. Bounded positive integer; repeats are legal, with no history checks.",
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "subagents_allowed": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "success_outcome": {
+                  "maxLength": 1000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "success_token": {
+                  "format": "completion-token",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "change_request_id",
+                "remediation_thread_title",
+                "step",
+                "codex_model",
+                "codex_effort",
+                "findings",
+                "starting_state_requirements",
+                "required_validation",
+                "completion_requirements",
+                "protected_boundaries",
+                "success_token",
+                "success_outcome",
+                "blocked_token",
+                "blocked_outcome"
+              ],
+              "type": "object"
+            },
+            "expected_head_sha": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            "pr_number": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repository": {
+              "const": "example-org/sample-project",
+              "type": "string"
+            },
+            "review_body": {
+              "maxLength": 12000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "structured_findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "detail": {
+                    "maxLength": 3000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "items": {
+                      "maxLength": 500,
+                      "type": "string"
+                    },
+                    "maxItems": 10,
+                    "type": "array"
+                  },
+                  "id": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "blocker",
+                      "major",
+                      "minor",
+                      "suggestion"
+                    ]
+                  },
+                  "title": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "severity",
+                  "title",
+                  "detail",
+                  "evidence"
+                ],
+                "type": "object"
+              },
+              "maxItems": 30,
+              "type": "array"
+            }
+          },
+          "required": [
+            "repository",
+            "pr_number",
+            "expected_head_sha",
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "submit_pr_review"
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+---
+evidence_root: '{{ relay_evidence_root }}'
+log_root: '{{ relay_log_root }}'
+retention_days: 30
+rollback_releases: 2
+healthcheck: '{{ relay_healthcheck_command }}'
+unknown_files: preserve
+delete_tasks: none

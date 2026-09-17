@@ -1,0 +1,8 @@
+---
+- name: Install the source-controlled stale-disposition helper
+  ansible.builtin.template:
+    src: relay-production-operation-stale-disposition.j2
+    dest: '{{ relay_production_operation_stale_disposition_path }}'
+    owner: root
+    group: root
+    mode: '0750'

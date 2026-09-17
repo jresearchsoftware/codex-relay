@@ -1,0 +1,133 @@
+---
+# Begin is the only task that creates a new operation record.  It is included
+# after all deterministic/read-only gates and immediately before the first
+# protected mutation of the caller's phase.  This is the first protected mutation
+# boundary; a matching recovery retains the
+# original record and verifies it under the same transition lock.
+
+- name: Begin or retain the exact production operation under the transition lock
+  ansible.builtin.shell: |
+    set -eu
+
+    record='{{ relay_production_operation_record_path }}'
+    lock='{{ relay_production_operation_lock_path }}'
+    schema_version='{{ relay_production_operation_schema_version }}'
+    expected_phase='{{ relay_production_operation_active_phase }}'
+    expected_head='{{ relay_production_operation_active_head }}'
+    recovery_required='{{ "true" if relay_production_operation_recovery_required | default(false) | bool else "false" }}'
+
+    lock_parent=${lock%/*}
+    /usr/bin/mkdir -p -- "$lock_parent"
+    exec 9>"$lock"
+    /usr/bin/flock -n 9 || {
+      echo 'PRODUCTION_OPERATION_BEGIN_LOCK_BUSY' >&2
+      exit 44
+    }
+
+    if [[ -L "$record" ]]; then
+      echo 'PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD' >&2
+      exit 90
+    fi
+
+    if [[ -e "$record" ]]; then
+      [[ "$recovery_required" == true ]] || {
+        echo 'PRODUCTION_OPERATION_BEGIN_CONCURRENT_RECORD' >&2
+        exit 45
+      }
+      /usr/bin/python3 - "$record" "$schema_version" "$expected_phase" "$expected_head" <<'PY'
+    import json
+    import os
+    import stat
+    import sys
+
+    path, schema_version, expected_phase, expected_head = sys.argv[1:]
+    try:
+        metadata = os.lstat(path)
+    except OSError:
+        raise SystemExit('PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD')
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+    ):
+        raise SystemExit('PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD')
+    try:
+        with open(path, encoding='utf-8') as stream:
+            record = json.load(stream)
+    except (OSError, ValueError):
+        raise SystemExit('PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD')
+    expected = {
+        'schemaVersion': schema_version,
+        'state': 'RECOVERY_REQUIRED',
+        'phase': expected_phase,
+        'target_head': expected_head,
+    }
+    if record != expected:
+        raise SystemExit('PRODUCTION_OPERATION_BEGIN_RECORD_CHANGED')
+    PY
+      exit 0
+    fi
+
+    [[ "$recovery_required" == false ]] || {
+      echo 'PRODUCTION_OPERATION_BEGIN_RECOVERY_RECORD_MISSING' >&2
+      exit 46
+    }
+
+    record_parent=${record%/*}
+    /usr/bin/mkdir -p -- "$record_parent"
+    temporary_record=$(/usr/bin/mktemp "${record}.tmp.XXXXXX")
+    trap '/usr/bin/rm -f -- "$temporary_record"' EXIT
+    /usr/bin/python3 - "$temporary_record" "$schema_version" "$expected_phase" "$expected_head" <<'PY'
+    import json
+    import sys
+
+    path, schema_version, phase, target_head = sys.argv[1:]
+    with open(path, 'w', encoding='utf-8') as stream:
+        json.dump(
+            {
+                'schemaVersion': schema_version,
+                'state': 'RECOVERY_REQUIRED',
+                'phase': phase,
+                'target_head': target_head,
+            },
+            stream,
+            sort_keys=True,
+        )
+        stream.write('\n')
+    PY
+    /usr/bin/chown root:root "$temporary_record"
+    /usr/bin/chmod 0600 "$temporary_record"
+    /usr/bin/mv -T -- "$temporary_record" "$record"
+    trap - EXIT
+  args:
+    executable: /bin/bash
+  changed_when: true
+  check_mode: false
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Report the planned or retained production operation boundary in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_OPERATION_CHECK_MODE_PLAN={{
+        'record_retained_for_matching_recovery'
+        if relay_production_operation_recovery_required | default(false) | bool
+        else 'record_would_be_created'
+      }};
+      phase={{ relay_production_operation_active_phase }};
+      target_head={{ relay_production_operation_active_head }}
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_phase in ['apply', 'activate', 'runner-enable']
+    - ansible_check_mode | bool
+
+- name: Mark the production operation record as present after begin
+  ansible.builtin.set_fact:
+    relay_production_operation_record_present: true
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool

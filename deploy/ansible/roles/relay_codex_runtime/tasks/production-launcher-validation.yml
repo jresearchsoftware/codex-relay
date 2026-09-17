@@ -1,0 +1,172 @@
+---
+- name: Inspect the final fixed Codex launcher artifact
+  ansible.builtin.stat:
+    path: '{{ relay_codex_launcher_path }}'
+    follow: false
+  register: relay_production_final_codex_launcher
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Inspect the final fixed Codex launcher module artifact
+  ansible.builtin.stat:
+    path: '{{ relay_install_root }}/relay-codex.mjs'
+    follow: false
+  register: relay_production_final_codex_launcher_module
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Read the final non-secret fixed Codex launcher artifact
+  ansible.builtin.slurp:
+    src: '{{ relay_codex_launcher_path }}'
+  register: relay_production_final_codex_launcher_raw
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+    - relay_production_final_codex_launcher.stat.exists | default(false)
+
+- name: Read the final non-secret fixed Codex launcher module artifact
+  ansible.builtin.slurp:
+    src: '{{ relay_install_root }}/relay-codex.mjs'
+  register: relay_production_final_codex_launcher_module_raw
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+    - relay_production_final_codex_launcher_module.stat.exists | default(false)
+
+- name: Resolve the expected exact-candidate Codex launcher rendering
+  ansible.builtin.set_fact:
+    relay_production_expected_codex_launcher_sha256: >-
+      {{ lookup('template', 'relay-codex-launcher.mjs.j2') | hash('sha256') }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Resolve the expected exact-candidate Codex launcher wrapper rendering
+  ansible.builtin.set_fact:
+    relay_production_expected_codex_launcher_wrapper_sha256: >-
+      {{ lookup('template', 'relay-codex-launcher-wrapper.sh.j2') | hash('sha256') }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Classify the final exact Codex launcher binding
+  ansible.builtin.set_fact:
+    relay_production_codex_launcher_binding_valid: >-
+      {{
+        relay_codex_launcher_path == (relay_install_root ~ '/relay-codex') and
+        relay_production_final_codex_launcher.stat.exists | default(false) and
+        relay_production_final_codex_launcher.stat.isreg | default(false) and
+        not relay_production_final_codex_launcher.stat.islnk | default(false) and
+        relay_production_final_codex_launcher.stat.pw_name | default('') == 'root' and
+        relay_production_final_codex_launcher.stat.gr_name | default('') == 'root' and
+        relay_production_final_codex_launcher.stat.mode | default('') == '0755' and
+        relay_production_final_codex_launcher_raw.content | default('') | b64decode | hash('sha256') == relay_production_expected_codex_launcher_wrapper_sha256 and
+        (relay_production_final_codex_launcher_raw.content | b64decode) is search('#!/bin/sh') and
+        (relay_production_final_codex_launcher_raw.content | b64decode) is search('exec /usr/bin/node --experimental-default-type=module') and
+        (relay_production_final_codex_launcher_raw.content | b64decode) is search('/relay-codex.mjs') and
+        relay_production_final_codex_launcher_module.stat.exists | default(false) and
+        relay_production_final_codex_launcher_module.stat.isreg | default(false) and
+        not relay_production_final_codex_launcher_module.stat.islnk | default(false) and
+        relay_production_final_codex_launcher_module.stat.pw_name | default('') == 'root' and
+        relay_production_final_codex_launcher_module.stat.gr_name | default('') == 'root' and
+        relay_production_final_codex_launcher_module.stat.mode | default('') == '0644' and
+        relay_production_final_codex_launcher_module_raw.content | default('') | b64decode | hash('sha256') == relay_production_expected_codex_launcher_sha256 and
+        (relay_production_final_codex_launcher_module_raw.content | b64decode) is search('const issueMode = argv.length === 12') and
+        (relay_production_final_codex_launcher_module_raw.content | b64decode) is search('const remediationMode = argv.length === 14') and
+        'argv[2] === "review-remediation"' in (relay_production_final_codex_launcher_module_raw.content | b64decode) and
+        'argv[12] === "--pull-request"' in (relay_production_final_codex_launcher_module_raw.content | b64decode) and
+        (relay_production_final_codex_launcher_module_raw.content | b64decode) is search('ARGUMENT_CONTRACT_INVALID') and
+        not ((relay_production_final_codex_launcher_raw.content | b64decode) is search('GITHUB_TOKEN')) and
+        not ((relay_production_final_codex_launcher_raw.content | b64decode) is search('OPENAI_API_KEY')) and
+        not ((relay_production_final_codex_launcher_raw.content | b64decode) is search('dangerously-bypass-approvals-and-sandbox')) and
+        not ((relay_production_final_codex_launcher_module_raw.content | b64decode) is search('GITHUB_TOKEN')) and
+        not ((relay_production_final_codex_launcher_module_raw.content | b64decode) is search('OPENAI_API_KEY')) and
+        not ((relay_production_final_codex_launcher_module_raw.content | b64decode) is search('dangerously-bypass-approvals-and-sandbox')) and
+        (relay_production_final_manifest.commit | default('')) == relay_production_operation_target_head and
+        (relay_production_final_manifest.codexLauncherSourceTreeSha256 | default('')) == relay_codex_launcher_source_tree_sha256
+      }}
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Require the final exact Codex launcher binding
+  ansible.builtin.assert:
+    that:
+      - relay_production_codex_launcher_binding_valid | bool
+    fail_msg: 'PRODUCTION_CODEX_LAUNCHER_BINDING_INVALID'
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+      relay_production_operation_phase | default('') == 'post-check' or
+      not ansible_check_mode | bool
+
+- name: Inspect the installed launcher diagnostic dependency
+  ansible.builtin.stat:
+    path: '{{ relay_codex_diagnostic_path }}'
+    follow: false
+    checksum_algorithm: sha256
+  register: relay_production_launcher_dependency
+
+- name: Require the exact governed launcher diagnostic dependency
+  ansible.builtin.assert:
+    that:
+      - relay_production_launcher_dependency.stat.isreg | default(false)
+      - not relay_production_launcher_dependency.stat.islnk | default(false)
+      - relay_production_launcher_dependency.stat.pw_name | default('') == 'root'
+      - relay_production_launcher_dependency.stat.gr_name | default('') == 'root'
+      - relay_production_launcher_dependency.stat.mode | default('') == '0644'
+      - relay_production_launcher_dependency.stat.checksum | default('') == lookup('file', role_path ~ '/files/relay-codex-diagnostic.mjs', rstrip=false) | hash('sha256')
+    fail_msg: PRODUCTION_CODEX_DEPENDENCY_BINDING_INVALID
+
+- name: Execute the installed launcher import closure as the Codex user without credentials
+  ansible.builtin.command:
+    argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', '{{ relay_codex_launcher_path }}', '--check-runtime']
+  register: relay_production_launcher_closure
+  changed_when: false
+  check_mode: false
+  failed_when: relay_production_launcher_closure.rc != 0 or relay_production_launcher_closure.stdout != 'CODEX_LAUNCHER_RUNTIME_READY'
+
+- name: Execute the installed dispatcher import closure as the runner without credentials
+  ansible.builtin.command:
+    argv: ['/usr/sbin/runuser', '-u', '{{ relay_runner_user }}', '--', '{{ relay_codex_dispatch_path }}', '--check-runtime']
+  register: relay_production_dispatch_closure
+  changed_when: false
+  check_mode: false
+  failed_when: relay_production_dispatch_closure.rc != 0 or (relay_production_dispatch_closure.stdout | from_json).status != 'RUNTIME_READY'
+
+- name: Execute the installed diagnostic sink import closure without storing a request
+  ansible.builtin.command:
+    argv: ['/usr/bin/node', '{{ relay_diagnostics_store_release_path }}', '--check-runtime']
+  # This direct module probe bypasses the env-i store wrapper. Bind the same
+  # deployed snapshot explicitly; workflow/source-workspace env is not authority.
+  environment:
+    RELAY_CONSUMER_CONFIG: '{{ relay_consumer_config_path }}'
+  register: relay_production_diagnostics_closure
+  changed_when: false
+  check_mode: false
+  failed_when: relay_production_diagnostics_closure.rc != 0 or relay_production_diagnostics_closure.stdout != 'DIAGNOSTICS_RUNTIME_READY'

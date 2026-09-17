@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+reviewer_service='{{ relay_reviewer_service_name }}'
+activation_marker='{{ relay_reviewer_activation_marker }}'
+recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
+expected_listener='{{ relay_reviewer_bind_address }}:8787'
+operation_state='{{ relay_production_operation_state_path }}'
+
+# Recovery is a read-only normalizer only in STABLE state.  A valid unfinished
+# operation, or an UNSAFE record, must remain visible for the explicit apply
+# recovery entrypoint and must never be converted into a service start.
+operation_rc=0
+operation_output="$($operation_state 2>&1)" || operation_rc=$?
+[[ "$operation_rc" -eq 0 ]] || {
+  echo "REVIEWER_RECOVERY_BLOCKED=$operation_output" >&2
+  exit 30
+}
+
+# The recovery reset writes the non-secret "requires-activation" marker; its
+# presence keeps this timer from reactivating a deliberately safe baseline.
+[[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || exit 33
+
+# The marker is written only by the exact-head, credential-gated activation
+# play.  Its absence is the durable pre-activation state and must never be
+# converted into a Reviewer start by ordinary reconciliation or boot recovery.
+[[ -f "$activation_marker" && ! -L "$activation_marker" ]] || exit 0
+read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marker")
+[[ "$marker_owner" == root && "$marker_mode" == 600 ]] || exit 31
+[[ "$(<"$activation_marker")" == authorized ]] || exit 32
+
+reviewer_enabled=$(/bin/systemctl is-enabled "$reviewer_service" 2>/dev/null || true)
+case "$reviewer_enabled" in
+  enabled|enabled-runtime) ;;
+  *) exit 20 ;;
+esac
+
+reviewer_active=$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)
+case "$reviewer_active" in
+  active)
+    ;;
+  inactive|failed)
+    /bin/systemctl reset-failed "$reviewer_service" >/dev/null 2>&1 || true
+    /bin/systemctl start "$reviewer_service"
+    ;;
+  activating)
+    ;;
+  *)
+    exit 21
+    ;;
+esac
+
+for attempt in {1..10}; do
+  reviewer_active=$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)
+  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null || true)
+  if [[ "$reviewer_active" == active && "$reviewer_listener" == *"$expected_listener"* ]]; then
+    break
+  fi
+  [[ "$reviewer_active" == active || "$reviewer_active" == activating ]] || exit 25
+  /bin/sleep 1
+done
+[[ "$reviewer_active" == active && "$reviewer_listener" == *"$expected_listener"* ]] || exit 25
+
+{% if relay_deployment_profile == 'production' %}
+# Production runner readiness is subordinate to the previously authorized and
+# currently healthy Reviewer.  Registration markers are checked by presence
+# only; their contents never enter this helper or its logs.
+runner_service='relay-runner.service'
+runner_registration_marker='{{ relay_runner_registration_marker }}'
+runner_credentials_marker='{{ relay_runner_credentials_marker }}'
+runner_enabled=$(/bin/systemctl is-enabled "$runner_service" 2>/dev/null || true)
+if [[ "$runner_enabled" == "enabled" || "$runner_enabled" == "enabled-runtime" ]] \
+  && [[ -f "$runner_registration_marker" && ! -L "$runner_registration_marker" ]] \
+  && [[ -f "$runner_credentials_marker" && ! -L "$runner_credentials_marker" ]]; then
+  reviewer_active=$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)
+  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null || true)
+  if [[ "$reviewer_active" == "active" && "$reviewer_listener" == *"$expected_listener"* ]]; then
+    runner_active=$(/bin/systemctl is-active "$runner_service" 2>/dev/null || true)
+    case "$runner_active" in
+      active|activating)
+        ;;
+      inactive|failed)
+        /bin/systemctl reset-failed "$runner_service" >/dev/null 2>&1 || true
+        /bin/systemctl start "$runner_service"
+        ;;
+      *)
+        exit 22
+        ;;
+    esac
+  fi
+fi
+{% endif %}

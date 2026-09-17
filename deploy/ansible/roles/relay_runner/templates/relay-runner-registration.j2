@@ -1,0 +1,47 @@
+#!/bin/bash
+# managed-by: codex-relay
+# Owner-mediated runner registration. Never log the token.
+# Production requires the restricted organization group configured by its owner;
+# registration selects that group but does not establish or verify its ACL.
+{% set registration_url = ('https://github.com/' ~ relay_github_repository.split('/')[0]) if relay_runner_registration_scope == 'organization' else ('https://github.com/' ~ relay_github_repository) %}
+set -euo pipefail
+umask 077
+
+fail() { echo "RUNNER_REGISTRATION_FAIL code=$1" >&2; exit 1; }
+
+[[ "$(id -u)" == 0 ]] || fail ROOT_REQUIRED
+[[ "{{ relay_runner_repository }}" == "{{ relay_github_repository }}" ]] || fail REPOSITORY_CONTRACT
+[[ -d "{{ relay_runner_root }}" && ! -L "{{ relay_runner_root }}" ]] || fail RUNNER_ROOT_INVALID
+[[ "$(stat -c '%U:%G:%a:%F' '{{ relay_runner_root }}')" == '{{ relay_runner_user }}:{{ relay_runner_group }}:750:directory' ]] || fail RUNNER_ROOT_OWNERSHIP
+[[ -x "{{ relay_runner_root }}/config.sh" && -x "{{ relay_runner_root }}/run.sh" ]] || fail RUNNER_PACKAGE_NOT_READY
+[[ ! -e "{{ relay_runner_registration_marker }}" && ! -e "{{ relay_runner_credentials_marker }}" ]] || fail REGISTRATION_ALREADY_PRESENT
+[[ "$(runuser --preserve-environment --user '{{ relay_runner_user }}' -- env HOME='{{ relay_runner_home }}' '{{ relay_runner_root }}/bin/Runner.Listener' --version 2>/dev/null || true)" == *"2.336.0"* ]] || fail RUNNER_VERSION_MISMATCH
+
+normalize_diagnostics() {
+  find '{{ relay_runner_root }}/_diag' -maxdepth 1 -type f -exec chown '{{ relay_runner_user }}:{{ relay_runner_group }}' {} + -exec chmod 0640 {} + 2>/dev/null || true
+}
+
+printf 'Enter the temporary runner-registration value for %s (input hidden): ' '{{ registration_url }}' >&2
+IFS= read -r -s registration_value
+printf '\n' >&2
+[[ -n "$registration_value" ]] || fail REGISTRATION_VALUE_EMPTY
+trap 'unset registration_value ACTIONS_RUNNER_INPUT_TOKEN HOME' EXIT HUP INT TERM
+export ACTIONS_RUNNER_INPUT_TOKEN="$registration_value"
+export HOME='{{ relay_runner_home }}'
+
+{% if relay_runner_registration_scope == 'organization' %}
+registration_group_args=(--runnergroup '{{ relay_runner_registration_group }}')
+{% else %}
+registration_group_args=()
+{% endif %}
+if ! runuser --preserve-environment --user '{{ relay_runner_user }}' -- /bin/bash -c 'cd "$1" && shift && exec ./config.sh "$@"' _ '{{ relay_runner_root }}' --unattended --url '{{ registration_url }}' --name '{{ relay_runner_name }}' --labels '{{ relay_runner_labels | join(',') }}' --work '{{ relay_runner_work_root }}' --disableupdate "${registration_group_args[@]}" >/dev/null 2>&1; then
+  normalize_diagnostics
+  fail REGISTRATION_COMMAND_FAILED
+fi
+
+unset registration_value ACTIONS_RUNNER_INPUT_TOKEN
+normalize_diagnostics
+[[ -f "{{ relay_runner_registration_marker }}" && ! -L "{{ relay_runner_registration_marker }}" ]] || fail REGISTRATION_MARKER_MISSING
+[[ -f "{{ relay_runner_credentials_marker }}" && ! -L "{{ relay_runner_credentials_marker }}" ]] || fail REGISTRATION_CREDENTIAL_MARKER_MISSING
+[[ "$(stat -c '%U:%G:%a:%F' '{{ relay_runner_registration_marker }}')" == '{{ relay_runner_user }}:{{ relay_runner_group }}:600:regular file' ]] || fail REGISTRATION_MARKER_OWNERSHIP
+echo 'RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} version=2.336.0'

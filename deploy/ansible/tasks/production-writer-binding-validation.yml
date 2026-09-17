@@ -1,0 +1,41 @@
+---
+- name: Classify the final Writer runtime binding
+  ansible.builtin.set_fact:
+    relay_production_final_writer_binding_valid: >-
+      {{
+        relay_production_final_paths.results[8].stat.exists | default(false) and
+        relay_production_final_paths.results[8].stat.isreg | default(false) and
+        not relay_production_final_paths.results[8].stat.islnk | default(false) and
+        relay_production_final_paths.results[8].stat.pw_name == 'root' and
+        relay_production_final_paths.results[8].stat.gr_name == 'root' and
+        relay_production_final_paths.results[8].stat.mode == '0750' and
+        relay_production_final_paths.results[9].stat.exists | default(false) and
+        relay_production_final_paths.results[9].stat.isreg | default(false) and
+        not relay_production_final_paths.results[9].stat.islnk | default(false) and
+        relay_production_final_paths.results[9].stat.pw_name == 'root' and
+        (relay_production_final_writer_entrypoint | default('')) is search(
+          (relay_install_root ~ '/current/reviewed-source/controller/src/privileged-writer-helper.mjs') | regex_escape
+        ) and
+        not ((relay_production_final_writer_entrypoint | default('')) is search(relay_release_root | regex_escape)) and
+        (relay_production_final_writer_entrypoint | default('')) is search('test "[$]#" -eq 0') and
+        (relay_production_final_writer_entrypoint | default('')) is search('/usr/bin/env -i') and
+        (relay_production_final_writer_entrypoint | default('')) is search('RELAY_WRITER_CLAIM_ROOT=')
+      }}
+  changed_when: false
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+        relay_production_operation_phase | default('') == 'post-check' or
+        not ansible_check_mode | bool
+
+- name: Require the final Writer runtime binding
+  ansible.builtin.assert:
+    that:
+      - relay_production_final_writer_binding_valid | bool
+    fail_msg: >-
+      {{ relay_production_writer_binding_failure_message | default('PRODUCTION_RECONCILIATION_FINAL_VALIDATION_FAILED') }}
+  when:
+    - relay_production_operation_phase | default('') in ['apply', 'post-check']
+    - >-
+        relay_production_operation_phase | default('') == 'post-check' or
+        not ansible_check_mode | bool

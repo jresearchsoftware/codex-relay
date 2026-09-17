@@ -1,0 +1,159 @@
+---
+- name: Keep public nginx ingress behind its separate qualification gate
+  ansible.builtin.assert:
+    that:
+      - not relay_nginx_manage | bool or relay_nginx_service_enabled | bool
+      - not relay_nginx_manage | bool or relay_nginx_certificate_ready | bool
+    fail_msg: 'Nginx public ingress requires explicit enablement and host-local certificate readiness'
+
+- name: Record the gated shared-nginx contract
+  ansible.builtin.debug:
+    msg: 'NGINX_PUBLIC_INGRESS_GATED=manage={{ relay_nginx_manage | bool }}; enabled={{ relay_nginx_service_enabled | bool }}; certificate_ready={{ relay_nginx_certificate_ready | bool }}'
+  when: not relay_nginx_manage | bool
+
+- name: Install compatible shared nginx package only when public ingress is enabled
+  ansible.builtin.apt:
+    name: '{{ relay_nginx_package }}'
+    state: present
+  when: relay_nginx_manage | bool
+
+- name: Inspect the relay-owned nginx fragment
+  ansible.builtin.stat:
+    path: '{{ relay_nginx_fragment }}'
+  register: relay_nginx_fragment_state
+  changed_when: false
+  when: relay_nginx_manage | bool
+
+- name: Verify an existing relay nginx fragment is attributable to the relay
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -Fx
+      - '# managed-by: codex-relay'
+      - '{{ relay_nginx_fragment }}'
+  register: relay_nginx_fragment_marker
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_nginx_manage | bool
+    - relay_nginx_fragment_state.stat.exists
+
+- name: Require the existing relay fragment to be a regular non-symlink file
+  ansible.builtin.assert:
+    that:
+      - not relay_nginx_fragment_state.stat.exists or relay_nginx_fragment_state.stat.isreg
+      - not relay_nginx_fragment_state.stat.exists or not relay_nginx_fragment_state.stat.islnk | default(false)
+    fail_msg: 'The relay nginx fragment path is foreign, non-regular, or symlinked'
+  when: relay_nginx_manage | bool
+
+- name: Inspect effective nginx server-name collisions before relay adoption
+  ansible.builtin.command:
+    argv: [nginx, -T]
+  register: relay_nginx_effective_config
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_nginx_manage | bool
+
+- name: Count relay hostname ownership inside the existing relay fragment
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -E
+      - 'server_name\s+[^;]*\b{{ relay_nginx_server_name }}\b'
+      - '{{ relay_nginx_fragment }}'
+  register: relay_nginx_fragment_server_name_matches
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_nginx_manage | bool
+    - relay_nginx_fragment_state.stat.exists
+
+- name: Fail closed on a foreign nginx fragment collision
+  ansible.builtin.assert:
+    that:
+      - not relay_nginx_fragment_state.stat.exists or relay_nginx_fragment_marker.rc == 0
+      - relay_nginx_effective_config.rc == 0
+      - >-
+        (
+          (relay_nginx_fragment_state.stat.exists and relay_nginx_fragment_marker.rc == 0 and
+           (relay_nginx_fragment_server_name_matches.stdout_lines | length) == 1 and
+           (relay_nginx_effective_config.stdout | regex_findall('server_name\\s+[^;]*\\b' ~ relay_nginx_server_name ~ '\\b')) | length == 1)
+          or
+          ((not relay_nginx_fragment_state.stat.exists) and
+           (relay_nginx_effective_config.stdout | regex_findall('server_name\\s+[^;]*\\b' ~ relay_nginx_server_name ~ '\\b')) | length == 0)
+        )
+    fail_msg: 'The relay nginx fragment is foreign or the effective configuration contains an unattributed hostname collision'
+  when: relay_nginx_manage | bool
+
+- name: Create relay-owned nginx backup namespace
+  ansible.builtin.file:
+    path: '{{ relay_nginx_backup_root }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0750'
+  when: relay_nginx_manage | bool
+
+- name: Preserve the previous relay-owned nginx fragment
+  ansible.builtin.copy:
+    src: '{{ relay_nginx_fragment }}'
+    dest: '{{ relay_nginx_backup_root }}/last-valid.conf'
+    remote_src: true
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0640'
+  when:
+    - relay_nginx_manage | bool
+    - relay_nginx_fragment_state.stat.exists
+
+- name: Install the isolated relay nginx mTLS fragment
+  block:
+    - ansible.builtin.template:
+        src: codex-relay.conf.j2
+        dest: '{{ relay_nginx_fragment }}'
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload shared nginx
+
+    - ansible.builtin.command:
+        argv:
+          - nginx
+          - -t
+      register: relay_nginx_validation
+      changed_when: false
+
+    - ansible.builtin.assert:
+        that:
+          - relay_nginx_validation.rc == 0
+        fail_msg: 'Nginx rejected the relay-owned candidate fragment; no shared service action is allowed'
+
+    - name: Enable and start host-native nginx only after candidate validation
+      ansible.builtin.systemd:
+        name: '{{ relay_nginx_service_name }}'
+        enabled: true
+        state: started
+      when:
+        - relay_nginx_service_enabled | bool
+        - not ansible_check_mode
+  rescue:
+    - ansible.builtin.copy:
+        src: '{{ relay_nginx_backup_root }}/last-valid.conf'
+        dest: '{{ relay_nginx_fragment }}'
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+      when: relay_nginx_fragment_state.stat.exists
+
+    - ansible.builtin.file:
+        path: '{{ relay_nginx_fragment }}'
+        state: absent
+      when: not relay_nginx_fragment_state.stat.exists
+
+    - ansible.builtin.fail:
+        msg: 'Relay nginx candidate was reverted before any reload after failed validation'
+  when: relay_nginx_manage | bool

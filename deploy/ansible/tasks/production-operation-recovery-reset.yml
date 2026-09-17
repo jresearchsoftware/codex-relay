@@ -1,0 +1,199 @@
+---
+# Recovery disposition is phase-scoped.  This file is used only by a matching
+# activate or runner-enable replay after all of that phase's read-only gates.
+# Ordinary apply recovery deliberately has no reset: its preserve contract must
+# not turn a baseline false into a stop/disable transition.
+
+- name: Require a matching phase-scoped recovery disposition
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_recovery_required | default(false) | bool
+      - relay_production_operation_recovery_matching | default(false) | bool
+      - relay_production_operation_recovery_phase in ['activate', 'runner-enable']
+    fail_msg: 'PRODUCTION_RECOVERY_PHASE_DISPOSITION_INVALID'
+
+- name: Inspect relay-owned Reviewer and runner units before scoped recovery
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+  loop:
+    - {name: '{{ relay_reviewer_service_name }}', path: '{{ relay_reviewer_service_unit_path }}'}
+    - {name: '{{ relay_runner_service_name }}', path: '{{ relay_runner_service_unit_path }}'}
+  register: relay_production_recovery_units
+  changed_when: false
+
+- name: Refuse foreign or unsafe relay unit files during scoped recovery
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists | default(false) or item.stat.isreg | default(false)
+      - not item.stat.exists | default(false) or not item.stat.islnk | default(false)
+      - not item.stat.exists | default(false) or item.stat.pw_name == 'root'
+      - not item.stat.exists | default(false) or item.stat.gr_name == 'root'
+    fail_msg: 'PRODUCTION_RECOVERY_UNIT_UNSAFE'
+  loop: '{{ relay_production_recovery_units.results }}'
+  loop_control:
+    label: '{{ item.item.name }}'
+
+- name: Inspect the persisted Reviewer activation authorization before scoped recovery
+  ansible.builtin.stat:
+    path: '{{ relay_reviewer_activation_marker }}'
+    follow: false
+  register: relay_production_recovery_activation_marker_stat
+  changed_when: false
+
+- name: Refuse an unsafe persisted Reviewer activation authorization
+  ansible.builtin.assert:
+    that:
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or relay_production_recovery_activation_marker_stat.stat.isreg
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or not relay_production_recovery_activation_marker_stat.stat.islnk | default(false)
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or relay_production_recovery_activation_marker_stat.stat.pw_name == 'root'
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or relay_production_recovery_activation_marker_stat.stat.gr_name == 'root'
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or relay_production_recovery_activation_marker_stat.stat.mode == '0600'
+    fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+- name: Read the non-secret Reviewer activation authorization before scoped recovery
+  ansible.builtin.slurp:
+    src: '{{ relay_reviewer_activation_marker }}'
+  register: relay_production_recovery_activation_marker_raw
+  when: relay_production_recovery_activation_marker_stat.stat.exists | default(false)
+
+- name: Require the persisted Reviewer activation authorization value
+  ansible.builtin.assert:
+    that:
+      - not relay_production_recovery_activation_marker_stat.stat.exists | default(false) or relay_production_recovery_activation_marker_raw.content | b64decode | trim == 'authorized'
+    fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+- name: Inspect any existing explicit Reviewer reactivation requirement
+  ansible.builtin.stat:
+    path: '{{ relay_reviewer_recovery_off_marker }}'
+    follow: false
+  register: relay_production_recovery_off_marker_stat
+  changed_when: false
+
+- name: Refuse an unsafe existing reactivation requirement during scoped recovery
+  ansible.builtin.assert:
+    that:
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or relay_production_recovery_off_marker_stat.stat.isreg
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or not relay_production_recovery_off_marker_stat.stat.islnk | default(false)
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or relay_production_recovery_off_marker_stat.stat.pw_name == 'root'
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or relay_production_recovery_off_marker_stat.stat.gr_name == 'root'
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or relay_production_recovery_off_marker_stat.stat.mode == '0600'
+    fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+- name: Read any existing explicit Reviewer reactivation requirement
+  ansible.builtin.slurp:
+    src: '{{ relay_reviewer_recovery_off_marker }}'
+  register: relay_production_recovery_off_marker_raw
+  when: relay_production_recovery_off_marker_stat.stat.exists | default(false)
+
+- name: Require the existing reactivation requirement value
+  ansible.builtin.assert:
+    that:
+      - not relay_production_recovery_off_marker_stat.stat.exists | default(false) or relay_production_recovery_off_marker_raw.content | b64decode | trim == 'requires-activation'
+    fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+- name: Preserve the runner and leave Reviewer for activation replay
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_ACTIVATE_REVIEWER_ONLY=activation-replay;
+      reviewer=owned-by-activate;
+      runner=not-touched;
+      PartOf-coupling=preserved
+  when: relay_production_operation_recovery_phase == 'activate'
+
+- name: Stop and disable only the relay-owned runner for runner-enable recovery
+  ansible.builtin.shell: |
+    set -eu
+    exec 9>"{{ relay_production_operation_lock_path }}"
+    /usr/bin/flock -n 9 || {
+      echo 'PRODUCTION_RECOVERY_RUNNER_LOCK_BUSY' >&2
+      exit 44
+    }
+    /bin/systemctl daemon-reload
+    /bin/systemctl stop '{{ relay_runner_service_name }}'
+    /bin/systemctl disable '{{ relay_runner_service_name }}'
+  args:
+    executable: /bin/bash
+  changed_when: true
+  check_mode: false
+  when:
+    - relay_production_operation_recovery_phase == 'runner-enable'
+    - relay_production_runner_enable_prestate | default('') != 'already_converged'
+    - not ansible_check_mode | bool
+    - relay_production_recovery_units.results[1].stat.exists | default(false)
+
+- name: Report the activation-only recovery boundary in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_RESET_CHECK_MODE_PLAN=reviewer-only;
+      runner=preserved;
+      credentials=retained;
+      registration=retained;
+      foreign-runtime=untouched
+  when:
+    - relay_production_operation_recovery_phase == 'activate'
+    - ansible_check_mode | bool
+
+- name: Report the runner-only recovery boundary in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_RESET_CHECK_MODE_PLAN=runner-only;
+      reviewer=preserved;
+      credentials=retained;
+      registration=retained;
+      foreign-runtime=untouched
+  when:
+    - relay_production_operation_recovery_phase == 'runner-enable'
+    - ansible_check_mode | bool
+
+- name: Persist the explicit reactivation requirement after activation recovery
+  ansible.builtin.shell: |
+    set -eu
+    exec 9>"{{ relay_production_operation_lock_path }}"
+    /usr/bin/flock -n 9 || {
+      echo 'PRODUCTION_RECOVERY_MARKER_LOCK_BUSY' >&2
+      exit 45
+    }
+    marker='{{ relay_reviewer_recovery_off_marker }}'
+    marker_dir=$(/usr/bin/dirname "$marker")
+    marker_tmp=$(/usr/bin/mktemp --tmpdir="$marker_dir" "$(/usr/bin/basename "$marker").tmp.XXXXXX")
+    trap '/bin/rm -f -- "$marker_tmp"' EXIT
+    /usr/bin/chown root:root "$marker_tmp"
+    /bin/chmod 0600 "$marker_tmp"
+    /bin/printf '%s\n' requires-activation > "$marker_tmp"
+    /bin/mv -T "$marker_tmp" "$marker"
+    trap - EXIT
+  args:
+    executable: /bin/bash
+  changed_when: true
+  check_mode: false
+  when:
+    - relay_production_operation_recovery_phase == 'activate'
+    - not ansible_check_mode | bool
+    - relay_production_recovery_activation_marker_stat.stat.exists | default(false)
+
+- name: Return to the true pre-activation baseline after activation recovery
+  ansible.builtin.shell: |
+    set -eu
+    exec 9>"{{ relay_production_operation_lock_path }}"
+    /usr/bin/flock -n 9 || {
+      echo 'PRODUCTION_RECOVERY_MARKER_LOCK_BUSY' >&2
+      exit 45
+    }
+    /bin/rm -f -- '{{ relay_reviewer_recovery_off_marker }}'
+  args:
+    executable: /bin/bash
+  changed_when: true
+  check_mode: false
+  when:
+    - relay_production_operation_recovery_phase == 'activate'
+    - not ansible_check_mode | bool
+    - not relay_production_recovery_activation_marker_stat.stat.exists | default(false)
+
+- name: Record the bounded phase-scoped recovery disposition
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_DISPOSITION=phase={{ relay_production_operation_recovery_phase }};
+      scope={{ 'reviewer-only' if relay_production_operation_recovery_phase == 'activate' else 'runner-only' }};
+      registration=retained;
+      foreign-runtime=untouched

@@ -1,0 +1,110 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# This is the only production apply command exposed to the unprivileged
+# GitHub runner. It deliberately has one typed argument and no environment,
+# inventory, playbook, target, key, or command selection surface.
+
+export PATH='/usr/bin:/bin'
+unset BASH_ENV CDPATH ENV GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT \
+  GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE \
+  GIT_OBJECT_DIRECTORY GIT_OPTIONAL_LOCKS GIT_WORK_TREE
+
+fail() {
+  printf 'PRODUCTION_LOCAL_APPLY_BLOCKED=%s\n' "$1" >&2
+  exit 64
+}
+
+[[ "$(/usr/bin/id -u)" == "0" ]] || fail ROOT_REQUIRED
+[[ "$#" -eq 1 ]] || fail ARGUMENT_CONTRACT_INVALID
+ADMITTED_HEAD="$1"
+[[ "$ADMITTED_HEAD" =~ ^[0-9a-f]{40}$ ]] || fail EXACT_HEAD_INVALID
+
+CHECKOUT_ROOT='{{ relay_production_local_apply_checkout_root }}'
+STAGE_ROOT='{{ relay_production_local_apply_stage_root }}'
+RUNNER_USER='{{ relay_runner_user }}'
+SOURCE_REPOSITORY='{{ relay_github_repository }}'
+
+[[ -d "$CHECKOUT_ROOT" && ! -L "$CHECKOUT_ROOT" ]] || fail CHECKOUT_ROOT_INVALID
+[[ "$(/usr/bin/stat -c '%F' "$CHECKOUT_ROOT")" == 'directory' ]] || fail CHECKOUT_ROOT_INVALID
+
+# The checkout and its Git metadata are runner-controlled. Every command that
+# reads that repository runs as the fixed runner user in a clean environment;
+# root never invokes Git against it. -c settings take precedence over local
+# configuration, including a hostile core.fsmonitor setting.
+runner_git() {
+  /usr/sbin/runuser -u "$RUNNER_USER" -- /usr/bin/env -i \
+    HOME=/nonexistent PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_OPTIONAL_LOCKS=0 \
+    /usr/bin/git -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+    -c core.attributesfile=/dev/null -C "$CHECKOUT_ROOT" "$@"
+}
+
+ACTUAL_ROOT="$(runner_git rev-parse --show-toplevel 2>/dev/null)" || fail CHECKOUT_UNAVAILABLE
+[[ "$ACTUAL_ROOT" == "$CHECKOUT_ROOT" ]] || fail CHECKOUT_ROOT_MISMATCH
+CHECKOUT_GIT_DIR="$(runner_git rev-parse --absolute-git-dir 2>/dev/null)" || fail GIT_DIR_UNAVAILABLE
+[[ -d "$CHECKOUT_GIT_DIR" && ! -L "$CHECKOUT_GIT_DIR" ]] || fail GIT_DIR_INVALID
+
+ORIGIN_URL="$(runner_git config --get remote.origin.url 2>/dev/null || true)"
+case "$ORIGIN_URL" in
+  "https://github.com/$SOURCE_REPOSITORY"|"https://github.com/$SOURCE_REPOSITORY.git"|"git@github.com:$SOURCE_REPOSITORY.git") ;;
+  *) fail CHECKOUT_REPOSITORY_MISMATCH ;;
+esac
+
+[[ "$(runner_git rev-parse HEAD 2>/dev/null)" == "$ADMITTED_HEAD" ]] || fail CHECKOUT_HEAD_MISMATCH
+[[ "$(runner_git status --porcelain --untracked-files=all 2>/dev/null)" == "" ]] || fail CHECKOUT_DIRTY
+runner_git cat-file -e "$ADMITTED_HEAD^{commit}" 2>/dev/null || fail ADMITTED_COMMIT_UNAVAILABLE
+[[ "$(runner_git rev-parse "$ADMITTED_HEAD^{commit}" 2>/dev/null)" == "$ADMITTED_HEAD" ]] || fail ADMITTED_COMMIT_MISMATCH
+
+[[ -d "$STAGE_ROOT" && ! -L "$STAGE_ROOT" ]] || fail STAGE_ROOT_INVALID
+[[ "$(/usr/bin/stat -c '%U:%G:%a:%F' "$STAGE_ROOT")" == 'root:root:700:directory' ]] || fail STAGE_ROOT_OWNERSHIP
+
+STAGE_PATH="$(/usr/bin/mktemp -d "$STAGE_ROOT/$ADMITTED_HEAD.XXXXXXXX")"
+trap '/usr/bin/rm -rf -- "$STAGE_PATH"' EXIT HUP INT TERM
+[[ "$(/usr/bin/stat -c '%U:%G:%a:%F' "$STAGE_PATH")" == 'root:root:700:directory' ]] || fail STAGE_OWNERSHIP
+
+# Export the content-addressed admitted commit while still the runner user,
+# then materialize it in root-owned disposable state. No runner checkout,
+# Git metadata, hook, configuration, path, or executable is used by root.
+runner_git archive --format=tar -- "$ADMITTED_HEAD" | \
+  /usr/bin/tar --no-same-owner --no-same-permissions -xf - -C "$STAGE_PATH" || fail EXACT_COMMIT_STAGE_FAILED
+/usr/bin/find "$STAGE_PATH" -xdev -exec /usr/bin/chown --no-dereference root:root {} + || fail STAGE_OWNERSHIP
+
+# Ansible derives artifact identities with rev-parse/ls-tree and exports exact
+# source with archive. Give it a fresh root-owned shallow object database, not
+# the runner's metadata. Export only the admitted commit and its tree; no
+# history, config, hooks, alternates or executable is copied from .git.
+[[ ! -e "$STAGE_PATH/.git" && ! -L "$STAGE_PATH/.git" ]] || fail STAGED_GIT_PATH_INVALID
+staged_git() {
+  /usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_OPTIONAL_LOCKS=0 \
+    /usr/bin/git -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+    -c core.attributesfile=/dev/null -C "$STAGE_PATH" "$@"
+}
+staged_git init --quiet --template= --object-format=sha1 || fail STAGED_GIT_INIT_FAILED
+printf '%s\n' "$ADMITTED_HEAD" >"$STAGE_PATH/.git/shallow"
+{
+  printf '%s\n' "$ADMITTED_HEAD"
+  runner_git rev-list --objects --no-object-names "$ADMITTED_HEAD^{tree}"
+} | runner_git pack-objects --stdout | staged_git index-pack --stdin --strict >/dev/null || fail STAGED_GIT_OBJECTS_INVALID
+staged_git update-ref HEAD "$ADMITTED_HEAD" || fail STAGED_GIT_HEAD_INVALID
+[[ "$(staged_git rev-parse HEAD)" == "$ADMITTED_HEAD" ]] || fail STAGED_GIT_HEAD_MISMATCH
+
+/usr/bin/rm -f -- "$STAGE_PATH/.production-local-apply-head"
+printf '%s\n' "$ADMITTED_HEAD" >"$STAGE_PATH/.production-local-apply-head"
+/usr/bin/chown root:root "$STAGE_PATH/.production-local-apply-head"
+/usr/bin/chmod 0400 "$STAGE_PATH/.production-local-apply-head"
+[[ "$(/usr/bin/stat -c '%U:%G:%a:%F' "$STAGE_PATH/.production-local-apply-head")" == 'root:root:400:regular file' ]] || fail STAGED_HEAD_MARKER_INVALID
+
+# Reconcile the admitted consumer configuration with the installed exact Relay.
+# Product upgrades use the owner transport; no new host GitHub credential is needed.
+CONFIG="$STAGE_PATH/{{ relay_consumer_deployment_config_relative }}"
+[[ -f "$CONFIG" && ! -L "$CONFIG" ]] || fail STAGED_CONFIG_MISSING
+PRODUCT_ROOT="$(/usr/bin/readlink -f '{{ relay_install_root }}/current')/reviewed-source"
+[[ -f "$PRODUCT_ROOT/deploy/relay-deploy.py" && ! -L "$PRODUCT_ROOT/deploy/relay-deploy.py" ]] || fail INSTALLED_DEPLOYMENT_MISSING
+cd "$STAGE_PATH"
+/usr/bin/nsenter --mount=/proc/1/ns/mnt -- \
+  /usr/bin/env -i HOME=/root PATH=/usr/bin:/bin \
+  /usr/bin/python3 "$PRODUCT_ROOT/deploy/relay-deploy.py" --config "$CONFIG" \
+  --phase apply --local-reconcile --consumer-revision "$ADMITTED_HEAD"

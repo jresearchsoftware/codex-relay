@@ -1,0 +1,62 @@
+---
+# Clearing evidence is the final commit point.  The record is never removed
+# unless it is still a trusted record for the exact operation that just passed
+# final validation.
+
+- name: Clear production recovery evidence under the transition lock
+  ansible.builtin.shell: |
+    set -eu
+
+    record='{{ relay_production_operation_record_path }}'
+    lock='{{ relay_production_operation_lock_path }}'
+    schema_version='{{ relay_production_operation_schema_version }}'
+    expected_phase='{{ relay_production_operation_clear_phase }}'
+    expected_head='{{ relay_production_operation_clear_head }}'
+
+    exec 9>"$lock"
+    /usr/bin/flock -n 9 || {
+      echo 'PRODUCTION_OPERATION_STATE_CLEAR_LOCK_BUSY' >&2
+      exit 44
+    }
+
+    /usr/bin/python3 - "$record" "$schema_version" "$expected_phase" "$expected_head" <<'PY'
+    import json
+    import os
+    import stat
+    import sys
+
+    path, schema_version, expected_phase, expected_head = sys.argv[1:]
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        raise SystemExit('PRODUCTION_OPERATION_STATE_CLEAR_UNSAFE_RECORD')
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+    ):
+        raise SystemExit('PRODUCTION_OPERATION_STATE_CLEAR_UNSAFE_RECORD')
+    with open(path, encoding='utf-8') as stream:
+        record = json.load(stream)
+    expected = {
+        'schemaVersion': schema_version,
+        'state': 'RECOVERY_REQUIRED',
+        'phase': expected_phase,
+        'target_head': expected_head,
+    }
+    if record != expected:
+        raise SystemExit('PRODUCTION_OPERATION_STATE_CLEAR_MISMATCH')
+    os.unlink(path)
+    PY
+  when: not ansible_check_mode | bool
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Report the stable production operation state
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECONCILIATION_STATE=STABLE;
+      cleared_phase={{ relay_production_operation_clear_phase }};
+      target_head={{ relay_production_operation_clear_head }}

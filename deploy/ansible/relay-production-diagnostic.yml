@@ -1,0 +1,89 @@
+---
+# Read-only current-production evidence path. It deliberately does not load
+# site.yml or any historical Stage A role/helper.
+- name: Read bounded current production relay evidence
+  hosts: relay
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Require the fixed production diagnostic identity
+      ansible.builtin.assert:
+        that:
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - relay_production_exact_head is defined
+          - relay_production_exact_head is match('^[0-9a-fA-F]{40}$')
+          - relay_production_diagnostic_target in ['issue', 'pull_request']
+          - >-
+            (relay_production_diagnostic_target == 'issue' and
+             relay_production_diagnostic_issue_number is integer and
+             relay_production_diagnostic_issue_number > 0 and
+             (relay_production_diagnostic_issue_body_sha256 | default('', true) == '' or
+              relay_production_diagnostic_issue_body_sha256 is match('^[0-9a-fA-F]{64}$'))) or
+            (relay_production_diagnostic_target == 'pull_request' and
+             relay_production_diagnostic_pull_request is integer and
+             relay_production_diagnostic_pull_request > 0 and
+             relay_production_diagnostic_review_id is integer and
+             relay_production_diagnostic_review_id > 0 and
+             relay_production_diagnostic_reviewed_head is match('^[0-9a-fA-F]{40}$') and
+             relay_production_diagnostic_change_request_id is match('^CR-[A-Za-z0-9-]{1,96}$'))
+        fail_msg: 'PRODUCTION_DIAGNOSTIC_AUTHORITY_INVALID'
+
+    - name: Resolve the exact source checkout head for the diagnostic invocation
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - '{{ relay_review_root }}'
+          - rev-parse
+          - HEAD
+      delegate_to: localhost
+      become: false
+      register: relay_production_diagnostic_checkout_head
+      changed_when: false
+      check_mode: false
+
+    - name: Bind the diagnostic path to the exact checked-out production candidate
+      ansible.builtin.assert:
+        that:
+          - relay_production_diagnostic_checkout_head.stdout == relay_production_exact_head
+        fail_msg: 'PRODUCTION_DIAGNOSTIC_CHECKOUT_HEAD_MISMATCH'
+
+  tasks:
+    - name: Execute the source-controlled bounded production diagnostic
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/tools/production-diagnostic.py
+          --repository {{ relay_github_repository }}
+          --runner-user {{ relay_runner_user }}
+          --install-root {{ relay_install_root }}
+          --config-root {{ relay_config_root }}
+          --state-root {{ relay_state_root }}
+          {% if relay_production_diagnostic_target == 'issue' %}
+          --issue-number {{ relay_production_diagnostic_issue_number }}
+          {% if relay_production_diagnostic_issue_body_sha256 | default('', true) != '' %}
+          --issue-body-sha256 {{ relay_production_diagnostic_issue_body_sha256 }}
+          {% endif %}
+          {% else %}
+          --pull-request {{ relay_production_diagnostic_pull_request }}
+          --review-id {{ relay_production_diagnostic_review_id }}
+          --reviewed-head {{ relay_production_diagnostic_reviewed_head }}
+          --change-request-id {{ relay_production_diagnostic_change_request_id }}
+          --branch {{ relay_production_diagnostic_branch }}
+          --base-branch-sha {{ relay_production_diagnostic_base_branch_sha }}
+          {% endif %}
+      register: relay_production_diagnostic_result
+      changed_when: false
+      check_mode: false
+
+    - name: Publish only the bounded diagnostic result
+      ansible.builtin.debug:
+        msg: '{{ relay_production_diagnostic_result.stdout | trim }}'
+      changed_when: false
+
+    - name: Require a successful bounded diagnostic response
+      ansible.builtin.assert:
+        that:
+          - relay_production_diagnostic_result.rc == 0
+          - relay_production_diagnostic_result.stdout | trim is match('^\\{.*\\}$')
+        fail_msg: 'PRODUCTION_DIAGNOSTIC_RESULT_INVALID'

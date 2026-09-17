@@ -1,0 +1,19 @@
+---
+- name: Require the Relay-owned immutable deployment identity
+  ansible.builtin.assert:
+    that:
+      - relay_source_identity.revision is match('^[0-9a-f]{40}$')
+      - relay_source_identity.tree is match('^[0-9a-f]{40}$')
+    fail_msg: RELAY_SOURCE_IDENTITY_REQUIRED
+
+- name: Bind every deployment component to that same Relay revision
+  ansible.builtin.set_fact:
+    relay_release_commit: '{{ relay_source_identity.revision }}'
+    relay_release_path: '{{ relay_release_root }}/{{ relay_source_identity.revision }}'
+    relay_release_sha256: '{{ relay_source_identity.sourceTreeSha256 }}'
+    relay_controller_source_tree_sha256: '{{ relay_source_identity.controllerSourceTreeSha256 }}'
+    relay_codex_launcher_source_tree_sha256: '{{ relay_source_identity.codexLauncherSourceTreeSha256 }}'
+    relay_reviewer_source_tree_sha256: '{{ relay_source_identity.reviewerSourceTreeSha256 }}'
+    relay_reviewer_build_inputs_tree_sha256: '{{ relay_source_identity.reviewerBuildInputsTreeSha256 }}'
+    relay_reviewer_build_contract_sha256: >-
+      {{ ('cargo-build=--locked,--release;target-dir=reviewer-target;rust-version=' ~ relay_rust_toolchain_version ~ ';rust-host=' ~ relay_rust_toolchain_host ~ ';rust-archive-sha256=' ~ relay_rust_toolchain_archive_sha256) | hash('sha256') }}

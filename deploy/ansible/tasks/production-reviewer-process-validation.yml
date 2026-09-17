@@ -1,0 +1,35 @@
+---
+- name: Inspect the actual running Reviewer process identity
+  ansible.builtin.command:
+    argv: [/bin/systemctl, show, '{{ relay_reviewer_service_name }}', '--property=MainPID', '--value']
+  register: relay_production_reviewer_main_pid
+  changed_when: false
+  check_mode: false
+
+- name: Require a live Reviewer PID before reading its executable
+  ansible.builtin.assert:
+    that:
+      - relay_production_reviewer_main_pid.stdout is match('^[1-9][0-9]*$')
+    fail_msg: PRODUCTION_REVIEWER_PROCESS_UNAVAILABLE
+
+- name: Hash the running executable rather than the current symlink target
+  # Read the proc descriptor directly: stat's checksum helper resolves a
+  # deleted executable to a nonexistent "... (deleted)" pathname first.
+  ansible.builtin.command:
+    argv: [/usr/bin/sha256sum, '/proc/{{ relay_production_reviewer_main_pid.stdout }}/exe']
+  register: relay_production_reviewer_executable
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require the running Reviewer bytes to equal the installed manifest
+  ansible.builtin.assert:
+    that:
+      - relay_production_final_manifest.reviewerBinarySha256 | default('') is match('^[0-9a-f]{64}$')
+      - relay_production_reviewer_executable.rc == 0
+      - relay_production_reviewer_executable.stdout.split()[0] | default('') == relay_production_final_manifest.reviewerBinarySha256
+    fail_msg: PRODUCTION_REVIEWER_RUNNING_ARTIFACT_MISMATCH
+
+- name: Report the running Reviewer artifact proof
+  ansible.builtin.debug:
+    msg: 'PRODUCTION_REVIEWER_PROCESS_VALIDATED=pid={{ relay_production_reviewer_main_pid.stdout }};sha256={{ relay_production_reviewer_executable.stdout.split()[0] }}'

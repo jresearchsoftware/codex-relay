@@ -1,0 +1,499 @@
+---
+- name: Require the pinned runner package and identity contract
+  ansible.builtin.assert:
+    that:
+      - relay_runner_package_version == '2.336.0'
+      - relay_runner_package_platform == 'linux-x64'
+      - relay_runner_package_url == 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
+      - relay_runner_package_sha256 == '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+      - relay_runner_repository == relay_github_repository
+      - relay_runner_name in [relay_general_runner_name, relay_production_runner_name]
+      - >-
+        (relay_runner_registration_scope == 'organization' and
+         relay_deployment_profile == 'production' and
+         relay_runner_name == relay_production_runner_name) or
+        (relay_runner_registration_scope == 'repository' and
+         relay_runner_name == relay_general_runner_name)
+      - relay_runner_labels | length == 1
+      - relay_runner_labels[0] is match('^[A-Za-z0-9_.-]+$')
+    fail_msg: 'RUNNER_PINNED_PACKAGE_OR_IDENTITY_CONTRACT_INVALID'
+
+- name: Require isolated namespaces for repository registration on a production host
+  ansible.builtin.assert:
+    that:
+      - relay_runner_user == relay_general_runner_user
+      - relay_runner_group == relay_general_runner_user
+      - relay_runner_root == (relay_install_root ~ '/general-runner')
+      - relay_runner_work_root == (relay_state_root ~ '/general-runner/work')
+      - relay_runner_home == (relay_state_root ~ '/general-runner/home')
+      - relay_runner_service_name == 'relay-general-runner.service'
+      - relay_runner_registration_helper_path == (relay_install_root ~ '/relay-general-runner-registration')
+    fail_msg: RUNNER_GENERAL_PRODUCTION_NAMESPACE_COLLISION
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_runner_registration_scope == 'repository'
+
+- name: Inspect instance namespaces before changing their ownership
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_runner_root }}'
+    - '{{ relay_runner_work_root | dirname }}'
+    - '{{ relay_runner_work_root }}'
+    - '{{ relay_runner_home }}'
+  register: relay_runner_namespace_paths
+
+- name: Refuse aliased or non-directory instance namespaces
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+    fail_msg: RUNNER_NAMESPACE_UNSAFE
+  loop: '{{ relay_runner_namespace_paths.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Create runner package cache and mutable namespaces
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ item.owner | default(relay_runner_user) }}'
+    group: '{{ item.group | default(relay_runner_group) }}'
+    mode: '{{ item.mode | default("0750") }}'
+  loop:
+    # Shared parent also protects the privileged product/dependency cache.
+    - {path: '{{ relay_state_root }}', owner: root, group: '{{ relay_group }}', mode: '0755'}
+    - {path: '{{ relay_runner_package_cache_root }}', owner: root, group: root, mode: '0755'}
+    - {path: '{{ relay_runner_root }}'}
+    - {path: '{{ relay_runner_work_root }}'}
+    - {path: '{{ relay_runner_home }}'}
+
+- name: Inspect runner root and registration markers before package reconciliation
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - '{{ relay_runner_root }}'
+    - '{{ relay_runner_root }}/config.sh'
+    - '{{ relay_runner_root }}/run.sh'
+    - '{{ relay_runner_root }}/bin/Runner.Listener'
+    - '{{ relay_runner_registration_marker }}'
+    - '{{ relay_runner_credentials_marker }}'
+  register: relay_runner_initial_paths
+  changed_when: false
+
+- name: Refuse ambiguous runner root or partial registration state
+  ansible.builtin.assert:
+    that:
+      - not relay_runner_initial_paths.results[0].stat.exists or relay_runner_initial_paths.results[0].stat.isdir
+      - not relay_runner_initial_paths.results[0].stat.islnk | default(false)
+      - not (relay_runner_initial_paths.results[4].stat.exists != relay_runner_initial_paths.results[5].stat.exists)
+      - not (relay_runner_initial_paths.results[4].stat.exists and (not relay_runner_initial_paths.results[4].stat.isreg or relay_runner_initial_paths.results[4].stat.islnk | default(false)))
+      - not (relay_runner_initial_paths.results[5].stat.exists and (not relay_runner_initial_paths.results[5].stat.isreg or relay_runner_initial_paths.results[5].stat.islnk | default(false)))
+    fail_msg: 'RUNNER_ROOT_OR_REGISTRATION_STATE_AMBIGUOUS'
+
+- name: Inspect an existing cached runner archive before package reconciliation
+  ansible.builtin.stat:
+    path: '{{ relay_runner_package_archive }}'
+    follow: false
+  register: relay_runner_existing_archive
+  changed_when: false
+
+- name: Download the pinned official GitHub Actions Runner package
+  ansible.builtin.get_url:
+    url: '{{ relay_runner_package_url }}'
+    dest: '{{ relay_runner_package_archive }}'
+    owner: root
+    group: root
+    mode: '0644'
+    checksum: 'sha256:{{ relay_runner_package_sha256 }}'
+  when:
+    - not ansible_check_mode | bool or relay_runner_existing_archive.stat.exists
+
+- name: Install runner archive safety validator
+  ansible.builtin.copy:
+    src: relay-runner-archive-check.py
+    dest: '{{ relay_install_root }}/relay-runner-archive-check.py'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Inspect downloaded runner archive
+  ansible.builtin.stat:
+    path: '{{ relay_runner_package_archive }}'
+    follow: false
+  register: relay_runner_archive_stat
+  changed_when: false
+
+- name: Validate runner archive layout before extraction
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ relay_install_root }}/relay-runner-archive-check.py'
+      - '{{ relay_runner_package_archive }}'
+      - '{{ relay_runner_package_version }}'
+  register: relay_runner_archive_check
+  changed_when: false
+  check_mode: false
+  when: relay_runner_archive_stat.stat.exists
+
+- name: Record fresh-host runner package check-mode plan
+  ansible.builtin.debug:
+    msg: 'RUNNER_CHECK_MODE_PACKAGE_PLAN=download_verify_extract; version=2.336.0; platform=linux-x64; mutable_root={{ relay_runner_root }}'
+  when:
+    - ansible_check_mode | bool
+    - not relay_runner_archive_stat.stat.exists
+
+- name: Refuse package drift or archive validation failure
+  ansible.builtin.assert:
+    that:
+      - relay_runner_archive_stat.stat.exists or ansible_check_mode | bool
+      - not relay_runner_archive_stat.stat.exists or relay_runner_archive_check.rc == 0
+      - not relay_runner_archive_stat.stat.exists or relay_runner_archive_check.stdout is search('RUNNER_ARCHIVE_VALID version=2.336.0')
+    fail_msg: 'RUNNER_PACKAGE_ARCHIVE_INVALID'
+
+- name: Inspect the installed runner version before software reconciliation
+  ansible.builtin.command:
+    # Runner.Listener creates diagnostics even for --version. Keep probes as
+    # private as the running service, including during read-only check mode.
+    argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
+  become_user: '{{ relay_runner_user }}'
+  register: relay_runner_package_existing_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_runner_initial_paths.results[3].stat.exists
+
+- name: Determine whether runner software needs installation or repair
+  ansible.builtin.set_fact:
+    relay_runner_package_install_needed: >-
+      {{ not relay_runner_initial_paths.results[1].stat.exists or
+         not relay_runner_initial_paths.results[2].stat.exists or
+         not relay_runner_initial_paths.results[3].stat.exists or
+         relay_runner_package_existing_version.rc | default(1) != 0 or
+         relay_runner_package_existing_version.stdout | default('') | trim != relay_runner_package_version }}
+
+- name: Inspect runner activity before replacing software files
+  ansible.builtin.command:
+    argv: [systemctl, is-active, '{{ relay_runner_service_name }}']
+  register: relay_runner_package_active_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_runner_package_install_needed | bool
+
+- name: Refuse to replace software used by an active or ambiguous runner process
+  ansible.builtin.assert:
+    that:
+      - relay_runner_package_active_state.stdout | trim in ['inactive', 'failed', 'unknown']
+      - relay_runner_package_active_state.rc in [3, 4]
+    fail_msg: RUNNER_ACTIVE_PACKAGE_TRANSITION_REQUIRED
+  when: relay_runner_package_install_needed | bool
+
+- name: Extract the verified runner package into the dedicated runner namespace
+  ansible.builtin.unarchive:
+    src: '{{ relay_runner_package_archive }}'
+    dest: '{{ relay_runner_root }}'
+    remote_src: true
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+  # The instance can write its own root. Never follow its mutable descendants
+  # while extracting as root; package replacement has only instance authority.
+  become_user: '{{ relay_runner_user }}'
+  when:
+    - not ansible_check_mode | bool
+    - relay_runner_package_install_needed | bool
+
+- name: Inspect installed runner entrypoints and version binary
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_runner_root }}/config.sh'
+    - '{{ relay_runner_root }}/run.sh'
+    - '{{ relay_runner_root }}/bin/Runner.Listener'
+  register: relay_runner_installed_paths
+  changed_when: false
+
+- name: Require installed runner entrypoints to be regular executable files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not item.stat.islnk | default(false)
+      - item.stat.executable | default(false)
+    fail_msg: 'RUNNER_REQUIRED_ENTRYPOINT_MISSING_OR_UNSAFE'
+  loop: '{{ relay_runner_installed_paths.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: not ansible_check_mode | bool or relay_runner_installed_paths.results[2].stat.exists
+
+- name: Create runner diagnostic namespace with runner ownership
+  ansible.builtin.file:
+    path: '{{ relay_runner_root }}/_diag'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    mode: '0750'
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Inspect existing runner diagnostic files
+  ansible.builtin.find:
+    paths: '{{ relay_runner_root }}/_diag'
+    file_type: file
+    recurse: false
+  register: relay_runner_diagnostic_files
+  changed_when: false
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Normalize runner diagnostic file ownership before package probes
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    # Preserve private 0600 service logs; remove excess access without adding it.
+    mode: '{{ "0600" if item.mode == "0600" else "0640" }}'
+  loop: '{{ relay_runner_diagnostic_files.files | default([]) }}'
+  loop_control:
+    label: '{{ item.path }}'
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Verify installed runner reports the pinned version
+  ansible.builtin.command:
+    argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
+  become_user: '{{ relay_runner_user }}'
+  register: relay_runner_version_check
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Refuse installed runner version drift
+  ansible.builtin.assert:
+    that:
+      - relay_runner_installed_paths.results[2].stat.exists or ansible_check_mode | bool
+      - not relay_runner_installed_paths.results[2].stat.exists or relay_runner_version_check.rc == 0
+      - not relay_runner_installed_paths.results[2].stat.exists or (relay_runner_version_check.stdout ~ relay_runner_version_check.stderr) is search('2.336.0')
+    fail_msg: 'RUNNER_INSTALLED_VERSION_MISMATCH'
+
+- name: Reconcile runner diagnostic ownership after all package probes
+  ansible.builtin.find:
+    paths: '{{ relay_runner_root }}/_diag'
+    file_type: file
+    recurse: false
+  register: relay_runner_post_probe_diagnostic_files
+  changed_when: false
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Enforce runner ownership of all diagnostic files after probes
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    mode: '{{ "0600" if item.mode == "0600" else "0640" }}'
+  loop: '{{ relay_runner_post_probe_diagnostic_files.files | default([]) }}'
+  loop_control:
+    label: '{{ item.path }}'
+  when: relay_runner_installed_paths.results[2].stat.exists
+
+- name: Converge runner root metadata after package reconciliation
+  ansible.builtin.file:
+    path: '{{ relay_runner_root }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    mode: '0750'
+    follow: false
+    recurse: false
+
+- name: Inspect final runner root without following links
+  ansible.builtin.stat:
+    path: '{{ relay_runner_root }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: relay_runner_final_root
+  changed_when: false
+
+- name: Require the registration helper runner root contract after reconciliation
+  ansible.builtin.assert:
+    that:
+      - relay_runner_final_root.stat.exists
+      - relay_runner_final_root.stat.isdir
+      - not relay_runner_final_root.stat.islnk
+      - relay_runner_final_root.stat.pw_name == relay_runner_user
+      - relay_runner_final_root.stat.gr_name == relay_runner_group
+      - relay_runner_final_root.stat.mode == '0750'
+    fail_msg: RUNNER_ROOT_OWNERSHIP_INVALID
+  # Check mode predicts file changes; stat still observes the unmodified host.
+  when: not ansible_check_mode | bool
+
+- name: Install owner-mediated runner registration helper
+  ansible.builtin.template:
+    src: relay-runner-registration.j2
+    dest: '{{ relay_runner_registration_helper_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Create runner directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    mode: '0750'
+  loop:
+    - '{{ relay_runner_work_root | dirname }}'
+
+- name: Enforce runner registration and enablement gates for the admitted repository
+  ansible.builtin.assert:
+    that:
+      - not relay_runner_registration_enabled | bool or relay_runner_registration_authorized | bool
+      - not relay_runner_registration_enabled | bool or relay_runner_repository == relay_github_repository
+      - not relay_runner_service_enabled | bool or relay_runner_registration_enabled | bool
+      - not relay_runner_service_enabled | bool or relay_runner_registration_authorized | bool
+      - not relay_runner_registration_completed | bool or relay_runner_initial_paths.results[4].stat.exists
+      - not relay_runner_registration_enabled | bool or relay_runner_initial_paths.results[4].stat.exists
+      - not relay_runner_service_enabled | bool or relay_runner_initial_paths.results[4].stat.exists
+    fail_msg: 'RUNNER_REGISTRATION_COMPLETION_NOT_DETECTED'
+
+- name: Validate the runner service-state management contract
+  ansible.builtin.assert:
+    that:
+      - (relay_runner_service_state_management | default('enforce') | lower) in ['enforce', 'preserve']
+      - >-
+        (relay_runner_service_state_management | default('enforce') | lower) != 'preserve' or
+        not relay_runner_service_enabled | bool
+    fail_msg: 'RUNNER_SERVICE_STATE_MANAGEMENT_CONTRACT_INVALID'
+
+- name: Read non-secret runner registration marker when present
+  ansible.builtin.slurp:
+    src: '{{ relay_runner_registration_marker }}'
+  register: relay_runner_registration_raw
+  when: relay_runner_initial_paths.results[4].stat.exists
+
+- name: Parse non-secret runner registration marker
+  ansible.builtin.set_fact:
+    relay_runner_registration_state: '{{ relay_runner_registration_raw.content | b64decode(encoding="utf-8-sig") | from_json }}'
+  when: relay_runner_initial_paths.results[4].stat.exists
+
+- name: Detect and validate factual runner registration completion
+  ansible.builtin.assert:
+    that:
+      # Group membership and workflow ACLs are GitHub-side owner authority.
+      # A local marker establishes registration identity, not scheduling trust.
+      - >-
+        relay_runner_registration_state.gitHubUrl ==
+        (('https://github.com/' ~ relay_github_repository.split('/')[0]) if relay_runner_registration_scope == 'organization'
+         else ('https://github.com/' ~ relay_github_repository))
+      - relay_runner_registration_state.agentName == relay_runner_name
+      - relay_runner_registration_state.workFolder == relay_runner_work_root
+    fail_msg: 'RUNNER_REGISTRATION_BINDING_INVALID'
+  when: relay_runner_initial_paths.results[4].stat.exists
+
+- name: Inspect runner unit before enforcing its desired state
+  ansible.builtin.stat:
+    path: '{{ relay_runner_service_unit_path }}'
+  register: relay_runner_unit
+  changed_when: false
+
+- name: Inspect the existing runner active state for preserve mode
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - '{{ relay_runner_service_name }}'
+  register: relay_runner_preserved_initial_active_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - (relay_runner_service_state_management | default('enforce') | lower) == 'preserve'
+    - relay_runner_unit.stat.exists | default(false)
+
+- name: Inspect the existing runner enabled state for preserve mode
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - '{{ relay_runner_service_name }}'
+  register: relay_runner_preserved_initial_enabled_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - (relay_runner_service_state_management | default('enforce') | lower) == 'preserve'
+    - relay_runner_unit.stat.exists | default(false)
+
+- name: Require a safe persisted runner lifecycle state in preserve mode
+  ansible.builtin.assert:
+    that:
+      - relay_runner_preserved_initial_active_state.stdout | trim != 'active' or relay_runner_initial_paths.results[4].stat.exists
+      - >-
+        (relay_runner_preserved_initial_active_state.stdout | trim == 'active' and
+         relay_runner_preserved_initial_enabled_state.stdout | trim in ['enabled', 'enabled-runtime']) or
+        (relay_runner_preserved_initial_active_state.stdout | trim in ['inactive', 'failed'] and
+         relay_runner_preserved_initial_enabled_state.stdout | trim in ['enabled', 'enabled-runtime', 'disabled'])
+    fail_msg: 'RUNNER_SERVICE_STATE_AMBIGUOUS'
+  when:
+    - (relay_runner_service_state_management | default('enforce') | lower) == 'preserve'
+    - relay_runner_unit.stat.exists | default(false)
+
+- name: Validate planned runner unit and state on a fresh host in check-mode
+  ansible.builtin.assert:
+    that:
+      - relay_runner_repository == relay_github_repository
+      - relay_runner_labels | length > 0
+      - not relay_runner_service_enabled | bool
+      - not relay_runner_registration_enabled | bool
+      - not relay_runner_registration_completed | bool
+    fail_msg: 'Fresh-host check-mode runner plan must remain unregistered, stopped, and disabled'
+  when:
+    - ansible_check_mode | bool
+    - not relay_runner_unit.stat.exists
+
+- name: Record that an independently authorized runner service state is preserved
+  ansible.builtin.debug:
+    msg: >-
+      RUNNER_SERVICE_STATE_PRESERVED=management={{ relay_runner_service_state_management | default('enforce') | lower }};
+      requested_enabled={{ relay_runner_service_enabled | bool }};
+      registered={{ relay_runner_initial_paths.results[4].stat.exists }}
+  when: (relay_runner_service_state_management | default('enforce') | lower) == 'preserve'
+
+- name: Record planned runner state on a fresh host in check-mode
+  ansible.builtin.debug:
+    msg: 'RUNNER_CHECK_MODE_PLANNED_STATE=unit_will_be_created; repository={{ relay_runner_repository }}; registered={{ relay_runner_initial_paths.results[4].stat.exists }}; service_enabled={{ relay_runner_service_enabled | bool }}'
+  when:
+    - ansible_check_mode | bool
+    - not relay_runner_unit.stat.exists
+
+- name: Install runner service structure
+  ansible.builtin.template:
+    src: relay-runner.service.j2
+    dest: '{{ relay_runner_service_unit_path }}'
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload runner unit
+
+- name: Enforce runner service state only after factual registration
+  ansible.builtin.systemd:
+    name: '{{ relay_runner_service_name }}'
+    enabled: '{{ relay_runner_service_enabled | bool and relay_runner_initial_paths.results[4].stat.exists }}'
+    state: >-
+      {{
+        'stopped'
+        if relay_runner_start_via_operation_helper | default(false) | bool
+        else (
+          'started'
+          if relay_runner_service_enabled | bool and relay_runner_initial_paths.results[4].stat.exists
+          else 'stopped'
+        )
+      }}
+    daemon_reload: true
+  when:
+    - not ansible_check_mode | bool or relay_runner_unit.stat.exists
+    - (relay_runner_service_state_management | default('enforce') | lower) == 'enforce'

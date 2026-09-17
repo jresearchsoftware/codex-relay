@@ -1,0 +1,258 @@
+---
+- name: Fail-fast host and ownership preflight
+  hosts: relay
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Establish or inspect the durable production operation state
+      ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Resolve the production nexus_gateway before recovery classification
+      ansible.builtin.include_role:
+        name: relay_docker_network_gateway
+      when: relay_deployment_profile == 'production' and relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Classify trusted recovery before ordinary stable-state validation
+      ansible.builtin.include_tasks: tasks/production-operation-recovery-classify.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase in ['check', 'post-check']
+        - relay_production_operation_recovery_required | default(false) | bool
+
+    - name: End the read-only play after a coherent recovery classification
+      ansible.builtin.meta: end_play
+      when: relay_production_recovery_check_classified | default(false) | bool
+
+  roles:
+    - role: relay_preflight
+
+- name: Install namespaced relay prerequisites and runtime state
+  hosts: relay
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: End the mutating play after a read-only recovery classification
+      ansible.builtin.meta: end_play
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_recovery_check_classified | default(false) | bool
+
+    # relay_runtime renders the Reviewer config, so the shared artifact
+    # identity must exist before that role runs. Independent role callers
+    # resolve it once when it has not already been established in this play.
+    - name: Resolve reviewed artifact identity before runtime templates
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
+
+    - name: Begin or retain the exact ordinary apply operation
+      ansible.builtin.include_tasks: tasks/production-operation-state-begin.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+
+    # A busy transition lock or ambiguous record must block BEFORE any install,
+    # including updates to the helper executing this apply.
+    - name: Snapshot live processes that the production job must preserve
+      ansible.builtin.include_tasks: tasks/production-live-lifecycle.yml
+      vars:
+        relay_production_lifecycle_verify: false
+      when: relay_production_defer_lifecycle | default(false) | bool
+
+    - name: Reconcile the fixed production local-apply boundary
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: production-local-apply.yml
+      when: relay_deployment_profile == 'production'
+  roles:
+    - role: relay_base
+    - role: relay_runtime
+    - role: relay_artifacts
+    - role: relay_reviewer_bind
+      when: relay_deployment_profile == 'production'
+    - role: relay_nginx
+    - role: relay_codex_runtime
+    - role: relay_controller
+
+  post_tasks:
+    - name: Reconcile the separate general runner as ordinary installed state
+      ansible.builtin.include_tasks: tasks/production-general-runner.yml
+      when: relay_deployment_profile == 'production'
+
+    # Run the production instance last: its observed lifecycle facts are the
+    # ones consumed by the final production gate. General instance variables
+    # never escape their include scope or enter the local-apply boundary.
+    - name: Reconcile the primary runner software and preserve authorized state
+      ansible.builtin.include_role:
+        name: relay_runner
+
+    # Keep address-bound artifact refresh in the check path as well.  The copy
+    # tasks are check-mode safe, so their changed count is the ordinary apply
+    # plan consumed by the deployment entrypoint; apply-only assertions remain below.
+    - name: Refresh and prove the current Reviewer bind state before handlers
+      ansible.builtin.include_tasks: tasks/production-reviewer-bind-state.yml
+      vars:
+        relay_production_reviewer_bind_refresh: true
+      when:
+        - relay_deployment_profile == 'production'
+
+    - name: Flush relay handlers before final production validation
+      ansible.builtin.meta: flush_handlers
+
+    - name: Inspect the final production release, configuration, and units
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - '{{ relay_install_root }}/current'
+        - '{{ relay_install_root }}/current/artifact-manifest.json'
+        - '{{ relay_install_root }}/current/bin/reviewer-mcp-http'
+        - '{{ relay_config_root }}/reviewer-mcp.json'
+        - '{{ relay_reviewer_service_unit_path }}'
+        - '{{ relay_runner_service_unit_path }}'
+        - '{{ relay_reviewer_activation_marker }}'
+        - '{{ relay_reviewer_recovery_off_marker }}'
+        - '{{ relay_writer_helper_path }}'
+        - '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs'
+        - '{{ relay_codex_launcher_path }}'
+        - '{{ relay_production_local_apply_helper_path }}'
+        - '{{ relay_production_local_apply_sudoers_file }}'
+      register: relay_production_final_paths
+      changed_when: false
+      when: relay_deployment_profile == 'production'
+
+    - name: Read the final non-secret production release manifest
+      ansible.builtin.slurp:
+        src: '{{ relay_install_root }}/current/artifact-manifest.json'
+      register: relay_production_final_manifest_raw
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_final_paths.results[1].stat.exists | default(false)
+
+    - name: Parse the final non-secret production release manifest
+      ansible.builtin.set_fact:
+        relay_production_final_manifest: '{{ relay_production_final_manifest_raw.content | b64decode | from_json }}'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_final_paths.results[1].stat.exists | default(false)
+
+    - name: Read the final non-secret fixed Writer entrypoint
+      ansible.builtin.slurp:
+        src: '{{ relay_writer_helper_path }}'
+      register: relay_production_final_writer_entrypoint_raw
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_final_paths.results[8].stat.exists | default(false)
+
+    - name: Parse the final non-secret fixed Writer entrypoint
+      ansible.builtin.set_fact:
+        relay_production_final_writer_entrypoint: '{{ relay_production_final_writer_entrypoint_raw.content | b64decode }}'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_final_paths.results[8].stat.exists | default(false)
+
+    - name: Validate the exact Codex launcher binding during production apply/post-check
+      ansible.builtin.include_role:
+        name: relay_codex_runtime
+        tasks_from: production-launcher-validation.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') in ['apply', 'post-check']
+
+    - name: Validate the fixed Writer runtime binding during read-only post-check
+      ansible.builtin.include_tasks: tasks/production-writer-binding-validation.yml
+      vars:
+        relay_production_writer_binding_failure_message: PRODUCTION_WRITER_RUNTIME_BINDING_INVALID
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'post-check'
+
+    - name: Inspect final production Reviewer and runner service states
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+      loop:
+        - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_reviewer_service_name }}'}
+        - {operation: is-active, unit: '{{ relay_runner_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_runner_service_name }}'}
+      register: relay_production_final_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: relay_deployment_profile == 'production'
+
+    - name: Verify the actual Reviewer executable after owner apply or post-check
+      ansible.builtin.include_tasks: tasks/production-reviewer-process-validation.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_final_services.results[0].stdout == 'active'
+        - relay_production_operation_phase | default('') in ['apply', 'post-check']
+        - not relay_production_defer_lifecycle | default(false) | bool
+
+    - name: Inspect the final private Reviewer listener
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:8787$/ { print }'
+      register: relay_production_final_listener
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: relay_deployment_profile == 'production'
+
+    - name: Validate stable exact production state before accepting zero-apply check
+      ansible.builtin.include_tasks: tasks/production-check-final-validation.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'check'
+        - ansible_check_mode | bool
+        - not relay_production_operation_recovery_required | default(false) | bool
+        - not relay_production_recovery_check_classified | default(false) | bool
+
+    - name: Return the authoritative stable no-op proof after check validation
+      ansible.builtin.debug:
+        msg: 'PRODUCTION_CHECK_VALIDATED={{ relay_production_operation_target_head }};state=stable-no-op;recovery=none'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'check'
+        - ansible_check_mode | bool
+        - not relay_production_operation_recovery_required | default(false) | bool
+        - not relay_production_recovery_check_classified | default(false) | bool
+        - relay_production_check_stable | default(false) | bool
+
+    - name: Apply the final production reconciliation validation
+      ansible.builtin.include_tasks: tasks/production-final-validation.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool
+
+    - name: Verify the production job survived all reconciliation and handlers
+      ansible.builtin.include_tasks: tasks/production-live-lifecycle.yml
+      vars:
+        relay_production_lifecycle_verify: true
+      when:
+        - relay_production_defer_lifecycle | default(false) | bool
+        - not ansible_check_mode | bool
+
+    - name: Verify installed product identity and protected parents after every role
+      ansible.builtin.include_tasks: tasks/installed-identity.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase in ['apply', 'post-check']
+        - relay_production_operation_phase == 'post-check' or not ansible_check_mode | bool
+
+    - name: Clear apply recovery evidence after complete production validation
+      ansible.builtin.include_tasks: tasks/production-operation-state-clear.yml
+      vars:
+        relay_production_operation_clear_phase: '{{ relay_production_operation_active_phase }}'
+        relay_production_operation_clear_head: '{{ relay_production_operation_active_head }}'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool
+
+    - name: Return the authoritative exact-release runtime proof after the commit point
+      ansible.builtin.debug:
+        msg: 'PRODUCTION_APPLY_VALIDATED={{ relay_production_operation_target_head }}'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool

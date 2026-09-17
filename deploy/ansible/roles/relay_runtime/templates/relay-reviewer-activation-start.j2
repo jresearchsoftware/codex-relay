@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+reviewer_service='{{ relay_reviewer_service_name }}'
+recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
+operation_state='{{ relay_production_operation_state_path }}'
+operation_lock='{{ relay_production_operation_lock_path }}'
+
+exec 9>"$operation_lock"
+/usr/bin/flock -n 9 || {
+  echo 'REVIEWER_ACTIVATION_START_LOCK_BUSY' >&2
+  exit 40
+}
+
+state_rc=0
+state_output="$($operation_state 2>&1)" || state_rc=$?
+if [[ "$state_rc" -ne 10 || "$state_output" != *'phase=activate'* ]]; then
+  echo 'REVIEWER_ACTIVATION_START_OPERATION_STATE_INVALID' >&2
+  exit 41
+fi
+
+/bin/systemctl daemon-reload
+/bin/systemctl enable "$reviewer_service"
+/bin/systemctl start "$reviewer_service"

@@ -1,0 +1,72 @@
+---
+- name: Inspect generic runtime roots before ownership reconciliation
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop: ['{{ relay_dispatch_state_root }}', '{{ relay_dispatch_work_root }}', '{{ relay_dispatch_home }}', '{{ relay_dispatch_evidence_root }}']
+  register: general_runtime_roots
+
+- name: Refuse aliased generic runtime roots
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+    fail_msg: GENERAL_RUNNER_RUNTIME_ROOT_UNSAFE
+  loop: '{{ general_runtime_roots.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Create the general runner primary group
+  ansible.builtin.group:
+    name: '{{ relay_runner_group }}'
+    system: true
+
+- name: Create the isolated general runner identity with only Codex work membership
+  ansible.builtin.user:
+    name: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    groups: ['{{ relay_codex_work_group }}']
+    append: false
+    system: true
+    create_home: false
+    home: '{{ relay_runner_home }}'
+    shell: /usr/sbin/nologin
+
+# These are the existing generic routing namespaces, not production runner
+# state. Preserve journal bytes and old attempts; never transfer worker-owned
+# checkout contents or broaden relay-codex access to the runner journal.
+- name: Assign existing generic dispatch journals to the general runner
+  ansible.builtin.file:
+    path: '{{ relay_dispatch_state_root }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    recurse: true
+    follow: false
+
+- name: Preserve the private routing and shared Codex work boundaries
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: '{{ relay_dispatch_state_root }}', group: '{{ relay_runner_group }}', mode: '0700'}
+    - {path: '{{ relay_dispatch_home }}', group: '{{ relay_runner_group }}', mode: '0700'}
+    - {path: '{{ relay_dispatch_evidence_root }}', group: '{{ relay_runner_group }}', mode: '0700'}
+    - {path: '{{ relay_dispatch_work_root }}', group: '{{ relay_codex_work_group }}', mode: '2770'}
+
+# Reuse the existing typed helpers. Separate files keep production-user and
+# general-user grants distinct on every apply, without general local apply.
+- name: Install only the existing automatic relay sudo capabilities for the general identity
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '/etc/sudoers.d/{{ relay_namespace }}-general-{{ item.name }}'
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+  loop:
+    - {name: writer, src: '{{ role_path }}/../relay_controller/templates/relay-writer-controller.sudoers.j2'}
+    - {name: diagnostics, src: '{{ role_path }}/../relay_controller/templates/relay-diagnostics.sudoers.j2'}
+    - {name: codex, src: '{{ role_path }}/../relay_codex_runtime/templates/relay-codex.sudoers.j2'}

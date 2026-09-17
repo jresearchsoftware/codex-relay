@@ -1,0 +1,16 @@
+---
+- name: Roll back only the relay-owned Docker-nginx adapter state
+  hosts: relay
+  become: true
+  gather_facts: true
+  pre_tasks:
+    # The rollback bind role renders the shared Reviewer config as well.
+    - name: Resolve reviewed artifact identity before rollback bind render
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
+  vars:
+    relay_reviewer_bind_mode: nexus_gateway
+    relay_docker_nginx_manage: true
+  roles:
+    - role: relay_docker_network_gateway
+    - role: relay_reviewer_bind
+    - role: relay_docker_nginx_rollback

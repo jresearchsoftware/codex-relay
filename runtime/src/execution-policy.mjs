@@ -1,0 +1,5 @@
+// Shared instructions for a single admitted worker, not a Relay retry policy.
+export const PROGRESS_BOUNDED_EXECUTION = `Progress-bounded execution:
+Within the admitted goal, iteratively inspect evidence, diagnose failures, make bounded corrections and rerun relevant validation while each next action is justified and authorized. There is no fixed correction-count default. Repeating the same failure or action without new evidence is not progress.
+Stop and preserve useful work when a human decision or additional authority is required, the next material correction is ambiguous, or no justified next action remains. Unknown prior execution state, ambiguous external mutation, uncontained prior execution, and repository, credential, security or production authority uncertainty are stop conditions.
+Do not launch nested workers, subagents or fan-out unless separately authorized by the admitted task. This policy does not authorize blind Relay retries, new model executions, publication, merge or deployment. Keep the admitted model and effort fixed and report validation truthfully.`;

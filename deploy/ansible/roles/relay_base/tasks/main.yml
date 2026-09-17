@@ -1,0 +1,65 @@
+---
+- name: Install only relay prerequisites
+  ansible.builtin.apt:
+    name: '{{ relay_base_packages }}'
+    state: present
+    update_cache: '{{ relay_manage_base_packages | bool }}'
+  when: relay_manage_base_packages | bool
+
+- name: Create relay group
+  ansible.builtin.group:
+    name: '{{ relay_group }}'
+    system: true
+
+- name: Create relay service user
+  ansible.builtin.user:
+    name: '{{ relay_user }}'
+    group: '{{ relay_group }}'
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create runner group
+  ansible.builtin.group:
+    name: '{{ relay_runner_group }}'
+    system: true
+
+- name: Create runner service user
+  ansible.builtin.user:
+    name: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  register: relay_base_runner_user_reconciliation
+
+- name: Create the separate generic dispatch group on production
+  ansible.builtin.group:
+    name: '{{ relay_dispatch_group }}'
+    system: true
+  register: relay_base_dispatch_group
+  when: relay_deployment_profile == 'production'
+
+- name: Create the separate generic dispatch identity before runtime installation
+  ansible.builtin.user:
+    name: '{{ relay_dispatch_user }}'
+    group: '{{ relay_dispatch_group }}'
+    system: true
+    create_home: false
+    home: '{{ relay_state_root }}/general-runner/home'
+    shell: /usr/sbin/nologin
+  when:
+    - relay_deployment_profile == 'production'
+    - not ansible_check_mode | bool or not relay_base_dispatch_group.changed | bool
+
+- name: Inspect materialized generic dispatch identity for dependent check-mode tasks
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_dispatch_user }}'
+    fail_key: false
+  register: relay_base_dispatch_identity
+
+- name: Record whether generic runtime ownership can be planned against an existing user
+  ansible.builtin.set_fact:
+    relay_dispatch_identity_materialized: >-
+      {{ ((relay_base_dispatch_identity.ansible_facts.getent_passwd | default({})).get(relay_dispatch_user) | default([], true)) | length > 0 }}

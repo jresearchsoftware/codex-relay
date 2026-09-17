@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "requestedRevision": {{ relay_requested_revision | to_json }},
+  "resolvedRevision": {{ relay_release_commit | to_json }},
+  "installedRevision": {{ relay_release_commit | to_json }},
+  "gitTree": {{ relay_source_identity.tree | to_json }},
+  "consumerRevision": {{ relay_consumer_revision | to_json }},
+  "previousRevision": {{ relay_previous_revision | to_json }},
+  "commit": "{{ relay_release_commit }}",
+  "releaseSourceTreeSha256": "{{ relay_release_sha256 }}",
+  "controllerSourceTreeSha256": "{{ relay_controller_source_tree_sha256 }}",
+  "codexLauncherSourceTreeSha256": "{{ relay_codex_launcher_source_tree_sha256 }}",
+  "reviewerSourceTreeSha256": "{{ relay_reviewer_source_tree_sha256 }}",
+  "reviewerBuildInputsTreeSha256": "{{ relay_reviewer_build_inputs_tree_sha256 }}",
+  "reviewerBuildContractSha256": "{{ relay_reviewer_build_contract_sha256 }}",
+  "reviewerBuildToolchain": {
+    "cargoVersion": "{{ relay_reviewer_cargo_version }}",
+    "archiveSha256": "{{ relay_rust_toolchain_archive_sha256 }}"
+  },
+  "reviewerBinarySha256": "{{ relay_reviewer_binary_digest.stdout.split()[0] }}",
+  "reviewerArtifactProvenance": "{{ relay_reviewer_artifact_provenance }}",
+  "reviewerReuseSourceRelease": "{{ relay_reviewer_reuse_source_release }}",
+  "reviewerReuseSourceBinarySha256": "{{ relay_reviewer_reuse_source_digest }}"
+}

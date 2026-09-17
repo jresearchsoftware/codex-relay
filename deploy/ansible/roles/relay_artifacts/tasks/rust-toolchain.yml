@@ -1,0 +1,131 @@
+---
+# One checksum/version authority for Reviewer builds and Codex development.
+# Reconcile this even when the Reviewer binary is reused. Existing binaries
+# need no download or reinstall, and the release build cache stays private.
+- name: Require the reviewed Rust toolchain host architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture == 'x86_64'
+    fail_msg: 'Reviewed Rust toolchain is pinned only for x86_64 Debian hosts'
+
+- name: Create relay-owned Rust toolchain namespaces
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '{{ item.mode }}'
+    follow: false
+  loop:
+    - {path: '{{ relay_state_root }}/toolchains', mode: '0751'}
+    - {path: '{{ relay_rust_toolchain_unpack_root }}', mode: '0750'}
+    - {path: '{{ relay_rust_toolchain_cargo_home }}', mode: '0750'}
+
+- name: Inspect the managed Rust prefix without following aliases
+  ansible.builtin.stat:
+    path: '{{ relay_rust_toolchain_root }}'
+    follow: false
+  register: relay_rust_toolchain_prefix
+
+- name: Require a real managed Rust installation directory when present
+  ansible.builtin.assert:
+    that:
+      - not relay_rust_toolchain_prefix.stat.exists or (relay_rust_toolchain_prefix.stat.isdir | default(false) and not relay_rust_toolchain_prefix.stat.islnk | default(false))
+    fail_msg: RUST_TOOLCHAIN_PREFIX_UNSAFE
+
+- name: Inspect the managed Rust development binaries
+  ansible.builtin.stat:
+    path: '{{ relay_rust_toolchain_root }}/bin/{{ item }}'
+    follow: false
+  loop: [cargo, rustc, rustfmt]
+  register: relay_rust_toolchain_binaries
+
+- name: Require real managed Rust binaries when present
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg | default(false)
+    fail_msg: RUST_TOOLCHAIN_BINARY_UNSAFE
+  loop: '{{ relay_rust_toolchain_binaries.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Determine whether the managed Rust toolchain needs installation
+  ansible.builtin.set_fact:
+    relay_rust_toolchain_install_needed: '{{ relay_rust_toolchain_binaries.results | selectattr("stat.exists") | list | length != 3 }}'
+
+- name: Record the pinned Rust toolchain plan in check-mode
+  ansible.builtin.debug:
+    msg: 'RUST_TOOLCHAIN_CHECK_MODE_PLAN=version={{ relay_rust_toolchain_version }}; archiveSha256={{ relay_rust_toolchain_archive_sha256 }}; root={{ relay_rust_toolchain_root }}; install={{ relay_rust_toolchain_install_needed }}; development=read-execute; build-cache=private'
+  when: ansible_check_mode | bool
+
+- name: Download the checksum-pinned Rust build toolchain
+  ansible.builtin.get_url:
+    url: '{{ relay_rust_toolchain_url }}'
+    dest: '{{ relay_state_root }}/toolchains/{{ relay_rust_toolchain_archive }}'
+    checksum: 'sha256:{{ relay_rust_toolchain_archive_sha256 }}'
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0640'
+  when:
+    - not ansible_check_mode | bool
+    - relay_rust_toolchain_install_needed | bool
+
+- name: Unpack the checksum-pinned Rust build toolchain
+  ansible.builtin.unarchive:
+    src: '{{ relay_state_root }}/toolchains/{{ relay_rust_toolchain_archive }}'
+    dest: '{{ relay_rust_toolchain_unpack_root }}'
+    remote_src: true
+    creates: '{{ relay_rust_toolchain_unpack_root }}/rust-{{ relay_rust_toolchain_version }}-{{ relay_rust_toolchain_host }}/install.sh'
+  when:
+    - not ansible_check_mode | bool
+    - relay_rust_toolchain_install_needed | bool
+
+- name: Install the pinned Rust build toolchain in the relay namespace
+  ansible.builtin.command:
+    argv:
+      - '{{ relay_rust_toolchain_unpack_root }}/rust-{{ relay_rust_toolchain_version }}-{{ relay_rust_toolchain_host }}/install.sh'
+      - '--prefix={{ relay_rust_toolchain_root }}'
+      - --disable-ldconfig
+      - --without=rust-docs
+  when:
+    - not ansible_check_mode | bool
+    - relay_rust_toolchain_install_needed | bool
+
+- name: Reconcile read-only development access to the managed Rust payload
+  ansible.builtin.file:
+    path: '{{ relay_rust_toolchain_root }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: 'u=rwX,go=rX'
+    recurse: true
+    follow: false
+  when: not ansible_check_mode | bool or relay_rust_toolchain_prefix.stat.exists
+
+- name: Verify the pinned Rust build toolchain identity
+  ansible.builtin.command:
+    argv: ['{{ relay_rust_toolchain_root }}/bin/cargo', --version]
+  register: relay_rust_toolchain_cargo_version
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Require the expected pinned Cargo version
+  ansible.builtin.assert:
+    that:
+      - relay_rust_toolchain_cargo_version.stdout is match('^cargo ' ~ (relay_rust_toolchain_version | regex_escape) ~ ' ')
+    fail_msg: 'Checksum-pinned Rust toolchain did not provide the expected Cargo version'
+  when: not ansible_check_mode | bool
+
+- name: Verify the pinned Rust compiler identity
+  ansible.builtin.command:
+    argv: ['{{ relay_rust_toolchain_root }}/bin/rustc', --version]
+  register: relay_rust_toolchain_rustc_version
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Require the expected pinned Rust compiler version
+  ansible.builtin.assert:
+    that:
+      - relay_rust_toolchain_rustc_version.stdout is match('^rustc ' ~ (relay_rust_toolchain_version | regex_escape) ~ ' ')
+    fail_msg: 'Checksum-pinned Rust toolchain did not provide the expected compiler version'
+  when: not ansible_check_mode | bool

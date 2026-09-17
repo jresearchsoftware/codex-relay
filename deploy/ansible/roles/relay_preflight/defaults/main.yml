@@ -1,0 +1,5 @@
+---
+relay_preflight_listener_command: ss
+relay_preflight_listener_args: ['-H', '-ltnp']
+relay_preflight_reviewer_service_name: '{{ relay_reviewer_service_name }}'
+relay_preflight_required_services: []

@@ -1,0 +1,8 @@
+---
+- name: Reload shared nginx
+  ansible.builtin.systemd:
+    name: '{{ relay_nginx_service_name }}'
+    state: reloaded
+  when:
+    - relay_nginx_service_enabled | bool
+    - not ansible_check_mode

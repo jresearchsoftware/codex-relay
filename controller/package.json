@@ -1,0 +1,8 @@
+{
+  "name": "codex-relay-controller",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ../consumer/test-support/consumer-env.mjs --test"
+  }
+}

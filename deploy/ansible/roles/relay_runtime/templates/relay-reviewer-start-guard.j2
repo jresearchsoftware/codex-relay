@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+reviewer_service='{{ relay_reviewer_service_name }}'
+activation_marker='{{ relay_reviewer_activation_marker }}'
+recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
+operation_state='{{ relay_production_operation_state_path }}'
+operation_lock='{{ relay_production_operation_lock_path }}'
+
+state_rc=0
+state_output="$($operation_state 2>&1)" || state_rc=$?
+if [[ "$state_rc" -eq 90 ]]; then
+  echo 'REVIEWER_START_BLOCKED=UNSAFE_OPERATION_STATE' >&2
+  exit 90
+fi
+if [[ "$state_rc" -ne 0 && "$state_rc" -ne 10 ]]; then
+  echo 'REVIEWER_START_BLOCKED=OPERATION_STATE_UNAVAILABLE' >&2
+  exit 91
+fi
+
+marker_is_authorized() {
+  [[ -f "$activation_marker" && ! -L "$activation_marker" ]]
+  read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marker")
+  [[ "$marker_owner" == root && "$marker_mode" == 600 ]]
+  [[ "$(<"$activation_marker")" == authorized ]]
+}
+
+if [[ "$state_rc" -eq 10 ]]; then
+  # A mutating operation may use a short, held lock for its own service
+  # transition.  A reboot, timer, or unrelated systemctl start cannot forge
+  # that window because the lock is advisory and held by the live invoker.
+  if [[ "$state_output" == *'phase=activate'* || "$state_output" == *'phase=apply'* ]]; then
+    if /usr/bin/flock -n "$operation_lock" -c ':' >/dev/null 2>&1; then
+      echo 'REVIEWER_START_BLOCKED=RECOVERY_REQUIRED' >&2
+      exit 32
+    fi
+    if [[ "$state_output" == *'phase=activate'* ]]; then
+      exit 0
+    fi
+    [[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || {
+      echo 'REVIEWER_START_BLOCKED=EXPLICIT_REACTIVATION_REQUIRED' >&2
+      exit 35
+    }
+    marker_is_authorized || {
+      echo 'REVIEWER_START_BLOCKED=ACTIVATION_MARKER_INVALID' >&2
+      exit 33
+    }
+    exit 0
+  fi
+  echo 'REVIEWER_START_BLOCKED=RECOVERY_REQUIRED' >&2
+  exit 32
+fi
+
+[[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || {
+  echo 'REVIEWER_START_BLOCKED=EXPLICIT_REACTIVATION_REQUIRED' >&2
+  exit 35
+}
+
+marker_is_authorized || {
+  echo 'REVIEWER_START_BLOCKED=ACTIVATION_MARKER_INVALID' >&2
+  exit 34
+}

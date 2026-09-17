@@ -1,0 +1,198 @@
+#!/usr/bin/node --experimental-default-type=module
+import { readFile, realpath, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+// The root-owned relay-codex-diagnostic.mjs is installed by the governed role.
+import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretRedactor, decodeUtf8, MAX_DEBUG_CAPTURE_BYTES, MAX_DIAGNOSTIC_CAPTURE_BYTES, writeChildDiagnostic } from "{{ relay_codex_diagnostic_path }}";
+
+const CODEX_BINARY = "{{ relay_codex_binary_path }}";
+const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
+const WORK_ROOT = "{{ relay_dispatch_work_root }}";
+const MAX_TOKEN_BYTES = 16 * 1024;
+const MAX_INPUT_BYTES = 256 * 1024;
+const DIAGNOSTICS_CONFIG_PATH = "{{ relay_diagnostics_config_path }}";
+// Argument syntax is a security boundary, not a model capability catalog.
+const secretLike = value => /(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}/.test(value);
+const safeModel = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) && !/[\r\n]/.test(value) && !secretLike(value);
+const safeEffort = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value) && !/[\r\n]/.test(value) && !secretLike(value);
+let diagnosticMode = "normal";
+let observedChildStarted = false;
+
+function fail(code) {
+  process.stderr.write(`CODEX_LAUNCHER_${code}\n`);
+  writeChildDiagnostic({ code: `CODEX_LAUNCHER_${code}`, childStarted: observedChildStarted, primaryCause: code === "LAUNCHER_FAILURE" ? null : `CODEX_LAUNCHER_${code}`, debug: diagnosticMode === "debug", stream: process.stderr });
+  process.exit(64);
+}
+
+function inside(candidate, root) {
+  const rel = relative(root, candidate);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+async function resolveBoundedPath(value, root) {
+  if (!isAbsolute(value)) fail("PATH_NOT_ABSOLUTE");
+  const resolvedRoot = await realpath(root).catch(() => fail("WORK_ROOT_UNAVAILABLE"));
+  const resolved = await realpath(value).catch(() => fail("PATH_UNAVAILABLE"));
+  if (!inside(resolved, resolvedRoot)) fail("PATH_OUTSIDE_WORK_ROOT");
+  return resolved;
+}
+
+async function main() {
+  // Static imports above resolve the installed dependency closure. This probe
+  // never reads credentials, task input, or launches a Codex child.
+  if (process.argv.length === 3 && process.argv[2] === "--check-runtime") {
+    process.stdout.write("CODEX_LAUNCHER_RUNTIME_READY\n");
+    return;
+  }
+  const diagnosticsConfig = await readFile(DIAGNOSTICS_CONFIG_PATH, "utf8").then(value => JSON.parse(value)).catch(() => fail("DIAGNOSTICS_CONFIG_INVALID"));
+  if (!diagnosticsConfig || diagnosticsConfig.schemaVersion !== "1.0" || !["normal", "debug"].includes(diagnosticsConfig.mode)) fail("DIAGNOSTICS_CONFIG_INVALID");
+  diagnosticMode = diagnosticsConfig.mode;
+  const argv = process.argv.slice(2);
+  const issueMode = argv.length === 12 && argv[0] === "exec" && argv[1] === "--json" && argv[2] === "--model" && argv[4] === "--effort" && argv[6] === "--input-file" && argv[8] === "--cwd" && argv[10] === "--issue";
+  const remediationMode = argv.length === 14 && argv[0] === "exec" && argv[1] === "--operation" && argv[2] === "review-remediation" && argv[3] === "--json" && argv[4] === "--model" && argv[6] === "--effort" && argv[8] === "--input-file" && argv[10] === "--cwd" && argv[12] === "--pull-request";
+  if (!issueMode && !remediationMode) fail("ARGUMENT_CONTRACT_INVALID");
+  const operation = remediationMode ? "review-remediation" : "issue-implementation";
+  const model = argv[remediationMode ? 5 : 3];
+  const effort = argv[remediationMode ? 7 : 5];
+  const inputArg = argv[remediationMode ? 9 : 7];
+  const cwdArg = argv[remediationMode ? 11 : 9];
+  const targetNumber = argv[remediationMode ? 13 : 11];
+  if (!safeModel(model) || !safeEffort(effort) || !/^[1-9][0-9]*$/.test(targetNumber)) fail("ARGUMENT_VALUE_INVALID");
+
+  const cwd = await resolveBoundedPath(cwdArg, WORK_ROOT);
+  const input = await resolveBoundedPath(inputArg, cwd);
+  const sandbox = ".codex-sandbox";
+  const inputName = "task-input.md";
+  const schemaName = "codex-result-schema.json";
+  if (input !== join(cwd, sandbox, inputName)) fail("INPUT_PATH_INVALID");
+  const schema = await resolveBoundedPath(join(cwd, sandbox, schemaName), cwd);
+  if (schema !== join(cwd, sandbox, schemaName)) fail("OUTPUT_SCHEMA_PATH_INVALID");
+  const gitRoot = await resolveBoundedPath(join(cwd, ".git"), cwd);
+  const gitStat = await stat(gitRoot).catch(() => fail("GIT_METADATA_UNAVAILABLE"));
+  if (!gitStat.isDirectory()) fail("GIT_METADATA_INVALID");
+  const schemaStat = await stat(schema).catch(() => fail("OUTPUT_SCHEMA_UNAVAILABLE"));
+  if (!schemaStat.isFile()) fail("OUTPUT_SCHEMA_INVALID");
+  if (schemaStat.size > 32 * 1024) fail("OUTPUT_SCHEMA_TOO_LARGE");
+  const inputStat = await stat(input).catch(() => fail("INPUT_FILE_UNAVAILABLE"));
+  if (!inputStat.isFile()) fail("INPUT_FILE_INVALID");
+  if (inputStat.size > MAX_INPUT_BYTES) fail("INPUT_TOO_LARGE");
+  const inputText = await readFile(input, "utf8").catch(() => fail("INPUT_FILE_UNREADABLE"));
+  if (Buffer.byteLength(inputText, "utf8") > MAX_INPUT_BYTES) fail("INPUT_TOO_LARGE");
+
+  const tokenFileValue = await readFile(TOKEN_FILE, "utf8").catch(() => fail("ACCESS_TOKEN_UNAVAILABLE"));
+  const token = tokenFileValue.trim();
+  if (Buffer.byteLength(tokenFileValue, "utf8") === 0 || Buffer.byteLength(tokenFileValue, "utf8") > MAX_TOKEN_BYTES || token.length === 0) fail("ACCESS_TOKEN_INVALID");
+
+  const sandboxRoot = join(cwd, sandbox);
+  const home = join(sandboxRoot, "home");
+  const config = join(sandboxRoot, "config");
+  const cache = join(sandboxRoot, "cache");
+  const data = join(sandboxRoot, "data");
+  const state = join(sandboxRoot, "state");
+  const temp = join(sandboxRoot, "tmp");
+  const env = {
+    PATH: "{{ relay_rust_toolchain_root }}/bin:/usr/bin:/bin",
+    // Dependency downloads belong to this task, never the protected build cache.
+    CARGO_HOME: join(cache, "cargo"),
+    HOME: home,
+    USERPROFILE: home,
+    CODEX_HOME: home,
+    CODEX_ACCESS_TOKEN: token.trim(),
+    CODEX_TASK_ROOT: cwd,
+    CODEX_SANDBOX_ROOT: sandboxRoot,
+    CODEX_ALLOWED_INPUT_ROOT: sandboxRoot,
+    XDG_CONFIG_HOME: config,
+    XDG_CACHE_HOME: cache,
+    XDG_DATA_HOME: data,
+    XDG_STATE_HOME: state,
+    TMP: temp,
+    TEMP: temp,
+    TMPDIR: temp,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "safe.directory",
+    GIT_CONFIG_VALUE_0: cwd,
+    GIT_AUTHOR_NAME: operation === "review-remediation" ? {{ relay_remediation_commit_name | to_json }} : {{ relay_writer_commit_name | to_json }},
+    GIT_AUTHOR_EMAIL: operation === "review-remediation" ? {{ relay_remediation_commit_email | to_json }} : {{ relay_writer_commit_email | to_json }},
+    GIT_COMMITTER_NAME: operation === "review-remediation" ? {{ relay_remediation_commit_name | to_json }} : {{ relay_writer_commit_name | to_json }},
+    GIT_COMMITTER_EMAIL: operation === "review-remediation" ? {{ relay_remediation_commit_email | to_json }} : {{ relay_writer_commit_email | to_json }},
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "Never",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_SSH_COMMAND: "false",
+    LANG: "C",
+    LC_ALL: "C",
+    TZ: "UTC"
+  };
+  let child;
+  try {
+    // The relay runner and relay-codex share one governed checkout; keep new Git objects group-writable for the handoff.
+    process.umask(0o0007);
+    child = spawn(CODEX_BINARY, ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+  } catch {
+    fail("PROCESS_START_FAILED");
+  }
+  let childStarted = false;
+  child.once("spawn", () => { childStarted = true; observedChildStarted = true; });
+  const stdoutRedactor = createStatefulSecretRedactor(token);
+  const stdoutChunks = [];
+  let stdoutBytes = 0;
+  const maxStdoutBytes = 16 * 1024 * 1024;
+  let stdoutOverflow = false;
+  let stderrBytes = 0;
+  const stderrChunks = [];
+  let stderrCapturedBytes = 0;
+  let processError = false;
+  // Redact the exact token before any child stdout crosses back to the runner;
+  // the worker still receives the structured result, but a leaked credential
+  // cannot enter the detached diagnostic bundle.
+  child.stdout.on("data", chunk => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    stdoutBytes += bytes.length;
+    const previousBytes = stdoutBytes - bytes.length;
+    const remaining = maxStdoutBytes - previousBytes;
+    if (remaining > 0) stdoutChunks.push(bytes.subarray(0, remaining));
+    if (stdoutBytes > maxStdoutBytes) stdoutOverflow = true;
+  });
+  child.stderr.on("data", chunk => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    stderrBytes += bytes.length;
+    const captureLimit = diagnosticMode === "debug" ? MAX_DEBUG_CAPTURE_BYTES : MAX_DIAGNOSTIC_CAPTURE_BYTES;
+    const remaining = captureLimit - stderrCapturedBytes;
+    if (remaining > 0) {
+      const captured = bytes.subarray(0, remaining);
+      stderrChunks.push(captured);
+      stderrCapturedBytes += captured.length;
+    }
+  });
+  // A child can close stdin early. Keep that causal failure inside the
+  // diagnostic envelope instead of crashing Node with an unhandled EPIPE.
+  let inputError;
+  child.stdin.on("error", error => { inputError = error; });
+  child.stdin.end(inputText);
+  child.once("error", error => {
+    processError = true;
+    writeChildDiagnostic({ code: "PROCESS_START_FAILED", primaryCause: error?.code, stderr: error?.message, stderrBytes, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+    process.exitCode = 1;
+  });
+  child.once("close", (code, signal) => {
+    if (stdoutOverflow) {
+      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+      process.exitCode = 64;
+      return;
+    }
+    const rawStdout = decodeUtf8(Buffer.concat(stdoutChunks));
+    const safeStdout = stdoutRedactor.push(rawStdout) + stdoutRedactor.flush();
+    try { process.stdout.write(assertSecretFreePublication(safeStdout, token)); }
+    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
+    if (!processError) {
+      const stderr = decodeUtf8(Buffer.concat(stderrChunks));
+      writeChildDiagnostic({ code: inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+    }
+    process.exitCode = Number.isInteger(code) && !signal && !inputError ? code : 1;
+  });
+}
+
+main().catch(() => fail("LAUNCHER_FAILURE"));

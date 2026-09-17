@@ -1,0 +1,170 @@
+#!/usr/bin/node --experimental-default-type=module
+import { readFile, readdir } from "node:fs/promises";
+import { join, basename } from "node:path";
+
+export const DEFAULT_PATHS = Object.freeze({
+  claimRoot: "{{ relay_state_root }}/writer-claims",
+  dispatchRoot: "{{ relay_state_root }}/dispatch",
+  debugRoot: "{{ relay_state_root }}/debug",
+  diagnosticsConfig: "{{ relay_config_root }}/diagnostics.json"
+});
+
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
+const SAFE_CODE = /^[A-Z0-9_]{1,128}$/;
+const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+const OMITTED_KEYS = new Set(["argv", "body", "environment", "input", "prBody", "preview", "stderr", "stdout"]);
+const ALLOWED_TARGETS = new Set(["issue", "pull_request", "debian-codex"]);
+const ALLOWED_ROUTES = new Set(["auto", "manual"]);
+const SECRET_LIKE = /(?:secret|token|password|credential|private[_-]?key|bearer|github_pat_|sk-[A-Za-z0-9])/i;
+
+function fail(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+}
+
+function safeId(value) { return typeof value === "string" && SAFE_ID.test(value) ? value : undefined; }
+function safeCode(value) { return typeof value === "string" && SAFE_CODE.test(value) && !SECRET_LIKE.test(value) ? value : undefined; }
+function safeKey(value) { return typeof value === "string" && SAFE_KEY.test(value) && !SECRET_LIKE.test(value) ? value : undefined; }
+function safeToken(value) { return typeof value === "string" && SAFE_TOKEN.test(value) && !SECRET_LIKE.test(value) ? value : undefined; }
+function safeTimestamp(value) { return typeof value === "string" && SAFE_TIMESTAMP.test(value) ? value : undefined; }
+
+const FIELD_VALIDATORS = Object.freeze({
+  claimId: safeId,
+  claimKey: safeKey,
+  operationKey: safeKey,
+  executionId: safeId,
+  target: value => typeof value === "string" && ALLOWED_TARGETS.has(value) ? value : undefined,
+  route: value => typeof value === "string" && ALLOWED_ROUTES.has(value) ? value : undefined,
+  phase: safeToken,
+  failureCode: safeCode,
+  classification: safeCode,
+  dispatchStatus: safeToken,
+  workerState: safeToken,
+  startedAt: safeTimestamp,
+  dispatchedAt: safeTimestamp,
+  completedAt: safeTimestamp,
+  recovery: safeToken
+});
+
+function parseArgs(argv) {
+  const result = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = argv[index + 1];
+    if (!["--claim", "--execution"].includes(flag) || !safeId(value) || result[flag.slice(2)]) fail("SNAPSHOT_ARGUMENT_INVALID", "Use one or both fixed --claim/--execution identifiers");
+    result[flag.slice(2)] = value;
+  }
+  if (!result.claim && !result.execution) fail("SNAPSHOT_ARGUMENT_INVALID", "A claim or execution identifier is required");
+  return result;
+}
+
+function matches(record, ids) {
+  if (ids.claim && [record.claimId, record.claimKey, record.operationKey].includes(ids.claim)) return true;
+  if (ids.execution && [record.executionId, record.diagnosticStore?.executionId].includes(ids.execution)) return true;
+  return false;
+}
+
+function safeDiagnosticStore(value) {
+  if (!value || typeof value !== "object" || !["stored", "unavailable"].includes(value.status)) return undefined;
+  return {
+    status: value.status,
+    ...(safeCode(value.code) ? { code: value.code } : {}),
+    ...(safeCode(value.storeCode) ? { storeCode: value.storeCode } : {}),
+    ...(safeId(value.executionId) ? { executionId: value.executionId } : {}),
+    ...(value.mode === "normal" || value.mode === "debug" ? { mode: value.mode } : {})
+  };
+}
+
+function safeFailureDiagnostic(value) {
+  if (!value || typeof value !== "object") return undefined;
+  return {
+    ...(safeCode(value.code) ? { code: value.code } : {}),
+    ...(Number.isInteger(value.bytes) && value.bytes >= 0 && value.bytes <= 1024 * 1024 ? { bytes: value.bytes } : {}),
+    ...(typeof value.truncated === "boolean" ? { truncated: value.truncated } : {}),
+    ...(Number.isInteger(value.childExitCode) && value.childExitCode >= 0 && value.childExitCode <= 255 ? { childExitCode: value.childExitCode } : {}),
+    ...(typeof value.childStarted === "boolean" ? { childStarted: value.childStarted } : {}),
+    ...(safeDiagnosticStore(value.diagnosticStore) ? { diagnosticStore: safeDiagnosticStore(value.diagnosticStore) } : {})
+  };
+}
+
+export function safeRecord(value, source) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = { source };
+  for (const field of ["claimId", "claimKey", "operationKey", "executionId", "target", "route", "phase", "failureCode", "classification", "dispatchStatus", "workerState", "startedAt", "dispatchedAt", "completedAt", "recovery"]) {
+    const validated = FIELD_VALIDATORS[field](value[field]);
+    if (validated !== undefined) record[field] = validated;
+  }
+  for (const field of ["issueNumber", "pullRequest"]) if (Number.isInteger(value[field]) && value[field] > 0) record[field] = value[field];
+  if (typeof value.executionConfirmed === "boolean") record.executionConfirmed = value.executionConfirmed;
+  const diagnosticStore = safeDiagnosticStore(value.diagnosticStore);
+  if (diagnosticStore) record.diagnosticStore = diagnosticStore;
+  const failureDiagnostic = safeFailureDiagnostic(value.failureDiagnostic);
+  if (failureDiagnostic && Object.keys(failureDiagnostic).length > 0) record.failureDiagnostic = failureDiagnostic;
+  return Object.keys(record).length > 1 ? record : undefined;
+}
+
+function collectRecords(value, source, ids, records, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  const record = safeRecord(value, source);
+  if (record && matches(record, ids)) records.push(record);
+  if (Array.isArray(value)) {
+    for (const item of value) collectRecords(item, source, ids, records, seen);
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) if (!OMITTED_KEYS.has(key)) collectRecords(child, source, ids, records, seen);
+}
+
+async function readJson(path) {
+  try { return JSON.parse(await readFile(path, "utf8")); } catch { return undefined; }
+}
+
+async function readDirectoryJson(root) {
+  try { return (await readdir(root, { withFileTypes: true })).filter(entry => entry.isFile() && entry.name.endsWith(".json")).map(entry => join(root, entry.name)); }
+  catch { return []; }
+}
+
+export async function buildSnapshot(ids, paths = DEFAULT_PATHS) {
+  const claimRecords = [];
+  for (const name of ["claims.json", "operations.json"]) collectRecords(await readJson(join(paths.claimRoot, name)), name, ids, claimRecords);
+  const dispatchRecords = [];
+  for (const path of await readDirectoryJson(paths.dispatchRoot)) collectRecords(await readJson(path), basename(path), ids, dispatchRecords);
+  const linkedExecutionIds = new Set([...claimRecords, ...dispatchRecords].flatMap(record => [record.executionId, record.diagnosticStore?.executionId].filter(Boolean)));
+  const bundleRecords = [];
+  for (const path of await readDirectoryJson(paths.debugRoot)) {
+    const bundle = await readJson(path);
+    if (!bundle || (ids.execution && bundle.executionId !== ids.execution)) continue;
+    if (ids.claim && !ids.execution && !linkedExecutionIds.has(bundle.executionId)) continue;
+    const record = safeRecord({
+      executionId: bundle.executionId,
+      phase: bundle.phase,
+      classification: bundle.classification,
+      process: bundle.process,
+      diagnosticStore: { status: "stored", executionId: bundle.executionId, mode: bundle.mode }
+    }, basename(path));
+    if (record) bundleRecords.push(record);
+  }
+  const config = await readJson(paths.diagnosticsConfig);
+  return {
+    schemaVersion: "1.0",
+    claim: ids.claim ?? null,
+    execution: ids.execution ?? null,
+    diagnosticsMode: config?.mode === "normal" || config?.mode === "debug" ? config.mode : "UNAVAILABLE",
+    claimRecords,
+    dispatchRecords,
+    debugBundles: bundleRecords,
+    protectedBodies: "omitted"
+  };
+}
+
+export async function main(argv = process.argv.slice(2), paths = DEFAULT_PATHS) {
+  return buildSnapshot(parseArgs(argv), paths);
+}
+
+if (process.argv[1] && new URL(`file://${process.argv[1]}`).href === import.meta.url) {
+  process.stderr.write(`${JSON.stringify({ status: "blocked", code: "STAGE_A_RUNTIME_RETIRED", message: "The historical Stage A diagnostic helper is retired" })}\n`);
+  process.exitCode = 67;
+}

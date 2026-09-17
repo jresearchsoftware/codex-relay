@@ -1,0 +1,326 @@
+---
+# This is a separate lifecycle transition for a trusted record whose source
+# head is known to be superseded.  It never replays the old implementation.
+# Stale apply is admitted only through the exact fresh-owner partial-apply
+# evidence contract; activate and runner-enable retain their phase-owned
+# replayable dispositions.
+
+- name: Require the explicit stale-operation disposition authority
+  ansible.builtin.assert:
+    that:
+      - relay_deployment_profile == 'production'
+      - relay_production_operation_phase == 'stale-dispose'
+      - relay_production_operation_stale_authorized | bool
+      - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+      - relay_production_operation_stale_target_head is match('^[0-9a-fA-F]{40}$')
+      - relay_production_operation_stale_target_head != relay_production_operation_target_head
+      - relay_production_operation_recovery_required | default(false) | bool
+      - relay_production_operation_recovery_phase == relay_production_operation_stale_phase
+      - relay_production_operation_recovery_target_head == relay_production_operation_stale_target_head
+      - not relay_production_operation_recovery_matching | default(false) | bool
+      - >-
+        {{
+          relay_production_operation_stale_phase != 'apply' or
+          (
+            relay_production_operation_stale_actual_completed_phase | default('') == 'apply' and
+            relay_production_operation_stale_expected_state_hash | default('') is match('^[0-9a-f]{64}$')
+          )
+        }}
+      - >-
+        {{
+          relay_production_operation_stale_phase == 'apply' or
+          (
+            relay_production_operation_stale_actual_completed_phase | default('') == '' and
+            relay_production_operation_stale_expected_state_hash | default('') == ''
+          )
+        }}
+    fail_msg: 'PRODUCTION_STALE_DISPOSITION_AUTHORITY_OR_RECORD_INVALID'
+
+- name: Bind stale disposition to the current controller checkout head
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - '{{ relay_review_root }}'
+      - rev-parse
+      - HEAD
+  delegate_to: localhost
+  become: false
+  register: relay_production_stale_checkout_head
+  changed_when: false
+  check_mode: false
+
+- name: Require the current reviewed source head for stale disposition
+  ansible.builtin.assert:
+    that:
+      - relay_production_stale_checkout_head.stdout == relay_production_operation_target_head
+    fail_msg: 'PRODUCTION_STALE_DISPOSITION_CHECKOUT_HEAD_MISMATCH'
+
+- name: Select the release-binding contract for stale apply recovery
+  ansible.builtin.set_fact:
+    relay_production_recovery_apply_release_binding_required: >-
+      {{ relay_production_operation_stale_phase == 'apply' }}
+  changed_when: false
+
+- name: Classify the stale record with the existing phase-owned evidence matrix
+  ansible.builtin.include_tasks: production-operation-recovery-classify.yml
+  when: relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+
+- name: Require exact fresh-owner evidence for stale partial apply disposition
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_stale_actual_completed_phase == 'apply'
+      - relay_production_operation_stale_expected_state_hash == relay_production_recovery_apply_state_hash
+      - relay_production_recovery_apply_state_safe | bool
+    fail_msg: >-
+      PRODUCTION_STALE_APPLY_FRESH_OWNER_EVIDENCE_INVALID;
+      stale_head={{ relay_production_operation_stale_target_head }};
+      expected_state_hash={{ relay_production_operation_stale_expected_state_hash }};
+      current_state_hash={{ relay_production_recovery_apply_state_hash | default('missing') }}
+  when: relay_production_operation_stale_phase == 'apply'
+
+- name: Classify the safe stale activate disposition for an un-authorized partial Reviewer
+  ansible.builtin.set_fact:
+    relay_production_stale_activate_safe: >-
+      {{
+        relay_production_recovery_phase_classifiable | bool and
+        relay_production_recovery_evidence_safe | bool and
+        not relay_production_recovery_activation_present | bool and
+        not relay_production_recovery_off_present | bool and
+        relay_production_recovery_reviewer_active in ['inactive', 'failed'] and
+        relay_production_recovery_reviewer_enabled in ['disabled', 'enabled', 'enabled-runtime'] and
+        not relay_production_recovery_listener_present | bool and
+        relay_production_recovery_runner_safe | bool
+      }}
+  changed_when: false
+  when: relay_production_operation_stale_phase == 'activate'
+
+- name: Require the bounded stale activate disposition matrix
+  ansible.builtin.assert:
+    that:
+      - relay_production_stale_activate_safe | bool
+    fail_msg: >-
+      PRODUCTION_STALE_ACTIVATE_DISPOSITION_BLOCKED;
+      stale_head={{ relay_production_operation_stale_target_head }};
+      reviewer={{ relay_production_recovery_reviewer_state }};
+      runner={{ relay_production_recovery_runner_state }};
+      listener={{ relay_production_recovery_listener_present | bool }}
+  when: relay_production_operation_stale_phase == 'activate'
+
+- name: Classify the safe stale runner-enable disposition
+  ansible.builtin.set_fact:
+    relay_production_stale_runner_enable_safe: >-
+      {{
+        relay_production_recovery_phase_classifiable | bool and
+        relay_production_recovery_evidence_safe | bool and
+        relay_production_recovery_activation_valid | bool and
+        relay_production_recovery_activation_present | bool and
+        not relay_production_recovery_off_present | bool and
+        relay_production_recovery_reviewer_active == 'active' and
+        relay_production_recovery_reviewer_enabled in ['enabled', 'enabled-runtime'] and
+        relay_production_recovery_listener_present | bool and
+        relay_production_recovery_registration_present | bool and
+        relay_production_recovery_credentials_present | bool and
+        relay_production_recovery_registration_valid | bool and
+        relay_production_recovery_runner_safe | bool
+      }}
+  changed_when: false
+  when: relay_production_operation_stale_phase == 'runner-enable'
+
+- name: Require the bounded stale runner-enable disposition matrix
+  ansible.builtin.assert:
+    that:
+      - relay_production_stale_runner_enable_safe | bool
+    fail_msg: >-
+      PRODUCTION_STALE_RUNNER_ENABLE_DISPOSITION_BLOCKED;
+      stale_head={{ relay_production_operation_stale_target_head }};
+      reviewer={{ relay_production_recovery_reviewer_state }};
+      runner={{ relay_production_recovery_runner_state }};
+      listener={{ relay_production_recovery_listener_present | bool }};
+      registration={{ relay_production_recovery_registration_present | bool and relay_production_recovery_credentials_present | bool }}
+  when: relay_production_operation_stale_phase == 'runner-enable'
+
+- name: Inspect the stale-disposition helper before replacing it
+  ansible.builtin.stat:
+    path: '{{ relay_production_operation_stale_disposition_path }}'
+    follow: false
+  register: relay_production_stale_helper_stat
+  changed_when: false
+
+- name: Refuse a foreign or unsafe stale-disposition helper
+  ansible.builtin.assert:
+    that:
+      - not relay_production_stale_helper_stat.stat.exists | default(false) or relay_production_stale_helper_stat.stat.isreg
+      - not relay_production_stale_helper_stat.stat.exists | default(false) or not relay_production_stale_helper_stat.stat.islnk | default(false)
+      - not relay_production_stale_helper_stat.stat.exists | default(false) or relay_production_stale_helper_stat.stat.pw_name == 'root'
+      - not relay_production_stale_helper_stat.stat.exists | default(false) or relay_production_stale_helper_stat.stat.gr_name == 'root'
+      - not relay_production_stale_helper_stat.stat.exists | default(false) or relay_production_stale_helper_stat.stat.mode == '0750'
+    fail_msg: 'PRODUCTION_STALE_DISPOSITION_HELPER_UNSAFE'
+  when: relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+
+- name: Install the current source-controlled stale-disposition helper
+  ansible.builtin.include_role:
+    name: relay_runtime
+    tasks_from: production-operation-stale-disposition.yml
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Commit the explicit stale-operation disposition under the target lock
+  ansible.builtin.command:
+    argv: ['{{ relay_production_operation_stale_disposition_path }}']
+  register: relay_production_stale_disposition_result
+  changed_when: true
+  check_mode: false
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Verify fresh-owner stale apply disposition preserves the completed release
+  ansible.builtin.command:
+    argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+  loop:
+    - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+    - {operation: is-enabled, unit: '{{ relay_reviewer_service_name }}'}
+    - {operation: is-active, unit: '{{ relay_runner_service_name }}'}
+    - {operation: is-enabled, unit: '{{ relay_runner_service_name }}'}
+  register: relay_production_stale_apply_post_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_production_operation_stale_phase == 'apply'
+    - relay_production_recovery_apply_state_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Verify the private Reviewer listener remains bound after stale apply recovery
+  ansible.builtin.shell: >-
+    ss -ltnH |
+    awk '$4 ~ /:8787$/ { print }'
+  register: relay_production_stale_apply_post_listener
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_production_operation_stale_phase == 'apply'
+    - relay_production_recovery_apply_state_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Require the completed release and services to remain unchanged after stale apply recovery
+  ansible.builtin.assert:
+    that:
+      - relay_production_stale_apply_post_services.results[0].stdout == relay_production_recovery_reviewer_active
+      - relay_production_stale_apply_post_services.results[1].stdout == relay_production_recovery_reviewer_enabled
+      - relay_production_stale_apply_post_services.results[2].stdout == relay_production_recovery_runner_active
+      - relay_production_stale_apply_post_services.results[3].stdout == relay_production_recovery_runner_enabled
+      - relay_production_stale_apply_post_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+    fail_msg: 'PRODUCTION_STALE_APPLY_PRESERVATION_POSTCHECK_FAILED'
+  when:
+    - relay_production_operation_stale_phase == 'apply'
+    - relay_production_recovery_apply_state_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Verify the Reviewer-only stale activate reset and runner preservation
+  ansible.builtin.command:
+    argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+  loop:
+    - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+    - {operation: is-enabled, unit: '{{ relay_reviewer_service_name }}'}
+    - {operation: is-active, unit: '{{ relay_runner_service_name }}'}
+    - {operation: is-enabled, unit: '{{ relay_runner_service_name }}'}
+  register: relay_production_stale_activate_post_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_production_operation_stale_phase == 'activate'
+    - relay_production_stale_activate_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Verify no private Reviewer listener remains after stale activate reset
+  ansible.builtin.shell: >-
+    ss -ltnH |
+    awk '$4 ~ /:8787$/ { print }'
+  register: relay_production_stale_activate_post_listener
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_production_operation_stale_phase == 'activate'
+    - relay_production_stale_activate_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Require the Reviewer-only stale activate reset result
+  ansible.builtin.assert:
+    that:
+      - relay_production_stale_activate_post_services.results[0].stdout in ['inactive', 'failed']
+      - relay_production_stale_activate_post_services.results[1].stdout == 'disabled'
+      - relay_production_stale_activate_post_services.results[2].stdout == relay_production_recovery_runner_active
+      - relay_production_stale_activate_post_services.results[3].stdout == relay_production_recovery_runner_enabled
+      - relay_production_stale_activate_post_listener.stdout is not search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+    fail_msg: 'PRODUCTION_STALE_ACTIVATE_RESET_POSTCHECK_FAILED'
+  when:
+    - relay_production_operation_stale_phase == 'activate'
+    - relay_production_stale_activate_safe | bool
+    - not ansible_check_mode | bool
+
+- name: Report the read-only stale-disposition plan
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_STALE_DISPOSITION_CHECK_MODE_PLAN=explicit-owner-transition;
+      phase={{ relay_production_operation_stale_phase }};
+      stale_head={{ relay_production_operation_stale_target_head }};
+      superseding_head={{ relay_production_operation_target_head }};
+      apply=fresh-owner-partial-apply-disposition;
+      activate=reviewer-only-preactivation-reset;
+      runner-enable=read-only-replayable-disposition
+  when: ansible_check_mode | bool
+
+- name: Inspect the archived superseded operation evidence
+  ansible.builtin.stat:
+    path: '{{ relay_production_operation_superseded_root }}/{{ relay_production_operation_stale_phase }}-{{ relay_production_operation_stale_target_head }}.json'
+    follow: false
+  register: relay_production_stale_archive_stat
+  changed_when: false
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Inspect the active operation record after stale disposition
+  ansible.builtin.stat:
+    path: '{{ relay_production_operation_record_path }}'
+    follow: false
+  register: relay_production_stale_active_record_post
+  changed_when: false
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Require the active record to be retired only with immutable superseded evidence
+  ansible.builtin.assert:
+    that:
+      - not relay_production_stale_active_record_post.stat.exists | default(false) | bool
+      - relay_production_stale_archive_stat.stat.isreg
+      - not relay_production_stale_archive_stat.stat.islnk | default(false)
+      - relay_production_stale_archive_stat.stat.pw_name == 'root'
+      - relay_production_stale_archive_stat.stat.gr_name == 'root'
+      - relay_production_stale_archive_stat.stat.mode == '0600'
+      - relay_production_stale_disposition_result.stdout is search('PRODUCTION_STALE_OPERATION_DISPOSITION=')
+    fail_msg: 'PRODUCTION_STALE_DISPOSITION_ARCHIVE_POSTCHECK_FAILED'
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool
+
+- name: Report the completed explicit stale-operation disposition
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_STALE_OPERATION_DISPOSITION_PASS=phase={{ relay_production_operation_stale_phase }};
+      stale_head={{ relay_production_operation_stale_target_head }};
+      superseding_head={{ relay_production_operation_target_head }};
+      record=archived-and-retired;
+      old-implementation=not-executed;
+      normal-matching-recovery=unchanged;
+      foreign-runtime=untouched
+  when:
+    - relay_production_operation_stale_phase in ['apply', 'activate', 'runner-enable']
+    - not ansible_check_mode | bool

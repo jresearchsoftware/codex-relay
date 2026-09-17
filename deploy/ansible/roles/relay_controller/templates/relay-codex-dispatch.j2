@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+export RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}'
+exec /usr/bin/node '{{ relay_codex_dispatch_release_path }}' "$@"

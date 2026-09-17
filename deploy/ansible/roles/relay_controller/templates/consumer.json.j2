@@ -1,0 +1,51 @@
+{
+  "version": 1,
+{% if relay_validation_names is defined %}
+  "validationNames": {{ relay_validation_names | to_json }},
+{% endif %}
+  "validationWorkflow": {{ relay_validation_workflow | to_json }},
+  "repository": {{ (relay_github_repository) | to_json }},
+  "owner": {{ (relay_owner_actor) | to_json }},
+  "baseBranch": {{ (relay_github_base_branch) | to_json }},
+  "taskBranchPrefix": {{ (relay_task_branch_prefix) | to_json }},
+  "routingWorkflow": {{ (relay_routing_workflow) | to_json }},
+  "recoveryWorkflow": {{ (relay_recovery_workflow) | to_json }},
+  "writerApp": {
+    "slug": {{ (relay_writer_app_slug) | to_json }},
+    "appId": {{ (relay_writer_app_id) | to_json }},
+    "installationId": {{ (relay_writer_app_installation_id) | to_json }},
+    "expectedActor": {{ (relay_writer_expected_actor) | to_json }}
+  },
+  "reviewerApp": {
+    "slug": {{ (relay_reviewer_app_slug) | to_json }},
+    "appId": {{ (relay_reviewer_app_id) | to_json }},
+    "installationId": {{ (relay_reviewer_app_installation_id) | to_json }},
+    "expectedActor": {{ (relay_reviewer_expected_actor) | to_json }}
+  },
+  "writerIdentity": {
+    "name": {{ (relay_writer_commit_name) | to_json }},
+    "email": {{ (relay_writer_commit_email) | to_json }}
+  },
+  "remediationIdentity": {
+    "name": {{ (relay_remediation_commit_name) | to_json }},
+    "email": {{ (relay_remediation_commit_email) | to_json }}
+  },
+  "defaultProfile": {
+    "cliModelId": {{ (relay_default_model) | to_json }},
+    "effort": {{ (relay_default_effort) | to_json }}
+  },
+  "runtimeUser": {{ (relay_codex_user) | to_json }},
+  "paths": {
+    "workRoot": {{ (relay_dispatch_work_root) | to_json }},
+    "attemptRoot": {{ (relay_dispatch_state_root ~ '/attempts-v2') | to_json }},
+    "dispatch": {{ (relay_codex_dispatch_path) | to_json }},
+    "writerHelper": {{ (relay_writer_helper_path) | to_json }},
+    "launcher": {{ (relay_codex_launcher_path) | to_json }},
+    "diagnosticsConfig": {{ (relay_diagnostics_config_path) | to_json }},
+    "diagnosticsStore": {{ (relay_diagnostics_store_path) | to_json }},
+    "diagnosticsRoot": {{ (relay_diagnostics_root) | to_json }},
+    "credentialEnv": {{ (relay_writer_credential_env_file) | to_json }},
+    "credentialKeyFile": {{ (relay_writer_credential_key_file) | to_json }},
+    "claimRoot": {{ (relay_writer_claim_root) | to_json }}
+  }
+}

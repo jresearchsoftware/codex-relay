@@ -1,0 +1,10 @@
+{
+  "name": "codex-relay",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --import ./consumer/test-support/consumer-env.mjs --test controller/test/*.test.mjs runtime/test/*.test.mjs contracts/test/*.test.mjs consumer/test/*.test.mjs"
+  }
+}

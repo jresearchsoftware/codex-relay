@@ -1,0 +1,578 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This helper is an explicit owner-authorized stale-operation transition.  It
+# never treats a stale SHA as a matching recovery and never replays the old
+# implementation.  Stale apply is admitted only for the exact fresh-owner
+# partial-apply evidence shape; its completed release and services are left
+# untouched.  The old record is archived as SUPERSEDED and removed only after
+# the archive file and directory entry are durable and the exact old record
+# has been rechecked under the target-side transition lock.
+record='{{ relay_production_operation_record_path }}'
+lock='{{ relay_production_operation_lock_path }}'
+archive_root='{{ relay_production_operation_superseded_root }}'
+stale_phase='{{ relay_production_operation_stale_phase }}'
+stale_head='{{ relay_production_operation_stale_target_head }}'
+superseding_head='{{ relay_production_operation_target_head }}'
+actual_completed_phase='{{ relay_production_operation_stale_actual_completed_phase | default('') }}'
+expected_state_hash='{{ relay_production_operation_stale_expected_state_hash | default('') }}'
+release_root='{{ relay_release_root | default('') }}'
+current_release='{{ relay_install_root | default('') }}/current'
+manifest_path="${current_release}/artifact-manifest.json"
+runner_user='{{ relay_runner_user | default('') }}'
+runner_group='{{ relay_runner_group | default('') }}'
+manifest_group='{{ relay_group | default('root') }}'
+reviewer_service='{{ relay_reviewer_service_name }}'
+runner_service='{{ relay_runner_service_name }}'
+activation_marker='{{ relay_reviewer_activation_marker }}'
+recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
+runner_registration_marker='{{ relay_runner_registration_marker }}'
+runner_credentials_marker='{{ relay_runner_credentials_marker }}'
+expected_listener='{{ relay_reviewer_bind_address }}:8787'
+
+[[ "$stale_phase" =~ ^(apply|activate|runner-enable)$ ]] || {
+  echo 'PRODUCTION_STALE_DISPOSITION_PHASE_INVALID' >&2
+  exit 60
+}
+[[ "$stale_head" =~ ^[0-9a-fA-F]{40}$ ]] || {
+  echo 'PRODUCTION_STALE_DISPOSITION_HEAD_INVALID' >&2
+  exit 61
+}
+[[ "$superseding_head" =~ ^[0-9a-fA-F]{40}$ ]] || {
+  echo 'PRODUCTION_STALE_DISPOSITION_SUPERSEDING_HEAD_INVALID' >&2
+  exit 62
+}
+[[ "$stale_head" != "$superseding_head" ]] || {
+  echo 'PRODUCTION_STALE_DISPOSITION_HEAD_NOT_STALE' >&2
+  exit 63
+}
+if [[ "$stale_phase" != apply && ( -n "$actual_completed_phase" || -n "$expected_state_hash" ) ]]; then
+  echo 'PRODUCTION_STALE_DISPOSITION_APPLY_EVIDENCE_FLAG_PHASE_INVALID' >&2
+  exit 64
+fi
+
+case "$stale_phase" in
+  activate) disposition='STALE_ACTIVATE_PREACTIVATION_RESET' ;;
+  runner-enable) disposition='STALE_RUNNER_ENABLE_REPLAYABLE' ;;
+  apply)
+    [[ "$actual_completed_phase" == apply ]] || {
+      echo 'PRODUCTION_STALE_APPLY_COMPLETED_PHASE_REQUIRED' >&2
+      exit 64
+    }
+    [[ "$expected_state_hash" =~ ^[0-9a-f]{64}$ ]] || {
+      echo 'PRODUCTION_STALE_APPLY_STATE_HASH_INVALID' >&2
+      exit 64
+    }
+    disposition='STALE_APPLY_PARTIAL_APPLY_OWNER_RECONCILIATION'
+    ;;
+esac
+
+archive_name="${stale_phase}-${stale_head}.json"
+exec 9>"$lock"
+/usr/bin/flock -n 9 || {
+  echo 'PRODUCTION_STALE_DISPOSITION_LOCK_BUSY' >&2
+  exit 65
+}
+
+# Validate the exact stale record before inspecting or changing any service
+# state.  A malformed or contradictory record therefore cannot trigger even
+# the Reviewer-only normalization below.
+/usr/bin/python3 - "$record" "$stale_phase" "$stale_head" <<'PY'
+import json
+import os
+import stat
+import sys
+
+path, phase, head = sys.argv[1:]
+try:
+    metadata = os.lstat(path)
+except OSError:
+    raise SystemExit('PRODUCTION_STALE_DISPOSITION_UNSAFE_RECORD')
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or metadata.st_uid != 0
+    or metadata.st_gid != 0
+):
+    raise SystemExit('PRODUCTION_STALE_DISPOSITION_UNSAFE_RECORD')
+try:
+    with open(path, encoding='utf-8') as stream:
+        record = json.load(stream)
+except (OSError, UnicodeDecodeError, ValueError):
+    raise SystemExit('PRODUCTION_STALE_DISPOSITION_UNSAFE_RECORD')
+expected = {
+    'schemaVersion': '{{ relay_production_operation_schema_version }}',
+    'state': 'RECOVERY_REQUIRED',
+    'phase': phase,
+    'target_head': head,
+}
+if record != expected:
+    raise SystemExit('PRODUCTION_STALE_DISPOSITION_RECORD_MISMATCH')
+PY
+
+service_state() {
+  /bin/systemctl "$1" "$2" 2>/dev/null || true
+}
+
+secure_authorization_marker() {
+  local marker="$1"
+  [[ -f "$marker" && ! -L "$marker" ]] || return 1
+  read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$marker")
+  [[ "$marker_owner" == root && "$marker_mode" == 600 ]]
+  [[ "$(<"$marker")" == authorized ]]
+}
+
+secure_nonsecret_file() {
+  local marker="$1"
+  [[ -f "$marker" && ! -L "$marker" ]] || return 1
+  read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$marker")
+  [[ "$marker_mode" == 600 ]]
+}
+
+secure_runner_evidence_file() {
+  local marker="$1"
+  [[ -f "$marker" && ! -L "$marker" ]] || return 1
+  read -r marker_owner marker_group marker_mode < <(/usr/bin/stat -c '%U %G %a' "$marker")
+  [[ "$marker_owner" == "$runner_user" && "$marker_group" == "$runner_group" && "$marker_mode" == 600 ]]
+}
+
+validate_apply_release() {
+  /usr/bin/python3 - "$current_release" "${release_root}/${stale_head}" "$manifest_path" "$stale_head" "$manifest_group" <<'PY'
+import json
+import grp
+import os
+import stat
+import sys
+
+
+current_release, expected_release, manifest_path, expected_head, expected_group = sys.argv[1:]
+
+
+def fail():
+    raise SystemExit('PRODUCTION_STALE_APPLY_RELEASE_BINDING_INVALID')
+
+
+try:
+    expected_gid = grp.getgrnam(expected_group).gr_gid
+except KeyError:
+    fail()
+
+
+try:
+    current_metadata = os.lstat(current_release)
+    release_metadata = os.lstat(expected_release)
+    manifest_metadata = os.lstat(manifest_path)
+except OSError:
+    fail()
+if (
+    not stat.S_ISLNK(current_metadata.st_mode)
+    or os.readlink(current_release) != expected_release
+    or not stat.S_ISDIR(release_metadata.st_mode)
+    or stat.S_ISLNK(release_metadata.st_mode)
+    or release_metadata.st_uid != 0
+    or release_metadata.st_gid not in {0, expected_gid}
+    or not stat.S_ISREG(manifest_metadata.st_mode)
+    or stat.S_ISLNK(manifest_metadata.st_mode)
+    or manifest_metadata.st_uid != 0
+    or manifest_metadata.st_gid != expected_gid
+):
+    fail()
+try:
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+    fd = os.open(manifest_path, flags)
+except OSError:
+    fail()
+try:
+    with os.fdopen(fd, 'rb') as stream:
+        fd = None
+        value = json.load(stream)
+finally:
+    if fd is not None:
+        os.close(fd)
+if (
+    not isinstance(value, dict)
+    or value.get('schemaVersion') != '1.0'
+    or value.get('commit') != expected_head
+):
+    fail()
+print(value['commit'])
+PY
+}
+
+reviewer_active_before="$(service_state is-active "$reviewer_service")"
+reviewer_enabled_before="$(service_state is-enabled "$reviewer_service")"
+runner_active_before="$(service_state is-active "$runner_service")"
+runner_enabled_before="$(service_state is-enabled "$runner_service")"
+listener_before="$(/bin/ss -H -ltn 2>/dev/null || true)"
+
+case "$stale_phase" in
+  apply)
+    [[ "$reviewer_active_before" == active ]] || {
+      echo 'PRODUCTION_STALE_APPLY_REVIEWER_STATE_UNSAFE' >&2
+      exit 86
+    }
+    [[ "$reviewer_enabled_before" == enabled || "$reviewer_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_APPLY_REVIEWER_ENABLEMENT_UNSAFE' >&2
+      exit 87
+    }
+    [[ "$runner_active_before" == active ]] || {
+      echo 'PRODUCTION_STALE_APPLY_RUNNER_STATE_UNSAFE' >&2
+      exit 88
+    }
+    [[ "$runner_enabled_before" == enabled || "$runner_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_APPLY_RUNNER_ENABLEMENT_UNSAFE' >&2
+      exit 89
+    }
+    [[ "$listener_before" == *"$expected_listener"* ]] || {
+      echo 'PRODUCTION_STALE_APPLY_LISTENER_MISSING' >&2
+      exit 90
+    }
+    secure_authorization_marker "$activation_marker" || {
+      echo 'PRODUCTION_STALE_APPLY_AUTHORIZATION_INVALID' >&2
+      exit 91
+    }
+    [[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || {
+      echo 'PRODUCTION_STALE_APPLY_REACTIVATION_MARKER_PRESENT' >&2
+      exit 92
+    }
+    secure_runner_evidence_file "$runner_registration_marker" || {
+      echo 'PRODUCTION_STALE_APPLY_REGISTRATION_EVIDENCE_INVALID' >&2
+      exit 93
+    }
+    secure_runner_evidence_file "$runner_credentials_marker" || {
+      echo 'PRODUCTION_STALE_APPLY_CREDENTIAL_EVIDENCE_INVALID' >&2
+      exit 94
+    }
+    apply_manifest_commit="$(validate_apply_release)" || {
+      echo 'PRODUCTION_STALE_APPLY_RELEASE_BINDING_INVALID' >&2
+      exit 95
+    }
+    current_state_hash="$({
+      /usr/bin/python3 - \
+        "$release_root/$stale_head" \
+        "$apply_manifest_commit" \
+        "$reviewer_active_before" \
+        "$reviewer_enabled_before" \
+        "$runner_active_before" \
+        "$runner_enabled_before" <<'PY'
+import hashlib
+import json
+import sys
+
+
+release_link, manifest_commit, reviewer_active, reviewer_enabled, runner_active, runner_enabled = sys.argv[1:]
+state = {
+    'activationMarker': 'authorized',
+    'listenerPresent': True,
+    'manifestCommit': manifest_commit,
+    'phase': 'apply',
+    'recoveryOffMarker': 'absent',
+    'registrationEvidence': True,
+    'releaseLink': release_link,
+    'reviewerActive': reviewer_active,
+    'reviewerEnabled': reviewer_enabled,
+    'runnerActive': runner_active,
+    'runnerEnabled': runner_enabled,
+}
+canonical = json.dumps(state, sort_keys=True, separators=(',', ':')).encode('utf-8')
+print(hashlib.sha256(canonical).hexdigest())
+PY
+    })" || {
+      echo 'PRODUCTION_STALE_APPLY_STATE_HASH_COMPUTE_FAILED' >&2
+      exit 96
+    }
+    [[ "$current_state_hash" == "$expected_state_hash" ]] || {
+      echo 'PRODUCTION_STALE_APPLY_STATE_HASH_MISMATCH' >&2
+      exit 97
+    }
+    ;;
+  activate)
+    [[ ! -e "$activation_marker" && ! -L "$activation_marker" ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_AUTHORIZATION_PRESENT' >&2
+      exit 66
+    }
+    [[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_REACTIVATION_MARKER_PRESENT' >&2
+      exit 67
+    }
+    [[ "$reviewer_active_before" == inactive || "$reviewer_active_before" == failed ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_STATE_UNSAFE' >&2
+      exit 68
+    }
+    [[ "$reviewer_enabled_before" == disabled || "$reviewer_enabled_before" == enabled || "$reviewer_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_ENABLEMENT_UNSAFE' >&2
+      exit 69
+    }
+    [[ "$listener_before" != *"$expected_listener"* ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_LISTENER_PRESENT' >&2
+      exit 70
+    }
+    [[ "$runner_active_before" == inactive || "$runner_active_before" == failed ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_RUNNER_STATE_UNSAFE' >&2
+      exit 71
+    }
+    [[ "$runner_enabled_before" == disabled || "$runner_enabled_before" == enabled || "$runner_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_RUNNER_ENABLEMENT_UNSAFE' >&2
+      exit 72
+    }
+    if [[ "$reviewer_enabled_before" == enabled || "$reviewer_enabled_before" == enabled-runtime ]]; then
+      /bin/systemctl stop "$reviewer_service"
+      /bin/systemctl disable "$reviewer_service"
+    fi
+    reviewer_active_after="$(service_state is-active "$reviewer_service")"
+    reviewer_enabled_after="$(service_state is-enabled "$reviewer_service")"
+    runner_active_after="$(service_state is-active "$runner_service")"
+    runner_enabled_after="$(service_state is-enabled "$runner_service")"
+    listener_after="$(/bin/ss -H -ltn 2>/dev/null || true)"
+    [[ "$reviewer_active_after" == inactive || "$reviewer_active_after" == failed ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_RESET_FAILED' >&2
+      exit 73
+    }
+    [[ "$reviewer_enabled_after" == disabled ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_DISABLE_FAILED' >&2
+      exit 74
+    }
+    [[ "$runner_active_after" == "$runner_active_before" && "$runner_enabled_after" == "$runner_enabled_before" ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_RUNNER_CHANGED' >&2
+      exit 75
+    }
+    [[ "$listener_after" != *"$expected_listener"* ]] || {
+      echo 'PRODUCTION_STALE_ACTIVATE_LISTENER_REMAINS' >&2
+      exit 76
+    }
+    ;;
+  runner-enable)
+    secure_authorization_marker "$activation_marker" || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_AUTHORIZATION_INVALID' >&2
+      exit 77
+    }
+    [[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_REACTIVATION_MARKER_PRESENT' >&2
+      exit 78
+    }
+    [[ "$reviewer_active_before" == active ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_REVIEWER_INACTIVE' >&2
+      exit 79
+    }
+    [[ "$reviewer_enabled_before" == enabled || "$reviewer_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_REVIEWER_NOT_ENABLED' >&2
+      exit 80
+    }
+    [[ "$listener_before" == *"$expected_listener"* ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_LISTENER_MISSING' >&2
+      exit 81
+    }
+    secure_nonsecret_file "$runner_registration_marker" || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_REGISTRATION_EVIDENCE_INVALID' >&2
+      exit 82
+    }
+    secure_nonsecret_file "$runner_credentials_marker" || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_CREDENTIAL_EVIDENCE_INVALID' >&2
+      exit 83
+    }
+    [[ "$runner_active_before" == active || "$runner_active_before" == inactive || "$runner_active_before" == failed ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_RUNNER_STATE_UNSAFE' >&2
+      exit 84
+    }
+    [[ "$runner_enabled_before" == disabled || "$runner_enabled_before" == enabled || "$runner_enabled_before" == enabled-runtime ]] || {
+      echo 'PRODUCTION_STALE_RUNNER_ENABLE_RUNNER_ENABLEMENT_UNSAFE' >&2
+      exit 85
+    }
+    ;;
+esac
+
+/usr/bin/python3 - "$record" "$archive_root" "$archive_name" "$stale_phase" "$stale_head" "$superseding_head" "$disposition" "$actual_completed_phase" "$expected_state_hash" "${current_state_hash:-}" <<'PY'
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+
+
+SCHEMA_VERSION = '{{ relay_production_operation_schema_version }}'
+(
+    record_path,
+    archive_root,
+    archive_name,
+    stale_phase,
+    stale_head,
+    superseding_head,
+    disposition,
+    actual_completed_phase,
+    expected_state_hash,
+    current_state_hash,
+) = sys.argv[1:]
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def require_secure_file(path, message):
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        fail(message)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+    ):
+        fail(message)
+
+
+def fsync_directory(path, message):
+    flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    try:
+        directory_fd = os.open(path, flags)
+    except OSError:
+        fail(message)
+    try:
+        os.fsync(directory_fd)
+    except OSError:
+        fail(message)
+    finally:
+        os.close(directory_fd)
+
+
+def read_record(path):
+    require_secure_file(path, 'PRODUCTION_STALE_DISPOSITION_UNSAFE_RECORD')
+    try:
+        with open(path, 'rb') as stream:
+            raw = stream.read()
+        value = json.loads(raw.decode('utf-8'))
+    except (OSError, UnicodeDecodeError, ValueError):
+        fail('PRODUCTION_STALE_DISPOSITION_UNSAFE_RECORD')
+    expected = {
+        'schemaVersion': SCHEMA_VERSION,
+        'state': 'RECOVERY_REQUIRED',
+        'phase': stale_phase,
+        'target_head': stale_head,
+    }
+    if value != expected:
+        fail('PRODUCTION_STALE_DISPOSITION_RECORD_MISMATCH')
+    return raw, value
+
+
+if not re.fullmatch(r'[0-9a-fA-F]{40}', stale_head):
+    fail('PRODUCTION_STALE_DISPOSITION_HEAD_INVALID')
+if not re.fullmatch(r'[0-9a-fA-F]{40}', superseding_head):
+    fail('PRODUCTION_STALE_DISPOSITION_SUPERSEDING_HEAD_INVALID')
+if stale_head == superseding_head:
+    fail('PRODUCTION_STALE_DISPOSITION_HEAD_NOT_STALE')
+if stale_phase not in {'apply', 'activate', 'runner-enable'}:
+    fail('PRODUCTION_STALE_DISPOSITION_PHASE_INVALID')
+if stale_phase == 'apply':
+    if actual_completed_phase != 'apply':
+        fail('PRODUCTION_STALE_APPLY_COMPLETED_PHASE_REQUIRED')
+    if not re.fullmatch(r'[0-9a-f]{64}', expected_state_hash):
+        fail('PRODUCTION_STALE_APPLY_STATE_HASH_INVALID')
+    if current_state_hash != expected_state_hash:
+        fail('PRODUCTION_STALE_APPLY_STATE_HASH_MISMATCH')
+else:
+    if actual_completed_phase or expected_state_hash or current_state_hash:
+        fail('PRODUCTION_STALE_DISPOSITION_APPLY_EVIDENCE_FLAG_PHASE_INVALID')
+
+raw, _ = read_record(record_path)
+try:
+    root_metadata = os.lstat(archive_root)
+except FileNotFoundError:
+    try:
+        os.mkdir(archive_root, 0o700)
+        os.chown(archive_root, 0, 0)
+    except OSError:
+        fail('PRODUCTION_STALE_DISPOSITION_ARCHIVE_ROOT_UNAVAILABLE')
+    archive_root_parent = os.path.dirname(os.path.abspath(archive_root))
+    fsync_directory(
+        archive_root_parent,
+        'PRODUCTION_STALE_DISPOSITION_ARCHIVE_ROOT_PARENT_UNAVAILABLE',
+    )
+else:
+    if (
+        not stat.S_ISDIR(root_metadata.st_mode)
+        or stat.S_ISLNK(root_metadata.st_mode)
+        or stat.S_IMODE(root_metadata.st_mode) != 0o700
+        or root_metadata.st_uid != 0
+        or root_metadata.st_gid != 0
+    ):
+        fail('PRODUCTION_STALE_DISPOSITION_ARCHIVE_ROOT_UNSAFE')
+
+archive_path = os.path.join(archive_root, archive_name)
+archive_value = {
+    'schemaVersion': SCHEMA_VERSION,
+    'state': 'SUPERSEDED',
+    'phase': stale_phase,
+    'target_head': stale_head,
+    'superseded_by_head': superseding_head,
+    'disposition': disposition,
+    'source_record_sha256': hashlib.sha256(raw).hexdigest(),
+}
+if stale_phase == 'apply':
+    archive_value.update(
+        {
+            'actual_completed_phase': actual_completed_phase,
+            'expected_state_hash': expected_state_hash,
+            'current_state_hash': current_state_hash,
+        }
+    )
+
+
+def verify_archive(path):
+    require_secure_file(path, 'PRODUCTION_STALE_DISPOSITION_ARCHIVE_UNSAFE')
+    try:
+        with open(path, encoding='utf-8') as stream:
+            value = json.load(stream)
+    except (OSError, UnicodeDecodeError, ValueError):
+        fail('PRODUCTION_STALE_DISPOSITION_ARCHIVE_UNSAFE')
+    if value != archive_value:
+        fail('PRODUCTION_STALE_DISPOSITION_ARCHIVE_CONFLICT')
+
+
+try:
+    archive_fd = os.open(
+        archive_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0),
+        0o600,
+    )
+except FileExistsError:
+    verify_archive(archive_path)
+else:
+    try:
+        os.fchown(archive_fd, 0, 0)
+        os.fchmod(archive_fd, 0o600)
+        payload = (json.dumps(archive_value, sort_keys=True) + '\n').encode('utf-8')
+        os.write(archive_fd, payload)
+        os.fsync(archive_fd)
+    finally:
+        os.close(archive_fd)
+    verify_archive(archive_path)
+
+# Publishing the archive directory entry is a separate durability boundary
+# from syncing the archive file contents.  This runs for both a new archive
+# and an identical idempotent retry before the active record can be retired.
+fsync_directory(
+    archive_root,
+    'PRODUCTION_STALE_DISPOSITION_ARCHIVE_DIRECTORY_UNAVAILABLE',
+)
+
+# Re-read the active record after the archive commit.  A cooperating writer
+# cannot pass the operation lock, and any unexpected byte change leaves both
+# the active record and the archive visible for owner review.
+raw_after, _ = read_record(record_path)
+if raw_after != raw:
+    fail('PRODUCTION_STALE_DISPOSITION_RECORD_CHANGED')
+record_parent = os.path.dirname(os.path.abspath(record_path))
+os.unlink(record_path)
+fsync_directory(
+    record_parent,
+    'PRODUCTION_STALE_DISPOSITION_RECORD_DIRECTORY_UNAVAILABLE',
+)
+print(
+    f'PRODUCTION_STALE_OPERATION_DISPOSITION={disposition};'
+    f'phase={stale_phase};stale_head={stale_head};'
+    f'superseding_head={superseding_head};archive={archive_path}'
+)
+PY

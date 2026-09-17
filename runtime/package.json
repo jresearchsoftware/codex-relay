@@ -1,0 +1,8 @@
+{
+  "name": "codex-relay-runtime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ../consumer/test-support/consumer-env.mjs --test"
+  }
+}

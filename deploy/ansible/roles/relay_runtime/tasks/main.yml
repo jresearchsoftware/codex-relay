@@ -1,0 +1,444 @@
+---
+- name: Create the dedicated Reviewer credential group
+  ansible.builtin.group:
+    name: '{{ relay_reviewer_group }}'
+    system: true
+
+- name: Create the dedicated Reviewer service identity
+  ansible.builtin.user:
+    name: '{{ relay_reviewer_user }}'
+    group: '{{ relay_reviewer_group }}'
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create namespaced relay directories
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ item.owner | default(relay_user) }}'
+    group: '{{ item.group | default(relay_group) }}'
+    mode: '{{ item.mode | default("0750") }}'
+  loop:
+    - {path: '{{ relay_install_root }}', owner: root, mode: '0755'}
+    - {path: '{{ relay_release_root }}', owner: root, mode: '0755'}
+    # Privileged Writer admission requires root ownership of every consumer
+    # parent. Service identities retain traversal to explicitly owned children.
+    - {path: '{{ relay_config_root }}', owner: root, group: root, mode: '0751'}
+    - {path: '{{ relay_config_root }}/certs', group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_reviewer_credential_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_writer_credential_root }}', owner: root, group: root, mode: '0700'}
+    - {path: '{{ relay_state_root }}', owner: root, mode: '0755'}
+    - {path: '{{ relay_state_root }}/reviewer', owner: '{{ relay_reviewer_user }}', group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_evidence_root }}', mode: '0751'}
+    - {path: '{{ relay_evidence_root }}/reviewer', owner: '{{ relay_reviewer_user }}', group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_log_root }}', owner: '{{ relay_user }}', group: '{{ relay_reviewer_group }}', mode: '0770'}
+    - {path: '{{ relay_runtime_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0770'}
+
+- name: Inspect the persisted Reviewer activation authorization marker
+  ansible.builtin.stat:
+    path: '{{ relay_reviewer_activation_marker }}'
+    follow: false
+  register: relay_reviewer_activation_marker_stat
+  changed_when: false
+
+- name: Inspect the existing Reviewer MCP unit before rendering changes
+  ansible.builtin.stat:
+    path: '{{ relay_reviewer_service_unit_path }}'
+    follow: false
+  register: relay_runtime_unit
+  changed_when: false
+
+- name: Validate the Reviewer service-state management contract
+  ansible.builtin.assert:
+    that:
+      - (relay_service_state_management | default('enforce') | lower) in ['enforce', 'preserve']
+      - not (
+          (relay_service_state_management | default('enforce') | lower) == 'enforce' and
+          relay_service_activation_authorized | bool
+        )
+    fail_msg: 'REVIEWER_SERVICE_STATE_MANAGEMENT_CONTRACT_INVALID'
+
+- name: Validate the persisted Reviewer activation marker when present
+  ansible.builtin.assert:
+    that:
+      - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.isreg
+      - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or not relay_reviewer_activation_marker_stat.stat.islnk | default(false)
+      - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.pw_name == 'root'
+      - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_stat.stat.mode == '0600'
+    fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+- name: Read the non-secret Reviewer activation authorization value
+  ansible.builtin.slurp:
+    src: '{{ relay_reviewer_activation_marker }}'
+  register: relay_reviewer_activation_marker_raw
+  when: relay_reviewer_activation_marker_stat.stat.exists | default(false)
+
+- name: Parse the Reviewer activation authorization value
+  ansible.builtin.set_fact:
+    relay_reviewer_activation_marker_content: '{{ relay_reviewer_activation_marker_raw.content | b64decode }}'
+  when: relay_reviewer_activation_marker_stat.stat.exists | default(false)
+
+- name: Require the durable Reviewer activation marker value
+  ansible.builtin.assert:
+    that:
+      - not relay_reviewer_activation_marker_stat.stat.exists | default(false) or relay_reviewer_activation_marker_content | default('') | trim == 'authorized'
+    fail_msg: 'REVIEWER_ACTIVATION_MARKER_INVALID'
+
+- name: Inspect the explicit Reviewer reactivation requirement marker
+  ansible.builtin.stat:
+    path: '{{ relay_reviewer_recovery_off_marker }}'
+    follow: false
+  register: relay_reviewer_recovery_off_marker_stat
+  changed_when: false
+
+- name: Refuse an unsafe explicit Reviewer reactivation requirement marker
+  ansible.builtin.assert:
+    that:
+      - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.isreg
+      - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or not relay_reviewer_recovery_off_marker_stat.stat.islnk | default(false)
+      - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.pw_name == 'root'
+      - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_stat.stat.mode == '0600'
+    fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+- name: Read the explicit Reviewer reactivation requirement value
+  ansible.builtin.slurp:
+    src: '{{ relay_reviewer_recovery_off_marker }}'
+  register: relay_reviewer_recovery_off_marker_raw
+  when: relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)
+
+- name: Require the explicit Reviewer reactivation requirement value
+  ansible.builtin.assert:
+    that:
+      - not relay_reviewer_recovery_off_marker_stat.stat.exists | default(false) or relay_reviewer_recovery_off_marker_raw.content | b64decode | trim == 'requires-activation'
+    fail_msg: 'REVIEWER_REACTIVATION_REQUIREMENT_INVALID'
+
+- name: Refuse a previously authorized Reviewer whose unit disappeared
+  ansible.builtin.assert:
+    that:
+      - not (
+          (relay_service_state_management | default('enforce') | lower) == 'preserve' and
+          relay_reviewer_activation_marker_stat.stat.exists | default(false) and
+          not relay_runtime_unit.stat.exists | default(false)
+        )
+    fail_msg: 'REVIEWER_SERVICE_STATE_AMBIGUOUS'
+
+- name: Inspect the existing Reviewer active state for preserve mode
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - '{{ relay_reviewer_service_name }}'
+  register: relay_reviewer_preserved_active_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - (relay_service_state_management | default('enforce') | lower) == 'preserve'
+    - relay_runtime_unit.stat.exists | default(false)
+
+- name: Inspect the existing Reviewer enabled state for preserve mode
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - '{{ relay_reviewer_service_name }}'
+  register: relay_reviewer_preserved_enabled_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - (relay_service_state_management | default('enforce') | lower) == 'preserve'
+    - relay_runtime_unit.stat.exists | default(false)
+
+- name: Require a safe persisted Reviewer lifecycle state in preserve mode
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_service_state_management | default('enforce') | lower) != 'preserve' or
+        not relay_runtime_unit.stat.exists | default(false) or
+        (
+          (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+          relay_reviewer_preserved_active_state.stdout | trim == 'active' and
+          relay_reviewer_preserved_enabled_state.stdout | trim in ['enabled', 'enabled-runtime']
+        ) or
+        (
+          not (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+          relay_reviewer_preserved_active_state.stdout | trim in ['inactive', 'failed'] and
+          relay_reviewer_preserved_enabled_state.stdout | trim == 'disabled'
+        ) or
+        (
+          (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+          relay_reviewer_preserved_active_state.stdout | trim in ['inactive', 'failed', 'activating'] and
+          relay_reviewer_preserved_enabled_state.stdout | trim in ['enabled', 'enabled-runtime']
+        ) or
+        (
+          (relay_reviewer_activation_marker_stat.stat.exists | default(false)) and
+          (relay_reviewer_recovery_off_marker_stat.stat.exists | default(false)) and
+          relay_reviewer_preserved_active_state.stdout | trim in ['inactive', 'failed'] and
+          relay_reviewer_preserved_enabled_state.stdout | trim == 'disabled'
+        )
+    fail_msg: 'REVIEWER_SERVICE_STATE_AMBIGUOUS'
+
+- name: Record the preserved Reviewer lifecycle state
+  ansible.builtin.debug:
+    msg: >-
+      REVIEWER_SERVICE_STATE_PRESERVED=management={{ relay_service_state_management | default('enforce') | lower }};
+      activation_marker={{ relay_reviewer_activation_marker_stat.stat.exists | default(false) }};
+      active={{ relay_reviewer_preserved_active_state.stdout | default('unit-absent') | trim }};
+      enabled={{ relay_reviewer_preserved_enabled_state.stdout | default('unit-absent') | trim }}
+  when: (relay_service_state_management | default('enforce') | lower) == 'preserve'
+
+- name: Inspect the existing Reviewer client CA bundle
+  ansible.builtin.stat:
+    path: '{{ relay_tls_client_ca_file }}'
+    follow: false
+  register: relay_reviewer_client_ca
+  changed_when: false
+
+- name: Enforce Reviewer-readable client CA bundle permissions
+  ansible.builtin.file:
+    path: '{{ relay_tls_client_ca_file }}'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0640'
+  when:
+    - relay_reviewer_client_ca.stat.exists | default(false)
+    - relay_reviewer_client_ca.stat.isreg | default(false)
+
+- name: Install Reviewer credential readiness verifier
+  ansible.builtin.template:
+    src: relay-reviewer-credential-check.j2
+    dest: '{{ relay_install_root }}/relay-reviewer-credential-check'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the production operation-state verifier
+  ansible.builtin.template:
+    src: relay-production-operation-state.j2
+    dest: '{{ relay_production_operation_state_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the explicit stale-operation disposition helper
+  ansible.builtin.include_tasks: production-operation-stale-disposition.yml
+  when: relay_deployment_profile == 'production'
+
+- name: Install the production Reviewer service start guard
+  ansible.builtin.template:
+    src: relay-reviewer-start-guard.j2
+    dest: '{{ relay_reviewer_start_guard_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the explicit Reviewer activation transition helper
+  ansible.builtin.template:
+    src: relay-reviewer-activation-start.j2
+    dest: '{{ relay_reviewer_activation_start_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the explicit runner-enable transition helper
+  ansible.builtin.template:
+    src: relay-runner-enable-start.j2
+    dest: '{{ relay_runner_enable_start_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the operation-locked Reviewer restart helper
+  ansible.builtin.template:
+    src: relay-reviewer-operation-restart.j2
+    dest: '{{ relay_reviewer_operation_restart_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_deployment_profile == 'production'
+
+- name: Install bounded read-only GitHub App qualification implementation
+  ansible.builtin.copy:
+    src: relay-app-qualification.py
+    dest: '{{ relay_install_root }}/relay-app-qualification.py'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Reviewer read-only GitHub App qualification wrapper
+  ansible.builtin.template:
+    src: relay-reviewer-app-qualification.j2
+    dest: '{{ relay_install_root }}/relay-reviewer-app-qualification'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install source-controlled non-secret GitHub App identity contracts
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: root
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {src: relay-reviewer-github-app.env.j2, dest: '{{ relay_reviewer_credential_env_file }}', group: '{{ relay_reviewer_group }}', mode: '0640'}
+    - {src: relay-writer-github-app.env.j2, dest: '{{ relay_writer_credential_env_file }}', group: root, mode: '0600'}
+
+- name: Install owner-local credential provisioning helper
+  ansible.builtin.template:
+    src: relay-credential-provision.j2
+    dest: '{{ relay_install_root }}/relay-credential-provision'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the previously authorized Reviewer recovery helper
+  ansible.builtin.template:
+    src: relay-reviewer-recovery.j2
+    dest: '{{ relay_install_root }}/relay-reviewer-recovery'
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the Reviewer failure runner-stop helper
+  ansible.builtin.template:
+    src: relay-reviewer-stop-runner.j2
+    dest: '{{ relay_reviewer_stop_runner_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the read-only Reviewer readiness gate for the production runner
+  ansible.builtin.template:
+    src: relay-reviewer-readiness.j2
+    dest: '{{ relay_reviewer_readiness_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+  when: relay_deployment_profile == 'production'
+
+- name: Install the Reviewer recovery service unit
+  ansible.builtin.template:
+    src: reviewer-mcp-recovery.service.j2
+    dest: '/etc/systemd/system/{{ relay_reviewer_recovery_service_name }}'
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Daemon reload
+  when: relay_deployment_profile == 'production'
+
+- name: Install the Reviewer recovery timer unit
+  ansible.builtin.template:
+    src: reviewer-mcp-recovery.timer.j2
+    dest: '/etc/systemd/system/{{ relay_reviewer_recovery_timer_name }}'
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Daemon reload
+  when: relay_deployment_profile == 'production'
+
+- name: Keep the Reviewer recovery timer available without activating Reviewer
+  ansible.builtin.systemd:
+    name: '{{ relay_reviewer_recovery_timer_name }}'
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - relay_deployment_profile == 'production'
+    - not ansible_check_mode | bool
+    - not relay_production_operation_recovery_required | default(false) | bool
+
+- name: Install secret-free relay environment contract
+  ansible.builtin.template:
+    src: relay.env.j2
+    dest: '{{ relay_config_root }}/relay.env'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0640'
+  notify: Try-restart Reviewer after configuration transition
+
+- name: Install reviewer configuration contract
+  ansible.builtin.template:
+    src: reviewer-mcp.json.j2
+    dest: '{{ relay_config_root }}/reviewer-mcp.json'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0640'
+  notify: Try-restart Reviewer after configuration transition
+
+- name: Install Reviewer MCP service unit
+  ansible.builtin.template:
+    src: reviewer-mcp.service.j2
+    dest: '{{ relay_reviewer_service_unit_path }}'
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Daemon reload
+    - Try-restart Reviewer after configuration transition
+
+- name: Inspect superseded dedicated mTLS proxy unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/relay-openai-mtls-proxy.service
+  register: relay_superseded_proxy_unit
+  changed_when: false
+
+- name: Stop and disable superseded dedicated mTLS proxy unit before removal
+  ansible.builtin.systemd:
+    name: relay-openai-mtls-proxy.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: relay_superseded_proxy_unit.stat.exists | default(false)
+
+- name: Remove superseded dedicated mTLS proxy unit after it is stopped
+  ansible.builtin.file:
+    path: /etc/systemd/system/relay-openai-mtls-proxy.service
+    state: absent
+  notify: Daemon reload
+
+- name: Validate planned relay units and state on a fresh host in check-mode
+  ansible.builtin.assert:
+    that:
+      - not relay_service_effective_enabled | bool
+    fail_msg: 'Fresh-host check-mode must keep Reviewer stopped and disabled until the credential gate authorizes activation'
+  when:
+    - ansible_check_mode | bool
+    - not relay_runtime_unit.stat.exists | default(false)
+
+- name: Record planned relay service state on a fresh host in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      RUNTIME_CHECK_MODE_PLANNED_STATE=units_will_be_created;
+      service_requested={{ relay_service_enabled | bool }};
+      activation_authorized={{ relay_service_activation_authorized | bool }};
+      service_enabled={{ relay_service_effective_enabled | bool }}
+  when:
+    - ansible_check_mode | bool
+    - not relay_runtime_unit.stat.exists | default(false)
+
+- name: Enforce relay service state when all units exist or apply creates them
+  ansible.builtin.systemd:
+    name: '{{ relay_reviewer_service_name }}'
+    enabled: '{{ relay_service_effective_enabled | bool }}'
+    state: '{{ "started" if relay_service_effective_enabled | bool else "stopped" }}'
+    daemon_reload: true
+  when: >-
+    (relay_service_state_management | default('enforce') | lower) == 'enforce' and
+    (not ansible_check_mode | bool or relay_runtime_unit.stat.exists | default(false))
+
+- name: Record retention and health contract
+  ansible.builtin.template:
+    src: retention-policy.yaml.j2
+    dest: '{{ relay_config_root }}/retention-policy.yaml'
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0640'

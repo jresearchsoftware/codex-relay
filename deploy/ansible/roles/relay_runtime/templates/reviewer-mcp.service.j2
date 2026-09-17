@@ -1,0 +1,46 @@
+[Unit]
+Description=Docs evolution Reviewer MCP
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ relay_install_root }}/current
+{% if relay_deployment_profile == 'production' %}
+StartLimitIntervalSec=300
+StartLimitBurst=30
+{% endif %}
+
+[Service]
+Type=simple
+User={{ relay_reviewer_user }}
+Group={{ relay_reviewer_proxy_group }}
+SupplementaryGroups={{ relay_reviewer_group }}
+UMask=0007
+EnvironmentFile={{ relay_config_root }}/relay.env
+EnvironmentFile=-{{ relay_reviewer_credential_env_file }}
+{% if relay_deployment_profile == 'production' %}
+# The guard is a fixed root-owned preflight.  The leading + is the only
+# privilege transition: the Reviewer main process remains under its dedicated
+# non-root identity and the root-only operation/activation evidence stays 0600.
+ExecStartPre=+{{ relay_reviewer_start_guard_path }}
+{% endif %}
+ExecStartPre={{ relay_install_root }}/relay-reviewer-credential-check
+ExecStart={{ relay_reviewer_exec_start }}
+{% if relay_deployment_profile == 'production' %}
+# PartOf propagates explicit Reviewer stop/restart jobs. ExecStopPost invokes a
+# failure-specific helper; its SERVICE_RESULT gate leaves planned stop/restart
+# to PartOf and stops the runner only after an unexpected Reviewer failure,
+# without adding a runner-to-Reviewer start dependency.
+ExecStopPost=+{{ relay_reviewer_stop_runner_path }}
+{% endif %}
+Restart=on-failure
+{% if relay_deployment_profile == 'production' %}
+RestartSec=5s
+{% endif %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths={{ relay_reviewer_credential_root }}
+ReadWritePaths={{ relay_state_root }}/reviewer {{ relay_evidence_root }}/reviewer {{ relay_log_root }} {{ relay_runtime_root }}
+
+[Install]
+WantedBy=multi-user.target

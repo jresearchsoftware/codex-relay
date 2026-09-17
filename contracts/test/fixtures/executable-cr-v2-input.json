@@ -1,0 +1,66 @@
+{
+  "repository": "example-org/sample-project",
+  "pr_number": 25,
+  "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "action": "REQUEST_CHANGES",
+  "change_request": {
+    "change_request_id": "CR-24-serialization",
+    "remediation_thread_title": "Task 24 — Step 2 — Reviewer-owned CR serialization",
+    "step": 2,
+    "codex_model": "future-model",
+    "codex_effort": "max",
+    "findings": [
+      {
+        "id": "CR12-F1",
+        "severity": "major",
+        "problem": "A valid CR required a manual validation heading rename.",
+        "impact": "Synthetic case A stopped with CURRENT_VALIDATION_MISSING.",
+        "remediation": "Reviewer must serialize structured validation before publication.",
+        "acceptance_criteria": [
+          "The published form is admitted without heading repair."
+        ],
+        "evidence": [
+          "Synthetic case A: parser-incompatible validation heading."
+        ]
+      },
+      {
+        "id": "serialization_gap_2",
+        "severity": "major",
+        "problem": "Repeated compatibility prose was reconstructed as duplicate executable data.",
+        "impact": "Synthetic case B stopped with CONTRACT_DUPLICATE_VALUE.",
+        "remediation": "Keep structured executable values separate from repeated prose.",
+        "acceptance_criteria": [
+          "Stable finding IDs and supplied Step round-trip unchanged."
+        ],
+        "evidence": [
+          "Synthetic case B: duplicate compatibility data during admission."
+        ]
+      }
+    ],
+    "starting_state_requirements": [],
+    "required_validation": [
+      "routing-tests",
+      "remediation-tests",
+      "rust-reviewer-tests-format",
+      "diff-check",
+      "secret-scan",
+      "github-test-validate"
+    ],
+    "completion_requirements": [
+      "Commit useful changes and stop for fresh independent exact-head review."
+    ],
+    "protected_boundaries": [
+      "No production mutation, deployment, canary, merge or Issue closure.",
+      "Preserve Reviewer identity and exact-head publication."
+    ],
+    "success_token": "TASK_24_CR_SERIALIZATION_IMPLEMENTED_PENDING_REVIEW",
+    "success_outcome": "Implementation is complete and awaits independent review.",
+    "blocked_token": "TASK_24_CR_SERIALIZATION_BLOCKED",
+    "blocked_outcome": "Preserve useful commits and explain the concrete blocker.",
+    "owner_policy_reconciliation": [
+      "No allowed_paths authority. Subagents: Off.",
+      "No allowed_paths authority. Subagents: Off.",
+      "Model and effort pass through; Subagents permission is separate."
+    ]
+  }
+}

@@ -1,0 +1,303 @@
+---
+- name: Require the pinned official Codex CLI contract
+  ansible.builtin.assert:
+    that:
+      - relay_codex_cli_version == '0.154.0'
+      - relay_codex_installer_url == 'https://chatgpt.com/codex/install.sh'
+      - relay_codex_user != 'root'
+      - relay_codex_group == relay_codex_user
+      - relay_codex_launcher_path == (relay_install_root ~ '/relay-codex')
+      - relay_codex_binary_path == (relay_install_root ~ '/codex-runtime/bin/codex')
+      - relay_codex_access_token_file == (relay_config_root ~ '/codex-credentials/access-token')
+      - relay_codex_work_group not in ['root', relay_codex_group]
+    fail_msg: 'CODEX_RUNTIME_PIN_OR_BOUNDARY_INVALID'
+
+- name: Create the dedicated Codex primary group
+  ansible.builtin.group:
+    name: '{{ relay_codex_group }}'
+    system: true
+  register: relay_codex_group_reconciliation
+
+- name: Create the dedicated Codex work group
+  ansible.builtin.group:
+    name: '{{ relay_codex_work_group }}'
+    system: true
+  register: relay_codex_work_group_reconciliation
+
+- name: Create the non-login Codex execution identity
+  ansible.builtin.user:
+    name: '{{ relay_codex_user }}'
+    group: '{{ relay_codex_group }}'
+    system: true
+    create_home: false
+    home: '{{ relay_codex_home }}'
+    shell: /usr/sbin/nologin
+  register: relay_codex_user_reconciliation
+  when:
+    - not ansible_check_mode | bool or not relay_codex_group_reconciliation.changed | bool
+
+- name: Inspect the relay runner identity without mutating the host
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_runner_user }}'
+    fail_key: false
+  register: relay_codex_runner_user_state
+  changed_when: false
+
+- name: Derive materialized and planned Codex runtime prerequisites
+  ansible.builtin.set_fact:
+    relay_codex_primary_group_planned: '{{ relay_codex_group_reconciliation.changed | default(false) | bool }}'
+    relay_codex_work_group_planned: '{{ relay_codex_work_group_reconciliation.changed | default(false) | bool }}'
+    relay_codex_user_skipped: '{{ relay_codex_user_reconciliation.skipped | default(false) | bool }}'
+    relay_codex_user_planned: >-
+      {{ (relay_codex_group_reconciliation.changed | default(false) | bool)
+         or (relay_codex_user_reconciliation.changed | default(false) | bool)
+         or (relay_codex_user_reconciliation.skipped | default(false) | bool) }}
+    relay_codex_user_materialized: >-
+      {{ not ((relay_codex_group_reconciliation.changed | default(false) | bool)
+              or (relay_codex_user_reconciliation.changed | default(false) | bool)
+              or (relay_codex_user_reconciliation.skipped | default(false) | bool)) }}
+    relay_codex_runner_user_materialized: >-
+      {{ (((relay_codex_runner_user_state.ansible_facts.getent_passwd | default({})).get(relay_runner_user) | default([], true)) | length) > 0 }}
+
+- name: Record the dependency-aware Codex runtime plan in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      CODEX_RUNTIME_CHECK_MODE_PLAN=official-standalone;
+      primary_group={{ relay_codex_group }};
+      work_group={{ relay_codex_work_group }};
+      primary_group_planned={{ relay_codex_primary_group_planned | bool }};
+      work_group_planned={{ relay_codex_work_group_planned | bool }};
+      codex_user_skipped={{ relay_codex_user_skipped | bool }};
+      codex_user_planned={{ relay_codex_user_planned | bool }};
+      codex_user_materialized={{ relay_codex_user_materialized | bool }};
+      runner_user_materialized={{ relay_codex_runner_user_materialized | bool }};
+      dependent_memberships={{ 'deferred_until_dependencies_exist' if (relay_codex_primary_group_planned or relay_codex_work_group_planned or relay_codex_user_planned or not relay_codex_runner_user_materialized) else 'planned_against_existing_dependencies' }};
+      mutation=none
+  when: ansible_check_mode | bool
+
+- name: Add the Codex execution identity to the shared Codex work group
+  ansible.builtin.user:
+    name: '{{ relay_codex_user }}'
+    groups:
+      - '{{ relay_codex_work_group }}'
+    append: true
+  register: relay_codex_user_work_group_membership
+  when:
+    - not ansible_check_mode | bool or not relay_codex_primary_group_planned | bool
+    - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
+    - not ansible_check_mode | bool or not relay_codex_user_planned | bool
+
+- name: Add the unprivileged relay runner to the shared Codex work group
+  ansible.builtin.user:
+    name: '{{ relay_runner_user }}'
+    groups:
+      - '{{ relay_codex_work_group }}'
+    append: true
+  register: relay_runner_codex_group_membership
+  when:
+    - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
+    - not ansible_check_mode | bool or relay_codex_runner_user_materialized | bool
+
+- name: Inspect the runner service before adopting the shared Codex work group
+  ansible.builtin.service_facts:
+
+- name: Restart the active relay runner through the governed service contract
+  ansible.builtin.systemd:
+    name: relay-runner.service
+    state: restarted
+    daemon_reload: false
+  when:
+    - not ansible_check_mode | bool
+    - not relay_production_defer_lifecycle | default(false) | bool
+    - relay_runner_codex_group_membership.changed | bool
+    - ansible_facts.services['relay-runner.service'] is defined
+    - ansible_facts.services['relay-runner.service'].state == 'running'
+
+- name: Create the fixed Codex runtime and credential namespaces
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: '{{ relay_codex_runtime_root }}', owner: root, group: root, mode: '0755'}
+    - {path: '{{ relay_codex_install_dir }}', owner: root, group: root, mode: '0755'}
+    - {path: '{{ relay_codex_home }}', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}', mode: '0700'}
+    - {path: '{{ relay_codex_access_token_root }}', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}', mode: '0700'}
+    - {path: '{{ relay_dispatch_work_root }}', owner: '{{ relay_dispatch_user }}', group: '{{ relay_codex_work_group }}', mode: '2770'}
+    - {path: '{{ relay_runner_package_cache_root }}', owner: root, group: root, mode: '0755'}
+  when: not ansible_check_mode | bool
+
+- name: Record the secret-free Codex runtime plan in check-mode
+  ansible.builtin.debug:
+    msg: 'CODEX_RUNTIME_CHECK_MODE_PLAN=official-standalone; version={{ relay_codex_cli_version }}; binary={{ relay_codex_binary_path }}; launcher={{ relay_codex_launcher_path }}; token_destination={{ relay_codex_access_token_file }}; token_value=not-read'
+  when: ansible_check_mode | bool
+
+- name: Inspect the existing Codex binary before installation
+  ansible.builtin.stat:
+    path: '{{ relay_codex_binary_path }}'
+    follow: false
+  register: relay_codex_existing_binary
+  changed_when: false
+
+- name: Inspect the existing Codex CLI version before installation
+  ansible.builtin.command:
+    argv: ['{{ relay_codex_binary_path }}', '--version']
+  register: relay_codex_existing_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode | bool
+    - relay_codex_existing_binary.stat.exists
+
+- name: Determine whether the pinned Codex CLI needs installation
+  ansible.builtin.set_fact:
+    relay_codex_install_needed: >-
+      {{
+        not relay_codex_existing_binary.stat.exists
+        or (relay_codex_existing_version.rc | default(1)) != 0
+        or not (((relay_codex_existing_version.stdout | default('')) ~
+        (relay_codex_existing_version.stderr | default(''))) is search(relay_codex_cli_version))
+      }}
+  when: not ansible_check_mode | bool
+
+- name: Download the official Codex installer
+  ansible.builtin.get_url:
+    url: '{{ relay_codex_installer_url }}'
+    dest: '{{ relay_codex_installer_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - not ansible_check_mode | bool
+    - relay_codex_install_needed | bool
+
+- name: Install the pinned official Codex CLI into the relay namespace
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - '{{ relay_codex_installer_path }}'
+      - --release
+      - '{{ relay_codex_cli_version }}'
+  environment:
+    CODEX_HOME: '{{ relay_codex_home }}'
+    CODEX_INSTALL_DIR: '{{ relay_codex_install_dir }}'
+    CODEX_NON_INTERACTIVE: '1'
+  register: relay_codex_install
+  changed_when: relay_codex_install.stdout is search('Codex CLI')
+  when:
+    - not ansible_check_mode | bool
+    - relay_codex_install_needed | bool
+
+- name: Reconcile the Codex temporary roots after runtime installation
+  ansible.builtin.include_tasks: runtime-namespace.yml
+
+- name: Inspect the installed Codex binary without authentication
+  ansible.builtin.stat:
+    path: '{{ relay_codex_binary_path }}'
+    follow: false
+  register: relay_codex_binary
+  changed_when: false
+
+- name: Verify the pinned Codex CLI version
+  ansible.builtin.command:
+    argv: ['{{ relay_codex_binary_path }}', '--version']
+  register: relay_codex_version
+  changed_when: false
+  check_mode: false
+  when: relay_codex_binary.stat.exists
+
+- name: Require the pinned Codex CLI version after installation
+  ansible.builtin.assert:
+    that:
+      - relay_codex_binary.stat.exists or ansible_check_mode | bool
+      - ansible_check_mode | bool or relay_codex_binary.stat.islnk | default(false)
+      - ansible_check_mode | bool or relay_codex_binary.stat.lnk_source.startswith(relay_codex_home ~ '/packages/standalone/releases/' ~ relay_codex_cli_version ~ '-')
+      - ansible_check_mode | bool or relay_codex_version.rc == 0
+      - ansible_check_mode | bool or (relay_codex_version.stdout ~ relay_codex_version.stderr) is search(relay_codex_cli_version)
+    fail_msg: 'CODEX_RUNTIME_VERSION_MISMATCH'
+
+- name: Reconcile installed Codex package traversal for its execution identity
+  ansible.builtin.include_tasks: package-access.yml
+  when: not ansible_check_mode | bool
+
+- name: Install the fixed Codex execution launcher
+  ansible.builtin.include_tasks: launcher.yml
+
+- name: Verify managed Rust tools through the Codex Unix identity without credentials
+  ansible.builtin.command:
+    argv: [/usr/sbin/runuser, -u, '{{ relay_codex_user }}', --, '{{ relay_rust_toolchain_root }}/bin/{{ item }}', --version]
+  loop: [cargo, rustc, rustfmt]
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Install the dedicated Codex sudoers boundary
+  ansible.builtin.template:
+    src: relay-codex.sudoers.j2
+    dest: '{{ relay_codex_sudoers_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+
+- name: Validate the installed Codex sudoers boundary
+  ansible.builtin.command:
+    argv: ['/usr/sbin/visudo', '-cf', '{{ relay_codex_sudoers_file }}']
+  register: relay_codex_sudoers_check
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode | bool
+
+- name: Provision a supplied Codex access token into the protected destination
+  ansible.builtin.copy:
+    content: "{{ lookup('env', 'CODEX_ACCESS_TOKEN') }}\n"
+    dest: '{{ relay_codex_access_token_file }}'
+    owner: '{{ relay_codex_user }}'
+    group: '{{ relay_codex_group }}'
+    mode: '0600'
+  no_log: true
+  when:
+    - not ansible_check_mode | bool
+    - lookup('env', 'CODEX_ACCESS_TOKEN') | length > 0
+
+- name: Inspect the Codex token destination without reading its contents
+  ansible.builtin.stat:
+    path: '{{ relay_codex_access_token_file }}'
+    follow: false
+  register: relay_codex_access_token
+  changed_when: false
+
+- name: Require a protected non-empty token destination for authenticated execution
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.exists
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.isreg
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.pw_name == relay_codex_user
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.gr_name == relay_codex_group
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.mode == '0600'
+      - ansible_check_mode | bool or not relay_codex_token_required | bool or relay_codex_access_token.stat.size > 0
+    fail_msg: 'CODEX_ACCESS_TOKEN_DESTINATION_NOT_PROVISIONED_OR_UNSAFE'
+
+- name: Probe token visibility as the unprivileged relay runner without reading it
+  ansible.builtin.command:
+    argv: ['/usr/sbin/runuser', '-u', '{{ relay_runner_user }}', '--', '/usr/bin/test', '-r', '{{ relay_codex_access_token_file }}']
+  become: true
+  register: relay_codex_runner_token_read_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: not ansible_check_mode | bool
+
+- name: Require the runner to be unable to read the Codex access token
+  ansible.builtin.assert:
+    that:
+      - relay_codex_runner_token_read_probe.rc != 0
+    fail_msg: 'CODEX_ACCESS_TOKEN_VISIBLE_TO_RELAY_RUNNER'
+  when: not ansible_check_mode | bool
+
+- name: Record Codex runtime reconciliation success without secret material
+  ansible.builtin.debug:
+    msg: 'CODEX_RUNTIME_PASS=version={{ relay_codex_cli_version }}; binary={{ relay_codex_binary_path }}; launcher={{ relay_codex_launcher_path }}; token_owner={{ relay_codex_user }}; token_mode=0600; token_contents=not-read'
+  when: not ansible_check_mode | bool

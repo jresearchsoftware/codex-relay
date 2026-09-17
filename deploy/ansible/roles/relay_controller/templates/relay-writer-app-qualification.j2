@@ -1,0 +1,16 @@
+#!/bin/sh
+# managed-by: codex-relay
+# Root-only Writer read-only GitHub App qualification. Never print secrets.
+set -eu
+test "$(id -u)" = 0 || { echo 'APP_QUALIFICATION_WRONG_BOUNDARY'; exit 51; }
+set -a
+. '{{ relay_writer_credential_env_file }}'
+set +a
+export RELAY_APP_ROLE=writer
+export RELAY_EXPECTED_APP_SLUG='{{ relay_writer_app_slug }}'
+export RELAY_EXPECTED_ACTOR='{{ relay_writer_expected_actor }}'
+export RELAY_EXPECTED_REPOSITORY='{{ relay_github_repository }}'
+export RELAY_EXPECTED_WRITE_PERMISSION_NAMES='contents,issues,pull_requests,workflows'
+export RELAY_TOKEN_PERMISSIONS='metadata:read'
+export RELAY_EXPECTED_KEY_MODE=0600
+exec /usr/bin/python3 '{{ relay_install_root }}/relay-app-qualification.py'

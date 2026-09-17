@@ -1,0 +1,4 @@
+[Service]
+# sudo inherits the runner mount namespace. This exception permits only the
+# fixed root helper's staging; root:root 0700 still denies runner Unix access.
+ReadWritePaths={{ relay_production_local_apply_stage_root }}

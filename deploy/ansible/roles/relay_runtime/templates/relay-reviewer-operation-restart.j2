@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+reviewer_service='{{ relay_reviewer_service_name }}'
+runner_service='{{ relay_runner_service_name }}'
+activation_marker='{{ relay_reviewer_activation_marker }}'
+recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
+operation_state='{{ relay_production_operation_state_path }}'
+operation_lock='{{ relay_production_operation_lock_path }}'
+
+[[ -f "$activation_marker" && ! -L "$activation_marker" ]] || exit 0
+read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marker")
+[[ "$marker_owner" == root && "$marker_mode" == 600 ]]
+[[ "$(<"$activation_marker")" == authorized ]] || exit 0
+[[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || exit 0
+
+exec 9>"$operation_lock"
+/usr/bin/flock -n 9 || {
+  echo 'REVIEWER_OPERATION_RESTART_LOCK_BUSY' >&2
+  exit 44
+}
+
+state_rc=0
+state_output="$($operation_state 2>&1)" || state_rc=$?
+if [[ "$state_rc" -ne 10 || "$state_output" != *'phase=apply'* ]]; then
+  echo 'REVIEWER_OPERATION_RESTART_STATE_INVALID' >&2
+  exit 45
+fi
+
+# PartOf propagates this restart to the production runner. Preserve an already
+# active runner inside the same live-owner lock; an inactive runner stays off.
+runner_was_active=false
+if /bin/systemctl is-active "$runner_service" >/dev/null 2>&1; then runner_was_active=true; fi
+/bin/systemctl try-restart "$reviewer_service"
+if [[ "$runner_was_active" == true ]]; then
+  /bin/systemctl start "$runner_service"
+fi

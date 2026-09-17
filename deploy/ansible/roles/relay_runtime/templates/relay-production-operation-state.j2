@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+record='{{ relay_production_operation_record_path }}'
+
+if [[ -L "$record" ]]; then
+  echo 'UNSAFE production operation record is a symlink' >&2
+  exit 90
+fi
+if [[ ! -e "$record" ]]; then
+  printf '%s\n' 'STABLE'
+  exit 0
+fi
+if [[ ! -f "$record" ]]; then
+  echo 'UNSAFE production operation record is not a regular file' >&2
+  exit 90
+fi
+
+read -r owner group mode < <(/usr/bin/stat -c '%U %G %a' "$record") || {
+  echo 'UNSAFE production operation record metadata is unreadable' >&2
+  exit 90
+}
+if [[ "$owner" != root || "$group" != root || "$mode" != 600 ]]; then
+  echo 'UNSAFE production operation record ownership or mode is invalid' >&2
+  exit 90
+fi
+
+/usr/bin/python3 - "$record" <<'PY'
+import json
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding='utf-8') as stream:
+        record = json.load(stream)
+except Exception:
+    print('UNSAFE production operation record is malformed', file=sys.stderr)
+    raise SystemExit(90)
+
+if not isinstance(record, dict) or set(record) != {'schemaVersion', 'state', 'phase', 'target_head'}:
+    print('UNSAFE production operation record schema is invalid', file=sys.stderr)
+    raise SystemExit(90)
+if record.get('schemaVersion') != '{{ relay_production_operation_schema_version }}':
+    print('UNSAFE production operation record version is invalid', file=sys.stderr)
+    raise SystemExit(90)
+if record.get('state') != 'RECOVERY_REQUIRED':
+    print('UNSAFE production operation record state is invalid', file=sys.stderr)
+    raise SystemExit(90)
+if record.get('phase') not in {'apply', 'activate', 'runner-enable'}:
+    print('UNSAFE production operation record phase is invalid', file=sys.stderr)
+    raise SystemExit(90)
+if not isinstance(record.get('target_head'), str) or not re.fullmatch(r'[0-9a-fA-F]{40}', record['target_head']):
+    print('UNSAFE production operation record head is invalid', file=sys.stderr)
+    raise SystemExit(90)
+
+print(f"RECOVERY_REQUIRED phase={record['phase']} target_head={record['target_head']}")
+raise SystemExit(10)
+PY

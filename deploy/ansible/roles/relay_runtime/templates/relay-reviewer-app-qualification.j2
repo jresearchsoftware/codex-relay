@@ -1,0 +1,16 @@
+#!/bin/sh
+# managed-by: codex-relay
+# Reviewer-only read-only GitHub App qualification. Never print secrets.
+set -eu
+test "$(id -un)" = '{{ relay_reviewer_user }}' || { echo 'APP_QUALIFICATION_WRONG_BOUNDARY'; exit 50; }
+set -a
+. '{{ relay_reviewer_credential_env_file }}'
+set +a
+export RELAY_APP_ROLE=reviewer
+export RELAY_EXPECTED_APP_SLUG='{{ relay_reviewer_app_slug }}'
+export RELAY_EXPECTED_ACTOR='{{ relay_reviewer_expected_actor }}'
+export RELAY_EXPECTED_REPOSITORY='{{ relay_github_repository }}'
+export RELAY_EXPECTED_WRITE_PERMISSION_NAMES='pull_requests,checks'
+export RELAY_TOKEN_PERMISSIONS='metadata:read'
+export RELAY_EXPECTED_KEY_MODE=0640
+exec /usr/bin/python3 '{{ relay_install_root }}/relay-app-qualification.py'

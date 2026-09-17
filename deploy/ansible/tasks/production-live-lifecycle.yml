@@ -1,0 +1,38 @@
+---
+# A Reviewer restart propagates to production via PartOf. Neither process may
+# be replaced by a job running in that production unit, including by handlers.
+- name: Inspect live production process identities and enablement
+  ansible.builtin.command:
+    argv:
+      - /bin/systemctl
+      - show
+      - '{{ item }}'
+      - --property=MainPID,ActiveState,SubState,UnitFileState
+  loop: [relay-runner.service, reviewer-mcp.service]
+  register: relay_production_lifecycle_observed
+  changed_when: false
+  check_mode: false
+
+- name: Require a running production job before deferring its lifecycle
+  ansible.builtin.assert:
+    that:
+      - relay_production_lifecycle_observed.results[0].stdout is search('(?m)^MainPID=[1-9][0-9]*$')
+      - relay_production_lifecycle_observed.results[0].stdout is search('(?m)^ActiveState=active$')
+    fail_msg: PRODUCTION_EXECUTING_RUNNER_STATE_INVALID
+
+- name: Retain the admitted live process state
+  ansible.builtin.set_fact:
+    relay_production_lifecycle_before: '{{ relay_production_lifecycle_observed.results | map(attribute="stdout") | list }}'
+  when: not relay_production_lifecycle_verify | bool
+
+- name: Prove installation did not restart or disable the executing services
+  ansible.builtin.assert:
+    that:
+      - relay_production_lifecycle_before == relay_production_lifecycle_observed.results | map(attribute='stdout') | list
+    fail_msg: PRODUCTION_EXECUTING_LIFECYCLE_CHANGED
+  when: relay_production_lifecycle_verify | bool
+
+- name: Report installed-state success with live activation explicitly deferred
+  ansible.builtin.debug:
+    msg: 'PRODUCTION_LIFECYCLE_PRESERVED={{ relay_production_exact_head }};activation=owner-after-job'
+  when: relay_production_lifecycle_verify | bool

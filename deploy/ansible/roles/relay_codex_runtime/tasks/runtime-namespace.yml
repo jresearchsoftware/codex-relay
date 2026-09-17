@@ -1,0 +1,19 @@
+---
+- name: Reconcile the Codex temporary roots for the runtime identity
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: '{{ relay_codex_home }}/tmp', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}', mode: '0700'}
+    - {path: '{{ relay_codex_home }}/tmp/arg0', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}', mode: '0700'}
+
+- name: Reconcile ownership of stale Codex arg0 temporary descendants
+  ansible.builtin.file:
+    path: '{{ relay_codex_home }}/tmp/arg0'
+    state: directory
+    owner: '{{ relay_codex_user }}'
+    group: '{{ relay_codex_group }}'
+    recurse: true

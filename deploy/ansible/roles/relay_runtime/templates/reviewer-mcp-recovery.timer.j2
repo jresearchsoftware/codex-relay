@@ -1,0 +1,11 @@
+[Unit]
+Description=Bounded recovery checks for the Docs evolution Reviewer
+
+[Timer]
+OnBootSec={{ relay_reviewer_recovery_interval }}
+OnUnitActiveSec={{ relay_reviewer_recovery_interval }}
+Unit={{ relay_reviewer_recovery_service_name }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

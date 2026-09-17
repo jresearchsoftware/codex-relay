@@ -1,0 +1,37 @@
+---
+- name: Require explicit owner authorization for relay credential cleanup
+  ansible.builtin.assert:
+    that:
+      - relay_credential_cleanup_authorized | bool
+    fail_msg: 'Credential cleanup requires relay_credential_cleanup_authorized=true and must not be inferred from normal rollback'
+
+- name: Inspect relay-owned credential roots before cleanup
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+  loop:
+    - {path: '{{ relay_reviewer_credential_root }}', group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_writer_credential_root }}', group: 'root', mode: '0700'}
+  register: relay_credential_cleanup_roots
+  changed_when: false
+
+- name: Fail closed on non-relay credential root ownership or mode
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.stat.exists or
+        (
+          item.stat.isdir | default(false) and
+          item.stat.pw_name == 'root' and
+          item.stat.gr_name == item.item.group and
+          item.stat.mode == item.item.mode
+        )
+    fail_msg: 'Credential cleanup refuses a non-relay or ambiguously owned credential root'
+  loop: '{{ relay_credential_cleanup_roots.results }}'
+
+- name: Remove only explicitly authorized relay credential roots
+  ansible.builtin.file:
+    path: '{{ item.item.path }}'
+    state: absent
+  loop: '{{ relay_credential_cleanup_roots.results }}'
+  when: item.stat.exists

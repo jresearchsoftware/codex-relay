@@ -1,0 +1,453 @@
+[
+  {
+    "name": "missing validation",
+    "path": [
+      "required_validation"
+    ],
+    "producer_error": "CR_VALIDATION_INVALID",
+    "delete": true
+  },
+  {
+    "name": "empty validation",
+    "path": [
+      "required_validation"
+    ],
+    "producer_error": "CR_VALIDATION_INVALID",
+    "value": []
+  },
+  {
+    "name": "unknown executable validation",
+    "path": [
+      "required_validation"
+    ],
+    "producer_error": "CR_VALIDATION_INVALID",
+    "value": [
+      "made-up-check"
+    ]
+  },
+  {
+    "name": "explicit duplicate validation",
+    "path": [
+      "required_validation"
+    ],
+    "producer_error": "CR_VALIDATION_INVALID",
+    "value": [
+      "diff-check",
+      "diff-check"
+    ]
+  },
+  {
+    "name": "missing change_request_id",
+    "path": [
+      "change_request_id"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing remediation_thread_title",
+    "path": [
+      "remediation_thread_title"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing step",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing codex_model",
+    "path": [
+      "codex_model"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing codex_effort",
+    "path": [
+      "codex_effort"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing findings",
+    "path": [
+      "findings"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing starting_state_requirements",
+    "path": [
+      "starting_state_requirements"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing completion_requirements",
+    "path": [
+      "completion_requirements"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing protected_boundaries",
+    "path": [
+      "protected_boundaries"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing success_token",
+    "path": [
+      "success_token"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing success_outcome",
+    "path": [
+      "success_outcome"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing blocked_token",
+    "path": [
+      "blocked_token"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "missing blocked_outcome",
+    "path": [
+      "blocked_outcome"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "delete": true
+  },
+  {
+    "name": "malformed Step 0",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": 0
+  },
+  {
+    "name": "malformed Step -1",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": -1
+  },
+  {
+    "name": "malformed Step 1.5",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": 1.5
+  },
+  {
+    "name": "malformed Step 1",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "1"
+  },
+  {
+    "name": "malformed Step 01",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "01"
+  },
+  {
+    "name": "malformed Step 1;echo",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "1;echo"
+  },
+  {
+    "name": "malformed Step 9007199254740992",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": 9007199254740992
+  },
+  {
+    "name": "malformed Step True",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": true
+  },
+  {
+    "name": "malformed Step None",
+    "path": [
+      "step"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": null
+  },
+  {
+    "name": "malformed finding id 'bad id'",
+    "path": [
+      "findings",
+      0,
+      "id"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "bad id"
+  },
+  {
+    "name": "malformed finding id '1F'",
+    "path": [
+      "findings",
+      0,
+      "id"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "1F"
+  },
+  {
+    "name": "malformed finding id ''",
+    "path": [
+      "findings",
+      0,
+      "id"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": ""
+  },
+  {
+    "name": "malformed finding id 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'",
+    "path": [
+      "findings",
+      0,
+      "id"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+  },
+  {
+    "name": "malformed finding severity 'fatal'",
+    "path": [
+      "findings",
+      0,
+      "severity"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "fatal"
+  },
+  {
+    "name": "malformed finding problem ''",
+    "path": [
+      "findings",
+      0,
+      "problem"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": ""
+  },
+  {
+    "name": "malformed finding impact 'TODO'",
+    "path": [
+      "findings",
+      0,
+      "impact"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "TODO"
+  },
+  {
+    "name": "malformed finding remediation 'bad\\ntext'",
+    "path": [
+      "findings",
+      0,
+      "remediation"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "bad\ntext"
+  },
+  {
+    "name": "malformed finding acceptance_criteria []",
+    "path": [
+      "findings",
+      0,
+      "acceptance_criteria"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": []
+  },
+  {
+    "name": "malformed finding evidence ['bad\\x00text']",
+    "path": [
+      "findings",
+      0,
+      "evidence"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": [
+      "bad\u0000text"
+    ]
+  },
+  {
+    "name": "duplicate stable IDs",
+    "path": [
+      "findings",
+      1,
+      "id"
+    ],
+    "producer_error": "CR_FINDING_IDS_INVALID",
+    "value": "CR12-F1"
+  },
+  {
+    "name": "invalid codex_model",
+    "path": [
+      "codex_model"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "../escape"
+  },
+  {
+    "name": "invalid codex_effort",
+    "path": [
+      "codex_effort"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "max;echo"
+  },
+  {
+    "name": "invalid subagents_allowed",
+    "path": [
+      "subagents_allowed"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "Off"
+  },
+  {
+    "name": "invalid success_token",
+    "path": [
+      "success_token"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "READY!"
+  },
+  {
+    "name": "invalid blocked_token",
+    "path": [
+      "blocked_token"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "blocked token"
+  },
+  {
+    "name": "invalid success_outcome",
+    "path": [
+      "success_outcome"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "�"
+  },
+  {
+    "name": "invalid protected_boundaries",
+    "path": [
+      "protected_boundaries"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
+  },
+  {
+    "name": "invalid completion_requirements",
+    "path": [
+      "completion_requirements"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": [
+      "é"
+    ]
+  },
+  {
+    "name": "invalid owner_policy_reconciliation",
+    "path": [
+      "owner_policy_reconciliation"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": [
+      "bad‮text"
+    ]
+  },
+  {
+    "name": "invalid allowed_paths",
+    "path": [
+      "allowed_paths"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": []
+  },
+  {
+    "name": "invalid unexpected_authorization",
+    "path": [
+      "unexpected_authorization"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": true
+  },
+  {
+    "name": "invalid review_model",
+    "path": [
+      "review_model"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "review-model"
+  },
+  {
+    "name": "invalid required_starting_head",
+    "path": [
+      "required_starting_head"
+    ],
+    "producer_error": "INVALID_CHANGE_REQUEST",
+    "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  {
+    "name": "identical completion tokens",
+    "path": [
+      "blocked_token"
+    ],
+    "producer_error": "CR_OUTCOMES_INVALID",
+    "value": "TASK_24_CR_SERIALIZATION_IMPLEMENTED_PENDING_REVIEW"
+  },
+  {
+    "name": "identical completion outcomes",
+    "path": [
+      "blocked_outcome"
+    ],
+    "producer_error": "CR_OUTCOMES_INVALID",
+    "value": "Implementation is complete and awaits independent review."
+  }
+]

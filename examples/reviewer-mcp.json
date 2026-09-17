@@ -1,0 +1,25 @@
+{
+  "repository": "example-org/sample-project",
+  "baseBranch": "main",
+  "reviewCheckName": "chatgpt-review",
+  "writerActor": "example-writer[bot]",
+  "githubApp": {
+    "slug": "example-reviewer",
+    "appId": "102",
+    "installationId": "202",
+    "expectedActor": "example-reviewer[bot]"
+  },
+  "artifact": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "service": {
+    "name": "reviewer-mcp",
+    "bind_mode": "a_only_loopback",
+    "bind_address": "127.0.0.1",
+    "bind_network": "",
+    "gateway_validated": false,
+    "bind_port": 8787,
+    "mount_path": "/mcp"
+  }
+}

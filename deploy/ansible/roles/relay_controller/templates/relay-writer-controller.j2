@@ -1,0 +1,17 @@
+#!/bin/sh
+# managed-by: codex-relay
+# Fixed root-owned entrypoint. It accepts one typed JSON request on stdin and
+# never accepts command arguments, executable paths, URLs, or environment
+# overrides from the runner.
+set -eu
+test "$#" -eq 0 || exit 40
+exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' \
+  PATH=/usr/bin:/bin \
+  HOME=/root \
+  LANG=C \
+  LC_ALL=C \
+  RELAY_WRITER_CREDENTIAL_ENV='{{ relay_writer_credential_env_file }}' \
+  RELAY_WRITER_CREDENTIAL_KEY_FILE='{{ relay_writer_credential_key_file }}' \
+  RELAY_WRITER_CLAIM_ROOT='{{ relay_writer_claim_root }}' \
+  /usr/bin/flock -n '{{ relay_writer_claim_root }}/publication-v2.lock' \
+  /usr/bin/node '{{ relay_writer_helper_release_path }}'

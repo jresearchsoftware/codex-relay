@@ -1,0 +1,218 @@
+{
+  "schema_version": "2.0",
+  "fence": "reviewer-executable-cr",
+  "max_payload_bytes": 50000,
+  "max_body_bytes": 60000,
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "change_request_id",
+      "remediation_thread_title",
+      "step",
+      "codex_model",
+      "codex_effort",
+      "findings",
+      "starting_state_requirements",
+      "required_validation",
+      "completion_requirements",
+      "protected_boundaries",
+      "success_token",
+      "success_outcome",
+      "blocked_token",
+      "blocked_outcome"
+    ],
+    "properties": {
+      "change_request_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "format": "stable-id"
+      },
+      "remediation_thread_title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "description": "Remediation thread name. Task identity comes from the linked Issue; Step must agree with the explicit current remediation profile."
+      },
+      "step": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991,
+        "description": "For a new executable CR, current synchronized Issue/PR step-N plus one. After native publication the owner synchronizes both labels. Republication of the same CR preserves Step; never scan history."
+      },
+      "codex_model": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "format": "codex-argument"
+      },
+      "codex_effort": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "format": "codex-argument"
+      },
+      "subagents_allowed": {
+        "type": "boolean",
+        "default": false
+      },
+      "findings": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 30,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "severity",
+            "problem",
+            "impact",
+            "remediation",
+            "acceptance_criteria"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "format": "stable-id"
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "blocker",
+                "major",
+                "minor",
+                "suggestion"
+              ]
+            },
+            "problem": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 3000
+            },
+            "impact": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 3000
+            },
+            "remediation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 3000
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 10,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            }
+          }
+        }
+      },
+      "starting_state_requirements": {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "description": "Additional requirements only; repository, PR and starting head are bound by the top-level target fields. May be empty."
+      },
+      "required_validation": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "items": {
+          "type": "string",
+          "enum": [
+            "routing-tests",
+            "dispatcher-worker-integration",
+            "issue-writer-tests",
+            "remediation-tests",
+            "diagnostics-tests",
+            "workflow-static",
+            "ansible-tests",
+            "rust-reviewer-tests-format",
+            "rust-format",
+            "diff-check",
+            "secret-scan",
+            "github-test-validate"
+          ]
+        },
+        "uniqueItems": true,
+        "description": "Native checks to run; supply at least one. Free-form validation prose is not executable data."
+      },
+      "completion_requirements": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "protected_boundaries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "success_token": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "format": "completion-token"
+      },
+      "success_outcome": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "blocked_token": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "format": "completion-token"
+      },
+      "blocked_outcome": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "owner_policy_reconciliation": {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 10,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}

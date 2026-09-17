@@ -1,0 +1,62 @@
+---
+# The root installer inherits the production service's UMask=0077. Its mkdir
+# package ancestors therefore deny relay-codex traversal, although root's
+# --version probe succeeds. Reconcile only these four directories; keep the
+# private home/token, executable payload and shared work permissions separate.
+- name: Inspect the installed Codex command link before package reconciliation
+  ansible.builtin.stat:
+    path: '{{ relay_codex_binary_path }}'
+    follow: false
+  register: relay_codex_package_link
+
+- name: Require the pinned standalone command topology
+  ansible.builtin.assert:
+    that:
+      - relay_codex_package_link.stat.islnk | default(false)
+      - relay_codex_package_link.stat.lnk_source | default('') is match('^' ~ (relay_codex_home | regex_escape) ~ '/packages/standalone/releases/' ~ (relay_codex_cli_version | regex_escape) ~ '-[a-z0-9_-]+/(bin/)?codex$')
+    fail_msg: CODEX_PACKAGE_LINK_UNSAFE
+
+- name: Resolve only the installed pinned release traversal directories
+  ansible.builtin.set_fact:
+    relay_codex_package_traversal:
+      - '{{ relay_codex_home }}/packages'
+      - '{{ relay_codex_home }}/packages/standalone'
+      - '{{ relay_codex_home }}/packages/standalone/releases'
+      - "{{ relay_codex_package_link.stat.lnk_source | dirname | regex_replace('/bin$', '') }}"
+
+- name: Inspect package directories without following aliases
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop: '{{ relay_codex_package_traversal }}'
+  register: relay_codex_package_directories
+
+- name: Refuse missing or aliased package traversal directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir | default(false)
+      - not item.stat.islnk | default(false)
+    fail_msg: CODEX_PACKAGE_DIRECTORY_UNSAFE
+  loop: '{{ relay_codex_package_directories.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Grant only the Codex primary group read and traversal of installed package roots
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_codex_group }}'
+    mode: '0750'
+    follow: false
+  loop: '{{ relay_codex_package_traversal }}'
+
+- name: Verify the installed CLI is executable by its runtime identity without credentials
+  ansible.builtin.command:
+    argv: [/usr/sbin/runuser, -u, '{{ relay_codex_user }}', --, '{{ relay_codex_binary_path }}', --version]
+  environment:
+    CODEX_HOME: '{{ relay_codex_home }}'
+  changed_when: false
+  register: relay_codex_runtime_user_version
+  failed_when: relay_codex_runtime_user_version.rc != 0 or (relay_codex_runtime_user_version.stdout | trim) != 'codex-cli ' ~ relay_codex_cli_version
+  when: not ansible_check_mode | bool

@@ -1,0 +1,49 @@
+---
+- name: Inspect the protected source and state parents after all roles
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_install_root }}'
+    - '{{ relay_release_root }}'
+    - '{{ relay_state_root }}'
+    - '{{ relay_release_path }}'
+    - '{{ relay_release_path }}/reviewed-source'
+    - '{{ relay_release_path }}/reviewed-source/.relay-source.json'
+  register: relay_installed_protected_paths
+  changed_when: false
+
+- name: Reject late privilege or source-parent drift
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.pw_name == 'root'
+      - not item.stat.islnk | default(false)
+      - item.stat.mode[-2] in ['0', '1', '4', '5']
+      - item.stat.mode[-1] in ['0', '1', '4', '5']
+    fail_msg: RELAY_INSTALLED_PARENT_UNSAFE
+  loop: '{{ relay_installed_protected_paths.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Read the installed product Git provenance
+  ansible.builtin.slurp:
+    src: '{{ relay_release_path }}/reviewed-source/.relay-source.json'
+  register: relay_installed_source_raw
+
+- name: Prove the selected, installed and configured product identities
+  ansible.builtin.assert:
+    that:
+      - relay_installed_source_raw.content | b64decode | from_json == relay_source_identity
+      - relay_production_final_paths.results[0].stat.lnk_source == relay_release_path
+      - relay_production_final_manifest.installedRevision == relay_release_commit
+      - relay_production_final_manifest.resolvedRevision == relay_release_commit
+      - relay_production_final_manifest.gitTree == relay_source_identity.tree
+      - relay_production_final_manifest.consumerRevision == relay_consumer_revision
+      - relay_production_final_manifest.controllerSourceTreeSha256 == relay_controller_source_tree_sha256
+      - relay_production_final_manifest.reviewerSourceTreeSha256 == relay_reviewer_source_tree_sha256
+    fail_msg: RELAY_INSTALLED_IDENTITY_MISMATCH
+
+- name: Report the exact installed identity after the complete role composition
+  ansible.builtin.debug:
+    msg: 'RELAY_INSTALLED_REVISION={{ relay_release_commit }};consumer={{ relay_consumer_revision }};previous={{ relay_production_final_manifest.previousRevision }}'

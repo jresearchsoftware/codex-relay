@@ -1,0 +1,31 @@
+# managed-by: codex-relay
+# This isolated fragment is removable without rewriting foreign nginx workloads.
+server {
+    listen {{ relay_nginx_public_port }} ssl;
+    server_name {{ relay_nginx_server_name }};
+
+    ssl_certificate {{ relay_nginx_server_certificate_file }};
+    ssl_certificate_key {{ relay_nginx_server_private_key_file }};
+    ssl_client_certificate {{ relay_nginx_client_ca_file }};
+    ssl_verify_client on;
+    ssl_verify_depth {{ relay_nginx_client_verify_depth }};
+
+    location = /mcp {
+        limit_except POST { deny all; }
+        proxy_set_header X-Client-Cert "";
+        proxy_set_header X-SSL-Client-Cert "";
+        proxy_set_header X-Forwarded-Client-Cert "";
+        proxy_set_header X-OpenAI-MTLS-Client-Cert $ssl_client_escaped_cert;
+        proxy_set_header X-OpenAI-MTLS-Verified "1";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_pass http://{{ relay_nginx_upstream }}/mcp;
+    }
+
+    location / { return 404; }
+}

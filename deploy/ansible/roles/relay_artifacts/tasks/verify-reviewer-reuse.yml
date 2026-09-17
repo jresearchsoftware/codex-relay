@@ -1,0 +1,115 @@
+---
+- name: Inspect whether the exact release is already staged
+  ansible.builtin.stat:
+    path: '{{ relay_release_path }}/artifact-manifest.json'
+    follow: false
+  register: relay_release_manifest
+  changed_when: false
+
+- name: Inspect the current release binding
+  ansible.builtin.stat:
+    path: '{{ relay_install_root }}/current'
+    follow: false
+  register: relay_current_release
+  changed_when: false
+
+- name: Inspect the current Reviewer manifest and binary for reuse eligibility
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_install_root }}/current/artifact-manifest.json'
+    - '{{ relay_install_root }}/current/bin/reviewer-mcp-http'
+  register: relay_current_reviewer_artifacts
+  changed_when: false
+
+- name: Read the current non-secret Reviewer manifest for reuse verification
+  ansible.builtin.slurp:
+    src: '{{ relay_install_root }}/current/artifact-manifest.json'
+  register: relay_current_reviewer_manifest_raw
+  when:
+    - relay_current_reviewer_artifacts.results[0].stat.exists
+    - relay_current_reviewer_artifacts.results[0].stat.isreg
+
+- name: Set fail-closed Reviewer reuse defaults
+  ansible.builtin.set_fact:
+    relay_current_reviewer_manifest: {}
+    relay_current_reviewer_binary_digest:
+      stdout: ''
+
+- name: Parse the current Reviewer manifest without reading protected content
+  ansible.builtin.set_fact:
+    relay_current_reviewer_manifest: '{{ relay_current_reviewer_manifest_raw.content | b64decode | from_json }}'
+  when:
+    - relay_current_reviewer_manifest_raw is defined
+    - relay_current_reviewer_manifest_raw.content is defined
+
+- name: Verify the current Reviewer binary digest for reuse
+  ansible.builtin.command:
+    argv:
+      - sha256sum
+      - '{{ relay_install_root }}/current/bin/reviewer-mcp-http'
+  register: relay_current_reviewer_binary_digest
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_current_reviewer_artifacts.results[1].stat.exists
+    - relay_current_reviewer_artifacts.results[1].stat.isreg
+
+- name: Determine whether the current Reviewer artifact is verified and reusable
+  ansible.builtin.set_fact:
+    relay_reviewer_reuse_verified: >-
+      {{
+        (not ansible_check_mode | bool)
+        and (relay_current_release.stat.exists | default(false))
+        and (relay_current_release.stat.islnk | default(false))
+        and (relay_current_release.stat.lnk_source | default('')) is match('^' ~ (relay_release_root | regex_escape) ~ '/[0-9a-f]{40}$')
+        and (relay_current_reviewer_artifacts.results[0].stat.pw_name | default('')) == 'root'
+        and (relay_current_reviewer_artifacts.results[0].stat.isreg | default(false))
+        and not (relay_current_reviewer_artifacts.results[0].stat.islnk | default(false))
+        and (relay_current_reviewer_artifacts.results[1].stat.pw_name | default('')) == 'root'
+        and (relay_current_reviewer_artifacts.results[1].stat.isreg | default(false))
+        and not (relay_current_reviewer_artifacts.results[1].stat.islnk | default(false))
+        and (relay_current_reviewer_manifest.schemaVersion | default('')) == '1.0'
+        and (relay_current_reviewer_manifest.commit | default('')) == (relay_current_release.stat.lnk_source | default('') | basename)
+        and (relay_current_reviewer_manifest.releaseSourceTreeSha256 | default('')) is match('^[0-9a-f]{64}$')
+        and (relay_current_reviewer_manifest.controllerSourceTreeSha256 | default('')) is match('^[0-9a-f]{64}$')
+        and (relay_current_reviewer_manifest.reviewerSourceTreeSha256 | default('')) == relay_reviewer_source_tree_sha256
+        and (relay_current_reviewer_manifest.reviewerBuildInputsTreeSha256 | default('')) == relay_reviewer_build_inputs_tree_sha256
+        and (relay_current_reviewer_manifest.reviewerBuildContractSha256 | default('')) == relay_reviewer_build_contract_sha256
+        and (relay_current_reviewer_manifest.reviewerBuildToolchain.archiveSha256 | default('')) == relay_rust_toolchain_archive_sha256
+        and (relay_current_reviewer_manifest.reviewerBuildToolchain.cargoVersion | default('')) is search('^cargo ' ~ relay_rust_toolchain_version)
+        and (relay_current_reviewer_manifest.reviewerBinarySha256 | default('')) is match('^[0-9a-f]{64}$')
+        and (relay_current_reviewer_manifest.reviewerArtifactProvenance | default('')) in ['built', 'verified-reuse']
+        and (relay_current_reviewer_binary_digest.stdout | default('')).split()[0] | default('') == relay_current_reviewer_manifest.reviewerBinarySha256
+      }}
+
+- name: Record verified Reviewer reuse provenance after eligibility is finalized
+  ansible.builtin.set_fact:
+    relay_reviewer_reuse_source_release: >-
+      {{ relay_current_release.stat.lnk_source if relay_reviewer_reuse_verified | bool else 'none' }}
+    relay_reviewer_reuse_source_digest: >-
+      {{ relay_current_reviewer_manifest.reviewerBinarySha256 if relay_reviewer_reuse_verified | bool else 'none' }}
+    relay_reviewer_artifact_provenance: >-
+      {{ 'verified-reuse' if relay_reviewer_reuse_verified | bool else 'built' }}
+
+- name: Fail closed on a foreign current release binding
+  ansible.builtin.assert:
+    that:
+      - >-
+        not relay_current_release.stat.exists or
+        (
+          relay_current_release.stat.islnk | default(false) and
+          relay_current_release.stat.lnk_source.startswith(relay_release_root + '/')
+        )
+    fail_msg: 'Relay current path is not a relay-owned release symlink'
+
+- name: Preserve the previous product identity across configuration-only reconciliation
+  ansible.builtin.set_fact:
+    relay_previous_revision: >-
+      {{ relay_current_reviewer_manifest.previousRevision | default('none')
+         if relay_current_reviewer_manifest.commit | default('') == relay_release_commit
+         else relay_current_reviewer_manifest.installedRevision | default(
+           (relay_current_reviewer_manifest.relayDependency | default({})).commit | default(
+             relay_current_reviewer_manifest.commit | default('none'))) }}

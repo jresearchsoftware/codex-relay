@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "repository": "{{ relay_github_repository }}",
+  "mutation": "none",
+  "artifact": {
+    "commit": "{{ relay_release_commit }}",
+    "sha256": "{{ relay_release_sha256 }}"
+  },
+  "preflightChecks": [
+    "github-policy",
+    "app-identity-permissions",
+    "debian-artifact-identity",
+    "runner",
+    "workflow",
+    "ingress-listener"
+  ],
+  "controller": {
+    "execBoundary": "{{ relay_install_root }}/relay-writer-controller (typed JSON on stdin)",
+    "runtimeMode": "on-demand-fixed-worker",
+    "stateRoot": "{{ relay_dispatch_state_root }}/attempts-v2",
+    "evidenceRoot": "{{ relay_dispatch_evidence_root }}",
+    "diagnostics": {
+      "defaultMode": "{{ relay_diagnostics_mode }}",
+      "modeControl": "{{ relay_diagnostics_control_path }}",
+      "configPath": "{{ relay_diagnostics_config_path }}",
+      "root": "{{ relay_diagnostics_root }}",
+      "store": "{{ relay_diagnostics_store_path }}",
+      "stateOwner": "trusted-production-operator"
+    },
+    "workerEntrypoint": "{{ relay_install_root }}/current/reviewed-source/controller/src/codex-dispatch.mjs",
+    "writerCredentialBoundary": "root-only-github-app-private-key-short-lived-installation-tokens",
+    "reviewerCredentialBoundary": "separate-reviewer-service-identity",
+    "credentialValues": "never-rendered-by-ansible",
+    "rootOrSudoBoundary": "bounded-root-only-controller-helper",
+    "writerApp": {
+      "slug": "{{ relay_writer_app_slug }}",
+      "appId": "{{ relay_writer_app_id }}",
+      "installationId": "{{ relay_writer_app_installation_id }}",
+      "expectedActor": "{{ relay_writer_expected_actor }}"
+    },
+    "reviewerApp": {
+      "slug": "{{ relay_reviewer_app_slug }}",
+      "appId": "{{ relay_reviewer_app_id }}",
+      "installationId": "{{ relay_reviewer_app_installation_id }}",
+      "expectedActor": "{{ relay_reviewer_expected_actor }}"
+    },
+    "automaticMerge": false,
+    "issueClosure": "human-merge-only"
+  }
+}

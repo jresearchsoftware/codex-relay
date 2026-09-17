@@ -1,0 +1,163 @@
+---
+# This file only inspects durable operation evidence.  Beginning a new
+# mutating operation is deliberately separate and is performed by
+# production-operation-state-begin.yml immediately before the first protected
+# mutation.  A trusted unfinished record is never replaced by a later request.
+
+- name: Require the production operation-state inputs
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_phase is defined
+      - relay_production_operation_phase in ['check', 'apply', 'post-check', 'activate', 'runner-enable', 'stale-dispose']
+      - relay_production_operation_target_head is defined
+      - relay_production_operation_target_head | length == 40
+      - relay_production_operation_target_head is match('^[0-9a-fA-F]{40}$')
+    fail_msg: 'PRODUCTION_OPERATION_STATE_INPUT_INVALID'
+  when: relay_deployment_profile == 'production'
+
+- name: Inspect the durable production operation record without following links
+  ansible.builtin.stat:
+    path: '{{ relay_production_operation_record_path }}'
+    follow: false
+  register: relay_production_operation_record_stat
+  changed_when: false
+  when: relay_deployment_profile == 'production'
+
+- name: Refuse an untrusted production operation record
+  ansible.builtin.assert:
+    that:
+      - not relay_production_operation_record_stat.stat.exists | default(false) or relay_production_operation_record_stat.stat.isreg | default(false)
+      - not relay_production_operation_record_stat.stat.exists | default(false) or not relay_production_operation_record_stat.stat.islnk | default(false)
+      - not relay_production_operation_record_stat.stat.exists | default(false) or relay_production_operation_record_stat.stat.pw_name == 'root'
+      - not relay_production_operation_record_stat.stat.exists | default(false) or relay_production_operation_record_stat.stat.gr_name == 'root'
+      - not relay_production_operation_record_stat.stat.exists | default(false) or relay_production_operation_record_stat.stat.mode == '0600'
+    fail_msg: 'PRODUCTION_OPERATION_STATE_UNSAFE_RECORD'
+  when: relay_deployment_profile == 'production'
+
+- name: Read the non-secret production operation record
+  ansible.builtin.slurp:
+    src: '{{ relay_production_operation_record_path }}'
+  register: relay_production_operation_record_raw
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_stat.stat.exists | default(false)
+
+- name: Validate production operation record JSON directly from the trusted host file
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |-
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding='utf-8') as stream:
+            record = json.load(stream)
+        raise SystemExit(0 if isinstance(record, dict) else 1)
+      - '{{ relay_production_operation_record_path }}'
+  register: relay_production_operation_record_json_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_stat.stat.exists | default(false)
+
+- name: Refuse malformed production operation evidence with a controlled result
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_record_json_check.rc == 0
+    fail_msg: 'PRODUCTION_OPERATION_STATE_UNSAFE_RECORD'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_stat.stat.exists | default(false)
+
+- name: Parse the validated production operation record
+  ansible.builtin.set_fact:
+    relay_production_operation_record: '{{ relay_production_operation_record_raw.content | b64decode | from_json }}'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_stat.stat.exists | default(false)
+    - relay_production_operation_record_json_check.rc == 0
+
+- name: Validate the production operation record schema and metadata
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_record is mapping
+      - (relay_production_operation_record.keys() | list | sort) == ['phase', 'schemaVersion', 'state', 'target_head']
+      - relay_production_operation_record.schemaVersion == relay_production_operation_schema_version
+      - relay_production_operation_record.state == 'RECOVERY_REQUIRED'
+      - relay_production_operation_record.phase in ['apply', 'activate', 'runner-enable']
+      - relay_production_operation_record.target_head is match('^[0-9a-fA-F]{40}$')
+    fail_msg: 'PRODUCTION_OPERATION_STATE_UNSAFE_RECORD'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_stat.stat.exists | default(false)
+
+- name: Record the inspected production operation disposition
+  ansible.builtin.set_fact:
+    relay_production_operation_recovery_required: '{{ relay_production_operation_record_stat.stat.exists | default(false) | bool }}'
+    relay_production_operation_record_present: '{{ relay_production_operation_record_stat.stat.exists | default(false) | bool }}'
+    relay_production_operation_recovery_phase: >-
+      {{ relay_production_operation_record.phase if relay_production_operation_record_stat.stat.exists | default(false) else '' }}
+    relay_production_operation_recovery_target_head: >-
+      {{ relay_production_operation_record.target_head if relay_production_operation_record_stat.stat.exists | default(false) else '' }}
+    relay_production_operation_recovery_matching: >-
+      {{
+        relay_production_operation_record_stat.stat.exists | default(false) | bool and
+        relay_production_operation_record.phase == relay_production_operation_phase and
+        relay_production_operation_record.target_head == relay_production_operation_target_head
+      }}
+    relay_production_operation_active_phase: >-
+      {{ relay_production_operation_record.phase if relay_production_operation_record_stat.stat.exists | default(false) else relay_production_operation_phase }}
+    relay_production_operation_active_head: >-
+      {{ relay_production_operation_record.target_head if relay_production_operation_record_stat.stat.exists | default(false) else relay_production_operation_target_head }}
+  when: relay_deployment_profile == 'production'
+
+- name: Report stable production reconciliation state in read-only phases
+  ansible.builtin.debug:
+    msg: 'PRODUCTION_RECONCILIATION_STATE=STABLE'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_phase in ['check', 'post-check']
+    - not relay_production_operation_recovery_required | default(false) | bool
+
+- name: Report trusted unfinished operation state for mutating entrypoints
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECONCILIATION_STATE=RECOVERY_REQUIRED;
+      phase={{ relay_production_operation_recovery_phase }};
+      target_head={{ relay_production_operation_recovery_target_head }};
+      requested_phase={{ relay_production_operation_phase }}
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_recovery_required | default(false) | bool
+    - relay_production_operation_phase in ['apply', 'activate', 'runner-enable']
+
+- name: Report a separately authorized stale-operation disposition request
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECONCILIATION_STATE=STALE_DISPOSITION_REQUIRED;
+      phase={{ relay_production_operation_recovery_phase }};
+      target_head={{ relay_production_operation_recovery_target_head }};
+      requested_phase=stale-dispose;
+      requested_head={{ relay_production_operation_target_head }}
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_phase == 'stale-dispose'
+    - relay_production_operation_recovery_required | default(false) | bool
+
+- name: Require a matching phase and exact head for recovery
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_recovery_matching | bool
+    fail_msg: >-
+      PRODUCTION_RECOVERY_PHASE_OR_HEAD_MISMATCH;
+      recorded_phase={{ relay_production_operation_recovery_phase }};
+      recorded_head={{ relay_production_operation_recovery_target_head }};
+      requested_phase={{ relay_production_operation_phase }};
+      requested_head={{ relay_production_operation_target_head }}
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_recovery_required | default(false) | bool
+    - relay_production_operation_phase in ['apply', 'activate', 'runner-enable']

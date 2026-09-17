@@ -1,0 +1,158 @@
+---
+- name: Validate the final Writer runtime binding before the full production gate
+  ansible.builtin.include_tasks: production-writer-binding-validation.yml
+
+- name: Classify the final reconciled production runner state
+  ansible.builtin.set_fact:
+    relay_production_final_runner_state_safe: >-
+      {{
+        (
+          relay_production_final_services.results[2].stdout in ['active', 'inactive', 'failed'] and
+          relay_production_final_services.results[3].stdout in ['enabled', 'enabled-runtime', 'disabled']
+        )
+      }}
+  changed_when: false
+
+- name: Classify the valid authorized-off production baseline
+  ansible.builtin.set_fact:
+    relay_production_final_authorized_off_baseline: >-
+      {{
+        relay_production_final_paths.results[6].stat.exists | default(false) and
+        relay_production_final_paths.results[6].stat.isreg | default(false) and
+        not relay_production_final_paths.results[6].stat.islnk | default(false) and
+        relay_production_final_paths.results[6].stat.pw_name == 'root' and
+        relay_production_final_paths.results[6].stat.gr_name == 'root' and
+        relay_production_final_paths.results[6].stat.mode == '0600' and
+        relay_production_final_paths.results[7].stat.exists | default(false) and
+        relay_production_final_paths.results[7].stat.isreg | default(false) and
+        not relay_production_final_paths.results[7].stat.islnk | default(false) and
+        relay_production_final_paths.results[7].stat.pw_name == 'root' and
+        relay_production_final_paths.results[7].stat.gr_name == 'root' and
+        relay_production_final_paths.results[7].stat.mode == '0600' and
+        relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
+        relay_production_final_services.results[1].stdout == 'disabled' and
+        relay_production_final_runner_state_safe | bool and
+        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape))
+      }}
+  changed_when: false
+
+- name: Classify the valid pre-activation recovery baseline
+  ansible.builtin.set_fact:
+    relay_production_final_pre_activation_recovery_baseline: >-
+      {{
+        not relay_production_final_paths.results[6].stat.exists | default(false) and
+        not relay_production_final_paths.results[7].stat.exists | default(false) and
+        relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
+        relay_production_final_services.results[1].stdout == 'disabled' and
+        relay_production_final_runner_state_safe | bool and
+        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape))
+      }}
+  changed_when: false
+
+- name: Classify a valid ordinary-apply recovery under preserve semantics
+  ansible.builtin.set_fact:
+    relay_production_final_apply_recovery_baseline: >-
+      {{
+        relay_production_operation_recovery_phase | default('') == 'apply' and
+        (
+          (
+            not relay_production_final_paths.results[6].stat.exists | default(false) and
+            not relay_production_final_paths.results[7].stat.exists | default(false) and
+            relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
+            relay_production_final_services.results[1].stdout == 'disabled'
+          ) or
+          (
+            relay_production_final_paths.results[6].stat.exists | default(false) and
+            not relay_production_final_paths.results[7].stat.exists | default(false) and
+            relay_production_final_services.results[0].stdout == 'active' and
+            relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime'] and
+            relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          ) or
+          (
+            relay_production_final_paths.results[6].stat.exists | default(false) and
+            not relay_production_final_paths.results[7].stat.exists | default(false) and
+            relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
+            relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime']
+          ) or
+          (
+            relay_production_final_paths.results[6].stat.exists | default(false) and
+            relay_production_final_paths.results[7].stat.exists | default(false) and
+            relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
+            relay_production_final_services.results[1].stdout == 'disabled'
+          )
+        ) and
+        relay_production_final_runner_state_safe | bool
+      }}
+  changed_when: false
+
+- name: Require the final production reconciliation contract
+  ansible.builtin.assert:
+    that:
+      - relay_production_final_paths.results[0].stat.exists
+      - relay_production_final_paths.results[0].stat.islnk | default(false)
+      - relay_production_final_paths.results[0].stat.lnk_source.startswith(relay_release_root + '/')
+      - relay_production_final_paths.results[0].stat.pw_name == 'root'
+      - relay_production_final_paths.results[1].stat.exists
+      - relay_production_final_paths.results[1].stat.isreg
+      - not relay_production_final_paths.results[1].stat.islnk | default(false)
+      - relay_production_final_paths.results[1].stat.pw_name == 'root'
+      - relay_production_final_manifest.schemaVersion == '1.0'
+      - relay_production_final_manifest.commit == relay_production_operation_target_head
+      - relay_production_final_paths.results[2].stat.isreg
+      - not relay_production_final_paths.results[2].stat.islnk | default(false)
+      - relay_production_final_paths.results[2].stat.pw_name == 'root'
+      - relay_production_final_paths.results[3].stat.isreg
+      - not relay_production_final_paths.results[3].stat.islnk | default(false)
+      - relay_production_final_paths.results[3].stat.pw_name == 'root'
+      - relay_production_final_paths.results[4].stat.isreg
+      - not relay_production_final_paths.results[4].stat.islnk | default(false)
+      - relay_production_final_paths.results[4].stat.pw_name == 'root'
+      - >-
+        relay_production_final_paths.results[5].stat.isreg and
+        not relay_production_final_paths.results[5].stat.islnk | default(false) and
+        relay_production_final_paths.results[5].stat.pw_name == 'root'
+      - not relay_production_final_paths.results[6].stat.exists | default(false) or relay_production_final_paths.results[6].stat.isreg
+      - not relay_production_final_paths.results[6].stat.exists | default(false) or not relay_production_final_paths.results[6].stat.islnk | default(false)
+      - not relay_production_final_paths.results[6].stat.exists | default(false) or relay_production_final_paths.results[6].stat.pw_name == 'root'
+      - not relay_production_final_paths.results[6].stat.exists | default(false) or relay_production_final_paths.results[6].stat.gr_name == 'root'
+      - not relay_production_final_paths.results[6].stat.exists | default(false) or relay_production_final_paths.results[6].stat.mode == '0600'
+      - not relay_production_final_paths.results[7].stat.exists | default(false) or relay_production_final_paths.results[7].stat.isreg
+      - not relay_production_final_paths.results[7].stat.exists | default(false) or not relay_production_final_paths.results[7].stat.islnk | default(false)
+      - not relay_production_final_paths.results[7].stat.exists | default(false) or relay_production_final_paths.results[7].stat.pw_name == 'root'
+      - not relay_production_final_paths.results[7].stat.exists | default(false) or relay_production_final_paths.results[7].stat.gr_name == 'root'
+      - not relay_production_final_paths.results[7].stat.exists | default(false) or relay_production_final_paths.results[7].stat.mode == '0600'
+      - >-
+        (relay_production_final_authorized_off_baseline | bool) or
+        (relay_production_final_pre_activation_recovery_baseline | bool) or
+        (relay_production_final_apply_recovery_baseline | bool) or
+        (
+          not (relay_production_operation_recovery_required | default(false) | bool) and
+          not relay_production_final_paths.results[7].stat.exists | default(false)
+        )
+      - >-
+        (relay_production_final_authorized_off_baseline | bool) or
+        (relay_production_final_pre_activation_recovery_baseline | bool) or
+        (relay_production_final_apply_recovery_baseline | bool) or
+        (
+          not (relay_production_operation_recovery_required | default(false) | bool) and
+          relay_production_final_services.results[0].stdout in ['active', 'inactive', 'failed', 'activating'] and
+          relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime', 'disabled'] and
+          (
+            relay_production_final_services.results[0].stdout != 'active' or
+            (
+              relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime'] and
+              relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+            )
+          ) and
+          relay_production_final_runner_state_safe | bool
+        )
+      - >-
+        not (
+          (relay_runner_preserved_initial_active_state.stdout | default('') | trim == 'active') and
+          (relay_runner_preserved_initial_enabled_state.stdout | default('') | trim in ['enabled', 'enabled-runtime'])
+        ) or
+        (
+          relay_production_final_services.results[2].stdout == 'active' and
+          relay_production_final_services.results[3].stdout in ['enabled', 'enabled-runtime']
+        )
+    fail_msg: 'PRODUCTION_RECONCILIATION_FINAL_VALIDATION_FAILED'

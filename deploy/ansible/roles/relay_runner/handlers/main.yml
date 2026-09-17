@@ -1,0 +1,4 @@
+---
+- name: Reload runner unit
+  ansible.builtin.systemd:
+    daemon_reload: true

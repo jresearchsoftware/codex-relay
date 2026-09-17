@@ -1,0 +1,7 @@
+---
+relay_preflight_owned_paths:
+  - '{{ relay_install_root }}'
+  - '{{ relay_config_root }}'
+  - '{{ relay_state_root }}'
+  - '{{ relay_log_root }}'
+  - '{{ relay_runtime_root }}'

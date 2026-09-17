@@ -1,0 +1,45 @@
+---
+- name: Daemon reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Try-restart Reviewer after configuration transition
+  ansible.builtin.command:
+    argv:
+      - /bin/systemctl
+      - try-restart
+      - '{{ relay_reviewer_service_name }}'
+  changed_when: true
+  when:
+    - not relay_production_defer_lifecycle | default(false) | bool
+    - not ansible_check_mode | bool
+    - not (
+        relay_deployment_profile == 'production' and
+        relay_production_operation_record_present | default(false) | bool
+      )
+    - >-
+      relay_service_effective_enabled | bool or
+      (
+        (relay_service_state_management | default('enforce') | lower) == 'preserve' and
+        not relay_reviewer_release_changed | default(false) | bool
+      )
+
+- name: Try-restart Reviewer under the ordinary apply operation lock
+  listen: Try-restart Reviewer after configuration transition
+  ansible.builtin.command:
+    argv:
+      - '{{ relay_reviewer_operation_restart_path }}'
+  changed_when: true
+  when:
+    - not relay_production_defer_lifecycle | default(false) | bool
+    - relay_deployment_profile == 'production'
+    - relay_production_operation_record_present | default(false) | bool
+    - relay_production_operation_phase | default('') == 'apply'
+    - not relay_production_operation_recovery_required | default(false) | bool
+    - not ansible_check_mode | bool
+    - >-
+      relay_service_effective_enabled | bool or
+      (
+        (relay_service_state_management | default('enforce') | lower) == 'preserve' and
+        not relay_reviewer_release_changed | default(false) | bool
+      )

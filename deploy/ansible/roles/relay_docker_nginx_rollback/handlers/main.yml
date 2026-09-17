@@ -1,0 +1,13 @@
+---
+- name: Reload Docker nginx after adapter rollback
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - '{{ relay_docker_nginx_container_name }}'
+      - nginx
+      - -s
+      - reload
+  when:
+    - not ansible_check_mode | bool
+    - (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).State.Running | bool

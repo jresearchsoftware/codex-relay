@@ -1,0 +1,21 @@
+---
+- name: Refresh Debian APT metadata only
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: '{{ relay_apt_metadata_cache_valid_time }}'
+  register: relay_apt_metadata_bootstrap
+  changed_when: relay_apt_metadata_bootstrap.cache_updated | default(false)
+
+- name: Record bounded APT metadata bootstrap result
+  ansible.builtin.set_fact:
+    relay_apt_metadata_bootstrap_state: >-
+      {{
+        'REFRESHED'
+        if (relay_apt_metadata_bootstrap.cache_updated | default(false) | bool)
+        else 'ALREADY_FRESH'
+      }}
+  changed_when: false
+
+- name: Report bounded APT metadata bootstrap result
+  ansible.builtin.debug:
+    msg: 'APT_METADATA_BOOTSTRAP={{ relay_apt_metadata_bootstrap_state }}'

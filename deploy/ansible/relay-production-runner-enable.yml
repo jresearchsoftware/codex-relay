@@ -1,0 +1,409 @@
+---
+- name: Enable the registered production relay runner
+  hosts: relay
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Establish or inspect the durable production operation state
+      ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Require the explicit production runner-enable authorization
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_authorized | bool
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - relay_production_runner_enable_exact_head is defined
+          - relay_production_runner_enable_exact_head | length == 40
+          - relay_production_runner_enable_exact_head is match('^[0-9a-fA-F]{40}$')
+          - relay_reviewer_bind_mode in ['nexus_gateway', 'a_only_loopback']
+          - relay_runner_name == relay_production_runner_name
+          - relay_runner_repository == relay_github_repository
+          - relay_runner_labels | length > 0
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_AUTHORIZATION_OR_IDENTITY_INVALID'
+
+    - name: Resolve the validated Reviewer nexus gateway before runner readiness checks
+      ansible.builtin.include_role:
+        name: relay_docker_network_gateway
+      when: relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Resolve the checked-out production runner-enable head
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - '{{ relay_review_root }}'
+          - rev-parse
+          - HEAD
+      delegate_to: localhost
+      become: false
+      register: relay_production_runner_enable_checkout_head
+      changed_when: false
+      check_mode: false
+
+    - name: Bind runner enablement to the reviewed exact head
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_checkout_head.stdout == relay_production_runner_enable_exact_head
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_CHECKOUT_HEAD_MISMATCH'
+
+    - name: Resolve the reviewed artifact identity before runner-enable bind refresh
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
+
+    - name: Inspect the exact current release and non-secret manifest
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - '{{ relay_install_root }}/current'
+        - '{{ relay_install_root }}/current/artifact-manifest.json'
+      register: relay_production_runner_enable_release_paths
+      changed_when: false
+
+    - name: Require the reviewed current release before runner enablement
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_release_paths.results[0].stat.exists
+          - relay_production_runner_enable_release_paths.results[0].stat.islnk | default(false)
+          - relay_production_runner_enable_release_paths.results[0].stat.lnk_source.startswith(relay_release_root + '/')
+          - relay_production_runner_enable_release_paths.results[1].stat.exists
+          - relay_production_runner_enable_release_paths.results[1].stat.isreg
+          - not relay_production_runner_enable_release_paths.results[1].stat.islnk | default(false)
+          - relay_production_runner_enable_release_paths.results[1].stat.pw_name == 'root'
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_RELEASE_OR_MANIFEST_UNAVAILABLE'
+
+    - name: Read only the current non-secret release manifest
+      ansible.builtin.slurp:
+        src: '{{ relay_install_root }}/current/artifact-manifest.json'
+      register: relay_production_runner_enable_manifest_raw
+
+    - name: Parse the current release manifest without protected content
+      ansible.builtin.set_fact:
+        relay_production_runner_enable_manifest: '{{ relay_production_runner_enable_manifest_raw.content | b64decode | from_json }}'
+
+    - name: Require the current release to match the reviewed head
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_manifest.schemaVersion == '1.0'
+          - relay_production_runner_enable_manifest.commit == relay_production_runner_enable_exact_head
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_RELEASE_HEAD_MISMATCH'
+
+    - name: Inspect registration markers
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop:
+        - '{{ relay_runner_registration_marker }}'
+        - '{{ relay_runner_credentials_marker }}'
+      register: relay_production_runner_enable_registration_paths
+      changed_when: false
+
+    - name: Require complete runner registration markers owned by the runner
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_registration_paths.results[0].stat.exists
+          - relay_production_runner_enable_registration_paths.results[0].stat.isreg
+          - not relay_production_runner_enable_registration_paths.results[0].stat.islnk | default(false)
+          - relay_production_runner_enable_registration_paths.results[0].stat.pw_name == relay_runner_user
+          - relay_production_runner_enable_registration_paths.results[0].stat.gr_name == relay_runner_group
+          - relay_production_runner_enable_registration_paths.results[0].stat.mode == '0600'
+          - relay_production_runner_enable_registration_paths.results[1].stat.exists
+          - relay_production_runner_enable_registration_paths.results[1].stat.isreg
+          - not relay_production_runner_enable_registration_paths.results[1].stat.islnk | default(false)
+          - relay_production_runner_enable_registration_paths.results[1].stat.pw_name == relay_runner_user
+          - relay_production_runner_enable_registration_paths.results[1].stat.gr_name == relay_runner_group
+          - relay_production_runner_enable_registration_paths.results[1].stat.mode == '0600'
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_REGISTRATION_STATE_INVALID'
+
+    - name: Read and validate only the non-secret runner registration marker
+      ansible.builtin.slurp:
+        src: '{{ relay_runner_registration_marker }}'
+      register: relay_production_runner_enable_registration_raw
+
+    - name: Parse the factual runner registration binding
+      ansible.builtin.set_fact:
+        relay_production_runner_enable_registration: '{{ relay_production_runner_enable_registration_raw.content | b64decode(encoding="utf-8-sig") | from_json }}'
+
+    - name: Require the factual production organization runner binding
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_registration.gitHubUrl == ('https://github.com/' ~ relay_github_repository.split('/')[0])
+          - relay_production_runner_enable_registration.agentName == relay_production_runner_name
+          - relay_production_runner_enable_registration.workFolder == relay_runner_work_root
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_REGISTRATION_BINDING_INVALID'
+
+    - name: Inspect the durable Reviewer activation authorization marker
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_activation_marker }}'
+        follow: false
+      register: relay_production_runner_enable_reviewer_activation_marker
+      changed_when: false
+
+    - name: Require the exact-head activation marker before runner enablement
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_reviewer_activation_marker.stat.exists
+          - relay_production_runner_enable_reviewer_activation_marker.stat.isreg
+          - not relay_production_runner_enable_reviewer_activation_marker.stat.islnk | default(false)
+          - relay_production_runner_enable_reviewer_activation_marker.stat.pw_name == 'root'
+          - relay_production_runner_enable_reviewer_activation_marker.stat.gr_name == 'root'
+          - relay_production_runner_enable_reviewer_activation_marker.stat.mode == '0600'
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_REVIEWER_AUTHORIZATION_INVALID'
+
+    - name: Read the non-secret Reviewer activation marker before runner enablement
+      ansible.builtin.slurp:
+        src: '{{ relay_reviewer_activation_marker }}'
+      register: relay_production_runner_enable_reviewer_activation_marker_raw
+
+    - name: Require the durable Reviewer activation marker value before runner enablement
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_reviewer_activation_marker_raw.content | b64decode | trim == 'authorized'
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_REVIEWER_AUTHORIZATION_INVALID'
+
+    - name: Inspect the explicit Reviewer reactivation requirement
+      ansible.builtin.stat:
+        path: '{{ relay_reviewer_recovery_off_marker }}'
+        follow: false
+      register: relay_production_runner_enable_recovery_off_marker
+      changed_when: false
+
+    - name: Refuse runner enablement before explicit Reviewer reactivation
+      ansible.builtin.assert:
+        that:
+          - not relay_production_runner_enable_recovery_off_marker.stat.exists | default(false)
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_REVIEWER_REACTIVATION_REQUIRED'
+
+    - name: Inspect pre-enable service and protected runtime boundaries
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+      loop:
+        - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+        - {operation: is-active, unit: docker.service, gateway_only: true}
+        - {operation: is-active, unit: '{{ relay_docker_nginx_service_name }}'}
+        - {operation: is-active, unit: relay-runner.service}
+        - {operation: is-enabled, unit: relay-runner.service}
+        - {operation: is-active, unit: relay-controller.service}
+        - {operation: is-enabled, unit: relay-controller.service}
+      register: relay_production_runner_enable_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: not (item.gateway_only | default(false)) or relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Inspect the Reviewer enablement state before runner enablement
+      ansible.builtin.command:
+        argv: ['systemctl', 'is-enabled', '{{ relay_reviewer_service_name }}']
+      register: relay_production_runner_enable_reviewer_enabled
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Inspect the expected private Reviewer TCP listener before runner enablement
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:8787$/ { print }'
+      register: relay_production_runner_enable_reviewer_listener_before
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Classify the runner-enable prestate for idempotent replay
+      ansible.builtin.set_fact:
+        relay_production_runner_enable_prestate: >-
+          {{
+            'already_converged'
+            if (
+              relay_production_runner_enable_services.results[3].stdout == 'active' and
+              relay_production_runner_enable_services.results[4].stdout == 'enabled'
+            ) else
+            'ready_to_enable'
+            if (
+              relay_production_runner_enable_services.results[3].stdout in ['inactive', 'failed'] and
+              relay_production_runner_enable_services.results[4].stdout == 'disabled'
+            ) else
+            'authorized_recovery'
+            if (
+              relay_production_runner_enable_services.results[3].stdout in ['inactive', 'failed'] and
+              relay_production_runner_enable_services.results[4].stdout in ['enabled', 'enabled-runtime']
+            ) else 'unsafe'
+          }}
+
+    - name: Require the pre-enable runner and protected-service state
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_services.results[0].stdout == 'active'
+          - relay_production_runner_enable_reviewer_enabled.stdout in ['enabled', 'enabled-runtime']
+          - relay_reviewer_bind_mode != 'nexus_gateway' or relay_production_runner_enable_services.results[1].stdout == 'active'
+          - relay_production_runner_enable_services.results[2].stdout == 'active'
+          - relay_production_runner_enable_prestate in ['already_converged', 'ready_to_enable', 'authorized_recovery']
+          - relay_production_runner_enable_reviewer_listener_before.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          - relay_production_runner_enable_services.results[5].stdout != 'active'
+          - relay_production_runner_enable_services.results[6].stdout not in ['enabled', 'static']
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_PRESTATE_INVALID'
+
+    - name: Capture the public listening boundary before runner enablement
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:(80|443|8787|8000)$/ { print }'
+      register: relay_production_runner_enable_listeners_before
+      changed_when: false
+      check_mode: false
+
+    - name: Inspect installed runner software and unit before the lifecycle transition
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - '{{ relay_runner_service_unit_path }}'
+        - '{{ relay_runner_root }}/run.sh'
+        - '{{ relay_runner_root }}/bin/Runner.Listener'
+      register: relay_production_runner_enable_installed
+
+    - name: Require installed regular runner artifacts rather than installing on enable
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+          - not item.stat.islnk
+        fail_msg: PRODUCTION_RUNNER_ENABLE_INSTALL_CURRENT_MAIN_FIRST
+      loop: '{{ relay_production_runner_enable_installed.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+
+    - name: Verify the installed production runner version without replacing software
+      ansible.builtin.command:
+        argv: ['{{ relay_runner_root }}/bin/Runner.Listener', '--version']
+      become_user: '{{ relay_runner_user }}'
+      register: relay_production_runner_enable_version
+      changed_when: false
+      failed_when: relay_production_runner_enable_version.stdout | trim != relay_runner_package_version
+      check_mode: false
+
+    - name: Require the installed production unit to remain root owned
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_installed.results[0].stat.pw_name == 'root'
+          - relay_production_runner_enable_installed.results[0].stat.gr_name == 'root'
+          - relay_production_runner_enable_installed.results[0].stat.mode == '0644'
+        fail_msg: PRODUCTION_RUNNER_ENABLE_UNIT_OWNERSHIP_INVALID
+
+    - name: Begin or retain the exact production runner-enable operation
+      ansible.builtin.include_tasks: tasks/production-operation-state-begin.yml
+
+    - name: Apply only the matching runner-only recovery disposition
+      ansible.builtin.include_tasks: tasks/production-operation-recovery-reset.yml
+      when: relay_production_operation_recovery_matching | default(false) | bool
+
+    - name: Refresh and prove the current Reviewer bind state before runner mutation
+      ansible.builtin.include_tasks: tasks/production-reviewer-bind-state.yml
+      vars:
+        relay_production_reviewer_bind_refresh: false
+      when: not ansible_check_mode | bool
+
+  tasks:
+    - name: Enable only the already installed registered production runner
+      ansible.builtin.systemd:
+        name: '{{ relay_runner_service_name }}'
+        enabled: '{{ relay_runner_service_enabled | bool }}'
+        state: '{{ "stopped" if relay_runner_start_via_operation_helper | bool else "started" }}'
+        daemon_reload: true
+      vars:
+        relay_runner_registration_enabled: true
+        relay_runner_registration_authorized: true
+        relay_runner_registration_completed: true
+        relay_runner_service_enabled: true
+        relay_runner_service_state_management: enforce
+        relay_runner_start_via_operation_helper: '{{ relay_production_runner_enable_prestate != "already_converged" }}'
+
+    - name: Start the registered runner through the explicit runner-enable transition window
+      ansible.builtin.command:
+        argv:
+          - '{{ relay_runner_enable_start_path }}'
+      changed_when: true
+      check_mode: false
+      when:
+        - not ansible_check_mode | bool
+        - relay_production_runner_enable_prestate != 'already_converged'
+
+  post_tasks:
+    - name: Inspect the current release after runner enablement
+      ansible.builtin.stat:
+        path: '{{ relay_install_root }}/current'
+        follow: false
+      register: relay_production_runner_enable_post_release
+      changed_when: false
+
+    - name: Inspect the final runner and protected service state
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
+      loop:
+        - {operation: is-active, unit: relay-runner.service}
+        - {operation: is-enabled, unit: relay-runner.service}
+        - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
+        - {operation: is-active, unit: relay-controller.service}
+        - {operation: is-enabled, unit: relay-controller.service}
+      register: relay_production_runner_enable_post_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Capture the public listening boundary after runner enablement
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:(80|443|8787|8000)$/ { print }'
+      register: relay_production_runner_enable_listeners_after
+      changed_when: false
+      check_mode: false
+
+    - name: Inspect the expected private Reviewer TCP listener after runner enablement
+      ansible.builtin.shell: >-
+        ss -ltnH |
+        awk '$4 ~ /:8787$/ { print }'
+      register: relay_production_runner_enable_reviewer_listener_after
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Inspect the Reviewer enablement state after runner enablement
+      ansible.builtin.command:
+        argv: ['systemctl', 'is-enabled', '{{ relay_reviewer_service_name }}']
+      register: relay_production_runner_enable_post_reviewer_enabled
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Require successful runner enablement without release or listener drift
+      ansible.builtin.assert:
+        that:
+          - relay_production_runner_enable_post_release.stat.exists
+          - relay_production_runner_enable_post_release.stat.islnk | default(false)
+          - relay_production_runner_enable_post_release.stat.lnk_source == relay_production_runner_enable_release_paths.results[0].stat.lnk_source
+          - relay_production_runner_enable_post_services.results[0].stdout == 'active'
+          - relay_production_runner_enable_post_services.results[1].stdout == 'enabled'
+          - relay_production_runner_enable_post_services.results[2].stdout == 'active'
+          - relay_production_runner_enable_post_reviewer_enabled.stdout in ['enabled', 'enabled-runtime']
+          - relay_production_runner_enable_post_services.results[3].stdout != 'active'
+          - relay_production_runner_enable_post_services.results[4].stdout not in ['enabled', 'static']
+          - relay_production_runner_enable_listeners_after.stdout == relay_production_runner_enable_listeners_before.stdout
+          - relay_production_runner_enable_reviewer_listener_after.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          - relay_production_runner_enable_reviewer_listener_after.stdout == relay_production_runner_enable_reviewer_listener_before.stdout
+        fail_msg: 'PRODUCTION_RUNNER_ENABLE_POSTCHECK_FAILED'
+
+    - name: Record the bounded production runner-enable result
+      ansible.builtin.debug:
+        msg: >-
+          PRODUCTION_RUNNER_ENABLE_PASS=repository={{ relay_runner_repository }};
+          name={{ relay_runner_name }};label={{ relay_runner_labels | join(',') }};
+          exact_head={{ relay_production_runner_enable_exact_head }};
+          reviewer={{ relay_reviewer_service_name }}:active;
+          controller_daemon=retired;public_listeners=unchanged
+
+    - name: Clear runner-enable recovery evidence after complete validation
+      ansible.builtin.include_tasks: tasks/production-operation-state-clear.yml
+      vars:
+        relay_production_operation_clear_phase: '{{ relay_production_operation_active_phase }}'
+        relay_production_operation_clear_head: '{{ relay_production_operation_active_head }}'
+      when: not ansible_check_mode | bool

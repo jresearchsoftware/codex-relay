@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "repository": "sample-co/inventory-api",
+  "owner": "inventory-owner",
+  "baseBranch": "trunk",
+  "taskBranchPrefix": "work/",
+  "routingWorkflow": ".github/workflows/inventory-route.yaml",
+  "recoveryWorkflow": ".github/workflows/inventory-recover.yaml",
+  "writerApp": {
+    "slug": "inventory-writer",
+    "appId": "701",
+    "installationId": "801",
+    "expectedActor": "inventory-writer[bot]"
+  },
+  "reviewerApp": {
+    "slug": "inventory-reviewer",
+    "appId": "702",
+    "installationId": "802",
+    "expectedActor": "inventory-reviewer[bot]"
+  },
+  "writerIdentity": {
+    "name": "inventory-writer",
+    "email": "inventory-writer@example.invalid"
+  },
+  "remediationIdentity": {
+    "name": "inventory-remediation",
+    "email": "inventory-remediation@example.invalid"
+  },
+  "defaultProfile": {
+    "cliModelId": "fixture-model",
+    "effort": "high"
+  },
+  "runtimeUser": "inventory-worker",
+  "paths": {
+    "workRoot": "/var/lib/relay-inventory/dispatch-work",
+    "attemptRoot": "/var/lib/relay-inventory/dispatch/attempts-v2",
+    "dispatch": "/opt/relay-inventory/relay-codex-dispatch",
+    "writerHelper": "/opt/relay-inventory/relay-writer-controller",
+    "launcher": "/opt/relay-inventory/relay-codex",
+    "diagnosticsConfig": "/etc/relay-inventory/diagnostics.json",
+    "diagnosticsStore": "/opt/relay-inventory/relay-diagnostics-store",
+    "diagnosticsRoot": "/var/lib/relay-inventory/debug",
+    "credentialEnv": "/etc/relay-inventory/writer-credentials/github-app.env",
+    "credentialKeyFile": "/etc/relay-inventory/writer-credentials/github-app-private-key.pem",
+    "claimRoot": "/var/lib/relay-inventory/writer-claims"
+  },
+  "validationWorkflow": ".github/workflows/inventory-validation.yaml",
+  "validationNames": [
+    "pytest-inventory",
+    "mypy-inventory",
+    "openapi-compatibility"
+  ]
+}

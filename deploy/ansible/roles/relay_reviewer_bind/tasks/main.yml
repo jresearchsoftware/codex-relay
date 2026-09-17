@@ -1,0 +1,45 @@
+---
+- name: Require an admitted TCP-only Reviewer bind mode
+  ansible.builtin.assert:
+    that:
+      - relay_reviewer_bind_mode in ['a_only_loopback', 'nexus_gateway']
+      - >-
+        relay_reviewer_bind_mode != 'a_only_loopback' or
+        (
+          relay_reviewer_bind_address == '127.0.0.1' and
+          relay_reviewer_bind_network == '' and
+          not relay_reviewer_gateway_validated | bool
+        )
+      - relay_reviewer_bind_mode != 'nexus_gateway' or relay_reviewer_gateway_validated | bool
+    fail_msg: 'Reviewer bind transition requires the source-controlled loopback TCP or validated nexus-gateway contract'
+
+- name: Render the Reviewer config for the validated bind mode
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runtime/templates/reviewer-mcp.json.j2'
+    dest: '{{ relay_config_root }}/reviewer-mcp.json'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0640'
+  notify: Try-restart Reviewer for validated bind mode
+
+- name: Inspect the active Reviewer listener for bind reconciliation
+  ansible.builtin.command:
+    argv: ['ss', '-H', '-ltnp', 'sport', '=', ':8787']
+  register: relay_reviewer_bind_active_listener
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Restart Reviewer when the active listener is not the desired bind
+  ansible.builtin.command:
+    argv:
+      - /bin/true
+  changed_when: true
+  notify: Try-restart Reviewer for validated bind mode
+  when:
+    - not ansible_check_mode | bool
+    - (relay_reviewer_bind_address ~ ':8787') not in relay_reviewer_bind_active_listener.stdout
+
+- name: Record the source-controlled Reviewer bind transition
+  ansible.builtin.debug:
+    msg: 'REVIEWER_BIND_MODE_RECONCILED={{ relay_reviewer_bind_mode }}; address={{ relay_reviewer_bind_address }}; network={{ relay_reviewer_bind_network | default("none") }}'

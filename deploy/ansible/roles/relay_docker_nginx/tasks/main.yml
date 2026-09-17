@@ -1,0 +1,638 @@
+---
+- name: Keep Docker-nginx public ingress behind its explicit coexistence gate
+  ansible.builtin.assert:
+    that:
+      - >-
+        not relay_docker_nginx_manage | bool or
+        relay_docker_nginx_validation_mode == 'prospective' or
+        relay_docker_nginx_service_enabled | bool
+    fail_msg: 'Docker-nginx relay ingress requires explicit service and TLS readiness gates'
+
+- name: Record the disabled Docker-nginx adapter state
+  ansible.builtin.debug:
+    msg: 'DOCKER_NGINX_ADAPTER_GATED=manage={{ relay_docker_nginx_manage | bool }}; service_enabled={{ relay_docker_nginx_service_enabled | bool }}'
+  when: not relay_docker_nginx_manage | bool
+
+- name: Inspect the expected Docker and Nexus control-plane services
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - '{{ item }}'
+  loop:
+    - docker.service
+    - '{{ relay_docker_nginx_service_name }}'
+  register: relay_docker_nginx_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Validate the parameterized Nexus ownership-root contract
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_compose_root == relay_nexus_ownership_root
+      - relay_docker_nginx_conf_root == relay_nexus_ownership_root ~ '/nginx-conf'
+      - relay_docker_nginx_letsencrypt_root == relay_nexus_ownership_root ~ '/letsencrypt'
+      - relay_docker_nginx_dhparam_file == relay_nexus_ownership_root ~ '/dhparam/dhparam-2048.pem'
+      - relay_docker_nginx_projection_root.startswith(relay_nexus_ownership_root ~ '/letsencrypt/' ~ relay_namespace ~ '/')
+    fail_msg: 'NEXUS_OWNERSHIP_ROOT_CONTRACT_INVALID_OR_MIXED'
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect the parameterized Nexus ownership root and support paths
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_nexus_ownership_root }}'
+    - '{{ relay_docker_nginx_compose_root }}'
+    - '{{ relay_nexus_compose_file }}'
+    - '{{ relay_docker_nginx_conf_root }}'
+    - '{{ relay_docker_nginx_letsencrypt_root }}'
+    - '{{ relay_docker_nginx_dhparam_file }}'
+  register: relay_docker_nginx_ownership_paths
+  changed_when: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Require safe parameterized Nexus ownership paths
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_ownership_paths.results[0].stat.exists
+      - relay_docker_nginx_ownership_paths.results[0].stat.isdir
+      - not relay_docker_nginx_ownership_paths.results[0].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[0].stat.pw_name == 'root'
+      - relay_docker_nginx_ownership_paths.results[1].stat.exists
+      - relay_docker_nginx_ownership_paths.results[1].stat.isdir
+      - not relay_docker_nginx_ownership_paths.results[1].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[1].stat.pw_name == 'root'
+      - relay_docker_nginx_ownership_paths.results[2].stat.exists
+      - relay_docker_nginx_ownership_paths.results[2].stat.isreg
+      - not relay_docker_nginx_ownership_paths.results[2].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[2].stat.pw_name == 'root'
+      - relay_docker_nginx_ownership_paths.results[3].stat.exists
+      - relay_docker_nginx_ownership_paths.results[3].stat.isdir
+      - not relay_docker_nginx_ownership_paths.results[3].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[3].stat.pw_name == 'root'
+      - relay_docker_nginx_ownership_paths.results[4].stat.exists
+      - relay_docker_nginx_ownership_paths.results[4].stat.isdir
+      - not relay_docker_nginx_ownership_paths.results[4].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[4].stat.pw_name == 'root'
+      - relay_docker_nginx_ownership_paths.results[5].stat.exists
+      - relay_docker_nginx_ownership_paths.results[5].stat.isreg
+      - not relay_docker_nginx_ownership_paths.results[5].stat.islnk | default(false)
+      - relay_docker_nginx_ownership_paths.results[5].stat.pw_name == 'root'
+    fail_msg: 'NEXUS_OWNERSHIP_ROOT_PATH_MISSING_SYMLINKED_OR_FOREIGN'
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect the Nexus systemd compose control-plane command
+  ansible.builtin.command:
+    argv: [systemctl, show, '{{ relay_docker_nginx_service_name }}', '--property=ExecStart', '--value']
+  register: relay_docker_nginx_compose_service
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Require systemd and compose paths to use the same Nexus ownership root
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_compose_service.rc == 0
+      - relay_docker_nginx_compose_service.stdout is search(relay_nexus_compose_file | regex_escape)
+    fail_msg: 'NEXUS_OWNERSHIP_ROOT_SYSTEMD_COMPOSE_MISMATCH'
+  when: relay_docker_nginx_manage | bool
+
+- name: Require the Docker daemon before adapter reconciliation
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_services.results[0].rc == 0
+    fail_msg: 'Docker daemon is not active; stop before adapter mutation'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Inspect the pinned Docker-nginx container with docker inspect
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - '{{ relay_docker_nginx_container_name }}'
+  register: relay_docker_nginx_inspect_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Parse the pinned Docker-nginx identity
+  ansible.builtin.set_fact:
+    relay_docker_nginx_inspect: '{{ (relay_docker_nginx_inspect_command.stdout | from_json | first) if relay_docker_nginx_inspect_command.rc == 0 else {} }}'
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Inspect the pinned nginx image for prospective validation
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - '{{ relay_docker_nginx_image }}'
+  register: relay_docker_nginx_image_inspect
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+
+- name: Require the pinned nginx image for prospective validation
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_image_inspect.rc == 0
+    fail_msg: 'Pinned nginx image is unavailable for prospective no-port validation'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+
+- name: Inspect the pinned Docker-nginx dhparam source for prospective validation
+  ansible.builtin.stat:
+    path: '{{ relay_docker_nginx_dhparam_file }}'
+    follow: false
+  register: relay_docker_nginx_dhparam_stat
+  changed_when: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+
+- name: Require the pinned Docker-nginx dhparam source
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_dhparam_stat.stat.exists | bool
+      - relay_docker_nginx_dhparam_stat.stat.isreg | bool
+      - not relay_docker_nginx_dhparam_stat.stat.islnk | bool
+    fail_msg: 'Pinned Docker-nginx dhparam source is absent or unsafe for prospective validation'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+
+- name: Require the pinned Docker-nginx identity and conf.d mount
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_inspect.Name == '/' ~ relay_docker_nginx_container_name
+      - relay_docker_nginx_inspect.Config.Image == relay_docker_nginx_expected_image
+      - >-
+        relay_docker_nginx_inspect.State.Running | bool
+        or relay_docker_nginx_validation_mode == 'prospective'
+      - >-
+        (
+          relay_docker_nginx_inspect.Mounts
+          | selectattr('Source', 'equalto', relay_docker_nginx_conf_root)
+          | selectattr('Destination', 'equalto', '/etc/nginx/conf.d')
+          | list | length
+        ) == 1
+      - >-
+        (
+          relay_docker_nginx_inspect.Mounts
+          | selectattr('Source', 'equalto', relay_docker_nginx_letsencrypt_root)
+          | selectattr('Destination', 'equalto', '/etc/letsencrypt')
+          | list | length
+        ) == 1
+    fail_msg: 'Pinned Docker-nginx control-plane identity or mounts are unexpected; fail closed'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Inspect public listener ownership for the active Docker-nginx control plane
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -ltnp
+      - ' sport = :80 or sport = :443 '
+  register: relay_docker_nginx_public_listeners
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Derive active Docker-nginx public listener lines
+  ansible.builtin.set_fact:
+    relay_docker_nginx_public_listener_lines: >-
+      {{ relay_docker_nginx_public_listeners.stdout_lines
+         | select('search', ':(80|443)\s') | list }}
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Require Docker-proxy ownership of both public listeners
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_public_listeners.rc == 0
+      - relay_docker_nginx_public_listener_lines | length >= 2
+      - relay_docker_nginx_public_listener_lines | select('search', ':80\s') | list | length >= 1
+      - relay_docker_nginx_public_listener_lines | select('search', ':443\s') | list | length >= 1
+      - relay_docker_nginx_public_listener_lines | reject('search', 'docker-proxy') | list | length == 0
+    fail_msg: 'Public 80/443 ownership is absent, foreign, or ambiguous; Docker-nginx adapter stops'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Inspect the Docker-nginx configuration directory and relay fragment without following links
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_docker_nginx_conf_root }}'
+    - '{{ relay_docker_nginx_foreign_config }}'
+    - '{{ relay_docker_nginx_fragment }}'
+  register: relay_docker_nginx_paths
+  changed_when: false
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Derive Docker-nginx adapter path facts
+  ansible.builtin.set_fact:
+    relay_docker_nginx_conf_stat: '{{ relay_docker_nginx_paths.results[0].stat }}'
+    relay_docker_nginx_foreign_config_stat: '{{ relay_docker_nginx_paths.results[1].stat }}'
+    relay_docker_nginx_fragment_stat: '{{ relay_docker_nginx_paths.results[2].stat }}'
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Require safe Docker-nginx configuration directory and foreign config
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_conf_stat.exists
+      - relay_docker_nginx_conf_stat.isdir
+      - not relay_docker_nginx_conf_stat.islnk | default(false)
+      - relay_docker_nginx_conf_stat.pw_name == 'root'
+      - relay_docker_nginx_foreign_config_stat.exists
+      - relay_docker_nginx_foreign_config_stat.isreg
+      - not relay_docker_nginx_foreign_config_stat.islnk | default(false)
+    fail_msg: 'Docker-nginx conf.d directory or pinned foreign nginx config is unsafe or absent'
+  when:
+    - relay_docker_nginx_manage | bool
+
+- name: Verify an existing Docker-nginx relay fragment is attributable to relay
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -Fx
+      - '# managed-by: codex-relay-docker-nginx'
+      - '{{ relay_docker_nginx_fragment }}'
+  register: relay_docker_nginx_fragment_marker
+  changed_when: false
+  failed_when: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_fragment_stat.exists
+
+- name: Fail closed on a foreign Docker-nginx fragment collision
+  ansible.builtin.assert:
+    that:
+      - not relay_docker_nginx_fragment_stat.exists or relay_docker_nginx_fragment_marker.rc == 0
+      - not relay_docker_nginx_fragment_stat.exists or relay_docker_nginx_fragment_stat.isreg
+      - not relay_docker_nginx_fragment_stat.exists or not relay_docker_nginx_fragment_stat.islnk | default(false)
+    fail_msg: 'Docker-nginx relay fragment target is foreign, non-regular, or symlinked'
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode | bool
+
+- name: Require distinct relay and foreign Nexus virtual-host identities
+  ansible.builtin.assert:
+    that:
+      - relay_nexus_b_server_name != relay_nginx_server_name
+      - relay_nginx_server_name not in (relay_nexus_b_server_aliases | default([]))
+    fail_msg: 'Relay and foreign Nexus Docker-nginx virtual hosts must remain distinct'
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect the foreign Docker-nginx configuration for a relay hostname claim
+  ansible.builtin.shell: >-
+    awk -v relay_host='{{ relay_nginx_server_name }}'
+    '$1 == "server_name" {
+      for (i = 2; i <= NF; i++) {
+        token = $i;
+        sub(/;$/, "", token);
+        if (token == relay_host) { found = 1 }
+      }
+    }
+    END { exit found ? 0 : 1 }'
+    '{{ relay_docker_nginx_foreign_config }}'
+  args:
+    executable: /bin/sh
+  register: relay_docker_nginx_foreign_relay_claim
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  when: relay_docker_nginx_manage | bool
+
+- name: Refuse foreign ownership of the relay virtual-host identity
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_foreign_relay_claim.rc == 1
+    fail_msg: 'Foreign Docker-nginx configuration claims the relay hostname; no fragment activation is allowed'
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect configured relay certificate and key source paths
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_nginx_server_certificate_file }}'
+    - '{{ relay_nginx_server_private_key_file }}'
+    - '{{ relay_nginx_client_ca_file }}'
+  register: relay_docker_nginx_source_paths
+  changed_when: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Resolve configured relay certificate and key source targets without reading material
+  ansible.builtin.command:
+    argv:
+      - realpath
+      - -e
+      - '{{ item }}'
+  loop:
+    - '{{ relay_nginx_server_certificate_file }}'
+    - '{{ relay_nginx_server_private_key_file }}'
+    - '{{ relay_nginx_client_ca_file }}'
+  register: relay_docker_nginx_source_realpaths
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect resolved relay certificate and key source targets
+  ansible.builtin.stat:
+    path: '{{ item.stdout }}'
+    follow: true
+  loop: '{{ relay_docker_nginx_source_realpaths.results }}'
+  register: relay_docker_nginx_source_targets
+  changed_when: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Require safe configured relay certificate and key sources
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_source_paths.results[0].stat.exists
+      - relay_docker_nginx_source_realpaths.results[0].rc == 0
+      - relay_docker_nginx_source_targets.results[0].stat.isreg
+      - relay_docker_nginx_source_targets.results[0].stat.pw_name == 'root'
+      - >-
+        not relay_docker_nginx_source_paths.results[0].stat.islnk | default(false) or
+        relay_docker_nginx_source_realpaths.results[0].stdout is match('/etc/letsencrypt/.*')
+      - relay_docker_nginx_source_paths.results[1].stat.exists
+      - relay_docker_nginx_source_realpaths.results[1].rc == 0
+      - relay_docker_nginx_source_targets.results[1].stat.isreg
+      - relay_docker_nginx_source_targets.results[1].stat.pw_name == 'root'
+      - >-
+        not relay_docker_nginx_source_paths.results[1].stat.islnk | default(false) or
+        relay_docker_nginx_source_realpaths.results[1].stdout is match('/etc/letsencrypt/.*')
+      - relay_docker_nginx_source_paths.results[2].stat.exists
+      - relay_docker_nginx_source_paths.results[2].stat.isreg
+      - not relay_docker_nginx_source_paths.results[2].stat.islnk | default(false)
+      - relay_docker_nginx_source_paths.results[2].stat.pw_name == 'root'
+    fail_msg: 'Configured relay certificate/key source is missing or unsafe'
+  when: relay_docker_nginx_manage | bool
+
+- name: Validate configured relay certificate hostname and key pair without printing private material
+  ansible.builtin.shell: >-
+    set -eu;
+    openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -noout -checkhost '{{ relay_nginx_server_name }}' >/dev/null;
+    certificate_public_key=$(openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -pubkey -noout |
+      openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d ' ' -f 1);
+    private_key_public_key=$(openssl pkey -in '{{ relay_nginx_server_private_key_file }}' -pubout -outform DER 2>/dev/null |
+      sha256sum | cut -d ' ' -f 1);
+    test "$certificate_public_key" = "$private_key_public_key"
+  args:
+    executable: /bin/sh
+  register: relay_docker_nginx_source_certificate_validation
+  changed_when: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Inspect the Docker-nginx certificate projection destinations
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_docker_nginx_projection_root }}'
+    - '{{ relay_docker_nginx_projected_certificate_file }}'
+    - '{{ relay_docker_nginx_projected_private_key_file }}'
+    - '{{ relay_docker_nginx_projected_client_ca_file }}'
+  register: relay_docker_nginx_projection_paths
+  changed_when: false
+  when: relay_docker_nginx_manage | bool
+
+- name: Reject unsafe existing Docker-nginx projection destinations
+  ansible.builtin.assert:
+    that:
+      - >-
+        not relay_docker_nginx_projection_paths.results[0].stat.exists or
+        (
+          relay_docker_nginx_projection_paths.results[0].stat.isdir and
+          not relay_docker_nginx_projection_paths.results[0].stat.islnk | default(false) and
+          relay_docker_nginx_projection_paths.results[0].stat.pw_name == 'root'
+        )
+      - >-
+        not relay_docker_nginx_projection_paths.results[1].stat.exists or
+        (relay_docker_nginx_projection_paths.results[1].stat.isreg and not relay_docker_nginx_projection_paths.results[1].stat.islnk | default(false))
+      - >-
+        not relay_docker_nginx_projection_paths.results[2].stat.exists or
+        (relay_docker_nginx_projection_paths.results[2].stat.isreg and not relay_docker_nginx_projection_paths.results[2].stat.islnk | default(false))
+      - >-
+        not relay_docker_nginx_projection_paths.results[3].stat.exists or
+        (relay_docker_nginx_projection_paths.results[3].stat.isreg and not relay_docker_nginx_projection_paths.results[3].stat.islnk | default(false))
+    fail_msg: 'Docker-nginx certificate projection destination is unsafe'
+  when: relay_docker_nginx_manage | bool
+
+- name: Enumerate existing relay Docker-nginx projection namespace contents
+  ansible.builtin.command:
+    argv:
+      - find
+      - '{{ relay_docker_nginx_projection_root }}'
+      - -mindepth
+      - '1'
+      - -maxdepth
+      - '1'
+      - -printf
+      - '%y:%f\n'
+  register: relay_docker_nginx_projection_entries
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_projection_paths.results[0].stat.isdir | default(false)
+
+- name: Reject foreign or temporary files in the relay projection namespace
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          relay_docker_nginx_projection_entries.stdout_lines | map('trim') | list
+          | difference(['f:fullchain.pem', 'f:privkey.pem', 'f:openai-client-ca.pem'])
+        ) | length == 0
+    fail_msg: 'Docker-nginx projection namespace contains foreign, symlinked, or stale temporary state'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_projection_paths.results[0].stat.isdir | default(false)
+
+- name: Create relay-owned Docker-nginx certificate projection namespace
+  ansible.builtin.file:
+    path: '{{ relay_docker_nginx_projection_root }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  when: relay_docker_nginx_manage | bool
+
+- name: Create a root-controlled temporary certificate projection directory
+  ansible.builtin.tempfile:
+    state: directory
+    path: '{{ relay_docker_nginx_projection_root }}'
+    prefix: '.staging-'
+  register: relay_docker_nginx_projection_temp
+  when: relay_docker_nginx_manage | bool
+
+- name: Stage relay certificate and client-CA projection source files without exposing contents
+  ansible.builtin.copy:
+    src: '{{ item.src }}'
+    dest: '{{ relay_docker_nginx_projection_temp.path }}/{{ item.name }}'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '{{ item.mode }}'
+  loop:
+    - {src: '{{ relay_nginx_server_certificate_file }}', name: fullchain.pem, mode: '0644'}
+    - {src: '{{ relay_nginx_server_private_key_file }}', name: privkey.pem, mode: '0600'}
+    - {src: '{{ relay_nginx_client_ca_file }}', name: openai-client-ca.pem, mode: '0644'}
+  no_log: true
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode
+
+- name: Validate staged certificate projection before installation
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - '{{ relay_docker_nginx_projection_temp.path }}/fullchain.pem'
+      - -noout
+      - -checkhost
+      - '{{ relay_nginx_server_name }}'
+  register: relay_docker_nginx_staged_certificate_validation
+  changed_when: false
+  no_log: true
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode
+
+- name: Install relay certificate projection atomically with controlled modes
+  ansible.builtin.shell: >-
+    set -eu;
+    install -o root -g root -m 0644 '{{ relay_docker_nginx_projection_temp.path }}/fullchain.pem' '{{ relay_docker_nginx_projected_certificate_file }}.new';
+    install -o root -g root -m 0600 '{{ relay_docker_nginx_projection_temp.path }}/privkey.pem' '{{ relay_docker_nginx_projected_private_key_file }}.new';
+    install -o root -g root -m 0644 '{{ relay_docker_nginx_projection_temp.path }}/openai-client-ca.pem' '{{ relay_docker_nginx_projected_client_ca_file }}.new';
+    mv -f '{{ relay_docker_nginx_projected_certificate_file }}.new' '{{ relay_docker_nginx_projected_certificate_file }}';
+    mv -f '{{ relay_docker_nginx_projected_private_key_file }}.new' '{{ relay_docker_nginx_projected_private_key_file }}';
+    mv -f '{{ relay_docker_nginx_projected_client_ca_file }}.new' '{{ relay_docker_nginx_projected_client_ca_file }}'
+  args:
+    executable: /bin/sh
+  no_log: true
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode
+
+- name: Remove temporary Docker-nginx certificate projection state
+  ansible.builtin.file:
+    path: '{{ relay_docker_nginx_projection_temp.path }}'
+    state: absent
+  no_log: true
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode
+
+- name: Install the isolated relay Docker-nginx mTLS fragment
+  ansible.builtin.template:
+    src: codex-relay-docker.conf.j2
+    dest: '{{ relay_docker_nginx_fragment }}'
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload Docker nginx with docker exec, never host nginx.service
+  when: relay_docker_nginx_manage | bool
+
+- name: Validate the complete active Docker-nginx configuration with docker exec
+  ansible.builtin.shell: >-
+    set -eu;
+    output=$(docker exec '{{ relay_docker_nginx_container_name }}' nginx -t 2>&1);
+    if printf '%s\n' "$output" | grep -Fq
+      'conflicting server name "{{ relay_nginx_server_name }}"'; then
+      exit 23;
+    fi
+  args:
+    executable: /bin/sh
+  register: relay_docker_nginx_active_validation
+  changed_when: false
+  no_log: true
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'active'
+
+- name: Validate the prospective Docker-nginx configuration with no public port binding
+  # docker run uses the admitted nexus network for foreign upstream resolution,
+  # publishes no host ports, and is expressed as argv to avoid shell parsing.
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - nexus
+      - -v
+      - '{{ relay_docker_nginx_conf_root }}:/etc/nginx/conf.d:ro'
+      - -v
+      - '{{ relay_docker_nginx_letsencrypt_root }}:/etc/letsencrypt:ro'
+      - -v
+      - '{{ relay_docker_nginx_dhparam_file }}:/etc/ssl/certs/dhparam-2048.pem:ro'
+      - --entrypoint
+      - nginx
+      - '{{ relay_docker_nginx_image }}'
+      - -t
+  register: relay_docker_nginx_prospective_validation
+  changed_when: false
+  failed_when: >-
+    relay_docker_nginx_prospective_validation.rc != 0 or
+    ('conflicting server name "' ~ relay_nginx_server_name ~ '"'
+     in (relay_docker_nginx_prospective_validation.stdout ~
+         relay_docker_nginx_prospective_validation.stderr))
+  no_log: true
+  check_mode: false
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+    - not ansible_check_mode | bool
+
+- name: Record prospective Docker-nginx validation plan in check-mode
+  ansible.builtin.debug:
+    msg: 'DOCKER_NGINX_PROSPECTIVE_CHECK_MODE_PLAN=no_public_port_binding_validation_then_guarded_listener_handoff'
+  when:
+    - relay_docker_nginx_manage | bool
+    - relay_docker_nginx_validation_mode == 'prospective'
+    - ansible_check_mode | bool
+
+- name: Require successful Docker-nginx configuration validation before reload
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          relay_docker_nginx_active_validation.rc
+          if relay_docker_nginx_validation_mode == 'active'
+          else relay_docker_nginx_prospective_validation.rc
+        ) == 0
+    fail_msg: 'Docker-nginx rejected the complete relay candidate configuration; no reload is allowed'
+  when:
+    - relay_docker_nginx_manage | bool
+    - not ansible_check_mode | bool

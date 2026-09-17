@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/example/codex-relay.git",
+    "revision": "main"
+  },
+  "target": {
+    "host": "192.0.2.10",
+    "user": "root",
+    "identityFile": "~/.ssh/relay-owner",
+    "identityFingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "hostFingerprint": "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  },
+  "consumer": {
+    "version": 1,
+    "repository": "example-org/sample-project",
+    "owner": "example-owner",
+    "baseBranch": "main",
+    "taskBranchPrefix": "codex/",
+    "routingWorkflow": ".github/workflows/codex-relay-routing.yml",
+    "recoveryWorkflow": ".github/workflows/manual-writer-publication-recovery.yml",
+    "writerApp": {
+      "slug": "example-writer",
+      "appId": "101",
+      "installationId": "201",
+      "expectedActor": "example-writer[bot]"
+    },
+    "reviewerApp": {
+      "slug": "example-reviewer",
+      "appId": "102",
+      "installationId": "202",
+      "expectedActor": "example-reviewer[bot]"
+    },
+    "writerIdentity": {
+      "name": "example-writer",
+      "email": "example-writer@example.invalid"
+    },
+    "remediationIdentity": {
+      "name": "example-remediation",
+      "email": "example-remediation@example.invalid"
+    },
+    "defaultProfile": {
+      "cliModelId": "example-model",
+      "effort": "max"
+    },
+    "runtimeUser": "relay-codex",
+    "paths": {
+      "workRoot": "/var/lib/codex-relay/dispatch-work",
+      "attemptRoot": "/var/lib/codex-relay/dispatch/attempts-v2",
+      "dispatch": "/opt/codex-relay/relay-codex-dispatch",
+      "writerHelper": "/opt/codex-relay/relay-writer-controller",
+      "launcher": "/opt/codex-relay/relay-codex",
+      "diagnosticsConfig": "/etc/codex-relay/diagnostics.json",
+      "diagnosticsStore": "/opt/codex-relay/relay-diagnostics-store",
+      "diagnosticsRoot": "/var/lib/codex-relay/debug",
+      "credentialEnv": "/etc/codex-relay/writer-credentials/github-app.env",
+      "credentialKeyFile": "/etc/codex-relay/writer-credentials/github-app-private-key.pem",
+      "claimRoot": "/var/lib/codex-relay/writer-claims"
+    },
+    "validationWorkflow": ".github/workflows/relay-exact-head-validation.yml"
+  },
+  "environment": {
+    "namespace": "codex-relay",
+    "serviceUser": "relay",
+    "reviewerUser": "relay-reviewer",
+    "codexWorkGroup": "relay-codex-work",
+    "runner": {
+      "user": "relay-runner",
+      "name": "relay-production",
+      "scope": "organization",
+      "group": "relay-production",
+      "labels": [
+        "relay"
+      ]
+    },
+    "generalRunner": {
+      "user": "relay-general-runner",
+      "name": "relay-general"
+    },
+    "reviewerBind": {
+      "mode": "docker_gateway",
+      "network": "nexus",
+      "container": "nginx"
+    },
+    "ingress": {
+      "serverName": "reviewer.example.invalid",
+      "ownershipRoot": "/srv/shared",
+      "foreignServerName": "other.example.invalid",
+      "service": "shared-proxy.service",
+      "protectedPaths": [
+        "/srv/shared",
+        "/etc/letsencrypt",
+        "/var/lib/docker",
+        "/var/run/docker.sock"
+      ],
+      "protectedServices": [
+        "docker.service",
+        "containerd.service",
+        "shared-proxy.service"
+      ]
+    },
+    "localApply": {
+      "configPath": "deploy/relay.json"
+    },
+    "codexTokenRequired": false,
+    "compatibilityLinks": {}
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Recover the previously authorized Docs evolution Reviewer
+After=network-online.target {{ relay_reviewer_service_name }}
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart={{ relay_install_root }}/relay-reviewer-recovery
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths={{ relay_config_root }} {{ relay_install_root }}
+
+[Install]
+WantedBy=multi-user.target

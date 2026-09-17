@@ -1,0 +1,191 @@
+---
+- name: Resolve shared reviewed artifact identities
+  ansible.builtin.include_tasks: resolve-identities.yml
+  when: relay_release_commit is not defined
+
+- name: Reuse the shared Reviewer artifact admission contract
+  ansible.builtin.include_tasks: verify-reviewer-reuse.yml
+
+- name: Create the exact relay release namespace
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0750'
+  loop:
+    - '{{ relay_release_path }}/reviewer-source'
+
+- name: Allow runtime traversal only to the reviewed release executable namespace
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0751'
+  loop:
+    - '{{ relay_release_path }}'
+    - '{{ relay_release_path }}/bin'
+    - '{{ relay_release_path }}/reviewed-source'
+
+- name: Stage Relay source through its internal Git transport
+  ansible.builtin.include_tasks: stage-source.yml
+
+- name: Stage the exact reviewed privileged Writer helper artifact
+  ansible.builtin.copy:
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/privileged-writer-helper.mjs'
+    dest: '{{ relay_release_path }}/bin/relay-writer-controller.mjs'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0700'
+  when: not ansible_check_mode | bool
+
+- name: Stage the exact reviewed on-demand Codex dispatch artifact
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/codex-dispatch.mjs'
+    dest: '{{ relay_release_path }}/bin/relay-codex-dispatch.mjs'
+    state: link
+    force: true
+    owner: root
+    group: '{{ relay_runner_group }}'
+  when: not ansible_check_mode | bool
+
+- name: Stage the exact reviewed diagnostics store artifact
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/diagnostic-store.mjs'
+    dest: '{{ relay_release_path }}/bin/relay-diagnostics-store.mjs'
+    state: link
+    force: true
+    owner: root
+    group: root
+  when: not ansible_check_mode | bool
+
+- name: Stage reviewed Rust Reviewer source and lockfile
+  ansible.builtin.copy:
+    src: '{{ item.source }}'
+    dest: '{{ relay_release_path }}/reviewer-source/{{ item.destination }}'
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '{{ item.mode }}'
+    remote_src: true
+  loop:
+    - {source: '{{ relay_release_path }}/reviewed-source/reviewer/Cargo.toml', destination: Cargo.toml, mode: '0640'}
+    - {source: '{{ relay_release_path }}/reviewed-source/reviewer/Cargo.lock', destination: Cargo.lock, mode: '0640'}
+  when: not ansible_check_mode | bool
+
+- name: Stage reviewed Rust Reviewer implementation
+  ansible.builtin.copy:
+    src: '{{ relay_release_path }}/reviewed-source/reviewer/src/'
+    dest: '{{ relay_release_path }}/reviewer-source/src/'
+    remote_src: true
+    owner: root
+    group: '{{ relay_group }}'
+    mode: preserve
+  when: not ansible_check_mode | bool
+
+- name: Reconcile the shared pinned Rust toolchain for builds and development
+  ansible.builtin.include_tasks: rust-toolchain.yml
+
+- name: Record the verified reused Reviewer toolchain identity
+  ansible.builtin.set_fact:
+    relay_reviewer_cargo_version: '{{ relay_current_reviewer_manifest.reviewerBuildToolchain.cargoVersion }}'
+  when:
+    - not ansible_check_mode | bool
+    - relay_reviewer_reuse_verified | bool
+
+- name: Record the non-mutating artifact staging plan in check-mode
+  ansible.builtin.debug:
+    msg: 'ARTIFACT_CHECK_MODE_PLAN=commit={{ relay_release_commit }}; controller={{ relay_controller_source_tree_sha256 }}; codexLauncher={{ relay_codex_launcher_source_tree_sha256 }}; reviewer={{ relay_reviewer_source_tree_sha256 }}; reviewerBuildInputs={{ relay_reviewer_build_inputs_tree_sha256 }}; reviewerReuse=verified-content-only; current={{ relay_release_path }}'
+  when: ansible_check_mode | bool
+
+- name: Build the locked reviewed Rust Reviewer release artifact
+  ansible.builtin.command:
+    argv:
+      - '{{ relay_rust_toolchain_root }}/bin/cargo'
+      - build
+      - --locked
+      - --release
+      - --target-dir
+      - '{{ relay_release_path }}/reviewer-target'
+    chdir: '{{ relay_release_path }}/reviewer-source'
+    creates: '{{ relay_release_path }}/reviewer-target/release/reviewer-mcp-http'
+  environment:
+    CARGO_HOME: '{{ relay_rust_toolchain_cargo_home }}'
+    PATH: '{{ relay_rust_toolchain_root }}/bin:{{ ansible_env.PATH }}'
+  when:
+    - not ansible_check_mode | bool
+    - not relay_reviewer_reuse_verified | bool
+
+- name: Record the built Reviewer toolchain identity
+  ansible.builtin.set_fact:
+    relay_reviewer_cargo_version: '{{ relay_rust_toolchain_cargo_version.stdout }}'
+  when:
+    - not ansible_check_mode | bool
+    - not relay_reviewer_reuse_verified | bool
+
+- name: Install the built Reviewer executable into the release contract
+  ansible.builtin.copy:
+    src: '{{ relay_release_path }}/reviewer-target/release/reviewer-mcp-http'
+    dest: '{{ relay_release_path }}/bin/reviewer-mcp-http'
+    remote_src: true
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0750'
+  when:
+    - not ansible_check_mode | bool
+    - not relay_reviewer_reuse_verified | bool
+
+- name: Reuse the verified Reviewer executable without rebuilding it
+  ansible.builtin.copy:
+    src: '{{ relay_install_root }}/current/bin/reviewer-mcp-http'
+    dest: '{{ relay_release_path }}/bin/reviewer-mcp-http'
+    remote_src: true
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0750'
+  when:
+    - not ansible_check_mode | bool
+    - relay_reviewer_reuse_verified | bool
+    - relay_current_release.stat.lnk_source != relay_release_path
+
+- name: Read the deployed Reviewer executable digest
+  ansible.builtin.command:
+    argv:
+      - sha256sum
+      - '{{ relay_release_path }}/bin/reviewer-mcp-http'
+  register: relay_reviewer_binary_digest
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Require a verifiable Reviewer executable digest
+  ansible.builtin.assert:
+    that:
+      - relay_reviewer_binary_digest.stdout.split() | length == 2
+      - relay_reviewer_binary_digest.stdout.split()[0] is match('^[0-9a-f]{64}$')
+    fail_msg: 'Reviewer build output is missing or does not have a SHA-256 identity'
+  when: not ansible_check_mode | bool
+
+- name: Record the deployed artifact manifest
+  ansible.builtin.template:
+    src: artifact-manifest.json.j2
+    dest: '{{ relay_release_path }}/artifact-manifest.json'
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0640'
+  when: not ansible_check_mode | bool
+
+- name: Activate only the reviewed release binding
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}'
+    dest: '{{ relay_install_root }}/current'
+    state: link
+    owner: root
+    group: '{{ relay_group }}'
+  register: relay_release_activation
+  notify: Try-restart Reviewer after release transition
+  when: not ansible_check_mode | bool
+
+- name: Record whether the reviewed release binding changed
+  ansible.builtin.set_fact:
+    relay_reviewer_release_changed: '{{ relay_release_activation.changed | default(false) | bool }}'

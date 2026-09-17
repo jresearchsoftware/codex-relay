@@ -1,0 +1,129 @@
+---
+- name: Inspect pinned Docker-nginx control-plane identity with docker inspect for adapter rollback
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - '{{ relay_docker_nginx_container_name }}'
+  register: relay_docker_nginx_rollback_inspect_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require pinned Docker-nginx control plane before adapter rollback
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_rollback_inspect_command.rc == 0
+      - (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).Name == '/' ~ relay_docker_nginx_container_name
+      - (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).Config.Image == relay_docker_nginx_expected_image
+      - >-
+        (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).State.Running | bool
+        or (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).State.Status in ['created', 'exited']
+    fail_msg: 'Rollback refuses unexpected pinned Docker-nginx control-plane identity or state'
+
+- name: Inspect relay-owned Docker-nginx adapter state without following links
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_docker_nginx_fragment }}'
+    - '{{ relay_docker_nginx_projection_root }}'
+  register: relay_docker_nginx_rollback_paths
+  changed_when: false
+
+- name: Verify the Docker-nginx fragment is relay-owned before removal
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -Fx
+      - '# managed-by: codex-relay-docker-nginx'
+      - '{{ relay_docker_nginx_fragment }}'
+  register: relay_docker_nginx_rollback_marker
+  changed_when: false
+  failed_when: false
+  when: relay_docker_nginx_rollback_paths.results[0].stat.exists
+
+- name: Fail closed on foreign Docker-nginx rollback state
+  ansible.builtin.assert:
+    that:
+      - not relay_docker_nginx_rollback_paths.results[0].stat.exists or relay_docker_nginx_rollback_marker.rc == 0
+      - not relay_docker_nginx_rollback_paths.results[0].stat.exists or relay_docker_nginx_rollback_paths.results[0].stat.isreg
+      - not relay_docker_nginx_rollback_paths.results[0].stat.exists or not relay_docker_nginx_rollback_paths.results[0].stat.islnk | default(false)
+      - not relay_docker_nginx_rollback_paths.results[1].stat.exists or relay_docker_nginx_rollback_paths.results[1].stat.isdir
+      - not relay_docker_nginx_rollback_paths.results[1].stat.exists or not relay_docker_nginx_rollback_paths.results[1].stat.islnk | default(false)
+    fail_msg: 'Rollback refuses foreign, unsafe, or symlinked Docker-nginx adapter state'
+
+- name: Enumerate certificate projection namespace contents before rollback
+  ansible.builtin.command:
+    argv:
+      - find
+      - '{{ relay_docker_nginx_projection_root }}'
+      - -mindepth
+      - '1'
+      - -maxdepth
+      - '1'
+      - -printf
+      - '%f\n'
+  register: relay_docker_nginx_rollback_projection_entries
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Reject foreign files in the relay projection namespace
+  ansible.builtin.assert:
+    that:
+      - >-
+        relay_docker_nginx_rollback_projection_entries.stdout_lines
+        | reject('match', '^(fullchain|privkey|openai-client-ca)\\.pem$')
+        | list | length == 0
+    fail_msg: 'Rollback refuses foreign entries in the relay Docker-nginx projection namespace'
+
+- name: Preview Docker-nginx adapter rollback without mutation
+  ansible.builtin.debug:
+    msg: 'DOCKER_NGINX_ROLLBACK_CHECK_MODE_PLAN=remove_relay_fragment_and_projection_only; preserve_pinned_nexus_state'
+  when: ansible_check_mode | bool
+
+- name: Remove only the relay-owned Docker-nginx fragment
+  ansible.builtin.file:
+    path: '{{ relay_docker_nginx_fragment }}'
+    state: absent
+  notify: Reload Docker nginx after adapter rollback
+
+- name: Remove only the relay-owned certificate projection files
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: absent
+  loop:
+    - '{{ relay_docker_nginx_projected_certificate_file }}'
+    - '{{ relay_docker_nginx_projected_private_key_file }}'
+    - '{{ relay_docker_nginx_projected_client_ca_file }}'
+
+- name: Remove the empty relay-owned certificate projection directory
+  ansible.builtin.file:
+    path: '{{ relay_docker_nginx_projection_root }}'
+    state: absent
+
+- name: Validate the remaining complete Docker-nginx configuration before reload
+  # The rollback validation is deliberately a docker exec nginx -t check;
+  # host nginx.service is never used as the Docker control plane.
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - '{{ relay_docker_nginx_container_name }}'
+      - nginx
+      - -t
+  register: relay_docker_nginx_rollback_validation
+  changed_when: false
+  when: (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).State.Running | bool
+
+- name: Require valid remaining Docker-nginx configuration
+  ansible.builtin.assert:
+    that:
+      - relay_docker_nginx_rollback_validation.rc == 0
+    fail_msg: 'Pinned Docker-nginx rejected the remaining B-only configuration; no reload is allowed'
+  when: (relay_docker_nginx_rollback_inspect_command.stdout | from_json | first).State.Running | bool
+
+- name: Record preserved foreign B-only state
+  ansible.builtin.debug:
+    msg: 'DOCKER_NGINX_ROLLBACK_RETAINED=foreign_nexus_compose_data_network_containers_acme_state_and_public_control_plane'

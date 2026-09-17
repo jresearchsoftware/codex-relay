@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "repository": "example-org/sample-project",
+  "owner": "example-owner",
+  "baseBranch": "main",
+  "taskBranchPrefix": "codex/",
+  "routingWorkflow": ".github/workflows/codex-relay-routing.yml",
+  "recoveryWorkflow": ".github/workflows/manual-writer-publication-recovery.yml",
+  "writerApp": {
+    "slug": "example-writer",
+    "appId": "101",
+    "installationId": "201",
+    "expectedActor": "example-writer[bot]"
+  },
+  "reviewerApp": {
+    "slug": "example-reviewer",
+    "appId": "102",
+    "installationId": "202",
+    "expectedActor": "example-reviewer[bot]"
+  },
+  "writerIdentity": {
+    "name": "example-writer",
+    "email": "example-writer@example.invalid"
+  },
+  "remediationIdentity": {
+    "name": "example-remediation",
+    "email": "example-remediation@example.invalid"
+  },
+  "defaultProfile": {
+    "cliModelId": "example-model",
+    "effort": "max"
+  },
+  "runtimeUser": "relay-worker",
+  "paths": {
+    "workRoot": "/var/lib/relay-example/dispatch-work",
+    "attemptRoot": "/var/lib/relay-example/dispatch/attempts-v2",
+    "dispatch": "/opt/relay-example/relay-codex-dispatch",
+    "writerHelper": "/opt/relay-example/relay-writer-controller",
+    "launcher": "/opt/relay-example/relay-codex",
+    "diagnosticsConfig": "/etc/relay-example/diagnostics.json",
+    "diagnosticsStore": "/opt/relay-example/relay-diagnostics-store",
+    "diagnosticsRoot": "/var/lib/relay-example/debug",
+    "credentialEnv": "/etc/relay-example/writer-credentials/github-app.env",
+    "credentialKeyFile": "/etc/relay-example/writer-credentials/github-app-private-key.pem",
+    "claimRoot": "/var/lib/relay-example/writer-claims"
+  },
+  "validationWorkflow": ".github/workflows/relay-exact-head-validation.yml"
+}

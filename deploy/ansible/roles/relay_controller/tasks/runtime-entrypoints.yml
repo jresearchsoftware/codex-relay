@@ -1,0 +1,40 @@
+---
+- name: Install the root-owned explicit consumer snapshot
+  ansible.builtin.template:
+    src: consumer.json.j2
+    dest: '{{ relay_consumer_config_path }}'
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the fixed root-owned diagnostics store wrapper
+  ansible.builtin.template:
+    src: relay-diagnostics-store.j2
+    dest: '{{ relay_diagnostics_store_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the fixed root-owned on-demand Codex dispatch wrapper
+  ansible.builtin.template:
+    src: relay-codex-dispatch.j2
+    dest: '{{ relay_codex_dispatch_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the explicit owner-only non-routing general runner smoke
+  ansible.builtin.template:
+    src: relay-general-runner-smoke.j2
+    dest: '{{ relay_install_root }}/relay-general-runner-smoke'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the consumer-owned smoke against the external product ABI
+  ansible.builtin.template:
+    src: general-runner-smoke.mjs.j2
+    dest: '{{ relay_release_path }}/reviewed-source/consumer-general-runner-smoke.mjs'
+    owner: root
+    group: root
+    mode: '0644'

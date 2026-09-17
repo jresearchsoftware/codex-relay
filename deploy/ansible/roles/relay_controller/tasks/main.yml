@@ -1,0 +1,181 @@
+---
+- name: Reconcile the fixed root-owned on-demand Writer entrypoint contract
+  ansible.builtin.include_tasks: writer-entrypoint.yml
+
+- name: Create generic-runner-owned on-demand dispatch state namespaces
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: '{{ relay_dispatch_user }}'
+    group: '{{ relay_dispatch_group }}'
+    mode: '0700'
+  loop:
+    - '{{ relay_dispatch_state_root }}'
+    - '{{ relay_dispatch_home }}'
+    - '{{ relay_dispatch_evidence_root }}'
+  when: not ansible_check_mode | bool or relay_dispatch_identity_materialized | default(true) | bool
+
+- name: Preserve the shared Codex work namespace without resetting its mode
+  ansible.builtin.file:
+    path: '{{ relay_dispatch_work_root }}'
+    state: directory
+    owner: '{{ relay_dispatch_user }}'
+    group: '{{ relay_codex_work_group }}'
+    mode: '2770'
+  when:
+    - not ansible_check_mode | bool or relay_dispatch_identity_materialized | default(true) | bool
+    - not ansible_check_mode | bool or not relay_codex_work_group_planned | default(false) | bool
+
+- name: Validate the operator-controlled diagnostics mode
+  ansible.builtin.assert:
+    that:
+      - relay_diagnostics_mode in ['normal', 'debug']
+      - relay_diagnostics_config_path == (relay_config_root ~ '/diagnostics.json')
+      - relay_diagnostics_control_path == (relay_install_root ~ '/relay-diagnostics-control')
+      - relay_diagnostics_root == (relay_state_root ~ '/debug')
+      - relay_diagnostics_store_path == (relay_install_root ~ '/relay-diagnostics-store')
+      - relay_diagnostics_sudoers_file == ('/etc/sudoers.d/' ~ relay_namespace ~ '-diagnostics')
+      - relay_diagnostics_retention_count | int >= 1
+      - relay_diagnostics_retention_count | int <= 32
+    fail_msg: 'RELAY_DIAGNOSTICS_MODE_INVALID'
+
+- name: Create the root-protected diagnostics namespace
+  ansible.builtin.file:
+    path: '{{ relay_diagnostics_root }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the operator-controlled diagnostics mode contract
+  ansible.builtin.stat:
+    path: '{{ relay_diagnostics_config_path }}'
+    follow: false
+  register: relay_diagnostics_config
+  changed_when: false
+
+- name: Reject a diagnostics configuration symlink
+  ansible.builtin.assert:
+    that:
+      - not relay_diagnostics_config.stat.exists or not relay_diagnostics_config.stat.islnk | default(false)
+    fail_msg: 'RELAY_DIAGNOSTICS_CONFIG_SYMLINK_FORBIDDEN'
+
+- name: Install the fixed root-owned diagnostics mode control path
+  ansible.builtin.template:
+    src: relay-diagnostics-control.mjs.j2
+    dest: '{{ relay_diagnostics_control_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the grouped read-only qualification diagnostic snapshot helper
+  ansible.builtin.template:
+    src: relay-qualification-diagnostic-snapshot.mjs.j2
+    dest: '{{ relay_install_root }}/relay-qualification-diagnostic-snapshot'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the initial diagnostics mode contract without resetting runtime state
+  ansible.builtin.copy:
+    content: "{{ {'schemaVersion': '1.0', 'mode': relay_diagnostics_mode, 'retentionCount': relay_diagnostics_retention_count | int} | to_nice_json }}\n"
+    dest: '{{ relay_diagnostics_config_path }}'
+    owner: root
+    group: root
+    # This file contains only the operator-selected mode and retention count;
+    # both the runner and relay-codex launcher must read it, but no credential
+    # material may ever be placed here.
+    mode: '0644'
+  when:
+    - not ansible_check_mode | bool
+    - not relay_diagnostics_config.stat.exists
+
+- name: Record the existing operator-selected diagnostics mode in check-mode
+  ansible.builtin.debug:
+    msg: 'RELAY_DIAGNOSTICS_MODE_PRESERVED={{ relay_diagnostics_config.stat.exists | default(false) }}; control={{ relay_diagnostics_control_path }}'
+  when: ansible_check_mode | bool
+
+- name: Install the narrowly scoped runner sudoers rule for diagnostics storage
+  ansible.builtin.template:
+    src: relay-diagnostics.sudoers.j2
+    dest: '{{ relay_diagnostics_sudoers_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+
+- name: Validate the installed diagnostics sudoers rule
+  ansible.builtin.command:
+    argv: ['/usr/sbin/visudo', '-cf', '{{ relay_diagnostics_sudoers_file }}']
+  register: relay_diagnostics_sudoers_check
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode | bool
+
+- name: Install root-only Writer credential readiness verifier
+  ansible.builtin.template:
+    src: relay-writer-credential-check.j2
+    dest: '{{ relay_install_root }}/relay-writer-credential-check'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the shared App qualification implementation required by Writer
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/roles/relay_runtime/files/relay-app-qualification.py'
+    dest: '{{ relay_install_root }}/relay-app-qualification.py'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the bounded non-routing Codex qualification probe
+  ansible.builtin.template:
+    src: relay-qualification-codex-probe.mjs.j2
+    dest: '{{ relay_install_root }}/relay-qualification-codex-probe'
+    owner: root
+    group: '{{ relay_runner_group }}'
+    mode: '0750'
+
+- name: Install root-only Writer read-only GitHub App qualification wrapper
+  ansible.builtin.template:
+    src: relay-writer-app-qualification.j2
+    dest: '{{ relay_install_root }}/relay-writer-app-qualification'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Inspect the historical Controller daemon before retirement
+  ansible.builtin.stat:
+    path: /etc/systemd/system/relay-controller.service
+  register: relay_controller_unit
+  changed_when: false
+
+- name: Record Controller daemon retirement in check-mode
+  ansible.builtin.debug:
+    msg: 'CONTROLLER_DAEMON_RETIREMENT=stop_disable_remove; active_path=on_demand_writer_helper'
+  when: ansible_check_mode | bool
+
+- name: Stop and disable the historical Controller daemon before removal
+  ansible.builtin.systemd:
+    name: relay-controller.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when:
+    - not ansible_check_mode | bool
+    - relay_controller_unit.stat.exists
+
+- name: Remove the historical Controller daemon unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/relay-controller.service
+    state: absent
+  when: not ansible_check_mode | bool
+  notify: Reload relay systemd metadata
+
+- name: Install the root-readable on-demand Controller contract
+  ansible.builtin.template:
+    src: relay-controller.json.j2
+    dest: '{{ relay_config_root }}/controller.json'
+    owner: root
+    group: '{{ relay_runner_group }}'
+    mode: '0640'
+  when: not ansible_check_mode | bool

@@ -1,0 +1,13 @@
+{
+  "action": "submitted",
+  "repository": { "full_name": "example-org/sample-project" },
+  "review": { "id": 17, "state": "changes_requested", "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "pull_request": {
+    "number": 127,
+    "state": "open",
+    "merged": false,
+    "draft": false,
+    "base": { "ref": "main" },
+    "head": { "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "repo": { "full_name": "example-org/sample-project" } }
+  }
+}

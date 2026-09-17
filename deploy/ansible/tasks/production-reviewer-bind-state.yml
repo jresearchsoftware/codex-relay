@@ -1,0 +1,86 @@
+---
+# The gateway role is the single source of the production Reviewer bind
+# address. Ordinary apply installs the address-bound artifacts. Dedicated
+# activation and runner-enable entrypoints validate that installed state;
+# a stale bind returns to production reconciliation before activation.
+#
+# The refresh template tasks are deliberately check-visible when site.yml runs the
+# ordinary production check.  A stale or missing artifact therefore becomes a
+# normal changed>0 apply plan.  The reads/assertions below remain apply-time
+# validation because check-mode does not materialize the candidate files.
+
+- name: Require one validated production Reviewer bind truth
+  ansible.builtin.assert:
+    that:
+      - relay_deployment_profile == 'production'
+      - relay_reviewer_bind_mode in ['a_only_loopback', 'nexus_gateway']
+      - relay_reviewer_bind_mode != 'nexus_gateway' or relay_reviewer_gateway_validated | bool
+      - relay_reviewer_bind_address is defined
+      - relay_reviewer_bind_address | length > 0
+      - relay_reviewer_bind_mode != 'nexus_gateway' or relay_reviewer_bind_network == relay_docker_network_name
+    fail_msg: 'REVIEWER_BIND_STATE_GATEWAY_UNAVAILABLE'
+
+- name: Refresh address-bound Reviewer artifacts from the current gateway
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runtime/templates/{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {src: reviewer-mcp.json.j2, dest: '{{ relay_config_root }}/reviewer-mcp.json', owner: root, group: '{{ relay_reviewer_group }}', mode: '0640'}
+    - {src: relay-reviewer-readiness.j2, dest: '{{ relay_reviewer_readiness_path }}', owner: root, group: root, mode: '0755'}
+    - {src: relay-reviewer-recovery.j2, dest: '{{ relay_install_root }}/relay-reviewer-recovery', owner: root, group: root, mode: '0750'}
+    - {src: relay-runner-enable-start.j2, dest: '{{ relay_runner_enable_start_path }}', owner: root, group: root, mode: '0750'}
+    - {src: relay-production-operation-stale-disposition.j2, dest: '{{ relay_production_operation_stale_disposition_path }}', owner: root, group: root, mode: '0750'}
+  when: relay_production_reviewer_bind_refresh | default(false) | bool
+
+- name: Read the staged Reviewer bind configuration
+  ansible.builtin.slurp:
+    src: '{{ relay_config_root }}/reviewer-mcp.json'
+  register: relay_production_reviewer_bind_config_raw
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Parse the staged Reviewer bind configuration
+  ansible.builtin.set_fact:
+    relay_production_reviewer_bind_config: '{{ relay_production_reviewer_bind_config_raw.content | b64decode | from_json }}'
+  when: not ansible_check_mode | bool
+
+- name: Require staged configuration to match the current gateway
+  ansible.builtin.assert:
+    that:
+      - relay_production_reviewer_bind_config.service.bind_mode == relay_reviewer_bind_mode
+      - relay_production_reviewer_bind_config.service.bind_address == relay_reviewer_bind_address
+      - relay_production_reviewer_bind_config.service.bind_network == relay_reviewer_bind_network
+      - relay_reviewer_bind_mode != 'nexus_gateway' or relay_production_reviewer_bind_config.service.gateway_validated | bool
+    fail_msg: 'REVIEWER_BIND_STATE_STALE_OR_INVALID'
+  when: not ansible_check_mode | bool
+
+- name: Inspect address-bound Reviewer helpers
+  ansible.builtin.command:
+    argv:
+      - /bin/grep
+      - -F
+      - --
+      - '{{ relay_reviewer_bind_address }}:8787'
+      - '{{ item }}'
+  loop:
+    - '{{ relay_reviewer_readiness_path }}'
+    - '{{ relay_install_root }}/relay-reviewer-recovery'
+    - '{{ relay_runner_enable_start_path }}'
+    - '{{ relay_production_operation_stale_disposition_path }}'
+  register: relay_production_reviewer_bind_helpers
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require address-bound Reviewer helpers to match the current gateway
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+    fail_msg: 'REVIEWER_BIND_HELPER_STATE_STALE_OR_INVALID'
+  loop: '{{ relay_production_reviewer_bind_helpers.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: not ansible_check_mode | bool

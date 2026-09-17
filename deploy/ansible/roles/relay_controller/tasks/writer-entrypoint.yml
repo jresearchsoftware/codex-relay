@@ -1,0 +1,40 @@
+---
+- name: Reconcile the shared dispatcher and diagnostic runtime entrypoints
+  ansible.builtin.include_tasks: runtime-entrypoints.yml
+
+- name: Create root-owned Writer publication record namespace
+  ansible.builtin.file:
+    path: '{{ relay_writer_claim_root }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the fixed root-owned on-demand Writer/Controller helper wrapper
+  ansible.builtin.template:
+    src: relay-writer-controller.j2
+    dest: '{{ relay_writer_helper_path }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the narrowly scoped runner sudoers rule for the Writer helper
+  ansible.builtin.template:
+    src: relay-writer-controller.sudoers.j2
+    dest: '{{ relay_writer_sudoers_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+
+- name: Validate the installed Writer helper sudoers rule
+  ansible.builtin.command:
+    argv: ['/usr/sbin/visudo', '-cf', '{{ relay_writer_sudoers_file }}']
+  register: relay_writer_sudoers_check
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode | bool
+
+- name: Record the non-mutating Writer privilege boundary plan
+  ansible.builtin.debug:
+    msg: 'WRITER_HELPER_CHECK_MODE_PLAN=fixed-helper-only; helper={{ relay_writer_helper_path }}; claimRoot={{ relay_writer_claim_root }}; binding={{ relay_writer_helper_release_path }}'
+  when: ansible_check_mode | bool

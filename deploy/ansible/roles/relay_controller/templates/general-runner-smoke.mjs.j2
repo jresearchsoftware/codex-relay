@@ -1,0 +1,100 @@
+import { CONSUMER_DIGEST } from './consumer/consumer.mjs';
+// Explicit owner-only, non-routing qualification of the installed dispatch
+// path. No admission, broker, publication or remote checkout is involved.
+import { chmod, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { randomInt } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { createOnDemandDispatchAdapter } from './controller/src/github.mjs';
+import { REPOSITORY, VERSION, digest, exactSha, fail } from './controller/src/execution-contract.mjs';
+import { WORK_ROOT } from './controller/src/attempt-runtime.mjs';
+import { grantSharedCheckoutAccess } from './runtime/src/codex-runtime.mjs';
+
+const exec = promisify(execFile);
+const CURRENT = '{{ relay_install_root }}/current';
+const PROFILE = Object.freeze({ cliModelId: 'gpt-6-astra', effort: 'low' });
+const INPUT = `Owner-authorized non-routing general runner smoke. Do not use tools,
+run commands, modify files, create commits, access GitHub or any external service,
+publish, push, invoke a Reviewer, or change production. Perform no external work.
+Only return {"status":"success","summary":"general-runner-smoke-child-started","validation":[],"blockedReason":""}.
+The scratch fixture is intentionally complete and requires no implementation.`;
+const ENV = Object.freeze({ PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C',
+  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'false', GIT_ALLOW_PROTOCOL: '',
+  GIT_AUTHOR_NAME: 'local-smoke', GIT_AUTHOR_EMAIL: 'local-smoke@localhost',
+  GIT_COMMITTER_NAME: 'local-smoke', GIT_COMMITTER_EMAIL: 'local-smoke@localhost' });
+const safeCode = value => /^[A-Z][A-Z0-9_]{0,79}$/.test(value ?? '') ? value : 'SMOKE_FAILED';
+
+export async function main() {
+  let cwd; let dispatchStarted = false; let contained = true; let child = 'unknown';
+  let cleanup = 'not-created'; let error; let boundary = 'preflight'; let approvedHead;
+  const git = async args => (await exec('/usr/bin/git', ['-C', cwd, ...args],
+    { env: ENV, timeout: 10000, maxBuffer: 65536 })).stdout.trim();
+  try {
+    approvedHead = process.argv[3];
+    if (process.argv.length !== 4 || process.argv[2] !== '--approved-head' || !exactSha(approvedHead)) fail('SMOKE_ARGUMENTS_INVALID');
+    const identity = (await exec('/usr/bin/id', ['-un'], { env: ENV })).stdout.trim();
+    if (identity !== '{{ relay_general_runner_user }}' || (await stat(`/proc/${process.ppid}`)).uid !== 0
+      || (await readFile(`/proc/${process.ppid}/comm`, 'utf8')).trim() !== 'runuser') fail('SMOKE_OWNER_TRANSITION_REQUIRED');
+    const release = `{{ relay_install_root }}/releases/${approvedHead}`;
+    if (await realpath(CURRENT) !== release || !fileURLToPath(import.meta.url).startsWith(`${release}/reviewed-source/`)) fail('SMOKE_INSTALLED_HEAD_MISMATCH');
+    if (!(await lstat(WORK_ROOT)).isDirectory() || await realpath(WORK_ROOT) !== WORK_ROOT) fail('SMOKE_WORK_ROOT_UNSAFE');
+    const eventId = randomInt(1_000_000_000_000, 9_000_000_000_000);
+    const attemptId = `event-${eventId}`;
+    const scratch = `${WORK_ROOT}/${attemptId}`;
+    await mkdir(scratch, { mode: 0o2770 }); // exclusive; never adopt an attempt
+    cwd = scratch; cleanup = 'pending';
+    await chmod(cwd, 0o2770);
+    await git(['init', '--template=', '--initial-branch=codex/general-runner-smoke']);
+    await git(['config', 'core.hooksPath', '/dev/null']);
+    await git(['config', 'protocol.allow', 'never']);
+    await writeFile(`${cwd}/SMOKE.txt`, 'local non-routing smoke\n', { mode: 0o660 });
+    await git(['add', 'SMOKE.txt']); await git(['commit', '-m', 'local smoke fixture']);
+    const base = await git(['rev-parse', 'HEAD']);
+    const config = await readFile(`${cwd}/.git/config`, 'utf8');
+    await grantSharedCheckoutAccess(cwd);
+    const envelope = { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId: eventId, eventId,
+      target: 'issue', number: 263, issueNumber: 263, route: 'manual', startHead: base,
+      historicalBase: base, targetBase: base, branch: 'codex/general-runner-smoke',
+      authorityDigest: digest({ purpose: 'owner-local-smoke', approvedHead }),
+      validation: ['diff-check'], thread: 'General runner non-routing smoke', profile: PROFILE, input: INPUT };
+    boundary = 'dispatch'; dispatchStarted = true; contained = false;
+    const result = await createOnDemandDispatchAdapter({ timeoutMs: 120000 }).dispatch(envelope);
+    contained = result.containment === 'reaped'; child = result.child;
+    if (!contained || child !== 'started') fail('SMOKE_CHILD_START_UNPROVEN');
+    boundary = 'scratch-validation';
+    if (result.result?.status !== 'success' || result.result?.summary !== 'general-runner-smoke-child-started') fail('SMOKE_RESULT_INVALID');
+    if (!(await lstat(`${cwd}/.git`)).isDirectory() || !(await lstat(`${cwd}/.git/config`)).isFile()
+      || await readFile(`${cwd}/.git/config`, 'utf8') !== config
+      || (await readdir(cwd)).sort().join(',') !== '.git,SMOKE.txt') fail('SMOKE_SCRATCH_CHANGED');
+    if (await git(['rev-parse', 'HEAD']) !== base || await git(['remote']) !== ''
+      || await git(['status', '--porcelain', '--untracked-files=no']) !== ''
+      || await readFile(`${cwd}/SMOKE.txt`, 'utf8') !== 'local non-routing smoke\n') fail('SMOKE_SCRATCH_CHANGED');
+    if (await realpath(CURRENT) !== release) fail('SMOKE_INSTALLED_HEAD_CHANGED');
+  } catch (caught) {
+    error = caught;
+    if (dispatchStarted && !contained) {
+      contained = caught.details?.containment === 'reaped' || caught.details?.containment === 'not_required';
+      child = caught.details?.childState ?? 'unknown';
+    }
+  } finally {
+    if (cwd && contained) {
+      try {
+        await rm(cwd, { recursive: true });
+        if (await lstat(cwd).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; })) fail('SMOKE_CLEANUP_FAILED');
+        cleanup = 'cleaned';
+      } catch { cleanup = 'failed'; error = Object.assign(new Error('SMOKE_CLEANUP_FAILED'), { code: 'SMOKE_CLEANUP_FAILED' }); }
+    } else if (cwd) cleanup = 'preserved-uncontained';
+  }
+  // No child text, diagnostic preview, argv, environment or credential bytes.
+  const proof = { status: error ? 'blocked' : 'success', code: error ? safeCode(error.code) : 'GENERAL_RUNNER_SMOKE_PASS',
+    approvedHead: exactSha(approvedHead) ? approvedHead : null,
+    child: ['started', 'not_started'].includes(child) ? child : 'unknown',
+    containment: contained ? 'reaped-or-not-required' : 'unknown', cleanup,
+    boundary, primaryCause: error?.details?.primaryCause ? safeCode(error.details.primaryCause) : null };
+  process.stdout.write(`GENERAL_RUNNER_SMOKE_RESULT=${JSON.stringify(proof)}\n`);
+  if (error || proof.child !== 'started' || cleanup !== 'cleaned') process.exitCode = 1;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

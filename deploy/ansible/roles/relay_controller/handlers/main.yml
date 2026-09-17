@@ -1,0 +1,4 @@
+---
+- name: Reload relay systemd metadata
+  ansible.builtin.systemd:
+    daemon_reload: true

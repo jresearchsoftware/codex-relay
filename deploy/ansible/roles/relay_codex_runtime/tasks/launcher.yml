@@ -1,0 +1,41 @@
+---
+- name: Require the fixed root Codex launcher binding path
+  ansible.builtin.assert:
+    that:
+      - relay_codex_launcher_path == (relay_install_root ~ '/relay-codex')
+    fail_msg: 'CODEX_LAUNCHER_PATH_CONTRACT_INVALID'
+
+- name: Install the fixed Codex diagnostic helper with every launcher reconciliation
+  ansible.builtin.copy:
+    src: relay-codex-diagnostic.mjs
+    dest: '{{ relay_codex_diagnostic_path }}'
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the fixed Codex execution module
+  ansible.builtin.template:
+    src: relay-codex-launcher.mjs.j2
+    dest: '{{ relay_install_root }}/relay-codex.mjs'
+    owner: root
+    group: root
+    mode: '0644'
+  register: relay_codex_launcher_module_install
+
+- name: Install the fixed Codex execution wrapper
+  ansible.builtin.template:
+    src: relay-codex-launcher-wrapper.sh.j2
+    dest: '{{ relay_codex_launcher_path }}'
+    owner: root
+    group: root
+    mode: '0755'
+  register: relay_codex_launcher_install
+
+- name: Record the non-mutating Codex launcher binding plan in check-mode
+  ansible.builtin.debug:
+    msg: >-
+      CODEX_LAUNCHER_CHECK_MODE_PLAN=path={{ relay_codex_launcher_path }};
+      sourceTreeSha256={{ relay_codex_launcher_source_tree_sha256 | default('UNAVAILABLE') }};
+      changed={{ (relay_codex_launcher_module_install.changed or relay_codex_launcher_install.changed) | bool }};
+      contract=issue-12-or-review-remediation-14
+  when: ansible_check_mode | bool

@@ -1,0 +1,73 @@
+---
+- name: Require an acquired source object for a new release
+  ansible.builtin.assert:
+    that:
+      - relay_source_archive | length > 0
+    fail_msg: RELAY_SOURCE_ACQUISITION_REQUIRED
+  when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
+
+- name: Transport only the selected Relay Git object
+  ansible.builtin.copy:
+    src: '{{ relay_source_archive }}'
+    dest: '{{ relay_release_path }}/source.tar'
+    owner: root
+    group: root
+    mode: '0600'
+  when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
+
+- name: Materialize the selected product source under protected release parents
+  ansible.builtin.unarchive:
+    src: '{{ relay_release_path }}/source.tar'
+    dest: '{{ relay_release_path }}/reviewed-source'
+    remote_src: true
+    owner: root
+    group: root
+  when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
+
+- name: Record the acquired Git identity for installed product reconciliation
+  ansible.builtin.copy:
+    content: '{{ relay_source_identity | to_nice_json }}
+'
+    dest: '{{ relay_release_path }}/reviewed-source/.relay-source.json'
+    owner: root
+    group: root
+    mode: '0644'
+  when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
+
+- name: Remove the temporary source transport after installation
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/source.tar'
+    state: absent
+  when: not ansible_check_mode | bool
+
+- name: Create configured legacy invocation parents
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/reviewed-source/{{ item.alias | dirname }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: '{{ relay_compatibility_links }}'
+  when: not ansible_check_mode | bool
+
+- name: Retain only configured legacy invocation links to this product
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}/reviewed-source/{{ item.target }}'
+    dest: '{{ relay_release_path }}/reviewed-source/{{ item.alias }}'
+    state: link
+    owner: root
+    group: root
+  loop: '{{ relay_compatibility_links }}'
+  when: not ansible_check_mode | bool
+
+- name: Install stable Relay routing and recovery invocation paths
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/{{ item.source }}'
+    dest: '{{ relay_release_path }}/bin/{{ item.destination }}'
+    state: link
+    owner: root
+    group: root
+  loop:
+    - {source: entrypoint.mjs, destination: relay-routing.mjs}
+    - {source: recover-attempt-publication.mjs, destination: relay-publication-recovery.mjs}
+  when: not ansible_check_mode | bool
