@@ -4,7 +4,7 @@ set -euo pipefail
 reviewer_service='{{ relay_reviewer_service_name }}'
 activation_marker='{{ relay_reviewer_activation_marker }}'
 recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
-expected_listener='{{ relay_reviewer_bind_address }}:8787'
+expected_listener='{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 operation_state='{{ relay_production_operation_state_path }}'
 operation_lock='{{ relay_production_operation_lock_path }}'
 
@@ -33,4 +33,4 @@ read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marke
 [[ "$marker_owner" == root && "$marker_mode" == 600 ]]
 [[ "$(<"$activation_marker")" == authorized ]]
 [[ "$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)" == "active" ]]
-ss -H -ltn 2>/dev/null | grep -F -- "$expected_listener" >/dev/null
+ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { exit !found }'

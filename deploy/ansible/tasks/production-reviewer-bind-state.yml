@@ -63,7 +63,7 @@
       - /bin/grep
       - -F
       - --
-      - '{{ relay_reviewer_bind_address }}:8787'
+      - '{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
       - '{{ item }}'
   loop:
     - '{{ relay_reviewer_readiness_path }}'

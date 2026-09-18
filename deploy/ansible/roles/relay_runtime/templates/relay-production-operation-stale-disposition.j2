@@ -28,7 +28,7 @@ activation_marker='{{ relay_reviewer_activation_marker }}'
 recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
 runner_registration_marker='{{ relay_runner_registration_marker }}'
 runner_credentials_marker='{{ relay_runner_credentials_marker }}'
-expected_listener='{{ relay_reviewer_bind_address }}:8787'
+expected_listener='{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 
 [[ "$stale_phase" =~ ^(apply|activate|runner-enable)$ ]] || {
   echo 'PRODUCTION_STALE_DISPOSITION_PHASE_INVALID' >&2
@@ -203,7 +203,7 @@ reviewer_active_before="$(service_state is-active "$reviewer_service")"
 reviewer_enabled_before="$(service_state is-enabled "$reviewer_service")"
 runner_active_before="$(service_state is-active "$runner_service")"
 runner_enabled_before="$(service_state is-enabled "$runner_service")"
-listener_before="$(/bin/ss -H -ltn 2>/dev/null || true)"
+listener_before="$(/bin/ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { if (found) print expected }' || true)"
 
 case "$stale_phase" in
   apply)
@@ -223,7 +223,7 @@ case "$stale_phase" in
       echo 'PRODUCTION_STALE_APPLY_RUNNER_ENABLEMENT_UNSAFE' >&2
       exit 89
     }
-    [[ "$listener_before" == *"$expected_listener"* ]] || {
+    [[ "$listener_before" == "$expected_listener" ]] || {
       echo 'PRODUCTION_STALE_APPLY_LISTENER_MISSING' >&2
       exit 90
     }
@@ -303,7 +303,7 @@ PY
       echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_ENABLEMENT_UNSAFE' >&2
       exit 69
     }
-    [[ "$listener_before" != *"$expected_listener"* ]] || {
+    [[ "$listener_before" != "$expected_listener" ]] || {
       echo 'PRODUCTION_STALE_ACTIVATE_LISTENER_PRESENT' >&2
       exit 70
     }
@@ -323,7 +323,7 @@ PY
     reviewer_enabled_after="$(service_state is-enabled "$reviewer_service")"
     runner_active_after="$(service_state is-active "$runner_service")"
     runner_enabled_after="$(service_state is-enabled "$runner_service")"
-    listener_after="$(/bin/ss -H -ltn 2>/dev/null || true)"
+    listener_after="$(/bin/ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { if (found) print expected }' || true)"
     [[ "$reviewer_active_after" == inactive || "$reviewer_active_after" == failed ]] || {
       echo 'PRODUCTION_STALE_ACTIVATE_REVIEWER_RESET_FAILED' >&2
       exit 73
@@ -336,7 +336,7 @@ PY
       echo 'PRODUCTION_STALE_ACTIVATE_RUNNER_CHANGED' >&2
       exit 75
     }
-    [[ "$listener_after" != *"$expected_listener"* ]] || {
+    [[ "$listener_after" != "$expected_listener" ]] || {
       echo 'PRODUCTION_STALE_ACTIVATE_LISTENER_REMAINS' >&2
       exit 76
     }
@@ -358,7 +358,7 @@ PY
       echo 'PRODUCTION_STALE_RUNNER_ENABLE_REVIEWER_NOT_ENABLED' >&2
       exit 80
     }
-    [[ "$listener_before" == *"$expected_listener"* ]] || {
+    [[ "$listener_before" == "$expected_listener" ]] || {
       echo 'PRODUCTION_STALE_RUNNER_ENABLE_LISTENER_MISSING' >&2
       exit 81
     }

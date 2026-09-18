@@ -104,15 +104,15 @@
 
 - name: Restart the active relay runner through the governed service contract
   ansible.builtin.systemd:
-    name: relay-runner.service
+    name: '{{ relay_production_runner_service_name }}'
     state: restarted
     daemon_reload: false
   when:
     - not ansible_check_mode | bool
     - not relay_production_defer_lifecycle | default(false) | bool
     - relay_runner_codex_group_membership.changed | bool
-    - ansible_facts.services['relay-runner.service'] is defined
-    - ansible_facts.services['relay-runner.service'].state == 'running'
+    - ansible_facts.services[relay_production_runner_service_name] is defined
+    - ansible_facts.services[relay_production_runner_service_name].state == 'running'
 
 - name: Create the fixed Codex runtime and credential namespaces
   ansible.builtin.file:

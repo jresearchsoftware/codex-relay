@@ -196,7 +196,7 @@
 - name: Verify the private Reviewer listener remains bound after stale apply recovery
   ansible.builtin.shell: >-
     ss -ltnH |
-    awk '$4 ~ /:8787$/ { print }'
+    awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
   register: relay_production_stale_apply_post_listener
   changed_when: false
   failed_when: false
@@ -213,7 +213,7 @@
       - relay_production_stale_apply_post_services.results[1].stdout == relay_production_recovery_reviewer_enabled
       - relay_production_stale_apply_post_services.results[2].stdout == relay_production_recovery_runner_active
       - relay_production_stale_apply_post_services.results[3].stdout == relay_production_recovery_runner_enabled
-      - relay_production_stale_apply_post_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+      - relay_production_stale_apply_post_listener.stdout is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
     fail_msg: 'PRODUCTION_STALE_APPLY_PRESERVATION_POSTCHECK_FAILED'
   when:
     - relay_production_operation_stale_phase == 'apply'
@@ -240,7 +240,7 @@
 - name: Verify no private Reviewer listener remains after stale activate reset
   ansible.builtin.shell: >-
     ss -ltnH |
-    awk '$4 ~ /:8787$/ { print }'
+    awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
   register: relay_production_stale_activate_post_listener
   changed_when: false
   failed_when: false
@@ -257,7 +257,7 @@
       - relay_production_stale_activate_post_services.results[1].stdout == 'disabled'
       - relay_production_stale_activate_post_services.results[2].stdout == relay_production_recovery_runner_active
       - relay_production_stale_activate_post_services.results[3].stdout == relay_production_recovery_runner_enabled
-      - relay_production_stale_activate_post_listener.stdout is not search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+      - relay_production_stale_activate_post_listener.stdout is not search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
     fail_msg: 'PRODUCTION_STALE_ACTIVATE_RESET_POSTCHECK_FAILED'
   when:
     - relay_production_operation_stale_phase == 'activate'

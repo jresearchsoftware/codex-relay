@@ -387,13 +387,13 @@
 
 - name: Inspect superseded dedicated mTLS proxy unit
   ansible.builtin.stat:
-    path: /etc/systemd/system/relay-openai-mtls-proxy.service
+    path: '/etc/systemd/system/{{ relay_superseded_proxy_service_name }}'
   register: relay_superseded_proxy_unit
   changed_when: false
 
 - name: Stop and disable superseded dedicated mTLS proxy unit before removal
   ansible.builtin.systemd:
-    name: relay-openai-mtls-proxy.service
+    name: '{{ relay_superseded_proxy_service_name }}'
     enabled: false
     state: stopped
     daemon_reload: true
@@ -401,7 +401,7 @@
 
 - name: Remove superseded dedicated mTLS proxy unit after it is stopped
   ansible.builtin.file:
-    path: /etc/systemd/system/relay-openai-mtls-proxy.service
+    path: '/etc/systemd/system/{{ relay_superseded_proxy_service_name }}'
     state: absent
   notify: Daemon reload
 

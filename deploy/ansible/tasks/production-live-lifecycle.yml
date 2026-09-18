@@ -8,7 +8,7 @@
       - show
       - '{{ item }}'
       - --property=MainPID,ActiveState,SubState,UnitFileState
-  loop: [relay-runner.service, reviewer-mcp.service]
+  loop: ['{{ relay_production_runner_service_name }}', '{{ relay_reviewer_service_name }}']
   register: relay_production_lifecycle_observed
   changed_when: false
   check_mode: false

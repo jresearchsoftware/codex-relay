@@ -274,11 +274,13 @@ class ProductionStaleOperationDispositionTests(unittest.TestCase):
                 "relay_production_operation_schema_version": "1",
                 "relay_reviewer_service_name": "reviewer-mcp.service",
                 "relay_runner_service_name": "relay-runner.service",
+                "relay_production_runner_service_name": "relay-runner.service",
                 "relay_reviewer_activation_marker": str(fixture_root / "activation"),
                 "relay_reviewer_recovery_off_marker": str(fixture_root / "recovery-off"),
                 "relay_runner_registration_marker": str(fixture_root / "runner"),
                 "relay_runner_credentials_marker": str(fixture_root / "credentials"),
                 "relay_reviewer_bind_address": "127.0.0.1",
+                "relay_reviewer_bind_port": 8787,
             }
             standalone_tasks = yaml.safe_load(self.stale_tasks)
             installation_task = next(

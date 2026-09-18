@@ -190,7 +190,7 @@
     - name: Inspect the final private Reviewer listener
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:8787$/ { print }'
+        awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
       register: relay_production_final_listener
       changed_when: false
       failed_when: false

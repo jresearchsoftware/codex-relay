@@ -94,6 +94,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "relay_reviewer_bind_mode": "nexus_gateway",
                 "relay_reviewer_gateway_validated": True,
                 "relay_reviewer_bind_address": "10.0.0.5",
+                "relay_reviewer_bind_port": 8787,
                 "relay_reviewer_bind_network": "nexus", "relay_docker_network_name": "nexus",
                 "relay_reviewer_group": "root",
                 "relay_config_root": str(config_root),
@@ -128,6 +129,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "relay_production_operation_superseded_root": str(fixture_root / "superseded"),
                 "relay_release_root": str(fixture_root / "releases"),
                 "relay_runner_service_name": "relay-runner.service",
+                "relay_production_runner_service_name": "relay-runner.service",
                 "relay_runner_user": "runner",
                 "relay_runner_group": "runner",
             }
@@ -245,6 +247,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "relay_reviewer_gateway_validated": True,
                 "relay_reviewer_bind_network": "nexus", "relay_docker_network_name": "nexus",
                 "relay_reviewer_bind_address": bind_address,
+                "relay_reviewer_bind_port": 8787,
                 "relay_release_root": release_root.as_posix(),
                 "relay_install_root": install_root.as_posix(),
                 "relay_config_root": config_root.as_posix(),

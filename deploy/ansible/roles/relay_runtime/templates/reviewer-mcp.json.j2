@@ -4,9 +4,6 @@
   "validationNames": {{ relay_validation_names | to_json }},
 {% endif %}
   "repository": "{{ relay_github_repository }}",
-{% if not relay_reviewer_publication_enabled | default(false) | bool %}
-  "mutation": "none",
-{% endif %}
   "baseBranch": {{ relay_github_base_branch | to_json }},
   "reviewCheckName": {{ relay_review_check_name | to_json }},
   "writerActor": {{ relay_writer_expected_actor | to_json }},
@@ -21,7 +18,7 @@
     "bind_address": "{{ relay_reviewer_bind_address }}",
     "bind_network": "{{ relay_reviewer_bind_network }}",
     "gateway_validated": {{ relay_reviewer_gateway_validated | bool | lower }},
-    "bind_port": 8787,
+    "bind_port": {{ relay_reviewer_bind_port }},
     "mount_path": "/mcp",
     "credentials": "owner_provisioned_reviewer_app_key_short_lived_installation_tokens",
     "evidenceRoot": "{{ relay_evidence_root }}/reviewer",

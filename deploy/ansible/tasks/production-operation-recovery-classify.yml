@@ -34,7 +34,7 @@
 - name: Inspect the private Reviewer listener for recovery classification
   ansible.builtin.shell: >-
     ss -ltnH |
-    awk '$4 ~ /:8787$/ { print }'
+    awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
   register: relay_production_recovery_listener
   changed_when: false
   failed_when: false
@@ -106,7 +106,7 @@
     relay_production_recovery_registration_present: '{{ relay_production_recovery_paths.results[4].stat.exists | default(false) | bool }}'
     relay_production_recovery_credentials_present: '{{ relay_production_recovery_paths.results[5].stat.exists | default(false) | bool }}'
     relay_production_recovery_listener_present: >-
-      {{ relay_production_recovery_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape) }}
+      {{ relay_production_recovery_listener.stdout is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape) }}
   changed_when: false
 
 - name: Validate and classify root-owned Reviewer recovery evidence

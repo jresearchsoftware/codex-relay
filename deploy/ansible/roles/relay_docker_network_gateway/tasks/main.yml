@@ -82,7 +82,7 @@
     relay_reviewer_bind_address: '{{ relay_nexus_network.IPAM.Config[0].Gateway }}'
     relay_reviewer_bind_network: '{{ relay_docker_network_name }}'
     relay_reviewer_gateway_validated: true
-    relay_docker_nginx_reviewer_upstream: '{{ relay_nexus_network.IPAM.Config[0].Gateway }}:8787'
+    relay_docker_nginx_reviewer_upstream: '{{ relay_nexus_network.IPAM.Config[0].Gateway }}:{{ relay_reviewer_bind_port }}'
 
 - name: Require the gateway to be local, routed, and attached to the pinned nginx network
   ansible.builtin.assert:

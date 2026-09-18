@@ -24,6 +24,36 @@ keys, tokens, templates, commands or backend variables. Unknown fields,
 duplicate keys, unsafe paths and overlapping identities are rejected. The
 runtime's existing validator remains authoritative for `consumer`.
 
+For another consumer on the same host, opt in to isolated service identities:
+
+```json
+"instance": {"reviewerPort": 18787, "publicationEnabled": false}
+```
+
+Place this object under `environment`. The port above is synthetic: select an
+unused unprivileged port from owner-controlled host/ingress configuration.
+Relay derives the Reviewer, recovery service/timer, production runner, general
+runner and retired Controller/proxy unit names from `environment.namespace`,
+using the suffixes `-reviewer`, `-reviewer-recovery`, `-runner`, `-general-runner`,
+`-controller` and `-openai-mtls-proxy`. Configuration, state, credentials and
+runtime paths stay in that namespace. All consumer paths must be under its
+`/opt`, `/etc` or `/var/lib`
+roots. Supply distinct Unix users, groups, runner identities and ingress for
+each consumer; do not reuse an existing consumer's namespace or credentials
+directory. Preflight rejects existing units bound to another installation or
+an installed Reviewer configuration bound to another repository.
+
+Omitting `instance` preserves legacy unit identities, port 8787 and publication
+configuration. Never opt an existing consumer into namespaced units as an
+implicit migration: it needs a separate owner-controlled lifecycle plan.
+For a new consumer, keep `publicationEnabled: false` through credential,
+configuration, identity and ingress qualification. This sets
+`REVIEWER_RELAY_ENABLED=false`; the valid runtime config still admits read-only
+target checks. Enabling publication is a separate owner-authorized config
+change after qualification. Service activation still requires the existing
+explicit activation gate. Ordinary apply does not register or activate runners.
+This setting does not authorize a native verdict or manage shared ingress/TLS.
+
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
 `FETCH_HEAD^{commit}` once, check out that immutable commit, and invoke:
 

@@ -26,7 +26,7 @@
       - relay_runner_root == (relay_install_root ~ '/general-runner')
       - relay_runner_work_root == (relay_state_root ~ '/general-runner/work')
       - relay_runner_home == (relay_state_root ~ '/general-runner/home')
-      - relay_runner_service_name == 'relay-general-runner.service'
+      - relay_runner_service_name == relay_general_runner_service_name
       - relay_runner_registration_helper_path == (relay_install_root ~ '/relay-general-runner-registration')
     fail_msg: RUNNER_GENERAL_PRODUCTION_NAMESPACE_COLLISION
   when:

@@ -31,6 +31,10 @@ relay_reviewer_recovery_interval: 30s
 relay_runner_user: relay-runner
 relay_runner_group: relay-runner
 relay_runner_service_name: relay-runner.service
+relay_production_runner_service_name: relay-runner.service
+relay_general_runner_service_name: relay-general-runner.service
+relay_controller_service_name: relay-controller.service
+relay_superseded_proxy_service_name: relay-openai-mtls-proxy.service
 relay_runner_service_unit_path: '/etc/systemd/system/{{ relay_runner_service_name }}'
 relay_runner_enable_start_path: '{{ relay_install_root }}/relay-runner-enable-start'
 
@@ -102,15 +106,16 @@ relay_nginx_server_name: relay.example.invalid
 relay_nexus_b_server_name: other.example.invalid
 relay_nexus_b_server_aliases: []
 relay_nginx_public_port: 443
-relay_nginx_upstream: '{{ relay_reviewer_bind_address }}:8787'
+relay_nginx_upstream: '{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 # Reviewer transport is TCP-only project-wide. The fixture default is an
 # explicit loopback TCP bind; production pins nexus_gateway in run-production.sh
 # and derives the address only from validated live Docker/Nexus state.
 relay_reviewer_bind_mode: a_only_loopback
 relay_reviewer_bind_address: 127.0.0.1
+relay_reviewer_bind_port: 8787
 relay_reviewer_bind_network: ''
 relay_reviewer_gateway_validated: false
-relay_docker_nginx_reviewer_upstream: '{{ relay_reviewer_bind_address }}:8787'
+relay_docker_nginx_reviewer_upstream: '{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 relay_nginx_certificate_ready: false
 relay_nginx_server_certificate_file: /etc/letsencrypt/live/relay.example.invalid/fullchain.pem
 relay_nginx_server_private_key_file: /etc/letsencrypt/live/relay.example.invalid/privkey.pem
@@ -330,7 +335,6 @@ relay_runner_registration_group: relay-production
 relay_docker_network_name: nexus
 relay_consumer_deployment_config_relative: deploy/relay.json
 relay_compatibility_links: []
-relay_reviewer_publication_enabled: false
 relay_requested_revision: main
 relay_consumer_revision: ''
 relay_source_archive: ''
