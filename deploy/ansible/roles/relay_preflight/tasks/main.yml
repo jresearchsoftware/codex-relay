@@ -1,4 +1,24 @@
 ---
+- name: Refuse another consumer's repository or service identity before reconciliation
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "{{ lookup('file', playbook_dir + '/scripts/verify_instance_identity.py') }}"
+      - '{{ relay_install_root }}'
+      - '{{ relay_config_root }}'
+      - '{{ relay_github_repository }}'
+      - '{{ relay_reviewer_user }}'
+      - '{{ relay_reviewer_service_name }}'
+      - '{{ relay_reviewer_recovery_service_name }}'
+      - '{{ relay_reviewer_recovery_timer_name }}'
+      - '{{ relay_production_runner_service_name }}'
+      - '{{ relay_general_runner_service_name }}'
+      - '{{ relay_controller_service_name }}'
+      - '{{ relay_superseded_proxy_service_name }}'
+  changed_when: false
+  check_mode: false
+
 - name: Inspect existing protected namespace parents before installation
   ansible.builtin.stat:
     path: '{{ item }}'
@@ -62,7 +82,7 @@
 - name: Collect Reviewer listening sockets with process ownership metadata
   ansible.builtin.command:
     argv: >-
-      {{ [relay_preflight_listener_command] + relay_preflight_listener_args + ['sport', '=', ':8787'] }}
+      {{ [relay_preflight_listener_command] + relay_preflight_listener_args + ['sport', '=', ':' ~ (relay_reviewer_bind_port | string)] }}
   register: relay_preflight_listeners
   check_mode: false
   changed_when: false
@@ -94,7 +114,7 @@
 
 - name: Derive the expected relay listener ownership markers
   ansible.builtin.set_fact:
-    relay_preflight_expected_listener: '{{ relay_reviewer_bind_address }}:8787'
+    relay_preflight_expected_listener: '{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
     relay_preflight_reviewer_pid_marker: 'pid={{ relay_preflight_reviewer_pid.stdout | trim }},'
 
 - name: Enforce the admitted TCP-only Reviewer bind modes
@@ -131,7 +151,7 @@
     relay_preflight_planned_transition_listener_lines: >-
       {{
         relay_preflight_listeners.stdout_lines
-        | select('search', '127.0.0.1:8787' | regex_escape)
+        | select('search', ('127.0.0.1:' ~ (relay_reviewer_bind_port | string)) | regex_escape)
         | select('search', relay_preflight_reviewer_pid_marker)
         | list
       }}
@@ -179,7 +199,7 @@
 - name: Preserve the Reviewer loopback boundary
   ansible.builtin.assert:
     that:
-      - 8787 not in relay_nexus_protected_ports
+      - relay_reviewer_bind_port not in relay_nexus_protected_ports
     fail_msg: 'Reviewer loopback port must remain outside protected public ports'
 
 - name: Require a listener inventory before mutation

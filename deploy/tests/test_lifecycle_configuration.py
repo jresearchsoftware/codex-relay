@@ -23,17 +23,20 @@ pytestmark = pytest.mark.skipif(
     reason='Linux localhost Ansible required')
 
 
-def run_gates(tmp_path, phase, mode, service, *, ingress_active=True, docker_active=True):
+def run_gates(tmp_path, phase, mode, service, *, ingress_active=True, docker_active=True, isolated=False):
     public = config.load(ROOT / 'deploy/example.json', ROOT)
     public['environment']['reviewerBind'].update(mode=mode, network='shared-net', container='shared-proxy')
     public['environment']['ingress']['service'] = service
+    if isolated:
+        public['environment']['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
     config.validate(public, ROOT)
     values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()), **config.compile_inputs(public)}
+    port = values['relay_reviewer_bind_port']
     values.update(relay_deployment_profile='production', relay_production_host='localhost',
-                  relay_production_runner_enable_reviewer_listener_before={'stdout': '127.0.0.1:8787'},
+                  relay_production_runner_enable_reviewer_listener_before={'stdout': f'127.0.0.1:{port}'},
                   relay_production_runner_enable_reviewer_enabled={'stdout': 'enabled'})
     if mode == 'docker_gateway':
-        values['relay_production_runner_enable_reviewer_listener_before']['stdout'] = '172.28.0.1:8787'
+        values['relay_production_runner_enable_reviewer_listener_before']['stdout'] = f'172.28.0.1:{port}'
     playbook = ('relay-production-runner-enable.yml' if phase == 'runner-enable'
                 else 'relay-production-operation-stale-disposition.yml')
     source = yaml.safe_load((BACKEND / playbook).read_text())[0]['pre_tasks']
@@ -62,8 +65,8 @@ if name=='systemctl':
     operation,unit=args
     if unit==os.environ['INGRESS_SERVICE']: state='active' if os.environ['INGRESS_ACTIVE']=='1' else 'inactive'
     elif unit=='docker.service': state='active' if os.environ['DOCKER_ACTIVE']=='1' else 'inactive'
-    elif unit=='reviewer-mcp.service': state='active' if operation=='is-active' else 'enabled'
-    elif unit in ['relay-runner.service','relay-controller.service']: state='inactive' if operation=='is-active' else 'disabled'
+    elif unit==os.environ['REVIEWER_UNIT']: state='active' if operation=='is-active' else 'enabled'
+    elif unit in [os.environ['RUNNER_UNIT'],os.environ['CONTROLLER_UNIT']]: state='inactive' if operation=='is-active' else 'disabled'
     else: raise SystemExit(70)
     print(state)
     raise SystemExit(0 if state in ['active','enabled'] else 3)
@@ -94,6 +97,9 @@ else: raise SystemExit(74)
             'ANSIBLE_ROLES_PATH': str(BACKEND / 'roles'), 'ANSIBLE_NOCOLOR': '1',
             'PATH': str(binaries) + os.pathsep + os.environ['PATH'], 'PROBE_LOG': str(probes),
             'INGRESS_SERVICE': service, 'INGRESS_ACTIVE': str(int(ingress_active)),
+            'REVIEWER_UNIT': values['relay_reviewer_service_name'],
+            'RUNNER_UNIT': values['relay_production_runner_service_name'],
+            'CONTROLLER_UNIT': values['relay_controller_service_name'],
             'DOCKER_ACTIVE': str(int(docker_active)), 'BIND_MODE': mode},
         capture_output=True, text=True)
     calls = [json.loads(line) for line in probes.read_text().splitlines()] if probes.exists() else []
@@ -102,10 +108,15 @@ else: raise SystemExit(74)
 
 @pytest.mark.parametrize('phase', ['runner-enable', 'stale-dispose'])
 @pytest.mark.parametrize('mode', ['loopback', 'docker_gateway'])
-def test_configured_service_and_bind_are_usable(tmp_path, phase, mode):
-    result, calls = run_gates(tmp_path, phase, mode, 'shared-proxy.service', docker_active=mode != 'loopback')
+@pytest.mark.parametrize('isolated', [False, True])
+def test_configured_service_and_bind_are_usable(tmp_path, phase, mode, isolated):
+    result, calls = run_gates(tmp_path, phase, mode, 'shared-proxy.service',
+                              docker_active=mode != 'loopback', isolated=isolated)
     assert result.returncode == 0, result.stdout + result.stderr
     assert not any('nexus-docker.service' in call for call in calls)
+    if isolated:
+        assert not any(unit in call for call in calls for unit in
+                       ['reviewer-mcp.service', 'relay-runner.service', 'relay-controller.service'])
     if phase == 'runner-enable':
         assert ['systemctl', 'is-active', 'shared-proxy.service'] in calls
     if mode == 'loopback':

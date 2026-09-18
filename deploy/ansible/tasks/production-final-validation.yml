@@ -32,7 +32,7 @@
         relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
         relay_production_final_services.results[1].stdout == 'disabled' and
         relay_production_final_runner_state_safe | bool and
-        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape))
+        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape))
       }}
   changed_when: false
 
@@ -45,7 +45,7 @@
         relay_production_final_services.results[0].stdout in ['inactive', 'failed'] and
         relay_production_final_services.results[1].stdout == 'disabled' and
         relay_production_final_runner_state_safe | bool and
-        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape))
+        not (relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape))
       }}
   changed_when: false
 
@@ -66,7 +66,7 @@
             not relay_production_final_paths.results[7].stat.exists | default(false) and
             relay_production_final_services.results[0].stdout == 'active' and
             relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime'] and
-            relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+            relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
           ) or
           (
             relay_production_final_paths.results[6].stat.exists | default(false) and
@@ -141,7 +141,7 @@
             relay_production_final_services.results[0].stdout != 'active' or
             (
               relay_production_final_services.results[1].stdout in ['enabled', 'enabled-runtime'] and
-              relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+              relay_production_final_listener.stdout | default('') is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
             )
           ) and
           relay_production_final_runner_state_safe | bool

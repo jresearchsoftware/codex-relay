@@ -164,7 +164,7 @@ def run(args):
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
-        'relay_deployment_profile': 'production', 'relay_reviewer_publication_enabled': True,
+        'relay_deployment_profile': 'production',
         'relay_production_operation_phase': args.phase, 'relay_production_operation_target_head': revision,
         'relay_production_exact_head': revision, 'relay_reviewer_activation_exact_head': revision,
         'relay_production_runner_enable_exact_head': revision,

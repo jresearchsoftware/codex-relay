@@ -145,7 +145,7 @@
 
 - name: Inspect the historical Controller daemon before retirement
   ansible.builtin.stat:
-    path: /etc/systemd/system/relay-controller.service
+    path: '/etc/systemd/system/{{ relay_controller_service_name }}'
   register: relay_controller_unit
   changed_when: false
 
@@ -156,7 +156,7 @@
 
 - name: Stop and disable the historical Controller daemon before removal
   ansible.builtin.systemd:
-    name: relay-controller.service
+    name: '{{ relay_controller_service_name }}'
     enabled: false
     state: stopped
     daemon_reload: true
@@ -166,7 +166,7 @@
 
 - name: Remove the historical Controller daemon unit
   ansible.builtin.file:
-    path: /etc/systemd/system/relay-controller.service
+    path: '/etc/systemd/system/{{ relay_controller_service_name }}'
     state: absent
   when: not ansible_check_mode | bool
   notify: Reload relay systemd metadata

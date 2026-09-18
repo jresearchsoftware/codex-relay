@@ -183,10 +183,10 @@
         - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
         - {operation: is-active, unit: docker.service, gateway_only: true}
         - {operation: is-active, unit: '{{ relay_docker_nginx_service_name }}'}
-        - {operation: is-active, unit: relay-runner.service}
-        - {operation: is-enabled, unit: relay-runner.service}
-        - {operation: is-active, unit: relay-controller.service}
-        - {operation: is-enabled, unit: relay-controller.service}
+        - {operation: is-active, unit: '{{ relay_production_runner_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_production_runner_service_name }}'}
+        - {operation: is-active, unit: '{{ relay_controller_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_controller_service_name }}'}
       register: relay_production_runner_enable_services
       changed_when: false
       failed_when: false
@@ -204,7 +204,7 @@
     - name: Inspect the expected private Reviewer TCP listener before runner enablement
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:8787$/ { print }'
+        awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
       register: relay_production_runner_enable_reviewer_listener_before
       changed_when: false
       failed_when: false
@@ -239,7 +239,7 @@
           - relay_reviewer_bind_mode != 'nexus_gateway' or relay_production_runner_enable_services.results[1].stdout == 'active'
           - relay_production_runner_enable_services.results[2].stdout == 'active'
           - relay_production_runner_enable_prestate in ['already_converged', 'ready_to_enable', 'authorized_recovery']
-          - relay_production_runner_enable_reviewer_listener_before.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          - relay_production_runner_enable_reviewer_listener_before.stdout is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
           - relay_production_runner_enable_services.results[5].stdout != 'active'
           - relay_production_runner_enable_services.results[6].stdout not in ['enabled', 'static']
         fail_msg: 'PRODUCTION_RUNNER_ENABLE_PRESTATE_INVALID'
@@ -247,7 +247,7 @@
     - name: Capture the public listening boundary before runner enablement
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:(80|443|8787|8000)$/ { print }'
+        awk '$4 ~ /:(80|443|{{ relay_reviewer_bind_port }}|8000)$/ { print }'
       register: relay_production_runner_enable_listeners_before
       changed_when: false
       check_mode: false
@@ -340,11 +340,11 @@
       ansible.builtin.command:
         argv: ['systemctl', '{{ item.operation }}', '{{ item.unit }}']
       loop:
-        - {operation: is-active, unit: relay-runner.service}
-        - {operation: is-enabled, unit: relay-runner.service}
+        - {operation: is-active, unit: '{{ relay_production_runner_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_production_runner_service_name }}'}
         - {operation: is-active, unit: '{{ relay_reviewer_service_name }}'}
-        - {operation: is-active, unit: relay-controller.service}
-        - {operation: is-enabled, unit: relay-controller.service}
+        - {operation: is-active, unit: '{{ relay_controller_service_name }}'}
+        - {operation: is-enabled, unit: '{{ relay_controller_service_name }}'}
       register: relay_production_runner_enable_post_services
       changed_when: false
       failed_when: false
@@ -353,7 +353,7 @@
     - name: Capture the public listening boundary after runner enablement
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:(80|443|8787|8000)$/ { print }'
+        awk '$4 ~ /:(80|443|{{ relay_reviewer_bind_port }}|8000)$/ { print }'
       register: relay_production_runner_enable_listeners_after
       changed_when: false
       check_mode: false
@@ -361,7 +361,7 @@
     - name: Inspect the expected private Reviewer TCP listener after runner enablement
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:8787$/ { print }'
+        awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
       register: relay_production_runner_enable_reviewer_listener_after
       changed_when: false
       failed_when: false
@@ -388,7 +388,7 @@
           - relay_production_runner_enable_post_services.results[3].stdout != 'active'
           - relay_production_runner_enable_post_services.results[4].stdout not in ['enabled', 'static']
           - relay_production_runner_enable_listeners_after.stdout == relay_production_runner_enable_listeners_before.stdout
-          - relay_production_runner_enable_reviewer_listener_after.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          - relay_production_runner_enable_reviewer_listener_after.stdout is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
           - relay_production_runner_enable_reviewer_listener_after.stdout == relay_production_runner_enable_reviewer_listener_before.stdout
         fail_msg: 'PRODUCTION_RUNNER_ENABLE_POSTCHECK_FAILED'
 

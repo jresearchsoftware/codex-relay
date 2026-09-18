@@ -24,7 +24,7 @@
 
 - name: Inspect the active Reviewer listener for bind reconciliation
   ansible.builtin.command:
-    argv: ['ss', '-H', '-ltnp', 'sport', '=', ':8787']
+    argv: ['ss', '-H', '-ltnp', 'sport', '=', ':{{ relay_reviewer_bind_port }}']
   register: relay_reviewer_bind_active_listener
   changed_when: false
   failed_when: false
@@ -38,7 +38,7 @@
   notify: Try-restart Reviewer for validated bind mode
   when:
     - not ansible_check_mode | bool
-    - (relay_reviewer_bind_address ~ ':8787') not in relay_reviewer_bind_active_listener.stdout
+    - (relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) not in relay_reviewer_bind_active_listener.stdout
 
 - name: Record the source-controlled Reviewer bind transition
   ansible.builtin.debug:

@@ -22,13 +22,13 @@
 # mount namespace only at an owner-authorized lifecycle transition after its job.
 - name: Inspect the runner unit before planning a sandbox refresh
   ansible.builtin.stat:
-    path: /etc/systemd/system/relay-runner.service
+    path: '/etc/systemd/system/{{ relay_production_runner_service_name }}'
   register: relay_production_local_apply_runner_unit
   changed_when: false
 
 - name: Create the root-owned production runner drop-in directory
   ansible.builtin.file:
-    path: /etc/systemd/system/relay-runner.service.d
+    path: '/etc/systemd/system/{{ relay_production_runner_service_name }}.d'
     state: directory
     owner: root
     group: root
@@ -37,7 +37,7 @@
 - name: Reconcile the production runner sandbox for local apply
   ansible.builtin.template:
     src: relay-runner-production-local-apply.conf.j2
-    dest: /etc/systemd/system/relay-runner.service.d/production-local-apply.conf
+    dest: '/etc/systemd/system/{{ relay_production_runner_service_name }}.d/production-local-apply.conf'
     owner: root
     group: root
     mode: '0644'

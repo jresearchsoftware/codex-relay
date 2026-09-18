@@ -4,7 +4,7 @@ set -euo pipefail
 reviewer_service='{{ relay_reviewer_service_name }}'
 activation_marker='{{ relay_reviewer_activation_marker }}'
 recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
-expected_listener='{{ relay_reviewer_bind_address }}:8787'
+expected_listener='{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 operation_state='{{ relay_production_operation_state_path }}'
 
 # Recovery is a read-only normalizer only in STABLE state.  A valid unfinished
@@ -52,20 +52,20 @@ esac
 
 for attempt in {1..10}; do
   reviewer_active=$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)
-  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null || true)
-  if [[ "$reviewer_active" == active && "$reviewer_listener" == *"$expected_listener"* ]]; then
+  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { if (found) print expected }' || true)
+  if [[ "$reviewer_active" == active && "$reviewer_listener" == "$expected_listener" ]]; then
     break
   fi
   [[ "$reviewer_active" == active || "$reviewer_active" == activating ]] || exit 25
   /bin/sleep 1
 done
-[[ "$reviewer_active" == active && "$reviewer_listener" == *"$expected_listener"* ]] || exit 25
+[[ "$reviewer_active" == active && "$reviewer_listener" == "$expected_listener" ]] || exit 25
 
 {% if relay_deployment_profile == 'production' %}
 # Production runner readiness is subordinate to the previously authorized and
 # currently healthy Reviewer.  Registration markers are checked by presence
 # only; their contents never enter this helper or its logs.
-runner_service='relay-runner.service'
+runner_service='{{ relay_production_runner_service_name }}'
 runner_registration_marker='{{ relay_runner_registration_marker }}'
 runner_credentials_marker='{{ relay_runner_credentials_marker }}'
 runner_enabled=$(/bin/systemctl is-enabled "$runner_service" 2>/dev/null || true)
@@ -73,8 +73,8 @@ if [[ "$runner_enabled" == "enabled" || "$runner_enabled" == "enabled-runtime" ]
   && [[ -f "$runner_registration_marker" && ! -L "$runner_registration_marker" ]] \
   && [[ -f "$runner_credentials_marker" && ! -L "$runner_credentials_marker" ]]; then
   reviewer_active=$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)
-  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null || true)
-  if [[ "$reviewer_active" == "active" && "$reviewer_listener" == *"$expected_listener"* ]]; then
+  reviewer_listener=$(/bin/ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { if (found) print expected }' || true)
+  if [[ "$reviewer_active" == "active" && "$reviewer_listener" == "$expected_listener" ]]; then
     runner_active=$(/bin/systemctl is-active "$runner_service" 2>/dev/null || true)
     case "$runner_active" in
       active|activating)

@@ -1988,7 +1988,7 @@ mod tests {
 
     fn rendered_runtime_config(repository: &str) -> String {
         let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../examples/ansible/reviewer-mcp.json.j2");
+            .join("../deploy/ansible/roles/relay_runtime/templates/reviewer-mcp.json.j2");
         let template_source =
             fs::read_to_string(&template_path).expect("managed Reviewer template");
         let mut environment = Environment::new();
@@ -2007,6 +2007,7 @@ mod tests {
                 relay_reviewer_exec_start => "/opt/relay-example/current/bin/reviewer-mcp-http --config /etc/relay-example/reviewer-mcp.json",
                 relay_reviewer_bind_mode => "private_gateway",
                 relay_reviewer_bind_address => "172.18.0.1",
+                relay_reviewer_bind_port => 18787,
                 relay_reviewer_bind_network => "example-network",
                 relay_reviewer_gateway_validated => true,
                 relay_evidence_root => "/var/lib/relay-example/evidence",
@@ -2026,6 +2027,7 @@ mod tests {
         let rendered = rendered_runtime_config(TEST_REPOSITORY);
         assert!(!rendered.contains("{{"));
         assert!(!rendered.contains("UNAVAILABLE_UNTIL_RELEASE_STAGING"));
+        assert!(!rendered.contains("\"mutation\""));
 
         let path = std::env::temp_dir().join(format!(
             "reviewer-managed-template-config-{}-{}.json",
@@ -2044,7 +2046,7 @@ mod tests {
                 policy: test_policy(),
                 repository: TEST_REPOSITORY.into(),
                 host: "172.18.0.1".into(),
-                port: 8787,
+                port: 18787,
                 mount: "/mcp".into(),
                 bind_mode: "private_gateway".into(),
                 bind_network: "example-network".into(),

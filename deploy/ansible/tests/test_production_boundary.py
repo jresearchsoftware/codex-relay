@@ -125,7 +125,9 @@ class ProductionBoundaryTests(unittest.TestCase):
                         self.local_apply_tasks.index(f"src: {template_name}"))
         unit = next(task for task in yaml.safe_load(self.local_apply_tasks)
                     if task.get("ansible.builtin.template", {}).get("src") == template_name)
-        self.assertEqual(unit["ansible.builtin.template"]["dest"],
+        self.assertEqual(Environment(undefined=StrictUndefined).from_string(
+            unit["ansible.builtin.template"]["dest"]).render(
+                relay_production_runner_service_name="relay-runner.service"),
                          "/etc/systemd/system/relay-runner.service.d/production-local-apply.conf")
         handlers = yaml.safe_load((ROOT / "roles/relay_runner/handlers/main.yml").read_text(encoding="utf-8"))
         selected = [handler for handler in handlers if handler["name"] in unit["notify"]]

@@ -294,7 +294,7 @@
     - name: Verify the expected private Reviewer TCP listener after activation
       ansible.builtin.shell: >-
         ss -ltnH |
-        awk '$4 ~ /:8787$/ { print }'
+        awk '$4 ~ /:{{ relay_reviewer_bind_port }}$/ { print }'
       register: relay_reviewer_activation_listener
       changed_when: false
       failed_when: false
@@ -303,7 +303,7 @@
       delay: 1
       until: >-
         relay_reviewer_activation_listener.stdout is search(
-          (relay_reviewer_bind_address ~ ':8787') | regex_escape
+          (relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape
         )
       when: not ansible_check_mode | bool
 
@@ -312,7 +312,7 @@
         that:
           - relay_reviewer_activation_post_services.results[0].stdout == 'active'
           - relay_reviewer_activation_post_services.results[1].stdout in ['enabled', 'enabled-runtime']
-          - relay_reviewer_activation_listener.stdout is search((relay_reviewer_bind_address ~ ':8787') | regex_escape)
+          - relay_reviewer_activation_listener.stdout is search((relay_reviewer_bind_address ~ ':' ~ (relay_reviewer_bind_port | string)) | regex_escape)
         fail_msg: 'REVIEWER_ACTIVATION_POSTCHECK_FAILED'
       when: not ansible_check_mode | bool
 
@@ -368,6 +368,6 @@
       ansible.builtin.debug:
         msg: >-
           REVIEWER_ACTIVATION_PASS=credential_gate_verified;release={{ relay_reviewer_activation_manifest.commit }};
-          listener={{ relay_reviewer_bind_address }}:8787;
+          listener={{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }};
           service={{ relay_reviewer_service_name }}
       when: not ansible_check_mode | bool

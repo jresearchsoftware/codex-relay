@@ -23,8 +23,8 @@
           - relay_runner_root == (relay_install_root ~ '/general-runner')
           - relay_runner_work_root == (relay_state_root ~ '/general-runner/work')
           - relay_runner_home == (relay_state_root ~ '/general-runner/home')
-          - relay_runner_service_name == 'relay-general-runner.service'
-          - relay_runner_service_unit_path == '/etc/systemd/system/relay-general-runner.service'
+          - relay_runner_service_name == relay_general_runner_service_name
+          - relay_runner_service_unit_path == ('/etc/systemd/system/' ~ relay_general_runner_service_name)
           - relay_runner_registration_helper_path == (relay_install_root ~ '/relay-general-runner-registration')
           - relay_runner_service_state_management == 'preserve'
           - not relay_runner_service_enabled | bool
@@ -53,7 +53,7 @@
 
     - name: Snapshot the production runner lifecycle
       ansible.builtin.command:
-        argv: [systemctl, '{{ item }}', relay-runner.service]
+        argv: [systemctl, '{{ item }}', '{{ relay_production_runner_service_name }}']
       loop: [is-active, is-enabled]
       register: general_runner_production_before
       changed_when: false
@@ -147,7 +147,7 @@
 
     - name: Snapshot production lifecycle after the general-only operation
       ansible.builtin.command:
-        argv: [systemctl, '{{ item }}', relay-runner.service]
+        argv: [systemctl, '{{ item }}', '{{ relay_production_runner_service_name }}']
       loop: [is-active, is-enabled]
       register: general_runner_production_after
       changed_when: false

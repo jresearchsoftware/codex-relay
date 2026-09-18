@@ -67,6 +67,7 @@ def _final_facts(
         "relay_install_root": "/opt/codex-relay",
         "relay_release_root": "/opt/codex-relay/releases",
         "relay_reviewer_bind_address": "127.0.0.1",
+        "relay_reviewer_bind_port": 8787,
         "relay_production_final_paths": {
             "results": [
                 {"stat": {"exists": True, "islnk": True, "lnk_source": f"/opt/codex-relay/releases/{HEAD}", "pw_name": "root"}},
@@ -390,6 +391,7 @@ class ProductionComposedLifecycleTests(unittest.TestCase):
                     f"    relay_runner_registration_marker: '{(root / 'runner').as_posix()}'\n"
                     f"    relay_runner_credentials_marker: '{(root / 'credentials').as_posix()}'\n"
                     "    relay_reviewer_bind_address: 127.0.0.1\n"
+                    "    relay_reviewer_bind_port: 8787\n"
                     "    relay_runner_user: runner\n"
                     "    relay_runner_group: runner\n"
                     "    relay_production_runner_name: relay-production-relay\n"
@@ -470,6 +472,7 @@ class ProductionComposedLifecycleTests(unittest.TestCase):
                 f"    relay_runner_registration_marker: '{(root / 'runner').as_posix()}'\n"
                 f"    relay_runner_credentials_marker: '{(root / 'credentials').as_posix()}'\n"
                 "    relay_reviewer_bind_address: 127.0.0.1\n"
+                "    relay_reviewer_bind_port: 8787\n"
                 "    relay_runner_user: runner\n"
                 "    relay_runner_group: runner\n"
                 "    relay_production_runner_name: relay-production-relay\n"

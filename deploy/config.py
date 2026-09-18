@@ -77,7 +77,7 @@ def validate(c, product_root):
     e = c['environment']
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
-        ['reviewCheckName']), 'environment')
+        ['reviewCheckName', 'instance']), 'environment')
     for key in ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup']:
         require(text(e[key], r'[a-z][a-z0-9-]{0,30}') and e[key] != 'root', key)
     r, g = e['runner'], e['generalRunner']
@@ -94,6 +94,16 @@ def validate(c, product_root):
     require(len(set(users)) == len(users), 'isolated-users')
     require(e['codexWorkGroup'] not in users, 'isolated-work-group')
     require(r['name'] != g['name'], 'isolated-runner-names')
+    if 'instance' in e:
+        instance = e['instance']
+        require(object_keys(instance, ['reviewerPort', 'publicationEnabled']), 'instance')
+        require(type(instance['reviewerPort']) is int
+                and 1024 <= instance['reviewerPort'] <= 65535, 'instance.reviewerPort')
+        require(type(instance['publicationEnabled']) is bool, 'instance.publicationEnabled')
+        # A second consumer must not reach another consumer's privileged paths.
+        roots = tuple(prefix + e['namespace'] + '/' for prefix in ['/opt/', '/etc/', '/var/lib/'])
+        require(all(path.startswith(roots) for path in c['consumer']['paths'].values()),
+                'instance.paths')
     bind = e['reviewerBind']
     require(object_keys(bind, ['mode', 'network', 'container']), 'reviewerBind')
     require(bind['mode'] in ['loopback', 'docker_gateway'], 'reviewerBind.mode')
@@ -165,6 +175,22 @@ def compile_inputs(c):
         'relay_review_check_name': e.get('reviewCheckName', 'chatgpt-review'),
         'relay_compatibility_links': [{'alias': k, 'target': v} for k, v in e['compatibilityLinks'].items()],
     }
+    instance = e.get('instance')
+    result['relay_reviewer_bind_port'] = instance['reviewerPort'] if instance else 8787
+    result['relay_reviewer_relay_enabled'] = instance['publicationEnabled'] if instance else True
+    if instance:
+        # Legacy consumers retain their installed unit identities. Opting in
+        # scopes every lifecycle participant, including disabled runner units.
+        result.update({
+            'relay_reviewer_service_name': ns + '-reviewer.service',
+            'relay_reviewer_recovery_service_name': ns + '-reviewer-recovery.service',
+            'relay_reviewer_recovery_timer_name': ns + '-reviewer-recovery.timer',
+            'relay_runner_service_name': ns + '-runner.service',
+            'relay_production_runner_service_name': ns + '-runner.service',
+            'relay_general_runner_service_name': ns + '-general-runner.service',
+            'relay_controller_service_name': ns + '-controller.service',
+            'relay_superseded_proxy_service_name': ns + '-openai-mtls-proxy.service',
+        })
     for suffix, kind in [('codex', 'codex'), ('writer', 'writer'), ('diagnostics', 'diagnostics'),
                          ('production-apply', 'production_local_apply')]:
         result['relay_' + kind + '_sudoers_file'] = '/etc/sudoers.d/' + ns + '-' + suffix
