@@ -10,6 +10,15 @@
       - relay_runner_user == relay_production_runner_user
     fail_msg: 'PRODUCTION_LOCAL_APPLY_BOUNDARY_INPUT_INVALID'
 
+# This boundary runs before relay_runtime creates the installation layout.
+# Preserve an existing runtime-assigned group so subsequent apply stays stable.
+- name: Create the protected installation parent before its local-apply helper
+  ansible.builtin.file:
+    path: '{{ relay_install_root }}'
+    state: directory
+    owner: root
+    mode: '0755'
+
 - name: Create root-owned disposable local-apply staging namespace
   ansible.builtin.file:
     path: '{{ relay_production_local_apply_stage_root }}'
