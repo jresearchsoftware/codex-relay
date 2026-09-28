@@ -130,6 +130,12 @@ has a separate, narrow `bootstrap-only` recovery shape. Read-only `check` report
 its exact state hash and still exits blocked. It requires absent consumer
 accounts, groups, units, listener, log root and sudoers rule; only the protected
 empty staging directory, operation lock and exact local-apply drop-in may exist.
+Every governed unit's persistent and runtime drop-in directory and systemd
+`DropInPaths` are checked. Unknown contents block both inspection and disposition;
+only the exact persistent production-runner `production-local-apply.conf` is
+admitted. Protected empty drop-in directories may exist. Their presence and
+metadata, the admitted file's metadata/content and systemd observations are
+bound into the state hash, so changed evidence requires a fresh owner binding.
 Unknown state is never discarded. After inspecting that evidence, an authorized
 owner can invoke the new accepted source with:
 

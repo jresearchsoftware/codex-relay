@@ -12,6 +12,7 @@
       stateRoot: '{{ relay_state_root }}'
       runtimeRoot: '{{ relay_runtime_root }}'
       stageRoot: '{{ relay_production_local_apply_stage_root }}'
+      productionRunnerUnit: '{{ relay_production_runner_service_name }}'
       dropinRoot: '/etc/systemd/system/{{ relay_production_runner_service_name }}.d'
       dropinContent: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/roles/relay_runner/templates/relay-runner-production-local-apply.conf.j2') }}"
       port: '{{ relay_reviewer_bind_port }}'

@@ -18,6 +18,9 @@ import subprocess
 import sys
 
 
+SYSTEMD_ROOTS = ('/etc/systemd/system', '/run/systemd/system')
+
+
 def require(condition, code):
     if not condition:
         raise ValueError(code)
@@ -88,6 +91,27 @@ def archive_value(config, raw, state_hash):
             'expected_state_hash': state_hash, 'current_state_hash': state_hash}
 
 
+def inspect_dropins(config, unit):
+    evidence = {}
+    for root in SYSTEMD_ROOTS:
+        directory = Path(root) / (unit + '.d')
+        admitted = str(directory) == config['dropinRoot']
+        if not admitted and not os.path.lexists(directory):
+            absent(directory)
+            evidence[str(directory)] = None
+            continue
+        info = metadata(directory, stat.S_ISDIR, 0o755)
+        entries = {path.name for path in directory.iterdir()}
+        require(entries == ({'production-local-apply.conf'} if admitted else set()), 'dropin-contents')
+        files = {}
+        if admitted:
+            raw, file_meta = read_file(directory / 'production-local-apply.conf', 0o644)
+            require(raw == config['dropinContent'].encode(), 'dropin-content')
+            files['production-local-apply.conf'] = {**file_meta, 'sha256': digest(raw)}
+        evidence[str(directory)] = {**info, 'files': files}
+    return evidence
+
+
 def inspect(config):
     raw, record_meta = read_file(config['record'], 0o600)
     require(json.loads(raw) == {'schemaVersion': config['schemaVersion'],
@@ -116,30 +140,30 @@ def inspect(config):
         config['stateRoot']: ('production-apply', 'superseded-operations'),
         config['stageRoot']: (),
         config['runtimeRoot']: ('production-operation.lock',),
-        config['dropinRoot']: ('production-local-apply.conf',),
     }
     for name, entries in allowed.items():
         mode = 0o700 if name in (config['stateRoot'], config['stageRoot']) else 0o755
         state['directories'][name] = metadata(name, stat.S_ISDIR, mode)
         actual = {p.name for p in Path(name).iterdir()}
         require(actual <= set(entries), 'unexpected-contents')
-        # The stage, lock and exact drop-in must exist. Only the archive is optional.
+        # The stage and lock must exist. Only the archive is optional.
         require(actual == set(entries) - ({'superseded-operations'} if not archive_root.exists() else set()),
                 'missing-evidence')
-    dropin, dropin_meta = read_file(Path(config['dropinRoot']) / 'production-local-apply.conf', 0o644)
-    require(dropin == config['dropinContent'].encode(), 'dropin-content')
-    state['dropin'] = {**dropin_meta, 'sha256': digest(dropin)}
     state['lock'] = metadata(config['lock'], stat.S_ISREG, 0o644)
     for unit in config['units']:
-        for root in ('/etc/systemd/system', '/run/systemd/system'):
+        for root in SYSTEMD_ROOTS:
             absent(Path(root) / unit)
+        dropins = inspect_dropins(config, unit)
         output = command(['/bin/systemctl', 'show', unit,
-                          '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,FragmentPath'])
+                          '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,FragmentPath,DropInPaths'])
         values = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
         require(values.get('LoadState') == 'not-found' and values.get('ActiveState') == 'inactive'
                 and values.get('SubState') == 'dead' and values.get('UnitFileState', '') in ('', 'not-found')
                 and values.get('MainPID', '0') == '0' and values.get('FragmentPath', '') == '', 'unit-present')
-        state['units'][unit] = values
+        admitted_paths = ('', str(Path(config['dropinRoot']) / 'production-local-apply.conf')) \
+            if unit == config['productionRunnerUnit'] else ('',)
+        require(values.get('DropInPaths') in admitted_paths, 'unit-dropins')
+        state['units'][unit] = {'properties': values, 'dropins': dropins}
     listeners = command(['/usr/bin/ss', '-ltnH'])
     require(not any(line.split()[3].endswith(':' + str(config['port']))
                     for line in listeners.splitlines() if len(line.split()) >= 4), 'listener-present')
@@ -171,6 +195,10 @@ def execute(config, mode):
     require(config['stageRoot'] == config['stateRoot'] + '/production-apply'
             and config['archiveRoot'] == config['stateRoot'] + '/superseded-operations'
             and config['lock'] == config['runtimeRoot'] + '/production-operation.lock', 'layout')
+    require(config['productionRunnerUnit'] in config['units']
+            and all(re.fullmatch(r'[A-Za-z0-9_.@-]+\.(service|timer)', unit) for unit in config['units'])
+            and config['dropinRoot'] == str(Path(SYSTEMD_ROOTS[0]) / (config['productionRunnerUnit'] + '.d')),
+            'dropin-layout')
     lock_meta = metadata(config['lock'], stat.S_ISREG, 0o644)
     lock = os.open(config['lock'], os.O_RDONLY | os.O_NOFOLLOW)
     try:
