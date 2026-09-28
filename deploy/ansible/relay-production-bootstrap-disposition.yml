@@ -1,0 +1,54 @@
+---
+- name: Retire only a superseded bootstrap whose exact evidence was inspected
+  hosts: relay
+  become: true
+  gather_facts: false
+  tasks:
+    - ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Require the explicit owner bootstrap disposition and old record
+      ansible.builtin.assert:
+        that:
+          - relay_deployment_profile == 'production'
+          - inventory_hostname == relay_production_host
+          - relay_production_operation_phase == 'stale-dispose'
+          - relay_production_operation_stale_authorized | bool
+          - relay_production_operation_stale_apply_shape == 'bootstrap-only'
+          - relay_production_operation_stale_phase == 'apply'
+          - relay_production_operation_stale_actual_completed_phase == ''
+          - relay_production_operation_stale_expected_state_hash is match('^[0-9a-f]{64}$')
+          - relay_production_operation_recovery_required | bool
+          - relay_production_operation_recovery_phase == 'apply'
+          - relay_production_operation_recovery_target_head == relay_production_operation_stale_target_head
+          - relay_production_operation_target_head != relay_production_operation_stale_target_head
+          - not ansible_check_mode | bool
+        fail_msg: PRODUCTION_BOOTSTRAP_DISPOSITION_AUTHORITY_INVALID
+
+    - name: Verify the controller checkout before the owner transition
+      ansible.builtin.command:
+        argv: [git, '-C', '{{ relay_review_root }}', rev-parse, HEAD]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: relay_bootstrap_checkout
+
+    - ansible.builtin.assert:
+        that: relay_bootstrap_checkout.stdout == relay_production_operation_target_head
+        fail_msg: PRODUCTION_BOOTSTRAP_DISPOSITION_CHECKOUT_MISMATCH
+
+    - ansible.builtin.include_tasks: tasks/production-bootstrap-probe.yml
+      vars:
+        relay_bootstrap_mode: dispose
+
+    - name: Verify the completed transition is bound to both exact heads
+      ansible.builtin.assert:
+        that:
+          - (relay_bootstrap_probe.stdout | from_json).mode == 'dispose'
+          - (relay_bootstrap_probe.stdout | from_json).head == relay_production_operation_target_head
+          - (relay_bootstrap_probe.stdout | from_json).staleHead == relay_production_operation_stale_target_head
+          - (relay_bootstrap_probe.stdout | from_json).stateHash == relay_production_operation_stale_expected_state_hash
+
+    - ansible.builtin.debug:
+        msg: >-
+          PRODUCTION_BOOTSTRAP_DISPOSITION_PASS={{ relay_production_operation_target_head }};
+          record=archived-and-retired;runtime=absent;services=untouched;bootstrap-files=retained

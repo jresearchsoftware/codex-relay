@@ -125,6 +125,28 @@ ordinary apply. Stale operation disposition remains evidence-bound through
 exact state hash. Diagnose an interrupted operation before any retry. No blind
 reset, force retry, registration or unrelated proxy/network management occurs.
 
+A first apply that stopped before creating the installation/configuration roots
+has a separate, narrow `bootstrap-only` recovery shape. Read-only `check` reports
+its exact state hash and still exits blocked. It requires absent consumer
+accounts, groups, units, listener, log root and sudoers rule; only the protected
+empty staging directory, operation lock and exact local-apply drop-in may exist.
+Unknown state is never discarded. After inspecting that evidence, an authorized
+owner can invoke the new accepted source with:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner-config.json \
+  --phase stale-dispose --authorize-stale-disposition \
+  --stale-phase apply --stale-head "$recorded_sha" \
+  --stale-apply-shape bootstrap-only --stale-state-hash "$observed_hash"
+```
+
+Do not assert `--stale-completed-phase apply` for this unfinished installation.
+The bootstrap transition rechecks the shape and exact hash under the existing
+host lock, durably archives the old record, and only then retires it. It retains
+all bootstrap files and does not create users, install helpers or touch services.
+A fresh check/apply of the accepted source is a subsequent owner action. The
+completed-release recovery contract and its required evidence remain unchanged.
+
 The installed fixed local-apply helper retains the existing runner trust
 boundary: one admitted consumer SHA, sanitized runner Git, root-owned staging,
 fixed host namespace transition and no caller-selected executable or config

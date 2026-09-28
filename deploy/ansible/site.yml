@@ -12,12 +12,21 @@
         name: relay_docker_network_gateway
       when: relay_deployment_profile == 'production' and relay_reviewer_bind_mode == 'nexus_gateway'
 
+    - name: Inspect a first apply that may have stopped before runtime creation
+      ansible.builtin.include_tasks: tasks/production-bootstrap-recovery.yml
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase in ['check', 'post-check']
+        - relay_production_operation_recovery_required | default(false) | bool
+        - relay_production_operation_recovery_phase == 'apply'
+
     - name: Classify trusted recovery before ordinary stable-state validation
       ansible.builtin.include_tasks: tasks/production-operation-recovery-classify.yml
       when:
         - relay_deployment_profile == 'production'
         - relay_production_operation_phase in ['check', 'post-check']
         - relay_production_operation_recovery_required | default(false) | bool
+        - not relay_production_recovery_check_classified | default(false) | bool
 
     - name: End the read-only play after a coherent recovery classification
       ansible.builtin.meta: end_play
