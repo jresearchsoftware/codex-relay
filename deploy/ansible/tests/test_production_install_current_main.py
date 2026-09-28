@@ -48,6 +48,62 @@ def run_play(directory, tasks, values, extra=None, check=False):
 @unittest.skipUnless(ANSIBLE, 'Linux Ansible required')
 class ProductionInstallCompositionTests(unittest.TestCase):
 
+    @unittest.skipUnless(os.name != 'nt' and os.geteuid() == 0, 'root ownership requires Linux root')
+    def test_local_apply_bootstraps_missing_install_root_and_preserves_existing_group(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            role = directory / 'roles/relay_runner'
+            shutil.copytree(ROOT / 'roles/relay_runner', role)
+            systemd = directory / 'etc/systemd/system'
+            sudoers = directory / 'etc/sudoers.d'
+            sudoers.mkdir(parents=True)
+            tasks_path = role / 'tasks/production-local-apply.yml'
+            # Redirect host paths, preserving the real task order, templates,
+            # root ownership checks and visudo validation. No runner is started.
+            tasks_path.write_text(tasks_path.read_text().replace(
+                '/etc/systemd/system/', str(systemd) + '/').replace(
+                '/etc/sudoers.d/', str(sudoers) + '/'))
+            write_yaml(role / 'handlers/main.yml', [{
+                'name': 'Reload runner unit',
+                'ansible.builtin.debug': {'msg': 'fixture daemon reload'},
+            }])
+            install = directory / 'install'
+            values = {
+                'relay_deployment_profile': 'production',
+                'relay_namespace': 'fixture-relay',
+                'relay_install_root': str(install),
+                'relay_state_root': str(directory / 'state'),
+                'relay_github_repository': 'example/project',
+                'relay_runner_user': 'root',
+                'relay_production_runner_user': 'root',
+                'relay_production_runner_service_name': 'fixture-relay-runner.service',
+                'relay_production_local_apply_sudoers_file': str(sudoers / 'fixture-relay-production-apply'),
+            }
+            tasks = [{'ansible.builtin.include_role': {
+                'name': 'relay_runner', 'tasks_from': 'production-local-apply.yml',
+            }}]
+            planned = run_play(directory, tasks, values, check=True)
+            self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+            self.assertFalse(install.exists())
+
+            applied = run_play(directory, tasks, values)
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            helper = install / 'relay-production-local-apply'
+            self.assertTrue(helper.is_file())
+            self.assertEqual(install.stat().st_uid, 0)
+            self.assertEqual(stat.S_IMODE(install.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(helper.stat().st_mode), 0o750)
+
+            # The runtime later assigns its service group to this parent.
+            # Early reconciliation must not reset that group on every apply.
+            import pwd
+            runtime_gid = pwd.getpwnam('nobody').pw_gid
+            os.chown(install, 0, runtime_gid)
+            repeated = run_play(directory, tasks, values)
+            self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+            self.assertRegex(repeated.stdout, r'changed=0\s')
+            self.assertEqual(install.stat().st_gid, runtime_gid)
+
 
     def test_check_plans_general_software_before_identity_or_work_group_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
