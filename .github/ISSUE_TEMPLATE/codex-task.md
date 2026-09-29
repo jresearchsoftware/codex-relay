@@ -33,12 +33,11 @@ does not itself close an Issue or authorize merge. -->
 
 ## Execution profile
 
-- Subagents: `Off`
-
-<!-- Before launch, resolve the model/effort from owner authority. For an explicit
-override add Codex model and Codex reasoning effort fields using exact identifiers.
-Automatic admission resolves omitted fields from that consumer's configuration,
-never from a private policy file or an invented repository default. The backend
+<!-- Resolve the model from owner authority or admitted consumer configuration.
+Omit effort/Subagents to use the AGENTS.md execution policy. For an explicit
+override add Codex reasoning effort and/or Subagents fields. Automatic admission
+uses the shared resolver; explicit consumer profile settings remain overrides.
+There is no repository-wide Codex model default. The backend
 determines support; do not substitute a profile during execution. For a manual
 launch the owner selects model/effort in the UI. -->
 

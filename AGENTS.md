@@ -162,6 +162,8 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   proof. Record whether subagents were used within the admitted permission.
 - Keep owner, worker, Writer and Reviewer responsibilities separate. Review
   acceptance is independent and bound to the exact candidate head.
+  Interactive ChatGPT review model/effort is not governance metadata: do not
+  require or record it in CRs, handoffs, publication or Outcomes.
 - Preserve reservation-before-mutation, replay suppression, non-force Git
   publication, safe paths/modes and scanning of every introduced blob.
 - Never run trusted Git against model-modified metadata. Import bounded object

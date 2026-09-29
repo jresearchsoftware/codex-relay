@@ -93,7 +93,7 @@ test('both worker operations receive supplied launch metadata despite historical
     assert.ok(request.inputText.startsWith(f.envelope.input)); // Canonical goal remains intact.
     assert.ok(request.inputText.includes(`Task: #42\nStep: 42\nThread name: ${f.envelope.thread}`));
     assert.equal(request.taskTitle, f.envelope.thread);
-    assert.match(request.inputText, /Subagents: Off/);
+    assert.ok(request.inputText.includes(`Subagents: ${remediation ? 'Off' : 'On'}`));
     assert.match(request.inputText, /Do not push, publish, merge PRs, close Issues/);
     assert.equal(request.inputText.includes('Bounded base-branch reconciliation:'), remediation);
   }

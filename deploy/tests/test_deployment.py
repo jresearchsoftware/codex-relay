@@ -27,6 +27,18 @@ def commit(root):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_compiler_preserves_omitted_and_explicit_effort_for_runtime_resolution(self):
+        for effort in [None, 'max', 'high', 'ultra']:
+            c = json.loads((ROOT / 'deploy/example.json').read_text())
+            if effort is not None:
+                c['consumer']['defaultProfile']['effort'] = effort
+            config.validate(c, ROOT)
+            values = config.compile_inputs(c)
+            if effort is None:
+                self.assertNotIn('relay_default_effort', values)
+            else:
+                self.assertEqual(values['relay_default_effort'], effort)
+
     def test_alternate_consumer_passes_the_actual_codex_runtime_contract(self):
         import yaml
         from ansible.parsing.dataloader import DataLoader

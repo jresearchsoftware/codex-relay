@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
 import { REPOSITORY } from '../src/execution-contract.mjs';
 const envelope = { version: 2, consumerDigest: CONSUMER_DIGEST, repository: REPOSITORY, attemptId: 'run-9', step: 2, runId: 9,
-  target: 'issue', number: 42, issueNumber: 42, route: 'auto', branch: 'codex/test',
+  target: 'issue', number: 42, issueNumber: 42, route: 'auto', branch: 'codex/test', subagentsAllowed: true,
   startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40), targetBase: 'b'.repeat(40), authorityDigest: 'c'.repeat(64), profile: { cliModelId: 'fixture-model', effort: 'high' }, validation: ['diff-check'] };
 function launch(code) {
   return (command, args, options) => {
@@ -36,6 +36,12 @@ test('native process timeout is bounded and cannot be relabeled not_started', as
 test('an unsupported required validation stops before the process boundary', async () => {
   const dispatcher = createOnDemandDispatchAdapter({ spawnImpl: () => assert.fail('must not start') });
   await assert.rejects(dispatcher.dispatch({ ...envelope, validation: ['custom-unknown-check'] }), { code: 'REQUIRED_VALIDATION_UNSUPPORTED' });
+});
+test('dispatcher refuses unresolved permission rather than supplying another default', async () => {
+  const dispatcher = createOnDemandDispatchAdapter({ spawnImpl: () => assert.fail('must not start') });
+  for (const subagentsAllowed of [undefined, null, 'Off', 0]) {
+    await assert.rejects(dispatcher.dispatch({ ...envelope, subagentsAllowed }), { code: 'SUBAGENTS_PERMISSION_INVALID' });
+  }
 });
 test('specific safe worker failure and known cause survive the dispatcher', async () => {
   const dispatcher = createOnDemandDispatchAdapter({ spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}}));process.exitCode=1;});`) });

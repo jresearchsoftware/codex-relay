@@ -2,8 +2,8 @@ import { safeBranch as safeConsumerBranch } from '../../consumer/consumer-config
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { CANONICAL_CODEX_DEFAULT_PROFILE, safeModel, safeEffort } from './codex-profile.mjs';
 import { launchStep } from '../../controller/src/launch-metadata.mjs';
+import { resolveExecutionDefaults } from '../../contracts/src/execution-defaults.mjs';
 export { CANONICAL_CODEX_DEFAULT_PROFILE } from './codex-profile.mjs';
-export const SAFE_PROJECT_DEFAULTS = Object.freeze({ subagentsAllowed: false });
 export const ISSUE_CLOSURE_POLICIES = Object.freeze(["keep-open", "close-authorized"]);
 
 const MAX_ISSUE_BODY_BYTES = 256 * 1024;
@@ -256,22 +256,22 @@ function parseProjectDefaults(source, warnings, resolutions) {
     if (["on", "true", "yes", "enabled", "allowed"].includes(key)) return true;
     return null;
   };
-  function resolve(values, field, code, defaultValue, defaultDisplay) {
+  function resolve(values, field, code, defaultValue) {
     const normalized = values.map(boolean);
     const valid = normalized.filter(value => value !== null);
     const unique = new Set(valid);
     if (values.length > 0 && valid.length === values.length && unique.size === 1) {
       const requested = safeRequestedValue(values); const resolved = valid[0];
       addResolution(resolutions, field, requested, resolved ? "On" : "Off", "authoring-normalized");
-      if (values.length > 1) addWarning(warnings, `${code}_DUPLICATE_EQUIVALENT`, field, `${field} metadata contained duplicate equivalent values; one safe value was retained`, requested, defaultDisplay);
+      if (values.length > 1) addWarning(warnings, `${code}_DUPLICATE_EQUIVALENT`, field, `${field} metadata contained duplicate equivalent values; one safe value was retained`, requested, resolved ? 'On' : 'Off');
       return resolved;
     }
-    addResolution(resolutions, field, safeRequestedValue(values), defaultValue ? "allowed" : defaultDisplay, "project-default");
-    if (values.length > 0) addWarning(warnings, code, field, `${field} metadata was malformed or unrecognized; the safe project default was selected`, safeRequestedValue(values), defaultDisplay);
+    if (values.length > 0) fail('SUBAGENTS_PERMISSION_INVALID', 'Subagents must be a single explicit permission', field);
+    addResolution(resolutions, field, null, defaultValue ? 'On' : 'Off', 'canonical-default');
     return defaultValue;
   }
   return {
-    subagentsAllowed: resolve(subagentValues, "subagents", "SUBAGENTS_DEFAULTED", SAFE_PROJECT_DEFAULTS.subagentsAllowed, "Off")
+    subagentsAllowed: resolve(subagentValues, "subagents", "SUBAGENTS_DEFAULTED", resolveExecutionDefaults().subagentsAllowed)
   };
 }
 

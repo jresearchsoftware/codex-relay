@@ -3,8 +3,9 @@
 Relay connects GitHub task authority to a contained Codex worker and back to
 an exact PR head. One configured consumer is served per process. The
 [consumer contract](../consumer/README.md) supplies repository identities,
-workflow names, runtime paths and effective profile defaults; reusable code
-does not choose them.
+workflow names, runtime paths, model and explicit effort overrides. Omitted
+execution fields use the [shared contract resolver](../contracts/README.md),
+which encodes the policy in `AGENTS.md`; reusable code chooses no model.
 
 ## Components and flow
 

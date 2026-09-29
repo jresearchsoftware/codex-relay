@@ -1225,6 +1225,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn omitted_execution_fields_publish_resolved_metadata_and_roundtrip_to_worker() {
+        for omitted in [
+            vec!["codex_effort"],
+            vec!["subagents_allowed"],
+            vec!["codex_effort", "subagents_allowed"],
+        ] {
+            let mut args = cr_fixture();
+            for key in &omitted {
+                args["change_request"].as_object_mut().unwrap().remove(*key);
+            }
+            let cr = executable_cr::normalized(&[], &args["change_request"]).unwrap();
+            assert_eq!(
+                cr["codex_effort"],
+                if omitted.contains(&"codex_effort") {
+                    "ultra"
+                } else {
+                    "max"
+                }
+            );
+            assert_eq!(
+                cr["subagents_allowed"],
+                omitted.contains(&"subagents_allowed")
+            );
+            let mut explicit = args.clone();
+            explicit["change_request"] = cr;
+            assert_eq!(operation_id(&[], &args), operation_id(&[], &explicit));
+            let state = MockState::default();
+            let (http, url) = client_with_state(true, None, state.clone()).await;
+            let result = rpc(
+                &http,
+                &url,
+                1,
+                "tools/call",
+                json!({"name":"submit_pr_review","arguments":args}),
+            )
+            .await;
+            assert_eq!(
+                result.pointer("/result/content/0/text"),
+                Some(&json!("PUBLISHED"))
+            );
+            let reviews = state.reviews.lock().unwrap();
+            assert_eq!(reviews.len(), 1);
+            assert_consumer_admits(&args, &reviews[0]);
+            // A configured synthetic consumer effort must not re-default the
+            // already resolved Reviewer profile on its next admission hop.
+            let mut canary_args = args.clone();
+            canary_args["repository"] = json!("harmless-lab/relay-canary");
+            let canary_publication = json!({"event":"REQUEST_CHANGES", "commit_id":HEAD,
+                "body":review_body(&[], &canary_args)});
+            assert_consumer_admits_with_config(&canary_args, &canary_publication, "canary");
+        }
+    }
+
+    #[tokio::test]
     async fn new_cr_publication_roundtrips_through_owner_step_sync_and_matching_launch() {
         let state = MockState::default();
         let mut pr = live_pr();

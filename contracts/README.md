@@ -20,7 +20,14 @@ UTF-8 bytes; descriptions are single-line NFC text. Findings retain their suppli
 stable IDs (a letter followed by letters, digits, `_` or `-`), up to 30 findings.
 Validation is a nonempty set of supported native check names, independently of
 repeated compatibility prose. Additional starting-state requirements may be
-empty because the exact starting head is already bound. Subagents defaults Off.
+empty because the exact starting head is already bound. Effort and Subagents
+may be omitted by authors. The shared schema encodes the execution defaults
+from [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal); Node admission and
+Rust rendering use those same values. Reviewer renders resolved launch metadata;
+downstream validation and worker launch preserve it, including explicit overrides.
+Existing rendered reviews keep their explicit values; the historical fixture
+still tests its intentional overrides. Authoring defaults affect unresolved
+fields only. Use the paired Reviewer/Node revision for the new optional fields.
 Step is a positive safe integer matching the current remediation launch profile
 and persistent Issue/PR labels. A new CR uses current N+1; execution and CR
 transport retries keep that CR's Step. History never supplies Step.

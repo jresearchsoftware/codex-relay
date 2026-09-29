@@ -95,6 +95,7 @@ export function validateEnvelope(e) {
     || !exactSha(e.targetBase) || typeof e.authorityDigest !== 'string'
     || !/^[a-f0-9]{64}$/.test(e.authorityDigest)) fail('EXECUTION_ENVELOPE_INVALID');
   branchName(e.branch);
+  if (nativeDispatch && typeof e.subagentsAllowed !== 'boolean') fail('SUBAGENTS_PERMISSION_INVALID');
   if (!Array.isArray(e.validation) || !e.validation.length || e.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
   return e;
 }

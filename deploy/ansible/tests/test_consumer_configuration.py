@@ -52,7 +52,8 @@ class ConsumerConfigurationTests(unittest.TestCase):
                 for key in ['name', 'email']:
                     variables[f'relay_{role}_commit_{key}'] = expected[role + 'Identity'][key]
             variables['relay_default_model'] = expected['defaultProfile']['cliModelId']
-            variables['relay_default_effort'] = expected['defaultProfile']['effort']
+            if 'effort' in expected['defaultProfile']:
+                variables['relay_default_effort'] = expected['defaultProfile']['effort']
             for key, variable in {
                 'workRoot': 'relay_dispatch_work_root', 'dispatch': 'relay_codex_dispatch_path',
                 'writerHelper': 'relay_writer_helper_path', 'launcher': 'relay_codex_launcher_path',
@@ -68,9 +69,11 @@ class ConsumerConfigurationTests(unittest.TestCase):
                 path = Path(temporary) / 'consumer.json'
                 path.write_text(rendered)
                 path.chmod(0o644)
-                probe = subprocess.run(['node', 'consumer/consumer.mjs'], cwd=ROOT,
+                probe = subprocess.run(['node', '--input-type=module', '-e',
+                    'import {CONSUMER} from "./consumer/consumer.mjs";console.log(JSON.stringify(CONSUMER.defaultProfile))'], cwd=ROOT,
                                        env={**os.environ, 'RELAY_CONSUMER_CONFIG': str(path)}, capture_output=True, text=True)
                 self.assertEqual(probe.returncode, 0, probe.stderr)
+                self.assertEqual(json.loads(probe.stdout)['effort'], expected['defaultProfile'].get('effort', 'ultra'))
 
 
 

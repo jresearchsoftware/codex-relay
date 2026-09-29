@@ -11,7 +11,7 @@ const body = fixture('executable-cr-v2.md').trimEnd();
 const publication = { event: input.action, commit_id: input.expected_head_sha, body };
 const context = { pullRequest: input.pr_number, reviewedHeadSha: input.expected_head_sha };
 const parse = text => validateRemediationContract(extractRemediationContract(text), context);
-const normalized = cr => ({ ...structuredClone(cr), subagents_allowed: cr.subagents_allowed ?? false,
+const normalized = cr => ({ ...structuredClone(validateStructuredCr(cr)),
   owner_policy_reconciliation: cr.owner_policy_reconciliation ?? [],
   findings: cr.findings.map(f => ({ ...f, evidence: f.evidence ?? [] })), required_validation: [...cr.required_validation].sort() });
 const wire = (cr = input.change_request, delta = {}) => ({ schema_version: CR_DEFINITION.schema_version,
@@ -34,6 +34,19 @@ test('validation comes from the structured contract, independent of human headin
   assert.throws(() => validateStructuredCr(missing), { code: 'EXECUTABLE_CR_INVALID' });
 });
 
+test('omitted structured effort and permission resolve once and survive admission and worker launch', async () => {
+  for (const fields of [['codex_effort'], ['subagents_allowed'], ['codex_effort', 'subagents_allowed']]) {
+    const args = structuredClone(input);
+    for (const key of fields) delete args.change_request[key];
+    const resolved = await admitPublished(args, { ...publication, body: block(wire(args.change_request)) });
+    assert.equal(resolved.codex_effort, fields.includes('codex_effort') ? 'ultra' : input.change_request.codex_effort);
+    assert.equal(resolved.subagents_allowed, fields.includes('subagents_allowed') ? true : false);
+  }
+  for (const key of ['review_model', 'review_effort', 'review_reasoning_effort', 'review_profile']) {
+    assert.throws(() => validateStructuredCr({ ...input.change_request, [key]: 'retired' }), { code: 'EXECUTABLE_CR_INVALID' });
+  }
+});
+
 test('repeated compatibility prose cannot create duplicate executable values', async () => {
   assert.equal(input.change_request.owner_policy_reconciliation[0], input.change_request.owner_policy_reconciliation[1]);
   await admitPublished(input, { ...publication, body: 'Codex model: harmless prose\nCodex model: repeated harmless prose\n' + body });
@@ -51,7 +64,7 @@ for (const row of JSON.parse(fixture('executable-cr-v2-invalid.json'))) {
 }
 
 test('all declared native validation names and safe explicit profiles remain executable', async () => {
-  for (const codex_effort of ['low', 'medium', 'high', 'xhigh', 'max', 'future-effort', 'unknown']) {
+  for (const codex_effort of ['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'future-effort', 'unknown']) {
     for (const subagents_allowed of [false, true]) {
       const args = structuredClone(input);
       Object.assign(args.change_request, { codex_model: 'future-model', codex_effort, subagents_allowed,

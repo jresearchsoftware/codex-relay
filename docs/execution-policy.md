@@ -15,7 +15,8 @@ Stop and preserve useful work when:
   external mutation has an ambiguous result;
 - repository, credential, security or production authority is uncertain.
 
-Do not use nested workers, subagents or fan-out unless separately authorized.
+Subagent use is discretionary and evidence-driven within the resolved Subagents
+permission. It does not authorize nested Relay workers or execution fan-out.
 Keep the admitted model/effort fixed. Completion requires applicable validation;
 report unavailable checks honestly and never replace independent acceptance
 with a worker's success claim.

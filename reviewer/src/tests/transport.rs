@@ -47,8 +47,29 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
     let mut current_cr = submit_schema["properties"]["change_request"].clone();
     let mut baseline_cr =
         baseline["result"]["tools"][1]["inputSchema"]["properties"]["change_request"].clone();
-    // Step/profile descriptions evolve independently. Preserve the fixture
-    // and compare every structural constraint; Step behavior has native tests.
+    // Preserve the historical fixture. Admission now resolves optional effort
+    // and permission from the common schema; all other constraints stay equal.
+    assert_eq!(current_cr["properties"]["codex_effort"]["default"], "ultra");
+    assert_eq!(
+        current_cr["properties"]["subagents_allowed"]["default"],
+        true
+    );
+    assert_eq!(
+        baseline_cr["properties"]["subagents_allowed"]["default"],
+        false
+    );
+    assert!(!current_cr["required"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("codex_effort")));
+    baseline_cr["required"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|key| key != "codex_effort");
+    for field in ["codex_effort", "subagents_allowed"] {
+        baseline_cr["properties"][field]["default"] =
+            current_cr["properties"][field]["default"].clone();
+    }
     for schema in [&mut current_cr, &mut baseline_cr] {
         for field in ["step", "remediation_thread_title"] {
             schema["properties"][field]

@@ -27,8 +27,7 @@
     "email": "example-remediation@example.invalid"
   },
   "defaultProfile": {
-    "cliModelId": "example-model",
-    "effort": "max"
+    "cliModelId": "example-model"
   },
   "runtimeUser": "relay-worker",
   "paths": {

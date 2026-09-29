@@ -11,7 +11,6 @@
       "remediation_thread_title",
       "step",
       "codex_model",
-      "codex_effort",
       "findings",
       "starting_state_requirements",
       "required_validation",
@@ -51,11 +50,12 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 64,
-        "format": "codex-argument"
+        "format": "codex-argument",
+        "default": "ultra"
       },
       "subagents_allowed": {
         "type": "boolean",
-        "default": false
+        "default": true
       },
       "findings": {
         "type": "array",

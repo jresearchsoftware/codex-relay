@@ -207,7 +207,8 @@ def compile_inputs(c):
         for key in ['name', 'email']:
             result['relay_' + role + '_commit_' + key] = consumer[role + 'Identity'][key]
     result['relay_default_model'] = consumer['defaultProfile']['cliModelId']
-    result['relay_default_effort'] = consumer['defaultProfile']['effort']
+    if 'effort' in consumer['defaultProfile']:
+        result['relay_default_effort'] = consumer['defaultProfile']['effort']
     mapping = {'workRoot':'dispatch_work_root', 'dispatch':'codex_dispatch_path', 'writerHelper':'writer_helper_path',
                'launcher':'codex_launcher_path', 'diagnosticsConfig':'diagnostics_config_path',
                'diagnosticsStore':'diagnostics_store_path', 'diagnosticsRoot':'diagnostics_root',

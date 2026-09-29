@@ -9,6 +9,7 @@
     "step": 2,
     "codex_model": "future-model",
     "codex_effort": "max",
+    "subagents_allowed": false,
     "findings": [
       {
         "id": "CR12-F1",

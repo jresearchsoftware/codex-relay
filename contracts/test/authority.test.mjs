@@ -36,7 +36,7 @@ test('native and YAML remediation default absent profile fields without path or 
     const resolved = validateRemediationContract(contract, context);
     assert.equal(resolved.codex_model, CONSUMER.defaultProfile.cliModelId);
     assert.equal(resolved.codex_effort, CONSUMER.defaultProfile.effort);
-    assert.equal(resolved.subagents_allowed, false);
+    assert.equal(resolved.subagents_allowed, true);
     assert.ok(!('allowed_paths' in resolved));
     assert.equal(validateRemediationContract({ ...contract, codex_model: 'future-model' }, context).codex_effort, CONSUMER.defaultProfile.effort);
     assert.equal(validateRemediationContract({ ...contract, codex_effort: 'future-effort' }, context).codex_model, CONSUMER.defaultProfile.cliModelId);
@@ -50,6 +50,14 @@ test('native CR authority accepts reordered sections, bullets and dash variants 
     const c = extractRemediationContract(body, { canonicalIssueBody: source });
     assert.equal(validateRemediationContract(c, { pullRequest: 43, reviewedHeadSha: head }).required_starting_head, head);
   }
+});
+
+test('legacy review provenance is readable as history without becoming active execution metadata', () => {
+  const body = [...fields, '## Required validation', 'git diff', '### F1 content'].join('\n');
+  const c = extractRemediationContract(body, { canonicalIssueBody: source });
+  const retired = { review_model: 'legacy-model', review_effort: 'high', review_reasoning_effort: 'high', review_profile: 'legacy-profile' };
+  const resolved = validateRemediationContract({ ...c, ...retired }, { pullRequest: 43, reviewedHeadSha: head });
+  for (const key of Object.keys(retired)) assert.ok(!(key in resolved));
 });
 test('conflicting head metadata and substantive empty findings fail closed', () => {
   const body = [...fields, `Required starting head: ${'b'.repeat(40)}`, '## Required validation', 'git diff', '### F1 content'].join('\n');
