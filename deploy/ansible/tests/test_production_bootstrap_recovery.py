@@ -89,7 +89,13 @@ class BootstrapRecoveryTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=mode):
                 recovery.execute(self.inputs, mode)
             self.assertEqual(self.record.read_bytes(), self.raw)
-            self.assertEqual(self.record.stat(), before)
+            # Reads (including the assertion above) may change atime. Bind
+            # identity, ownership, mode, content size and nanosecond write/change
+            # times so replacement or mutation still fails this preservation proof.
+            after = self.record.stat()
+            for field in ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
+                          'st_size', 'st_mtime_ns', 'st_ctime_ns'):
+                self.assertEqual(getattr(after, field), getattr(before, field), field)
             self.assertFalse(self.archive().parent.exists())
 
     def test_orphan_dropins_for_every_governed_unit_block_inspect_and_dispose(self):
@@ -113,6 +119,8 @@ class BootstrapRecoveryTests(unittest.TestCase):
 
     def test_unrecognized_dropin_contents_and_untrusted_directories_fail_closed(self):
         self.authorize_hash()
+        # Make the next read update atime even on a relatime filesystem.
+        os.utime(self.record, ns=(0, self.record.stat().st_mtime_ns))
         for root in self.systemd_roots:
             for kind in ('non-conf', 'hidden', 'directory', 'symlink', 'directory-symlink', 'unsafe-mode'):
                 with self.subTest(root=root.name, kind=kind):
