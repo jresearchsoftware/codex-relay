@@ -12,6 +12,22 @@
     create_home: false
     shell: /usr/sbin/nologin
 
+# Dry-run account tasks do not create identities. The file module still
+# resolves ownership on retained bootstrap directories, even in check mode.
+- name: Inspect directory ownership identities in check mode
+  ansible.builtin.command:
+    argv: [getent, '{{ item.database }}', '{{ item.name }}']
+  loop:
+    - {database: passwd, name: '{{ relay_user }}'}
+    - {database: group, name: '{{ relay_group }}'}
+    - {database: passwd, name: '{{ relay_reviewer_user }}'}
+    - {database: group, name: '{{ relay_reviewer_group }}'}
+  register: relay_runtime_directory_identities
+  changed_when: false
+  failed_when: relay_runtime_directory_identities.rc not in [0, 2]
+  check_mode: false
+  when: ansible_check_mode | bool
+
 - name: Create namespaced relay directories
   ansible.builtin.file:
     path: '{{ item.path }}'
@@ -34,6 +50,17 @@
     - {path: '{{ relay_evidence_root }}/reviewer', owner: '{{ relay_reviewer_user }}', group: '{{ relay_reviewer_group }}', mode: '0750'}
     - {path: '{{ relay_log_root }}', owner: '{{ relay_user }}', group: '{{ relay_reviewer_group }}', mode: '0770'}
     - {path: '{{ relay_runtime_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0770'}
+  when: >-
+    not ansible_check_mode | bool or
+    (relay_runtime_directory_identities.results | selectattr('rc', 'equalto', 2) | list | length == 0)
+
+- name: Report directory reconciliation pending planned ownership identities
+  ansible.builtin.debug:
+    msg: 'RUNTIME_DIRECTORY_CHECK_MODE_PLAN=ownership-identities-pending; directories=planned; ownership=deferred-until-apply'
+  changed_when: true
+  when:
+    - ansible_check_mode | bool
+    - relay_runtime_directory_identities.results | selectattr('rc', 'equalto', 2) | list | length > 0
 
 - name: Inspect the persisted Reviewer activation authorization marker
   ansible.builtin.stat:

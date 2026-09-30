@@ -108,6 +108,11 @@ before operation evidence is cleared.
 Missing Reviewer groups are materialized by normal apply before artifact
 ownership. Check mode reports planned-but-not-materialized state without
 inventing accounts or hiding the Reviewer artifact ownership dependency.
+Retained bootstrap directories can also precede their intended owners and
+groups. Check mode inspects those identities read-only and reports pending
+directory reconciliation as a change until all exist. With materialized
+identities, ordinary directory checks still detect permission drift; apply
+always enforces the configured ownership and modes after creating accounts.
 
 Upgrade means acquire another selected revision and apply it. Rollback uses
 the same operation with a previously qualified explicit SHA and its compatible
