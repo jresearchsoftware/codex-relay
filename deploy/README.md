@@ -87,6 +87,24 @@ A read-only check may report missing bootstrap state as pending. Materializing
 certificates, trust or credentials remains a production mutation and still
 requires live authority; this contract does not broaden Task/CR scope.
 
+The supported public deployment surface must be complete enough to express this
+contract. A reusable protected artifact is only operationally reusable when the
+public configuration can reference its validated source without inventing a
+private-backend override. Product-owned bootstrap must be reachable through the
+public deployment entrypoint rather than by asking consumers to invoke internal
+Ansible playbooks.
+
+Keep staged qualification least-privilege as well. A Reviewer-only or
+publication-disabled qualification step must not require unrelated Writer keys,
+Codex tokens, runner credentials or other secrets merely because one broad
+interactive helper happens to provision them together. Ask for each external
+credential only when the admitted stage actually needs it.
+
+Do not conflate independent network identities. The SSH deployment target and
+the public ingress/DNS address may differ; if both shapes are supported, the
+public configuration and validation must represent the distinction explicitly
+rather than silently treating an SSH hostname as an ACME IP address.
+
 Current pre-release limitation: the source contains TLS preparation logic,
 including official OpenAI CA preparation and explicit ACME phases, only in the
 internal Ansible backend. The public `deploy/relay-deploy.py` interface does not
