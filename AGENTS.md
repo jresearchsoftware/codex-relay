@@ -181,6 +181,13 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   in the private Ansible backend and the public deployment interface cannot
   perform it, treat that as a source/interface defect instead of bypassing the
   public API or inventing a manual secret path.
+- Keep first-install stages least-privilege and public-interface complete.
+  Reusable protected state must be expressible through supported configuration;
+  product-owned bootstrap must be reachable through the public deployment
+  entrypoint; and a staged Reviewer qualification must not demand unrelated
+  Writer/Codex/runner secrets. Keep SSH target identity separate from public
+  ingress/DNS identity when both are supported. Treat violations as reusable
+  source/interface defects rather than owner-local workarounds.
 - A successful upgrade or second consumer on an already prepared host does not
   prove standalone bootstrap. Keep clean-environment qualification as separately
   admitted work when it needs distinct infrastructure; do not retroactively make
