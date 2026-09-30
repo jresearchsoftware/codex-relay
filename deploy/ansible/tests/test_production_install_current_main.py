@@ -472,6 +472,38 @@ class RunnerInstalledStateExecutionTests(unittest.TestCase):
                 if case == 'apply-missing-group':
                     self.assertIn('chgrp failed', result.stdout)
 
+    def test_shared_state_apply_enforces_root_ownership_real_group_and_mode(self):
+        import grp
+        import pwd
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            state = directory / 'state'
+            state.mkdir(mode=0o700)
+            os.chown(state, pwd.getpwnam('nobody').pw_uid, 0)
+            evidence = state / 'preserved'
+            evidence.write_bytes(b'original archive\n')
+            evidence.chmod(0o600)
+            before = evidence.stat()
+            names = {
+                'Inspect shared state group in check mode',
+                'Reconcile root-owned shared runner state parent',
+                'Report shared state ownership pending the planned relay group',
+            }
+            tasks = [task for task in yaml.safe_load((ROOT / 'roles/relay_runner/tasks/main.yml').read_text())
+                     if task['name'] in names]
+            values = {'relay_state_root': str(state), 'relay_group': 'nogroup'}
+            for check in (False, True, False):
+                result = run_play(directory, tasks, values, check=check)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                info = state.stat()
+                self.assertEqual((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)),
+                                 (0, grp.getgrnam('nogroup').gr_gid, 0o755))
+                self.assertEqual(evidence.read_bytes(), b'original archive\n')
+                for field in ('st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_mtime_ns', 'st_ctime_ns'):
+                    self.assertEqual(getattr(evidence.stat(), field), getattr(before, field), field)
+                if check:
+                    self.assertRegex(result.stdout, r'changed=0\s')
+
     def test_declared_retired_component_is_removed_by_the_ordinary_controller_role(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
