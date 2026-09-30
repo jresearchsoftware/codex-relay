@@ -247,13 +247,10 @@ Local qualification does not prove a consumer's real Apps, mTLS or live host.
 Those must be qualified separately on exact candidate identities before an
 owner declares that deployment successful.
 
-A standalone first-install readiness claim also requires a clean-environment
-proof, not only upgrade or cohosted-consumer evidence. Start without the target
-Relay namespace, users, units, state/database, credential files, OpenAI client
-CA bundle or matching TLS lineage; provide only the documented external owner
-prerequisites. Exercise the supported public deployment/bootstrap interfaces
-through installed Reviewer qualification and, when the claimed product scope
-includes them, Writer/Codex and runner credential/activation paths. Separately
-qualify cohosted/shared-ingress installation when that topology is supported.
-Incidental state retained from another consumer must never be required for a
-fresh-install PASS.
+A standalone first-install readiness claim should eventually include a
+clean-environment proof in addition to upgrade/cohosted-consumer evidence.
+That qualification is independent work and does not block a cohosted deployment
+task unless its live authority explicitly requires standalone-install proof.
+Track the dedicated clean-environment qualification separately (currently
+Task #15); incidental state retained from another consumer must not become a
+documented prerequisite merely because that proof is deferred.
