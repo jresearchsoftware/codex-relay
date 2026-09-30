@@ -53,6 +53,38 @@
   loop_control:
     label: '{{ item.item }}'
 
+# Bootstrap recovery retains this root before check-mode account tasks can
+# materialize relay_group. Still check its type, root owner and mode, and
+# explicitly count the pending group assignment as drift.
+- name: Inspect shared state group in check mode
+  ansible.builtin.command:
+    argv: [getent, group, '{{ relay_group }}']
+  register: relay_runner_shared_state_group
+  changed_when: false
+  failed_when: relay_runner_shared_state_group.rc not in [0, 2]
+  check_mode: false
+  when: ansible_check_mode | bool
+
+- name: Reconcile root-owned shared runner state parent
+  ansible.builtin.file:
+    path: '{{ relay_state_root }}'
+    state: directory
+    owner: root
+    group: '{{ omit if ansible_check_mode | bool and relay_runner_shared_state_group.rc == 2 else relay_group }}'
+    mode: '0755'
+    follow: false
+  register: relay_runner_shared_state_directory
+  changed_when: >-
+    relay_runner_shared_state_directory.changed or
+    (ansible_check_mode | bool and relay_runner_shared_state_group.rc == 2)
+
+- name: Report shared state ownership pending the planned relay group
+  ansible.builtin.debug:
+    msg: 'RUNNER_SHARED_STATE_CHECK_MODE_PLAN=group-pending; owner=root; mode=0755; group-enforcement=apply'
+  when:
+    - ansible_check_mode | bool
+    - relay_runner_shared_state_group.rc == 2
+
 - name: Create runner package cache and mutable namespaces
   ansible.builtin.file:
     path: '{{ item.path }}'
@@ -61,8 +93,6 @@
     group: '{{ item.group | default(relay_runner_group) }}'
     mode: '{{ item.mode | default("0750") }}'
   loop:
-    # Shared parent also protects the privileged product/dependency cache.
-    - {path: '{{ relay_state_root }}', owner: root, group: '{{ relay_group }}', mode: '0755'}
     - {path: '{{ relay_runner_package_cache_root }}', owner: root, group: root, mode: '0755'}
     - {path: '{{ relay_runner_root }}'}
     - {path: '{{ relay_runner_work_root }}'}

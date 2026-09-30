@@ -381,6 +381,129 @@ class RunnerInstalledStateExecutionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse(fixture.runner.exists())
 
+    def test_full_runner_check_preserves_bootstrap_state_with_only_planned_identities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            fixture = RunnerPackageFixture(directory, {
+                'relay_deployment_profile': 'production',
+                'relay_runner_registration_scope': 'organization',
+                'relay_runner_name': 'fixture-production',
+                'relay_production_runner_name': 'fixture-production',
+                'relay_production_runner_user': 'relay-planned-runner',
+                'relay_runner_service_name': 'fixture-production.service',
+                'relay_group': 'relay-planned-state-group',
+                'relay_runner_user': 'relay-planned-runner',
+                'relay_runner_group': 'relay-planned-runner-group',
+            })
+            Path(fixture.values['relay_runner_package_archive']).unlink()
+            state = Path(fixture.values['relay_state_root'])
+            state.mkdir(mode=0o700)
+            stage = state / 'production-apply'
+            stage.mkdir(mode=0o700)
+            archive_root = state / 'superseded-operations'
+            archive_root.mkdir(mode=0o700)
+            archive = archive_root / 'apply.json'
+            archive.write_bytes(b'{"state":"SUPERSEDED"}\n')
+            archive.chmod(0o600)
+
+            def snapshot():
+                result = {}
+                for path in [state, *state.rglob('*')]:
+                    info = path.lstat()
+                    result[str(path.relative_to(state))] = (
+                        info.st_ino, info.st_uid, info.st_gid, info.st_mode,
+                        info.st_mtime_ns, info.st_ctime_ns,
+                        path.read_bytes() if path.is_file() else None,
+                    )
+                return result
+
+            # Both a permission change and a group-only change must remain a
+            # changed plan, while every subsequent task in the real role runs.
+            for mode in (0o700, 0o755):
+                with self.subTest(mode=oct(mode)):
+                    state.chmod(mode)
+                    before = snapshot()
+                    result = fixture.run(check=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('RUNNER_SHARED_STATE_CHECK_MODE_PLAN=', result.stdout)
+                    self.assertIn('RUNNER_CHECK_MODE_PACKAGE_PLAN=', result.stdout)
+                    parent_task = result.stdout.split('TASK [relay_runner : Reconcile root-owned shared runner state parent]', 1)[1].split('TASK [', 1)[0]
+                    self.assertIn('changed: [localhost]', parent_task)
+                    self.assertEqual(snapshot(), before)
+                    self.assertFalse(fixture.runner.exists())
+                    self.assertFalse(Path(fixture.values['relay_runner_service_unit_path']).exists())
+                    self.assertNotIn('lifecycle', fixture.trace.read_text())
+
+    def test_shared_state_planning_preserves_failure_boundaries(self):
+        for case in ('apply-missing-group', 'lookup-error', 'file', 'symlink'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                names = {
+                    'Inspect shared state group in check mode',
+                    'Reconcile root-owned shared runner state parent',
+                    'Report shared state ownership pending the planned relay group',
+                }
+                tasks = [task for task in yaml.safe_load((ROOT / 'roles/relay_runner/tasks/main.yml').read_text())
+                         if task['name'] in names]
+                self.assertEqual(len(tasks), 3)
+                state = directory / 'state'
+                target = directory / 'target'
+                target.mkdir(mode=0o700)
+                sentinel = target / 'preserved'
+                sentinel.write_bytes(b'preserved evidence\n')
+                if case == 'symlink':
+                    state.symlink_to(target)
+                elif case == 'file':
+                    state.write_bytes(b'not a directory\n')
+                else:
+                    state.mkdir(mode=0o700)
+                if case == 'lookup-error':
+                    tasks[0]['ansible.builtin.command']['argv'][0] = '/bin/false'
+                before, target_before = state.lstat(), target.stat()
+                result = run_play(directory, tasks, {
+                    'relay_state_root': str(state), 'relay_group': 'relay-planned-state-group',
+                }, check=case != 'apply-missing-group')
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                for field in ('st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_mtime_ns', 'st_ctime_ns'):
+                    self.assertEqual(getattr(state.lstat(), field), getattr(before, field), field)
+                    self.assertEqual(getattr(target.stat(), field), getattr(target_before, field), field)
+                self.assertEqual(sentinel.read_bytes(), b'preserved evidence\n')
+                self.assertNotIn('RUNNER_SHARED_STATE_CHECK_MODE_PLAN=', result.stdout)
+                if case == 'apply-missing-group':
+                    self.assertIn('chgrp failed', result.stdout)
+
+    def test_shared_state_apply_enforces_root_ownership_real_group_and_mode(self):
+        import grp
+        import pwd
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            state = directory / 'state'
+            state.mkdir(mode=0o700)
+            os.chown(state, pwd.getpwnam('nobody').pw_uid, 0)
+            evidence = state / 'preserved'
+            evidence.write_bytes(b'original archive\n')
+            evidence.chmod(0o600)
+            before = evidence.stat()
+            names = {
+                'Inspect shared state group in check mode',
+                'Reconcile root-owned shared runner state parent',
+                'Report shared state ownership pending the planned relay group',
+            }
+            tasks = [task for task in yaml.safe_load((ROOT / 'roles/relay_runner/tasks/main.yml').read_text())
+                     if task['name'] in names]
+            values = {'relay_state_root': str(state), 'relay_group': 'nogroup'}
+            for check in (False, True, False):
+                result = run_play(directory, tasks, values, check=check)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                info = state.stat()
+                self.assertEqual((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)),
+                                 (0, grp.getgrnam('nogroup').gr_gid, 0o755))
+                self.assertEqual(evidence.read_bytes(), b'original archive\n')
+                for field in ('st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_mtime_ns', 'st_ctime_ns'):
+                    self.assertEqual(getattr(evidence.stat(), field), getattr(before, field), field)
+                if check:
+                    self.assertRegex(result.stdout, r'changed=0\s')
+
     def test_declared_retired_component_is_removed_by_the_ordinary_controller_role(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

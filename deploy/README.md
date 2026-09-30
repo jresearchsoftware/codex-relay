@@ -113,6 +113,9 @@ groups. Check mode inspects those identities read-only and reports pending
 directory reconciliation as a change until all exist. With materialized
 identities, ordinary directory checks still detect permission drift; apply
 always enforces the configured ownership and modes after creating accounts.
+The later runner role checks the retained shared state parent's type, root
+owner and mode even when its group is still only planned. That pending group
+assignment counts as a change; apply still requires and enforces the real group.
 
 Upgrade means acquire another selected revision and apply it. Rollback uses
 the same operation with a previously qualified explicit SHA and its compatible

@@ -97,7 +97,6 @@ class RunnerLifecycleTests(unittest.TestCase):
         ):
             self.assertIn(marker, tasks)
         self.assertIn("ReadWritePaths={{ relay_runner_root }} {{ relay_runner_work_root }} {{ relay_runner_home }} {{ relay_log_root }} {{ relay_writer_claim_root }} {{ relay_diagnostics_root }} {{ relay_codex_home }} {{ relay_dispatch_state_root }} {{ relay_dispatch_work_root }} {{ relay_dispatch_home }}", RUNNER_SERVICE.read_text(encoding="utf-8"))
-        self.assertIn("relay_state_root }}', owner: root, group: '{{ relay_group }}', mode: '0755'", tasks)
         self.assertLess(tasks.index("Create runner diagnostic namespace"), tasks.index("Verify installed runner reports the pinned version"))
         self.assertIn("become_user: '{{ relay_runner_user }}'", tasks)
         self.assertLess(tasks.index("Enforce runner ownership of all diagnostic files after probes"), tasks.index("Install owner-mediated runner registration helper"))
