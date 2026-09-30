@@ -54,6 +54,28 @@ change after qualification. Service activation still requires the existing
 explicit activation gate. Ordinary apply does not register or activate runners.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
 
+### First-install TLS bootstrap
+
+For a newly admitted ingress hostname, absence of a matching certificate/key
+pair or Let's Encrypt lineage is the expected first-install state. It is not a
+blocker and is not a reason to search unrelated protected server paths for an
+incidental certificate. A certificate retained from an older installation is
+existing state, not a prerequisite for a new environment.
+
+If owner-controlled configuration explicitly names an existing certificate
+source, validate that source. Otherwise, when the live deployment authority
+permits TLS provisioning, use Relay's established protected Let's Encrypt/ACME
+path to issue a certificate for the configured ingress hostname. Before ingress
+reconciliation, validate hostname/SAN matching, certificate/private-key pairing,
+expiry/chain requirements, ownership and modes. Never print, log, expose, or
+manually copy private-key material outside the established protected mechanism.
+Do not repurpose unrelated lineages by guessing paths or hostnames.
+
+A read-only check may report the missing first-install certificate as pending
+state. Materializing it remains a production mutation and therefore still
+requires the deployment authority that admits TLS provisioning; this rule does
+not broaden Task/CR authority.
+
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
 `FETCH_HEAD^{commit}` once, check out that immutable commit, and invoke:
 
