@@ -117,7 +117,7 @@ class RuntimeDirectoryOwnershipTests(unittest.TestCase):
     def test_apply_does_not_defer_missing_ownership(self):
         result = run_play(self.root, self.tasks, self.values)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('failed to look up group', result.stdout)
+        self.assertRegex(result.stdout, r'failed to look up (user|group) relay-check-missing')
         self.assertNotIn('RUNTIME_DIRECTORY_CHECK_MODE_PLAN=', result.stdout)
 
     @unittest.skipUnless(os.name != 'nt' and os.geteuid() == 0, 'root ownership requires Linux root')
