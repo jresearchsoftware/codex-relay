@@ -54,27 +54,49 @@ change after qualification. Service activation still requires the existing
 explicit activation gate. Ordinary apply does not register or activate runners.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
 
-### First-install TLS bootstrap
+### First-install bootstrap and reusable state
 
-For a newly admitted ingress hostname, absence of a matching certificate/key
-pair or Let's Encrypt lineage is the expected first-install state. It is not a
-blocker and is not a reason to search unrelated protected server paths for an
-incidental certificate. A certificate retained from an older installation is
-existing state, not a prerequisite for a new environment.
+Treat missing install-time state according to ownership before asking the owner
+for another path or artifact. A fresh environment is expected to lack many
+runtime-generated files.
 
-If owner-controlled configuration explicitly names an existing certificate
-source, validate that source. Otherwise, when the live deployment authority
-permits TLS provisioning, use Relay's established protected Let's Encrypt/ACME
-path to issue a certificate for the configured ingress hostname. Before ingress
-reconciliation, validate hostname/SAN matching, certificate/private-key pairing,
-expiry/chain requirements, ownership and modes. Never print, log, expose, or
-manually copy private-key material outside the established protected mechanism.
-Do not repurpose unrelated lineages by guessing paths or hostnames.
+1. **Reusable protected state.** If a supported existing artifact is present,
+   validate and reuse it instead of regenerating it merely because the consumer
+   is new. For TLS this means a certificate/key pair that matches the configured
+   hostname, is currently valid, has an acceptable chain, matches its private
+   key, and satisfies the required ownership/modes. A retained Let's Encrypt
+   lineage from an earlier installation is valid input when it passes those
+   checks; it is not required to exist.
+2. **Product-managed bootstrap.** If no qualifying TLS pair exists and the live
+   deployment authority permits TLS provisioning, use the supported protected
+   Let's Encrypt/ACME path for the configured hostname. The OpenAI client CA
+   bundle is also product-managed bootstrap state: prepare it from the pinned
+   official OpenAI CA sources and fingerprints rather than searching unrelated
+   protected paths for a pre-existing copy.
+3. **External owner prerequisites.** Ask the owner only for state Relay does not
+   own or cannot create: target/SSH identity, DNS, ACME contact identity when
+   issuance is needed, GitHub App creation/installation and private-key input,
+   the selected ingress topology or externally managed terminator, and later
+   ChatGPT connector creation/connection.
 
-A read-only check may report the missing first-install certificate as pending
-state. Materializing it remains a production mutation and therefore still
-requires the deployment authority that admits TLS provisioning; this rule does
-not broaden Task/CR authority.
+Never guess or scan arbitrary protected paths for credentials, keys or
+certificates. Missing product-owned bootstrap state is not evidence that an
+operator must already have provisioned it somewhere else.
+
+A read-only check may report missing bootstrap state as pending. Materializing
+certificates, trust or credentials remains a production mutation and still
+requires live authority; this contract does not broaden Task/CR scope.
+
+Current pre-release limitation: the source contains TLS preparation logic,
+including official OpenAI CA preparation and explicit ACME phases, only in the
+internal Ansible backend. The public `deploy/relay-deploy.py` interface does not
+currently expose those phases. Because `deploy/ansible/` is not a consumer API,
+do not solve that gap by instructing consumers to invoke private playbooks
+directly. Treat it as a deployment-interface defect to be corrected under
+appropriate source authority. Likewise, standalone HTTP-01 issuance requires
+the admitted public listeners to be available; a cohosted ingress that cannot
+safely yield that path needs a supported issuance integration or an explicitly
+managed external certificate source, not an arbitrary-path search.
 
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
 `FETCH_HEAD^{commit}` once, check out that immutable commit, and invoke:
