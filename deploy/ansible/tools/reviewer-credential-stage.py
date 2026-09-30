@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 
-from bootstrap_guard import ProtectedPath, mutation_guard, require
+from bootstrap_guard import ProtectedPath, mutation_guard, publish_no_replace, require
 
 
 def validate_env(raw, destination, app_id, installation_id):
@@ -89,14 +89,17 @@ def stage(args):
                 source.recheck(source_stamp)
                 env.recheck(env_stamp)
                 target.recheck_parents()
-                # link(), unlike rename(), cannot replace a destination created
-                # after the absent check. The protected temporary is then retired.
-                os.link(temporary, target.path.name, src_dir_fd=target.fd,
-                        dst_dir_fd=target.fd, follow_symlinks=False)
+                # No replacement race and no second name left on the inode if
+                # execution stops after the destination becomes durable.
+                publish_no_replace(target.fd, temporary, target.path.name)
                 os.fsync(target.fd)
             finally:
-                os.unlink(temporary, dir_fd=target.fd)
-                os.fsync(target.fd)
+                try:
+                    os.unlink(temporary, dir_fd=target.fd)
+                except FileNotFoundError:
+                    pass  # Successful publication already consumed this name.
+                else:
+                    os.fsync(target.fd)
             saved, _ = target.read({0o640}, group=group)
             require(hmac.compare_digest(saved, raw), 'staged-credential-unproven')
             return {'changed': True, 'status': 'REVIEWER_CREDENTIAL_STAGED',

@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 import urllib.request
 
-from bootstrap_guard import ProtectedPath, mutation_guard
+from bootstrap_guard import ProtectedPath, mutation_guard, publish_no_replace
 
 CERTBOT_GLOBAL_CONFIG = '/etc/letsencrypt/cli.ini'
 # Debian bookworm certbot 2.1.0-4 ships only max-log-backups=0 and
@@ -93,13 +93,19 @@ def write_atomic(path, data, mode=0o640, *, exclusive=False):
     safe_path(path, absent=True)
     fd, temporary = tempfile.mkstemp(prefix='.relay-tls-', dir=path.parent)
     try:
+        os.fchown(fd, 0, 0)
         os.fchmod(fd, mode)
         with os.fdopen(fd, 'wb') as output:
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
         if exclusive:
-            os.link(temporary, path, follow_symlinks=False)
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                publish_no_replace(directory, Path(temporary).name, path.name)
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         else:
             os.replace(temporary, path)
     finally:
@@ -395,17 +401,24 @@ def publish_certificate(config):
         validator.validate_sources(cert, key, config['hostname'])
         # Product-managed destinations are immutable inputs to a later explicit
         # ingress phase. Publishing never activates/reloads TLS or Reviewer.
-        require(not os.path.lexists(config['private_key']) and not os.path.lexists(config['certificate']),
-                'TLS_MANAGED_DESTINATION_ALREADY_EXISTS')
-        write_atomic(config['private_key'], key.read_bytes(), 0o600, exclusive=True)
-        published_key = Path(config['private_key']).stat()
+        require(not os.path.lexists(config['certificate']), 'TLS_MANAGED_DESTINATION_ALREADY_EXISTS')
         try:
-            write_atomic(config['certificate'], cert.read_bytes(), 0o644, exclusive=True)
-        except BaseException:
-            current = Path(config['private_key']).lstat()
-            if (current.st_dev, current.st_ino) == (published_key.st_dev, published_key.st_ino):
-                Path(config['private_key']).unlink()
-            raise
+            with ProtectedPath(config['private_key']) as destination:
+                existing, identity = destination.read({0o600}, group=0, absent=True)
+                if existing is not None:
+                    # The only recoverable partial state is our first published
+                    # file, with exact bytes from this fully validated lineage.
+                    # Never replace/adopt a foreign key or an ambiguous alias.
+                    require(config['phase'] == 'issue', 'TLS_MANAGED_PARTIAL_REQUIRES_ISSUE_REUSE')
+                    require(existing == key.read_bytes(), 'TLS_MANAGED_PARTIAL_KEY_MISMATCH')
+                    destination.recheck(identity)
+                else:
+                    write_atomic(config['private_key'], key.read_bytes(), 0o600, exclusive=True)
+        except (OSError, ValueError) as error:
+            raise BootstrapError('TLS_MANAGED_PARTIAL_KEY_UNSAFE') from error
+        # Retain the validated first publication on failure/interruption. The
+        # same explicit issue operation can resume it without another issuance.
+        write_atomic(config['certificate'], cert.read_bytes(), 0o644, exclusive=True)
 
 
 def run(config):
@@ -444,8 +457,12 @@ def run_mutating(config):
         return {'status': 'TLS_PREPARATION_PREREQUISITES_READY'}
     # Reuse already-valid managed material without any ACME/account/ingress
     # work. An invalid existing pair is never silently replaced or rotated.
-    if Path(config['certificate']).exists() or Path(config['private_key']).exists():
+    if os.path.lexists(config['certificate']):
         validator_module().validate_sources(config['certificate'], config['private_key'], config['hostname'])
+        return {'status': 'TLS_EXISTING_CERTIFICATE_REUSED'}
+    if os.path.lexists(config['private_key']):
+        require(config['phase'] == 'issue', 'TLS_MANAGED_PARTIAL_REQUIRES_ISSUE_REUSE')
+        publish_certificate(config)
         return {'status': 'TLS_EXISTING_CERTIFICATE_REUSED'}
     for name in ('webroot', 'conf_root'):
         safe_path(config[name], directory=True)
@@ -514,8 +531,6 @@ def run_mutating(config):
         require(certbot_configuration_identity() == current_binding['certbot_global_configuration'],
                 'TLS_CERTBOT_GLOBAL_CONFIGURATION_CHANGED')
         execute(argv)
-        if config['phase'] == 'issue':
-            publish_certificate(config)
     finally:
         if fragment_created:
             # Do not overwrite/delete a concurrent edit or reload an unpinned
@@ -524,6 +539,11 @@ def run_mutating(config):
             require(fragment.read_bytes() == fragment_text(config), 'TLS_ACME_FRAGMENT_CHANGED')
             fragment.unlink()
             reload_nginx(config, container_id)
+    # Restore shared ingress before publishing either managed file. A process
+    # interruption during publication can then resume from the namespace
+    # lineage without leaving a live temporary challenge configuration behind.
+    if config['phase'] == 'issue':
+        publish_certificate(config)
     if config['phase'] == 'dry_run':
         write_record(config['marker'], {'status': 'TLS_ACME_DRY_RUN_PASSED', 'binding': current_binding})
     return {'status': 'TLS_ACME_DRY_RUN_PASSED' if config['phase'] == 'dry_run' else

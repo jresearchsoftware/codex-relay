@@ -2,6 +2,7 @@
 """Protect owner bootstrap mutations with the installed exact-head operation lock."""
 import argparse
 from contextlib import contextmanager
+import ctypes
 import fcntl
 import json
 import os
@@ -23,6 +24,23 @@ def stamp(info):
     return (info.st_dev, info.st_ino, info.st_uid, info.st_gid,
             info.st_mode, info.st_nlink, info.st_size,
             info.st_mtime_ns, info.st_ctime_ns)
+
+
+def publish_no_replace(directory_fd, temporary_name, destination_name):
+    """Atomically move a prepared file without a replace or hardlink window.
+
+    Debian's Linux/glibc baseline supplies renameat2. Unsupported filesystems
+    or runtimes fail closed rather than falling back to an overwrite or a
+    link/unlink sequence. The caller fsyncs the containing directory.
+    """
+    rename = getattr(ctypes.CDLL(None, use_errno=True), 'renameat2', None)
+    require(rename is not None, 'atomic-publication-unavailable')
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                       ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(directory_fd, os.fsencode(temporary_name), directory_fd,
+              os.fsencode(destination_name), 1) != 0:  # RENAME_NOREPLACE
+        raise OSError(ctypes.get_errno(), 'atomic-publication-failed')
 
 
 class ProtectedPath:

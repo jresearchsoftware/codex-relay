@@ -81,6 +81,15 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
     def run_stage(self):
         return stage.stage(self.args)
 
+    def stage_command(self):
+        command = [sys.executable, str(TOOLS / 'reviewer-credential-stage.py')]
+        for name, value in vars(self.args).items():
+            if name != 'check':
+                command.extend(['--' + name.replace('_', '-'), value])
+        if self.args.check:
+            command.append('--check')
+        return command
+
     def assert_absent(self):
         self.assertFalse(self.destination.exists())
         self.assertEqual(sorted(path.name for path in self.credentials.iterdir()), ['github-app.env'])
@@ -110,6 +119,46 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
         self.args.check = True
         self.assertEqual(self.run_stage()['status'], 'REVIEWER_CREDENTIAL_STAGE_PLANNED')
         self.assert_absent()
+
+    def test_abrupt_exit_after_durable_publication_retries_without_cleanup(self):
+        # Run the real CLI and kill the process immediately after its first
+        # directory fsync with a published destination. os._exit deliberately
+        # bypasses finally blocks, reproducing interruption between link and
+        # temporary-name removal in the former implementation.
+        harness = '''import os, runpy, stat, sys
+destination = sys.argv.pop(1)
+sys.argv.pop(0)
+sys.path.insert(0, os.path.dirname(sys.argv[0]))
+fsync = os.fsync
+def interrupt_after_publication(fd):
+    fsync(fd)
+    if stat.S_ISDIR(os.fstat(fd).st_mode) and os.path.exists(destination):
+        os._exit(73)
+os.fsync = interrupt_after_publication
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
+        command = self.stage_command()
+        interrupted = subprocess.run(
+            [sys.executable, '-c', harness, str(self.destination)] + command[1:],
+            capture_output=True, timeout=30, check=False)
+        self.assertEqual(interrupted.returncode, 73, interrupted.stderr)
+        self.assertEqual(interrupted.stdout + interrupted.stderr, b'')
+        self.assertEqual(self.destination.stat().st_nlink, 1)
+        self.assertEqual(self.destination.read_bytes(), self.keys[0])
+        self.assertFalse(list(self.credentials.glob('.reviewer-key-*')))
+        before = self.destination.stat()
+
+        retried = subprocess.run(command, capture_output=True, timeout=30, check=False)
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual(json.loads(retried.stdout)['status'], 'REVIEWER_CREDENTIAL_UNCHANGED')
+        self.assertFalse(json.loads(retried.stdout)['changed'])
+        after = self.destination.stat()
+        self.assertEqual((before.st_ino, before.st_mtime_ns, before.st_ctime_ns),
+                         (after.st_ino, after.st_mtime_ns, after.st_ctime_ns))
+        self.assertEqual(self.source.read_bytes(), self.keys[0])
+        self.assertEqual(sorted(path.name for path in self.credentials.iterdir()),
+                         ['github-app-private-key.pem', 'github-app.env'])
+        self.assertFalse(self.operation.exists())
 
     def test_existing_different_key_is_never_replaced(self):
         self.destination.write_bytes(self.keys[1])
@@ -213,6 +262,26 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
             self.run_stage()
         self.assertEqual(self.destination.stat().st_uid, 65534)
 
+    def test_existing_hardlinks_are_rejected_even_with_helper_shaped_alias(self):
+        for raw in self.keys:
+            for alias_name in ['foreign-key-alias', '.reviewer-key-' + 'a' * 32]:
+                with self.subTest(matching=raw == self.keys[0], alias=alias_name):
+                    self.destination.write_bytes(raw)
+                    self.destination.chmod(0o640)
+                    os.chown(self.destination, 0, self.group.gr_gid)
+                    alias = self.credentials / alias_name
+                    os.link(self.destination, alias)
+                    before = self.destination.stat()
+                    with self.assertRaisesRegex(ValueError, 'file-metadata'):
+                        self.run_stage()
+                    self.assertEqual(self.destination.read_bytes(), raw)
+                    self.assertEqual(alias.stat().st_ino, before.st_ino)
+                    after = self.destination.stat()
+                    self.assertEqual((after.st_ino, after.st_nlink, after.st_mtime_ns, after.st_ctime_ns),
+                                     (before.st_ino, before.st_nlink, before.st_mtime_ns, before.st_ctime_ns))
+                    alias.unlink()
+                    self.destination.unlink()
+
     def test_source_hardlink_or_fifo_and_symlink_env_are_refused(self):
         os.link(self.source, self.root / 'source-alias.pem')
         with self.assertRaisesRegex(ValueError, 'file-metadata'):
@@ -246,13 +315,13 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
         self.assert_absent()
 
     def test_destination_race_is_not_overwritten_and_staging_is_cleaned(self):
-        link = os.link
+        publish = stage.publish_no_replace
         def compete(*args, **kwargs):
             self.destination.write_bytes(self.keys[1])
             self.destination.chmod(0o640)
             os.chown(self.destination, 0, self.group.gr_gid)
-            return link(*args, **kwargs)
-        with patch.object(stage.os, 'link', side_effect=compete):
+            return publish(*args, **kwargs)
+        with patch.object(stage, 'publish_no_replace', side_effect=compete):
             with self.assertRaises(FileExistsError):
                 self.run_stage()
         self.assertEqual(self.destination.read_bytes(), self.keys[1])

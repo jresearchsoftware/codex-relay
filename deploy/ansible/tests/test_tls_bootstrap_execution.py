@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -465,7 +466,8 @@ class BootstrapExecutionTests(unittest.TestCase):
         (lineage / 'fullchain.pem').symlink_to(certificate)
         (lineage / 'privkey.pem').symlink_to(key)
         validator = TLS.validator_module()
-        wrapped = SimpleNamespace(validate_sources=lambda *args, **kwargs:
+        wrapped = SimpleNamespace(ValidationError=validator.ValidationError,
+                                  validate_sources=lambda *args, **kwargs:
                                   validator.validate_sources(*args, **kwargs, trust_store=fixture / 'root.pem'))
         return archive, lineage, wrapped
 
@@ -483,6 +485,124 @@ class BootstrapExecutionTests(unittest.TestCase):
             self.assertEqual(self.simulate(dict(self.config, phase='issue'))['status'],
                              'TLS_EXISTING_CERTIFICATE_REUSED')
         self.assertFalse(any('certonly' in command for command in self.commands))
+
+    def test_issue_recovers_after_process_exit_at_first_durable_key_publication(self):
+        archive, lineage, validator = self.make_server_lineage()
+        # Certbot exposes the synthetic lineage only when the admitted issue
+        # operation reaches certonly, after a successful staging operation.
+        pending = lineage.with_name('fixture-pending-lineage')
+        lineage.rename(pending)
+        self.simulate()
+        config = dict(self.config, phase='issue')
+        certificate, key = Path(config['certificate']), Path(config['private_key'])
+        original_fsync = os.fsync
+
+        def interrupt_after_durable_key(fd):
+            original_fsync(fd)
+            if stat.S_ISDIR(os.fstat(fd).st_mode) and key.exists() and not certificate.exists():
+                os._exit(74)
+
+        def issue(argv):
+            result = self.execute(argv)
+            if 'certonly' in argv:
+                pending.rename(lineage)
+            return result
+
+        child = os.fork()
+        if child == 0:
+            try:
+                with patch.object(TLS, 'validator_module', return_value=validator), \
+                        patch.object(TLS.os, 'fsync', side_effect=interrupt_after_durable_key):
+                    self.simulate(config, execute=issue)
+            except BaseException:
+                os._exit(75)
+            os._exit(76)
+        _, status = os.waitpid(child, 0)
+        self.assertEqual(os.waitstatus_to_exitcode(status), 74)
+        self.assertTrue(key.exists())
+        self.assertFalse(certificate.exists())
+        self.assertEqual(key.stat().st_nlink, 1)
+        self.assertEqual(key.read_bytes(), (archive / 'privkey1.pem').read_bytes())
+        # os._exit bypasses every finally, including temporary snapshot cleanup.
+        # The public issue retry must converge without removing any residue.
+        self.assertTrue(list(Path(config['state_root']).glob('.certificate-*')))
+        self.assertFalse(list(key.parent.glob('.relay-tls-*')))
+        self.assert_preserved()
+        identity = (key.stat().st_dev, key.stat().st_ino)
+        self.commands.clear()
+        with patch.object(TLS, 'validator_module', return_value=validator):
+            self.assertEqual(self.simulate(config)['status'], 'TLS_EXISTING_CERTIFICATE_REUSED')
+            self.assertEqual(self.simulate(config)['status'], 'TLS_EXISTING_CERTIFICATE_REUSED')
+        self.assertEqual((key.stat().st_dev, key.stat().st_ino), identity)
+        self.assertEqual(certificate.read_bytes(), (archive / 'fullchain1.pem').read_bytes())
+        self.assertEqual(certificate.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+        validator.validate_sources(certificate, key, config['hostname'])
+        self.assertFalse(self.commands)
+        self.assert_preserved()
+
+    def test_foreign_or_ambiguous_partial_key_is_preserved_and_rejected(self):
+        archive, _, validator = self.make_server_lineage()
+        key = Path(self.config['private_key'])
+        material = (archive / 'privkey1.pem').read_bytes()
+        for kind in ('mismatched', 'hardlink', 'symlink', 'dangling', 'owner', 'group', 'mode'):
+            with self.subTest(kind=kind), patch.object(TLS, 'validator_module', return_value=validator):
+                if kind == 'hardlink':
+                    os.link(archive / 'privkey1.pem', key)
+                elif kind in ('symlink', 'dangling'):
+                    key.symlink_to(archive / ('privkey1.pem' if kind == 'symlink' else 'absent.pem'))
+                else:
+                    key.write_bytes((self.root / 'ca-fixture' / 'root.key').read_bytes()
+                                    if kind == 'mismatched' else material)
+                    key.chmod(0o640 if kind == 'mode' else 0o600)
+                    os.chown(key, 1 if kind == 'owner' else 0, 1 if kind == 'group' else 0)
+                before = key.lstat()
+                with self.assertRaisesRegex(TLS.BootstrapError, 'TLS_MANAGED_PARTIAL_KEY_'):
+                    self.simulate(dict(self.config, phase='issue'))
+                after = key.lstat()
+                for attribute in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink',
+                                  'st_size', 'st_mtime_ns', 'st_ctime_ns'):
+                    self.assertEqual(getattr(after, attribute), getattr(before, attribute))
+                self.assertFalse(Path(self.config['certificate']).exists())
+                self.assertFalse(self.commands)
+                key.unlink()
+
+    def test_partial_key_requires_explicit_issue_and_matching_namespace_lineage(self):
+        archive, lineage, validator = self.make_server_lineage()
+        key = Path(self.config['private_key'])
+        key.write_bytes((archive / 'privkey1.pem').read_bytes())
+        key.chmod(0o600)
+        before = key.read_bytes()
+        with patch.object(TLS, 'validator_module', return_value=validator):
+            with self.assertRaisesRegex(TLS.BootstrapError, 'PARTIAL_REQUIRES_ISSUE_REUSE'):
+                self.simulate()
+            (lineage / 'privkey.pem').unlink()
+            (archive / 'privkey2.pem').write_bytes(before)
+            (archive / 'privkey2.pem').chmod(0o600)
+            (lineage / 'privkey.pem').symlink_to(archive / 'privkey2.pem')
+            with self.assertRaisesRegex(TLS.BootstrapError, 'GENERATION_MISMATCH'):
+                self.simulate(dict(self.config, phase='issue'))
+            (lineage / 'fullchain.pem').unlink()
+            (lineage / 'privkey.pem').unlink()
+            lineage.rmdir()
+            with self.assertRaisesRegex(TLS.BootstrapError, 'PATH_MISSING'):
+                self.simulate(dict(self.config, phase='issue'))
+        self.assertEqual(key.read_bytes(), before)
+        self.assertFalse(Path(self.config['certificate']).exists())
+        self.assertFalse(self.commands)
+
+    def test_certificate_only_partial_state_is_never_adopted(self):
+        archive, _, validator = self.make_server_lineage()
+        certificate = Path(self.config['certificate'])
+        certificate.write_bytes((archive / 'fullchain1.pem').read_bytes())
+        certificate.chmod(0o644)
+        before = certificate.read_bytes()
+        with patch.object(TLS, 'validator_module', return_value=validator):
+            with self.assertRaisesRegex(validator.ValidationError, 'TLS_SOURCE_UNAVAILABLE_OR_UNSAFE'):
+                self.simulate(dict(self.config, phase='issue'))
+        self.assertEqual(certificate.read_bytes(), before)
+        self.assertFalse(Path(self.config['private_key']).exists())
+        self.assertFalse(self.commands)
 
     def test_unsafe_lineage_and_mixed_generations_cannot_publish(self):
         archive, lineage, validator = self.make_server_lineage()

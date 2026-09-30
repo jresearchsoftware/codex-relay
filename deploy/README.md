@@ -198,10 +198,21 @@ reported blocked for inspection, never blindly removed or retried.
 
 An existing valid pair is reused. An existing invalid pair, foreign CA bundle
 or different destination App key blocks instead of silently rotating it.
+If managed TLS publication is interrupted after the private key is durable,
+rerun the same authorized `tls-issue` operation. It completes the pair only
+when the root-owned, single-link 0600 key exactly matches the fully validated
+same-generation lineage in this namespace's Certbot state. Certificate-only,
+foreign, mismatched or unsafe partial state remains blocked. The temporary
+challenge fragment is retired and nginx revalidated before pair publication.
 Reviewer credential staging accepts only an existing protected RSA App key,
 verifies the installed Reviewer App/installation/file references, and creates
-the root-owned Reviewer-readable destination atomically. It does not request
-Writer, Codex or runner secrets and does not activate Reviewer.
+the root-owned Reviewer-readable destination with an atomic no-replace rename.
+TLS component publication uses the same primitive: destination creation leaves
+no second hardlink to retire. Retrying `reviewer-credentials` after interrupted
+publication accepts identical protected material as a no-op; hardlinked or
+different credentials remain blocked. Unsupported atomic no-replace publication
+fails closed. Staging does not request Writer, Codex or runner secrets and does
+not activate Reviewer.
 
 After separately authorized ingress and Reviewer activation, perform live
 server-side qualification and a final ordinary `post-check` with no unexpected

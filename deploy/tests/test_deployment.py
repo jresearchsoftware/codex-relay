@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -269,6 +270,132 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
                 wrong = self.invoke('--phase', 'check', '--authorize-' + phase)
                 self.assertNotEqual(wrong.returncode, 0)
                 self.assertFalse(self.capture.exists())
+
+    def bootstrap_fixture(self, module_name, class_name):
+        if os.geteuid() != 0 or not shutil.which('openssl'):
+            self.skipTest('native root filesystem and OpenSSL required')
+        spec = importlib.util.spec_from_file_location('public_' + module_name,
+            self.product / 'deploy/ansible/tests' / (module_name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        fixture_type = getattr(module, class_name)
+        fixture_type.setUpClass()
+        fixture = fixture_type()
+        self.addCleanup(fixture.doCleanups)
+        fixture.setUp()
+        # The real bootstrap guard must see the CLI's exact installed revision.
+        current = fixture.root / 'install/current'
+        release = current.parent / 'releases' / self.revision
+        current.resolve().rename(release)
+        current.unlink()
+        current.symlink_to(release)
+        manifest = release / 'artifact-manifest.json'
+        value = json.loads(manifest.read_text())
+        value.update(commit=self.revision, installedRevision=self.revision)
+        manifest.write_text(json.dumps(value))
+        return fixture
+
+    def recovery_backend(self, phase, request, destination, trust_store=None):
+        # Only SSH/Ansible transport and remote path mapping are synthetic. The
+        # public CLI, Git identities, guard, publication and retry are real.
+        backend = self.bin / 'ansible-playbook'
+        self.addCleanup(backend.write_text, backend.read_text())
+        interrupted = destination.parent / 'fixture-crash-injected'
+        helper = 'tls-webroot-bootstrap.py' if phase == 'tls-issue' else 'reviewer-credential-stage.py'
+        backend.write_text('#!/usr/bin/python3\n' + textwrap.dedent(f'''\
+            import importlib.util, json, os, stat, sys
+            from pathlib import Path
+            from types import SimpleNamespace
+            a = sys.argv
+            hosts = json.loads(Path(a[a.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
+            assert list(hosts) == ['192.0.2.10']
+            v = hosts['192.0.2.10']
+            Path({str(self.capture)!r}).write_text(json.dumps(v))
+            head = v['relay_bootstrap_exact_head']
+            assert v['relay_production_operation_phase'] == {phase!r}
+            assert not v['relay_service_activation_authorized']
+            assert not v['relay_runner_registration_authorized']
+            assert v['relay_runner_service_state_management'] == 'preserve'
+            expected = 'relay-tls-preparation.yml' if {phase!r} == 'tls-issue' else 'relay-reviewer-credentials.yml'
+            assert Path(a[a.index('-i') + 2]).name == expected
+            tools = Path({str(self.product / 'deploy/ansible/tools')!r})
+            sys.path.insert(0, str(tools))
+            spec = importlib.util.spec_from_file_location('public_bootstrap', tools / {helper!r})
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            request = {request!r}
+            destination, interrupted = Path({str(destination)!r}), Path({str(interrupted)!r})
+            fsync = os.fsync
+            def crash_after_publication(fd):
+                fsync(fd)
+                if stat.S_ISDIR(os.fstat(fd).st_mode) and destination.exists() and not interrupted.exists():
+                    interrupted.touch()
+                    os._exit(73)
+            os.fsync = crash_after_publication
+            if {phase!r} == 'tls-issue':
+                assert request['hostname'] == v['relay_tls_acme_hostname']
+                request.update(phase=v['relay_tls_phase'], head=head)
+                validator = module.validator_module()
+                module.validator_module = lambda: SimpleNamespace(validate_sources=lambda *args, **kwargs:
+                    validator.validate_sources(*args, **kwargs, trust_store={str(trust_store)!r}))
+                module.prepare_ca = lambda _: None
+                def no_external_operation(*_):
+                    raise AssertionError('validated lineage reuse needs no external operation')
+                module.execute = no_external_operation
+                result = module.run(request)
+                assert result['status'] == 'TLS_EXISTING_CERTIFICATE_REUSED'
+                print('TLS_BOOTSTRAP_RESULT=PASS;phase=issue;head=' + head)
+            else:
+                assert request['app_id'] == str(v['relay_reviewer_app_id'])
+                assert request['installation_id'] == str(v['relay_reviewer_app_installation_id'])
+                request['exact_head'] = head
+                result = module.stage(SimpleNamespace(**request))
+                assert result['status'] == 'REVIEWER_CREDENTIAL_UNCHANGED'
+                print(result['proof'])
+            print('192.0.2.10 : ok=1 changed=0 unreachable=0 failed=0')
+            '''))
+        return interrupted
+
+    def assert_public_recovery(self, phase, destination, interrupted):
+        command = ('--phase', phase, '--authorize-' + phase)
+        failed = self.invoke(*command)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('BACKEND_FAILED;phase=' + phase, failed.stderr)
+        self.assertTrue(interrupted.exists(), 'must reach actual durable publication')
+        self.assertEqual(destination.stat().st_nlink, 1)
+        identity = destination.stat().st_ino
+        if phase == 'tls-issue':
+            self.assertFalse((destination.parent / 'server-fullchain.pem').exists())
+        recovered = self.invoke(*command)
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertIn('RELAY_DEPLOYMENT_RESULT=PASS;phase=' + phase, recovered.stdout)
+        self.assertIn('resolved_revision=' + self.revision, recovered.stdout)
+        self.assertEqual(destination.stat().st_ino, identity)
+        self.assertEqual(destination.stat().st_nlink, 1)
+
+    def test_public_tls_issue_retries_its_interrupted_publication_without_cleanup(self):
+        fixture = self.bootstrap_fixture('test_tls_bootstrap_execution', 'BootstrapExecutionTests')
+        fixture.config['hostname'] = json.loads(self.config.read_text())['environment']['ingress']['serverName']
+        archive, _, _ = fixture.make_server_lineage()
+        destination = Path(fixture.config['private_key'])
+        interrupted = self.recovery_backend('tls-issue', fixture.config, destination,
+                                            fixture.root / 'ca-fixture/root.pem')
+        self.assert_public_recovery('tls-issue', destination, interrupted)
+        self.assertEqual(destination.read_bytes(), (archive / 'privkey1.pem').read_bytes())
+        self.assertEqual(Path(fixture.config['certificate']).read_bytes(), (archive / 'fullchain1.pem').read_bytes())
+        self.assertEqual(fixture.foreign.read_bytes(), fixture.foreign_original)
+
+    def test_public_reviewer_credentials_retries_its_interrupted_publication_without_cleanup(self):
+        fixture = self.bootstrap_fixture('test_reviewer_credential_staging', 'ReviewerCredentialStagingTests')
+        app = json.loads(self.config.read_text())['consumer']['reviewerApp']
+        fixture.args.app_id, fixture.args.installation_id = app['appId'], app['installationId']
+        fixture.env.write_text('GITHUB_APP_PRIVATE_KEY_FILE=' + str(fixture.destination) + '\n'
+            'GITHUB_APP_ID=' + app['appId'] + '\nGITHUB_APP_INSTALLATION_ID=' + app['installationId'] + '\n')
+        interrupted = self.recovery_backend('reviewer-credentials', vars(fixture.args), fixture.destination)
+        self.assert_public_recovery('reviewer-credentials', fixture.destination, interrupted)
+        self.assertEqual(fixture.destination.read_bytes(), fixture.keys[0])
+        self.assertEqual(fixture.source.read_bytes(), fixture.keys[0])
+        self.assertFalse(list(fixture.credentials.glob('.reviewer-key-*')))
 
     def test_tls_check_is_read_only_and_ordinary_apply_does_not_enable_bootstrap(self):
         result = self.invoke('--phase', 'tls-check')
