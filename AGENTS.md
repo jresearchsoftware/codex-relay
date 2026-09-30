@@ -181,6 +181,11 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   in the private Ansible backend and the public deployment interface cannot
   perform it, treat that as a source/interface defect instead of bypassing the
   public API or inventing a manual secret path.
+- For reusable installation behavior, reproduce first-install failures from
+  clean state as well as retained/cohosted state. A successful upgrade or second
+  consumer on an already prepared host does not prove standalone bootstrap.
+  Add proportional clean-state regression coverage for discovered bootstrap
+  defects and keep external prerequisites explicit.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 
