@@ -170,13 +170,17 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
-- Follow the [first-install TLS bootstrap contract](deploy/README.md#first-install-tls-bootstrap):
-  for a newly admitted ingress hostname, a missing matching certificate/lineage
-  is expected initial state. Do not search arbitrary protected paths or treat
-  incidental old lineages as prerequisites. When admitted deployment authority
-  includes TLS provisioning, use the established protected Let's Encrypt/ACME
-  path and validate the resulting certificate/key before ingress reconciliation;
-  otherwise stop at the production-mutation authority boundary.
+- Follow the [first-install bootstrap contract](deploy/README.md#first-install-bootstrap-and-reusable-state).
+  Classify missing state by ownership before asking the owner for paths. Reuse
+  supported existing protected state when it validates; otherwise use the
+  product-managed bootstrap for product-owned state. In particular, a valid
+  matching TLS lineage may be reused, while a missing lineage and missing
+  OpenAI client CA are normal bootstrap states rather than evidence of an
+  undisclosed server path. Ask only for true external prerequisites such as
+  DNS or owner-provisioned App credentials. If the needed bootstrap exists only
+  in the private Ansible backend and the public deployment interface cannot
+  perform it, treat that as a source/interface defect instead of bypassing the
+  public API or inventing a manual secret path.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 
