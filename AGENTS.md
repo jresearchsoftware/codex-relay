@@ -170,6 +170,13 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
+- Follow the [first-install TLS bootstrap contract](deploy/README.md#first-install-tls-bootstrap):
+  for a newly admitted ingress hostname, a missing matching certificate/lineage
+  is expected initial state. Do not search arbitrary protected paths or treat
+  incidental old lineages as prerequisites. When admitted deployment authority
+  includes TLS provisioning, use the established protected Let's Encrypt/ACME
+  path and validate the resulting certificate/key before ingress reconciliation;
+  otherwise stop at the production-mutation authority boundary.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 
