@@ -62,11 +62,18 @@ Relay is not a replacement for Codex or CI, a hosted service, a deployment
 framework, a model selector, a retry scheduler, or multi-owner/fork automation.
 
 To install a consumer, supply a supported Linux target, trusted GitHub
-routing/validation workflows,
-separate Writer and Reviewer Apps, persistent protected state, and ChatGPT
-custom-connector access with a reachable TLS/mTLS terminator and the trusted
-OpenAI client CA. These are consumer/environment prerequisites. Relay installs
-its users, fixed sudo wrappers, runtime and services through its deployment interface.
+routing/validation workflows, separate Writer and Reviewer Apps with their
+owner-provisioned private keys, DNS and a supported ingress topology, plus
+ChatGPT custom-connector access. Relay installs its users, fixed sudo wrappers,
+runtime and services. Its [first-install bootstrap contract](deploy/README.md#first-install-bootstrap-and-reusable-state)
+distinguishes reusable protected state, product-managed bootstrap such as the
+OpenAI client CA and TLS issuance, and true external prerequisites.
+
+This is still a pre-release deployment surface: TLS preparation exists in the
+internal backend but is not yet exposed through the public deployment entrypoint,
+and cohosted ingress may need a supported certificate-issuance integration.
+Do not treat private backend invocation or arbitrary secret-path discovery as
+part of the consumer installation contract.
 
 Codex Relay is licensed under the [MIT License](LICENSE).
 
