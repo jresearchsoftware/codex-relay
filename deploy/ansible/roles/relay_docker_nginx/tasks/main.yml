@@ -397,9 +397,12 @@
   when: relay_docker_nginx_manage | bool
 
 - name: Validate configured relay certificate hostname and key pair without printing private material
+  # x509 -checkhost can exit zero on mismatch; require its affirmative result.
   ansible.builtin.shell: >-
     set -eu;
-    openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -noout -checkhost '{{ relay_nginx_server_name }}' >/dev/null;
+    export LC_ALL=C;
+    hostname_check=$(openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -noout -checkhost '{{ relay_nginx_server_name }}');
+    test "$hostname_check" = 'Hostname {{ relay_nginx_server_name }} does match certificate';
     certificate_public_key=$(openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -pubkey -noout |
       openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d ' ' -f 1);
     private_key_public_key=$(openssl pkey -in '{{ relay_nginx_server_private_key_file }}' -pubout -outform DER 2>/dev/null |
@@ -513,6 +516,7 @@
     - not ansible_check_mode
 
 - name: Validate staged certificate projection before installation
+  # A successful x509 command alone does not establish a hostname match.
   ansible.builtin.command:
     argv:
       - openssl
@@ -524,6 +528,12 @@
       - '{{ relay_nginx_server_name }}'
   register: relay_docker_nginx_staged_certificate_validation
   changed_when: false
+  environment:
+    LC_ALL: C
+  failed_when: >-
+    relay_docker_nginx_staged_certificate_validation.rc != 0 or
+    relay_docker_nginx_staged_certificate_validation.stdout !=
+    'Hostname ' ~ relay_nginx_server_name ~ ' does match certificate'
   no_log: true
   when:
     - relay_docker_nginx_manage | bool
