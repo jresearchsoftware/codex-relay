@@ -86,6 +86,7 @@ def arguments():
     p.add_argument('--stale-phase', choices=['apply', 'activate', 'runner-enable'])
     p.add_argument('--stale-head')
     p.add_argument('--stale-completed-phase', choices=['apply'])
+    p.add_argument('--stale-apply-shape', choices=['bootstrap-only'])
     p.add_argument('--stale-state-hash')
     p.add_argument('--issue-number', type=int)
     p.add_argument('--issue-body-sha256', default='')
@@ -135,9 +136,13 @@ def run(args):
     if args.phase == 'stale-dispose':
         require(args.stale_phase and re.fullmatch('[0-9a-f]{40}', args.stale_head or '') and args.stale_head != revision, 'stale-identity')
         if args.stale_phase == 'apply':
-            require(args.stale_completed_phase == 'apply' and re.fullmatch('[0-9a-f]{64}', args.stale_state_hash or ''), 'stale-apply-evidence')
+            require(re.fullmatch('[0-9a-f]{64}', args.stale_state_hash or '') and
+                    ((args.stale_apply_shape == 'bootstrap-only' and not args.stale_completed_phase) or
+                     (not args.stale_apply_shape and args.stale_completed_phase == 'apply')), 'stale-apply-evidence')
+        else:
+            require(not any([args.stale_apply_shape, args.stale_completed_phase, args.stale_state_hash]), 'stale-flags')
     else:
-        require(not any([args.stale_phase, args.stale_head, args.stale_completed_phase, args.stale_state_hash]), 'stale-flags')
+        require(not any([args.stale_phase, args.stale_head, args.stale_completed_phase, args.stale_state_hash, args.stale_apply_shape]), 'stale-flags')
     if args.phase == 'diagnose':
         if args.issue_number:
             require(args.issue_number > 0 and not any([args.pull_request, args.review_id, args.reviewed_head,
@@ -183,6 +188,7 @@ def run(args):
         'relay_production_operation_stale_authorized': args.authorize_stale_disposition,
         'relay_production_operation_stale_actual_completed_phase': args.stale_completed_phase or '',
         'relay_production_operation_stale_expected_state_hash': args.stale_state_hash or '',
+        'relay_production_operation_stale_apply_shape': args.stale_apply_shape or '',
         'relay_production_diagnostic_target': 'issue' if args.issue_number else 'pull_request',
         'relay_production_diagnostic_issue_number': args.issue_number,
         'relay_production_diagnostic_issue_body_sha256': args.issue_body_sha256,
@@ -223,7 +229,8 @@ def run(args):
             env.update({'ANSIBLE_CONFIG': str(BACKEND / 'ansible.cfg'), 'ANSIBLE_ROLES_PATH': str(BACKEND / 'roles'),
                 'ANSIBLE_SSH_COMMON_ARGS': '-o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes',
                 'ANSIBLE_PRIVATE_KEY_FILE': str(key), 'PYTHONDONTWRITEBYTECODE': '1'})
-            argv = ['ansible-playbook', '-i', str(work / 'inventory.json'), str(BACKEND / PHASES[args.phase]),
+            playbook = ('relay-production-bootstrap-disposition.yml' if args.stale_apply_shape else PHASES[args.phase])
+            argv = ['ansible-playbook', '-i', str(work / 'inventory.json'), str(BACKEND / playbook),
                     '--limit', target['host']]
             if args.phase in ['check', 'post-check']:
                 argv += ['--check']
@@ -241,10 +248,13 @@ def run(args):
             if args.phase == 'general-runner-enable':
                 require(f'GENERAL_RUNNER_VALIDATED={revision};phase=general-runner-enable;' in evidence, 'general-runner-proof')
             if args.phase == 'check':
-                require('PRODUCTION_RECOVERY_CLASSIFICATION=' not in evidence
-                        and 'PRODUCTION_RECONCILIATION_STATE=RECOVERY_REQUIRED' not in evidence, 'recovery-requires-disposition')
+                if ('PRODUCTION_RECOVERY_CLASSIFICATION=' in evidence
+                        or 'PRODUCTION_RECONCILIATION_STATE=RECOVERY_REQUIRED' in evidence):
+                    raise RuntimeError(f'recovery-requires-disposition;log={log_name}')
                 if not re.search(r'changed=[1-9][0-9]*', evidence):
                     require(f'PRODUCTION_CHECK_VALIDATED={revision};state=stable-no-op;recovery=none' in evidence, 'final-check-proof')
+            if args.stale_apply_shape:
+                require(f'PRODUCTION_BOOTSTRAP_DISPOSITION_PASS={revision}' in evidence, 'bootstrap-disposition-proof')
             if args.phase == 'apply':
                 require(f'PRODUCTION_APPLY_VALIDATED={revision}' in evidence, 'final-runtime-proof')
             if args.phase in ['apply', 'post-check']:

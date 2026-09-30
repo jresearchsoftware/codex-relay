@@ -69,12 +69,12 @@
     "delete": true
   },
   {
-    "name": "missing codex_effort",
+    "name": "null codex_effort",
     "path": [
       "codex_effort"
     ],
     "producer_error": "INVALID_CHANGE_REQUEST",
-    "delete": true
+    "value": null
   },
   {
     "name": "missing findings",

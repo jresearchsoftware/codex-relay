@@ -1,12 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { EXECUTION_DEFINITION, resolveExecutionDefaults } from './execution-defaults.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { safeModel, safeEffort } from '../../runtime/src/codex-profile.mjs';
 
 // Included by the Rust binary and retained in reviewed-source at runtime. No
 // network lookup, capability inventory or separate CR authority store.
-export const CR_DEFINITION = JSON.parse(readFileSync(new URL(
-  '../../reviewer/src/executable-cr-v2.json',
-  import.meta.url), 'utf8'));
+export const CR_DEFINITION = structuredClone(EXECUTION_DEFINITION);
 const validationItems = CR_DEFINITION.input_schema.properties.required_validation.items;
 // Names are trusted consumer policy, never commands or caller-supplied schema.
 validationItems.enum = [...new Set([...validationItems.enum, ...(CONSUMER.validationNames ?? [])])];
@@ -40,10 +38,12 @@ function conforms(value, spec) {
 }
 
 export function validateStructuredCr(cr) {
-  if (!conforms(cr, CR_DEFINITION.input_schema) || !safeEffort(cr.codex_effort)
+  if (!conforms(cr, CR_DEFINITION.input_schema)
+    || (cr.codex_effort !== undefined && !safeEffort(cr.codex_effort))
     || new Set(cr.findings.map(f => f.id)).size !== cr.findings.length
     || cr.success_token === cr.blocked_token || cr.success_outcome === cr.blocked_outcome) invalid();
-  return cr;
+  const resolved = resolveExecutionDefaults({ effort: cr.codex_effort, subagentsAllowed: cr.subagents_allowed });
+  return { ...cr, codex_effort: resolved.effort, subagents_allowed: resolved.subagentsAllowed };
 }
 
 export function canonicalJson(value) {
@@ -69,6 +69,5 @@ export function extractExecutableCr(body) {
   const cr = validateStructuredCr(wire.change_request);
   return { ...cr, schema_version: wire.schema_version, repository: wire.repository,
     pull_request: wire.pull_request, reviewed_head_sha: wire.reviewed_head_sha,
-    required_starting_head: wire.reviewed_head_sha, finding_ids: cr.findings.map(f => f.id),
-    subagents_allowed: cr.subagents_allowed ?? false };
+    required_starting_head: wire.reviewed_head_sha, finding_ids: cr.findings.map(f => f.id) };
 }

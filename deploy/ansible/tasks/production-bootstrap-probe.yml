@@ -1,0 +1,49 @@
+---
+- name: Bind bootstrap evidence to the owner configuration and exact operation
+  ansible.builtin.set_fact:
+    relay_bootstrap_inputs:
+      repository: '{{ relay_github_repository }}'
+      schemaVersion: '{{ relay_production_operation_schema_version }}'
+      staleHead: '{{ relay_production_operation_recovery_target_head }}'
+      head: '{{ relay_production_operation_target_head }}'
+      record: '{{ relay_production_operation_record_path }}'
+      lock: '{{ relay_production_operation_lock_path }}'
+      archiveRoot: '{{ relay_production_operation_superseded_root }}'
+      stateRoot: '{{ relay_state_root }}'
+      runtimeRoot: '{{ relay_runtime_root }}'
+      stageRoot: '{{ relay_production_local_apply_stage_root }}'
+      productionRunnerUnit: '{{ relay_production_runner_service_name }}'
+      dropinRoot: '/etc/systemd/system/{{ relay_production_runner_service_name }}.d'
+      dropinContent: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/roles/relay_runner/templates/relay-runner-production-local-apply.conf.j2') }}"
+      port: '{{ relay_reviewer_bind_port }}'
+      absentPaths:
+        - '{{ relay_install_root }}'
+        - '{{ relay_config_root }}'
+        - '{{ relay_log_root }}'
+        - '{{ relay_production_local_apply_sudoers_file }}'
+      users: '{{ [relay_user, relay_reviewer_user, relay_codex_user, relay_runner_user, relay_general_runner_user] | unique | sort }}'
+      groups: '{{ [relay_group, relay_reviewer_group, relay_codex_group, relay_codex_work_group, relay_runner_group, relay_general_runner_user] | unique | sort }}'
+      units:
+        - '{{ relay_reviewer_service_name }}'
+        - '{{ relay_reviewer_recovery_service_name }}'
+        - '{{ relay_reviewer_recovery_timer_name }}'
+        - '{{ relay_runner_service_name }}'
+        - '{{ relay_general_runner_service_name }}'
+        - '{{ relay_controller_service_name }}'
+        - '{{ relay_superseded_proxy_service_name }}'
+      authorized: '{{ relay_production_operation_stale_authorized | default(false) | bool }}'
+      expectedStateHash: '{{ relay_production_operation_stale_expected_state_hash | default("") }}'
+
+# Controller source travels over the established owner SSH channel. There is
+# deliberately no helper installation into the still-absent installation root.
+- name: Inspect or retire the bootstrap record under its existing operation lock
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '-'
+      - '{{ relay_bootstrap_mode | default("inspect") }}'
+      - '{{ relay_bootstrap_inputs | to_json }}'
+    stdin: '{{ lookup("ansible.builtin.file", playbook_dir ~ "/tools/production-bootstrap-recovery.py", rstrip=false) }}'
+  register: relay_bootstrap_probe
+  changed_when: (relay_bootstrap_mode | default('inspect')) == 'dispose'
+  check_mode: false

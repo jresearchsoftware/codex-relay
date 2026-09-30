@@ -6,8 +6,9 @@ result schema, Issue parser and a small adapter for isolated runtime probes.
 Run `npm test` here for the runtime contract tests.
 
 The runtime uses the deployment-owned [consumer contract](../consumer/README.md)
-for effective authoring defaults, commit identities, runtime user and paths.
-The worker receives the exact resolved model/effort from immutable admission.
+for the model, explicit effort overrides, commit identities, runtime user and
+paths. Omitted effort/Subagents uses the [shared contract resolver](../contracts/README.md).
+The worker receives the exact resolved effort/Subagents from immutable admission.
 Every governed invocation receives the shared
 [progress-bounded policy](../docs/execution-policy.md); it can make evidence-based
 corrections within the admitted goal without a fixed correction count. This

@@ -159,7 +159,8 @@ class InstalledConsumerBindingTests(unittest.TestCase):
           import {{ CONSUMER, CONSUMER_DIGEST }} from {json.dumps(consumer_module)};
           import {{ validateEnvelope }} from {json.dumps(contract_module)};
           const e = {{version: 2, repository: CONSUMER.repository, consumerDigest: CONSUMER_DIGEST,
-            profile: CONSUMER.defaultProfile, runId: 7, step: 1, attemptId: 'run-7', target: 'issue',
+            profile: CONSUMER.defaultProfile, subagentsAllowed: true,
+            runId: 7, step: 1, attemptId: 'run-7', target: 'issue',
             number: 1, issueNumber: 1, route: 'auto', startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40),
             targetBase: 'a'.repeat(40), authorityDigest: 'b'.repeat(64),
             branch: CONSUMER.taskBranchPrefix + 'task-1', validation: ['routing-tests']}};

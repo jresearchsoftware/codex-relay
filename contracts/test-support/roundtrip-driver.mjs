@@ -1,4 +1,6 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
+import { resolveExecutionDefaults } from '../src/execution-defaults.mjs';
+import { executeCodex } from '../../controller/src/attempt-runtime.mjs';
 // Called with the actual intercepted GitHub POST payload by Rust HTTP tests.
 // Kept outside test/ so Node's default discovery never runs this stdin driver.
 import assert from 'node:assert/strict';
@@ -15,12 +17,13 @@ export async function admitPublished(arguments_, publication) {
   const contract = validateRemediationContract(extractRemediationContract(publication.body),
     { pullRequest: arguments_.pr_number, reviewedHeadSha: publication.commit_id });
   const input = arguments_.change_request;
+  const resolved = resolveExecutionDefaults({ effort: input.codex_effort, subagentsAllowed: input.subagents_allowed });
   assert.equal(contract.change_request_id, input.change_request_id);
   assert.equal(contract.step, input.step);
   assert.deepEqual(contract.finding_ids, input.findings.map(f => f.id));
   assert.equal(contract.codex_model, input.codex_model);
-  assert.equal(contract.codex_effort, input.codex_effort);
-  assert.equal(contract.subagents_allowed, input.subagents_allowed ?? false);
+  assert.equal(contract.codex_effort, resolved.effort);
+  assert.equal(contract.subagents_allowed, resolved.subagentsAllowed);
   assert.equal(contract.success_token, input.success_token);
   assert.equal(contract.blocked_token, input.blocked_token);
   assert.ok(!('allowed_paths' in contract));
@@ -69,6 +72,13 @@ export async function admitPublished(arguments_, publication) {
     assert.ok(!envelope.blocked, JSON.stringify(envelope.block));
     assert.equal(envelope.step, step);
     assert.equal(envelope.profile.cliModelId, input.codex_model);
+    assert.equal(envelope.profile.effort, resolved.effort);
+    assert.equal(envelope.subagentsAllowed, resolved.subagentsAllowed);
+    await executeCodex(envelope, { runTask: async request => {
+      assert.deepEqual(request.profile, { cliModelId: input.codex_model, effort: resolved.effort });
+      assert.ok(request.inputText.includes(`Subagents: ${resolved.subagentsAllowed ? 'On' : 'Off'}`));
+      return { status: 'success' };
+    } });
     assert.deepEqual(envelope.validation, contract.required_validation);
     assert.throws(() => validateEnvelope({ ...envelope, validation: ['undeclared-check'] }), { code: 'REQUIRED_VALIDATION_UNSUPPORTED' });
     assert.equal(envelope.closure, 'Related to #24');

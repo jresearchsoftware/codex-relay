@@ -1,0 +1,27 @@
+---
+# A first apply can fail before relay_runtime has created users or units. Probe
+# only this pre-install shape; established installations keep their own matrix.
+- name: Inspect the installation root without following links
+  ansible.builtin.stat:
+    path: '{{ relay_install_root }}'
+    follow: false
+  register: relay_bootstrap_install_root
+  changed_when: false
+
+- name: Classify the exact incomplete bootstrap from protected host evidence
+  ansible.builtin.include_tasks: production-bootstrap-probe.yml
+  when: not relay_bootstrap_install_root.stat.exists | default(false)
+
+- name: Report the read-only bootstrap classification and owner evidence hash
+  ansible.builtin.debug:
+    msg: >-
+      PRODUCTION_RECOVERY_CLASSIFICATION=phase=apply;shape=bootstrap-only;
+      target_head={{ relay_production_operation_recovery_target_head }};
+      apply_state_hash={{ (relay_bootstrap_probe.stdout | from_json).stateHash }};
+      mutation_boundary=explicit-stale-dispose-with-exact-state-hash
+  when: not relay_bootstrap_install_root.stat.exists | default(false)
+
+- name: Mark the incomplete bootstrap classified without declaring install success
+  ansible.builtin.set_fact:
+    relay_production_recovery_check_classified: true
+  when: not relay_bootstrap_install_root.stat.exists | default(false)

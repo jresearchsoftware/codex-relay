@@ -64,7 +64,9 @@ policy; undeclared names fail closed. Supply semantic findings,
 remediation profile, Step, validation names,
 starting-state requirements, completion requirements, boundaries and outcome
 tokens/descriptions. Owner-policy reconciliation and finding evidence are
-optional; Subagents defaults Off. No interactive ChatGPT model/effort is needed.
+optional; omitted effort/Subagents use the shared execution defaults described
+in the [CR contract](../contracts/README.md). No interactive ChatGPT model/effort
+is required or recorded as governance metadata.
 
 Reviewer validates the input before contacting GitHub, then renders a canonical
 human-readable CR plus the version `2.0` execution data inside the same native

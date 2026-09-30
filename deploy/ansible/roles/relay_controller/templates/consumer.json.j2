@@ -31,8 +31,9 @@
     "email": {{ (relay_remediation_commit_email) | to_json }}
   },
   "defaultProfile": {
-    "cliModelId": {{ (relay_default_model) | to_json }},
+    "cliModelId": {{ (relay_default_model) | to_json }}{% if relay_default_effort is defined %},
     "effort": {{ (relay_default_effort) | to_json }}
+{% endif %}
   },
   "runtimeUser": {{ (relay_codex_user) | to_json }},
   "paths": {

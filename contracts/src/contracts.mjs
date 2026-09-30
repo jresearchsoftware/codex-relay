@@ -1,5 +1,6 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { resolveCodexProfile } from '../../runtime/src/codex-profile.mjs';
+import { resolveExecutionDefaults } from './execution-defaults.mjs';
 import { CR_DEFINITION, extractExecutableCr, validateStructuredCr } from './executable-cr.mjs';
 
 export const ALLOWED_REPOSITORY = CONSUMER.repository;
@@ -109,7 +110,7 @@ function deriveNativeContract(body, canonicalIssueBody) {
   const requiredStart = inlineValue(start, ["Required starting head", "Required starting/reviewed head"]) ?? inlineValue(profile, ["Required starting head", "Required starting/reviewed head"]);
   const remediationThreadTitle = inlineValue(profile, ["Thread name"]);
   const codexModel = inlineValue(profile, ["Codex model"]);
-  const codexEffort = inlineValue(profile, ["Codex reasoning effort"]);
+  const codexEffort = inlineValue(profile, ["Codex reasoning effort", "Codex effort"]);
   const subagents = inlineValue(profile, ["Subagents"]);
   const successToken = outcome.match(/(?:Allowed\s+)?success(?:\s+token)?\s*:\s*`([^`]+)`/i)?.[1]
     ?? outcome.match(/Expected successful remediation outcome\s*:\s*`([^`]+)`/i)?.[1];
@@ -136,7 +137,7 @@ function deriveNativeContract(body, canonicalIssueBody) {
     remediation_thread_title: remediationThreadTitle,
     codex_model: codexModel,
     codex_effort: codexEffort,
-    subagents_allowed: subagents === undefined ? false : /^(enabled|on|true)$/i.test(subagents) ? true
+    subagents_allowed: subagents === undefined ? undefined : /^(enabled|on|true)$/i.test(subagents) ? true
       : /^(disabled|off|false)$/i.test(subagents) ? false : subagents,
     finding_ids: findingIds,
     required_validation: requiredValidation,
@@ -180,12 +181,13 @@ export function validateRemediationContract(c, context) {
   if (!sha(c.reviewed_head_sha) || c.reviewed_head_sha !== context.reviewedHeadSha || c.required_starting_head !== c.reviewed_head_sha) reject('CONTRACT_HEAD_MISMATCH');
   if (c.schema_version === CR_DEFINITION.schema_version) {
     const { schema_version, repository, pull_request, reviewed_head_sha, required_starting_head, finding_ids, ...input } = c;
-    validateStructuredCr(input);
+    const resolved = validateStructuredCr(input);
+    c = { ...c, codex_effort: resolved.codex_effort, subagents_allowed: resolved.subagents_allowed };
     if (JSON.stringify(finding_ids) !== JSON.stringify(input.findings.map(f => f.id))) reject('EXECUTABLE_CR_INVALID');
     if (!Number.isSafeInteger(pull_request) || pull_request < 1 || !/^[a-f0-9]{40}$/.test(reviewed_head_sha)) reject('CONTRACT_BINDING_INVALID');
   }
   const profile = resolveCodexProfile({ cliModelId: c.codex_model, effort: c.codex_effort });
-  const subagentsAllowed = c.subagents_allowed === undefined ? false : c.subagents_allowed;
+  const subagentsAllowed = resolveExecutionDefaults({ subagentsAllowed: c.subagents_allowed }).subagentsAllowed;
   if (typeof subagentsAllowed !== 'boolean') reject('SUBAGENTS_PERMISSION_INVALID');
   assertSafeText(c.change_request_id, 'change_request_id');
   assertSafeText(c.remediation_thread_title, 'thread');
@@ -193,9 +195,11 @@ export function validateRemediationContract(c, context) {
     if (!Array.isArray(c[key]) || !c[key].length || c[key].length > 64 || c[key].some(v => typeof v !== 'string' || !v.trim())) reject('CONTRACT_SET_INVALID');
     assertUnique(c[key], key);
   }
-  // Historical path metadata has no execution role. Retain all other contract
-  // instructions in the authority fingerprint, including outcome tokens.
-  const { allowed_paths: retiredPaths, ...current } = c;
+  // Historical path and interactive review-profile metadata have no execution
+  // role. Preserve the original review as history, not active governance fields.
+  const { allowed_paths: retiredPaths, review_model: retiredReviewModel,
+    review_effort: retiredReviewEffort, review_reasoning_effort: retiredReasoning,
+    review_profile: retiredReviewProfile, ...current } = c;
   return Object.freeze({ ...current,
     codex_model: profile.cliModelId, codex_effort: profile.effort, subagents_allowed: subagentsAllowed });
 }

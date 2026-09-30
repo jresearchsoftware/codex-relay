@@ -105,11 +105,17 @@ needs a human decision, authority is uncertain, the next material correction
 is ambiguous, the same action fails without new evidence, or prior execution
 or external mutation is unknown or uncontained.
 
-Do not create nested workers or subagents unless the task separately authorizes
-them. An inner correction does not itself need a new Issue, Step or execution.
-Never convert this rule into a Relay retry loop. A manual task may publish
-through its explicitly authorized owner channel; an automatic worker delegates
-publication to Writer.
+For future owner-admitted Relay/Codex work, the default reasoning effort is
+`ultra` and the default Subagents permission is `On`. An explicit live Task or
+Change Request may override either default. Subagent use remains discretionary
+and evidence-driven; permission does not weaken scope, authority, exact-head,
+publication, production, credential or protected-boundary rules. These defaults
+do not introduce a repository-wide model default or authorize nested Relay
+execution or retry loops.
+
+An inner correction does not itself need a new Issue, Step or execution.
+A manual task may publish through its explicitly authorized owner channel;
+an automatic worker delegates publication to Writer.
 
 ## Minimum sufficient ceremony
 
@@ -144,8 +150,11 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
 
 - Keep consumer policy, model defaults, credentials, runner configuration and
   operations in consumer-owned configuration. Use synthetic examples here.
-- Resolve model, reasoning effort and Subagents once at admission. These are
-  the execution-profile fields for launch cards, task metadata and handoffs;
+- Resolve model, reasoning effort and Subagents once at admission. Omitted
+  effort/Subagents fields use the repository defaults above unless explicitly
+  overridden by the live Task/CR; they need not be repeated in each admission
+  or handoff. These are the execution-profile fields for launch cards, task
+  metadata and handoffs;
   an effort identifier does not imply an additional capability switch. Do not
   silently substitute profiles or consult a moving external recommendation
   during execution. Record actual model/effort only when runtime evidence
@@ -153,6 +162,8 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   proof. Record whether subagents were used within the admitted permission.
 - Keep owner, worker, Writer and Reviewer responsibilities separate. Review
   acceptance is independent and bound to the exact candidate head.
+  Interactive ChatGPT review model/effort is not governance metadata: do not
+  require or record it in CRs, handoffs, publication or Outcomes.
 - Preserve reservation-before-mutation, replay suppression, non-force Git
   publication, safe paths/modes and scanning of every introduced blob.
 - Never run trusted Git against model-modified metadata. Import bounded object
@@ -192,8 +203,10 @@ acceptance. Do not post a Reviewer verdict for your own work.
 
 Future task files include `## Recommended model budget` with recommended model,
 effort, rationale and escalation/de-escalation conditions. The task author
-resolves an explicit profile or delegates omitted fields to the admitted
-consumer configuration; there is no repository-specific model default here.
+resolves the model explicitly or delegates it to the admitted consumer
+configuration; there is no repository-specific model default here. Omitted
+effort/Subagents fields inherit the repository defaults above; an explicit
+live Task/CR may override either.
 An interactive prompt cannot change the user's UI model/effort selection.
 Keep task-specific authority and execution evidence in the live Issue/PR,
 not a duplicate registry.

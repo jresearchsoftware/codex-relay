@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, lstatSync } from 'node:fs';
 import { dirname, isAbsolute } from 'node:path';
+import { resolveExecutionDefaults } from '../contracts/src/execution-defaults.mjs';
 
 const reject = () => { throw Object.assign(new Error('CONSUMER_CONFIG_INVALID'), { code: 'CONSUMER_CONFIG_INVALID' }); };
 const text = (v, re) => typeof v === 'string' && re.test(v);
@@ -39,14 +40,17 @@ export function validateConsumer(c) {
       || !text(identity.email, /^[A-Za-z0-9+_.\[\]-]+@[A-Za-z0-9.-]+$/)
       || identity.name === c.reviewerApp.slug || identity.email.includes(c.reviewerApp.expectedActor)) reject();
   }
-  if (!keys(c.defaultProfile, ['cliModelId', 'effort'])
+  const profile = c.defaultProfile;
+  if (!profile || !keys(profile, Object.hasOwn(profile, 'effort') ? ['cliModelId', 'effort'] : ['cliModelId'])
     || !text(c.defaultProfile.cliModelId, /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
-    || !text(c.defaultProfile.effort, /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)) reject();
+    || (Object.hasOwn(profile, 'effort') && !text(profile.effort, /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/))) reject();
   if (!keys(c.paths, ['workRoot', 'attemptRoot', 'dispatch', 'writerHelper', 'launcher', 'diagnosticsConfig',
     'diagnosticsStore', 'diagnosticsRoot', 'credentialEnv', 'credentialKeyFile', 'claimRoot'])
     || Object.values(c.paths).some(v => !path(v)) || new Set(Object.values(c.paths)).size !== Object.keys(c.paths).length) reject();
   if (/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}|PRIVATE KEY/.test(JSON.stringify(c))) reject();
-  return freeze(structuredClone(c));
+  const resolved = structuredClone(c);
+  resolved.defaultProfile.effort = resolveExecutionDefaults(profile).effort;
+  return freeze(resolved);
 }
 
 export function loadConsumer(pathname) {

@@ -27,6 +27,18 @@ def commit(root):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_compiler_preserves_omitted_and_explicit_effort_for_runtime_resolution(self):
+        for effort in [None, 'max', 'high', 'ultra']:
+            c = json.loads((ROOT / 'deploy/example.json').read_text())
+            if effort is not None:
+                c['consumer']['defaultProfile']['effort'] = effort
+            config.validate(c, ROOT)
+            values = config.compile_inputs(c)
+            if effort is None:
+                self.assertNotIn('relay_default_effort', values)
+            else:
+                self.assertEqual(values['relay_default_effort'], effort)
+
     def test_alternate_consumer_passes_the_actual_codex_runtime_contract(self):
         import yaml
         from ansible.parsing.dataloader import DataLoader
@@ -124,6 +136,8 @@ print('192.0.2.10 : ok=1 changed=0 unreachable=0 failed=0')
 print('PRODUCTION_APPLY_VALIDATED='+head)
 print('PRODUCTION_CHECK_VALIDATED='+head+';state=stable-no-op;recovery=none')
 print('RELAY_INSTALLED_REVISION='+head+';consumer='+consumer+';previous=none')
+if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
+    print('PRODUCTION_BOOTSTRAP_DISPOSITION_PASS='+head)
 ''',
         }
         for name, source in stubs.items():
@@ -192,6 +206,22 @@ print('RELAY_INSTALLED_REVISION='+head+';consumer='+consumer+';previous=none')
                      ('--phase','stale-dispose','--authorize-stale-disposition')]:
             result=self.invoke(*args)
             self.assertNotEqual(result.returncode,0)
+            self.assertFalse(self.capture.exists())
+
+    def test_bootstrap_disposition_has_a_distinct_explicit_evidence_shape(self):
+        args = ['--phase', 'stale-dispose', '--authorize-stale-disposition',
+                '--stale-phase', 'apply', '--stale-head', 'a' * 40,
+                '--stale-apply-shape', 'bootstrap-only', '--stale-state-hash', 'b' * 64]
+        result = self.invoke(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(self.capture.read_text())
+        self.assertEqual(values['relay_production_operation_stale_apply_shape'], 'bootstrap-only')
+        self.assertEqual(values['relay_production_operation_stale_actual_completed_phase'], '')
+        for invalid in (args + ['--stale-completed-phase', 'apply'], args[:-2],
+                        ['--phase', 'apply', '--stale-apply-shape', 'bootstrap-only'],
+                        [v if v != 'apply' else 'activate' for v in args]):
+            result = self.invoke(*invalid)
+            self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.capture.exists())
 
 

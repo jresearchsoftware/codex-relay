@@ -14,7 +14,7 @@ their paths and IDs do not authorize access to any deployed system.
 | `writerApp`, `reviewerApp` | Separate App slugs, numeric App/installation IDs and expected bot actors |
 | `writerIdentity`, `remediationIdentity` | Worker commit author/committer and trusted object validation |
 | `routingWorkflow`, `recoveryWorkflow`, `validationWorkflow` | Exact native workflow identity checks and lookups |
-| `defaultProfile` | Consumer-owned resolution of omitted authoring fields at admission |
+| `defaultProfile` | Required consumer-owned model; optional effort override for omitted authoring fields |
 | `paths`, `runtimeUser` | Installed helpers, state/credential locations and non-root worker identity |
 | Optional `validationNames` | Up to 32 unique bounded consumer check IDs; declare the same list in Reviewer config |
 
@@ -24,6 +24,12 @@ including blocked-admission replay. Existing pre-configuration attempts must be
 reconciled under their original reviewed release before cutover; do not invent
 a digest or discard publication reservations. An admitted worker executes its
 resolved explicit model/effort. Relay never reads a moving Model Landscape.
+
+With no explicit consumer effort override, the shared execution resolver uses
+the schema representation of [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal).
+Omitted Subagents uses that same resolver. Explicit Task/CR values take priority.
+Consumer configuration still supplies the model; no model default is defined by
+Relay. Existing explicit consumer profiles and their digests are preserved.
 
 The privileged Writer receives its configuration path from the root-owned
 `env -i` wrapper. It verifies root ownership and non-writable ancestors before

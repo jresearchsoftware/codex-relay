@@ -309,7 +309,8 @@ relay_base_packages:
   - python3
   - sudo
 
-# Consumer policy defaults. The reusable modules have no identity/path defaults.
+# Synthetic backend fixture values; production supplies explicit consumer
+# identity, model and overrides through the versioned deployment compiler.
 relay_consumer_config_path: '{{ relay_config_root }}/consumer.json'
 relay_github_base_branch: main
 relay_owner_actor: example-owner
@@ -318,7 +319,8 @@ relay_routing_workflow: .github/workflows/codex-relay-routing.yml
 relay_recovery_workflow: .github/workflows/manual-writer-publication-recovery.yml
 relay_review_check_name: chatgpt-review
 relay_default_model: gpt-6-astra
-relay_default_effort: max
+# Omitted effort stays absent in rendered config; admission uses the shared
+# execution schema. Explicit consumer values remain overrides.
 relay_writer_commit_name: example-writer
 relay_writer_commit_email: '100001+example-writer[bot]@users.noreply.github.com'
 relay_remediation_commit_name: example-remediation

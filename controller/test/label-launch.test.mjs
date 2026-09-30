@@ -67,10 +67,12 @@ for (const remediation of [false, true]) test(`manual ready label makes a copyab
   assert.equal((await run()).status, 'handed-off'); assert.equal((await run()).status, 'handed-off');
   assert.equal(f.comments.length, 1); assert.equal(f.pushes(), 0);
   assert.match(f.comments[0].body, /MANUAL_CODEX_HANDOFF_READY[\s\S]*```text/);
+  assert.ok(f.comments[0].body.includes(`Codex effort: ${f.envelope.profile.effort}`));
+  assert.ok(f.comments[0].body.includes(`Subagents: ${remediation ? 'Off' : 'On'}`));
   assert.match(f.comments[0].body, /Task 42 — Step 5/);
   assert.match(f.comments[0].body, /```text[\s\S]*Progress-bounded execution[\s\S]*```/);
   assert.match(f.comments[0].body, /does not authorize blind Relay retries/);
-  assert.match(f.comments[0].body, /Do not launch nested workers, subagents or fan-out unless separately authorized/);
+  assert.match(f.comments[0].body, /Subagent use is discretionary and evidence-driven within the resolved Subagents permission/);
   assert.equal(currentStep(f.issue.labels), 5);
 });
 

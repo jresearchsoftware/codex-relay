@@ -162,7 +162,11 @@ pub fn normalized(validation_names: &[String], input: &Value) -> Result<Value, &
     }
     let mut cr = input.clone();
     let object = cr.as_object_mut().expect("validated object");
-    object.entry("subagents_allowed").or_insert(json!(false));
+    for (key, spec) in schema["properties"].as_object().expect("properties") {
+        if let Some(default) = spec.get("default") {
+            object.entry(key).or_insert_with(|| default.clone());
+        }
+    }
     object
         .entry("owner_policy_reconciliation")
         .or_insert(json!([]));
