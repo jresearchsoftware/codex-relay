@@ -534,7 +534,11 @@
     test -r "$cert"
     test -r "$chain"
     test -r "$key"
-    openssl x509 -in "$cert" -noout -checkend 0 -checkhost '{{ relay_tls_acme_hostname }}' >/dev/null
+    export LC_ALL=C
+    openssl x509 -in "$cert" -noout -checkend 0 >/dev/null
+    # x509 -checkhost can exit zero on mismatch; require its affirmative result.
+    hostname_check=$(openssl x509 -in "$cert" -noout -checkhost '{{ relay_tls_acme_hostname }}')
+    test "$hostname_check" = 'Hostname {{ relay_tls_acme_hostname }} does match certificate'
     leaf=$(mktemp)
     trap 'rm -f "$leaf"' EXIT
     awk 'BEGIN {n=0} /-----BEGIN CERTIFICATE-----/ {n++} n==1 {print} /-----END CERTIFICATE-----/ && n==1 {exit}' "$chain" > "$leaf"
