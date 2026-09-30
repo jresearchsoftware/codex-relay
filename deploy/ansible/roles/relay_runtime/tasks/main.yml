@@ -41,7 +41,7 @@
     # Privileged Writer admission requires root ownership of every consumer
     # parent. Service identities retain traversal to explicitly owned children.
     - {path: '{{ relay_config_root }}', owner: root, group: root, mode: '0751'}
-    - {path: '{{ relay_config_root }}/certs', group: '{{ relay_reviewer_group }}', mode: '0750'}
+    - {path: '{{ relay_config_root }}/certs', owner: root, group: '{{ relay_reviewer_group }}', mode: '0750'}
     - {path: '{{ relay_reviewer_credential_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0750'}
     - {path: '{{ relay_writer_credential_root }}', owner: root, group: root, mode: '0700'}
     - {path: '{{ relay_state_root }}', owner: root, mode: '0755'}
@@ -49,7 +49,9 @@
     - {path: '{{ relay_evidence_root }}', mode: '0751'}
     - {path: '{{ relay_evidence_root }}/reviewer', owner: '{{ relay_reviewer_user }}', group: '{{ relay_reviewer_group }}', mode: '0750'}
     - {path: '{{ relay_log_root }}', owner: '{{ relay_user }}', group: '{{ relay_reviewer_group }}', mode: '0770'}
-    - {path: '{{ relay_runtime_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0770'}
+    # The shared privileged operation lock lives here. Reviewer needs traversal,
+    # never permission to unlink/replace the lock or bootstrap control files.
+    - {path: '{{ relay_runtime_root }}', owner: root, group: '{{ relay_reviewer_group }}', mode: '0750'}
   when: >-
     not ansible_check_mode | bool or
     (relay_runtime_directory_identities.results | selectattr('rc', 'equalto', 2) | list | length == 0)

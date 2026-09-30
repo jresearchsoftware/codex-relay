@@ -69,11 +69,12 @@ runtime and services. Its [first-install bootstrap contract](deploy/README.md#fi
 distinguishes reusable protected state, product-managed bootstrap such as the
 OpenAI client CA and TLS issuance, and true external prerequisites.
 
-This is still a pre-release deployment surface: TLS preparation exists in the
-internal backend but is not yet exposed through the public deployment entrypoint,
-and cohosted ingress may need a supported certificate-issuance integration.
-Do not treat private backend invocation or arbitrary secret-path discovery as
-part of the consumer installation contract.
+The public deployment entrypoint exposes protected TLS source reuse, pinned
+OpenAI client CA preparation, explicit shared-ingress HTTP-01 bootstrap and
+Reviewer-only credential staging. Each mutation has a separate authorization
+flag and requires the exact installed revision. See the deployment contract for
+the supported topology and remaining live qualification requirements; private
+backend invocation and arbitrary secret-path discovery are not consumer APIs.
 
 Codex Relay is licensed under the [MIT License](LICENSE).
 

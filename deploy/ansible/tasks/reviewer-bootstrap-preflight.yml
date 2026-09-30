@@ -1,0 +1,46 @@
+---
+# Public bootstrap is a separate explicit owner stage after normal installation.
+# Every mutating helper repeats these observations under the shared host lock.
+- name: Require the public bootstrap invocation and exact installed head
+  ansible.builtin.assert:
+    that:
+      - relay_bootstrap_public_entrypoint | default(false) | bool
+      - relay_bootstrap_exact_head is match('^[0-9a-f]{40}$')
+      - relay_deployment_profile == 'production'
+      - inventory_hostname == relay_production_host
+    fail_msg: REVIEWER_BOOTSTRAP_PUBLIC_IDENTITY_REQUIRED
+
+- name: Inspect the accepted installation before bootstrap staging
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import json, os, stat, sys
+        from pathlib import Path
+        root, head, record = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+        def protected(path, kind):
+            for parent in path.parents:
+                s = parent.lstat()
+                assert stat.S_ISDIR(s.st_mode) and s.st_uid == 0 and not s.st_mode & 0o022
+            s = path.lstat()
+            assert s.st_uid == 0 and kind(s.st_mode) and not s.st_mode & 0o022
+        protected(root, stat.S_ISDIR)
+        current = root / 'current'
+        s = current.lstat()
+        assert stat.S_ISLNK(s.st_mode) and s.st_uid == 0
+        release = root / 'releases' / head
+        assert current.resolve(strict=True) == release
+        manifest = release / 'artifact-manifest.json'
+        protected(manifest, stat.S_ISREG)
+        data = json.loads(manifest.read_text())
+        assert data['schemaVersion'] == '1.0' and data['commit'] == data['installedRevision'] == head
+        assert not os.path.lexists(record)
+        print('REVIEWER_BOOTSTRAP_INSTALLED_HEAD=' + head)
+      - '{{ relay_install_root }}'
+      - '{{ relay_bootstrap_exact_head }}'
+      - '{{ relay_production_operation_record_path }}'
+  changed_when: false
+  check_mode: false
+  register: relay_bootstrap_installed_identity
+  failed_when: relay_bootstrap_installed_identity.rc != 0

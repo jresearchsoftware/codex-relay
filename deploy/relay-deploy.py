@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import shlex
 import stat
 import subprocess
 import sys
@@ -22,7 +24,14 @@ PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'post-check': 'site.yml',
           'diagnose': 'relay-production-diagnostic.yml', 'activate': 'relay-reviewer-activation.yml',
           'runner-enable': 'relay-production-runner-enable.yml',
           'general-runner-enable': 'relay-general-runner.yml',
-          'stale-dispose': 'relay-production-operation-stale-disposition.yml'}
+          'stale-dispose': 'relay-production-operation-stale-disposition.yml',
+          'tls-check': 'relay-tls-preparation.yml',
+          'tls-prepare': 'relay-tls-preparation.yml',
+          'tls-dry-run': 'relay-tls-preparation.yml',
+          'tls-issue': 'relay-tls-preparation.yml',
+          'reviewer-credentials': 'relay-reviewer-credentials.yml',
+          'ingress': 'relay-docker-nginx.yml'}
+BOOTSTRAP_MUTATIONS = ['tls-prepare', 'tls-dry-run', 'tls-issue', 'reviewer-credentials', 'ingress']
 
 
 def command(argv, **kwargs):
@@ -70,6 +79,58 @@ def root_owned(path):
                 and not metadata.st_mode & 0o022, 'protected-local-input')
 
 
+def ingress_guard(target, key, values, revision):
+    """Hold the installed host operation lock across the private adapter play.
+
+    The remote helper is from the exact accepted installation, not transferred
+    candidate code. EOF releases the kernel lock; no daemon or new ledger.
+    """
+    remote = ['/usr/bin/python3', values['relay_install_root'] +
+              '/current/reviewed-source/deploy/ansible/tools/bootstrap_guard.py', '--hold',
+              '--lock-file', values['relay_runtime_root'] + '/production-operation.lock',
+              '--operation-record', values['relay_production_operation_record_path'],
+              '--manifest', values['relay_install_root'] + '/current/artifact-manifest.json',
+              '--exact-head', revision]
+    process = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(remote)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    with selectors.DefaultSelector() as ready:
+        ready.register(process.stdout, selectors.EVENT_READ)
+        acquired = bool(ready.select(timeout=30)) and process.stdout.readline().strip() == 'BOOTSTRAP_GUARD_READY'
+    if not acquired:
+        process.stdin.close()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        raise RuntimeError('ingress-operation-guard-unavailable')
+    return process
+
+
+def run_backend(argv, cwd, env, log, guard=None):
+    process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
+    try:
+        while process.poll() is None:
+            if guard is not None and guard.poll() is not None:
+                raise RuntimeError('ingress-operation-guard-lost;inspect-before-retry')
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+        if guard is not None and guard.poll() is not None:
+            raise RuntimeError('ingress-operation-guard-lost;inspect-before-retry')
+        return process.returncode
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
@@ -83,6 +144,8 @@ def arguments():
     p.add_argument('--authorize-runner-enable', action='store_true')
     p.add_argument('--authorize-general-runner-enable', action='store_true')
     p.add_argument('--authorize-stale-disposition', action='store_true')
+    for phase in BOOTSTRAP_MUTATIONS:
+        p.add_argument('--authorize-' + phase, action='store_true')
     p.add_argument('--stale-phase', choices=['apply', 'activate', 'runner-enable'])
     p.add_argument('--stale-head')
     p.add_argument('--stale-completed-phase', choices=['apply'])
@@ -133,6 +196,13 @@ def run(args):
     require(args.authorize_runner_enable == (args.phase == 'runner-enable'), 'explicit-runner-enablement')
     require(args.authorize_general_runner_enable == (args.phase == 'general-runner-enable'), 'explicit-general-runner-enablement')
     require(args.authorize_stale_disposition == (args.phase == 'stale-dispose'), 'explicit-stale-disposition')
+    for phase in BOOTSTRAP_MUTATIONS:
+        require(getattr(args, 'authorize_' + phase.replace('-', '_')) == (args.phase == phase),
+                'explicit-' + phase)
+    if args.phase in ['tls-dry-run', 'tls-issue']:
+        require(values['relay_tls_acme_configured'], 'tls.acme-required')
+    if args.phase == 'reviewer-credentials':
+        require(bool(values['relay_reviewer_credential_source_file']), 'reviewerCredential-required')
     if args.phase == 'stale-dispose':
         require(args.stale_phase and re.fullmatch('[0-9a-f]{40}', args.stale_head or '') and args.stale_head != revision, 'stale-identity')
         if args.stale_phase == 'apply':
@@ -198,7 +268,16 @@ def run(args):
         'relay_production_diagnostic_change_request_id': args.change_request_id or '',
         'relay_production_diagnostic_branch': args.branch or '',
         'relay_production_diagnostic_base_branch_sha': args.base_branch_sha or '',
+        'relay_bootstrap_public_entrypoint': True,
+        'relay_bootstrap_exact_head': revision,
+        'relay_reviewer_credentials_authorized': args.authorize_reviewer_credentials,
+        'relay_tls_exact_head': revision,
+        'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
+                           'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
     })
+    if args.phase == 'ingress':
+        values.update(relay_docker_nginx_manage=True, relay_docker_nginx_service_enabled=True,
+                      relay_docker_nginx_validation_mode='active')
     if args.phase == 'general-runner-enable':
         import yaml  # part of the private Ansible backend dependency set
         values.update(yaml.safe_load((BACKEND / 'vars/general-runner.yml').read_text()))
@@ -213,7 +292,7 @@ def run(args):
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             require(os.fstat(lock).st_uid == os.getuid() and not os.fstat(lock).st_mode & 0o077, 'invocation-lock')
-            if args.phase in ['apply', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose']:
+            if args.phase in ['apply', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # A normal source archive is only an internal transport detail.
             # No consumer lock, helper hash, distribution bundle or host cache.
@@ -232,17 +311,30 @@ def run(args):
             playbook = ('relay-production-bootstrap-disposition.yml' if args.stale_apply_shape else PHASES[args.phase])
             argv = ['ansible-playbook', '-i', str(work / 'inventory.json'), str(BACKEND / playbook),
                     '--limit', target['host']]
-            if args.phase in ['check', 'post-check']:
+            if args.phase in ['check', 'post-check', 'tls-check']:
                 argv += ['--check']
             started = time.monotonic()
             log.write(f'requested_revision={requested};resolved_revision={revision};consumer_revision={consumer_revision}\n')
             log.flush()
-            completed = subprocess.run(argv, cwd=BACKEND, env=env, stdout=log, stderr=subprocess.STDOUT)
+            guard = ingress_guard(target, key, values, revision) if args.phase == 'ingress' else None
+            try:
+                returncode = run_backend(argv, BACKEND, env, log, guard)
+            finally:
+                if guard is not None:
+                    guard.stdin.close()
+                    require(guard.wait(timeout=30) == 0, 'ingress-operation-guard-final-check;inspect-before-retry')
             log.flush()
             evidence = Path(log_name).read_text()
-            if completed.returncode:
+            if returncode:
                 raise RuntimeError(f'BACKEND_FAILED;phase={args.phase};log={log_name};next=diagnose-operation-before-retry')
             require('failed=0' in evidence, 'backend-recap')
+            if args.phase == 'tls-check':
+                require(f'TLS_BOOTSTRAP_CHECK=PASS;head={revision}' in evidence, 'tls-check-proof')
+            if args.phase in ['tls-prepare', 'tls-dry-run', 'tls-issue']:
+                require(f'TLS_BOOTSTRAP_RESULT=PASS;phase={values["relay_tls_phase"]};head={revision}' in evidence,
+                        'tls-bootstrap-proof')
+            if args.phase == 'reviewer-credentials':
+                require(f'REVIEWER_CREDENTIAL_STAGE=PASS;head={revision}' in evidence, 'reviewer-credential-proof')
             if args.phase == 'post-check':
                 require(not re.search(r'changed=[1-9][0-9]*', evidence), 'post-check-drift')
             if args.phase == 'general-runner-enable':
@@ -275,7 +367,7 @@ def run(args):
 if __name__ == '__main__':
     try:
         run(arguments())
-    except (ValueError, OSError, subprocess.CalledProcessError, RuntimeError) as error:
+    except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as error:
         # Avoid dumping subprocess output or a full consumer/environment input.
         message = str(error) if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)

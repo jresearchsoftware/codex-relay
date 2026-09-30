@@ -4,6 +4,10 @@
   become: true
   gather_facts: true
   pre_tasks:
+    - name: Verify the exact accepted installation for the public ingress phase
+      ansible.builtin.include_tasks: tasks/reviewer-bootstrap-preflight.yml
+      when: relay_bootstrap_public_entrypoint | default(false) | bool
+
     # relay_reviewer_bind renders the shared Reviewer config directly, so the
     # artifact identity must be resolved before the adapter role runs.
     - name: Resolve reviewed artifact identity before Docker-nginx bind render
@@ -12,7 +16,9 @@
   roles:
     - role: relay_docker_network_gateway
       when: relay_docker_nginx_manage | bool
+    # The existing repository/service binding must be admitted before any
+    # Reviewer template can replace the evidence inspected by preflight.
+    - role: relay_preflight
     - role: relay_reviewer_bind
       when: relay_docker_nginx_manage | bool
-    - role: relay_preflight
     - role: relay_docker_nginx

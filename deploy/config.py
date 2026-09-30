@@ -1,6 +1,7 @@
 """Version 1 deployment input. No playbooks, templates or backend variables in it."""
 from pathlib import Path, PurePosixPath
 import json
+import ipaddress
 import re
 import subprocess
 
@@ -77,7 +78,7 @@ def validate(c, product_root):
     e = c['environment']
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
-        ['reviewCheckName', 'instance']), 'environment')
+        ['reviewCheckName', 'instance', 'tls', 'reviewerCredential']), 'environment')
     for key in ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup']:
         require(text(e[key], r'[a-z][a-z0-9-]{0,30}') and e[key] != 'root', key)
     r, g = e['runner'], e['generalRunner']
@@ -111,9 +112,18 @@ def validate(c, product_root):
         require(text(bind[key], r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}'), 'reviewerBind.' + key)
     ingress = e['ingress']
     require(object_keys(ingress, ['serverName', 'ownershipRoot', 'foreignServerName', 'service',
-                                 'protectedPaths', 'protectedServices']), 'ingress')
+                                 'protectedPaths', 'protectedServices'], ['publicAddresses']), 'ingress')
     for key in ['serverName', 'foreignServerName']:
         require(text(ingress[key], r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}'), 'ingress.' + key)
+    if 'publicAddresses' in ingress:
+        addresses = ingress['publicAddresses']
+        require(isinstance(addresses, list) and 1 <= len(addresses) <= 16
+                and all(isinstance(v, str) for v in addresses), 'ingress.publicAddresses')
+        try:
+            canonical = [str(ipaddress.ip_address(v)) for v in addresses]
+        except ValueError:
+            require(False, 'ingress.publicAddresses')
+        require(canonical == addresses and len(set(canonical)) == len(canonical), 'ingress.publicAddresses')
     require(absolute(ingress['ownershipRoot']), 'ingress.ownershipRoot')
     require(isinstance(ingress['protectedPaths'], list) and all(absolute(p) for p in ingress['protectedPaths']), 'protectedPaths')
     require(isinstance(ingress['protectedServices'], list), 'protectedServices')
@@ -125,6 +135,32 @@ def validate(c, product_root):
             require(not (owned == protected or owned.startswith(protected + '/') or protected.startswith(owned + '/')), 'path-overlap')
     require(object_keys(e['localApply'], ['configPath']) and relative(e['localApply']['configPath']), 'localApply')
     require(type(e['codexTokenRequired']) is bool, 'codexTokenRequired')
+    if 'tls' in e:
+        tls = e['tls']
+        require(object_keys(tls, [], ['source', 'acme']), 'tls')
+        if 'source' in tls:
+            source = tls['source']
+            require(object_keys(source, ['certificateFile', 'privateKeyFile']), 'tls.source')
+            require(all(absolute(v) for v in source.values()), 'tls.source.paths')
+            require(source['certificateFile'] != source['privateKeyFile'], 'tls.source.distinct')
+        if 'acme' in tls:
+            acme = tls['acme']
+            require(object_keys(acme, ['email', 'challenge', 'webroot']), 'tls.acme')
+            require(text(acme['email'], r'[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}'), 'tls.acme.email')
+            require(acme['challenge'] == 'webroot', 'tls.acme.challenge')
+            require(absolute(acme['webroot']) and acme['webroot'].startswith(ingress['ownershipRoot'] + '/'),
+                    'tls.acme.webroot')
+            require(bind['mode'] == 'docker_gateway', 'tls.acme.topology')
+            require('publicAddresses' in ingress, 'tls.acme.publicAddresses')
+            require(text(ingress['serverName'], r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}'),
+                    'tls.acme.hostname')
+            require(ingress['serverName'] != ingress['foreignServerName'], 'tls.acme.distinct-hostname')
+            # Issuance owns its output. It must never overwrite an external reuse source.
+            require('source' not in tls, 'tls.source-or-acme')
+    if 'reviewerCredential' in e:
+        credential = e['reviewerCredential']
+        require(object_keys(credential, ['sourceKeyFile']) and absolute(credential['sourceKeyFile']),
+                'reviewerCredential')
     require(text(e.get('reviewCheckName', 'chatgpt-review'), r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}'), 'reviewCheckName')
     links = e['compatibilityLinks']
     require(isinstance(links, dict) and len(links) <= 8, 'compatibilityLinks')
@@ -170,11 +206,30 @@ def compile_inputs(c):
         'relay_nginx_server_private_key_file': '/etc/letsencrypt/live/' + ingress['serverName'] + '/privkey.pem',
         'relay_docker_nginx_fragment': ingress['ownershipRoot'] + '/nginx-conf/' + ns + '.conf',
         'relay_docker_nginx_projection_root': ingress['ownershipRoot'] + '/letsencrypt/' + ns + '/' + ingress['serverName'],
-        'relay_tls_acme_hostname': ingress['serverName'], 'relay_tls_acme_admitted_ip': target['host'],
+        'relay_tls_acme_hostname': ingress['serverName'],
+        # SSH transport is never a DNS/ACME assertion. Old install-only inputs
+        # remain valid; new issuance requires explicit public addresses.
+        'relay_tls_public_addresses': ingress.get('publicAddresses', []),
+        'relay_tls_acme_admitted_ip': '',
         'relay_nginx_manage': False, 'relay_docker_nginx_manage': False, 'relay_docker_nginx_service_enabled': False,
         'relay_review_check_name': e.get('reviewCheckName', 'chatgpt-review'),
         'relay_compatibility_links': [{'alias': k, 'target': v} for k, v in e['compatibilityLinks'].items()],
     }
+    tls = e.get('tls')
+    result['relay_tls_allow_legacy_lineage'] = tls is None
+    if tls is not None:
+        pair = tls.get('source', {'certificateFile': config + '/certs/server-fullchain.pem',
+                                 'privateKeyFile': config + '/certs/server-private-key.pem'})
+        result['relay_nginx_server_certificate_file'] = pair['certificateFile']
+        result['relay_nginx_server_private_key_file'] = pair['privateKeyFile']
+    acme = (tls or {}).get('acme', {})
+    result.update({
+        'relay_tls_acme_method': acme.get('challenge', 'webroot'),
+        'relay_tls_acme_email': acme.get('email', ''),
+        'relay_tls_acme_webroot': acme.get('webroot', ''),
+        'relay_tls_acme_configured': bool(acme),
+        'relay_reviewer_credential_source_file': e.get('reviewerCredential', {}).get('sourceKeyFile', ''),
+    })
     instance = e.get('instance')
     result['relay_reviewer_bind_port'] = instance['reviewerPort'] if instance else 8787
     result['relay_reviewer_relay_enabled'] = instance['publicationEnabled'] if instance else True
