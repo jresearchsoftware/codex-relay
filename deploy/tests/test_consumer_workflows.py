@@ -182,20 +182,27 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 os.setuid(65534)
 
             child_options = {'preexec_fn': drop_privileges} if os.geteuid() == 0 else {}
+            node = NODE
             if child_options:
-                unreadable = subprocess.run([NODE, '-e', 'require("node:fs").readFileSync(process.argv[1])', str(manifest)],
+                # The selected toolchain may live below a private owner home.
+                # Stage its executable in this fixture without widening host
+                # permissions, so denial proves the manifest boundary itself.
+                node = str(install / 'node')
+                shutil.copyfile(NODE, node)
+                Path(node).chmod(0o755)
+                unreadable = subprocess.run([node, '-e', 'require("node:fs").readFileSync(process.argv[1])', str(manifest)],
                                             text=True, capture_output=True, **child_options)
                 self.assertNotEqual(unreadable.returncode, 0, 'Fixture must deny the restricted manifest')
                 self.assertIn('EACCES', unreadable.stderr)
 
             def execute(value, overrides=None):
                 _, step = control_step(value)
-                code = javascript(step).replace('/opt/codex-relay', install.as_posix())
+                code = javascript(step).replace('/opt/codex-relay', install.as_posix()).replace('/usr/bin/node', node)
                 environment = {**os.environ, 'EXPECTED_RELAY_HEAD': HEAD, 'GITHUB_SHA': HEAD,
                                'RECOVERY_OPERATION': 'inspect', 'RECOVERY_RUN_ID': '99',
                                'RECOVERY_ATTEMPT_ID': 'run-99', 'RECOVERY_AUTHORIZATION_ID': '',
                                **(overrides or {})}
-                return subprocess.run([NODE, '--input-type=module', '-e', code],
+                return subprocess.run([node, '--input-type=module', '-e', code],
                                       env=environment, text=True, capture_output=True, **child_options)
 
             started = execute(self.routing)
