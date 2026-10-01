@@ -22,6 +22,8 @@ The [validator and compiler](config.py) define configuration version 1:
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
 | `environment.tls.acme` | Optional contact and HTTP-01 webroot for the admitted shared Docker ingress |
 | `environment.reviewerCredential.sourceKeyFile` | Optional existing owner-provisioned Reviewer App private-key reference |
+| `environment.writerCredential.sourceKeyFile` | Optional existing owner-provisioned Writer App private-key reference |
+| `environment.codexCredential.sourceTokenFile` | Optional existing owner-provisioned Codex access-token reference |
 
 Configuration contains literal data and secret **references**, never private
 keys, tokens, templates, commands or backend variables. Unknown fields,
@@ -123,6 +125,8 @@ implicitly activates Reviewer, registers runners or enables publication.
 | `tls-dry-run` | `--authorize-tls-dry-run` | Prepare CA if absent and qualify the configured shared-ingress HTTP-01 path against ACME staging |
 | `tls-issue` | `--authorize-tls-issue` | Reuse a valid pair, or issue after a matching successful dry run and publish protected managed files |
 | `reviewer-credentials` | `--authorize-reviewer-credentials` | Stage only the configured Reviewer App key; identical existing key is a no-op |
+| `writer-credentials` | `--authorize-writer-credentials` | Stage only the configured Writer App key as root-only material; identical existing key is a no-op |
+| `codex-credentials` | `--authorize-codex-credentials` | Stage only the configured Codex access token for its isolated runtime identity; identical existing token is a no-op |
 | `ingress` | `--authorize-ingress` | Validate and project TLS/CA, install the namespace's MCP fragment, test and reload the admitted shared ingress |
 
 For example, inspect readiness through the same public interface:
@@ -217,6 +221,42 @@ publication accepts identical protected material as a no-op; hardlinked or
 different credentials remain blocked. Unsupported atomic no-replace publication
 fails closed. Staging does not request Writer, Codex or runner secrets and does
 not activate Reviewer.
+
+Writer and Codex provisioning use their own explicit phases so that a later
+activation stage preserves an already qualified Reviewer key. Add only the
+needed protected source references under `environment`, for example:
+
+```json
+"writerCredential": {"sourceKeyFile": "/root/owner-input/writer-app.pem"},
+"codexCredential": {"sourceTokenFile": "/root/owner-input/codex-access-token"}
+```
+
+These references name existing files on the deployment target; do not put
+secret bytes in configuration or command arguments. Writer staging requires a
+single-link root:root 0600 source with root-owned ancestors that are not writable
+by other users. It validates this source before any destination mutation,
+verifies the installed App identity, and writes a root:root 0600 key. This
+Writer-only source restriction leaves Reviewer source admission unchanged.
+Codex staging accepts one nonempty printable token line of at most 16 KiB, with optional
+LF/CRLF, and writes only the namespace's fixed `codex-credentials/access-token`
+with its configured runtime user/group and mode 0600. The Codex source is a
+single-link root:root 0600 file; source ancestors are root-owned and not writable
+by other users. The destination's existing runtime-owned 0700 parent is a
+separate, explicitly validated boundary. Both phases preserve source bytes,
+use the installed exact-head operation lock, refuse active/recovery operations,
+publish without replacement, and leave different or unsafe existing material
+untouched. Provision Codex authentication before admitting runners or workers;
+the deployment operation lock does not serialize model execution. Neither phase
+rotates a credential, registers a runner, starts a model call or activates a
+service. Qualify the Writer's installed App identity and repository permissions
+through the fixed `relay-writer-app-qualification` helper after staging. Do not
+use the legacy all-credential interactive helper for a scoped provisioning step.
+
+`environment.codexTokenRequired: false` permits unauthenticated installation
+and staged Reviewer qualification only. The accepted launcher still requires
+the fixed access-token file and recreates an isolated home for every worker;
+the flag does not enable anonymous model calls or reuse an owner's interactive
+login. Token presence and metadata checks do not prove remote authentication.
 
 After separately authorized ingress and Reviewer activation, perform live
 server-side qualification and a final ordinary `post-check` with no unexpected

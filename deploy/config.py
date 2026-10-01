@@ -78,7 +78,7 @@ def validate(c, product_root):
     e = c['environment']
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
-        ['reviewCheckName', 'instance', 'tls', 'reviewerCredential']), 'environment')
+        ['reviewCheckName', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
     for key in ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup']:
         require(text(e[key], r'[a-z][a-z0-9-]{0,30}') and e[key] != 'root', key)
     r, g = e['runner'], e['generalRunner']
@@ -157,10 +157,11 @@ def validate(c, product_root):
             require(ingress['serverName'] != ingress['foreignServerName'], 'tls.acme.distinct-hostname')
             # Issuance owns its output. It must never overwrite an external reuse source.
             require('source' not in tls, 'tls.source-or-acme')
-    if 'reviewerCredential' in e:
-        credential = e['reviewerCredential']
-        require(object_keys(credential, ['sourceKeyFile']) and absolute(credential['sourceKeyFile']),
-                'reviewerCredential')
+    for name, field in [('reviewerCredential', 'sourceKeyFile'), ('writerCredential', 'sourceKeyFile'),
+                        ('codexCredential', 'sourceTokenFile')]:
+        if name in e:
+            credential = e[name]
+            require(object_keys(credential, [field]) and absolute(credential[field]), name)
     require(text(e.get('reviewCheckName', 'chatgpt-review'), r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}'), 'reviewCheckName')
     links = e['compatibilityLinks']
     require(isinstance(links, dict) and len(links) <= 8, 'compatibilityLinks')
@@ -229,6 +230,8 @@ def compile_inputs(c):
         'relay_tls_acme_webroot': acme.get('webroot', ''),
         'relay_tls_acme_configured': bool(acme),
         'relay_reviewer_credential_source_file': e.get('reviewerCredential', {}).get('sourceKeyFile', ''),
+        'relay_writer_credential_source_file': e.get('writerCredential', {}).get('sourceKeyFile', ''),
+        'relay_codex_credential_source_file': e.get('codexCredential', {}).get('sourceTokenFile', ''),
     })
     instance = e.get('instance')
     result['relay_reviewer_bind_port'] = instance['reviewerPort'] if instance else 8787

@@ -38,7 +38,7 @@ credential markers; it does not certify absence of private knowledge or secrets.
 Qualification uses temporary fixtures/keys and loopback mock GitHub; Cargo can
 download locked build dependencies. No model calls or live GitHub writes occur.
 
-The [Public CI workflow](.github/workflows/ci.yml) runs these same candidate
+The [Public CI workflow](.github/workflows/relay-exact-head-validation.yml) runs these same candidate
 commands for pull requests targeting `main` and pushes to `main`. Its stable
 check name is `Candidate checks`. PR runs check out the exact PR head; push runs
 check out the pushed commit. The whitespace step also checks the committed diff
@@ -51,6 +51,10 @@ SHAs, checkout credentials are not persisted, and workflow permissions are
 limited to read-only repository contents. Public CI needs no configured secrets,
 Relay installation or consumer state. Its candidate checks do not run the
 separate [deployment qualification](deploy/README.md#qualification).
+
+The repository's separate [self-dogfood control workflows](docs/self-dogfood-workflows.md)
+use an accepted installed Relay revision. Their presence does not qualify public
+runner activation or permit candidate code on persistent privileged runners.
 
 For one focused suite, retain the test consumer preload:
 

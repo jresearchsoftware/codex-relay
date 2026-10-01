@@ -11,6 +11,14 @@ product; the admitted task defines the goal and allowed external actions.
 Read [architecture](docs/architecture.md) before changing orchestration or a
 trust boundary, and the affected component contract before changing its API.
 
+All human-readable GitHub publication for this repository is in English,
+including Issue and PR titles/bodies, Codex Outcomes and handoffs, ordinary
+comments, and native Reviewer APPROVE / REQUEST_CHANGES bodies. Interactive
+owner/ChatGPT discussion and review previews may use the owner's preferred
+language; do not copy that language into GitHub publication. Literal evidence,
+logs, identifiers and quoted external text may retain their original language
+when necessary.
+
 ## Task identity and startup rename
 
 `Task N` is canonical GitHub Issue `#N`, not a separately allocated number.

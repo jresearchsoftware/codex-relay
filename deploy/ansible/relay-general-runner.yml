@@ -68,6 +68,62 @@
         argv: ['{{ relay_reviewer_readiness_path }}']
       changed_when: false
 
+    # codexTokenRequired=false permits installation before credentials exist.
+    # It cannot qualify an automatic runner: the launcher always needs this
+    # file. Inspect metadata/readability only; do not authenticate or read bytes.
+    - name: Require the fixed Codex credential namespace before automatic execution
+      ansible.builtin.assert:
+        that:
+          - relay_codex_access_token_root == (relay_config_root ~ '/codex-credentials')
+          - relay_codex_access_token_file == (relay_codex_access_token_root ~ '/access-token')
+        fail_msg: GENERAL_RUNNER_CODEX_CREDENTIAL_NAMESPACE_INVALID
+
+    - name: Inspect Codex credential directory without reading credentials
+      ansible.builtin.stat:
+        path: '{{ relay_codex_access_token_root }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: general_runner_codex_credential_directory
+
+    - name: Require the isolated Codex credential directory
+      ansible.builtin.assert:
+        that:
+          - general_runner_codex_credential_directory.stat.exists
+          - general_runner_codex_credential_directory.stat.isdir
+          - not general_runner_codex_credential_directory.stat.islnk
+          - general_runner_codex_credential_directory.stat.pw_name == relay_codex_user
+          - general_runner_codex_credential_directory.stat.gr_name == relay_codex_group
+          - general_runner_codex_credential_directory.stat.mode == '0700'
+        fail_msg: GENERAL_RUNNER_CODEX_CREDENTIAL_DIRECTORY_INVALID
+
+    - name: Inspect Codex token metadata without reading credentials
+      ansible.builtin.stat:
+        path: '{{ relay_codex_access_token_file }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: general_runner_codex_token
+
+    - name: Require a provisioned Codex token before enabling automatic execution
+      ansible.builtin.assert:
+        that:
+          - general_runner_codex_token.stat.exists
+          - general_runner_codex_token.stat.isreg
+          - not general_runner_codex_token.stat.islnk
+          - general_runner_codex_token.stat.pw_name == relay_codex_user
+          - general_runner_codex_token.stat.gr_name == relay_codex_group
+          - general_runner_codex_token.stat.mode == '0600'
+          - general_runner_codex_token.stat.nlink == 1
+          - general_runner_codex_token.stat.size > 0
+          - general_runner_codex_token.stat.size <= 16384
+        fail_msg: GENERAL_RUNNER_CODEX_CREDENTIAL_NOT_PROVISIONED_OR_UNSAFE
+
+    - name: Require the Codex runtime identity to read its fixed token
+      ansible.builtin.command:
+        argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', '/usr/bin/test', '-r', '{{ relay_codex_access_token_file }}']
+      changed_when: false
+
     - name: Inspect the existing production registration without reading credentials
       ansible.builtin.slurp:
         src: '{{ relay_install_root }}/runner/.runner'
