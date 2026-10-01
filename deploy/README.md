@@ -184,7 +184,11 @@ The webroot must be inside the declared ingress ownership root.
 Bootstrap checks effective nginx routing, refuses conflicting or ambiguous
 routes, installs only a temporary namespace-owned HTTP challenge fragment,
 tests/reloads nginx and probes a fresh challenge through every admitted public
-address before invoking Debian Certbot. Certbot uses isolated account/state
+address before invoking Debian Certbot. Successful nginx validation may report
+nonfatal warnings from existing cohosted virtual hosts; bootstrap does not
+rewrite their configuration to silence those warnings. Nonzero validation
+exits and conflicting server-name diagnostics still block, as do ambiguous
+effective routes and failed public challenge probes. Certbot uses isolated account/state
 directories, pinned Let's Encrypt endpoints and no directory hooks; ambiguous
 inherited configuration is rejected. A global `/etc/letsencrypt/cli.ini` is
 admitted only when its protected bytes exactly match the known Debian package

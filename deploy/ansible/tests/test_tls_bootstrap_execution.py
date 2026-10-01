@@ -219,11 +219,57 @@ class BootstrapExecutionTests(unittest.TestCase):
         self.foreign.write_bytes(self.foreign_original)
 
     def test_nginx_conflicting_name_warning_with_zero_exit_is_rejected(self):
-        completed = subprocess.CompletedProcess(['docker'], 0, '',
-                                                'nginx: [warn] conflicting server name ignored')
-        with patch.object(TLS.subprocess, 'run', return_value=completed):
-            with self.assertRaisesRegex(TLS.BootstrapError, 'VALIDATION_WARNING'):
-                TLS.execute(['docker', 'exec', 'fixture', 'nginx', '-t'])
+        for option in ('-t', '-T'):
+            for hostname in ('relay.example.invalid', 'foreign.example.invalid'):
+                for stream in ('stdout', 'stderr'):
+                    with self.subTest(option=option, hostname=hostname, stream=stream):
+                        message = f'nginx: [warn] conflicting server name "{hostname}" ignored'
+                        completed = subprocess.CompletedProcess(['docker'], 0,
+                            message if stream == 'stdout' else '', message if stream == 'stderr' else '')
+                        with patch.object(TLS.subprocess, 'run', return_value=completed):
+                            with self.assertRaisesRegex(TLS.BootstrapError, 'VALIDATION_WARNING'):
+                                TLS.execute(['docker', 'exec', 'fixture', 'nginx', option])
+
+    def test_nonfatal_cohost_warnings_allow_scoped_dry_run_and_issuance(self):
+        # Exercise the real subprocess diagnostic gate inside the lifecycle.
+        # Existing foreign TLS warnings do not authorize rewriting its config.
+        diagnostics = (
+            'nginx: [warn] the "listen ... http2" directive is deprecated, use the "http2" directive instead in /etc/nginx/conf.d/foreign.conf:33\n'
+            'nginx: [warn] protocol options redefined for 0.0.0.0:443 in /etc/nginx/conf.d/foreign.conf:78\n'
+            'nginx: [warn] "ssl_stapling" ignored, no OCSP responder URL in the certificate "/etc/owner-tls/foreign.pem"\n'
+            'nginx: configuration file /etc/nginx/nginx.conf test is successful\n')
+        real_execute = TLS.execute
+        validations = []
+        def execute(argv):
+            if 'nginx' in argv and argv[-1] in ('-t', '-T'):
+                self.commands.append(argv)
+                validations.append(argv[-1])
+                effective = self.foreign.read_text() if argv[-1] == '-T' else ''
+                completed = subprocess.CompletedProcess(argv, 0, effective, diagnostics)
+                with patch.object(TLS.subprocess, 'run', return_value=completed):
+                    return real_execute(argv)
+            return self.execute(argv)
+        self.assertEqual(self.simulate(execute=execute)['status'], 'TLS_ACME_DRY_RUN_PASSED')
+        self.assertEqual(self.marker()['status'], 'TLS_ACME_DRY_RUN_PASSED')
+        self.assert_preserved()
+        with patch.object(TLS, 'publish_certificate') as publish:
+            self.assertEqual(self.simulate(dict(self.config, phase='issue'), execute=execute)['status'],
+                             'TLS_CERTIFICATE_KEY_VALIDATED')
+            publish.assert_called_once()
+        self.assertEqual(validations.count('-T'), 2)
+        self.assertEqual(validations.count('-t'), 6)
+        self.assertEqual(len([command for command in self.commands if 'certonly' in command]), 2)
+        self.assertEqual(self.marker()['status'], 'TLS_ACME_DRY_RUN_INVALIDATED')
+        self.assert_preserved()
+
+    def test_nonfatal_warning_cannot_hide_failed_nginx_validation(self):
+        for option in ('-t', '-T'):
+            with self.subTest(option=option):
+                completed = subprocess.CompletedProcess(['docker'], 1, '',
+                    'nginx: [warn] protocol options redefined for 0.0.0.0:443')
+                with patch.object(TLS.subprocess, 'run', return_value=completed):
+                    with self.assertRaisesRegex(TLS.BootstrapError, 'TLS_SUBPROCESS_FAILED'):
+                        TLS.execute(['docker', 'exec', 'fixture', 'nginx', option])
 
     def test_effective_included_non_conf_wildcard_is_not_overridden(self):
         self.foreign.write_text('include /etc/nginx/foreign-vhost.snippet;\n')
