@@ -60,6 +60,7 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
         self.source = self.root / 'source.pem'
         self.source.write_bytes(self.keys[0])
         self.source.chmod(0o600)
+        os.chown(self.source, 0, 0)
         self.credentials = self.root / (self.ROLE + '-credentials')
         self.credentials.mkdir(mode=0o750)
         os.chown(self.credentials, 0, self.group.gr_gid)
@@ -100,6 +101,8 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
 
     def test_stages_only_selected_role_and_is_idempotent_without_changing_source(self):
         before = self.source.stat()
+        self.assertEqual((before.st_uid, before.st_gid, stat.S_IMODE(before.st_mode)),
+                         (0, 0, 0o600))
         other_role = 'reviewer' if self.ROLE == 'writer' else 'writer'
         unrelated = self.root / (other_role + '-key-do-not-touch')
         unrelated.write_bytes(b'unrelated-private-fixture')
@@ -124,6 +127,24 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
         self.args.check = True
         self.assertEqual(self.run_stage()['status'], self.ROLE.upper() + '_CREDENTIAL_STAGE_PLANNED')
         self.assert_absent()
+
+    def test_group_readable_source_is_supported_only_for_reviewer(self):
+        self.source.chmod(0o640)
+        os.chown(self.source, 0, grp.getgrnam('nogroup').gr_gid)
+        before = self.source.stat()
+        if self.ROLE == 'reviewer':
+            self.assertTrue(self.run_stage()['changed'])
+            self.assertEqual(self.destination.read_bytes(), self.keys[0])
+        else:
+            with self.assertRaisesRegex(ValueError, 'file-metadata'):
+                self.run_stage()
+            self.assert_absent()
+        after = self.source.stat()
+        self.assertEqual(self.source.read_bytes(), self.keys[0])
+        self.assertEqual((after.st_ino, after.st_uid, after.st_gid, after.st_mode,
+                          after.st_mtime_ns, after.st_ctime_ns),
+                         (before.st_ino, before.st_uid, before.st_gid, before.st_mode,
+                          before.st_mtime_ns, before.st_ctime_ns))
 
     def test_abrupt_exit_after_durable_publication_retries_without_cleanup(self):
         # Run the real CLI and kill the process immediately after its first
@@ -408,6 +429,40 @@ class WriterCredentialStagingTests(ReviewerCredentialStagingTests):
     ROLE = 'writer'
     GROUP = 'root'
     MODE = 0o600
+
+    def test_unsafe_writer_source_is_rejected_without_mutation_in_all_paths(self):
+        def metadata(path):
+            info = path.stat()
+            return (info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+                    info.st_mode, info.st_nlink, info.st_size,
+                    info.st_mtime_ns, info.st_ctime_ns)
+
+        for source_group, source_mode in [(0, 0o640), (65534, 0o640), (65534, 0o600)]:
+            for check in [False, True]:
+                for existing in [False, True]:
+                    with self.subTest(group=source_group, mode=oct(source_mode),
+                                      check=check, existing=existing):
+                        self.args.check = check
+                        self.source.chmod(source_mode)
+                        os.chown(self.source, 0, source_group)
+                        self.destination.unlink(missing_ok=True)
+                        if existing:
+                            self.destination.write_bytes(self.keys[0])
+                            self.destination.chmod(0o600)
+                            os.chown(self.destination, 0, 0)
+                        files = [self.source, self.env] + ([self.destination] if existing else [])
+                        before = {path: (path.read_bytes(), metadata(path)) for path in files}
+                        directory_before = metadata(self.credentials)
+                        result = subprocess.run(self.stage_command(), capture_output=True,
+                                                timeout=30, check=False)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertEqual(result.stdout, b'')
+                        self.assertEqual(result.stderr, b'WRITER_CREDENTIAL_STAGE_BLOCKED=file-metadata\n')
+                        self.assertEqual(before, {path: (path.read_bytes(), metadata(path)) for path in files})
+                        self.assertEqual(metadata(self.credentials), directory_before)
+                        self.assertEqual(sorted(path.name for path in self.credentials.iterdir()),
+                                         sorted(path.name for path in files if path != self.source))
+                        self.assertFalse(self.operation.exists())
 
     def test_writer_rejects_reviewer_group_or_group_readable_destination(self):
         self.args.group = 'nogroup'

@@ -69,7 +69,10 @@ def stage(args):
                 ProtectedPath(args.env_file) as env:
             env_raw, env_stamp = env.read({mode}, group=group, limit=8192)
             validate_env(env_raw, args.destination, args.app_id, args.installation_id)
-            raw, source_stamp = source.read({0o600, 0o640})
+            # Writer material must already be root-only at the source; a safe
+            # destination cannot undo group readability of an admitted key.
+            source_modes = {0o600} if role == 'writer' else {0o600, 0o640}
+            raw, source_stamp = source.read(source_modes, group=0 if role == 'writer' else None)
             validate_key(raw)
             present, _ = target.read({mode}, group=group, absent=True)
             source.recheck(source_stamp)

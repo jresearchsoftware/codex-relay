@@ -232,9 +232,12 @@ needed protected source references under `environment`, for example:
 ```
 
 These references name existing files on the deployment target; do not put
-secret bytes in configuration or command arguments. Writer staging validates
-the installed App identity and writes a root-owned 0600 key. Codex staging
-accepts one nonempty printable token line of at most 16 KiB, with optional
+secret bytes in configuration or command arguments. Writer staging requires a
+single-link root:root 0600 source with root-owned ancestors that are not writable
+by other users. It validates this source before any destination mutation,
+verifies the installed App identity, and writes a root:root 0600 key. This
+Writer-only source restriction leaves Reviewer source admission unchanged.
+Codex staging accepts one nonempty printable token line of at most 16 KiB, with optional
 LF/CRLF, and writes only the namespace's fixed `codex-credentials/access-token`
 with its configured runtime user/group and mode 0600. The Codex source is a
 single-link root:root 0600 file; source ancestors are root-owned and not writable
