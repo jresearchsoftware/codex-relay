@@ -147,7 +147,13 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
     monkeypatch.setattr(sys, 'argv', ['relay-deploy', '--config', str(installed['snapshot']),
                         '--phase', 'apply', '--local-reconcile', '--expected-installed-head', HEAD,
                         '--log-root', str(installed['base'] / 'logs')])
-    cli.run(cli.arguments())
+    # The public CLI normally exits its process with a restrictive mask. This
+    # in-process adapter test must not change later native filesystem fixtures.
+    previous_umask = os.umask(0o077)
+    try:
+        cli.run(cli.arguments())
+    finally:
+        os.umask(previous_umask)
     output = capsys.readouterr().out
     assert f'consumer_revision={CONSUMER_HEAD}' in output
     assert f'PRODUCTION_APPLY_VALIDATED={HEAD}' in output
