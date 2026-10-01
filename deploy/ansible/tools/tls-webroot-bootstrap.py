@@ -82,7 +82,13 @@ def execute(argv):
         raise BootstrapError('TLS_SUBPROCESS_FAILED') from error
     require(result.returncode == 0, 'TLS_SUBPROCESS_FAILED')
     if 'nginx' in argv and ('-t' in argv or '-T' in argv):
-        require(re.search(r'\[warn\]|conflicting server name', result.stdout + result.stderr,
+        # Shared ingress can have nonfatal diagnostics in foreign TLS vhosts
+        # (deprecated listen syntax, protocol options, or unavailable OCSP).
+        # This operation adds only an HTTP-01 fragment; it must not rewrite
+        # those vhosts merely to silence warnings. Keep failed validation and
+        # conflicting routes closed, alongside the effective hostname scan and
+        # public challenge probes below.
+        require(re.search(r'conflicting server name', result.stdout + result.stderr,
                           re.IGNORECASE) is None,
                 'TLS_INGRESS_VALIDATION_WARNING')
     return result.stdout
