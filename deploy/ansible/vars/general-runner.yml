@@ -2,7 +2,8 @@
 # The second instance on the existing production host. Never import these
 # overrides into production-local-apply.yml or the production runner enablement.
 relay_runner_name: '{{ relay_general_runner_name }}'
-relay_runner_registration_scope: repository
+relay_runner_registration_scope: '{{ relay_general_runner_registration_scope }}'
+relay_runner_registration_group: '{{ relay_general_runner_registration_group }}'
 relay_runner_user: '{{ relay_general_runner_user }}'
 relay_runner_group: '{{ relay_general_runner_user }}'
 relay_runner_root: '{{ relay_install_root }}/general-runner'

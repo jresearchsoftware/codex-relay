@@ -18,7 +18,7 @@ User={{ relay_runner_user }}
 Group={{ relay_runner_group }}
 EnvironmentFile=-{{ relay_config_root }}/relay.env
 Environment=HOME={{ relay_runner_home }}
-Environment=RUNNER_REGISTRATION=owner-mediated-repository-token
+Environment=RUNNER_REGISTRATION=owner-mediated-{{ relay_runner_registration_scope }}-token
 Environment=RUNNER_LABELS={{ relay_runner_labels | join(',') }}
 Environment=RUNNER_ALLOW_RUNASROOT=0
 WorkingDirectory={{ relay_runner_root }}

@@ -17,7 +17,13 @@
           - relay_production_operation_phase == 'general-runner-enable'
           - relay_production_exact_head is match('^[0-9a-f]{40}$')
           - relay_runner_name == relay_general_runner_name
-          - relay_runner_registration_scope == 'repository'
+          - relay_runner_registration_scope == relay_general_runner_registration_scope
+          - relay_runner_registration_scope in ['repository', 'organization']
+          - >-
+            relay_runner_registration_scope != 'organization' or
+            (relay_runner_registration_group == relay_general_runner_registration_group and
+             relay_runner_registration_group is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$') and
+             relay_runner_registration_group | lower != relay_production_runner_registration_group | lower)
           - relay_runner_user == relay_general_runner_user
           - relay_runner_group == relay_general_runner_user
           - relay_runner_root == (relay_install_root ~ '/general-runner')
@@ -175,10 +181,15 @@
       register: general_runner_marker
       when: relay_production_operation_phase == 'general-runner-enable'
 
-    - name: Require repository registration for the exact general runner
+    - name: Require the configured registration scope for the exact general runner
       ansible.builtin.assert:
         that:
-          - general_marker.gitHubUrl == ('https://github.com/' ~ relay_github_repository)
+          # Local registration binds scope and identity; actual group membership
+          # and workflow/ref restrictions still require GitHub-side owner proof.
+          - >-
+            general_marker.gitHubUrl ==
+            (('https://github.com/' ~ relay_github_repository.split('/')[0]) if relay_runner_registration_scope == 'organization'
+             else ('https://github.com/' ~ relay_github_repository))
           - general_marker.agentName == relay_runner_name
           - general_marker.workFolder == relay_runner_work_root
         fail_msg: GENERAL_RUNNER_REGISTRATION_INVALID
