@@ -135,6 +135,40 @@ class GeneralRunnerTests(unittest.TestCase):
             self.assertNotIn('debian-codexexp-01', text)
             self.assertNotIn('Stage-A', text)
 
+    def test_general_enable_binds_the_configured_production_registration(self):
+        play = yaml.safe_load((ROOT / 'relay-general-runner.yml').read_text())[0]
+        contract = next(task for task in play['tasks']
+                        if task['name'] == 'Require unchanged organization production registration')
+        for production_name in ('relay-production-relay', 'example-production-runner'):
+            with self.subTest(production_name=production_name):
+                values = {
+                    'relay_github_repository': 'another-owner/consumer',
+                    'relay_production_runner_name': production_name,
+                    'relay_runner_name': 'example-general-runner',
+                    'relay_state_root': '/var/lib/another-relay',
+                }
+                marker = {
+                    'gitHubUrl': 'https://github.com/another-owner',
+                    'agentName': production_name,
+                    'workFolder': '/var/lib/another-relay/runner/work',
+                }
+                self.assertTrue(assertions_pass(contract, {**values, 'production_marker': marker}))
+                mismatches = (
+                    {'agentName': 'wrong-production-runner'},
+                    {'agentName': values['relay_runner_name']},
+                    {'gitHubUrl': 'https://github.com/another-owner/consumer'},
+                    {'gitHubUrl': 'https://github.com/other-owner'},
+                    {'workFolder': '/var/lib/another-relay/general-runner/work'},
+                    {'workFolder': '/var/lib/other-relay/runner/work'},
+                )
+                if production_name != 'relay-production-relay':
+                    mismatches += ({'agentName': 'relay-production-relay'},)
+                for mismatch in mismatches:
+                    with self.subTest(mismatch=mismatch):
+                        self.assertFalse(assertions_pass(contract, {
+                            **values, 'production_marker': {**marker, **mismatch},
+                        }))
+
 
 
 

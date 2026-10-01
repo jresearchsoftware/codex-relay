@@ -26,7 +26,7 @@
   ansible.builtin.set_fact:
     relay_production_check_release_stable: >-
       {{
-        relay_production_final_paths.results | default([]) | length == 11 and
+        relay_production_final_paths.results | default([]) | length == 13 and
         relay_production_final_paths.results[0].stat.exists | default(false) and
         relay_production_final_paths.results[0].stat.islnk | default(false) and
         not relay_production_final_paths.results[0].stat.isreg | default(false) and
@@ -48,7 +48,7 @@
   ansible.builtin.set_fact:
     relay_production_check_runtime_stable: >-
       {{
-        relay_production_final_paths.results | default([]) | length == 11 and
+        relay_production_final_paths.results | default([]) | length == 13 and
         relay_production_final_paths.results[2].stat.exists | default(false) and
         relay_production_final_paths.results[2].stat.isreg | default(false) and
         not relay_production_final_paths.results[2].stat.islnk | default(false) and
@@ -70,6 +70,18 @@
         not relay_production_final_paths.results[10].stat.islnk | default(false) and
         relay_production_final_paths.results[10].stat.pw_name | default('') == 'root' and
         relay_production_final_paths.results[10].stat.mode | default('') == '0755' and
+        relay_production_final_paths.results[11].stat.exists | default(false) and
+        relay_production_final_paths.results[11].stat.isreg | default(false) and
+        not relay_production_final_paths.results[11].stat.islnk | default(false) and
+        relay_production_final_paths.results[11].stat.pw_name | default('') == 'root' and
+        relay_production_final_paths.results[11].stat.gr_name | default('') == 'root' and
+        relay_production_final_paths.results[11].stat.mode | default('') == '0750' and
+        relay_production_final_paths.results[12].stat.exists | default(false) and
+        relay_production_final_paths.results[12].stat.isreg | default(false) and
+        not relay_production_final_paths.results[12].stat.islnk | default(false) and
+        relay_production_final_paths.results[12].stat.pw_name | default('') == 'root' and
+        relay_production_final_paths.results[12].stat.gr_name | default('') == 'root' and
+        relay_production_final_paths.results[12].stat.mode | default('') == '0440' and
         relay_production_final_services.results[0].stdout | trim in ['active', 'inactive', 'failed'] and
         relay_production_final_services.results[1].stdout | trim in ['enabled', 'enabled-runtime', 'disabled'] and
         relay_production_final_services.results[2].stdout | trim in ['active', 'inactive', 'failed'] and
@@ -122,7 +134,7 @@
   ansible.builtin.set_fact:
     relay_production_check_writer_stable: >-
       {{
-        relay_production_final_paths.results | default([]) | length == 11 and
+        relay_production_final_paths.results | default([]) | length == 13 and
         relay_production_final_paths.results[8].stat.exists | default(false) and
         relay_production_final_paths.results[8].stat.isreg | default(false) and
         not relay_production_final_paths.results[8].stat.islnk | default(false) and
