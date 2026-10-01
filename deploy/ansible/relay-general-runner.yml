@@ -77,7 +77,7 @@
       ansible.builtin.assert:
         that:
           - production_marker.gitHubUrl == ('https://github.com/' ~ relay_github_repository.split('/')[0])
-          - production_marker.agentName == 'relay-production-relay'
+          - production_marker.agentName == relay_production_runner_name
           - production_marker.workFolder == (relay_state_root ~ '/runner/work')
         fail_msg: GENERAL_RUNNER_PRODUCTION_REGISTRATION_INVALID
       vars:

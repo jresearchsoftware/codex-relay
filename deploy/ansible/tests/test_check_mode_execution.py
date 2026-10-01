@@ -1,5 +1,5 @@
 """Backend check-mode execution lessons extracted from the consumer workflow."""
-import json, os, shutil, subprocess, tempfile, unittest
+import copy, json, os, shutil, subprocess, tempfile, unittest
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[3]
@@ -208,26 +208,34 @@ class DeploymentCheckTests(unittest.TestCase):
                     "mode": mode,
                 }
 
-            final_paths = [
-                {
-                    "stat": {
-                        "exists": True,
-                        "isreg": False,
-                        "islnk": True,
-                        "lnk_source": release_path.as_posix(),
-                        "pw_name": "root",
-                    }
+            path_observations = {
+                "{{ relay_install_root }}/current": {
+                    "exists": True,
+                    "isreg": False,
+                    "islnk": True,
+                    "lnk_source": release_path.as_posix(),
+                    "pw_name": "root",
                 },
-                {"stat": regular("0640")},
-                {"stat": regular("0750")},
-                {"stat": regular("0640")},
-                {"stat": regular()},
-                {"stat": regular()},
-                {"stat": {"exists": False}},
-                {"stat": {"exists": False}},
-                {"stat": regular("0750")},
-                {"stat": regular("0750")},
-                {"stat": regular("0755")},
+                "{{ relay_install_root }}/current/artifact-manifest.json": regular("0640"),
+                "{{ relay_install_root }}/current/bin/reviewer-mcp-http": regular("0750"),
+                "{{ relay_config_root }}/reviewer-mcp.json": regular("0640"),
+                "{{ relay_reviewer_service_unit_path }}": regular(),
+                "{{ relay_runner_service_unit_path }}": regular(),
+                "{{ relay_reviewer_activation_marker }}": {"exists": False},
+                "{{ relay_reviewer_recovery_off_marker }}": {"exists": False},
+                "{{ relay_writer_helper_path }}": regular("0750"),
+                "{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs": regular("0750"),
+                "{{ relay_codex_launcher_path }}": regular("0755"),
+                "{{ relay_production_local_apply_helper_path }}": regular("0750"),
+                "{{ relay_production_local_apply_sudoers_file }}": regular("0440"),
+            }
+            site = yaml.safe_load((ROOT / "deploy" / "ansible" / "site.yml").read_text())
+            path_task = next(task for play in site for task in play.get("post_tasks", [])
+                             if task.get("register") == "relay_production_final_paths")
+            # Match the production observation producer, not a stale fixture count.
+            final_paths = [
+                {"stat": path_observations[item]}
+                for item in path_task["loop"]
             ]
             services = {
                 "results": [
@@ -258,7 +266,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "relay_production_final_writer_entrypoint": writer_entrypoint,
             }
 
-            def run_fixture(recovery=False, manifest_head=HEAD):
+            def run_fixture(recovery=False, manifest_head=HEAD, extra_vars=None):
                 variables = dict(common_vars)
                 variables["relay_production_operation_recovery_required"] = recovery
                 variables["relay_production_recovery_check_classified"] = recovery
@@ -266,6 +274,7 @@ class DeploymentCheckTests(unittest.TestCase):
                     "schemaVersion": "1.0",
                     "commit": manifest_head,
                 }
+                variables.update(extra_vars or {})
                 playbook_path = fixture_root / "check-validation.yml"
                 rendered_vars = "\n".join(
                     f"    {name}: {json.dumps(value)}" for name, value in variables.items()
@@ -312,3 +321,35 @@ class DeploymentCheckTests(unittest.TestCase):
             wrong_head = run_fixture(manifest_head="b" * 40)
             self.assertEqual(wrong_head.returncode, 0, wrong_head.stderr or wrong_head.stdout)
             self.assertNotIn(f"PRODUCTION_CHECK_VALIDATED={HEAD};state=stable-no-op;recovery=none", wrong_head.stdout)
+
+            for item, change in [
+                ("{{ relay_install_root }}/current/bin/reviewer-mcp-http", {"exists": False}),
+                ("{{ relay_writer_helper_path }}", {"islnk": True}),
+                ("{{ relay_production_local_apply_helper_path }}", {"exists": False}),
+                ("{{ relay_production_local_apply_helper_path }}", {"isreg": False}),
+                ("{{ relay_production_local_apply_helper_path }}", {"islnk": True}),
+                ("{{ relay_production_local_apply_helper_path }}", {"pw_name": "runner"}),
+                ("{{ relay_production_local_apply_helper_path }}", {"gr_name": "runner"}),
+                ("{{ relay_production_local_apply_helper_path }}", {"mode": "0770"}),
+                ("{{ relay_production_local_apply_sudoers_file }}", {"exists": False}),
+                ("{{ relay_production_local_apply_sudoers_file }}", {"islnk": True}),
+                ("{{ relay_production_local_apply_sudoers_file }}", {"pw_name": "runner"}),
+                ("{{ relay_production_local_apply_sudoers_file }}", {"gr_name": "runner"}),
+                ("{{ relay_production_local_apply_sudoers_file }}", {"mode": "0660"}),
+            ]:
+                with self.subTest(item=item, change=change):
+                    unsafe_paths = copy.deepcopy(final_paths)
+                    unsafe_paths[path_task["loop"].index(item)]["stat"].update(change)
+                    unsafe = run_fixture(extra_vars={"relay_production_final_paths": {"results": unsafe_paths}})
+                    self.assertEqual(unsafe.returncode, 0, unsafe.stderr or unsafe.stdout)
+                    self.assertNotIn(f"PRODUCTION_CHECK_VALIDATED={HEAD};state=stable-no-op;recovery=none", unsafe.stdout)
+
+            for extra_vars in [
+                {"relay_production_final_paths": {"results": final_paths[:-1]}},
+                {"relay_production_final_writer_entrypoint": writer_entrypoint.replace("/current/", f"/releases/{HEAD}/")},
+                {"relay_reviewer_bind_address": "10.0.0.6"},
+            ]:
+                with self.subTest(extra_vars=extra_vars):
+                    drift = run_fixture(extra_vars=extra_vars)
+                    self.assertEqual(drift.returncode, 0, drift.stderr or drift.stdout)
+                    self.assertNotIn(f"PRODUCTION_CHECK_VALIDATED={HEAD};state=stable-no-op;recovery=none", drift.stdout)
