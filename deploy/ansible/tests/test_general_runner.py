@@ -169,6 +169,52 @@ class GeneralRunnerTests(unittest.TestCase):
                             **values, 'production_marker': {**marker, **mismatch},
                         }))
 
+    def test_general_enable_requires_local_codex_credentials_even_when_install_allows_missing(self):
+        tasks = yaml.safe_load((ROOT / 'relay-general-runner.yml').read_text())[0]['tasks']
+        by_name = {task['name']: task for task in tasks}
+        token_gate = by_name['Require a provisioned Codex token before enabling automatic execution']
+        directory_gate = by_name['Require the isolated Codex credential directory']
+        values = {**instance(True), 'relay_codex_token_required': False}
+        directory = {'exists': True, 'isdir': True, 'islnk': False,
+                     'pw_name': values['relay_codex_user'], 'gr_name': values['relay_codex_group'],
+                     'mode': '0700'}
+        token = {'exists': True, 'isreg': True, 'islnk': False,
+                 'pw_name': values['relay_codex_user'], 'gr_name': values['relay_codex_group'],
+                 'mode': '0600', 'nlink': 1, 'size': 128}
+        self.assertTrue(assertions_pass(token_gate, {**values, 'general_runner_codex_token': {'stat': token}}))
+        self.assertTrue(assertions_pass(directory_gate, {
+            **values, 'general_runner_codex_credential_directory': {'stat': directory},
+        }))
+        for mismatch in ({'exists': False}, {'isreg': False}, {'islnk': True}, {'pw_name': 'root'},
+                         {'gr_name': 'root'}, {'mode': '0640'}, {'nlink': 2}, {'size': 0}, {'size': 16385}):
+            with self.subTest(token=mismatch):
+                self.assertFalse(assertions_pass(token_gate, {
+                    **values, 'general_runner_codex_token': {'stat': {**token, **mismatch}},
+                }))
+        for mismatch in ({'exists': False}, {'isdir': False}, {'islnk': True},
+                         {'pw_name': 'root'}, {'gr_name': 'root'}, {'mode': '0750'}):
+            with self.subTest(directory=mismatch):
+                self.assertFalse(assertions_pass(directory_gate, {
+                    **values, 'general_runner_codex_credential_directory': {'stat': {**directory, **mismatch}},
+                }))
+        for name in ['Inspect Codex credential directory without reading credentials',
+                     'Inspect Codex token metadata without reading credentials']:
+            inspection = by_name[name]['ansible.builtin.stat']
+            self.assertFalse(inspection['follow'])
+            self.assertFalse(inspection['get_checksum'])
+            self.assertFalse(inspection['get_mime'])
+        readability = by_name['Require the Codex runtime identity to read its fixed token']
+        self.assertEqual(readability['ansible.builtin.command']['argv'], [
+            '/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', '/usr/bin/test', '-r',
+            '{{ relay_codex_access_token_file }}',
+        ])
+        enable_index = tasks.index(by_name['Enable and start only the owner-registered general service'])
+        self.assertLess(tasks.index(token_gate), enable_index)
+        self.assertLess(tasks.index(directory_gate), enable_index)
+        self.assertLess(tasks.index(readability), enable_index)
+        for task in [token_gate, directory_gate, readability]:
+            self.assertNotIn('when', task)
+
 
 
 

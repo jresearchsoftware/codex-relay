@@ -38,11 +38,15 @@ class ConfigurationTests(unittest.TestCase):
             'certificateFile': '/etc/owner-tls/fullchain.pem',
             'privateKeyFile': '/etc/owner-tls/private.pem'}}
         c['environment']['reviewerCredential'] = {'sourceKeyFile': '/root/owner-reviewer.pem'}
+        c['environment']['writerCredential'] = {'sourceKeyFile': '/root/owner-writer.pem'}
+        c['environment']['codexCredential'] = {'sourceTokenFile': '/root/owner-codex-token'}
         config.validate(c, ROOT)
         v = config.compile_inputs(c)
         self.assertFalse(v['relay_tls_allow_legacy_lineage'])
         self.assertEqual(v['relay_nginx_server_certificate_file'], '/etc/owner-tls/fullchain.pem')
         self.assertEqual(v['relay_reviewer_credential_source_file'], '/root/owner-reviewer.pem')
+        self.assertEqual(v['relay_writer_credential_source_file'], '/root/owner-writer.pem')
+        self.assertEqual(v['relay_codex_credential_source_file'], '/root/owner-codex-token')
         c['environment']['tls'] = {'acme': {'email': 'owner@example.invalid',
             'challenge': 'webroot', 'webroot': '/srv/shared/web-root'}}
         c['environment']['ingress']['publicAddresses'] = ['198.51.100.20', '2001:db8::20']
@@ -66,6 +70,10 @@ class ConfigurationTests(unittest.TestCase):
                        lambda e: e['tls']['acme'].update(email='owner@example.invalid;command'),
                        lambda e: e['tls'].update(source={'certificateFile': '/etc/a.pem', 'privateKeyFile': '/etc/b.pem'}),
                        lambda e: e.update(reviewerCredential={'sourceKeyFile': '../private.pem'}),
+                       lambda e: e.update(writerCredential={'sourceKeyFile': '../private.pem'}),
+                       lambda e: e.update(writerCredential={'sourceKeyFile': '/root/key.pem', 'mode': '0644'}),
+                       lambda e: e.update(codexCredential={'sourceTokenFile': '../token'}),
+                       lambda e: e.update(codexCredential={'sourceTokenFile': '/root/token', 'value': 'secret'}),
                        lambda e: e['tls'].update(source={'certificateFile': '/etc/a.pem', 'privateKeyFile': '/etc/a.pem'})]:
             changed = copy.deepcopy(c)
             mutate(changed['environment'])
@@ -161,6 +169,8 @@ class EntrypointTests(unittest.TestCase):
         c['environment']['tls'] = {'acme': {'email': 'owner@example.invalid',
             'challenge': 'webroot', 'webroot': '/srv/shared/web-root'}}
         c['environment']['reviewerCredential'] = {'sourceKeyFile': '/root/reviewer-input.pem'}
+        c['environment']['writerCredential'] = {'sourceKeyFile': '/root/writer-input.pem'}
+        c['environment']['codexCredential'] = {'sourceTokenFile': '/root/codex-input-token'}
         cls.config = cls.consumer / 'relay.json'
         cls.config.write_text(json.dumps(c))
         cls.consumer_revision = commit(cls.consumer)
@@ -197,6 +207,8 @@ print('RELAY_INSTALLED_REVISION='+head+';consumer='+consumer+';previous=none')
 print('TLS_BOOTSTRAP_CHECK=PASS;head='+head)
 print('TLS_BOOTSTRAP_RESULT=PASS;phase='+v['relay_tls_phase']+';head='+head)
 print('REVIEWER_CREDENTIAL_STAGE=PASS;head='+head)
+print('WRITER_CREDENTIAL_STAGE=PASS;head='+head)
+print('CODEX_CREDENTIAL_STAGE=PASS;head='+head)
 if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
     print('PRODUCTION_BOOTSTRAP_DISPOSITION_PASS='+head)
 ''',
@@ -252,6 +264,8 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
                                 ('tls-dry-run', 'relay-tls-preparation.yml'),
                                 ('tls-issue', 'relay-tls-preparation.yml'),
                                 ('reviewer-credentials', 'relay-reviewer-credentials.yml'),
+                                ('writer-credentials', 'relay-writer-credentials.yml'),
+                                ('codex-credentials', 'relay-codex-credentials.yml'),
                                 ('ingress', 'relay-docker-nginx.yml')]:
             with self.subTest(phase=phase):
                 denied = self.invoke('--phase', phase)
@@ -265,6 +279,9 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
                 self.assertEqual(values['relay_runner_service_state_management'], 'preserve')
                 self.assertFalse(values['relay_runner_registration_authorized'])
                 self.assertFalse(values['relay_service_activation_authorized'])
+                for role in ['reviewer', 'writer', 'codex']:
+                    self.assertEqual(values['relay_' + role + '_credentials_authorized'],
+                                     phase == role + '-credentials')
                 self.assertEqual(values['relay_tls_public_addresses'], ['198.51.100.20', '2001:db8::20'])
                 self.assertEqual(values['relay_tls_acme_admitted_ip'], '')
                 wrong = self.invoke('--phase', 'check', '--authorize-' + phase)
@@ -316,7 +333,7 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
             assert not v['relay_service_activation_authorized']
             assert not v['relay_runner_registration_authorized']
             assert v['relay_runner_service_state_management'] == 'preserve'
-            expected = 'relay-tls-preparation.yml' if {phase!r} == 'tls-issue' else 'relay-reviewer-credentials.yml'
+            expected = 'relay-tls-preparation.yml' if {phase!r} == 'tls-issue' else 'relay-' + {phase!r} + '.yml'
             assert Path(a[a.index('-i') + 2]).name == expected
             tools = Path({str(self.product / 'deploy/ansible/tools')!r})
             sys.path.insert(0, str(tools))
@@ -346,11 +363,12 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
                 assert result['status'] == 'TLS_EXISTING_CERTIFICATE_REUSED'
                 print('TLS_BOOTSTRAP_RESULT=PASS;phase=issue;head=' + head)
             else:
-                assert request['app_id'] == str(v['relay_reviewer_app_id'])
-                assert request['installation_id'] == str(v['relay_reviewer_app_installation_id'])
+                role = {phase!r}.removesuffix('-credentials')
+                assert request['app_id'] == str(v['relay_' + role + '_app_id'])
+                assert request['installation_id'] == str(v['relay_' + role + '_app_installation_id'])
                 request['exact_head'] = head
                 result = module.stage(SimpleNamespace(**request))
-                assert result['status'] == 'REVIEWER_CREDENTIAL_UNCHANGED'
+                assert result['status'] == role.upper() + '_CREDENTIAL_UNCHANGED'
                 print(result['proof'])
             print('192.0.2.10 : ok=1 changed=0 unreachable=0 failed=0')
             '''))
@@ -397,6 +415,21 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
         self.assertEqual(fixture.source.read_bytes(), fixture.keys[0])
         self.assertFalse(list(fixture.credentials.glob('.reviewer-key-*')))
 
+    def test_public_writer_credentials_recovers_without_touching_reviewer_or_codex(self):
+        fixture = self.bootstrap_fixture('test_reviewer_credential_staging', 'WriterCredentialStagingTests')
+        app = json.loads(self.config.read_text())['consumer']['writerApp']
+        fixture.args.app_id, fixture.args.installation_id = app['appId'], app['installationId']
+        fixture.env.write_text('GITHUB_APP_PRIVATE_KEY_FILE=' + str(fixture.destination) + '\n'
+            'GITHUB_APP_ID=' + app['appId'] + '\nGITHUB_APP_INSTALLATION_ID=' + app['installationId'] + '\n')
+        unrelated = fixture.root / 'reviewer-and-codex-state'
+        unrelated.write_bytes(b'existing-protected-fixture')
+        interrupted = self.recovery_backend('writer-credentials', vars(fixture.args), fixture.destination)
+        self.assert_public_recovery('writer-credentials', fixture.destination, interrupted)
+        self.assertEqual(fixture.destination.read_bytes(), fixture.keys[0])
+        self.assertEqual(fixture.source.read_bytes(), fixture.keys[0])
+        self.assertEqual(unrelated.read_bytes(), b'existing-protected-fixture')
+        self.assertFalse(list(fixture.credentials.glob('.writer-key-*')))
+
     def test_tls_check_is_read_only_and_ordinary_apply_does_not_enable_bootstrap(self):
         result = self.invoke('--phase', 'tls-check')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -404,12 +437,16 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
         self.assertTrue(values['_test_check_mode'])
         self.assertFalse(values['relay_docker_nginx_manage'])
         self.assertFalse(values['relay_reviewer_credentials_authorized'])
+        self.assertFalse(values['relay_writer_credentials_authorized'])
+        self.assertFalse(values['relay_codex_credentials_authorized'])
         result = self.invoke('--phase', 'apply')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(self.capture.read_text())
         self.assertEqual(values['_test_playbook'], 'site.yml')
         self.assertFalse(values['relay_docker_nginx_manage'])
         self.assertFalse(values['relay_reviewer_credentials_authorized'])
+        self.assertFalse(values['relay_writer_credentials_authorized'])
+        self.assertFalse(values['relay_codex_credentials_authorized'])
 
     def test_mismatched_or_dirty_source_fails_before_backend(self):
         result = self.invoke('--phase','apply','--resolved-revision','a'*40)

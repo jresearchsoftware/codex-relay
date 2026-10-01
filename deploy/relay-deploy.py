@@ -30,8 +30,11 @@ PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'post-check': 'site.yml',
           'tls-dry-run': 'relay-tls-preparation.yml',
           'tls-issue': 'relay-tls-preparation.yml',
           'reviewer-credentials': 'relay-reviewer-credentials.yml',
+          'writer-credentials': 'relay-writer-credentials.yml',
+          'codex-credentials': 'relay-codex-credentials.yml',
           'ingress': 'relay-docker-nginx.yml'}
-BOOTSTRAP_MUTATIONS = ['tls-prepare', 'tls-dry-run', 'tls-issue', 'reviewer-credentials', 'ingress']
+BOOTSTRAP_MUTATIONS = ['tls-prepare', 'tls-dry-run', 'tls-issue', 'reviewer-credentials',
+                       'writer-credentials', 'codex-credentials', 'ingress']
 
 
 def command(argv, **kwargs):
@@ -201,8 +204,9 @@ def run(args):
                 'explicit-' + phase)
     if args.phase in ['tls-dry-run', 'tls-issue']:
         require(values['relay_tls_acme_configured'], 'tls.acme-required')
-    if args.phase == 'reviewer-credentials':
-        require(bool(values['relay_reviewer_credential_source_file']), 'reviewerCredential-required')
+    for role in ['reviewer', 'writer', 'codex']:
+        if args.phase == role + '-credentials':
+            require(bool(values['relay_' + role + '_credential_source_file']), role + 'Credential-required')
     if args.phase == 'stale-dispose':
         require(args.stale_phase and re.fullmatch('[0-9a-f]{40}', args.stale_head or '') and args.stale_head != revision, 'stale-identity')
         if args.stale_phase == 'apply':
@@ -271,6 +275,8 @@ def run(args):
         'relay_bootstrap_public_entrypoint': True,
         'relay_bootstrap_exact_head': revision,
         'relay_reviewer_credentials_authorized': args.authorize_reviewer_credentials,
+        'relay_writer_credentials_authorized': args.authorize_writer_credentials,
+        'relay_codex_credentials_authorized': args.authorize_codex_credentials,
         'relay_tls_exact_head': revision,
         'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
                            'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
@@ -333,8 +339,10 @@ def run(args):
             if args.phase in ['tls-prepare', 'tls-dry-run', 'tls-issue']:
                 require(f'TLS_BOOTSTRAP_RESULT=PASS;phase={values["relay_tls_phase"]};head={revision}' in evidence,
                         'tls-bootstrap-proof')
-            if args.phase == 'reviewer-credentials':
-                require(f'REVIEWER_CREDENTIAL_STAGE=PASS;head={revision}' in evidence, 'reviewer-credential-proof')
+            for role in ['reviewer', 'writer', 'codex']:
+                if args.phase == role + '-credentials':
+                    require(f'{role.upper()}_CREDENTIAL_STAGE=PASS;head={revision}' in evidence,
+                            role + '-credential-proof')
             if args.phase == 'post-check':
                 require(not re.search(r'changed=[1-9][0-9]*', evidence), 'post-check-drift')
             if args.phase == 'general-runner-enable':
