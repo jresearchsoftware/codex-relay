@@ -1,15 +1,98 @@
 ---
-- name: Read-only preflight and APT metadata preparation for TLS
+- name: Execute the explicit product-managed Reviewer TLS bootstrap
   hosts: relay
   become: true
   gather_facts: true
-  roles:
-    - role: relay_preflight
-    - role: relay_apt_metadata
+  tasks:
+    - name: Admit the supported host and explicit TLS phase
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == relay_required_distribution
+          - ansible_facts.distribution_major_version == relay_required_version_id
+          - relay_tls_phase in ['prerequisites', 'dry_run', 'issue']
+          - relay_tls_exact_head is match('^[0-9a-f]{40}$')
+          - relay_tls_phase == 'prerequisites' or relay_tls_acme_configured | bool
+        fail_msg: 'TLS_BOOTSTRAP_HOST_PHASE_OR_AUTHORITY_INVALID'
 
-- name: Prepare shared Certbot and relay-owned OpenAI client CA
-  hosts: relay
-  become: true
-  gather_facts: false
-  roles:
-    - role: relay_tls
+    - name: Create protected ephemeral bootstrap code staging
+      ansible.builtin.tempfile:
+        state: directory
+        path: /root
+        prefix: .relay-tls-bootstrap-
+      register: relay_tls_bootstrap_staging
+      check_mode: false
+
+    - name: Run the bounded bootstrap without exposing contact or credential material
+      block:
+        - name: Stage the source-bound bootstrap and validation helpers
+          ansible.builtin.copy:
+            src: '{{ playbook_dir }}/tools/{{ item }}'
+            dest: '{{ relay_tls_bootstrap_staging.path }}/{{ item }}'
+            owner: root
+            group: root
+            mode: '0600'
+          loop:
+            - tls-webroot-bootstrap.py
+            - tls-source-validate.py
+            - bootstrap_guard.py
+          check_mode: false
+
+        - name: Stage bounded non-secret bootstrap references
+          ansible.builtin.copy:
+            content: >-
+              {{ {
+                'phase': 'check' if ansible_check_mode else relay_tls_phase,
+                'head': relay_tls_exact_head,
+                'namespace': relay_namespace,
+                'hostname': relay_tls_acme_hostname,
+                'email': relay_tls_acme_email,
+                'method': relay_tls_acme_method,
+                'addresses': relay_tls_public_addresses,
+                'webroot': relay_tls_acme_webroot,
+                'conf_root': relay_docker_nginx_conf_root,
+                'container': relay_docker_nginx_container_name,
+                'image': relay_docker_nginx_expected_image,
+                'preparation_root': relay_tls_preparation_root,
+                'state_root': relay_tls_acme_state_root,
+                'marker': relay_tls_acme_dry_run_marker,
+                'client_ca': relay_tls_client_ca_file,
+                'certificate': relay_nginx_server_certificate_file,
+                'private_key': relay_nginx_server_private_key_file,
+                'allow_legacy_lineage': relay_tls_allow_legacy_lineage,
+                'reviewer_group': relay_reviewer_group,
+                'manifest': relay_tls_qualified_manifest_file,
+                'certbot': relay_tls_certbot_executable,
+                'lock_file': relay_production_operation_lock_path,
+                'operation_record': relay_production_operation_record_path
+              } | to_nice_json }}
+            dest: '{{ relay_tls_bootstrap_staging.path }}/request.json'
+            owner: root
+            group: root
+            mode: '0600'
+          no_log: true
+          diff: false
+          check_mode: false
+
+        - name: Run only the explicitly selected bootstrap stage
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - '{{ relay_tls_bootstrap_staging.path }}/tls-webroot-bootstrap.py'
+              - --config
+              - '{{ relay_tls_bootstrap_staging.path }}/request.json'
+          register: relay_tls_bootstrap_result
+          changed_when: not ansible_check_mode
+          check_mode: false
+
+        - name: Report exact-head bootstrap completion
+          ansible.builtin.debug:
+            msg: >-
+              {{ ('TLS_BOOTSTRAP_CHECK=PASS;head=' ~ relay_tls_exact_head) if ansible_check_mode else
+                 ('TLS_BOOTSTRAP_RESULT=PASS;phase=' ~ relay_tls_phase ~ ';head=' ~ relay_tls_exact_head) }}
+
+      always:
+        - name: Remove this invocation's ephemeral bootstrap staging
+          ansible.builtin.file:
+            path: '{{ relay_tls_bootstrap_staging.path }}'
+            state: absent
+          check_mode: false

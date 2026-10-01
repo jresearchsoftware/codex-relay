@@ -170,6 +170,30 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
+- Follow the [first-install bootstrap contract](deploy/README.md#first-install-bootstrap-and-reusable-state).
+  Classify missing state by ownership before asking the owner for paths. Reuse
+  supported existing protected state when it validates; otherwise use the
+  product-managed bootstrap for product-owned state. In particular, a valid
+  matching TLS lineage may be reused, while a missing lineage and missing
+  OpenAI client CA are normal bootstrap states rather than evidence of an
+  undisclosed server path. Ask only for true external prerequisites such as
+  DNS or owner-provisioned App credentials. If the needed bootstrap exists only
+  in the private Ansible backend and the public deployment interface cannot
+  perform it, treat that as a source/interface defect instead of bypassing the
+  public API or inventing a manual secret path.
+- Keep first-install stages least-privilege and public-interface complete.
+  Reusable protected state must be expressible through supported configuration;
+  product-owned bootstrap must be reachable through the public deployment
+  entrypoint; and a staged Reviewer qualification must not demand unrelated
+  Writer/Codex/runner secrets. Keep SSH target identity separate from public
+  ingress/DNS identity when both are supported. Treat violations as reusable
+  source/interface defects rather than owner-local workarounds.
+- A successful upgrade or second consumer on an already prepared host does not
+  prove standalone bootstrap. Keep clean-environment qualification as separately
+  admitted work when it needs distinct infrastructure; do not retroactively make
+  it a gate for an unrelated/cohosted task. Still add proportional local
+  clean-state regression coverage for any bootstrap defect corrected in the
+  current task, and keep external prerequisites explicit.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 

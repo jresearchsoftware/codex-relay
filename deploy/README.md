@@ -18,6 +18,10 @@ The [validator and compiler](config.py) define configuration version 1:
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
 | `environment.compatibilityLinks` | Optional old invocation paths retained during a consumer's workflow migration |
+| `environment.ingress.publicAddresses` | Explicit public IPv4/IPv6 addresses for ACME; independent of SSH `target.host` |
+| `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
+| `environment.tls.acme` | Optional contact and HTTP-01 webroot for the admitted shared Docker ingress |
+| `environment.reviewerCredential.sourceKeyFile` | Optional existing owner-provisioned Reviewer App private-key reference |
 
 Configuration contains literal data and secret **references**, never private
 keys, tokens, templates, commands or backend variables. Unknown fields,
@@ -53,6 +57,167 @@ target checks. Enabling publication is a separate owner-authorized config
 change after qualification. Service activation still requires the existing
 explicit activation gate. Ordinary apply does not register or activate runners.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
+
+### First-install bootstrap and reusable state
+
+Treat missing install-time state according to ownership before asking the owner
+for another path or artifact. A fresh environment is expected to lack many
+runtime-generated files.
+
+1. **Reusable protected state.** If a supported existing artifact is present,
+   validate and reuse it instead of regenerating it merely because the consumer
+   is new. For TLS this means a certificate/key pair that matches the configured
+   hostname, is currently valid, has an acceptable chain, matches its private
+   key, and satisfies the required ownership/modes. A retained Let's Encrypt
+   lineage from an earlier installation is valid input when it passes those
+   checks; it is not required to exist.
+2. **Product-managed bootstrap.** If no qualifying TLS pair exists and the live
+   deployment authority permits TLS provisioning, use the supported protected
+   Let's Encrypt/ACME path for the configured hostname. The OpenAI client CA
+   bundle is also product-managed bootstrap state: prepare it from the pinned
+   official OpenAI CA sources and fingerprints rather than searching unrelated
+   protected paths for a pre-existing copy.
+3. **External owner prerequisites.** Ask the owner only for state Relay does not
+   own or cannot create: target/SSH identity, DNS, ACME contact identity when
+   issuance is needed, GitHub App creation/installation and private-key input,
+   the selected ingress topology or externally managed terminator, and later
+   ChatGPT connector creation/connection.
+
+Never guess or scan arbitrary protected paths for credentials, keys or
+certificates. Missing product-owned bootstrap state is not evidence that an
+operator must already have provisioned it somewhere else.
+
+A read-only check may report missing bootstrap state as pending. Materializing
+certificates, trust or credentials remains a production mutation and still
+requires live authority; this contract does not broaden Task/CR scope.
+
+The supported public deployment surface must be complete enough to express this
+contract. A reusable protected artifact is only operationally reusable when the
+public configuration can reference its validated source without inventing a
+private-backend override. Product-owned bootstrap must be reachable through the
+public deployment entrypoint rather than by asking consumers to invoke internal
+Ansible playbooks.
+
+Keep staged qualification least-privilege as well. A Reviewer-only or
+publication-disabled qualification step must not require unrelated Writer keys,
+Codex tokens, runner credentials or other secrets merely because one broad
+interactive helper happens to provision them together. Ask for each external
+credential only when the admitted stage actually needs it.
+
+Do not conflate independent network identities. The SSH deployment target and
+the public ingress/DNS address may differ; if both shapes are supported, the
+public configuration and validation must represent the distinction explicitly
+rather than silently treating an SSH hostname as an ACME IP address.
+
+The public entrypoint provides the following separate owner transitions. Run
+the ordinary `check` and authorized `apply` of the accepted exact revision
+first, inspecting their plan; bootstrap mutations require that same installed
+revision and refuse active/recovery operation evidence. The host operation lock
+covers each mutation, including the entire ingress adapter run. Nothing here
+implicitly activates Reviewer, registers runners or enables publication.
+
+| Phase | Additional flag | Scope |
+| --- | --- | --- |
+| `tls-check` | None | Inspect TLS/CA presence and validate any existing pair; missing state is pending |
+| `tls-prepare` | `--authorize-tls-prepare` | Prepare the OpenAI client CA from fixed official URLs and pinned fingerprints |
+| `tls-dry-run` | `--authorize-tls-dry-run` | Prepare CA if absent and qualify the configured shared-ingress HTTP-01 path against ACME staging |
+| `tls-issue` | `--authorize-tls-issue` | Reuse a valid pair, or issue after a matching successful dry run and publish protected managed files |
+| `reviewer-credentials` | `--authorize-reviewer-credentials` | Stage only the configured Reviewer App key; identical existing key is a no-op |
+| `ingress` | `--authorize-ingress` | Validate and project TLS/CA, install the namespace's MCP fragment, test and reload the admitted shared ingress |
+
+For example, inspect readiness through the same public interface:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/consumer/deploy/relay.json --phase tls-check
+```
+
+`tls-check` uses temporary protected helper files, removed on completion; it
+does not fetch CA material, issue certificates, change trust/credentials or
+reload services. Mutating phases require live owner authority as well as their
+matching CLI flag. A dry run is also a mutation: it can create an ACME staging
+account and temporarily reload the challenge fragment. A flag is not approval
+to run unaccepted source.
+
+To reuse an existing certificate, add this under `environment`:
+
+```json
+"tls": {
+  "source": {
+    "certificateFile": "/etc/owner-tls/reviewer-fullchain.pem",
+    "privateKeyFile": "/etc/owner-tls/reviewer-private-key.pem"
+  }
+}
+```
+
+Explicit sources must be regular root-owned files below protected parents,
+with certificate mode 0600/0640/0644 and private-key mode 0600/0640. Symlinks,
+untrusted chains, invalid dates, missing matching DNS SANs and mismatched keys
+fail closed. The system CA store validates server trust; the OpenAI client CA
+is a distinct mTLS trust input. Omitting `tls` preserves the legacy canonical
+`/etc/letsencrypt/live/<serverName>` source: only its protected same-generation
+Certbot archive links are admitted. Explicit `tls: {}` selects managed files
+under `/etc/<namespace>/certs/` without authorizing issuance.
+
+For new issuance, use `acme` instead of `source` and extend the existing ingress
+object with the complete public DNS address set (all examples are synthetic):
+
+```json
+"tls": {
+  "acme": {
+    "email": "owner@example.invalid",
+    "challenge": "webroot",
+    "webroot": "/srv/shared/web-root"
+  }
+},
+"reviewerCredential": {"sourceKeyFile": "/root/owner-input/reviewer-app.pem"}
+```
+
+Set `environment.ingress.publicAddresses` to an explicit array such as
+`["198.51.100.20", "2001:db8::20"]`. It must match the observed DNS A/AAAA set.
+`target.host` is solely the SSH endpoint and is never an ACME address fallback.
+The supported issuance topology is the configured, pinned Docker nginx shared
+ingress, with its existing configuration directory mounted at
+`/etc/nginx/conf.d`, the explicit webroot mounted at `/var/www/html`, and public
+ports 80/443. Relay does not stop ingress or create another public listener.
+The webroot must be inside the declared ingress ownership root.
+
+Bootstrap checks effective nginx routing, refuses conflicting or ambiguous
+routes, installs only a temporary namespace-owned HTTP challenge fragment,
+tests/reloads nginx and probes a fresh challenge through every admitted public
+address before invoking Debian Certbot. Certbot uses isolated account/state
+directories, pinned Let's Encrypt endpoints and no directory hooks; ambiguous
+inherited configuration is rejected. A global `/etc/letsencrypt/cli.ini` is
+admitted only when its protected bytes exactly match the known Debian package
+default; modified or unknown configuration blocks issuance because Certbot can
+merge its options and hooks. Relay does not remove foreign configuration.
+A successful dry run is bound to the
+exact source head, hostname, contact, addresses, ingress and CA inputs. Live
+issuance requires that binding. The temporary fragment is removed and ingress
+revalidated on completion. Changed or unknown concurrent state is retained and
+reported blocked for inspection, never blindly removed or retried.
+
+An existing valid pair is reused. An existing invalid pair, foreign CA bundle
+or different destination App key blocks instead of silently rotating it.
+If managed TLS publication is interrupted after the private key is durable,
+rerun the same authorized `tls-issue` operation. It completes the pair only
+when the root-owned, single-link 0600 key exactly matches the fully validated
+same-generation lineage in this namespace's Certbot state. Certificate-only,
+foreign, mismatched or unsafe partial state remains blocked. The temporary
+challenge fragment is retired and nginx revalidated before pair publication.
+Reviewer credential staging accepts only an existing protected RSA App key,
+verifies the installed Reviewer App/installation/file references, and creates
+the root-owned Reviewer-readable destination with an atomic no-replace rename.
+TLS component publication uses the same primitive: destination creation leaves
+no second hardlink to retire. Retrying `reviewer-credentials` after interrupted
+publication accepts identical protected material as a no-op; hardlinked or
+different credentials remain blocked. Unsupported atomic no-replace publication
+fails closed. Staging does not request Writer, Codex or runner secrets and does
+not activate Reviewer.
+
+After separately authorized ingress and Reviewer activation, perform live
+server-side qualification and a final ordinary `post-check` with no unexpected
+drift. Local fixtures prove the implementation contract; live cohosted proof
+and clean-environment standalone qualification remain separate evidence.
 
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
 `FETCH_HEAD^{commit}` once, check out that immutable commit, and invoke:
@@ -202,3 +367,11 @@ teardown are replaced by the product entrypoint/selector tests.
 Local qualification does not prove a consumer's real Apps, mTLS or live host.
 Those must be qualified separately on exact candidate identities before an
 owner declares that deployment successful.
+
+A standalone first-install readiness claim should eventually include a
+clean-environment proof in addition to upgrade/cohosted-consumer evidence.
+That qualification is independent work and does not block a cohosted deployment
+task unless its live authority explicitly requires standalone-install proof.
+Track the dedicated clean-environment qualification separately (currently
+Task #15); incidental state retained from another consumer must not become a
+documented prerequisite merely because that proof is deferred.

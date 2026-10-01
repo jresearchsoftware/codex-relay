@@ -335,83 +335,38 @@
     fail_msg: 'Foreign Docker-nginx configuration claims the relay hostname; no fragment activation is allowed'
   when: relay_docker_nginx_manage | bool
 
-- name: Inspect configured relay certificate and key source paths
+- name: Inspect the configured relay client CA source without following links
   ansible.builtin.stat:
-    path: '{{ item }}'
+    path: '{{ relay_nginx_client_ca_file }}'
     follow: false
-  loop:
-    - '{{ relay_nginx_server_certificate_file }}'
-    - '{{ relay_nginx_server_private_key_file }}'
-    - '{{ relay_nginx_client_ca_file }}'
-  register: relay_docker_nginx_source_paths
+  register: relay_docker_nginx_client_ca_source
   changed_when: false
   when: relay_docker_nginx_manage | bool
 
-- name: Resolve configured relay certificate and key source targets without reading material
-  ansible.builtin.command:
-    argv:
-      - realpath
-      - -e
-      - '{{ item }}'
-  loop:
-    - '{{ relay_nginx_server_certificate_file }}'
-    - '{{ relay_nginx_server_private_key_file }}'
-    - '{{ relay_nginx_client_ca_file }}'
-  register: relay_docker_nginx_source_realpaths
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when: relay_docker_nginx_manage | bool
-
-- name: Inspect resolved relay certificate and key source targets
-  ansible.builtin.stat:
-    path: '{{ item.stdout }}'
-    follow: true
-  loop: '{{ relay_docker_nginx_source_realpaths.results }}'
-  register: relay_docker_nginx_source_targets
-  changed_when: false
-  when: relay_docker_nginx_manage | bool
-
-- name: Require safe configured relay certificate and key sources
+- name: Require the protected configured relay client CA source
   ansible.builtin.assert:
     that:
-      - relay_docker_nginx_source_paths.results[0].stat.exists
-      - relay_docker_nginx_source_realpaths.results[0].rc == 0
-      - relay_docker_nginx_source_targets.results[0].stat.isreg
-      - relay_docker_nginx_source_targets.results[0].stat.pw_name == 'root'
-      - >-
-        not relay_docker_nginx_source_paths.results[0].stat.islnk | default(false) or
-        relay_docker_nginx_source_realpaths.results[0].stdout is match('/etc/letsencrypt/.*')
-      - relay_docker_nginx_source_paths.results[1].stat.exists
-      - relay_docker_nginx_source_realpaths.results[1].rc == 0
-      - relay_docker_nginx_source_targets.results[1].stat.isreg
-      - relay_docker_nginx_source_targets.results[1].stat.pw_name == 'root'
-      - >-
-        not relay_docker_nginx_source_paths.results[1].stat.islnk | default(false) or
-        relay_docker_nginx_source_realpaths.results[1].stdout is match('/etc/letsencrypt/.*')
-      - relay_docker_nginx_source_paths.results[2].stat.exists
-      - relay_docker_nginx_source_paths.results[2].stat.isreg
-      - not relay_docker_nginx_source_paths.results[2].stat.islnk | default(false)
-      - relay_docker_nginx_source_paths.results[2].stat.pw_name == 'root'
-    fail_msg: 'Configured relay certificate/key source is missing or unsafe'
+      - relay_docker_nginx_client_ca_source.stat.exists
+      - relay_docker_nginx_client_ca_source.stat.isreg
+      - not relay_docker_nginx_client_ca_source.stat.islnk | default(false)
+      - relay_docker_nginx_client_ca_source.stat.pw_name == 'root'
+      - relay_docker_nginx_client_ca_source.stat.mode in ['0600', '0640', '0644']
+    fail_msg: 'Configured relay client CA source is missing or unsafe'
   when: relay_docker_nginx_manage | bool
 
 - name: Validate configured relay certificate hostname and key pair without printing private material
-  # x509 -checkhost can exit zero on mismatch; require its affirmative result.
-  ansible.builtin.shell: >-
-    set -eu;
-    export LC_ALL=C;
-    hostname_check=$(openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -noout -checkhost '{{ relay_nginx_server_name }}');
-    test "$hostname_check" = 'Hostname {{ relay_nginx_server_name }} does match certificate';
-    certificate_public_key=$(openssl x509 -in '{{ relay_nginx_server_certificate_file }}' -pubkey -noout |
-      openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d ' ' -f 1);
-    private_key_public_key=$(openssl pkey -in '{{ relay_nginx_server_private_key_file }}' -pubout -outform DER 2>/dev/null |
-      sha256sum | cut -d ' ' -f 1);
-    test "$certificate_public_key" = "$private_key_public_key"
-  args:
-    executable: /bin/sh
+  # The helper also enforces protected parents, current validity and system trust.
+  ansible.builtin.script:
+    cmd: >-
+      {{ (role_path ~ '/../../tools/tls-source-validate.py') | quote }}
+      --certificate {{ relay_nginx_server_certificate_file | quote }}
+      --private-key {{ relay_nginx_server_private_key_file | quote }}
+      --hostname {{ relay_nginx_server_name | quote }}
+      {{ '--allow-letsencrypt-lineage' if relay_tls_allow_legacy_lineage | default(true) | bool else '' }}
+    executable: /usr/bin/python3
   register: relay_docker_nginx_source_certificate_validation
   changed_when: false
+  check_mode: false
   when: relay_docker_nginx_manage | bool
 
 - name: Inspect the Docker-nginx certificate projection destinations
@@ -516,24 +471,16 @@
     - not ansible_check_mode
 
 - name: Validate staged certificate projection before installation
-  # A successful x509 command alone does not establish a hostname match.
-  ansible.builtin.command:
-    argv:
-      - openssl
-      - x509
-      - -in
-      - '{{ relay_docker_nginx_projection_temp.path }}/fullchain.pem'
-      - -noout
-      - -checkhost
-      - '{{ relay_nginx_server_name }}'
+  # Revalidate the complete pair after copying, before any installed projection.
+  ansible.builtin.script:
+    cmd: >-
+      {{ (role_path ~ '/../../tools/tls-source-validate.py') | quote }}
+      --certificate {{ (relay_docker_nginx_projection_temp.path ~ '/fullchain.pem') | quote }}
+      --private-key {{ (relay_docker_nginx_projection_temp.path ~ '/privkey.pem') | quote }}
+      --hostname {{ relay_nginx_server_name | quote }}
+    executable: /usr/bin/python3
   register: relay_docker_nginx_staged_certificate_validation
   changed_when: false
-  environment:
-    LC_ALL: C
-  failed_when: >-
-    relay_docker_nginx_staged_certificate_validation.rc != 0 or
-    relay_docker_nginx_staged_certificate_validation.stdout !=
-    'Hostname ' ~ relay_nginx_server_name ~ ' does match certificate'
   no_log: true
   when:
     - relay_docker_nginx_manage | bool

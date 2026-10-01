@@ -15,9 +15,10 @@ class TlsPreparationContractTests(unittest.TestCase):
         cls.tasks = (ROOT / "roles" / "relay_tls" / "tasks" / "main.yml").read_text(encoding="utf-8")
 
     def test_explicit_playbook_and_phase_gate_exist(self):
-        self.assertIn("role: relay_preflight", self.playbook)
-        self.assertIn("role: relay_apt_metadata", self.playbook)
-        self.assertIn("role: relay_tls", self.playbook)
+        self.assertIn("tls-webroot-bootstrap.py", self.playbook)
+        self.assertIn("bootstrap_guard.py", self.playbook)
+        self.assertIn("TLS_BOOTSTRAP_RESULT=PASS", self.playbook)
+        self.assertNotIn("role: relay_apt_metadata", self.playbook)
         self.assertIn("relay_tls_phase in ['prerequisites', 'dry_run', 'issue']", self.tasks)
         self.assertIn("TLS_PREPARATION_PREREQUISITES_READY", self.tasks)
         self.assertIn("TLS_ACME_OWNER_EMAIL_REQUIRED", self.tasks)

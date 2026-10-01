@@ -145,10 +145,10 @@ relay_docker_nginx_projected_client_ca_file: '{{ relay_docker_nginx_projection_r
 relay_docker_nginx_image: nginx:latest
 relay_docker_nginx_host_native_service_name: nginx.service
 
-# TLS preparation is a separate, explicit playbook gate. It may install/reuse
-# shared Debian Certbot tooling and prepare only the relay-owned OpenAI CA
-# bundle. ACME dry-run/live issuance is never implicit and requires an owner
-# supplied email plus an explicit phase.
+# Public TLS preparation is an explicit phase; CA-only preparation does not
+# depend on Certbot, DNS or free ports. ACME phases may install/reuse shared
+# Debian Certbot tooling and require an admitted contact/webroot/public identity.
+# Ordinary apply never implicitly requests issuance.
 relay_tls_manage: true
 relay_tls_certbot_package: certbot
 relay_tls_certbot_executable: /usr/bin/certbot
@@ -156,6 +156,12 @@ relay_tls_certbot_provenance: debian-package
 relay_tls_acme_hostname: relay.example.invalid
 relay_tls_acme_admitted_ip: 192.0.2.10
 relay_tls_acme_email: ''
+relay_tls_acme_method: ''
+relay_tls_acme_configured: false
+relay_tls_allow_legacy_lineage: true
+relay_tls_acme_webroot: ''
+relay_tls_public_addresses: []
+relay_tls_acme_state_root: '{{ relay_tls_preparation_root }}/certbot'
 relay_tls_phase: prerequisites
 relay_tls_exact_head: ''
 relay_tls_qualified_manifest_file: '{{ relay_install_root }}/current/artifact-manifest.json'
