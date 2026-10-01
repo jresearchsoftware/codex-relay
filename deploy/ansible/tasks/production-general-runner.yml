@@ -9,6 +9,7 @@
   vars:
     relay_runner_name: '{{ relay_general_instance.relay_runner_name }}'
     relay_runner_registration_scope: '{{ relay_general_instance.relay_runner_registration_scope }}'
+    relay_runner_registration_group: '{{ relay_general_instance.relay_runner_registration_group }}'
     relay_runner_user: '{{ relay_general_instance.relay_runner_user }}'
     relay_runner_group: '{{ relay_general_instance.relay_runner_group }}'
     relay_runner_root: '{{ relay_general_instance.relay_runner_root }}'

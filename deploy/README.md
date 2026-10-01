@@ -17,6 +17,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `target` | Host, root SSH transport, existing key reference and known host/key fingerprints |
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
+| `environment.generalRunner.scope`, `environment.generalRunner.group` | Optional general-runner registration scope and its dedicated organization runner group; omitted scope preserves repository registration |
 | `environment.compatibilityLinks` | Optional old invocation paths retained during a consumer's workflow migration |
 | `environment.ingress.publicAddresses` | Explicit public IPv4/IPv6 addresses for ACME; independent of SSH `target.host` |
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
@@ -341,6 +342,31 @@ ordinary apply. Stale operation disposition remains evidence-bound through
 `stale-dispose`; an apply disposition requires the observed completed phase and
 exact state hash. Diagnose an interrupted operation before any retry. No blind
 reset, force retry, registration or unrelated proxy/network management occurs.
+
+The general runner defaults to repository registration. Consumers that need an
+organization runner group's external workflow restrictions can explicitly select
+organization registration with a dedicated group, for example:
+
+```json
+"generalRunner": {
+  "name": "sample-relay-general-runner",
+  "user": "sample-relay-general-runner",
+  "scope": "organization",
+  "group": "sample-relay-control"
+}
+```
+
+The group must differ from the production runner's group. Repository scope does
+not accept an organization group. Registration scope changes neither the general
+runner's Unix identity, isolated filesystem namespaces nor fixed sudo boundary.
+The owner must separately restrict the general group to the one consumer
+repository and its exact trusted routing/recovery workflow refs, excluding
+candidate validation. Production requires its own independently admitted
+workflow/ref allowlist. Selecting a group does not create it or prove its ACL.
+Apply does not register, migrate or re-register either runner; an existing
+registration that disagrees with the selected scope remains blocked. Changing
+an admitted consumer's scope requires explicit owner acceptance and external
+qualification before registration or enablement.
 
 A first apply that stopped before creating the installation/configuration roots
 has a separate, narrow `bootstrap-only` recovery shape. Read-only `check` reports

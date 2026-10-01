@@ -42,8 +42,17 @@ fork and same-repository candidate code from reaching those runners.
 The accepted installation uses the `codex-relay` label for both runner instances.
 The production organization's runner group must restrict repository and exact
 trusted workflow/ref access so it cannot receive routing, recovery or candidate
-jobs. The repository-scoped general runner requires its own proven external
-trust boundary. Neither its repository scope nor a label is a workflow allowlist.
+jobs. The general runner requires its own proven external trust boundary. Its
+default repository registration scope and labels are not workflow allowlists.
+The public deployment interface also supports an explicit organization-scoped
+general runner in a separate group restricted to this repository and exactly
+`jresearchsoftware/codex-relay/.github/workflows/codex-relay-routing.yml@refs/heads/main`
+and
+`jresearchsoftware/codex-relay/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/main`.
+This option requires owner acceptance of the registration scope and independent
+qualification of the external group ACL; it does not migrate an existing runner
+or establish that the public consumer has adopted the option. Candidate CI must
+have no access to either persistent runner.
 The control jobs' owner/ref conditions and checks for runner name and Unix user
 `codex-relay-general-runner` are defensive consistency checks after scheduling;
 they do not establish that boundary. If external restrictions are unavailable or

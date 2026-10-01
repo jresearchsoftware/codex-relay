@@ -11,14 +11,20 @@
       - >-
         (relay_runner_registration_scope == 'organization' and
          relay_deployment_profile == 'production' and
-         relay_runner_name == relay_production_runner_name) or
-        (relay_runner_registration_scope == 'repository' and
-         relay_runner_name == relay_general_runner_name)
+         relay_runner_name == relay_production_runner_name and
+         relay_runner_registration_group == relay_production_runner_registration_group) or
+        (relay_runner_name == relay_general_runner_name and
+         relay_runner_registration_scope == relay_general_runner_registration_scope and
+         relay_runner_registration_scope in ['repository', 'organization'] and
+         (relay_runner_registration_scope == 'repository' or
+          (relay_runner_registration_group == relay_general_runner_registration_group and
+           relay_runner_registration_group is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$') and
+           relay_runner_registration_group | lower != relay_production_runner_registration_group | lower)))
       - relay_runner_labels | length == 1
       - relay_runner_labels[0] is match('^[A-Za-z0-9_.-]+$')
     fail_msg: 'RUNNER_PINNED_PACKAGE_OR_IDENTITY_CONTRACT_INVALID'
 
-- name: Require isolated namespaces for repository registration on a production host
+- name: Require isolated namespaces for the general instance on a production host
   ansible.builtin.assert:
     that:
       - relay_runner_user == relay_general_runner_user
@@ -31,7 +37,7 @@
     fail_msg: RUNNER_GENERAL_PRODUCTION_NAMESPACE_COLLISION
   when:
     - relay_deployment_profile == 'production'
-    - relay_runner_registration_scope == 'repository'
+    - relay_runner_name == relay_general_runner_name
 
 - name: Inspect instance namespaces before changing their ownership
   ansible.builtin.stat:

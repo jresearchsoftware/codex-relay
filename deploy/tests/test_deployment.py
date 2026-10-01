@@ -28,6 +28,55 @@ def commit(root):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_general_runner_scope_defaults_to_repository_and_org_group_is_independent(self):
+        import yaml
+        from ansible.parsing.dataloader import DataLoader
+        from ansible.template import Templar
+        c = json.loads((ROOT / 'deploy/example.json').read_text())
+        c['environment']['runner']['group'] = 'consumer-production'
+        backend = ROOT / 'deploy/ansible'
+        defaults = yaml.safe_load((backend / 'group_vars/all.yml').read_text())
+        general = yaml.safe_load((backend / 'vars/general-runner.yml').read_text())
+        reconciliation = yaml.safe_load((backend / 'tasks/production-general-runner.yml').read_text())[1]
+        for extra in [{}, {'scope': 'repository'}, {'scope': 'organization', 'group': 'consumer-general'}]:
+            with self.subTest(extra=extra):
+                current = copy.deepcopy(c)
+                current['environment']['generalRunner'].update(extra)
+                config.validate(current, ROOT)
+                compiled = config.compile_inputs(current)
+                self.assertEqual(compiled['relay_runner_registration_scope'], 'organization')
+                self.assertEqual(compiled['relay_runner_registration_group'], c['environment']['runner']['group'])
+                self.assertEqual(compiled['relay_production_runner_registration_group'], c['environment']['runner']['group'])
+                scope, group = extra.get('scope', 'repository'), extra.get('group', '')
+                self.assertEqual(compiled['relay_general_runner_registration_scope'], scope)
+                self.assertEqual(compiled['relay_general_runner_registration_group'], group)
+                # Both ordinary apply's scoped include and the public enable
+                # phase must resolve the same consumer inputs, never inherit
+                # the production runner's group when reconciling general.
+                apply_values = {**defaults, **compiled, 'relay_general_instance': general}
+                apply_templar = Templar(loader=DataLoader(), variables=apply_values)
+                enable_templar = Templar(loader=DataLoader(), variables={**defaults, **compiled, **general})
+                for key, expected in [('relay_runner_registration_scope', scope),
+                                      ('relay_runner_registration_group', group)]:
+                    self.assertEqual(apply_templar.template(reconciliation['vars'][key]), expected)
+                    self.assertEqual(enable_templar.template(general[key]), expected)
+
+    def test_general_runner_scope_and_group_reject_ambiguous_or_shared_inputs(self):
+        c = json.loads((ROOT / 'deploy/example.json').read_text())
+        production_group = c['environment']['runner']['group']
+        for extra in [
+            {'scope': 'enterprise'}, {'scope': 'organization'}, {'group': 'unused'},
+            {'scope': 'repository', 'group': ''}, {'scope': 'repository', 'group': 'unused'},
+            {'scope': 'organization', 'group': ''}, {'scope': 'organization', 'group': "group'command"},
+            {'scope': 'organization', 'group': production_group},
+            {'scope': 'organization', 'group': production_group.upper()},
+        ]:
+            with self.subTest(extra=extra):
+                current = copy.deepcopy(c)
+                current['environment']['generalRunner'].update(extra)
+                with self.assertRaises(config.InvalidConfig):
+                    config.validate(current, ROOT)
+
     def test_tls_sources_and_public_identity_compile_without_ssh_fallback(self):
         c = json.loads((ROOT / 'deploy/example.json').read_text())
         original = config.compile_inputs(c)

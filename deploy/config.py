@@ -83,12 +83,19 @@ def validate(c, product_root):
         require(text(e[key], r'[a-z][a-z0-9-]{0,30}') and e[key] != 'root', key)
     r, g = e['runner'], e['generalRunner']
     require(object_keys(r, ['user', 'name', 'scope', 'group', 'labels']), 'runner')
-    require(object_keys(g, ['user', 'name']), 'generalRunner')
+    require(object_keys(g, ['user', 'name'], ['scope', 'group']), 'generalRunner')
     for instance in [r, g]:
         require(text(instance['user'], r'[a-z][a-z0-9-]{0,30}') and instance['user'] != 'root', 'runner.user')
         require(text(instance['name'], r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}'), 'runner.name')
     require(r['scope'] == 'organization', 'runner.scope')
     require(text(r['group'], r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}'), 'runner.group')
+    general_scope = g.get('scope', 'repository')
+    require(general_scope in ['repository', 'organization'], 'generalRunner.scope')
+    if general_scope == 'organization':
+        require(text(g.get('group'), r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}'), 'generalRunner.group')
+        require(g['group'].lower() != r['group'].lower(), 'isolated-runner-groups')
+    else:
+        require('group' not in g, 'generalRunner.group')
     require(isinstance(r['labels'], list) and len(r['labels']) == 1
             and all(text(v, r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}') for v in r['labels']), 'runner.labels')
     users = [e['serviceUser'], e['reviewerUser'], r['user'], g['user'], c['consumer']['runtimeUser']]
@@ -186,7 +193,10 @@ def compile_inputs(c):
         'relay_production_operation_record_path': '/var/lib/' + ns + '-production-operation.json',
         'relay_production_host': target['host'], 'relay_production_reviewer_server_name': ingress['serverName'],
         'relay_production_runner_name': r['name'], 'relay_production_runner_user': r['user'],
+        'relay_production_runner_registration_group': r['group'],
         'relay_general_runner_name': g['name'], 'relay_general_runner_user': g['user'],
+        'relay_general_runner_registration_scope': g.get('scope', 'repository'),
+        'relay_general_runner_registration_group': g.get('group', ''),
         'relay_runner_name': r['name'], 'relay_runner_user': r['user'], 'relay_runner_group': r['user'],
         'relay_runner_registration_scope': r['scope'], 'relay_runner_registration_group': r['group'],
         'relay_runner_labels': r['labels'], 'relay_runner_repository': consumer['repository'],

@@ -338,7 +338,10 @@ relay_validation_workflow: .github/workflows/relay-exact-head-validation.yml
 relay_namespace: codex-relay
 relay_general_runner_user: relay-general-runner
 relay_general_runner_name: relay-general
+relay_general_runner_registration_scope: repository
+relay_general_runner_registration_group: ''
 relay_production_runner_user: relay-runner
+relay_production_runner_registration_group: relay-production
 relay_runner_registration_group: relay-production
 relay_docker_network_name: nexus
 relay_consumer_deployment_config_relative: deploy/relay.json
