@@ -28,6 +28,39 @@ def commit(root):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_host_apply_lock_cannot_overlap_foreign_protected_paths(self):
+        c = json.loads((ROOT / 'deploy/example.json').read_text())
+        lock = '/var/lib/' + c['environment']['namespace'] + '-deployment.lock'
+        for path in [lock, '/var/lib', lock + '/foreign']:
+            for field in ['ownershipRoot', 'protectedPaths']:
+                invalid = copy.deepcopy(c)
+                invalid['environment']['ingress'][field] = [path] if field == 'protectedPaths' else path
+                with self.subTest(path=path, field=field), self.assertRaises(config.InvalidConfig):
+                    config.validate(invalid, ROOT)
+
+    def test_installed_local_apply_is_explicit_self_consumer_main_only(self):
+        c = json.loads((ROOT / 'deploy/example.json').read_text())
+        legacy = config.compile_inputs(c)
+        self.assertEqual(legacy['relay_local_apply_source'], 'checkout')
+        self.assertEqual(legacy['relay_consumer_deployment_config_relative'], c['environment']['localApply']['configPath'])
+        c['source'] = {'repository': 'https://github.com/' + c['consumer']['repository'] + '.git', 'revision': 'main'}
+        c['environment']['localApply'] = {'source': 'installed'}
+        config.validate(c, ROOT)
+        compiled = config.compile_inputs(c)
+        self.assertEqual(compiled['relay_local_apply_source'], 'installed')
+        self.assertEqual(compiled['relay_consumer_deployment_config_relative'], '')
+        for mutate in [
+            lambda v: v['environment']['localApply'].update(configPath='deploy/relay.json'),
+            lambda v: v['environment']['localApply'].update(source='checkout'),
+            lambda v: v['source'].update(repository='https://github.com/foreign/relay.git'),
+            lambda v: v['source'].update(revision='a' * 40),
+            lambda v: v['consumer'].update(baseBranch='candidate'),
+        ]:
+            invalid = copy.deepcopy(c)
+            mutate(invalid)
+            with self.assertRaises(config.InvalidConfig):
+                config.validate(invalid, ROOT)
+
     def test_general_runner_scope_defaults_to_repository_and_org_group_is_independent(self):
         import yaml
         from ansible.parsing.dataloader import DataLoader
@@ -235,7 +268,10 @@ else: print('256 SHA256:' + ('B' if sys.argv[-1]=='-' else 'A')*43 + ' fixture')
             'ssh': f'''import sys
 from pathlib import Path
 Path({str(cls.calls)!r}).write_text("strict-preflight")
-if '--hold' in sys.argv[-1]:
+if 'DEPLOYMENT_LOCK_READY' in sys.argv[-1]:
+    print('DEPLOYMENT_LOCK_READY', flush=True)
+    sys.stdin.read()
+elif '--hold' in sys.argv[-1]:
     print('BOOTSTRAP_GUARD_READY', flush=True)
     sys.stdin.read()
     if Path({str(cls.base / 'guard-fail')!r}).exists(): sys.exit(1)
@@ -303,7 +339,7 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
         try:
             result = self.invoke('--phase', 'ingress', '--authorize-ingress')
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('ingress-operation-guard-final-check', result.stderr)
+            self.assertIn('host-operation-guard-final-check', result.stderr)
             self.assertNotIn('RELAY_DEPLOYMENT_RESULT=PASS', result.stdout)
         finally:
             marker.unlink()

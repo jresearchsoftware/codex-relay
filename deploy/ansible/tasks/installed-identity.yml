@@ -44,6 +44,30 @@
       - relay_production_final_manifest.reviewerSourceTreeSha256 == relay_reviewer_source_tree_sha256
     fail_msg: RELAY_INSTALLED_IDENTITY_MISMATCH
 
+- name: Inspect the opted-in private deployment snapshot without exposing content
+  ansible.builtin.stat:
+    path: '{{ relay_release_path }}/deployment-config.json'
+    follow: false
+    checksum_algorithm: sha256
+    get_mime: false
+  register: relay_installed_snapshot
+  when: relay_local_apply_source | default('checkout') == 'installed'
+
+- name: Require the exact protected deployment snapshot and manifest binding
+  ansible.builtin.assert:
+    that:
+      - relay_installed_snapshot.stat.exists
+      - relay_installed_snapshot.stat.isreg
+      - not relay_installed_snapshot.stat.islnk
+      - relay_installed_snapshot.stat.pw_name == 'root'
+      - relay_installed_snapshot.stat.gr_name == 'root'
+      - relay_installed_snapshot.stat.mode == '0600'
+      - relay_installed_snapshot.stat.nlink == 1
+      - relay_installed_snapshot.stat.checksum == relay_installed_deployment_config_sha256
+      - relay_production_final_manifest.deploymentConfigSha256 == relay_installed_deployment_config_sha256
+    fail_msg: INSTALLED_DEPLOYMENT_CONFIG_BINDING_INVALID
+  when: relay_local_apply_source | default('checkout') == 'installed'
+
 - name: Report the exact installed identity after the complete role composition
   ansible.builtin.debug:
     msg: 'RELAY_INSTALLED_REVISION={{ relay_release_commit }};consumer={{ relay_consumer_revision }};previous={{ relay_production_final_manifest.previousRevision }}'

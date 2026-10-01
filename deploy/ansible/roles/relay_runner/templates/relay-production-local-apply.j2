@@ -21,6 +21,35 @@ fail() {
 ADMITTED_HEAD="$1"
 [[ "$ADMITTED_HEAD" =~ ^[0-9a-f]{40}$ ]] || fail EXACT_HEAD_INVALID
 
+{% if relay_local_apply_source | default('checkout') == 'installed' %}
+# This opt-in instance uses only its installed protected snapshot. The caller
+# selects no config, target, checkout, environment or executable.
+PRODUCT_ROOT='{{ relay_install_root }}/releases/'"$ADMITTED_HEAD"'/reviewed-source'
+CONFIG='{{ relay_install_root }}/releases/'"$ADMITTED_HEAD"'/deployment-config.json'
+# Check the code path with isolated stdlib before executing installed Python.
+/usr/bin/python3 -I - '{{ relay_install_root }}' "$ADMITTED_HEAD" <<'PY'
+import os, stat, sys
+from pathlib import Path
+try:
+    install, head = Path(sys.argv[1]), sys.argv[2]
+    release = install / 'releases' / head
+    current = install / 'current'
+    info = current.lstat()
+    assert stat.S_ISLNK(info.st_mode) and info.st_uid == 0 and os.readlink(current) == str(release)
+    for name in ['deploy/relay-deploy.py', 'deploy/config.py', 'deploy/installed_config.py',
+                 'deploy/deployment_lock.py', 'consumer/consumer-config.mjs',
+                 'contracts/src/execution-defaults.mjs', 'reviewer/src/executable-cr-v2.json']:
+        path = release / 'reviewed-source' / name
+        for entry in [path, *path.parents]:
+            info = entry.lstat()
+            assert info.st_uid == 0 and not info.st_mode & 0o022
+            assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1 if entry == path else stat.S_ISDIR(info.st_mode)
+except (OSError, AssertionError):
+    raise SystemExit('PRODUCTION_LOCAL_APPLY_BLOCKED=INSTALLED_CODE_UNSAFE')
+PY
+reconcile_args=(--expected-installed-head "$ADMITTED_HEAD")
+cd /
+{% else %}
 CHECKOUT_ROOT='{{ relay_production_local_apply_checkout_root }}'
 STAGE_ROOT='{{ relay_production_local_apply_stage_root }}'
 RUNNER_USER='{{ relay_runner_user }}'
@@ -104,7 +133,9 @@ CONFIG="$STAGE_PATH/{{ relay_consumer_deployment_config_relative }}"
 PRODUCT_ROOT="$(/usr/bin/readlink -f '{{ relay_install_root }}/current')/reviewed-source"
 [[ -f "$PRODUCT_ROOT/deploy/relay-deploy.py" && ! -L "$PRODUCT_ROOT/deploy/relay-deploy.py" ]] || fail INSTALLED_DEPLOYMENT_MISSING
 cd "$STAGE_PATH"
+reconcile_args=(--consumer-revision "$ADMITTED_HEAD")
+{% endif %}
 /usr/bin/nsenter --mount=/proc/1/ns/mnt -- \
   /usr/bin/env -i HOME=/root PATH=/usr/bin:/bin \
   /usr/bin/python3 "$PRODUCT_ROOT/deploy/relay-deploy.py" --config "$CONFIG" \
-  --phase apply --local-reconcile --consumer-revision "$ADMITTED_HEAD"
+  --phase apply --local-reconcile "${reconcile_args[@]}"

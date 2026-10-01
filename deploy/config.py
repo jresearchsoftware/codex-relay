@@ -45,7 +45,10 @@ def unique_object(pairs):
 
 
 def load(path, product_root):
-    raw = Path(path).read_text()
+    return loads(Path(path).read_text(), product_root)
+
+
+def loads(raw, product_root):
     require(len(raw) <= 65536, 'size')
     require(not re.search(r'{{|{%|PRIVATE KEY|(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}', raw), 'literal-data-only')
     config = json.loads(raw, object_pairs_hook=unique_object)
@@ -136,11 +139,18 @@ def validate(c, product_root):
     require(isinstance(ingress['protectedServices'], list), 'protectedServices')
     for unit in [ingress['service'], *ingress['protectedServices']]:
         require(text(unit, r'[A-Za-z0-9_.-]+\.service'), 'service')
-    for prefix in ['/opt/', '/etc/', '/var/lib/', '/var/log/', '/run/']:
-        owned = prefix + e['namespace']
+    owned_paths = [prefix + e['namespace'] for prefix in ['/opt/', '/etc/', '/var/lib/', '/var/log/', '/run/']]
+    owned_paths.append('/var/lib/' + e['namespace'] + '-deployment.lock')
+    for owned in owned_paths:
         for protected in [ingress['ownershipRoot'], *ingress['protectedPaths']]:
             require(not (owned == protected or owned.startswith(protected + '/') or protected.startswith(owned + '/')), 'path-overlap')
-    require(object_keys(e['localApply'], ['configPath']) and relative(e['localApply']['configPath']), 'localApply')
+    local_apply = e['localApply']
+    if object_keys(local_apply, ['source']) and local_apply['source'] == 'installed':
+        repository = c['source']['repository'].removeprefix('https://github.com/').removeprefix('git@github.com:').removesuffix('.git')
+        require(repository == c['consumer']['repository'] and c['consumer']['baseBranch'] == 'main'
+                and c['source'].get('revision', 'main') == 'main', 'localApply.installed-self-consumer')
+    else:
+        require(object_keys(local_apply, ['configPath']) and relative(local_apply['configPath']), 'localApply')
     require(type(e['codexTokenRequired']) is bool, 'codexTokenRequired')
     if 'tls' in e:
         tls = e['tls']
@@ -205,7 +215,8 @@ def compile_inputs(c):
         'relay_codex_user': consumer['runtimeUser'], 'relay_codex_group': consumer['runtimeUser'],
         'relay_codex_work_group': e['codexWorkGroup'], 'relay_codex_token_required': e['codexTokenRequired'],
         'relay_production_local_apply_checkout_root': state + '/runner/work/' + '/'.join([consumer['repository'].split('/')[1]] * 2),
-        'relay_consumer_deployment_config_relative': e['localApply']['configPath'],
+        'relay_local_apply_source': e['localApply'].get('source', 'checkout'),
+        'relay_consumer_deployment_config_relative': e['localApply'].get('configPath', ''),
         'relay_reviewer_bind_mode': 'nexus_gateway' if bind['mode'] == 'docker_gateway' else 'a_only_loopback',
         'relay_docker_network_name': bind['network'], 'relay_docker_nginx_container_name': bind['container'],
         'relay_docker_nginx_service_name': ingress['service'],

@@ -345,6 +345,12 @@ relay_production_runner_registration_group: relay-production
 relay_runner_registration_group: relay-production
 relay_docker_network_name: nexus
 relay_consumer_deployment_config_relative: deploy/relay.json
+relay_local_apply_source: checkout
+relay_installed_config_reconcile: false
+relay_installed_config_recovery_authorized: false
+relay_installed_config_expected_sha256: ''
+relay_installed_deployment_config: ''
+relay_installed_deployment_config_sha256: ''
 relay_compatibility_links: []
 relay_requested_revision: main
 relay_consumer_revision: ''

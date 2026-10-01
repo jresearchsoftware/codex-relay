@@ -24,6 +24,38 @@
       exit 44
     }
 
+    {% if relay_local_apply_source | default('checkout') == 'installed' and relay_production_operation_phase == 'apply' %}
+    # Unknown completion remains blocked even after a lost host-lock holder.
+    # Only an explicitly authorized owner transport may recover the same apply;
+    # the one-SHA runner helper can never request this exception.
+    if [[ -e "$record" || -L "$record" ]]; then
+      [[ '{{ "true" if relay_installed_config_recovery_authorized | default(false) | bool else "false" }}' == true &&
+         '{{ "true" if relay_installed_config_reconcile | default(false) | bool else "false" }}' == false &&
+         "$expected_phase" == apply && "$expected_head" == '{{ relay_production_operation_target_head }}' ]] || {
+        echo 'PRODUCTION_INSTALLED_CONFIG_OPERATION_PENDING' >&2
+        exit 45
+      }
+    else
+      [[ '{{ "true" if relay_installed_config_recovery_authorized | default(false) | bool else "false" }}' == false ]] || {
+        echo 'PRODUCTION_INSTALLED_CONFIG_RECOVERY_RECORD_MISSING' >&2
+        exit 45
+      }
+    fi
+    {% endif %}
+
+    {% if relay_installed_config_reconcile | default(false) | bool %}
+    # Recheck the complete installed binding and fresh anonymous GitHub main
+    # while holding the existing transition lock, immediately before reserving
+    # this mutation. An active/recovery record never grants an implicit retry.
+    [[ ! -e "$record" && ! -L "$record" ]] || {
+      echo 'PRODUCTION_INSTALLED_CONFIG_OPERATION_PENDING' >&2
+      exit 45
+    }
+    /usr/bin/python3 '{{ relay_review_root }}/deploy/installed_config.py' \
+      '{{ relay_production_operation_target_head }}' \
+      '{{ relay_installed_config_expected_sha256 }}' '{{ relay_consumer_revision }}'
+    {% endif %}
+
     if [[ -L "$record" ]]; then
       echo 'PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD' >&2
       exit 90
