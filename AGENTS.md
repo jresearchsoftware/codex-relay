@@ -40,6 +40,21 @@ metadata needs reconciliation. Step labels alone do not launch work or grant
 authority. The [Issue template](.github/ISSUE_TEMPLATE/codex-task.md) supplies
 the authoring baseline; its creation is not admission or dispatch.
 
+### Canonical Issue body maintenance
+
+For an admitted Task/Issue, the live Issue body is the mutable canonical task
+contract. Put current requirements, owner decisions/corrections, scope,
+constraints and task status in that body and update it in place when they
+change. Do not use a new top-level comment as a substitute for updating the
+canonical body.
+
+Use Issue comments for discussion, evidence, Outcomes, handoffs and historical
+events that do not redefine the active task contract. If active contract
+material is posted as a comment by mistake, fold it into the Issue body
+promptly and delete the duplicate comment when the available API permits;
+otherwise mark it superseded. Do not maintain competing current authority in
+both the Issue body and comments.
+
 For an owner-launched manual session, rename the current Codex task at startup
 to the exact title resolved from live task/Change Request authority above.
 Use the native task-title tool once with only `title` (omit `threadId`); search
