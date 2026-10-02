@@ -462,7 +462,7 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
                     output = result.stdout + result.stderr
                     self.assertTrue(invocation.exists(), output)
                     self.assertEqual(json.loads(invocation.read_text()), {
-                        "argv": [HEAD, "f" * 64, "c" * 40], "lockHeld": True, "recordPresent": False,
+                        "argv": [HEAD, "f" * 64, "c" * 40, "d" * 40], "lockHeld": True, "recordPresent": False,
                     })
                     if accepted:
                         self.assertEqual(result.returncode, 0, output)
