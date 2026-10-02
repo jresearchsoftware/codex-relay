@@ -95,6 +95,23 @@ claims never establish native CI success. Native exact-head CI, independent
 review, merge and Issue closure remain separate gates. Unavailable usage is reported
 as unavailable; it never authorizes another model call.
 
+Before returning, the governed worker reconciles task-owned changes under its
+actual identity and permissions: preserve meaningful work in ordinary commits,
+remove only confirmed disposable residue when safe, and report anything that
+cannot be reconciled. Collection imports object bytes into a fresh repository;
+it never runs trusted Git against worker metadata. Git observation failures,
+including unreadable worktree paths, cannot stand in for a clean/dirty result.
+
+After known terminal, contained success and durable PR/Outcome publication,
+remaining uncommitted/non-ignored residue alone is a green
+`COMPLETED_WITH_WARNINGS` handoff. `UNCOMMITTED_WORK_REMAINS` remains in the
+terminal receipt, Outcome and workflow warning, including on terminal replay.
+It requires reconciliation against the worker claims and published diff at the
+next owner/review boundary. The controller does not classify arbitrary bytes as
+generated, silently discard or commit them, publish them, or launch another
+worker. Blocked execution with unreconciled work and unknown execution,
+containment, collection, authority, evidence or publication remain failures.
+
 Run `npm test` here and the affected runtime/contract suites. Consumer-owned
 installed runtime/user/sudo proof requires its separate integration checks.
 
@@ -181,11 +198,12 @@ recorded previous head blocks a new recovery push.
 
 Successful recovery can continue the existing `finish` path without replaying
 the original routing workflow. It retains the original execution receipt, checks
-the exact clean checkout, observes the PR head, marks the PR ready and updates
+the exact checkout head and worktree state, observes the PR head, marks the PR ready and updates
 the original Writer-owned blocked Outcome comment in place. A partially failed
 finish can be resumed using the same successful publication receipt; it cannot
-push again. A blocked/unknown original execution or dirty checkout cannot claim
-readiness. Native exact-head validation, independent review, merge, deployment
+push again. A blocked/unknown original execution cannot claim readiness. Known
+successful execution with residue retains the same actionable warning as normal
+completion; collection failures remain red. Native exact-head validation, independent review, merge, deployment
 and Issue closure retain their separate gates.
 
 The durable recovery receipt preserves the trusted Git layer's sanitized push

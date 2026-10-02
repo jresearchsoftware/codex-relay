@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fixture, memoryStore } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
@@ -65,6 +65,126 @@ for (const committed of [false, true]) {
     } })), 1);
     assert.equal(await readFile(join(f.cwd, 'docs/work.md'), 'utf8'), 'unsaved task work\n');
     assert.equal(f.pushes(), committed ? 1 : 0);
+  });
+}
+
+test('contained successful handoff with generated residue stays green with a durable actionable warning on replay', async t => {
+  const f = await fixture(t); const journal = memoryStore(); let executions = 0; let returned;
+  const residue = join(f.cwd, '__pycache__/generated.pyc');
+  const stdout = []; const warnings = [];
+  const reporting = { write: text => stdout.push(text), writeError: text => warnings.push(text) };
+  const args = { ...f, journal, execute: async () => {
+    executions++; await f.commit();
+    await mkdir(join(f.cwd, '__pycache__'));
+    await writeFile(residue, 'generated local validation cache\n');
+    return result(f.envelope, 'success');
+  } };
+  assert.equal(await reportRoutingResult(async () => { returned = await runAttempt(args); return returned; }, reporting), 0);
+  assert.equal(returned.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.deepEqual(returned.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+  assert.deepEqual((await journal.get(99)).outcome, returned);
+  assert.deepEqual((await f.store.get(99)).outcome.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+  assert.equal((await journal.get(99)).collection.clean, false);
+  assert.equal((await f.api.get('/pulls/43')).draft, false);
+  assert.match(f.comments[0].body, /Completion: COMPLETED_WITH_WARNINGS/);
+  assert.match(f.comments[0].body, /UNCOMMITTED_WORK_REMAINS/);
+  assert.match(f.comments[0].body, /owner.*reviewer must reconcile.*before acceptance/i);
+  assert.equal(await reportRoutingResult(() => runAttempt({ ...args,
+    prepare: () => assert.fail('replay prepared the checkout'),
+    execute: () => assert.fail('replay executed the worker'),
+    collect: () => assert.fail('replay recollected residue') }), reporting), 0);
+  assert.deepEqual(JSON.parse(stdout[1]), JSON.parse(stdout[0]));
+  assert.equal(warnings.filter(text => text.startsWith('::warning') && text.includes('UNCOMMITTED_WORK_REMAINS')).length, 2);
+  assert.equal(await readFile(residue, 'utf8'), 'generated local validation cache\n');
+  assert.equal(await f.command(f.cwd, ['status', '--porcelain']), '?? __pycache__/');
+  assert.equal(await f.command(f.cwd, ['rev-list', '--count', `${f.envelope.startHead}..HEAD`]), '1');
+  assert.equal(await f.command(f.cwd, ['ls-tree', '--name-only', 'HEAD', '__pycache__']), '');
+  assert.equal(executions, 1); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+});
+
+test('replay restores the Writer warning receipt when completion preceded the runner terminal journal write', async t => {
+  const f = await fixture(t); const journal = memoryStore();
+  const residue = join(f.cwd, 'validation-cache.tmp');
+  const completed = await runAttempt({ ...f, journal, execute: async () => {
+    await f.commit(); await writeFile(residue, 'generated validation residue\n');
+    return result(f.envelope, 'success');
+  } });
+  // Model the crash window after Writer persisted finish but before the runner
+  // persisted the returned receipt. Execution and publication are already known.
+  const interrupted = await journal.get(99); interrupted.outcome = null;
+  await journal.put(99, interrupted);
+  assert.deepEqual(completed.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+  assert.deepEqual((await f.store.get(99)).outcome.executionWarnings, completed.executionWarnings);
+  const operations = []; const warnings = []; let restored;
+  const args = { ...f, journal,
+    prepare: () => assert.fail('receipt restoration prepared the checkout'),
+    execute: () => assert.fail('receipt restoration executed the worker'),
+    collect: () => assert.fail('receipt restoration recollected residue'),
+    broker: { invoke: request => { operations.push(request.operation); return f.broker.invoke(request); } } };
+  assert.equal(await reportRoutingResult(async () => { restored = await runAttempt(args); return restored; },
+    { write() {}, writeError: text => warnings.push(text) }), 0);
+  assert.deepEqual(restored, completed);
+  assert.deepEqual(operations, ['preflight']);
+  assert.deepEqual((await journal.get(99)).outcome, completed);
+  assert.equal(warnings.filter(text => text.startsWith('::warning') && text.includes('UNCOMMITTED_WORK_REMAINS')).length, 1);
+  assert.deepEqual(await runAttempt({ ...args, broker: { invoke: () => assert.fail('restored receipt contacted Writer') } }), completed);
+  assert.equal(await readFile(residue, 'utf8'), 'generated validation residue\n');
+  assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+});
+
+test('a failed terminal journal write remains red on replay even after Writer persisted successful handoff with a warning', async t => {
+  const f = await fixture(t); const journal = memoryStore(); const put = journal.put;
+  let writeFailed = false;
+  journal.put = async (id, record) => {
+    if (record.outcome?.status === 'IMPLEMENTED_PENDING_FRESH_REVIEW' && !writeFailed) {
+      writeFailed = true; throw failure('JOURNAL_WRITE_FAILED');
+    }
+    return put(id, record);
+  };
+  assert.equal(await report(() => runAttempt({ ...f, journal, execute: async () => {
+    await f.commit(); await writeFile(join(f.cwd, 'validation-cache.tmp'), 'generated validation residue\n');
+    return result(f.envelope, 'success');
+  } })), 1);
+  const failed = await journal.get(99);
+  assert.equal(failed.outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.deepEqual(failed.outcome.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+  assert.equal(failed.diagnostic.orchestration, 'FAILED');
+  assert.equal(failed.diagnostic.classification.code, 'JOURNAL_WRITE_FAILED');
+  assert.equal(await report(() => runAttempt({ ...f, journal,
+    broker: { invoke: () => assert.fail('failed terminal replay contacted Writer') },
+    prepare: () => assert.fail('failed terminal replay prepared the checkout'),
+    execute: () => assert.fail('failed terminal replay executed the worker'),
+    collect: () => assert.fail('failed terminal replay recollected residue') })), 1);
+  assert.deepEqual(await journal.get(99), failed);
+  assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+});
+
+for (const boundary of ['collection', 'clean-observation', 'publication', 'authority', 'containment', 'outcome', 'journal']) {
+  test(`successful worker with generated residue stays red when ${boundary} is uncertain or failed`, async t => {
+    const f = await fixture(t); const journal = memoryStore();
+    const residue = join(f.cwd, 'validation-cache.tmp');
+    const broker = { invoke: async request => {
+      if (boundary === 'publication' && request.operation === 'publish-progress') throw failure('PUBLICATION_UNCERTAIN');
+      if (boundary === 'outcome' && request.operation === 'finish') throw failure('COMMENT_PUBLICATION_UNCERTAIN');
+      return f.broker.invoke(request);
+    } };
+    const put = journal.put;
+    if (boundary === 'journal') journal.put = async (id, row) => { if (row.outcome) throw failure('JOURNAL_WRITE_FAILED'); return put(id, row); };
+    assert.equal(await report(() => runAttempt({ ...f, broker, journal,
+      collect: async e => {
+        if (boundary === 'collection') throw failure('OBJECT_IMPORT_FAILED');
+        const progress = await f.collect(e);
+        return boundary === 'clean-observation' ? { ...progress, clean: undefined } : progress;
+      },
+      execute: async () => {
+        await f.commit(); await writeFile(residue, 'generated validation residue\n');
+        if (boundary === 'authority') f.issue.body += '\nChanged owner requirement.';
+        const returned = result(f.envelope, 'success');
+        if (boundary === 'containment') returned.containment = 'unknown';
+        return returned;
+      } })), 1);
+    assert.equal(await readFile(residue, 'utf8'), 'generated validation residue\n');
+    if (boundary !== 'journal') assert.equal((await journal.get(99)).diagnostic.orchestration, 'FAILED');
   });
 }
 

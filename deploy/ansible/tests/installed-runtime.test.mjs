@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { fixture } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
@@ -134,6 +135,45 @@ test('installed profile rejection never starts a child or inherits a model defau
     });
   }
 });
+
+for (const mode of ['generated-residue', 'unreadable-task-work']) {
+  test(`installed ${mode} publication observes worker ownership and collector permissions`, async t => {
+    const f = await fixture(t, { installed: true, remediation: true,
+      instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+    const journal = attemptStore(f);
+    const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
+    const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
+    if (mode === 'generated-residue') {
+      const result = await runAttempt(args);
+      assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+      const saved = await journal.get(f.envelope.runId);
+      assert.equal(saved.collection.clean, false);
+      assert.equal(saved.progress.head, await f.remoteHead());
+      assert.equal(f.pushes(), 1);
+      assert.match(f.comments[0].body, /UNCOMMITTED_WORK_REMAINS/);
+      assert.deepEqual(await runAttempt(args), result);
+    } else {
+      await assert.rejects(runAttempt(args), error => {
+        assert.equal(error.code, 'TRUSTED_GIT_FAILED');
+        assert.equal(error.details.diagnostic.orchestration, 'FAILED');
+        return true;
+      });
+      const saved = await journal.get(f.envelope.runId);
+      assert.equal(saved.progress, null);
+      assert.equal(saved.outcome.status, 'BLOCKED');
+      assert.equal(f.pushes(), 0);
+    }
+    const remaining = `${f.cwd}/${mode === 'generated-residue' ? 'validation-output.tmp' : 'docs/work.md'}`;
+    const metadata = await stat(remaining);
+    assert.equal(metadata.uid, 24002);
+    assert.notEqual(metadata.uid, process.getuid());
+    assert.equal(metadata.mode & 0o777, 0o600);
+    await assert.rejects(access(remaining, constants.R_OK), { code: 'EACCES' });
+    assert.equal(calls, 1);
+    assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
+    await retireVerifiedFixtureCapsule(f);
+  });
+}
 
 test('installed checkout-ownership keeps fixture cleanup and collection isolated', async t => {
   const first = await fixture(t, { installed: true, remediation: true, instruction: 'fixture-mode=checkout-ownership-first' });

@@ -7,6 +7,14 @@ const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
 const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
+// These are controller observations, separate from worker validation claims and
+// admission defaults. Never infer that uncommitted bytes are disposable.
+export function executionWarningSummary(warnings) {
+  return Array.isArray(warnings) && warnings.includes('UNCOMMITTED_WORK_REMAINS')
+    ? 'UNCOMMITTED_WORK_REMAINS: Uncommitted/non-ignored checkout residue was retained. The owner and independent reviewer must reconcile it with the worker claims and published diff before acceptance or another attempt; no cleanup, commit, publication or retry of that residue was performed.'
+    : '';
+}
+
 function safeCode(value) {
   return typeof value === 'string' && SAFE_CODE.test(value) ? value : 'UNAVAILABLE';
 }

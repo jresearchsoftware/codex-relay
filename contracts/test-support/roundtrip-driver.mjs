@@ -32,7 +32,7 @@ export async function admitPublished(arguments_, publication) {
   assert.ok(contract.required_validation.every(v => NATIVE_VALIDATIONS.has(v)));
   assert.deepEqual(contract.required_validation, [...input.required_validation].sort());
   const labels = [{ name: `step-${input.step > 1 ? input.step - 1 : input.step}` }];
-  const issue = { number: 24, labels: structuredClone(labels), state: 'open', user: { login: OWNER }, body: '# Task 24\nImplement the admitted serialization change.' };
+  const issue = { number: 24, labels: structuredClone(labels), state: 'open', user: { login: OWNER }, body: '# Task 24\nImplement the admitted serialization change.\nIssue closure policy: keep-open' };
   const pr = { number: arguments_.pr_number, state: 'open', merged: false, draft: false, body: 'Related to #24',
     labels: structuredClone(labels), title: 'Task 24 serialization', base: { ref: CONSUMER.baseBranch, sha: publication.commit_id, repo: { full_name: REPOSITORY } },
     head: { ref: `${CONSUMER.taskBranchPrefix}task-24`, sha: publication.commit_id, repo: { full_name: REPOSITORY } } };

@@ -15,7 +15,7 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
   // A durable terminal receipt ends this attempt's mutable-checkout lifetime.
   // Replay outside the catch path so it cannot recollect or republish anything.
   if (record?.outcome) {
-    if (record.outcome.status === 'BLOCKED') {
+    if (record.outcome.status === 'BLOCKED' || record.diagnostic?.orchestration === 'FAILED') {
       const diagnostic = record.diagnostic;
       if (!diagnostic?.classification?.code) fail('TERMINAL_STATE_INVALID');
       const code = diagnostic.classification.code;
@@ -39,7 +39,16 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
     if (record.execution?.reserved && !record.execution.returned) fail('EXECUTION_UNKNOWN_NO_RETRY');
     const preflight = await invoke('preflight');
     lastSuccessfulBoundary = 'preflight';
-    if (preflight.finalHead) return { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: preflight.finalHead };
+    if (preflight.finalHead) {
+      // Writer may have durably finished before the runner saved its receipt.
+      // Restore that exact receipt, including warnings, without recollection.
+      if (preflight.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
+        || preflight.outcome.head !== preflight.finalHead) fail('TERMINAL_STATE_INVALID');
+      record.outcome = preflight.outcome;
+      record.diagnostic = null;
+      await journal.put(e.runId, record);
+      return record.outcome;
+    }
     if (!record.execution) {
       await prepare(e);
       lastSuccessfulBoundary = 'checkout';
@@ -62,6 +71,7 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
     lastSuccessfulBoundary = 'contained-execution';
     stage = 'progress';
     const progress = await collect(e);
+    if (typeof progress.clean !== 'boolean') fail('WORKTREE_STATE_UNKNOWN');
     record.collection = { head: progress.head, clean: progress.clean === true };
     lastSuccessfulBoundary = 'collection';
     if (progress.bundle) {
@@ -71,7 +81,9 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
       await journal.put(e.runId, record);
     }
     stage = 'readiness';
-    if (!progress.clean) fail('UNCOMMITTED_WORK_REMAINS');
+    // Dirtiness alone is not an automation failure after known successful
+    // execution. An incomplete worker still needs its unsaved work reconciled.
+    if (!progress.clean && record.execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
     if (record.execution.result?.status !== 'success') {
       if (record.execution.errorCode) stage = 'execution';
       const code = record.execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED';
@@ -79,7 +91,9 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
         causal: record.execution.diagnostic, primaryCause: record.execution.diagnostic?.primaryCause ?? null } });
     }
     if (!record.progress) fail('NO_DURABLE_PROGRESS');
+    if (record.progress.head !== progress.head) fail('PUBLISHED_HEAD_REQUIRED');
     record.outcome = await invoke('finish', { head: record.progress.head,
+      executionWarnings: progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'],
       taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
     record.diagnostic = null; await journal.put(e.runId, record);
     return record.outcome;

@@ -36,11 +36,13 @@ export async function recoverAttemptPublication({ runId, attemptId, authorizatio
     await journal.put(runId, record);
     progress ??= await collect(e);
     if (progress.head !== published.publishedHead) fail('RECOVERY_CANDIDATE_CHANGED');
+    if (typeof progress.clean !== 'boolean') fail('WORKTREE_STATE_UNKNOWN');
     record.collection = { head: progress.head, clean: progress.clean === true };
     record.progress.clean = progress.clean === true;
-    if (!progress.clean) fail('UNCOMMITTED_WORK_REMAINS');
+    if (!progress.clean && execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
     if (execution.result?.status !== 'success') fail(execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED');
     record.outcome = await invoke('finish', { head: published.publishedHead, recoveryAuthorizationId: authorizationId,
+      executionWarnings: progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'],
       taskResult: { summary: execution.result.summary, validation: execution.result.validation } });
     record.progress.prNumber = record.outcome.prNumber;
     record.diagnostic = null;
