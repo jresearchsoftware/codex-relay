@@ -92,6 +92,8 @@ def main():
         create = """import json,os,sys
 root=sys.argv[1]
 os.mkdir(root, 0o700)
+# Codex explicitly sets 0700 after mkdir; clear the parent's inherited setgid.
+os.chmod(root, 0o700)
 with open(root+'/private-state','w') as f: f.write('synthetic protected state')
 s=os.stat(root)
 print(json.dumps({'uid':os.getuid(),'mode':s.st_mode & 0o777}))
