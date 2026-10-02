@@ -4,6 +4,7 @@ import { writeFile, readFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 import { fixture, memoryStore } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
@@ -51,6 +52,68 @@ test('ordinary uncertain publication and replay cannot authorize recovery or ano
   await assert.rejects(f.broker.invoke({ ...f.ordinary, operation: 'recover-publication' }), { code: 'RECOVERY_OWNER_AUTHORIZATION_REQUIRED' });
   assert.equal(f.pushes(), 1);
 });
+
+for (const merged of [false, true]) {
+  test(`Issue publication recovery ignores a historical ${merged ? 'merged' : 'closed'} PR on the reused branch`, async t => {
+    const f = await uncertain(t, { remediation: false });
+    const historical = { number: 41, state: 'closed', merged, draft: false, body: 'Closes #42',
+      base: { ref: CONSUMER.baseBranch, sha: f.envelope.startHead, repo: { full_name: REPOSITORY } },
+      head: { ref: f.envelope.branch, sha: f.envelope.startHead, repo: { full_name: REPOSITORY } } };
+    const list = f.api.list.bind(f.api); const lookups = [];
+    f.api.list = async path => {
+      const rows = await list(path);
+      if (!path.startsWith('/pulls?')) return rows;
+      const state = new URL(path, 'https://fixture.test').searchParams.get('state');
+      lookups.push(state);
+      return [...rows, historical].filter(pr => state === 'all' || pr.state === state);
+    };
+    const { request } = await f.authorize();
+    assert.equal((await f.broker.invoke(request)).publishedHead, f.progress.head);
+    assert.equal((await f.broker.invoke(request)).publishedHead, f.progress.head);
+    assert.equal(f.pushes(), 2); // failed original push plus the one authorized recovery
+    const published = await f.broker.invoke(f.ordinary);
+    assert.equal(published.prNumber, 43);
+    assert.equal(f.pushes(), 2);
+    assert.ok(lookups.length >= 2);
+    assert.ok(lookups.every(state => state === 'open'));
+    assert.equal(historical.state, 'closed');
+  });
+}
+
+test('Issue recovery fails closed on multiple current PRs before another push', async t => {
+  const f = await uncertain(t, { remediation: false });
+  const list = f.api.list.bind(f.api);
+  f.api.list = path => path.startsWith('/pulls?')
+    ? Promise.resolve([{ number: 43, state: 'open' }, { number: 44, state: 'open' }]) : list(path);
+  const { request } = await f.authorize();
+  await assert.rejects(f.broker.invoke(request), { code: 'PR_AMBIGUOUS' });
+  assert.equal(f.pushes(), 1);
+  assert.equal((await f.store.get(99)).publicationRecoveries, undefined);
+});
+
+for (const changed of ['closed', 'replaced']) {
+  test(`Issue recovery preserves a previously resolved PR when it is ${changed}`, async t => {
+    const f = await fixture(t);
+    await f.prepare(f.envelope); await f.commit();
+    const first = await f.collect(f.envelope);
+    await f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: first.bundle });
+    assert.equal((await f.store.get(99)).prNumber, 43);
+    await f.commit('docs/work.md', 'next progress\n'); f.progress = await f.collect(f.envelope);
+    f.failPush(true);
+    await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99,
+      attemptId: f.envelope.attemptId, bundle: f.progress.bundle }), { code: 'PUBLICATION_UNCERTAIN' });
+    f.failPush(false); ownerSurface(f);
+    const list = f.api.list.bind(f.api);
+    f.api.list = async path => {
+      const rows = await list(path);
+      return path.startsWith('/pulls?') ? changed === 'closed' ? [] : rows.map(pr => ({ ...pr, number: 44 })) : rows;
+    };
+    const { request } = await f.authorize();
+    await assert.rejects(f.broker.invoke(request), { code: changed === 'closed' ? 'PR_PUBLICATION_UNCERTAIN' : 'PR_AUTHORITY_CHANGED' });
+    assert.equal(f.pushes(), 2); // first publication and failed next push only
+    assert.equal((await f.store.get(99)).publicationRecoveries, undefined);
+  });
+}
 
 test('label-launched publication recovery binds the consumed command and preserves its Step', async t => {
   const f = await uncertain(t, { labelLaunch: true, step: 5 });

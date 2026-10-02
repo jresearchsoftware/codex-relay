@@ -68,6 +68,21 @@ explicit base blocks; the admitted exact base cannot move during execution.
 The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
 
+For Issue publication, Writer resolves only open PRs for the admitted repository,
+branch and configured base. Closed and merged PRs using that branch remain
+history: they neither block a fresh PR nor receive labels, readiness changes or
+terminal Outcomes. A single current PR must retain the exact repository, branch
+and Issue linkage; multiple current candidates fail closed. Before mutating a
+resolved target, Writer records its PR number in the existing attempt receipt.
+A missing or replaced target then blocks continuation rather than creating or
+adopting another PR. With no current or previously resolved PR, a blocked Outcome
+targets the admitted Issue. The same current-target resolution
+applies to owner-authorized publication recovery, preserving its exact previous
+head check. A reserved PR creation is never repeated merely because no open PR
+is visible, including when the created PR has since closed. Before a PR number
+has been observed, uncertain creation must reconcile a compatible current PR
+carrying the same native attempt marker or stop without another POST.
+
 The automatic worker follows [progress-bounded execution](../docs/execution-policy.md):
 it may iteratively diagnose, correct and validate any repository file required
 by the admitted goal. Writer identity, the task commit chain, safe Git paths and regular-file modes,

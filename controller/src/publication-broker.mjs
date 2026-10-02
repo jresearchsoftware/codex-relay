@@ -8,6 +8,7 @@ import { admissionWarningSummary, terminalOutcomeBody, workerOutcomeClaims } fro
 import { boundedThreadCorrelationIdentity, threadCorrelationIdentity } from './run-name.mjs';
 import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody } from './publication-recovery.mjs';
 import { assertStep, labelNames, stepLike } from './step-metadata.mjs';
+import { findCurrentIssuePullRequest } from './publication-target.mjs';
 
 // Caller serializes this broker across processes. Store contains only immutable
 // admission and mutation intents/receipts, never child, retry or lifecycle state.
@@ -68,32 +69,38 @@ export function createPublicationBroker({ api, store, publisher }) {
   }
   async function pullRequest(r) {
     const e = r.envelope;
-    if (e.target === 'pull_request') {
-      const pr = await api.get(`/pulls/${e.number}`); assertPr(pr, e.number); return mirrorStep(r, pr);
-    }
-    const matches = await api.list(`/pulls?state=all&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(e.branch)}&base=${encodeURIComponent(CONSUMER.baseBranch)}`);
-    if (matches.length > 1) fail('PR_AMBIGUOUS');
-    if (matches.length === 1) {
-      const pr = matches[0]; assertPr(pr, pr.number);
-      if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
-      return mirrorStep(r, pr);
-    }
+    const existing = await existingPullRequest(r);
+    if (existing) return mirrorStep(r, existing);
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
     const pr = await api.post('/pulls', { title: secretFree(boundedThreadCorrelationIdentity(e.thread)), head: e.branch, base: CONSUMER.baseBranch, draft: true,
       body: `Implementation of https://github.com/${REPOSITORY}/issues/${e.issueNumber}\n\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nStarting head: ${e.startHead}\n\n${e.closure}` });
-    assertPr(pr, pr.number); return mirrorStep(r, pr);
+    assertPr(pr, pr.number);
+    if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
+    await rememberPullRequest(r, pr);
+    return mirrorStep(r, pr);
+  }
+  async function rememberPullRequest(r, pr) {
+    // Preserve the first observed target before any label/readiness mutation.
+    // Closing or replacing it cannot authorize another PR in this attempt.
+    if (r.prNumber && r.prNumber !== pr.number) fail('PR_AUTHORITY_CHANGED');
+    if (!r.prNumber) {
+      r.prNumber = pr.number;
+      await store.put(r.envelope.runId, r);
+    }
   }
   async function existingPullRequest(r) {
     const e = r.envelope;
     if (e.target === 'pull_request') {
       const pr = await api.get(`/pulls/${e.number}`); assertPr(pr, e.number); return pr;
     }
-    const matches = await api.list(`/pulls?state=all&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(e.branch)}&base=${encodeURIComponent(CONSUMER.baseBranch)}`);
-    if (matches.length > 1) fail('PR_AMBIGUOUS');
-    if (matches.length === 0) return null;
-    const pr = matches[0]; assertPr(pr, pr.number);
-    if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
+    const pr = await findCurrentIssuePullRequest(api, e, r.prNumber);
+    if (pr) {
+      // An uncertain POST has no number receipt yet. Reconcile its own native
+      // attempt binding, not a different compatible PR created in the meantime.
+      if (r.prIntent && !r.prNumber && !String(pr.body).split(/\r?\n/).includes(`Attempt: ${e.attemptId}`)) fail('PR_PUBLICATION_UNCERTAIN');
+      await rememberPullRequest(r, pr);
+    }
     return pr;
   }
 
