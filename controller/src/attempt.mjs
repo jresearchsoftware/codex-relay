@@ -86,8 +86,8 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
   } catch (error) {
     error.details = { ...error.details,
       ...(stage === 'execution' ? { causal: error.details?.causal ?? record.execution?.diagnostic } : {}),
-      childState: error.details?.childState ?? record.execution?.child ?? 'not_started',
-      containment: error.details?.containment ?? record.execution?.containment ?? 'not_required',
+      childState: error.details?.childState ?? (record.execution ? record.execution.child ?? 'unknown' : 'not_started'),
+      containment: error.details?.containment ?? (record.execution ? record.execution.containment ?? 'unknown' : 'not_required'),
       executionId: e.attemptId };
     if (!error.details.lastSuccessfulBoundary && !error.details.causal?.lastSuccessfulBoundary) error.details.lastSuccessfulBoundary = lastSuccessfulBoundary;
     // Preparation, collection and journal/finalization failures also need a
