@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,10 +16,30 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / '.github/workflows'
 NODE = shutil.which('node')
 HEAD = 'a' * 40
+sys.path.insert(0, str(ROOT / 'deploy'))
+from workflow_projection import render
+
+
+def self_config():
+    """Synthetic inputs with the public consumer's non-secret workflow wiring."""
+    config = json.loads((ROOT / 'deploy/example.json').read_text())
+    config['source']['repository'] = 'https://github.com/jresearchsoftware/codex-relay.git'
+    config['consumer']['repository'] = 'jresearchsoftware/codex-relay'
+    config['consumer']['owner'] = 'foal'
+    config['environment']['runner'].update(user='codex-relay-runner', name='codex-relay-runner',
+                                            group='codex-relay-runner', labels=['codex-relay'])
+    config['environment']['generalRunner'].update(user='codex-relay-general-runner', name='codex-relay-general-runner')
+    config['environment']['localApply'] = {'source': 'installed'}
+    return config
 
 
 def workflow(name):
-    value = yaml.safe_load((WORKFLOWS / name).read_text(encoding='utf-8'))
+    # Managed workflows are tested from canonical source at a synthetic pinned
+    # product revision. The repository projection remains the installed owner
+    # version until an accepted release is explicitly projected and reviewed.
+    sources = render(self_config(), HEAD, ROOT)
+    raw = sources.get('.github/workflows/' + name)
+    value = yaml.safe_load(raw if raw is not None else (WORKFLOWS / name).read_bytes())
     # PyYAML's YAML 1.1 boolean resolver recognizes GitHub's unquoted `on` key.
     if True in value:
         value['on'] = value.pop(True)
@@ -59,7 +80,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_RELAY_HEAD'], '${{ github.sha }}')
+                self.assertEqual(step['env']['EXPECTED_RELAY_HEAD'], HEAD)
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
                 self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
@@ -212,14 +233,24 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 for invalid in ({'EXPECTED_RELAY_HEAD': 'b' * 40}, {'EXPECTED_RELAY_HEAD': '../../candidate'}):
                     blocked = execute(value, invalid)
                     self.assertNotEqual(blocked.returncode, 0)
-                    self.assertIn('INSTALLED_RELAY_HEAD_MISMATCH', blocked.stderr)
+                    self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
                     self.assertNotIn('FIXTURE_ROUTING_STARTED', blocked.stdout)
                     self.assertNotIn('fixtureRequest', blocked.stdout)
                 identity.write_text(json.dumps({'revision': 'b' * 40}))
                 blocked = execute(value)
                 self.assertNotEqual(blocked.returncode, 0)
-                self.assertIn('INSTALLED_RELAY_HEAD_MISMATCH', blocked.stderr)
+                self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
                 identity.write_text(json.dumps({'revision': HEAD}))
+
+            # A consumer commit, newer Relay main or unavailable latest-version
+            # information never changes the installed runtime selection.
+            for value in (self.routing, self.recovery):
+                continued = execute(value, {'GITHUB_SHA': 'c' * 40, 'LATEST_RELAY_HEAD': 'd' * 40})
+                self.assertEqual(continued.returncode, 0, continued.stderr)
+                self.assertNotIn('warning', continued.stdout.lower())
+                self.assertEqual(continued.stderr, '')
+                logged = json.loads(continued.stdout.splitlines()[0])
+                self.assertEqual(logged, {'installedRelayHead': HEAD, 'workflowHead': 'c' * 40})
 
             inspected = execute(self.recovery)
             self.assertEqual(inspected.returncode, 0, inspected.stderr)

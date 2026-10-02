@@ -95,7 +95,7 @@ class GeneralRunnerTests(unittest.TestCase):
                 self.assertIn("--runnergroup '" + expected_group + "'", helper)
             self.assertNotIn('--token', helper)
             self.assertIn('read -r -s registration_value', helper)
-            self.assertIn('REGISTRATION_ALREADY_PRESENT', helper)
+            self.assertIn('state=reused', helper)
             self.assertNotIn('{{', helper)
             unit = ENV.from_string((ROLE / 'templates/relay-runner.service.j2').read_text()).render(values)
             self.assertIn('RUNNER_REGISTRATION=owner-mediated-' + scope + '-token', unit)

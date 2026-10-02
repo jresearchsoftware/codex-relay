@@ -88,6 +88,7 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
             "relay_review_root": str(review_root),
             "relay_installed_config_expected_sha256": digest,
             "relay_consumer_revision": consumer_revision,
+            "relay_workflow_consumer_revision": "d" * 40,
         })
         helper.write_text(textwrap.dedent(f"""\
             import fcntl
@@ -96,7 +97,7 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
             from pathlib import Path
             import sys
 
-            assert sys.argv[1:] == {[HEAD, digest, consumer_revision]!r}
+            assert sys.argv[1:] == {[HEAD, digest, consumer_revision, "d" * 40]!r}
             record = Path({variables['relay_production_operation_record_path']!r})
             assert not record.exists(), 'record reserved before installed verification'
             fd = os.open({variables['relay_production_operation_lock_path']!r}, os.O_RDONLY)
@@ -461,7 +462,7 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
                     output = result.stdout + result.stderr
                     self.assertTrue(invocation.exists(), output)
                     self.assertEqual(json.loads(invocation.read_text()), {
-                        "argv": [HEAD, "f" * 64, "c" * 40], "lockHeld": True, "recordPresent": False,
+                        "argv": [HEAD, "f" * 64, "c" * 40, "d" * 40], "lockHeld": True, "recordPresent": False,
                     })
                     if accepted:
                         self.assertEqual(result.returncode, 0, output)

@@ -98,8 +98,10 @@ local diagnose/fix/validate iterations.
 
 ## Trust and deployment
 
-The consumer supplies trusted workflows, workflow concurrency, App/ingress
-references and owner lifecycle decisions. Relay implements the root Writer
+The consumer supplies runner policy, App/ingress references and owner lifecycle
+decisions and reviews the installed workflow projection. Relay owns canonical
+workflow templates, deterministic projection and workflow concurrency, as well
+as the root Writer
 lock, fixed wrappers/sudo policy, worker isolation and deployment lifecycle. Caller JSON cannot select a credential, executable or repository.
 Keep root-owned configuration and separate consumer state outside worker-writable
 paths. Never execute PR/fork-controlled code on a persistent privileged runner.
@@ -110,6 +112,17 @@ Consumers own configuration, secret references, target properties, policy and
 channel/revision selection. Ansible is a replaceable internal backend; it is
 not a consumer API. A selector resolves once and the exact installed identity
 is reported. Selecting a version does not grant deployment authority.
+
+Product source revision, installed product revision, consumer authority revision
+and latest accepted product revision are independent. Routing and recovery use
+the installed revision pinned by the reviewed workflow projection; advancing
+either repository does not upgrade or invalidate it. An owner selects one exact
+accepted target, reviews its generated projection, and uses the public upgrade
+primitive to apply and verify that same target under the existing host lock.
+Unknown or failed transitions retain recovery evidence. Task #25 may wrap this
+primitive with quiesce/drain/resume policy; the primitive does not invent that
+authority. Without authoritative latest-release information no update note is
+emitted, and availability of a newer revision is never itself a warning or gate.
 
 The [Reviewer](../reviewer/README.md) is a narrow MCP HTTP service behind a
 trusted mTLS terminator. It verifies forwarded client identity and binds every

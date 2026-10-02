@@ -58,8 +58,12 @@ terminal status values are protocol vocabulary. The historical
 for duplicate recovery; it grants no organization or App authority. The local
 `refs/remotes/main` import ref is a private alias for the configured base SHA.
 
-Consumer workflows own runner labels/groups, event wiring, effective model
-policy and deployment decisions. Relay owns the deployment implementation. The [rendering examples](../examples/README.md)
+Consumers own runner labels/groups, effective model policy and deployment
+decisions. Relay owns the canonical routing/recovery workflow templates and
+their deterministic [installed projection](../deploy/README.md#workflow-projection-and-pinned-runtime).
+The selected product revision is independent of the consumer commit processed
+by those workflows. Consumer candidate validation remains consumer-owned.
+Relay owns the deployment implementation. The [rendering examples](../examples/README.md)
 are synthetic inputs; the [deployment interface](../deploy/README.md) implements
 installation and owner-authorized lifecycle operations.
 

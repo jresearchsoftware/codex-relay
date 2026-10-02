@@ -103,7 +103,7 @@ class RunnerLifecycleTests(unittest.TestCase):
 
     def test_registration_helper_never_places_token_in_argv_or_persists_it(self):
         helper = RUNNER_REGISTRATION.read_text(encoding="utf-8")
-        for marker in ("ACTIONS_RUNNER_INPUT_TOKEN", "read -r -s", "--disableupdate", "RUNNER_REGISTRATION_PASS", "REGISTRATION_ALREADY_PRESENT", "normalize_diagnostics", "runuser --preserve-environment --user '{{ relay_runner_user }}'"):
+        for marker in ("ACTIONS_RUNNER_INPUT_TOKEN", "read -r -s", "--disableupdate", "RUNNER_REGISTRATION_PASS", "REGISTRATION_STATE_AMBIGUOUS", "normalize_diagnostics", "runuser --preserve-environment --user '{{ relay_runner_user }}'"):
             self.assertIn(marker, helper)
         self.assertNotIn("--token", helper)
         self.assertNotIn("GITHUB_APP", helper)
@@ -133,7 +133,7 @@ class RunnerLifecycleTests(unittest.TestCase):
                 self.assertEqual(helper.count("exec ./config.sh"), 1)
                 self.assertIn('"${registration_group_args[@]}"', helper)
                 self.assertNotIn("--token", helper)
-                self.assertIn("REGISTRATION_ALREADY_PRESENT", helper)
+                self.assertIn("state=reused", helper)
                 if profile == "qualification":
                     self.assertNotIn("--runnergroup", helper)
                 else:

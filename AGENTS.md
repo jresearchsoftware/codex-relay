@@ -188,6 +188,11 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
 
 ## Preserve the product boundaries
 
+- Edit Relay-managed workflow behavior in `deploy/workflows/*.yml.in`, never
+  the installed `.github/workflows/` projection as product source. Use the
+  [public projection interface](deploy/README.md#workflow-projection-and-pinned-runtime)
+  from an exact accepted product revision; generated consumer changes retain
+  ordinary owner review/merge authority. Product CI remains consumer-owned.
 - Keep consumer policy, model defaults, credentials, runner configuration and
   operations in consumer-owned configuration. Use synthetic examples here.
 - Resolve model, reasoning effort and Subagents once at admission. Omitted

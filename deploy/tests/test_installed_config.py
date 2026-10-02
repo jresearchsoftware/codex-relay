@@ -21,6 +21,7 @@ import installed_config
 
 HEAD = 'a' * 40
 CONSUMER_HEAD = 'b' * 40
+WORKFLOW_HEAD = 'c' * 40
 PRIVATE_MARKER = 'fixture-private-config-marker'
 
 
@@ -132,6 +133,7 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
         values = next(iter(values.values()))
         assert values['ansible_connection'] == 'local'
         assert values['relay_consumer_revision'] == CONSUMER_HEAD != HEAD
+        assert values['relay_workflow_consumer_revision'] == WORKFLOW_HEAD
         assert values['relay_installed_config_expected_sha256'] == digest
         assert not values['relay_installed_config_recovery_authorized']
         assert values['relay_installed_deployment_config'] == raw
@@ -146,6 +148,7 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
     monkeypatch.setattr(deployment_lock, 'acquire', acquire_fixture)
     monkeypatch.setattr(sys, 'argv', ['relay-deploy', '--config', str(installed['snapshot']),
                         '--phase', 'apply', '--local-reconcile', '--expected-installed-head', HEAD,
+                        '--workflow-consumer-revision', WORKFLOW_HEAD,
                         '--log-root', str(installed['base'] / 'logs')])
     # The public CLI normally exits its process with a restrictive mask. This
     # in-process adapter test must not change later native filesystem fixtures.
@@ -185,8 +188,8 @@ def test_supported_repository_spelling_and_default_main(installed, source):
     with patch.object(installed_config, 'check_public_main') as remote:
         config, observed, consumer = installed_config.verify(
             installed['source'], HEAD, expected_digest=digest,
-            expected_consumer_revision=CONSUMER_HEAD, check_main=True)
-    remote.assert_called_once_with('example/codex-relay', HEAD)
+            expected_consumer_revision=CONSUMER_HEAD, check_main=True, workflow_consumer_revision=WORKFLOW_HEAD)
+    remote.assert_called_once_with('example/codex-relay', WORKFLOW_HEAD)
     assert config['source'] == source
     assert observed == digest and consumer == CONSUMER_HEAD
 
@@ -281,7 +284,7 @@ def test_source_identity_must_match_installed_head(installed, capsys):
 ])
 def test_revalidation_rejects_changed_admission_binding_before_remote_read(installed, capsys, binding):
     with patch.object(installed_config, 'check_public_main') as remote:
-        assert_rejected(installed, capsys, check_main=True, **binding)
+        assert_rejected(installed, capsys, check_main=True, workflow_consumer_revision=WORKFLOW_HEAD, **binding)
     remote.assert_not_called()
 
 
@@ -311,7 +314,7 @@ def test_private_malformed_json_is_not_disclosed(installed, capsys, name):
 @pytest.mark.parametrize('name', ['snapshot', 'manifest_path', 'source_identity', 'current'])
 def test_remote_read_cannot_hide_changed_local_inputs(installed, capsys, name):
     def replace_after_read(repository, head):
-        assert (repository, head) == ('example/codex-relay', HEAD)
+        assert (repository, head) == ('example/codex-relay', WORKFLOW_HEAD)
         target = installed[name]
         if name == 'current':
             target.unlink()
@@ -319,7 +322,7 @@ def test_remote_read_cannot_hide_changed_local_inputs(installed, capsys, name):
         else:
             target.write_bytes(target.read_bytes() + b'\n')
     with patch.object(installed_config, 'check_public_main', side_effect=replace_after_read):
-        assert_rejected(installed, capsys, check_main=True)
+        assert_rejected(installed, capsys, check_main=True, workflow_consumer_revision=WORKFLOW_HEAD)
 
 
 @pytest.mark.parametrize('mutation', ['symlink', 'private-json'])
@@ -333,7 +336,7 @@ def test_cli_failure_is_bounded_and_never_discloses_snapshot(installed, mutation
         save_config(installed)
     completed = subprocess.run([
         sys.executable, str(installed['source'] / 'deploy/installed_config.py'), HEAD,
-        installed['manifest']['deploymentConfigSha256'], CONSUMER_HEAD,
+        installed['manifest']['deploymentConfigSha256'], CONSUMER_HEAD, WORKFLOW_HEAD,
     ], capture_output=True, text=True)
     assert completed.returncode == 1
     assert completed.stdout == ''

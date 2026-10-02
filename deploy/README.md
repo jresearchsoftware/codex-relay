@@ -62,6 +62,42 @@ change after qualification. Service activation still requires the existing
 explicit activation gate. Ordinary apply does not register or activate runners.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
 
+### Fresh-owner preparation
+
+Create and install distinct Writer and Reviewer Apps for the selected consumer
+with the permissions in the [integration reference](../docs/integration-reference.md).
+Record only their IDs, identities and protected key-file references in one
+owner-controlled `relay.json`. Configure strict SSH host/key identities,
+public DNS/ingress and the chosen runner policy. Before registration, prove the
+external runner-group workflow/ref restrictions described in the
+[activation boundary](../docs/self-dogfood-workflows.md#activation-boundary).
+Repository labels and a workflow's `if` expression cannot establish that policy.
+
+`validate` reports invalid local schema/identity/path prerequisites. `check`
+reports installation plans and protected target conflicts; `tls-check` distinguishes
+missing product bootstrap state from invalid existing TLS/CA state. These
+commands do not claim to read owner-admin GitHub settings: unavailable App
+installation/runner-group policy evidence requires owner verification, not a
+false claim that configuration validation proved it. Fresh runner registration
+is requested only after the intended installed runner cannot be reused.
+
+The supported sequence is:
+
+```text
+GitHub preparation -> durable config -> validate -> workflow projection/review
+-> check/apply -> scoped credential/TLS bootstrap -> ingress
+-> Reviewer activation -> runner registration/enablement -> qualification -> post-check
+```
+
+The first apply installs fixed bootstrap helpers. Each protected transition uses
+the same public entrypoint and explicit authorization flags from the tables
+below; separate capabilities need only their relevant credentials. Reuse the
+durable nonsecret config, accepted source and proven existing state on subsequent
+invocations. A private ignored wrapper may hold the config path and current
+optional registration-token arguments for operator convenience. It is never
+product configuration or execution authority. Ordinary logs and durable
+configuration must not contain those tokens.
+
 ### First-install bootstrap and reusable state
 
 Treat missing install-time state according to ownership before asking the owner
@@ -266,7 +302,8 @@ drift. Local fixtures prove the implementation contract; live cohosted proof
 and clean-environment standalone qualification remain separate evidence.
 
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
-`FETCH_HEAD^{commit}` once, check out that immutable commit, and invoke:
+`FETCH_HEAD^{commit}` once and check out that immutable commit. After reviewing
+its projection, a first installation invokes:
 
 ```sh
 python3 deploy/relay-deploy.py --config /path/to/consumer/deploy/relay.json \
@@ -276,8 +313,9 @@ python3 deploy/relay-deploy.py --config /path/to/consumer/deploy/relay.json \
 The product verifies its clean exact Git checkout and the consumer configuration
 checkout. Every source export, build, manifest, operation and post-check uses
 that one Relay SHA. Selection is not a consumer review/approval gate: accepted
-channel governance belongs to the Relay repository. An advancing channel or
-squash-merge SHA requires no consumer lock update.
+channel governance belongs to the Relay repository. Advancing a channel does
+not change durable owner configuration or the installed version. An owner
+upgrade explicitly updates the workflow projection and runtime together.
 
 Use a Linux controller with Git, Python 3, Node 22+, OpenSSH and Ansible Core
 plus the dependencies in [ansible/requirements.txt](ansible/requirements.txt).
@@ -306,6 +344,67 @@ provenance and actual Reviewer binary hash. These are observations and build
 reuse evidence, not a consumer security lock. Logs remain owner-local and
 contain bounded non-secret configuration/runtime evidence.
 
+## Workflow projection and pinned runtime
+
+Keep four revisions distinct: the accepted product source used for an install,
+the exact installed Relay revision, the consumer repository commit carrying
+Task/CR authority, and any newer accepted/released product revision. A newer
+Relay commit does not invalidate a working installed revision. Normal routing
+and recovery neither consult moving `main` nor compare the consumer workflow
+SHA with the installed product SHA. No warning or degraded success is emitted
+merely because an update exists. There is currently no authoritative latest
+release lookup, so no update-available note is emitted.
+
+Canonical product sources are [routing](workflows/routing.yml.in),
+[publication recovery](workflows/recovery.yml.in), and the supported installed
+self-dogfood [production reconciliation](workflows/production.yml.in). Consumer
+configuration supplies repository/owner/ref, runner identities/groups/labels
+and installation namespace. Candidate validation is specific to each consumer
+and is not projected. The `.github/workflows/` copies are versioned installation
+artifacts; product changes edit the templates. Self-dogfood uses this same rule.
+
+From a clean checkout of one owner-selected **accepted exact product target**:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --resolved-revision "$target_sha" \
+  --phase workflow-project --authorize-workflow-projection
+```
+
+This local operation writes the managed workflows and
+`.github/relay-workflows.json`, which binds the product source repository,
+exact revision, consumer repository and deterministic output digests. It does
+not commit, push, merge, install or activate anything. The manifest is a drift
+baseline, not acceptance authority. Review and publish the generated change
+through the consumer's normal authority. No credential or registration token
+belongs in either file. The owner configuration can remain outside Git when
+`--consumer-root` supplies the separate clean consumer checkout.
+
+Every existing managed byte must match the previous manifest before an update;
+unmanaged collisions, direct edits, path changes, unsafe files and partial
+projection stop for reconciliation instead of being overwritten. Interrupted
+writes report changed paths; inspect the worktree before retrying. First
+self-dogfood migration can explicitly add `--adopt-legacy`, which recognizes
+only the byte-exact bundled pre-projection workflows from
+`48946e7bcabed73fa6f7809b266bf9f641ed71fc`. Modified or foreign workflows are
+not adopted. External consumers start at unused managed workflow paths or
+resolve existing consumer-owned collisions through their normal review process.
+
+After the projection is reviewed and merged, verify the clean consumer checkout:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --resolved-revision "$target_sha" \
+  --phase workflow-verify
+```
+
+For self-dogfood, retain a separate clean product checkout at `$target_sha` and
+a consumer checkout at the commit containing the reviewed projection. Those
+SHAs normally differ; embedding the future projection commit's own SHA would
+create an impossible circular binding. Publishing product templates alone does
+not migrate an installed consumer. Existing legacy self-dogfood workflows stay
+unchanged until this explicit owner transition.
+
 ## Lifecycle, upgrade and rollback
 
 Normal apply reconciles installable state and preserves existing separately
@@ -328,12 +427,41 @@ The later runner role checks the retained shared state parent's type, root
 owner and mode even when its group is still only planned. That pending group
 assignment counts as a change; apply still requires and enforces the real group.
 
-Upgrade means acquire another selected revision and apply it. Rollback uses
-the same operation with a previously qualified explicit SHA and its compatible
-consumer configuration. Existing release trees and durable Writer/Reviewer
-state are retained. There is no destructive release cleanup disguised as
-rollback. Keep a clean known-good source checkout and configuration available;
-pre-boundary installations can be restored with their original supported path.
+An upgrade requires the reviewed workflow projection of one exact accepted
+target, then the explicit public primitive from that target's clean source:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --resolved-revision "$target_sha" \
+  --phase upgrade --authorize-upgrade
+```
+
+The primitive verifies the projection before contacting the target, validates
+the protected existing installation and owner configuration, and runs apply
+plus a required clean post-check under one host apply lock. Only source revision
+selection may differ from the protected configuration snapshot. Credentials,
+runner registration, service activation intent, TLS/mTLS, consumer identity and
+Writer/Reviewer separation are preserved. Configuration changes are separate
+owner reconciliation. Upgrade never supplies tokens, registers runners or
+implicitly authorizes activation. Existing operation/recovery evidence blocks
+an upgrade; diagnose it through the existing recovery interface. Failed or
+ambiguous apply/post-check never becomes a successful upgrade receipt.
+
+Ordinary owner apply verifies the workflow target and permits first installation
+or reconciliation of the same installed revision. Changing the installed
+revision requires `upgrade`. Moving Relay `main` does not trigger either action.
+This primitive does not implement Task #25's separate quiesce/drain/resume
+lifecycle or authorize its transitions. The owner must establish the appropriate
+operational boundary before upgrading.
+
+Rollback uses the same exact-target upgrade primitive with a previously
+qualified compatible revision that supports this contract and its reviewed
+projection. Existing release trees and durable Writer/Reviewer state are
+retained; no destructive release cleanup is disguised as rollback. Legacy
+installations without a protected deployment snapshot cannot prove preserved
+owner intent and need a separately admitted migration before this upgrade
+primitive. Do not bypass that check or manufacture a snapshot from guessed
+state. Keep the prior supported recovery path and exact source available.
 
 `activate --authorize-reviewer-activation` and
 `runner-enable --authorize-runner-enable` and
@@ -368,6 +496,35 @@ Apply does not register, migrate or re-register either runner; an existing
 registration that disagrees with the selected scope remains blocked. Changing
 an admitted consumer's scope requires explicit owner acceptance and external
 qualification before registration or enablement.
+
+### Ephemeral runner registration
+
+Use the public registration phase after installing the exact accepted product:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --phase runner-register \
+  --authorize-runner-register --runner-registration-token "$fresh_token"
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --phase general-runner-register \
+  --authorize-general-runner-register --general-runner-registration-token "$fresh_general_token"
+```
+
+Both token options are optional. The installer first validates and reuses an
+already registered intended runner without consuming a token. Otherwise it
+transports the one-run input through protected SSH stdin to the installed
+helper; the token is never written to config, inventory, deployment state or
+normal logs. Run these commands without shell tracing. A missing or recognized
+expired/invalid required token reports `fresh registration token required`.
+Replace the token and rerun the same authorized phase. Valid registration is
+reused, so a token refresh does not duplicate runners. Existing partial or
+mismatched registration and uncertain transport results require inspection
+before any retry; they are not treated as permission to register again.
+
+Registration does not enable a service. Follow it with the separately authorized
+`runner-enable` or `general-runner-enable` phase after validating external
+scheduling restrictions. Reuse proves local intended registration metadata;
+GitHub availability and runner-group ACLs remain independent live evidence.
 
 A first apply that stopped before creating the installation/configuration roots
 has a separate, narrow `bootstrap-only` recovery shape. Read-only `check` reports
@@ -413,7 +570,7 @@ A self-dogfood consumer may keep deployment configuration private and select
 product source repositories to match and uses `main`. It is mutually exclusive
 with `configPath`; existing checkout-based consumers keep their current contract.
 
-Owner apply stores the validated deployment input as
+Owner apply for every consumer stores the validated deployment input as
 `<exact release>/deployment-config.json`, owned by `root:root` with mode `0600`.
 The existing artifact manifest binds its SHA-256 digest and original consumer
 revision. Configuration contains only references to credentials; the snapshot
@@ -421,19 +578,23 @@ does not contain credential bytes. Its content is suppressed in deployment logs
 and diffs. The source repository and workflow never receive this configuration.
 Changes to it still require owner deployment through the public interface.
 
-The same fixed `relay-production-local-apply <SHA>` command then reconciles the
-installed product using that protected snapshot. In this mode the argument is
-the native workflow's **product** SHA; it must match the installed release. The
-original consumer revision remains provenance and is not replaced by the
-workflow SHA. There is no runner checkout, caller-selected config, target,
-executable, inventory, credential, or source-upgrade option.
+The fixed `relay-production-local-apply <product-SHA>:<consumer-SHA>` command
+then reconciles the installed product using that protected snapshot. The single
+typed argument binds both the projected product and the native dispatch commit.
+The helper validates the exact installed release against the product component
+before executing its code; a concurrent release switch fails closed. The
+original configuration's consumer revision remains provenance and is not
+replaced by the workflow SHA. There is no runner checkout, caller-selected
+config, target, executable, inventory, credential, or source-upgrade option.
 
 Before reserving an apply operation, the installed code revalidates the exact
 release, protected configuration digest and current GitHub `main` under the
-existing production transition lock. A changed release/configuration, advanced
-`main`, invalid metadata, active operation or unavailable remote verification
-fails closed before install changes. The GitHub read uses normal TLS validation
-without a host credential. This mode therefore requires a publicly readable
+existing production transition lock. A changed release/configuration, a stale
+consumer dispatch (current `main` no longer matches that dispatch), invalid
+metadata, active operation or
+unavailable remote verification fails closed before install changes. Current
+consumer `main` may differ from the installed product revision. The GitHub read
+uses normal TLS validation without a host credential. This mode therefore requires a publicly readable
 repository. The ordinary operation record and live-lifecycle preservation rules
 still apply; a workflow does not activate or restart its own runner.
 
@@ -450,8 +611,8 @@ for the fixed runner helper and local reconciliation. It is not automatic retry
 or authority to discard an unknown operation. Legacy checkout-mode recovery is
 unchanged.
 
-Deploy and qualify the newly accepted product with the owner transport before
-dispatching its matching workflow. This is reconciliation of that installed
+Review the projection and deploy/qualify its selected accepted product through
+the owner transport before dispatching that workflow. This is reconciliation of that installed
 release, not a workflow-based source upgrade. See the public consumer's
 [workflow and activation contract](../docs/self-dogfood-workflows.md).
 

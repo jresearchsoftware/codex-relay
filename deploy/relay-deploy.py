@@ -21,7 +21,9 @@ from config import load, compile_inputs, require, selector
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
-PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'post-check': 'site.yml',
+PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post-check': 'site.yml',
+          'workflow-project': None, 'workflow-verify': None,
+          'runner-register': None, 'general-runner-register': None,
           'diagnose': 'relay-production-diagnostic.yml', 'activate': 'relay-reviewer-activation.yml',
           'runner-enable': 'relay-production-runner-enable.yml',
           'general-runner-enable': 'relay-general-runner.yml',
@@ -166,10 +168,19 @@ def arguments():
     p.add_argument('--phase', choices=[*PHASES, 'validate'], required=True)
     p.add_argument('--requested-revision', help='selector already resolved by the trusted acquisition/bootstrap')
     p.add_argument('--resolved-revision', help='exact acquisition result; must equal this clean checkout')
+    p.add_argument('--consumer-root', type=Path, help='consumer Git checkout when durable config is stored separately')
+    p.add_argument('--authorize-upgrade', action='store_true')
+    p.add_argument('--authorize-workflow-projection', action='store_true')
+    p.add_argument('--adopt-legacy', action='store_true', help='adopt only the product-defined exact legacy workflow projection')
+    p.add_argument('--authorize-runner-register', action='store_true')
+    p.add_argument('--authorize-general-runner-register', action='store_true')
+    p.add_argument('--runner-registration-token', help='ephemeral bootstrap input for this registration only')
+    p.add_argument('--general-runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
     p.add_argument('--local-reconcile', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
+    p.add_argument('--workflow-consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--authorize-apply-recovery', action='store_true',
                    help='Owner-authorized matching installed-config apply recovery after diagnosis')
     p.add_argument('--authorize-reviewer-activation', action='store_true')
@@ -196,6 +207,19 @@ def arguments():
 
 def run(args):
     os.umask(0o077)
+    require(args.authorize_upgrade == (args.phase == 'upgrade'), 'explicit-upgrade')
+    require(args.authorize_workflow_projection == (args.phase == 'workflow-project'), 'explicit-workflow-projection')
+    require(not args.adopt_legacy or args.phase == 'workflow-project', 'legacy-projection-phase')
+    require(args.authorize_runner_register == (args.phase == 'runner-register'), 'explicit-runner-registration')
+    require(args.authorize_general_runner_register == (args.phase == 'general-runner-register'),
+            'explicit-general-runner-registration')
+    require(args.runner_registration_token is None or args.phase == 'runner-register', 'runner-token-phase')
+    require(args.general_runner_registration_token is None or args.phase == 'general-runner-register',
+            'general-runner-token-phase')
+    require(not args.local_reconcile or args.consumer_root is None, 'local-consumer-root-forbidden')
+    require((bool(re.fullmatch('[0-9a-f]{40}', args.workflow_consumer_revision or ''))
+             if args.expected_installed_head else args.workflow_consumer_revision is None),
+            'installed-workflow-consumer-revision')
     config_path = args.config.absolute()
     installed_digest = ''
     installed_consumer_revision = None
@@ -230,12 +254,15 @@ def run(args):
         require(args.consumer_revision is None, 'consumer-revision-from-git-only')
         identity = source_identity(ROOT)
         requested = args.requested_revision or identity['revision']
-        consumer_root = Path(git(config_path.parent, 'rev-parse', '--show-toplevel'))
+        consumer_root = (args.consumer_root.absolute() if args.consumer_root else
+                         Path(git(config_path.parent, 'rev-parse', '--show-toplevel')))
         consumer_revision = clean_git(consumer_root)
     require(selector(requested), 'requested-revision')
     require(args.resolved_revision is None or args.resolved_revision == identity['revision'], 'resolved-revision-mismatch')
     require(re.fullmatch('[0-9a-f]{40}', consumer_revision or ''), 'consumer-revision')
     revision = identity['revision']
+    if args.phase in ['upgrade', 'workflow-project', 'workflow-verify']:
+        require(args.resolved_revision == revision and not args.local_reconcile, 'explicit-exact-product-target')
     require(not re.fullmatch('[0-9a-f]{40}', requested) or requested == revision, 'selected-commit-mismatch')
     require(args.authorize_reviewer_activation == (args.phase == 'activate'), 'explicit-activation')
     require(args.authorize_runner_enable == (args.phase == 'runner-enable'), 'explicit-runner-enablement')
@@ -272,6 +299,16 @@ def run(args):
     else:
         require(not any([args.issue_number, args.issue_body_sha256, args.pull_request, args.review_id,
             args.reviewed_head, args.change_request_id, args.branch, args.base_branch_sha]), 'diagnostic-flags')
+    if args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or (args.phase == 'apply' and not args.local_reconcile):
+        from workflow_projection import project, verify
+        if args.phase == 'workflow-project':
+            project(config, revision, ROOT, consumer_root, adopt_legacy=args.adopt_legacy)
+        else:
+            verify(config, revision, ROOT, consumer_root)
+        print(f'RELAY_WORKFLOW_PROJECTION=PASS;revision={revision};consumer={consumer_revision}', flush=True)
+        if args.phase in ['workflow-project', 'workflow-verify']:
+            print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
+            return
     target = config['target']
     key = Path(target['identityFile']).expanduser()
     if not args.local_reconcile:
@@ -286,10 +323,14 @@ def run(args):
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
         'relay_deployment_profile': 'production',
-        'relay_production_operation_phase': args.phase, 'relay_production_operation_target_head': revision,
+        'relay_production_operation_phase': 'apply' if args.phase == 'upgrade' else args.phase,
+        'relay_upgrade_requested': args.phase == 'upgrade',
+        'relay_owner_apply_requested': args.phase == 'apply' and not args.local_reconcile,
+        'relay_production_operation_target_head': revision,
         'relay_production_exact_head': revision, 'relay_reviewer_activation_exact_head': revision,
         'relay_installed_config_reconcile': bool(args.expected_installed_head),
         'relay_installed_config_expected_sha256': installed_digest,
+        'relay_workflow_consumer_revision': args.workflow_consumer_revision or '',
         'relay_installed_config_recovery_authorized': args.authorize_apply_recovery,
         'relay_production_runner_enable_exact_head': revision,
         'relay_service_state_management': 'preserve',
@@ -326,21 +367,33 @@ def run(args):
         'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
                            'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
     })
-    if values['relay_local_apply_source'] == 'installed':
-        # Literal references only, frozen from this validated invocation. The
-        # private inventory and target snapshot never become public artifacts.
-        snapshot = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
-        values['relay_installed_deployment_config'] = snapshot
-        values['relay_installed_deployment_config_sha256'] = hashlib.sha256(snapshot.encode('utf-8')).hexdigest()
-        require(not installed_digest or installed_digest == values['relay_installed_deployment_config_sha256'],
-                'installed-config-canonical')
+    # Preserve complete owner intent for upgrades for every consumer. These
+    # literal references never contain credential bytes or bootstrap tokens.
+    snapshot = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+    values['relay_installed_deployment_config'] = snapshot
+    values['relay_installed_deployment_config_sha256'] = hashlib.sha256(snapshot.encode('utf-8')).hexdigest()
+    require(not installed_digest or installed_digest == values['relay_installed_deployment_config_sha256'],
+            'installed-config-canonical')
     if args.phase == 'ingress':
         values.update(relay_docker_nginx_manage=True, relay_docker_nginx_service_enabled=True,
                       relay_docker_nginx_validation_mode='active')
-    if args.phase == 'general-runner-enable':
+    if args.phase in ['general-runner-enable', 'general-runner-register']:
         import yaml  # part of the private Ansible backend dependency set
         values.update(yaml.safe_load((BACKEND / 'vars/general-runner.yml').read_text()))
-        values['relay_general_runner_authorized'] = True
+        values['relay_general_runner_authorized'] = args.phase == 'general-runner-enable'
+    if args.phase in ['runner-register', 'general-runner-register']:
+        from runner_registration import register_runner
+        token = (args.runner_registration_token if args.phase == 'runner-register'
+                 else args.general_runner_registration_token)
+        guard = ingress_guard(target, key, values, revision)
+        try:
+            proof = register_runner(target, key, values, revision, token, guard)
+        finally:
+            guard.stdin.close()
+            require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
+        print(proof)
+        print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
+        return
     args.log_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     log_fd, log_name = tempfile.mkstemp(prefix=f'relay-{revision[:12]}-{args.phase}-', suffix='.log', dir=args.log_root)
     print(f'requested_revision={requested}\nresolved_revision={revision}\nconsumer_revision={consumer_revision}', flush=True)
@@ -351,11 +404,11 @@ def run(args):
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             require(os.fstat(lock).st_uid == os.getuid() and not os.fstat(lock).st_mode & 0o077, 'invocation-lock')
-            if args.phase in ['apply', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
+            if args.phase in ['apply', 'upgrade', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # A normal source archive is only an internal transport detail.
             # No consumer lock, helper hash, distribution bundle or host cache.
-            if args.phase == 'apply' and not args.local_reconcile:
+            if args.phase in ['apply', 'upgrade'] and not args.local_reconcile:
                 archive = work / 'source.tar'
                 git(ROOT, 'archive', '--format=tar', '--output=' + str(archive), revision)
                 values['relay_source_archive'] = str(archive)
@@ -377,7 +430,7 @@ def run(args):
             log.flush()
             with ExitStack() as host_locks:
                 guard = None
-                if args.phase == 'apply':
+                if args.phase in ['apply', 'upgrade']:
                     if args.local_reconcile:
                         from deployment_lock import acquire
                         host_locks.enter_context(acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock'))
@@ -387,6 +440,31 @@ def run(args):
                     guard = ingress_guard(target, key, values, revision)
                 try:
                     returncode = run_backend(argv, BACKEND, env, log, guard)
+                    if args.phase == 'upgrade':
+                        log.flush()
+                        apply_evidence = Path(log_name).read_text()
+                        require(returncode == 0 and 'failed=0' in apply_evidence,
+                                f'upgrade-apply-failed;log={log_name};next=diagnose-operation-before-retry')
+                        require(f'PRODUCTION_APPLY_VALIDATED={revision}' in apply_evidence,
+                                'upgrade-final-runtime-proof')
+                        require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
+                                'upgrade-installed-identity-proof')
+                        # Keep the existing host apply mutex held across the
+                        # independent read-only check. No new recovery ledger:
+                        # apply retains its normal durable operation semantics.
+                        values['relay_production_operation_phase'] = 'post-check'
+                        values['relay_upgrade_requested'] = False
+                        inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                        (work / 'inventory.json').write_text(json.dumps(inventory))
+                        offset = len(apply_evidence)
+                        returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard)
+                        log.flush()
+                        checked = Path(log_name).read_text()[offset:]
+                        require(returncode == 0 and 'failed=0' in checked,
+                                f'upgrade-post-check-failed;log={log_name};next=diagnose-operation-before-retry')
+                        require(not re.search(r'changed=[1-9][0-9]*', checked), 'upgrade-post-check-drift')
+                        require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in checked,
+                                'upgrade-post-check-installed-identity-proof')
                 finally:
                     if guard is not None:
                         guard.stdin.close()
@@ -419,15 +497,17 @@ def run(args):
                 require(f'PRODUCTION_BOOTSTRAP_DISPOSITION_PASS={revision}' in evidence, 'bootstrap-disposition-proof')
             if args.phase == 'apply':
                 require(f'PRODUCTION_APPLY_VALIDATED={revision}' in evidence, 'final-runtime-proof')
-            if args.phase in ['apply', 'post-check']:
+            if args.phase in ['apply', 'upgrade', 'post-check']:
                 require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in evidence, 'installed-identity-proof')
                 previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', evidence)
                 require(previous is not None, 'previous-revision-proof')
                 print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
+            if args.phase == 'upgrade':
+                print(f'RELAY_UPGRADE_RESULT=PASS;installed={revision};projection={revision};post_check=clean')
             if args.local_reconcile:
                 require(f'PRODUCTION_LIFECYCLE_PRESERVED={revision};activation=owner-after-job' in evidence, 'local-live-lifecycle')
                 # Checkout mode retains the consumer workflow receipt ABI;
-                # installed mode admits the product SHA and reports that SHA.
+                # installed mode binds both revisions and reports the product SHA.
                 receipt_head = revision if args.expected_installed_head else consumer_revision
                 print(f'PRODUCTION_APPLY_VALIDATED={receipt_head}')
                 print(f'PRODUCTION_LIFECYCLE_PRESERVED={receipt_head};activation=owner-after-job')

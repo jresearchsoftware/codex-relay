@@ -1,8 +1,18 @@
 # Public Relay consumer workflows
 
-These workflows are the consumer wiring for `jresearchsoftware/codex-relay`.
-They are not deployment templates for other consumers. The protected consumer
-configuration remains `/etc/codex-relay/consumer.json`.
+The workflows under `.github/workflows/` are installed consumer artifacts for
+`jresearchsoftware/codex-relay`. Relay-managed behavior comes from canonical
+[product templates](../deploy/README.md#workflow-projection-and-pinned-runtime),
+which are projected for both self-dogfood and external consumers. The protected
+consumer configuration remains `/etc/codex-relay/consumer.json`. Candidate CI
+remains specific to this repository.
+
+The current legacy projection is retained until the owner selects an accepted
+product target, explicitly adopts the exact legacy workflow bytes, reviews and
+merges the generated projection, then upgrades and qualifies that target. Editing
+product templates does not silently rewrite or upgrade this installed consumer.
+The contract below describes the new projected behavior; the retained legacy
+projection still has the old workflow/product SHA equality gate until migration.
 
 | Configured path | Execution boundary |
 | --- | --- |
@@ -23,12 +33,16 @@ publication authority.
 
 The control workflows perform no checkout and run no actions or candidate code.
 They resolve the root-owned installed release once, require its public
-`reviewed-source/.relay-source.json` revision and release path to match the native
-workflow SHA, and invoke the stable `bin/relay-routing.mjs` or
+`reviewed-source/.relay-source.json` revision and release path to match the exact
+product revision embedded by projection, and invoke the stable `bin/relay-routing.mjs` or
 `bin/relay-publication-recovery.mjs` entrypoint from that resolved release. The
 source identity is installed root-owned with mode `0644`; the general runner does
-not need access to the restricted artifact manifest. Install and qualify the accepted `main` revision
-before launch. A mismatch fails before Relay admission. Routing and recovery
+not need access to the restricted artifact manifest. Install and qualify the
+accepted projected product revision before launch. An unprovable or mismatched
+installation fails before admission. The consumer workflow SHA may differ from
+the installed product revision. A newer Relay `main` never forces an upgrade or
+emits a warning; without authoritative release information no update note is
+emitted. Routing and recovery
 share one concurrency group with cancellation disabled; the existing root Writer
 lock still serializes publication. Logs record the installed and workflow SHAs.
 
@@ -88,12 +102,17 @@ registration or enablement. Source publication or a passing workflow test does
 not establish that policy.
 
 The job performs no checkout and downloads no action or candidate executable.
-It binds `github.sha` to the root-owned installed source identity, then calls
-only `/usr/bin/sudo -n /opt/codex-relay/relay-production-local-apply <SHA>`.
+It verifies the projected exact product revision against the root-owned
+installed source identity, then calls only the fixed helper:
+`/usr/bin/sudo -n /opt/codex-relay/relay-production-local-apply <product-SHA>:<consumer-SHA>`.
+The single typed argument binds both the projected product and native dispatch
+commit. The helper rechecks that exact installed product before executing its
+code, preventing a concurrent installation switch from changing the target.
 The accepted deployment must first opt into
 [`localApply.source: installed`](../deploy/README.md#protected-self-dogfood-reconciliation)
 through owner configuration and public owner apply. The helper validates the
-private root-owned snapshot and rechecks current `main` immediately before
+private root-owned snapshot and rechecks the dispatched consumer commit against current `main`
+immediately before
 reservation under the existing transition lock. It retains the exact installed
 product version and original consumer provenance. Failed or stale checks prevent
 apply. No workflow step receives the configuration or credential material.

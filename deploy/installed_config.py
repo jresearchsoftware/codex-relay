@@ -70,9 +70,12 @@ def check_public_main(repository, expected_head):
 
 
 def verify(product_root, expected_head, expected_digest=None,
-           expected_consumer_revision=None, check_main=False):
+           expected_consumer_revision=None, check_main=False, workflow_consumer_revision=None):
     require(os.geteuid() == 0, 'root-required')
     require(isinstance(expected_head, str) and re.fullmatch('[0-9a-f]{40}', expected_head), 'installed-head')
+    if check_main:
+        require(isinstance(workflow_consumer_revision, str)
+                and re.fullmatch('[0-9a-f]{40}', workflow_consumer_revision), 'workflow-consumer-revision')
     product_root = Path(product_root)
     release = product_root.parent
     require(product_root.name == 'reviewed-source' and release.name == expected_head
@@ -112,7 +115,9 @@ def verify(product_root, expected_head, expected_digest=None,
             raise
         raise ValueError('invalid-installed-config') from None
     if check_main:
-        check_public_main(config['consumer']['repository'], expected_head)
+        # The dispatch commit is consumer authority, independent of both the
+        # pinned product and the configuration's original consumer provenance.
+        check_public_main(config['consumer']['repository'], workflow_consumer_revision)
     protected_parents(current)
     require(stamp(current.lstat()) == stamp(binding), 'installed-current-changed')
     for path, expected in zip(paths, [source_stamp, manifest_stamp, config_stamp]):
@@ -124,9 +129,10 @@ def verify(product_root, expected_head, expected_digest=None,
 if __name__ == '__main__':
     try:
         # Only the existing begin task calls this internal checker while holding
-        # its transition lock. The runner sudo interface still accepts one SHA.
-        require(len(sys.argv) == 4, 'argument-contract')
-        verify(Path(__file__).resolve().parents[1], sys.argv[1], sys.argv[2], sys.argv[3], check_main=True)
+        # its transition lock. The runner sudo interface accepts one typed product:consumer binding.
+        require(len(sys.argv) == 5, 'argument-contract')
+        verify(Path(__file__).resolve().parents[1], sys.argv[1], sys.argv[2], sys.argv[3],
+               check_main=True, workflow_consumer_revision=sys.argv[4])
     except (ValueError, OSError) as error:
         code = str(error) if type(error) is ValueError and re.fullmatch('[a-z-]+', str(error)) else 'invalid-input-or-io'
         print('INSTALLED_CONFIG_BLOCKED=' + code, file=sys.stderr)

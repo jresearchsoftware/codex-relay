@@ -166,9 +166,9 @@
     fail_msg: 'Reviewer build output is missing or does not have a SHA-256 identity'
   when: not ansible_check_mode | bool
 
-- name: Reconcile the opted-in protected deployment snapshot before its manifest
+- name: Reconcile the protected deployment snapshot before its manifest
   ansible.builtin.include_tasks: installed-config.yml
-  when: relay_local_apply_source | default('checkout') == 'installed'
+  when: relay_installed_deployment_config | default('') | length > 0
 
 - name: Record the deployed artifact manifest
   ansible.builtin.template:
