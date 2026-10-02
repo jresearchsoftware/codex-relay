@@ -6,6 +6,7 @@ import { runAttempt } from '../src/attempt.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
 import { threadCorrelationIdentity } from '../src/run-name.mjs';
+import { openRuntimeDiagnostic } from '../src/diagnostic-fallback.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -19,6 +20,16 @@ const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'
 assert.equal(process.getuid(), Number(process.env.INSTALLED_RUNNER_UID ?? 24001));
 const attemptStore = f => createAttemptStore(process.getuid() === 24003
   ? `/var/lib/codex-relay/dispatch/attempts-v2/${f.envelope.attemptId}` : `${f.root}/journal`);
+
+async function retireVerifiedFixtureCapsule(f) {
+  // Test-owned synthetic teardown after assertions; product failure retention
+  // remains occupied until separate operator inspection/disposition.
+  const capsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId });
+  if (capsule) {
+    assert.equal((await capsule.read()).executionId, f.envelope.attemptId);
+    await capsule.release();
+  }
+}
 
 test('installed dedicated Rust development qualification', async t => {
   const f = await fixture(t, { installed: true, remediation: true,
@@ -43,6 +54,16 @@ test('installed dedicated Rust development qualification', async t => {
     assert.deepEqual(result.result.validation, ['MANAGED_RUST_DEVELOPMENT_PROOF_PASS']);
     console.log('MANAGED_RUST_DEVELOPMENT_PROOF_PASS uid=24002;exact-tools;task-local-cargo-home;protected-roots-denied;locked-offline-test');
   }
+  assert.equal(f.pushes(), 0);
+  assert.equal(f.comments.length, 0);
+  await retireVerifiedFixtureCapsule(f);
+});
+
+test('installed former production runner cannot reserve migrated general-runner diagnostics', { skip: process.getuid() !== 24001 }, async t => {
+  assert.equal(process.getuid(), 24001);
+  const f = await fixture(t, { installed: true, instruction: 'fixture-mode=success; Маркер UTF-8' });
+  await assert.rejects(createOnDemandDispatchAdapter().dispatch(f.envelope), { code: 'EACCES' });
+  await assert.rejects(access(`${f.cwd}/.codex-sandbox`), { code: 'ENOENT' });
   assert.equal(f.pushes(), 0);
   assert.equal(f.comments.length, 0);
 });
@@ -78,6 +99,8 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     assert.equal(saved.progress.head, await f.remoteHead()); assert.notEqual(saved.progress.head, f.envelope.startHead);
     const artifact = JSON.parse(await readFile(`${f.cwd}/docs/work.md`, 'utf8'));
     assert.equal(artifact.uid, 24002); assert.equal(artifact.input, true); assert.equal(artifact.umask, 7);
+    assert.equal(artifact.privateSandboxMode, 0o700); assert.equal(artifact.privateSandboxOwner, 24002);
+    await assert.rejects(access(`${f.cwd}/.codex-sandbox`), { code: 'ENOENT' });
     assert.equal(artifact.model, cliModelId); assert.equal(artifact.effort, effort);
     assert.equal(artifact.identity, remediation ? 'example-remediation' : 'example-writer');
     assert.deepEqual(await runAttempt(await withoutCheckout(f, journal, args)), result);
@@ -214,6 +237,7 @@ for (const [mode, code, state] of [
     assert.deepEqual(await journal.get(f.envelope.runId), saved);
     assert.equal(f.pushes(), pushes); assert.equal(calls, 1);
     assert.equal(outcomes().length, 1);
+    await retireVerifiedFixtureCapsule(f);
   });
 }
 

@@ -456,8 +456,12 @@ def live_smoke_proof(install, release, env, token):
     git_guard.chmod(0o755)
     run(['mount', '--bind', str(git_guard), '/usr/bin/git'])
 
-    def invoke(expected_child, expected_code):
+    def invoke(expected_child, expected_code, *, retained=False, private_artifact=False):
         diagnostics_before = set(Path('/var/lib/codex-relay/debug').glob('*.json'))
+        fallback_root = Path('/var/lib/codex-relay/dispatch/attempts-v2/runtime-diagnostics')
+        capsules_before = set(fallback_root.glob('*/*.json'))
+        work_root = Path('/var/lib/codex-relay/dispatch-work')
+        work_before = set(work_root.iterdir())
         result = subprocess.run(command, env=env, text=True, capture_output=True)
         assert 'fixture-only-credential' not in result.stdout + result.stderr
         assert result.stderr == '', result.stderr
@@ -467,9 +471,39 @@ def live_smoke_proof(install, release, env, token):
         if proof['child'] != expected_child or proof['code'] != expected_code:
             launcher_diagnostics_since(diagnostics_before)
         assert proof['child'] == expected_child and proof['code'] == expected_code, proof
-        assert proof['cleanup'] == 'cleaned', proof
+        assert proof['cleanup'] == ('preserved-diagnostic-evidence' if retained else 'cleaned'), proof
         assert (result.returncode == 0) == (expected_code == 'GENERAL_RUNNER_SMOKE_PASS'), proof
-        assert sorted(Path('/var/lib/codex-relay/dispatch-work').iterdir()) == before
+        added_work = set(work_root.iterdir()) - work_before
+        assert len(added_work) == (1 if retained else 0), (proof, added_work)
+        new_capsules = set(fallback_root.glob('*/*.json')) - capsules_before
+        assert (fallback_root.stat().st_uid, stat.S_IMODE(fallback_root.stat().st_mode)) == (24003, 0o700)
+        assert len(new_capsules) == (0 if expected_code == 'GENERAL_RUNNER_SMOKE_PASS' else 1), new_capsules
+        for capsule in new_capsules:
+            raw = capsule.read_text()
+            assert len(raw.encode('utf8')) <= 16 * 1024 and 'fixture-only-credential' not in raw
+            state = json.loads(raw)
+            assert state['containment'] in ['reaped', 'not_required'], state
+            assert state['cleanup'] == ('retained' if retained else 'complete'), state
+            assert (capsule.stat().st_uid, stat.S_IMODE(capsule.stat().st_mode)) == (24003, 0o600)
+            for user, allowed in [('relay-general-runner', True), ('relay-codex', False), ('relay-runner', False)]:
+                access = subprocess.run(['runuser', '-u', user, '--', 'test', '-r', str(capsule)], capture_output=True)
+                assert access.returncode == (0 if allowed else 1), (user, access.returncode)
+            if private_artifact:
+                assert state['persistence'] == 'failed' and state['retention'] == 'retained', state
+        for scratch in added_work:
+            assert scratch.parent.resolve() == work_root.resolve() and scratch.name.startswith('event-')
+            if private_artifact:
+                private = scratch / '.codex-sandbox/home/tmp/arg0'
+                assert (private.stat().st_uid, stat.S_IMODE(private.stat().st_mode)) == (24002, 0o700)
+                assert (private / 'private-state').read_text() == 'protected fixture state'
+            # Root fixture disposal only after the synthetic evidence and
+            # denied worker access have been verified. Never product cleanup.
+            shutil.rmtree(scratch)
+        for capsule in new_capsules:
+            assert capsule.parent.parent.resolve() == fallback_root.resolve()
+            capsule.unlink()
+            capsule.parent.rmdir()
+        assert sorted(work_root.iterdir()) == before
         assert Path('/run/production-helper-executed').stat().st_mtime_ns == sentinel.st_mtime_ns
         print(result.stdout.strip(), flush=True)
 
@@ -494,9 +528,23 @@ def live_smoke_proof(install, release, env, token):
     saved_dispatch = dispatch.with_suffix('.smoke-saved')
     dispatch.rename(saved_dispatch)
     try:
-        invoke('not_started', 'EXECUTION_FAILED')
+        invoke('not_started', 'EXECUTION_FAILED', retained=True)
     finally:
         saved_dispatch.rename(dispatch)
+    # An ordinary child succeeds but the primary protected store is missing.
+    # Debug mode requires persistence; retained evidence must survive smoke's
+    # outer finally as well as the runtime finalizer.
+    diagnostics_config = token.parent.parent / 'diagnostics.json'
+    original_config = diagnostics_config.read_text()
+    store = install / 'relay-diagnostics-store'
+    saved_store = store.with_suffix('.smoke-saved')
+    diagnostics_config.write_text('{"schemaVersion":"1.0","mode":"debug","retentionCount":8}\n')
+    store.rename(saved_store)
+    try:
+        invoke('started', 'RUNTIME_DIAGNOSTICS_FAILED', retained=True, private_artifact=True)
+    finally:
+        saved_store.rename(store)
+        diagnostics_config.write_text(original_config)
     assert trace.read_text() and set(trace.read_text().splitlines()) == {'local'}
     run(['umount', '/usr/bin/git'])
     print('OWNER_NON_ROUTING_SMOKE_DISPOSABLE_PROOF_PASS git-external-effects=none;production-helper=unchanged;live-production=not-executed', flush=True)
@@ -774,9 +822,10 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         restore_linker_alternative(etc, compiler)
         assert Path('/usr/bin/cc').resolve(strict=True) == compiler
         run_installed(rust_test, env={**env, 'INSTALLED_RUST_LINKER': 'ready', 'INSTALLED_FIXTURE_EVENT_BASE': '970'}, umask=deploy_umask)
-        # The original production identity also traverses the composed path.
+        # Generic runtime state now belongs solely to the general runner. The
+        # former production identity retains its own grants, not this journal.
         run_installed(['/usr/sbin/runuser', '-u', 'relay-runner', '--', 'node', '--test',
-             '--test-name-pattern=Issue gpt-6-astra/max', test_path],
+             '--test-name-pattern=former production runner', test_path],
             env={**env, 'INSTALLED_RUNNER_UID': '24001', 'INSTALLED_FIXTURE_EVENT_BASE': '950'}, umask=deploy_umask)
         # Distinct invocations keep protected failure setup root-owned.
         run_installed([*node_command, '--test-name-pattern=publication|profile rejection|checkout-ownership|invalid-result|child-failure', test_path], env={**env, 'INSTALLED_FIXTURE_EVENT_BASE': '1000'}, umask=deploy_umask)

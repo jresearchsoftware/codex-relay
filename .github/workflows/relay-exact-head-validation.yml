@@ -59,6 +59,9 @@ jobs:
       - name: Test Node.js components
         run: npm test
 
+      - name: Qualify sandbox cleanup across synthetic Unix identities
+        run: sudo python3 scripts/qualify-sandbox-cleanup.py
+
       - name: Check Reviewer formatting
         run: cargo fmt --manifest-path reviewer/Cargo.toml --check
 

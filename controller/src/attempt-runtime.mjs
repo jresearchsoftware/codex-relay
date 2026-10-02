@@ -38,6 +38,7 @@ export async function executeCodex(e, { runTask = runGovernedCodexTask } = {}) {
     operation: remediation ? 'review-remediation' : 'issue-implementation', profile: e.profile,
     cwd: checkoutPath(e), targetNumber: e.number,
     taskTitle: e.thread, evidence, attemptId: e.attemptId,
+    existingFallback: true,
     gitIdentity: remediation ? CODEX_REMEDIATION_IDENTITY : CODEX_WRITER_IDENTITY,
     inputText: `${e.input}${launchMetadata}\n\nTrusted execution boundary:\nWork only in the governed repository checkout and task branch. The admitted goal permits changes to any repository file necessary to complete it. Preserve repository, security, and authority boundaries. Make ordinary task-owned commits. Do not push, publish, merge PRs, close Issues, invoke a Reviewer, or use GitHub credentials. The local Git metadata is untrusted and will be imported as object bytes only. Do not modify hooks/config/remotes. Preserve useful commits even when blocked.${integration}\nCapability-owned validation: run applicable unprivileged local checks and report checks you cannot execute. Root/sudo-only installed-runtime proof belongs to native Exact-head CI after Writer publication; do not attempt privilege escalation or claim that proof passed. Pending native proof alone does not block an otherwise completed local implementation.\nSubagents: ${e.subagentsAllowed === true ? 'On, within the resolved execution permission; use is discretionary and evidence-driven' : 'Off'}\nReturn only JSON with status (success or blocked), summary, validation (array of claims), and blockedReason. Do not reconstruct Git/publication metadata.`,
     buildArgs: ({ inputPath, cwd, profile }) => remediation
@@ -48,9 +49,9 @@ export async function executeCodex(e, { runTask = runGovernedCodexTask } = {}) {
   } catch (error) {
     error.details = { ...error.details, executionId: e.attemptId,
       childState: error.details?.childState ?? (evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : 'unknown'),
-      lastSuccessfulBoundary: evidence.codexChildStarted === true ? 'codex-child'
+      lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? (evidence.codexChildStarted === true ? 'codex-child'
         : evidence.codexFailureClass && evidence.codexFailureClass !== 'UNCLASSIFIED_CHILD_FAILURE' ? 'launcher'
-        : evidence.launcherStarted ? 'privilege-process' : 'worker' };
+        : evidence.launcherStarted ? 'privilege-process' : 'worker') };
     throw error;
   }
 }

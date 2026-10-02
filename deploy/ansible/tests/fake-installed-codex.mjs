@@ -1,6 +1,6 @@
 #!/usr/bin/node --experimental-default-type=module
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { qualifyRustDevelopment } from './rust-development-probe.mjs';
 if (process.argv[2] === '--version') {
@@ -20,6 +20,14 @@ assert.equal(process.env.CODEX_ACCESS_TOKEN, 'fixture-only-credential');
 for (const key of ['GITHUB_TOKEN', 'OPENAI_API_KEY', 'SSH_AUTH_SOCK', 'NODE_OPTIONS', 'workflowReadToken']) assert.equal(process.env[key], undefined);
 assert.equal(process.env.CODEX_HOME, `${cwd}/.codex-sandbox/home`);
 assert.equal(process.env.HOME, process.env.CODEX_HOME);
+// Codex 0.154.0 creates a runtime-owned private descendant despite the shared
+// work group. The general runner cannot traverse it; mode must stay private.
+const arg0 = `${process.env.CODEX_HOME}/tmp/arg0`;
+mkdirSync(arg0, { recursive: true });
+chmodSync(arg0, 0o700);
+writeFileSync(`${arg0}/private-state`, 'protected fixture state');
+assert.equal(statSync(arg0).uid, process.getuid());
+assert.equal(statSync(arg0).mode & 0o777, 0o700);
 writeFileSync(`${process.env.HOME}/child-write-probe`, 'writable');
 for (const [key, directory] of Object.entries({ XDG_CONFIG_HOME: 'config', XDG_CACHE_HOME: 'cache', XDG_DATA_HOME: 'data', XDG_STATE_HOME: 'state' })) {
   assert.equal(process.env[key], `${cwd}/.codex-sandbox/${directory}`);
@@ -58,7 +66,8 @@ if (smoke) {
   process.stdout.write(JSON.stringify({ status: 'success', summary: 'general-runner-smoke-child-started', validation: [], blockedReason: '' }) + '\n');
   process.exit(0);
 }
-writeFileSync('docs/work.md', JSON.stringify({ uid: process.getuid(), input: true, umask: process.umask(), identity: process.env.GIT_AUTHOR_NAME, model, effort }) + '\n');
+writeFileSync('docs/work.md', JSON.stringify({ uid: process.getuid(), input: true, umask: process.umask(), identity: process.env.GIT_AUTHOR_NAME, model, effort,
+  privateSandboxMode: statSync(arg0).mode & 0o777, privateSandboxOwner: statSync(arg0).uid }) + '\n');
 execFileSync('git', ['add', 'docs/work.md']);
 execFileSync('git', ['commit', '-m', 'installed child task progress']);
 if (input.includes('fixture-mode=child-failure')) {

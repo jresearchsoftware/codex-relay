@@ -22,6 +22,15 @@
     mode: '0644'
   register: relay_codex_launcher_module_install
 
+- name: Install the bounded sandbox cleanup helper for the runtime identity
+  ansible.builtin.template:
+    src: relay-codex-cleanup.py.j2
+    dest: '{{ relay_install_root }}/relay-codex-cleanup.py'
+    owner: root
+    group: root
+    mode: '0644'
+  register: relay_codex_cleanup_install
+
 - name: Install the fixed Codex execution wrapper
   ansible.builtin.template:
     src: relay-codex-launcher-wrapper.sh.j2
@@ -36,6 +45,6 @@
     msg: >-
       CODEX_LAUNCHER_CHECK_MODE_PLAN=path={{ relay_codex_launcher_path }};
       sourceTreeSha256={{ relay_codex_launcher_source_tree_sha256 | default('UNAVAILABLE') }};
-      changed={{ (relay_codex_launcher_module_install.changed or relay_codex_launcher_install.changed) | bool }};
-      contract=issue-12-or-review-remediation-14
+      changed={{ (relay_codex_launcher_module_install.changed or relay_codex_launcher_install.changed or relay_codex_cleanup_install.changed) | bool }};
+      contract=issue-12-or-review-remediation-14-or-bounded-sandbox-cleanup
   when: ansible_check_mode | bool

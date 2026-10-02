@@ -6,6 +6,9 @@ import { constants as fsConstants } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from '../../controller/src/diagnostic-fallback.mjs';
+import { captureSandboxIdentity } from './sandbox-cleanup.mjs';
 import { CODEX_RESULT_SCHEMA, isBoundedCodexRuntimeIdentifier, normalizeCodexSemanticResult } from "./codex-result-schema.mjs";
 import { WriterBlockedError } from "./contracts.mjs";
 import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig } from "../../controller/src/diagnostics.mjs";
@@ -335,8 +338,8 @@ function addDiagnosticDetails(error, diagnostic, store, childExitCode, signal, c
   };
   const failureDiagnostic = failureDiagnosticFromDetails(enriched, {
     fallbackCode: error.code,
-    fallbackStage: resultParseFailure ? "result-parse" : childActuallyStarted ? "codex-child" : "launcher",
-    fallbackBoundary: resultParseFailure ? "result-parse" : childActuallyStarted ? "codex-child" : "launcher"
+    fallbackStage: details.stage ?? (resultParseFailure ? "result-parse" : childActuallyStarted ? "codex-child" : "launcher"),
+    fallbackBoundary: details.boundary ?? (resultParseFailure ? "result-parse" : childActuallyStarted ? "codex-child" : "launcher")
   });
   error.details = {
     ...enriched,
@@ -360,26 +363,28 @@ export async function runGovernedCodexTask({
   taskTitle,
   evidence = {},
   diagnosticStore = persistExecutionDiagnostic,
+  fallbackStore = reserveRuntimeDiagnostic,
+  existingFallback = false,
+  openFallback = openRuntimeDiagnostic,
+  createDiagnostic = createExecutionDiagnostic,
+  readDiagnosticConfig = readDiagnosticsConfig,
   resultSchema = CODEX_RESULT_SCHEMA
 }) {
-  profile = resolveCodexProfile(profile);
-  if (typeof inputText !== "string" || inputText.length === 0) throw new WriterBlockedError("CODEX_INPUT_MISSING", "Codex requires the exact admitted task input");
-  if (typeof buildArgs !== "function") throw new WriterBlockedError("CODEX_ARGUMENTS_MISSING", "Codex runtime requires a typed argument builder");
-  buildCodexProcessSpec({ args: [], executable });
-
-  if (typeof cwd !== "string" || cwd.trim() === "") throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_INVALID", "Codex checkout root is required");
-  const checkoutRoot = resolve(cwd);
-  const stagingDir = join(checkoutRoot, CODEX_SANDBOX_NAME);
-  const inputPath = join(stagingDir, CODEX_INPUT_NAME);
-  const schemaPath = join(stagingDir, CODEX_SCHEMA_NAME);
-  const diagnosticsConfig = await readDiagnosticsConfig();
-  const diagnosticMode = diagnosticsConfig.mode;
-  const executionId = attemptId ?? `codex-${operation ?? "task"}-${Date.now()}-${process.pid}-${targetNumber ?? "unknown"}`;
+  const executionId = attemptId ?? `codex-${randomUUID()}`;
+  // Reservation precedes workspace mutation and execution. A full or failed
+  // independent store prevents another attempt from consuming evidence space.
+  const capsule = await (existingFallback ? openFallback : fallbackStore)({ executionId });
+  if (!capsule) throw new WriterBlockedError('RUNTIME_DIAGNOSTIC_MISSING', 'The reserved runtime diagnostic is unavailable');
+  let checkoutRoot, stagingDir, inputPath, schemaPath;
+  let diagnosticMode = 'normal';
   const diagnosticStartedAt = new Date().toISOString();
   const diagnosticPhases = ["start"];
-  const diagnosticLimit = diagnosticMode === "debug" ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES;
-  const taskInput = `${inputText}\n\n${PROGRESS_BOUNDED_EXECUTION}\n`;
-  const schemaText = `${JSON.stringify(resultSchema)}\n`;
+  let taskInput = '', schemaText = '';
+  let state = { executionId, stage: 'worker', boundary: 'worker', operation: 'runtime-validation',
+    lastSuccessfulBoundary: 'dispatcher', childState: 'not_started', containment: 'unknown',
+    cleanup: 'pending', persistence: 'pending', retention: 'unknown', sandboxCreated: false, inputSchemaCreated: false };
+  const checkpoint = async changes => { state = { ...state, ...changes }; await capsule.write(state); };
+  const secrets = { codexAccessToken: env?.CODEX_ACCESS_TOKEN ?? '', githubToken: env?.GITHUB_TOKEN ?? '' };
   let child;
   let childEnv;
   let finalProcessSpec;
@@ -392,9 +397,8 @@ export async function runGovernedCodexTask({
   let childLaunchError = false;
   let launcherDiagnostic;
   let pendingError;
-  let runtimeStarted = false;
   const stdoutCapture = createBoundedUtf8Capture(MAX_CODEX_FUNCTIONAL_STDOUT_BYTES);
-  const stderrCapture = createBoundedUtf8Capture(diagnosticLimit);
+  let stderrCapture = createBoundedUtf8Capture(MAX_NORMAL_DIAGNOSTIC_BYTES);
   let stdoutCapturedBytes = 0;
   let stderrCapturedBytes = 0;
   let stdoutTruncated = false;
@@ -416,7 +420,28 @@ export async function runGovernedCodexTask({
   };
 
   try {
+    await checkpoint({});
+    profile = resolveCodexProfile(profile);
+    if (typeof inputText !== 'string' || inputText.length === 0) throw new WriterBlockedError('CODEX_INPUT_MISSING', 'Codex requires the exact admitted task input');
+    if (typeof buildArgs !== 'function') throw new WriterBlockedError('CODEX_ARGUMENTS_MISSING', 'Codex runtime requires a typed argument builder');
+    buildCodexProcessSpec({ args: [], executable });
+    if (typeof cwd !== 'string' || cwd.trim() === '') throw new WriterBlockedError('CODEX_PATH_PREFLIGHT_INVALID', 'Codex checkout root is required');
+    checkoutRoot = resolve(cwd);
+    stagingDir = join(checkoutRoot, CODEX_SANDBOX_NAME);
+    inputPath = join(stagingDir, CODEX_INPUT_NAME);
+    schemaPath = join(stagingDir, CODEX_SCHEMA_NAME);
+    await checkpoint({ operation: 'diagnostic-config', pathContext: 'diagnostic-store' });
+    diagnosticMode = (await readDiagnosticConfig()).mode;
+    stderrCapture = createBoundedUtf8Capture(diagnosticMode === 'debug' ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES);
+    taskInput = `${inputText}\n\n${PROGRESS_BOUNDED_EXECUTION}\n`;
+    schemaText = `${JSON.stringify(resultSchema)}\n`;
+    await checkpoint({ operation: 'sandbox-preflight', pathContext: 'sandbox' });
+    // Existing sandboxes may be the last evidence of an earlier failed attempt.
+    const existing = await lstat(stagingDir).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (existing) throw new WriterBlockedError('CODEX_SANDBOX_ALREADY_EXISTS', 'Existing runtime artifacts require inspection');
     await preflightCodexWorkspace({ cwd: checkoutRoot, sandboxRoot: stagingDir });
+    await checkpoint({ sandboxCreated: true, sandboxIdentity: await captureSandboxIdentity(stagingDir),
+      lastSuccessfulBoundary: 'worker', operation: 'input-schema-write', pathContext: 'input' });
     diagnosticPhases.push("sandbox-created", "path-preflight-passed");
     await writeFile(inputPath, taskInput, { mode: 0o660 });
     await writeFile(schemaPath, schemaText, { mode: 0o660 });
@@ -425,6 +450,7 @@ export async function runGovernedCodexTask({
       await chmod(schemaPath, 0o660);
     }
     diagnosticPhases.push("input-schema-written");
+    await checkpoint({ inputSchemaCreated: true, operation: 'build-arguments', pathContext: 'sandbox' });
     childEnv = buildCodexEnvironment(env, { sandboxRoot: stagingDir, gitIdentity });
     childEnv.CODEX_TASK_ROOT = checkoutRoot;
     childEnv.CODEX_SANDBOX_ROOT = stagingDir;
@@ -436,14 +462,15 @@ export async function runGovernedCodexTask({
     if (!Array.isArray(args) || args.some(value => typeof value !== "string")) throw new WriterBlockedError("CODEX_ARGUMENTS_INVALID", "Codex argument builder returned an invalid command shape");
     finalProcessSpec = buildCodexProcessSpec({ args, executable });
     evidence.codexCommand = [finalProcessSpec.command, ...finalProcessSpec.args.map(value => value === inputPath ? "[INPUT_PATH]" : value === schemaPath ? "[OUTPUT_SCHEMA]" : value)];
-    runtimeStarted = true;
+    await checkpoint({ stage: 'launcher', boundary: 'launcher', operation: 'launcher-spawn', childState: 'unknown' });
     // The on-demand dispatcher owns the outer process group. Both automatic
     // entry paths use this same bounded child lifecycle and termination path.
     try {
       child = spawnImpl(finalProcessSpec.command, finalProcessSpec.args, { cwd: checkoutRoot, env: childEnv, stdio: ["ignore", "pipe", "pipe"], detached: false, windowsHide: true });
     } catch (error) {
       childLaunchError = true;
-      throw new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher could not be started", { childStarted: false, primaryCause: error?.code, cause: error?.code });
+      evidence.codexChildStarted = false;
+      throw Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher could not be started", { childStarted: false, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error });
     }
     evidence.codexChildStarted = null;
     child.once("spawn", () => {
@@ -472,7 +499,7 @@ export async function runGovernedCodexTask({
       child.on("error", error => {
         childLaunchError = true;
         if (!child.pid) evidence.codexChildStarted = false;
-        if (!settled) { settled = true; clearTimeout(timer); rejectExit(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher failed before completing", { childStarted: evidence.codexChildStarted, primaryCause: error?.code, cause: error?.code })); }
+        if (!settled) { settled = true; clearTimeout(timer); rejectExit(Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher failed before completing", { childStarted: evidence.codexChildStarted, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error })); }
       });
       child.on("close", (code, signal) => {
         if (!settled) { settled = true; clearTimeout(timer); resolveExit({ code, signal }); }
@@ -482,6 +509,8 @@ export async function runGovernedCodexTask({
     childExitCode = exit.code;
     childSignal = exit.signal;
     diagnosticPhases.push("child-closed");
+    await checkpoint({ stage: 'codex-child', boundary: 'codex-child', operation: 'child-result',
+      childExitCode, signal: childSignal, lastSuccessfulBoundary: 'launcher' });
     evidence.codexExitCode = childExitCode;
     evidence.codexStdoutBytes = stdoutBytes;
     evidence.codexStdoutCapturedBytes = stdoutCapturedBytes;
@@ -508,64 +537,86 @@ export async function runGovernedCodexTask({
     }
     launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
     evidence.codexChildStarted = launcherDiagnostic.childStarted;
+    await checkpoint({ stage: 'result-parse', boundary: 'result-parse', operation: 'result-parse',
+      childState: launcherDiagnostic.childState, lastSuccessfulBoundary: 'codex-child' });
     const result = parseCodexJsonLines(stdout, evidence);
     evidence.codexChildStarted = true;
+    await checkpoint({ stage: 'finalization', boundary: 'finalization', operation: 'runtime-finalization',
+      childState: 'started', lastSuccessfulBoundary: 'result-parse' });
     if (appServer?.setThreadName && result.threadId !== "UNAVAILABLE") {
       try { await appServer.setThreadName(result.threadId, taskTitle); }
       catch { evidence.threadNameWarning = true; }
     }
     return result;
   } catch (error) {
-    pendingError = error;
-    throw error;
+    pendingError = error instanceof WriterBlockedError ? error : new WriterBlockedError(
+      /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'RUNTIME_UNEXPECTED_FAILURE',
+      'Governed runtime failed; inspect the protected diagnostic reference');
+    pendingError.runtimeCause = error.runtimeCause ?? error;
+    throw pendingError;
   } finally {
-    finalizeStreams();
-    const filesystem = await filesystemSnapshot([["checkout", checkoutRoot], ["git", join(checkoutRoot, ".git")], ["sandbox", stagingDir], ["input", inputPath], ["schema", schemaPath]]);
-    const shouldPersist = runtimeStarted && (diagnosticMode === "debug" || childLaunchError || childExitCode !== 0 || childSignal !== null || typeof pendingError?.code === "string");
-    diagnosticPhases.push("cleanup-start");
-    await rm(stagingDir, { recursive: true, force: true });
-    diagnosticPhases.push("cleanup-complete");
-    if (shouldPersist) {
-      if (!launcherDiagnostic && !childLaunchError && (diagnosticMode === "debug" || childExitCode !== 0 || childSignal !== null)) {
-        launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
-        evidence.codexChildStarted = launcherDiagnostic.childStarted;
+    let finalizationError;
+    let store;
+    const safeCode = (error, fallback) => /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : fallback;
+    const cause = pendingError?.runtimeCause ?? pendingError;
+    state = { ...state, childState: evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : state.childState,
+      ...(pendingError ? { primaryCause: pendingError.details?.primaryCause ?? pendingError.code,
+        failureDiagnostic: { code: pendingError.code, primaryCause: pendingError.details?.primaryCause ?? pendingError.code,
+          stage: state.stage, boundary: state.boundary, operation: state.operation,
+          syscall: cause?.syscall, pathContext: state.pathContext } } : {}) };
+    try {
+      // This capsule already contains the operation about to run. Even a failed
+      // replacement leaves the previous durable frontier and blocks cleanup.
+      await checkpoint({ cleanup: 'pending', retention: 'unknown' });
+      finalizeStreams();
+      if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
+      const shouldPersist = pendingError || diagnosticMode === 'debug';
+      if (shouldPersist) {
+        const filesystem = checkoutRoot ? await filesystemSnapshot([
+          ['checkout', checkoutRoot], ['git', join(checkoutRoot, '.git')], ['sandbox', stagingDir], ['input', inputPath], ['schema', schemaPath]]) : {};
+        const diagnostic = createDiagnostic({
+          executionId, mode: diagnosticMode, startedAt: diagnosticStartedAt, endedAt: new Date().toISOString(),
+          phase: state.stage, phases: diagnosticPhases, lifecycle: { ...state, cleanupComplete: false, cleanupRequiredByOwner: true },
+          pid: child?.pid, ppid: process.ppid, cwd: checkoutRoot, executable: finalProcessSpec?.command ?? executable,
+          argv: finalProcessSpec?.args ?? [], env: childEnv ? diagnosticEnvironmentSnapshot(childEnv) : {}, checkout: checkoutRoot,
+          filesystem, input: { path: inputPath, bytes: Buffer.byteLength(taskInput), exists: filesystem.input?.exists === true },
+          schema: { path: schemaPath, bytes: Buffer.byteLength(schemaText), exists: filesystem.schema?.exists === true },
+          stdout, stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
+          classification: pendingError?.code ?? launcherDiagnostic?.code ?? 'CODEX_EXIT_OK',
+          runtimeFailure: cause ? { operation: state.operation, code: cause.code, syscall: cause.syscall, path: cause.path, dest: cause.dest } : undefined,
+          secrets
+        });
+        const receipt = await diagnosticStore(diagnostic);
+        if (receipt?.status === 'unavailable') throw Object.assign(new Error('Primary diagnostic store unavailable'), { code: receipt.storeCode ?? receipt.code });
+        store = { status: 'stored', mode: diagnosticMode, executionId };
+        await checkpoint({ persistence: 'stored', diagnosticStore: store });
+      } else {
+        await checkpoint({ persistence: 'not_required' });
       }
-      const diagnostic = createExecutionDiagnostic({
-        executionId,
-        mode: diagnosticMode,
-        startedAt: diagnosticStartedAt,
-        endedAt: new Date().toISOString(),
-        phase: diagnosticPhases.at(-1),
-        phases: diagnosticPhases,
-        lifecycle: { sandboxCreated: true, inputSchemaCreated: true, childStarted: evidence.codexChildStarted, childClosed: childExitCode !== null || childSignal !== null, cleanupComplete: true, cleanupRequiredByOwner: childExitCode === null && childSignal === null },
-        pid: child?.pid,
-        ppid: process.ppid,
-        cwd: checkoutRoot,
-        executable: finalProcessSpec?.command ?? CODEX_LAUNCHER_PATH,
-        argv: finalProcessSpec?.args ?? [],
-        env: childEnv ? diagnosticEnvironmentSnapshot(childEnv) : {},
-        checkout: checkoutRoot,
-        filesystem,
-        input: { path: inputPath, bytes: Buffer.byteLength(taskInput, "utf8"), exists: filesystem.input?.exists === true },
-        schema: { path: schemaPath, bytes: Buffer.byteLength(schemaText, "utf8"), exists: filesystem.schema?.exists === true },
-        stdout,
-        stderr,
-        launcherDiagnostic,
-        exitCode: childExitCode,
-        signal: childSignal,
-        classification: launcherDiagnostic?.code ?? pendingError?.code ?? (childExitCode === 0 ? "CODEX_EXIT_OK" : "UNCLASSIFIED_CHILD_FAILURE")
-      });
-      let store;
-      try { await diagnosticStore(diagnostic); store = { status: "stored", mode: diagnosticMode, executionId }; }
-      catch (error) {
-        store = {
-          status: "unavailable",
-          code: error?.code ?? "DIAGNOSTICS_STORE_FAILED",
-          ...(typeof error?.storeDiagnosticCode === "string" && /^[A-Z0-9_]+$/.test(error.storeDiagnosticCode) ? { storeCode: error.storeDiagnosticCode } : {})
-        };
-      }
-      addDiagnosticDetails(pendingError, launcherDiagnostic, store, childExitCode, childSignal, evidence.codexChildStarted);
-      evidence.diagnosticStore = store;
+    } catch (error) {
+      const code = safeCode(error, 'DIAGNOSTICS_STORE_FAILED');
+      store = { status: 'unavailable', code: 'DIAGNOSTICS_STORE_FAILED', storeCode: error?.storeDiagnosticCode ?? code, executionId, mode: diagnosticMode };
+      finalizationError = new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Runtime diagnostics failed; attempt artifacts are retained', {
+        stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence', operation: 'persist-diagnostic', primaryCause: code });
+      // Independent of diagnostic capture/serialization and of the root store.
+      // If this also fails, the pre-operation capsule remains the durable trace.
+      try { await checkpoint({ persistence: 'failed', cleanup: 'retained', retention: 'retained', diagnosticStore: store,
+        ...(pendingError ? {} : { stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence', operation: 'persist-diagnostic', primaryCause: code }) }); }
+      catch { evidence.fallbackWriteFailed = true; }
     }
+    const failure = pendingError ?? finalizationError;
+    if (failure) {
+      failure.details = { ...state, ...failure.details, executionId, fallbackReference: capsule.reference,
+        cleanup: state.cleanup, persistence: state.persistence, retention: state.retention,
+        lastSuccessfulBoundary: state.lastSuccessfulBoundary, ...(store ? { diagnosticStore: store } : {}) };
+      addDiagnosticDetails(failure, launcherDiagnostic, store, childExitCode, childSignal, evidence.codexChildStarted);
+      // Do not carry Error objects or raw OS paths across the worker wire.
+      delete failure.runtimeCause;
+    }
+    evidence.executionId = executionId;
+    evidence.fallbackReference = capsule.reference;
+    evidence.diagnosticStore = store;
+    evidence.runtimeLifecycle = state;
+    if (!pendingError && finalizationError) throw finalizationError;
   }
 }

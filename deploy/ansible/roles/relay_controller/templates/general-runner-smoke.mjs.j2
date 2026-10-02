@@ -29,6 +29,7 @@ const safeCode = value => /^[A-Z][A-Z0-9_]{0,79}$/.test(value ?? '') ? value : '
 export async function main() {
   let cwd; let dispatchStarted = false; let contained = true; let child = 'unknown';
   let cleanup = 'not-created'; let error; let boundary = 'preflight'; let approvedHead;
+  let runtimeCleanupComplete = false;
   const git = async args => (await exec('/usr/bin/git', ['-C', cwd, ...args],
     { env: ENV, timeout: 10000, maxBuffer: 65536 })).stdout.trim();
   try {
@@ -62,6 +63,7 @@ export async function main() {
       subagentsAllowed: false, input: INPUT };
     boundary = 'dispatch'; dispatchStarted = true; contained = false;
     const result = await createOnDemandDispatchAdapter({ timeoutMs: 120000 }).dispatch(envelope);
+    runtimeCleanupComplete = result.runtimeLifecycle?.cleanup === 'complete';
     contained = result.containment === 'reaped'; child = result.child;
     if (!contained || child !== 'started') fail('SMOKE_CHILD_START_UNPROVEN');
     boundary = 'scratch-validation';
@@ -75,18 +77,21 @@ export async function main() {
     if (await realpath(CURRENT) !== release) fail('SMOKE_INSTALLED_HEAD_CHANGED');
   } catch (caught) {
     error = caught;
+    runtimeCleanupComplete = caught.details?.cleanup === 'complete';
     if (dispatchStarted && !contained) {
       contained = caught.details?.containment === 'reaped' || caught.details?.containment === 'not_required';
       child = caught.details?.childState ?? 'unknown';
     }
   } finally {
-    if (cwd && contained) {
+    // A contained worker may still have retained the last diagnostic evidence.
+    // The smoke owns its checkout, but must obey the runtime's evidence gate.
+    if (cwd && contained && (!dispatchStarted || runtimeCleanupComplete)) {
       try {
         await rm(cwd, { recursive: true });
         if (await lstat(cwd).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; })) fail('SMOKE_CLEANUP_FAILED');
         cleanup = 'cleaned';
       } catch { cleanup = 'failed'; error = Object.assign(new Error('SMOKE_CLEANUP_FAILED'), { code: 'SMOKE_CLEANUP_FAILED' }); }
-    } else if (cwd) cleanup = 'preserved-uncontained';
+    } else if (cwd) cleanup = contained ? 'preserved-diagnostic-evidence' : 'preserved-uncontained';
   }
   // No child text, diagnostic preview, argv, environment or credential bytes.
   const proof = { status: error ? 'blocked' : 'success', code: error ? safeCode(error.code) : 'GENERAL_RUNNER_SMOKE_PASS',

@@ -11,7 +11,7 @@ export const MAX_DEBUG_DIAGNOSTIC_BYTES = 4 * 1024 * 1024;
 
 const SAFE_DIAGNOSTIC_CODE = /^[A-Z0-9_]{1,80}$/;
 const SAFE_DIAGNOSTIC_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const SAFE_SIGNAL = /^SIG[A-Z0-9]+$/;
+const SAFE_SIGNAL = /^SIG[A-Z0-9]{1,29}$/;
 
 export const FAILURE_DIAGNOSTIC_STAGES = Object.freeze([
   "authority",
@@ -21,6 +21,15 @@ export const FAILURE_DIAGNOSTIC_STAGES = Object.freeze([
   "launcher",
   "codex-child",
   "result-parse",
+  "preflight",
+  "sandbox",
+  "finalization",
+  "cleanup",
+  "diagnostic-capture",
+  "diagnostic-persistence",
+  "execution",
+  "progress",
+  "readiness",
   "writer-publication"
 ]);
 export const FAILURE_DIAGNOSTIC_BOUNDARIES = FAILURE_DIAGNOSTIC_STAGES;
@@ -79,6 +88,29 @@ export function safeDiagnosticStoreReference(value) {
   };
 }
 
+export function safeFallbackReference(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !["stored", "unavailable", "released"].includes(value.status)) return undefined;
+  return {
+    status: value.status,
+    ...(typeof value.executionId === "string" && SAFE_DIAGNOSTIC_ID.test(value.executionId) ? { executionId: value.executionId } : {}),
+    ...(Number.isInteger(value.slot) && value.slot >= 0 && value.slot < 8 ? { slot: value.slot } : {}),
+    ...(typeof value.code === "string" && SAFE_DIAGNOSTIC_CODE.test(value.code) ? { code: value.code } : {})
+  };
+}
+
+// These labels describe governed objects, never worker-selected path text.
+const PATH_CONTEXTS = new Set(["sandbox", "checkout", "input", "schema", "diagnostic-store", "fallback-store", "outside-sandbox", "unknown"]);
+export function safeRuntimeLifecycle(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return {
+    ...(["pending", "complete", "failed", "retained", "not_required"].includes(value.cleanup) ? { cleanup: value.cleanup } : {}),
+    ...(["pending", "stored", "failed", "not_required"].includes(value.persistence) ? { persistence: value.persistence } : {}),
+    ...(["none", "retained", "unknown"].includes(value.retention) ? { retention: value.retention } : {}),
+    ...(["reaped", "not_required", "unknown"].includes(value.containment) ? { containment: value.containment } : {}),
+    ...(["reaped", "not_required", "unknown"].includes(value.cleanupContainment) ? { cleanupContainment: value.cleanupContainment } : {})
+  };
+}
+
 function safeFailureDiagnosticCode(value) {
   return typeof value === "string" && SAFE_DIAGNOSTIC_CODE.test(value) ? value : undefined;
 }
@@ -118,6 +150,10 @@ export function safeFailureDiagnosticReference(value, { fallbackCode, fallbackSt
   if (truncated !== undefined) result.truncated = truncated;
   const childExitCode = firstInteger([value.childExitCode], { max: 255 });
   if (childExitCode !== undefined) result.childExitCode = childExitCode;
+  const dispatcherExitCode = firstInteger([value.dispatcherExitCode], { max: 255 });
+  if (dispatcherExitCode !== undefined) result.dispatcherExitCode = dispatcherExitCode;
+  const dispatcherSignal = safeFailureDiagnosticSignal(value.dispatcherSignal);
+  if (dispatcherSignal) result.dispatcherSignal = dispatcherSignal;
   const gitExitCode = firstInteger([value.gitExitCode, value.publicationExitCode], { max: 255 });
   if (gitExitCode !== undefined) result.gitExitCode = gitExitCode;
   const signal = safeFailureDiagnosticSignal(value.signal);
@@ -126,6 +162,9 @@ export function safeFailureDiagnosticReference(value, { fallbackCode, fallbackSt
   if (safeFailureDiagnosticCode(value.primaryCause)) result.primaryCause = value.primaryCause;
   if (typeof value.childStarted === "boolean") result.childStarted = value.childStarted;
   if (typeof value.operation === "string" && /^[a-z][a-z0-9-]{0,63}$/.test(value.operation)) result.operation = value.operation;
+  if (typeof value.syscall === "string" && /^[a-z][a-z0-9_]{0,39}$/.test(value.syscall)) result.syscall = value.syscall;
+  if (PATH_CONTEXTS.has(value.pathContext)) result.pathContext = value.pathContext;
+  Object.assign(result, safeRuntimeLifecycle(value));
   if (typeof value.preview === "string") {
     const preview = boundedDiagnosticText(value.preview, 2048);
     if (preview.text) result.preview = preview.text;
@@ -140,6 +179,8 @@ export function safeFailureDiagnosticReference(value, { fallbackCode, fallbackSt
   if (executionId && SAFE_DIAGNOSTIC_ID.test(executionId)) result.executionId = executionId;
   const diagnosticStore = safeDiagnosticStoreReference(value.diagnosticStore);
   if (diagnosticStore) result.diagnosticStore = diagnosticStore;
+  const fallbackReference = safeFallbackReference(value.fallbackReference);
+  if (fallbackReference) result.fallbackReference = fallbackReference;
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
@@ -155,6 +196,8 @@ export function failureDiagnosticFromDetails(details, options = {}) {
     ["diagnosticBytes", "bytes"],
     ["diagnosticTruncated", "truncated"],
     ["childExitCode", "childExitCode"],
+    ["dispatcherExitCode", "dispatcherExitCode"],
+    ["dispatcherSignal", "dispatcherSignal"],
     ["gitExitCode", "gitExitCode"],
     ["publicationExitCode", "gitExitCode"],
     ["signal", "signal"],
@@ -167,6 +210,14 @@ export function failureDiagnosticFromDetails(details, options = {}) {
     ["boundary", "boundary"],
     ["classification", "classification"],
     ["operation", "operation"],
+    ["syscall", "syscall"],
+    ["pathContext", "pathContext"],
+    ["cleanup", "cleanup"],
+    ["persistence", "persistence"],
+    ["retention", "retention"],
+    ["containment", "containment"],
+    ["cleanupContainment", "cleanupContainment"],
+    ["fallbackReference", "fallbackReference"],
     ["preview", "preview"],
     ["priorCause", "priorCause"]
   ];
@@ -205,7 +256,7 @@ export async function readDiagnosticsConfig({ readFileImpl = readFile } = {}) {
 
 function safePath(value) { return typeof value === "string" && value.length <= 1024 ? value : "[UNAVAILABLE]"; }
 
-export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stderr, launcherDiagnostic, exitCode, signal, classification, secrets = {} }) {
+export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
   const limit = mode === "debug" ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES;
   const output = {
     schemaVersion: "1.0",
@@ -227,6 +278,13 @@ export function createExecutionDiagnostic({ executionId = randomUUID(), mode, st
     launcherDiagnostic: launcherDiagnostic ?? null,
     stderr: boundedDiagnosticText(stderr, limit, secrets),
   };
+  if (runtimeFailure && typeof runtimeFailure === "object") {
+    const safe = safeFailureDiagnosticReference(runtimeFailure) ?? {};
+    delete safe.preview;
+    output.runtimeFailure = { ...safe,
+      ...(typeof runtimeFailure.path === "string" ? { path: boundedDiagnosticText(runtimeFailure.path, 1024, secrets).text } : {}),
+      ...(typeof runtimeFailure.dest === "string" ? { dest: boundedDiagnosticText(runtimeFailure.dest, 1024, secrets).text } : {}) };
+  }
   if (mode === "debug") output.stdout = boundedDiagnosticText(stdout, limit, secrets);
   return output;
 }

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { realpathSync } from "node:fs";
+import { constants, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { DIAGNOSTICS_CONFIG_PATH } from "./diagnostics.mjs";
 
@@ -24,18 +25,23 @@ export function normalizeDiagnosticRequest(value, { mode = "normal" } = {}) {
 }
 
 export async function writeDiagnosticBundle(value, { root = STORE_ROOT, retentionCount = RETENTION_COUNT, mode = value.mode } = {}) {
+  const safe = normalizeDiagnosticRequest(value, { mode });
+  if (!Number.isSafeInteger(retentionCount) || retentionCount < 1 || retentionCount > 128) fail('DIAGNOSTIC_RETENTION_INVALID', 'Diagnostic retention count must preserve a bounded nonempty store');
   await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
-  const safe = normalizeDiagnosticRequest(value, { mode });
   const output = JSON.stringify(safe, null, 2) + "\n";
   const path = join(root, `${safe.executionId}.json`);
-  const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, output, { encoding: "utf8", mode: 0o600 });
-  await chmod(temporary, 0o600);
+  const temporary = `${path}.tmp-${randomUUID()}`;
+  const descriptor = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+  try { await descriptor.writeFile(output, 'utf8'); await descriptor.sync(); }
+  finally { await descriptor.close(); }
   await rename(temporary, path);
-  await chmod(path, 0o600);
-  const entries = (await Promise.all((await readdir(root)).filter(name => name.endsWith(".json")).map(async name => ({ name, stat: await stat(join(root, name)) })))).sort((left, right) => left.stat.mtimeMs - right.stat.mtimeMs);
-  for (const entry of entries.slice(0, Math.max(0, entries.length - retentionCount))) await rm(join(root, entry.name), { force: true });
+  if (process.platform !== 'win32') {
+    const directory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try { await directory.sync(); } finally { await directory.close(); }
+  }
+  const entries = (await Promise.all((await readdir(root)).filter(name => name.endsWith(".json") && name !== `${safe.executionId}.json`).map(async name => ({ name, stat: await stat(join(root, name)) })))).sort((left, right) => left.stat.mtimeMs - right.stat.mtimeMs);
+  for (const entry of entries.slice(0, Math.max(0, entries.length - (retentionCount - 1)))) await rm(join(root, entry.name), { force: true });
   return { status: "stored", executionId: safe.executionId, mode: safe.mode, bytes: Buffer.byteLength(output, "utf8") };
 }
 

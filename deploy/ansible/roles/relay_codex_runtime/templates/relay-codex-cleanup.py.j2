@@ -1,0 +1,160 @@
+#!/usr/bin/python3
+"""Delete only the pinned sandbox of one contained attempt, as its runtime UID.
+
+No credential access, permission repair, arbitrary path or root deletion. The
+trusted runtime supplies an inode captured before child start and calls this
+only after containment and durable diagnostics. Every traversal is descriptor
+relative with O_NOFOLLOW; symlinks are unlinked, never traversed.
+"""
+import errno
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+import time
+
+WORK_ROOT = {{ relay_dispatch_work_root | to_json }}
+SANDBOX = '.codex-sandbox'
+MAX_ENTRIES = 100000
+MAX_DEPTH = 128
+MAX_SECONDS = 30
+FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+operation = 'validate-request'
+context = SANDBOX
+
+
+def reject(code):
+    raise ValueError(code)
+
+
+def checked(syscall, function, *args, **kwargs):
+    try:
+        return function(*args, **kwargs)
+    except OSError as error:
+        # Keep the failing OS operation attached to the exception: later
+        # descriptor closes must not replace it with a successful operation.
+        error.cleanup_syscall = syscall
+        raise
+
+
+def safe_context(parts):
+    # Preserve useful fixed runtime locations, never arbitrary worker filenames.
+    known = {'home', 'config', 'cache', 'data', 'state', 'tmp', 'arg0',
+             'task-input.md', 'codex-result-schema.json'}
+    return '/'.join([SANDBOX, *[
+        part if part in known else '<entry-' + hashlib.sha256(os.fsencode(part)).hexdigest()[:12] + '>'
+        for part in parts[:8]]])
+
+
+def open_absolute(path):
+    if not path.startswith('/') or os.path.normpath(path) != path:
+        reject('SANDBOX_CLEANUP_PATH_INVALID')
+    fd = checked('open', os.open, '/', FLAGS)
+    try:
+        for part in path.split('/')[1:]:
+            child = checked('open', os.open, part, FLAGS, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def cleanup(argv):
+    global operation, context
+    if len(argv) != 4 or argv[0] != '--cwd' or argv[2] != '--sandbox-identity':
+        reject('SANDBOX_CLEANUP_ARGUMENT_INVALID')
+    cwd, identity = argv[1], argv[3]
+    if os.path.dirname(cwd) != WORK_ROOT or not re.fullmatch(r'(?:run|event)-[1-9][0-9]{0,19}', os.path.basename(cwd)):
+        reject('SANDBOX_CLEANUP_PATH_INVALID')
+    if not re.fullmatch(r'[0-9]{1,20}:[1-9][0-9]{0,19}', identity):
+        reject('SANDBOX_CLEANUP_IDENTITY_INVALID')
+    expected = tuple(map(int, identity.split(':')))
+    operation = 'open-work-root'
+    root = open_absolute(WORK_ROOT)
+    try:
+        operation = 'open-checkout'
+        checkout = checked('open', os.open, os.path.basename(cwd), FLAGS, dir_fd=root)
+        try:
+            operation = 'open-sandbox'
+            sandbox = checked('open', os.open, SANDBOX, FLAGS, dir_fd=checkout)
+            try:
+                metadata = checked('fstat', os.fstat, sandbox)
+                if (metadata.st_dev, metadata.st_ino) != expected:
+                    reject('SANDBOX_CLEANUP_IDENTITY_MISMATCH')
+                deadline = time.monotonic() + MAX_SECONDS
+                remaining = MAX_ENTRIES
+
+                def remove_contents(fd, parts):
+                    nonlocal remaining
+                    global operation, context
+                    if len(parts) > MAX_DEPTH:
+                        reject('SANDBOX_CLEANUP_LIMIT_EXCEEDED')
+                    operation, context = 'list-directory', safe_context(parts)
+                    # scandir yields entries instead of allocating an unbounded list.
+                    with checked('scandir', os.scandir, fd) as entries:
+                        while True:
+                            operation, context = 'list-directory', safe_context(parts)
+                            try:
+                                entry = checked('readdir', next, entries)
+                            except StopIteration:
+                                break
+                            remaining -= 1
+                            if remaining < 0 or time.monotonic() > deadline:
+                                reject('SANDBOX_CLEANUP_LIMIT_EXCEEDED')
+                            nested = [*parts, entry.name]
+                            operation, context = 'stat-entry', safe_context(nested)
+                            info = checked('stat', os.stat, entry.name, dir_fd=fd, follow_symlinks=False)
+                            if stat.S_ISDIR(info.st_mode):
+                                operation = 'open-directory'
+                                child = checked('open', os.open, entry.name, FLAGS, dir_fd=fd)
+                                try:
+                                    opened = checked('fstat', os.fstat, child)
+                                    if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino) or opened.st_dev != expected[0]:
+                                        reject('SANDBOX_CLEANUP_ENTRY_CHANGED')
+                                    remove_contents(child, nested)
+                                    operation, context = 'rmdir-directory', safe_context(nested)
+                                    current = checked('stat', os.stat, entry.name, dir_fd=fd, follow_symlinks=False)
+                                    if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+                                        reject('SANDBOX_CLEANUP_ENTRY_CHANGED')
+                                    checked('rmdir', os.rmdir, entry.name, dir_fd=fd)
+                                finally:
+                                    os.close(child)
+                            else:
+                                operation = 'unlink-entry'
+                                checked('unlink', os.unlink, entry.name, dir_fd=fd)
+
+                remove_contents(sandbox, [])
+                operation, context = 'rmdir-sandbox', SANDBOX
+                current = checked('stat', os.stat, SANDBOX, dir_fd=checkout, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) != expected:
+                    reject('SANDBOX_CLEANUP_IDENTITY_MISMATCH')
+                checked('rmdir', os.rmdir, SANDBOX, dir_fd=checkout)
+                operation = 'sync-checkout'
+                checked('fsync', os.fsync, checkout)
+            finally:
+                os.close(sandbox)
+        finally:
+            os.close(checkout)
+    finally:
+        os.close(root)
+
+
+if __name__ == '__main__':
+    try:
+        if sys.argv[1:] == ['--check-runtime']:
+            print('SANDBOX_CLEANUP_RUNTIME_READY')
+            sys.exit(0)
+        cleanup(sys.argv[1:])
+        print(json.dumps({'schemaVersion': 1, 'status': 'removed'}, separators=(',', ':')))
+    except Exception as error:
+        code = errno.errorcode.get(error.errno, 'SANDBOX_CLEANUP_FAILED') if isinstance(error, OSError) else str(error) if isinstance(error, ValueError) else 'SANDBOX_CLEANUP_FAILED'
+        if not re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', code):
+            code = 'SANDBOX_CLEANUP_FAILED'
+        print(json.dumps({'schemaVersion': 1, 'status': 'retained', 'code': code,
+                          'operation': operation, 'syscall': getattr(error, 'cleanup_syscall', None),
+                          'path': context}, separators=(',', ':')))
+        sys.exit(1)

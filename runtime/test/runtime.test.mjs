@@ -9,17 +9,22 @@ import { PassThrough } from 'node:stream';
 import { join } from 'node:path';
 import { parseLauncherDiagnostic, parseCodexJsonLines, buildCodexProcessSpec, runGovernedCodexTask, preflightCodexWorkspace, buildCodexEnvironment } from '../src/codex-runtime.mjs';
 import { causalEvidence } from '../../controller/src/execution-contract.mjs';
+import { reserveRuntimeDiagnostic } from '../../controller/src/diagnostic-fallback.mjs';
 
 test('worker arguments resolve absent profiles and preserve explicit unknown identifiers', async t => {
   const root = await mkdtemp(join(tmpdir(), 'codex-profile-runtime-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
+  let profileCase = 0;
   for (const [profile, expected] of [
     [undefined, CONSUMER.defaultProfile],
     [{ cliModelId: 'future-model', effort: 'future-effort' }, { cliModelId: 'future-model', effort: 'future-effort' }]
   ]) {
+    const cwd = join(root, `checkout-${profileCase++}`);
+    await mkdir(cwd);
     let invoked = false;
-    const result = await runGovernedCodexTask({ profile, inputText: 'Admitted task', cwd: root, targetNumber: 12,
+    const result = await runGovernedCodexTask({ profile, inputText: 'Admitted task', cwd, targetNumber: 12,
       diagnosticStore: async () => undefined,
+      fallbackStore: options => reserveRuntimeDiagnostic({ ...options, root: join(root, 'fallback') }),
       buildArgs: ({ profile, inputPath }) => {
         const delivered = readFileSync(inputPath, 'utf8');
         assert.ok(delivered.startsWith('Admitted task\n'));
@@ -142,7 +147,8 @@ test('Codex child exit remains an execution exit and is not confused with public
   await assert.rejects(runGovernedCodexTask({
     operation: 'review-remediation', attemptId: 'event-245', profile: { cliModelId: 'gpt-5.6-luna', effort: 'high' },
     inputText: 'bounded test input', cwd: root, targetNumber: 245,
-    buildArgs: () => [], env: { PATH: process.env.PATH }, spawnImpl, diagnosticStore: async () => undefined
+    buildArgs: () => [], env: { PATH: process.env.PATH }, spawnImpl, diagnosticStore: async () => undefined,
+    fallbackStore: options => reserveRuntimeDiagnostic({ ...options, root: join(root, 'fallback') })
   }), error => {
     failure = error;
     assert.equal(error.code, 'CODEX_NONZERO_EXIT');

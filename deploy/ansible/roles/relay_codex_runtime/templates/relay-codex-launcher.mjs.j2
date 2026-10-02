@@ -1,6 +1,6 @@
 #!/usr/bin/node --experimental-default-type=module
 import { readFile, realpath, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 // The root-owned relay-codex-diagnostic.mjs is installed by the governed role.
 import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretRedactor, decodeUtf8, MAX_DEBUG_CAPTURE_BYTES, MAX_DIAGNOSTIC_CAPTURE_BYTES, writeChildDiagnostic } from "{{ relay_codex_diagnostic_path }}";
@@ -8,6 +8,7 @@ import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretR
 const CODEX_BINARY = "{{ relay_codex_binary_path }}";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
+const CLEANUP_HELPER = "{{ relay_install_root }}/relay-codex-cleanup.py";
 const MAX_TOKEN_BYTES = 16 * 1024;
 const MAX_INPUT_BYTES = 256 * 1024;
 const DIAGNOSTICS_CONFIG_PATH = "{{ relay_diagnostics_config_path }}";
@@ -41,7 +42,27 @@ async function main() {
   // Static imports above resolve the installed dependency closure. This probe
   // never reads credentials, task input, or launches a Codex child.
   if (process.argv.length === 3 && process.argv[2] === "--check-runtime") {
+    const probe = spawnSync("/usr/bin/python3", ["-I", "-S", CLEANUP_HELPER, "--check-runtime"], {
+      env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, encoding: "utf8", timeout: 5000, maxBuffer: 4096
+    });
+    if (probe.status !== 0 || probe.stdout.trim() !== "SANDBOX_CLEANUP_RUNTIME_READY") fail("CLEANUP_RUNTIME_UNAVAILABLE");
     process.stdout.write("CODEX_LAUNCHER_RUNTIME_READY\n");
+    return;
+  }
+  // Uses the same runtime UID and sudo boundary as execution. The fixed
+  // helper accepts only an admitted sandbox inode, never an arbitrary path.
+  // This branch deliberately precedes all diagnostics config/token reads.
+  if (process.argv[2] === "cleanup") {
+    const cleanup = spawnSync("/usr/bin/python3", ["-I", "-S", CLEANUP_HELPER, ...process.argv.slice(3)], {
+      env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, encoding: "utf8", timeout: 35000, maxBuffer: 4096
+    });
+    if (cleanup.error || ![0, 1].includes(cleanup.status)) {
+      process.stdout.write(JSON.stringify({ schemaVersion: 1, status: "retained", code: "SANDBOX_CLEANUP_HELPER_FAILED", operation: "cleanup-helper", path: ".codex-sandbox" }) + "\n");
+      process.exitCode = 1;
+    } else {
+      process.stdout.write(cleanup.stdout);
+      process.exitCode = cleanup.status;
+    }
     return;
   }
   const diagnosticsConfig = await readFile(DIAGNOSTICS_CONFIG_PATH, "utf8").then(value => JSON.parse(value)).catch(() => fail("DIAGNOSTICS_CONFIG_INVALID"));

@@ -10,6 +10,7 @@ import { prepareCheckout, collectCheckout } from './attempt-runtime.mjs';
 import { REPOSITORY, OWNER, causalEvidence } from './execution-contract.mjs';
 import { emitAdmissionWarnings } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
+import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 
 export async function main() {
   const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
@@ -32,9 +33,20 @@ export async function main() {
   emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
   if (admitted.status === 'BLOCKED') return admitted;
   const dispatcher = createOnDemandDispatchAdapter();
-  return runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
-    journal: createAttemptStore(CONSUMER.paths.attemptRoot),
-    prepare: prepareCheckout, execute: e => dispatcher.dispatch(e), collect: collectCheckout });
+  try {
+    return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
+      journal: createAttemptStore(CONSUMER.paths.attemptRoot), persistFailure: persistAttemptFailureDiagnostic,
+      prepare: prepareCheckout, execute: e => dispatcher.dispatch(e), collect: collectCheckout });
+  } catch (error) {
+    // Includes a failed journal write before/inside the normal catch path.
+    // Never rerun the operation just because its normal evidence store failed.
+    if (!error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
+      const durable = await persistAttemptFailureDiagnostic({ executionId: admitted.envelope.attemptId,
+        error, stage: 'finalization', lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? 'admission' });
+      error.details = { ...error.details, ...durable };
+    }
+    throw error;
+  }
 }
 export async function reportRoutingResult(run, { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value) } = {}) {
   try {

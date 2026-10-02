@@ -2,7 +2,7 @@ import { safeModel, safeEffort } from '../../runtime/src/codex-profile.mjs';
 import { safeBranch as safeConsumerBranch } from '../../consumer/consumer-config.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createHash } from 'node:crypto';
-import { safeDiagnosticStoreReference, safeFailureDiagnosticReference } from './diagnostics.mjs';
+import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle } from './diagnostics.mjs';
 import { NATIVE_CR_VALIDATIONS } from '../../contracts/src/executable-cr.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
@@ -57,6 +57,8 @@ const WORKER_DOMAIN_CODES = new Set(['CODEX_JSON_INVALID', 'CODEX_RESULT_MISSING
   'CODEX_NONZERO_EXIT', 'CODEX_OUTPUT_TOO_LARGE', 'CODEX_RUNTIME_TIMEOUT']);
 export function safeDomainTerminal(error, record, stage) {
   const execution = record.execution;
+  const lifecycle = safeRuntimeLifecycle(execution?.diagnostic?.runtime ?? error?.details?.failureDiagnostic ?? error?.details);
+  if (lifecycle.persistence === 'failed' || ['failed', 'retained'].includes(lifecycle.cleanup)) return false;
   const domain = isNormalDomainBlock(error)
     || (stage === 'execution' && execution?.child === 'started' && WORKER_DOMAIN_CODES.has(error?.code));
   if (!domain) return false;
@@ -105,8 +107,12 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const detail = error?.details ?? {};
   const inherited = detail.causal ?? {};
   const diagnostic = detail.failureDiagnostic ?? detail;
-  const safeDiagnostic = safeFailureDiagnosticReference(diagnostic) ?? {};
+  const safeDiagnostic = { ...safeFailureDiagnosticReference(detail), ...safeFailureDiagnosticReference(diagnostic),
+    // Parent finalization happens after the worker diagnostic was emitted.
+    // Preserve its latest lifecycle observations alongside the original cause.
+    ...safeRuntimeLifecycle(detail) };
   const inheritedPublication = safeFailureDiagnosticReference(inherited.publication) ?? {};
+  const inheritedRuntime = safeFailureDiagnosticReference(inherited.runtime) ?? {};
   const observed = safeDiagnostic.childState ?? inherited.observed?.child ?? (typeof safeDiagnostic.childStarted === 'boolean' ? (safeDiagnostic.childStarted ? 'started' : 'not_started') : child);
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
   const parserFailure = ['CODEX_JSON_INVALID', 'CODEX_RESULT_INVALID', 'CODEX_RESULT_MISSING'].includes(code);
@@ -118,6 +124,14 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const operation = safeDiagnostic.operation ?? inheritedPublication.operation;
   const priorCause = safeDiagnostic.priorCause ?? inheritedPublication.priorCause;
   const gitExitCode = safeDiagnostic.gitExitCode ?? inheritedPublication.gitExitCode;
+  const signal = safeDiagnostic.signal ?? inherited.observed?.signal;
+  const runtime = {
+    ...inheritedRuntime,
+    ...(safeDiagnostic.syscall ? { syscall: safeDiagnostic.syscall } : {}),
+    ...(safeDiagnostic.pathContext ? { pathContext: safeDiagnostic.pathContext } : {}),
+    ...safeRuntimeLifecycle(safeDiagnostic)
+  };
+  if (Object.keys(runtime).length && safeDiagnostic.operation) runtime.operation = safeDiagnostic.operation;
   const publication = {
     ...(operation ? { operation } : {}),
     ...(priorCause ? { priorCause } : {}),
@@ -125,7 +139,8 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   };
   return {
     observed: { child: ['started', 'not_started', 'unknown'].includes(observed) ? observed : 'unknown',
-      exitCode: Number.isInteger(exitCode) ? exitCode : null },
+      exitCode: Number.isInteger(exitCode) ? exitCode : null,
+      ...(/^SIG[A-Z0-9]+$/.test(signal ?? '') ? { signal } : {}) },
     executionState: observed === 'started' ? 'confirmed' : observed === 'not_started' ? 'known-not-executed' : 'uncertain',
     executionId: /^[A-Za-z0-9_-]{1,128}$/.test(executionId ?? '') ? executionId : null,
     lastSuccessfulBoundary: boundary(detail.lastSuccessfulBoundary ?? inherited.lastSuccessfulBoundary),
@@ -134,7 +149,10 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
     primaryCause: primary,
     containment: ['reaped', 'not_required', 'unknown'].includes(containment) ? containment : 'unknown',
     terminal: 'blocked', durable: { publishedHead: exactSha(publishedHead) ? publishedHead : null,
-      diagnosticStore: safeDiagnosticStoreReference(detail.diagnosticStore ?? diagnostic.diagnosticStore ?? inherited.durable?.diagnosticStore) ?? null },
+      diagnosticStore: safeDiagnosticStoreReference(detail.diagnosticStore ?? diagnostic.diagnosticStore ?? inherited.durable?.diagnosticStore) ?? null,
+      ...(safeFallbackReference(detail.fallbackReference ?? diagnostic.fallbackReference ?? inherited.durable?.fallbackReference)
+        ? { fallbackReference: safeFallbackReference(detail.fallbackReference ?? diagnostic.fallbackReference ?? inherited.durable?.fallbackReference) } : {}) },
+    ...(Object.keys(runtime).length > 0 ? { runtime } : {}),
     ...(Object.keys(publication).length > 0 ? { publication } : {}),
     nextAction: publishedHead ? 'reconcile-published-progress-before-new-owner-attempt' : observed === 'not_started' ? 'correct-cause-before-new-owner-attempt' : 'inspect-attempt-before-new-owner-attempt'
   };
