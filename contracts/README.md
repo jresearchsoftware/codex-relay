@@ -94,6 +94,11 @@ decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity
 The ChatGPT/owner orchestration that authors and publishes the review also
 performs these small native metadata operations. They are not additional human
 launch actions and do not grant the Reviewer App label permissions.
+Implementation branch, commit and PR flow remains Codex-owned under
+[the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff);
+orchestration creates those implementation artifacts only at the owner's
+explicit request. These metadata operations do not transfer implementation
+ownership or replace the Issue body's current Task contract with comments.
 
 1. Read the linked canonical Issue and current PR. Require exactly one valid
    `step-N` on each, with equal N. For a **new** executable Change Request,
