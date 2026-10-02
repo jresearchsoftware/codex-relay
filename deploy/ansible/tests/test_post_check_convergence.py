@@ -63,6 +63,43 @@ class PostCheckConvergenceTests(unittest.TestCase):
             self.assertRegex(result.stdout, r'changed=[1-9][0-9]*')
             self.assertEqual(drift.read_text(), '{}\n', 'check must not repair drift')
 
+    def test_runner_enable_probe_leaves_private_diagnostics_for_post_check(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            runner = directory / 'runner'
+            (runner / 'bin').mkdir(parents=True)
+            diagnostic = runner / '_diag'
+            diagnostic.mkdir(mode=0o750)
+            listener = runner / 'bin/Runner.Listener'
+            listener.write_text('#!/bin/sh\n: > "$(dirname "$0")/../_diag/enable-probe-$$.log"\nprintf "2.336.0\\n"\n')
+            listener.chmod(0o755)
+            playbook = yaml.safe_load((ROOT / 'relay-production-runner-enable.yml').read_text())
+            probe = next(t for t in playbook[0]['pre_tasks'] if t['name'] ==
+                         'Verify the installed production runner version without replacing software')
+            values = {'relay_runner_root': str(runner), 'relay_runner_user': 'root',
+                      'relay_runner_group': 'root',
+                      'relay_runner_installed_paths': {'results': [{'stat': {'exists': True}}] * 3}}
+            inherited_umask = os.umask(0o022)
+            try:
+                result = run_play(directory, [probe], values)
+            finally:
+                os.umask(inherited_umask)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            logs = list(diagnostic.glob('enable-probe-*.log'))
+            self.assertEqual(len(logs), 1)
+            self.assertEqual(stat.S_IMODE(logs[0].stat().st_mode), 0o600)
+            names = [
+                'Inspect existing runner diagnostic files',
+                'Normalize runner diagnostic file ownership before package probes',
+                'Reconcile runner diagnostic ownership after all package probes',
+                'Enforce runner ownership of all diagnostic files after probes',
+            ]
+            tasks = [task('roles/relay_runner/tasks/main.yml', name) for name in names]
+            result = run_play(directory, tasks, values, check=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertRegex(result.stdout, r'changed=0\s+unreachable=0\s+failed=0')
+            self.assertEqual(stat.S_IMODE(logs[0].stat().st_mode), 0o600)
+
     def test_runner_probes_preserve_private_logs_and_still_detect_excess_access(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

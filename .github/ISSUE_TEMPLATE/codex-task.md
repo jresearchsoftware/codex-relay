@@ -16,6 +16,9 @@ The full PR diff is reviewed independently at its exact head. -->
 ## Starting state and authority
 
 <!-- Identify the target repository and any relevant live Issue/CR/PR.
+Maintain this Issue body as the current Task contract, including requirements,
+owner corrections, scope/boundary decisions and task status. Comments carry
+discussion, evidence, Outcomes, handoffs and history, not a competing contract.
 For fresh work, omitted base resolves to the exact current configured base branch
 at admission; omitted branch resolves to the configured prefix + task-N (normally
 codex/task-N). If pinning a base, add Required starting base with one exact SHA.
@@ -70,7 +73,10 @@ Separate deterministic helper tests from native lifecycle or deployment proof. -
 
 <!-- Publish one top-level Codex Outcome on the canonical authorized surface:
 exact title/profile (UNAVAILABLE when not exposed), final head and PR, completed
-behavior, validation, material warnings and remaining boundaries. Preserve and
-publish safe authorized task work before a terminal stop. Use an explicit success
-or blocked token if useful. Implementation stops for independent exact-head review;
+behavior, material validation evidence, warnings and remaining boundaries. Link
+required native checks; do not duplicate reconstructible CI status or add an
+Outcome update solely for CI PASS. Correct clear, safe, in-scope CI failures and
+rerun validation. Preserve and publish safe authorized task work before a
+terminal stop. Use an explicit success or blocked token if useful.
+Implementation stops for independent exact-head review;
 do not claim acceptance, merge, Issue closure, deployment or release. -->

@@ -11,6 +11,12 @@ product; the admitted task defines the goal and allowed external actions.
 Read [architecture](docs/architecture.md) before changing orchestration or a
 trust boundary, and the affected component contract before changing its API.
 
+The live Issue body is the mutable canonical Task contract. Keep current
+requirements, owner corrections, scope/boundary decisions and task status in
+that body. Comments hold discussion, evidence, Outcomes, handoffs and history;
+they must not become a competing current Task contract. Native Change Requests
+retain their existing remediation authority.
+
 All human-readable GitHub publication for this repository is in English,
 including Issue and PR titles/bodies, Codex Outcomes and handoffs, ordinary
 comments, and native Reviewer APPROVE / REQUEST_CHANGES bodies. Interactive
@@ -64,6 +70,11 @@ execution already passes its resolved title to Codex and does not require a
 worker to discover or invoke the UI rename tool.
 
 ## Canonical checkout and safe Git handoff
+
+For repository changes assigned to Codex, Codex owns the implementation branch,
+commit and PR flow. ChatGPT/owner orchestration must not create implementation
+branches, commits or PRs unless the owner explicitly requests it. Automatic
+workers still delegate GitHub publication to trusted Writer.
 
 Before applying an existing PR's starting-head gate, read its live repository,
 branch, base and required SHA. Inspect the current checkout, worktrees, dirty
@@ -142,6 +153,12 @@ facts, native checks and one Outcome over duplicate ledgers, receipts or packets
 A self-contained packet needs a concrete independent purpose. Do not add a
 commit, review pass, gate or state transition when existing evidence proves the
 same invariant; stronger controls need a concrete risk or authority reason.
+
+Wait for required native CI, but leave reconstructible CI/status results in
+their native records instead of posting another PASS comment or Outcome update.
+If CI fails and the next correction is clear, safe and in scope, correct it and
+rerun the relevant validation. Publish material evidence unavailable from those
+records, blockers, authority/boundary changes and required handoff information.
 
 Aggregate related findings, use targeted checks while correcting them, and run
 the required full candidate set once before handoff unless a later change or
@@ -238,9 +255,11 @@ a production service.
 Native checks and independent review remain separate evidence.
 
 Describe the problem and final behavior in the PR. Report the exact final head,
-validation results and limitations in one top-level Codex Outcome on the
-canonical authority. Distinguish implementation complete from independent
-acceptance. Do not post a Reviewer verdict for your own work.
+material validation evidence and limitations in one top-level Codex Outcome on
+the canonical authority. Link required native checks instead of restating their
+reconstructible status; do not add an Outcome update solely to announce CI PASS.
+Distinguish implementation complete from independent acceptance. Do not post a
+Reviewer verdict for your own work.
 
 Future task files include `## Recommended model budget` with recommended model,
 effort, rationale and escalation/de-escalation conditions. The task author

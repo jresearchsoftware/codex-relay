@@ -275,7 +275,9 @@
 
     - name: Verify the installed production runner version without replacing software
       ansible.builtin.command:
-        argv: ['{{ relay_runner_root }}/bin/Runner.Listener', '--version']
+        # --version creates diagnostics; keep this lifecycle probe as private
+        # as the service and ordinary reconciliation probes.
+        argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
       become_user: '{{ relay_runner_user }}'
       register: relay_production_runner_enable_version
       changed_when: false
