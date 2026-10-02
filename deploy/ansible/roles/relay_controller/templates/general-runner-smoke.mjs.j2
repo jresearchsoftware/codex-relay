@@ -58,7 +58,8 @@ export async function main() {
       target: 'issue', number: 263, issueNumber: 263, route: 'manual', startHead: base,
       historicalBase: base, targetBase: base, branch: 'codex/general-runner-smoke',
       authorityDigest: digest({ purpose: 'owner-local-smoke', approvedHead }),
-      validation: ['diff-check'], thread: 'General runner non-routing smoke', profile: PROFILE, input: INPUT };
+      validation: ['diff-check'], thread: 'General runner non-routing smoke', profile: PROFILE,
+      subagentsAllowed: false, input: INPUT };
     boundary = 'dispatch'; dispatchStarted = true; contained = false;
     const result = await createOnDemandDispatchAdapter({ timeoutMs: 120000 }).dispatch(envelope);
     contained = result.containment === 'reaped'; child = result.child;
