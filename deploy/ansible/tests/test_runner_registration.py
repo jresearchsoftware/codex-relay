@@ -26,6 +26,9 @@ class RegistrationTests(unittest.TestCase):
         self.runner = self.root / 'runner'
         self.runner.mkdir(mode=0o750)
         self.runner.chmod(0o750)
+        self.state_root = self.root / 'state'
+        self.state_root.mkdir(mode=0o755)
+        self.pending = self.state_root / 'runner-registration-production-runner.pending'
         (self.runner / '_diag').mkdir()
         self.bin = self.root / 'bin'
         self.bin.mkdir()
@@ -49,7 +52,8 @@ from pathlib import Path
 Path('calls').open('a').write('called\\n')
 token = os.environ.get('ACTIONS_RUNNER_INPUT_TOKEN')
 if token == 'expired-synthetic-token':
-    print('Http response code: Unauthorized: Bad credentials ' + token)
+    print("Http response code: Unauthorized from 'POST https://api.github.com/actions/runner-registration' (Request Id: fixture)")
+    print('Bad credentials ' + token)
     raise SystemExit(1)
 if token in ('rejected-synthetic-token', 'forbidden-synthetic-token'):
     code = 'NotFound' if token == 'rejected-synthetic-token' else 'Forbidden'
@@ -58,12 +62,21 @@ if token in ('rejected-synthetic-token', 'forbidden-synthetic-token'):
 if token == 'ambiguous-synthetic-token':
     print('unexpected failure ' + token)
     raise SystemExit(1)
+if token == 'later-unauthorized-synthetic-token':
+    print('Http response code: Unauthorized: Bad credentials ' + token)
+    raise SystemExit(1)
+if token == 'retried-exchange-synthetic-token':
+    print("Http response code: Unauthorized from 'POST https://api.github.com/actions/runner-registration' (Request Id: fixture)")
+    print('Connected to GitHub')
+    print('unexpected failure ' + token)
+    raise SystemExit(1)
 Path('.runner').write_text(%r)
 Path('.credentials').write_text('{}')
 Path('.runner').chmod(0o600)
 Path('.credentials').chmod(0o600)
 ''' % json.dumps(self.marker))
         values = dict(relay_runner_root=str(self.runner), relay_runner_user=pwd.getpwuid(os.getuid()).pw_name,
+                      relay_state_root=str(self.state_root),
                       relay_runner_group=grp.getgrgid(os.getgid()).gr_name,
                       relay_runner_repository='example/consumer', relay_github_repository='example/consumer',
                       relay_runner_name='production-runner', relay_runner_registration_scope='organization',
@@ -87,11 +100,29 @@ Path('.credentials').chmod(0o600)
             (self.runner / name).write_text(content)
             (self.runner / name).chmod(0o600)
 
+    def pending_registration(self, **changes):
+        binding = ('url=https://github.com/example name=production-runner label=production '
+                   'group=production-group work=' + str(self.root / 'work'))
+        self.pending.write_text(json.dumps({'version': 1, 'binding': binding, **changes}))
+        self.pending.chmod(0o600)
+
     def test_missing_token_is_actionable_and_never_attempts_registration(self):
         result = self.run_helper()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('fresh registration token required', result.stderr)
         self.assertFalse((self.runner / 'calls').exists())
+        self.assertFalse(self.pending.exists())
+
+    def test_pending_reinstall_blocks_direct_registration_and_preserves_evidence(self):
+        journal = Path(str(self.state_root) + '-clean-reinstall.json')
+        journal.write_text('{"stage":"DECOMMISSIONED"}')
+        result = self.run_helper('fresh-synthetic-token')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('CLEAN_REINSTALL_RECOVERY_REQUIRED', result.stderr)
+        self.assertNotIn('fresh-synthetic-token', result.stdout + result.stderr)
+        self.assertFalse((self.runner / 'calls').exists())
+        self.assertFalse(self.pending.exists())
+        self.assertEqual(journal.read_text(), '{"stage":"DECOMMISSIONED"}')
 
     def test_changed_public_configuration_cannot_mutate_the_installed_runner(self):
         binding = ('url=https://github.com/example name=production-runner label=production '
@@ -106,9 +137,11 @@ Path('.credentials').chmod(0o600)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn('FRESH_REGISTRATION_TOKEN_REQUIRED', rejected.stderr)
         self.assertNotIn('expired-synthetic-token', rejected.stdout + rejected.stderr)
+        self.assertFalse(self.pending.exists())
         accepted = self.run_helper('fresh-synthetic-token')
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertIn('state=registered', accepted.stdout)
+        self.assertFalse(self.pending.exists())
         for token in ('', 'expired-synthetic-token'):
             reused = self.run_helper(token)
             self.assertEqual(reused.returncode, 0, reused.stderr)
@@ -120,6 +153,66 @@ Path('.credentials').chmod(0o600)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('REGISTRATION_COMMAND_FAILED_INSPECT_BEFORE_RETRY', result.stderr)
         self.assertNotIn('ambiguous-synthetic-token', result.stdout + result.stderr)
+        self.assertTrue(self.pending.exists())
+        self.assertEqual(self.pending.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('ambiguous-synthetic-token', self.pending.read_text())
+        retried = self.run_helper('fresh-synthetic-token')
+        self.assertNotEqual(retried.returncode, 0)
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', retried.stderr)
+        self.assertEqual((self.runner / 'calls').read_text(), 'called\n')
+
+    def test_only_complete_matching_registration_reconciles_interrupted_attempt(self):
+        self.pending_registration()
+        self.registered()
+        result = self.run_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('state=reused', result.stdout)
+        self.assertFalse(self.pending.exists())
+        self.assertFalse((self.runner / 'calls').exists())
+
+    def test_pending_without_registration_cannot_relaunch_after_interruption(self):
+        self.pending_registration()
+        result = self.run_helper('fresh-synthetic-token')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.assertTrue(self.pending.exists())
+        self.assertFalse((self.runner / 'calls').exists())
+
+    def test_mismatched_or_unsafe_pending_is_retained_even_with_complete_registration(self):
+        self.registered()
+        for changes in ({'version': 2}, {'binding': 'another runner'}, {'unexpected': True}):
+            with self.subTest(changes=changes):
+                self.pending_registration(**changes)
+                result = self.run_helper()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+                self.assertTrue(self.pending.exists())
+        self.pending_registration()
+        self.pending.chmod(0o644)
+        result = self.run_helper()
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.pending.unlink()
+        target = self.root / 'pending-target'
+        target.write_text('preserve')
+        self.pending.symlink_to(target)
+        result = self.run_helper()
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.assertEqual(target.read_text(), 'preserve')
+        self.assertFalse((self.runner / 'calls').exists())
+
+    def test_authentication_error_after_possible_progress_is_not_retry_authority(self):
+        for token in ('later-unauthorized-synthetic-token', 'retried-exchange-synthetic-token'):
+            with self.subTest(token=token):
+                result = self.run_helper(token)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('REGISTRATION_COMMAND_FAILED_INSPECT_BEFORE_RETRY', result.stderr)
+                self.assertTrue(self.pending.exists())
+                self.assertNotIn(token, result.stdout + result.stderr + self.pending.read_text())
+                retried = self.run_helper('fresh-synthetic-token')
+                self.assertIn('REGISTRATION_STATE_AMBIGUOUS', retried.stderr)
+                # Each independent fixture scenario keeps its first unknown attempt.
+                self.pending.unlink()
+        self.assertEqual((self.runner / 'calls').read_text(), 'called\ncalled\n')
 
     def test_rejected_registration_exchange_requires_fresh_token(self):
         for token in ('rejected-synthetic-token', 'forbidden-synthetic-token'):

@@ -283,6 +283,15 @@ class CodexCredentialStagingTests(unittest.TestCase):
                 self.run_stage()
         self.assert_absent()
 
+    def test_pending_reinstall_refuses_token_staging_after_apply_record_clears(self):
+        journal = self.operation.with_name(self.install.name + '-clean-reinstall.json')
+        journal.write_text('{"stage":"DECOMMISSIONED"}')
+        journal.chmod(0o600)
+        self.assertFalse(self.operation.exists())
+        with self.assertRaisesRegex(ValueError, 'reinstall-recovery-required'):
+            self.run_stage()
+        self.assert_absent()
+
     def test_abrupt_exit_after_publication_retries_as_identical_noop(self):
         harness = '''import os, runpy, stat, sys
 destination = sys.argv.pop(1)

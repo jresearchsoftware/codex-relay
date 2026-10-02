@@ -360,7 +360,7 @@ class BootstrapExecutionTests(unittest.TestCase):
         self.assertEqual(before, sorted(str(path.relative_to(self.root)) for path in self.root.rglob('*')))
 
     def test_guard_rejects_wrong_head_active_operation_and_busy_lock(self):
-        for kind in ('head', 'operation', 'lock'):
+        for kind in ('head', 'operation', 'lock', 'reinstall'):
             with self.subTest(kind=kind), ExitStack() as stack:
                 config = copy.deepcopy(self.config)
                 if kind == 'head':
@@ -371,6 +371,11 @@ class BootstrapExecutionTests(unittest.TestCase):
                 if kind == 'lock':
                     lock = stack.enter_context(open(config['lock_file']))
                     fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if kind == 'reinstall':
+                    namespace = Path(config['manifest']).parent.parent.name
+                    journal = Path(config['operation_record']).with_name(namespace + '-clean-reinstall.json')
+                    journal.write_text('{"stage":"DECOMMISSIONED"}')
+                    stack.callback(journal.unlink)
                 with self.assertRaises((TLS.BootstrapError, ValueError, BlockingIOError)):
                     self.simulate(config)
                 self.assertFalse(Path(config['marker']).exists())

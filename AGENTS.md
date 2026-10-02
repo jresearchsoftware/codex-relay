@@ -151,6 +151,27 @@ An inner correction does not itself need a new Issue, Step or execution.
 A manual task may publish through its explicitly authorized owner channel;
 an automatic worker delegates publication to Writer.
 
+## Material User/Operator Contract Change Gate
+
+Removing, replacing, renaming, disabling or materially changing an existing
+user/operator capability or workflow requires explicit authorization in the
+canonical Issue. Material surfaces include commands and entry points, required
+inputs, visible surfaces, actor responsibilities, automated/manual transitions,
+additional required actions, ChatGPT/GitHub paths, and material status, Outcome
+or recovery behavior. Internal refactoring with equivalent observable behavior
+needs no separate owner decision.
+
+If implementation, security work, tests, Reviewer feedback or remediation
+discovers preferable behavior outside that authority, preserve the existing
+behavior when safe or stop and surface an owner decision. A technical, security
+or test preference is not authorization for a material contract change.
+
+Before independent `APPROVE`, compare the material old and new behavior in every
+changed surface as well as the functional and security requirements. An
+unauthorized material delta is `OWNER_DECISION_REQUIRED` and blocks approval
+until the canonical Issue records explicit owner disposition. Never normalize
+an implementation-originated behavior change into policy after the fact.
+
 ## Minimum sufficient ceremony
 
 Use the least complex process that preserves source truth, reproducible checks,

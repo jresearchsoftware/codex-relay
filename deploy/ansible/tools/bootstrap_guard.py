@@ -114,6 +114,7 @@ def mutation_guard(lock_file, operation_record, manifest, exact_head):
     require(current.name == 'current' and Path(manifest).name == 'artifact-manifest.json',
             'manifest-path')
     expected_release = current.parent / 'releases' / exact_head
+    reinstall_path = Path(operation_record).with_name(current.parent.name + '-clean-reinstall.json')
     with ProtectedPath(lock_file) as lock, ProtectedPath(operation_record) as operation:
         lock_info = lock.metadata()
         require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == lock_info.st_gid == 0
@@ -131,6 +132,17 @@ def mutation_guard(lock_file, operation_record, manifest, exact_head):
                 pass
             else:
                 raise ValueError('operation-recovery-required')
+            # Ordinary apply may have cleared its own operation record before
+            # reinstall post-check completes. That does not release the outer
+            # reinstall recovery boundary for credentials, TLS, ingress or
+            # runner registration. Never parse or reset that evidence here.
+            with ProtectedPath(str(reinstall_path)) as reinstall:
+                try:
+                    reinstall.metadata()
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise ValueError('reinstall-recovery-required')
             with ProtectedPath(str(current)) as binding:
                 info = binding.metadata()
                 require(stat.S_ISLNK(info.st_mode) and info.st_uid == 0, 'installed-binding')

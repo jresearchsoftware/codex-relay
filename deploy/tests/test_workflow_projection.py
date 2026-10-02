@@ -189,33 +189,40 @@ class ProjectionTests(unittest.TestCase):
                 self.project('b' * 40)
         self.assertEqual(edited.read_text(), 'concurrent owner edit\n')
 
-    def test_legacy_adoption_is_explicit_exact_and_scoped(self):
-        self.config = self_config()
-        legacy = json.loads((ROOT / 'deploy/workflows/legacy.json').read_text())
-        for name, digest in legacy['files'].items():
-            source = ROOT / 'deploy/tests/fixtures/workflows-48946e7' / Path(name).name
-            self.assertEqual(projection.sha256(source.read_bytes()), digest,
-                             'Migration fixture must match the supported immutable predecessor')
-            target = self.root / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
-        with self.assertRaisesRegex(InvalidConfig, 'workflow-unmanaged'):
-            self.project()
-        changed = self.root / next(iter(legacy['files']))
-        original = changed.read_bytes()
-        changed.write_bytes(original + b'# direct edit\n')
-        with self.assertRaisesRegex(InvalidConfig, 'workflow-legacy-drift'):
-            self.project(adopt_legacy=True)
-        changed.write_bytes(original)
-        self.config['consumer']['owner'] = 'other-owner'
-        with self.assertRaisesRegex(InvalidConfig, 'workflow-legacy-consumer'):
-            self.project(adopt_legacy=True)
-        self.config['consumer']['owner'] = 'foal'
-        projected = self.project(adopt_legacy=True)
-        self.assertEqual(self.verify(), projected)
-        self.assertEqual(len(projected['files']), 3)
-        with self.assertRaisesRegex(InvalidConfig, 'workflow-legacy-already-managed'):
-            self.project(adopt_legacy=True)
+    def test_bootstrap_derives_missing_projection_and_preserves_old_consumer_workflows(self):
+        path = self.root / next(iter(self.rendered))
+        path.parent.mkdir(parents=True)
+        path.write_text('old consumer-owned workflow\n')
+        with tempfile.TemporaryDirectory(prefix='relay-bootstrap-artifacts-') as output:
+            result = projection.prepare(self.config, HEAD, ROOT, self.root, output)
+            self.assertEqual(result['state'], 'workflow-review-required')
+            self.assertEqual(path.read_text(), 'old consumer-owned workflow\n')
+            self.assertFalse((self.root / projection.MANIFEST).exists())
+            projection.verify(self.config, HEAD, ROOT, output)
+            self.assertEqual(projection.prepare(self.config, HEAD, ROOT, self.root, output), result)
+            # Simulate the separately owner-reviewed consumer publication.
+            shutil.copytree(output, self.root, dirs_exist_ok=True)
+            self.assertEqual(projection.prepare(self.config, HEAD, ROOT, self.root, output)['state'], 'ready')
+
+    def test_bootstrap_refuses_managed_drift_and_does_not_rewrite_a_reviewed_proposal(self):
+        self.project()
+        with tempfile.TemporaryDirectory(prefix='relay-bootstrap-artifacts-') as output:
+            next_head = 'b' * 40
+            projection.prepare(self.config, next_head, ROOT, self.root, output)
+            proposal_path = Path(output) / next(iter(self.rendered))
+            proposal_path.write_text('owner edit in proposal\n')
+            with self.assertRaisesRegex(InvalidConfig, 'workflow-drift'):
+                projection.prepare(self.config, next_head, ROOT, self.root, output)
+            self.assertEqual(proposal_path.read_text(), 'owner edit in proposal\n')
+            source_path = self.root / next(iter(self.rendered))
+            source_path.write_text('consumer drift\n')
+            with self.assertRaisesRegex(InvalidConfig, 'workflow-drift'):
+                projection.prepare(self.config, next_head, ROOT, self.root, output)
+
+    def test_bootstrap_cannot_write_proposals_inside_either_checkout(self):
+        with self.assertRaisesRegex(InvalidConfig, 'projection-output-outside-checkouts'):
+            projection.prepare(self.config, HEAD, ROOT, self.root, self.root / 'output')
+        self.assertFalse((self.root / 'output').exists())
 
     def test_projection_lock_blocks_overlapping_local_mutation(self):
         self.project()

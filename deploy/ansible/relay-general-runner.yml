@@ -46,6 +46,19 @@
         that: [not general_runner_operation.stat.exists]
         fail_msg: GENERAL_RUNNER_PRODUCTION_OPERATION_PENDING
 
+    - name: Inspect the outer clean-reinstall recovery boundary before general activation
+      ansible.builtin.stat:
+        path: '{{ relay_state_root }}-clean-reinstall.json'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: general_runner_reinstall
+
+    - name: Refuse activation while clean reinstall still requires recovery
+      ansible.builtin.assert:
+        that: [not general_runner_reinstall.stat.exists]
+        fail_msg: GENERAL_RUNNER_CLEAN_REINSTALL_PENDING
+
     - name: Inspect the installed non-secret release manifest before enablement
       ansible.builtin.slurp:
         src: '{{ relay_install_root }}/current/artifact-manifest.json'
