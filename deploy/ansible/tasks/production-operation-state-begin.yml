@@ -24,10 +24,19 @@
       exit 44
     }
 
+    {% if relay_upgrade_requested | default(false) | bool %}
+    # An explicit upgrade never implies recovery of a prior operation. The
+    # ordinary diagnosis/disposition interface remains the only next step.
+    [[ ! -e "$record" && ! -L "$record" ]] || {
+      echo 'PRODUCTION_UPGRADE_OPERATION_PENDING' >&2
+      exit 45
+    }
+    {% endif %}
+
     {% if relay_local_apply_source | default('checkout') == 'installed' and relay_production_operation_phase == 'apply' %}
     # Unknown completion remains blocked even after a lost host-lock holder.
     # Only an explicitly authorized owner transport may recover the same apply;
-    # the one-SHA runner helper can never request this exception.
+    # the fixed-argument runner helper can never request this exception.
     if [[ -e "$record" || -L "$record" ]]; then
       [[ '{{ "true" if relay_installed_config_recovery_authorized | default(false) | bool else "false" }}' == true &&
          '{{ "true" if relay_installed_config_reconcile | default(false) | bool else "false" }}' == false &&
@@ -53,7 +62,8 @@
     }
     /usr/bin/python3 '{{ relay_review_root }}/deploy/installed_config.py' \
       '{{ relay_production_operation_target_head }}' \
-      '{{ relay_installed_config_expected_sha256 }}' '{{ relay_consumer_revision }}'
+      '{{ relay_installed_config_expected_sha256 }}' '{{ relay_consumer_revision }}' \
+      '{{ relay_workflow_consumer_revision }}'
     {% endif %}
 
     if [[ -L "$record" ]]; then

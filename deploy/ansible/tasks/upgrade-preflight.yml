@@ -1,0 +1,12 @@
+---
+- name: Prove the protected installed identity and preserve complete owner intent before upgrade
+  ansible.builtin.command:
+    argv: >-
+      {{ ['/usr/bin/python3', '-c', lookup('file', playbook_dir + '/scripts/verify_upgrade.py'),
+          relay_install_root, relay_config_root] +
+         ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else []) }}
+    stdin: '{{ relay_installed_deployment_config | string }}'
+    stdin_add_newline: false
+  changed_when: false
+  check_mode: false
+  no_log: true

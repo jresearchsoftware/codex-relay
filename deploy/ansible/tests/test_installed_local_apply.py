@@ -10,6 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HEAD = 'a' * 40
+WORKFLOW_HEAD = 'b' * 40
 CODE = ['deploy/relay-deploy.py', 'deploy/config.py', 'deploy/installed_config.py',
         'deploy/deployment_lock.py', 'consumer/consumer-config.mjs',
         'contracts/src/execution-defaults.mjs', 'reviewer/src/executable-cr-v2.json']
@@ -36,7 +37,8 @@ def helper():
             'import os,sys\nfrom pathlib import Path\n'
             'assert os.geteuid()==0 and os.environ["HOME"]=="/root"\n'
             f'assert sys.argv[1:] == ["--config", {str(release / "deployment-config.json")!r}, '
-            f'"--phase", "apply", "--local-reconcile", "--expected-installed-head", {HEAD!r}]\n'
+            f'"--phase", "apply", "--local-reconcile", "--expected-installed-head", {HEAD!r}, '
+            f'"--workflow-consumer-revision", {WORKFLOW_HEAD!r}]\n'
             f'Path({str(marker)!r}).write_text("called")\n')
         template = (ROOT / 'roles/relay_runner/templates/relay-production-local-apply.j2').read_text()
         script = Environment(undefined=StrictUndefined).from_string(template).render(
@@ -53,7 +55,7 @@ def helper():
 
 def test_installed_helper_uses_only_fixed_snapshot_and_exact_sha(helper):
     executable, _, marker = helper
-    result = subprocess.run([str(executable), HEAD], capture_output=True, text=True)
+    result = subprocess.run([str(executable), HEAD + ":" + WORKFLOW_HEAD], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert marker.read_text() == 'called'
 
@@ -73,13 +75,14 @@ def test_unsafe_imported_code_is_rejected_before_execution(helper, name, unsafe)
         target.symlink_to(original)
     else:
         os.link(target, target.with_suffix('.alias'))
-    result = subprocess.run([str(executable), HEAD], capture_output=True, text=True)
+    result = subprocess.run([str(executable), HEAD + ":" + WORKFLOW_HEAD], capture_output=True, text=True)
     assert result.returncode != 0
     assert 'INSTALLED_CODE_UNSAFE' in result.stderr
     assert not marker.exists()
 
 
-@pytest.mark.parametrize('arguments', [[], [HEAD, '--authorize-apply-recovery'], ['main']])
+@pytest.mark.parametrize('arguments', [[], [HEAD], [HEAD, '--authorize-apply-recovery'], ['main'],
+                                       [HEAD + ':main'], ['c' * 40 + ':' + WORKFLOW_HEAD]])
 def test_installed_helper_has_no_extra_argument_surface(helper, arguments):
     executable, _, marker = helper
     result = subprocess.run([str(executable), *arguments], capture_output=True, text=True)

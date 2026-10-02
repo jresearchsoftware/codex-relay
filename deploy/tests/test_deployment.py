@@ -255,6 +255,8 @@ class EntrypointTests(unittest.TestCase):
         c['environment']['codexCredential'] = {'sourceTokenFile': '/root/codex-input-token'}
         cls.config = cls.consumer / 'relay.json'
         cls.config.write_text(json.dumps(c))
+        from workflow_projection import project
+        project(c, cls.revision, cls.product, cls.consumer)
         cls.consumer_revision = commit(cls.consumer)
         cls.bin = cls.base / 'bin'
         cls.bin.mkdir()

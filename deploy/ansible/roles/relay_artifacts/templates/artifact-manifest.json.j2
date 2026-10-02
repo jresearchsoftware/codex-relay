@@ -5,7 +5,7 @@
   "installedRevision": {{ relay_release_commit | to_json }},
   "gitTree": {{ relay_source_identity.tree | to_json }},
   "consumerRevision": {{ relay_consumer_revision | to_json }},
-{% if relay_local_apply_source | default('checkout') == 'installed' %}
+{% if relay_installed_deployment_config | default('') | length > 0 %}
   "deploymentConfigSha256": {{ relay_installed_deployment_config_sha256 | to_json }},
 {% endif %}
   "previousRevision": {{ relay_previous_revision | to_json }},

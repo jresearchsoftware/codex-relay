@@ -4,3 +4,5 @@ reviewer/target/
 node_modules/
 *.log
 .codex/local/
+# Per-execution worker home, caches, transport inputs and temporary test state.
+.codex-sandbox/

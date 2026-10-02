@@ -153,20 +153,20 @@
       }}
   changed_when: false
 
-- name: Inspect the installed-mode deployment snapshot for stable check proof
+- name: Inspect the deployment snapshot for stable check proof
   ansible.builtin.stat:
     path: '{{ relay_release_path }}/deployment-config.json'
     follow: false
     checksum_algorithm: sha256
     get_mime: false
   register: relay_production_check_snapshot
-  when: relay_local_apply_source | default('checkout') == 'installed'
+  when: relay_installed_deployment_config | default('') | length > 0
 
 - name: Classify the private snapshot and public manifest digest binding
   ansible.builtin.set_fact:
     relay_production_check_snapshot_stable: >-
       {{
-        relay_local_apply_source | default('checkout') != 'installed' or
+        relay_installed_deployment_config | default('') | length == 0 or
         (
           relay_production_check_snapshot.stat.exists | default(false) and
           relay_production_check_snapshot.stat.isreg | default(false) and

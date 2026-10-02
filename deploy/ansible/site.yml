@@ -7,6 +7,10 @@
     - name: Establish or inspect the durable production operation state
       ansible.builtin.include_tasks: tasks/production-operation-state.yml
 
+    - name: Validate explicit upgrade or same-revision owner apply before any protected mutation
+      ansible.builtin.include_tasks: tasks/upgrade-preflight.yml
+      when: relay_upgrade_requested | default(false) | bool or relay_owner_apply_requested | default(false) | bool
+
     - name: Resolve the production nexus_gateway before recovery classification
       ansible.builtin.include_role:
         name: relay_docker_network_gateway
