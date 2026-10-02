@@ -232,8 +232,15 @@ def _runner(probe, config, general):
             try:
                 probe.metadata(runner_root + '/.credentials', uid=uid, gid=gid, modes={0o600}, leaf_parent_uid=uid)
             except FileNotFoundError:
-                return {'status': 'missing', 'freshTokenRequired': True,
-                        'next': 'fresh registration token required'}
+                # The runner writes its RSA key before AddRunner/AddAgent but
+                # saves the other markers afterwards. RSA-only residue cannot
+                # distinguish a pre-registration failure from a remote success.
+                try:
+                    probe.metadata(runner_root + '/.credentials_rsaparams', uid=uid, gid=gid,
+                                   modes={0o600}, leaf_parent_uid=uid)
+                except FileNotFoundError:
+                    return {'status': 'missing', 'freshTokenRequired': True,
+                            'next': 'fresh registration token required'}
             raise ValueError('partial-registration')
         probe.metadata(runner_root + '/.credentials', uid=uid, gid=gid, modes={0o600}, leaf_parent_uid=uid)
         marker = _json(raw.decode('utf-8-sig'))

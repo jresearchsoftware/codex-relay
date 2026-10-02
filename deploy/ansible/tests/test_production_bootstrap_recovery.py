@@ -355,13 +355,14 @@ class BootstrapRecoveryTests(unittest.TestCase):
         # Copy real tasks and templates, substituting only host filesystem and
         # service-manager I/O. The public CLI's separate flag routing is tested
         # in deploy/tests; this executes the target-side contract end to end.
-        for name in ('tasks', 'tools', 'roles/relay_runner/templates'):
+        for name in ('tasks', 'tools', 'scripts', 'roles/relay_runner/templates'):
             (self.root / name).mkdir(parents=True)
         for name in ('production-bootstrap-recovery.yml', 'production-bootstrap-probe.yml',
                      'production-operation-state.yml'):
             source = (ROOT / 'tasks' / name).read_text()
             source = source.replace('/etc/systemd/system/', str(self.systemd_roots[0]) + '/')
             (self.root / 'tasks' / name).write_text(source)
+        shutil.copy(ROOT / 'scripts/verify_reinstall_continuation.py', self.root / 'scripts')
         shutil.copy(ROOT / 'roles/relay_runner/templates/relay-runner-production-local-apply.conf.j2',
                     self.root / 'roles/relay_runner/templates')
         stub = self.root / 'systemctl'

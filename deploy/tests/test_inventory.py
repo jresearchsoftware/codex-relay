@@ -66,6 +66,7 @@ def runner(target, general=False):
               'agentId': 123, 'poolName': intent.get('group', 'Default')}
     marker_path = write(target, '/opt/codex-relay/' + suffix + '/.runner', marker)
     write(target, '/opt/codex-relay/' + suffix + '/.credentials', 'PRIVATE_FIXTURE_NEVER_READ')
+    write(target, '/opt/codex-relay/' + suffix + '/.credentials_rsaparams', 'PRIVATE_RSA_FIXTURE_NEVER_READ')
     return marker_path
 
 
@@ -101,7 +102,7 @@ def test_installed_equivalence_and_registered_runners_reuse_without_secret_reads
     read = inventory.Probe.read
 
     def bounded_read(self, value, **kwargs):
-        assert not value.endswith(('.credentials', 'private-key.pem', 'access-token'))
+        assert not value.endswith(('.credentials', '.credentials_rsaparams', 'private-key.pem', 'access-token'))
         return read(self, value, **kwargs)
 
     monkeypatch.setattr(inventory.Probe, 'read', bounded_read)
@@ -213,6 +214,31 @@ def test_missing_one_runner_requires_only_its_token(target):
 def test_existing_unregistered_runner_package_is_missing_registration(target):
     write(target, '/opt/codex-relay/runner/config.sh', '# fixture')
     assert observe(target)['runners']['production']['status'] == 'missing'
+
+
+@pytest.mark.parametrize('general', [False, True])
+@pytest.mark.parametrize('shape', ['regular', 'dangling'])
+def test_rsa_only_runner_state_is_preserved_as_ambiguous_without_secret_reads(target, monkeypatch, general, shape):
+    suffix = 'general-runner' if general else 'runner'
+    rsa = write(target, '/opt/codex-relay/' + suffix + '/.credentials_rsaparams', 'PRIVATE_RSA_FIXTURE_NEVER_READ')
+    if shape == 'dangling':
+        rsa.unlink()
+        rsa.symlink_to(rsa.with_name('missing-private-key'))
+    before = snapshot(target.root)
+    read = inventory.Probe.read
+
+    def bounded_read(self, value, **kwargs):
+        assert not value.endswith('.credentials_rsaparams')
+        return read(self, value, **kwargs)
+
+    monkeypatch.setattr(inventory.Probe, 'read', bounded_read)
+    report = observe(target)
+    name = 'general' if general else 'production'
+    assert report['runners'][name]['status'] == 'invalid'
+    assert not report['runners'][name]['freshTokenRequired']
+    assert 'runner-' + name + '-ambiguous' in report['blockers']
+    assert 'PRIVATE_RSA_FIXTURE' not in json.dumps(report)
+    assert snapshot(target.root) == before
 
 
 def test_pending_registration_stays_ambiguous_even_with_complete_local_credentials(target):

@@ -70,6 +70,11 @@ if token == 'retried-exchange-synthetic-token':
     print('Connected to GitHub')
     print('unexpected failure ' + token)
     raise SystemExit(1)
+if token == 'rsa-residue-synthetic-token':
+    Path('.credentials_rsaparams').write_text('PRIVATE_RSA_FIXTURE_NEVER_PRINT')
+    Path('.credentials_rsaparams').chmod(0o600)
+    print("Http response code: Unauthorized from 'POST https://api.github.com/actions/runner-registration' (Request Id: fixture)")
+    raise SystemExit(1)
 Path('.runner').write_text(%r)
 Path('.credentials').write_text('{}')
 Path('.runner').chmod(0o600)
@@ -240,6 +245,51 @@ Path('.credentials').chmod(0o600)
         result = self.run_helper('fresh-synthetic-token')
         self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
         self.assertFalse((self.runner / 'calls').exists())
+
+    def test_rsa_only_state_blocks_registration_and_preserves_existing_evidence(self):
+        rsa = self.runner / '.credentials_rsaparams'
+        for shape in ('regular', 'dangling'):
+            with self.subTest(shape=shape):
+                if shape == 'regular':
+                    rsa.write_text('PRIVATE_RSA_FIXTURE_NEVER_PRINT')
+                    rsa.chmod(0o600)
+                else:
+                    rsa.unlink()
+                    rsa.symlink_to(self.root / 'missing-private-key')
+                inode = rsa.lstat().st_ino
+                result = self.run_helper('fresh-synthetic-token')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+                self.assertNotIn('fresh registration token required', result.stderr)
+                self.assertNotIn('PRIVATE_RSA_FIXTURE', result.stdout + result.stderr)
+                self.assertEqual(rsa.lstat().st_ino, inode)
+                self.assertFalse((self.runner / 'calls').exists())
+                self.assertFalse(self.pending.exists())
+
+    def test_complete_registration_with_rsa_state_remains_reusable(self):
+        self.registered()
+        rsa = self.runner / '.credentials_rsaparams'
+        rsa.write_text('PRIVATE_RSA_FIXTURE_NEVER_PRINT')
+        rsa.chmod(0o600)
+        inode = rsa.stat().st_ino
+        result = self.run_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('state=reused', result.stdout)
+        self.assertFalse((self.runner / 'calls').exists())
+        self.assertEqual(rsa.stat().st_ino, inode)
+        self.assertEqual(rsa.read_text(), 'PRIVATE_RSA_FIXTURE_NEVER_PRINT')
+
+    def test_unauthorized_text_with_new_rsa_residue_cannot_clear_attempt_reservation(self):
+        result = self.run_helper('rsa-residue-synthetic-token')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.assertNotIn('FRESH_REGISTRATION_TOKEN_REQUIRED', result.stderr)
+        self.assertTrue(self.pending.exists())
+        self.assertTrue((self.runner / '.credentials_rsaparams').exists())
+        retry = self.run_helper('fresh-synthetic-token')
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', retry.stderr)
+        self.assertEqual((self.runner / 'calls').read_text(), 'called\n')
+        self.assertNotIn('rsa-residue-synthetic-token', result.stdout + result.stderr + self.pending.read_text())
 
 
 if __name__ == '__main__':

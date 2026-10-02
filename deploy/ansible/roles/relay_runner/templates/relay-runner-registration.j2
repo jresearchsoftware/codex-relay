@@ -108,6 +108,9 @@ if [[ -e '{{ relay_runner_registration_marker }}' || -L '{{ relay_runner_registr
   exit 0
 fi
 [[ "$pending_state" == absent ]] || fail REGISTRATION_STATE_AMBIGUOUS
+# RSA-only state can survive a remote registration before either local marker
+# was saved. Preserve it for diagnosis instead of requesting another token.
+[[ ! -e '{{ relay_runner_root }}/.credentials_rsaparams' && ! -L '{{ relay_runner_root }}/.credentials_rsaparams' ]] || fail REGISTRATION_STATE_AMBIGUOUS
 
 if [[ -t 0 ]]; then
   printf 'Enter the temporary runner-registration value for %s (input hidden): ' '{{ registration_url }}' >&2
@@ -129,6 +132,7 @@ if ! registration_output=$(runuser --preserve-environment --user '{{ relay_runne
   unset registration_value ACTIONS_RUNNER_INPUT_TOKEN
   normalize_diagnostics
   [[ ! -e '{{ relay_runner_registration_marker }}' && ! -L '{{ relay_runner_registration_marker }}' && ! -e '{{ relay_runner_credentials_marker }}' && ! -L '{{ relay_runner_credentials_marker }}' ]] || fail REGISTRATION_STATE_AMBIGUOUS
+  [[ ! -e '{{ relay_runner_root }}/.credentials_rsaparams' && ! -L '{{ relay_runner_root }}/.credentials_rsaparams' ]] || fail REGISTRATION_STATE_AMBIGUOUS
   # Recognized rejected credentials are retryable with fresh ephemeral input.
   # All other failures may have mutated GitHub and require diagnosis first.
   # Runner v2.336.0 ConfigurationManager.GetTenantCredential reports this
