@@ -17,6 +17,36 @@ that body. Comments hold discussion, evidence, Outcomes, handoffs and history;
 they must not become a competing current Task contract. Native Change Requests
 retain their existing remediation authority.
 
+## Material user/operator contract change gate
+
+Removing, replacing, renaming, disabling or materially changing an existing
+user/operator capability requires explicit authorization in the canonical
+Issue. This includes launch labels, buttons, commands and entry points; required
+inputs and visible surfaces; actor responsibilities; automated-to-manual
+transitions; additional required actions; ChatGPT/GitHub paths; and material
+status, Outcome, copy/paste, notification or recovery behavior. Internal
+refactoring with equivalent observable behavior needs no separate owner
+decision.
+
+If implementation or remediation discovers a preferable design outside that
+authorization, identify the old behavior, proposed behavior, impact and reason.
+Preserve existing behavior when safe; otherwise stop and surface an unresolved
+owner decision. Record explicit owner approval in the canonical Issue before
+final approval or merge. Technical preference, security rationale, test
+convenience and reviewer suggestion are not authorization.
+
+Before `APPROVE`, independent review compares the candidate with material
+existing behavior in every changed surface as well as functional and security
+requirements. An unauthorized material delta is `OWNER_DECISION_REQUIRED` and
+blocks approval. Surface old/new behavior, impact and implementation reason and
+obtain explicit owner disposition. Rejection requires restoration; acceptance
+requires a canonical Issue update before approval.
+
+Apply this gate equally to initial Codex choices, Reviewer suggestions,
+remediation, tests and security-driven changes. Never normalize an
+implementation-originated change into policy or rewrite active guidance to make
+unapproved behavior appear canonical.
+
 All human-readable GitHub publication for this repository is in English,
 including Issue and PR titles/bodies, Codex Outcomes and handoffs, ordinary
 comments, and native Reviewer APPROVE / REQUEST_CHANGES bodies. Interactive
