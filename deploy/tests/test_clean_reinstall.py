@@ -172,6 +172,112 @@ def test_unknown_indirect_service_runtime_reference_blocks_retirement(installati
     assert not value.paths['journal'].exists()
 
 
+@pytest.mark.parametrize('unit_root', ['etc/systemd/system', 'usr/lib/systemd/system',
+                                      'lib/systemd/system'])
+@pytest.mark.parametrize('binding', ['ExecStart=/opt/codex-relay/current/sidecar',
+                                   'ExecStart=/usr/bin/node /opt/codex-relay/current/sidecar'])
+def test_unknown_symlinked_runtime_service_blocks_before_mutation(installation, unit_root, binding):
+    value = installation
+    target = value.root / unit_root / 'vendor.service'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(binding + '\n')
+    link = value.root / 'etc/systemd/system/owner-sidecar.service'
+    link.symlink_to('/' + str(target.relative_to(value.root)))
+    with pytest.raises(ValueError, match='UNSUPPORTED_RUNTIME_UNIT'):
+        run(value)
+    assert not value.paths['journal'].exists()
+    assert not value.systemd.calls
+
+
+@pytest.mark.parametrize('usr_merge', [False, True])
+def test_unrelated_symlink_chain_is_classified_without_retiring_it(installation, usr_merge):
+    value = installation
+    vendor = value.root / 'usr/lib/systemd/system'
+    vendor.mkdir(parents=True)
+    target = vendor / 'vendor.service'
+    target.write_text('# /opt/codex-relay/comment\n; /opt/codex-relay/comment\nExecStart=/usr/bin/true\n')
+    if usr_merge:
+        (value.root / 'lib').symlink_to('usr/lib')
+    alias = vendor / 'alias.service'
+    alias.symlink_to('vendor.service')
+    link = value.root / 'etc/systemd/system/owner-sidecar.service'
+    link.symlink_to('/lib/systemd/system/alias.service' if usr_merge else '../../..//usr/lib/systemd/system/alias.service')
+    result = run(value)
+    assert result['state'] == 'DECOMMISSIONED'
+    assert link.is_symlink() and target.exists()
+    assert not any(name == link.name for _, name in value.systemd.calls)
+
+
+@pytest.mark.parametrize('shape', ['dangling', 'outside', 'writable', 'directory', 'fifo',
+                                  'cycle', 'directory-link', 'writable-directory', 'hardlink',
+                                  'wrong-owner', 'wrong-link-owner'])
+def test_unclassifiable_unknown_symlink_fails_closed_without_reading_target(installation, shape, monkeypatch):
+    value = installation
+    base = value.root / 'usr/lib/systemd/system'
+    base.mkdir(parents=True)
+    target = base / 'vendor.service'
+    target.write_text('ExecStart=/opt/codex-relay/current/sidecar\n')
+    link = value.root / 'etc/systemd/system/owner-sidecar.service'
+    if shape == 'dangling':
+        target.unlink()
+    elif shape == 'outside':
+        target = value.paths['config'] / 'writer-private-key'
+    elif shape == 'writable':
+        target.chmod(0o666)
+    elif shape in ['directory', 'fifo']:
+        target.unlink()
+        target.mkdir() if shape == 'directory' else os.mkfifo(target)
+    elif shape == 'cycle':
+        target.unlink()
+        target.symlink_to('vendor.service')
+    elif shape == 'directory-link':
+        alias = base / 'redirect'
+        alias.symlink_to(base, target_is_directory=True)
+        target = alias / 'vendor.service'
+    elif shape == 'writable-directory':
+        base.chmod(0o777)
+    elif shape == 'hardlink':
+        os.link(target, base / 'duplicate.service')
+    link.symlink_to('/' + str(target.relative_to(value.root)))
+    if shape in ['wrong-owner', 'wrong-link-owner']:
+        original = Path.lstat
+        invalid = target if shape == 'wrong-owner' else link
+        def lstat(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if path == invalid:
+                values = list(result)
+                values[4] = os.getuid() + 1
+                return os.stat_result(values)
+            return result
+        monkeypatch.setattr(Path, 'lstat', lstat)
+    original_open = os.open
+    def guarded_open(path, *args, **kwargs):
+        assert Path(path) != target, 'unsafe target was opened'
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(os, 'open', guarded_open)
+    with pytest.raises(ValueError, match='UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links'):
+        run(value)
+    assert not value.paths['journal'].exists()
+    assert not value.systemd.calls
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='synthetic device identity requires root')
+def test_unknown_mask_is_classified_without_opening_device(installation, monkeypatch):
+    value = installation
+    device = value.root / 'dev/null'
+    device.parent.mkdir()
+    os.mknod(device, stat.S_IFCHR | 0o666, os.makedev(1, 3))
+    link = value.root / 'etc/systemd/system/owner-mask.service'
+    link.symlink_to('/dev/null')
+    original_open = os.open
+    def guarded_open(path, *args, **kwargs):
+        assert Path(path) != device, 'mask device was opened'
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(os, 'open', guarded_open)
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert link.is_symlink()
+
+
 def test_missing_snapshot_never_admits_mismatched_source_identity(installation):
     value = installation
     value.report['configuration']['deployment'] = 'unavailable'

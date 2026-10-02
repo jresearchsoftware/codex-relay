@@ -17,7 +17,15 @@ Stop and preserve useful work when:
 
 Subagent use is discretionary and evidence-driven within the resolved Subagents
 permission. It does not authorize nested Relay workers or execution fan-out.
-Keep the admitted model/effort fixed. Completion requires applicable validation;
+Keep the admitted parent model/effort fixed. Select each subagent's model and
+effort independently based on its assignment's complexity and risk; they may
+differ from the parent's. By default provide a separate self-contained assignment
+with its goal, necessary facts/files, constraints and completion criteria, without
+automatically passing full conversation or execution history. Include broader
+history only when materially necessary, preserving relevant prior decisions,
+constraints, prohibitions and protected boundaries. Delegation never expands
+Task/CR scope, external authority, credential access, publication or production
+rights. Completion requires applicable validation;
 report unavailable checks honestly and never replace independent acceptance
 with a worker's success claim.
 

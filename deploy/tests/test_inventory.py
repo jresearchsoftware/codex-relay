@@ -126,8 +126,15 @@ def test_source_selector_and_explicit_default_effort_are_materially_equivalent(t
     installed(target)
     config = copy.deepcopy(target.config)
     config['source']['revision'] = 'accepted-tag'
-    config['consumer']['defaultProfile']['effort'] = 'ultra'
+    config['consumer']['defaultProfile']['effort'] = 'medium'
     assert observe(target, config)['configuration']['status'] == 'equivalent'
+
+
+def test_explicit_effort_override_is_a_material_configuration_change(target):
+    installed(target)
+    config = copy.deepcopy(target.config)
+    config['consumer']['defaultProfile']['effort'] = 'ultra'
+    assert observe(target, config)['configuration']['status'] == 'different'
 
 
 @pytest.mark.parametrize('section,key,value', [

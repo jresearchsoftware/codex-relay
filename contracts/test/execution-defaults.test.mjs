@@ -7,18 +7,23 @@ import { CONSUMER } from '../../consumer/consumer.mjs';
 import { parseIssueAuthority } from '../../runtime/src/issue-authority.mjs';
 import { executeCodex } from '../../controller/src/attempt-runtime.mjs';
 import { fixture } from '../../controller/test/fixture.mjs';
+import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
 
-test('shared machine defaults match canonical policy without a model default', () => {
-  assert.deepEqual(EXECUTION_DEFAULTS, { effort: 'ultra', subagentsAllowed: true });
+test('ordinary project defaults match schema, deployment inputs and canonical policy', () => {
+  assert.deepEqual(EXECUTION_DEFAULTS, { effort: 'medium', subagentsAllowed: true });
   const policy = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
-  assert.match(policy, /default reasoning effort is\s+`ultra` and the default Subagents permission is `On`/);
+  assert.match(policy, /default model is\s+`gpt-6\.1-sol`, the default reasoning effort is `medium` and the default Subagents\s+permission is `On`/);
+  const example = JSON.parse(readFileSync(new URL('../../deploy/example.json', import.meta.url), 'utf8'));
+  assert.deepEqual(validateConsumer(example.consumer).defaultProfile, { cliModelId: 'gpt-6.1-sol', effort: 'medium' });
+  const backend = readFileSync(new URL('../../deploy/ansible/group_vars/all.yml', import.meta.url), 'utf8');
+  assert.match(backend, /^relay_default_model: gpt-6\.1-sol$/m);
   assert.deepEqual(resolveExecutionDefaults({ effort: 'max', subagentsAllowed: false }),
     { effort: 'max', subagentsAllowed: false });
 });
 
 test('consumer model stays required and omitted effort resolves without altering explicit config digests', () => {
   const omitted = { ...CONSUMER, defaultProfile: { cliModelId: 'explicit-model' } };
-  assert.deepEqual(validateConsumer(omitted).defaultProfile, { cliModelId: 'explicit-model', effort: 'ultra' });
+  assert.deepEqual(validateConsumer(omitted).defaultProfile, { cliModelId: 'explicit-model', effort: 'medium' });
   for (const effort of ['max', 'high', 'ultra', 'future-effort']) {
     const explicit = { ...omitted, defaultProfile: { cliModelId: 'explicit-model', effort } };
     assert.equal(consumerDigest(validateConsumer(explicit)), consumerDigest(explicit));
@@ -26,6 +31,19 @@ test('consumer model stays required and omitted effort resolves without altering
   for (const defaultProfile of [{}, { effort: 'ultra' }, { cliModelId: 'm', effort: null },
     { cliModelId: 'm', effort: '' }, { cliModelId: 'm', review_model: 'm' }]) {
     assert.throws(() => validateConsumer({ ...CONSUMER, defaultProfile }), { code: 'CONSUMER_CONFIG_INVALID' });
+  }
+});
+
+test('delegation guidance selects assignment profiles and bounds context and authority', () => {
+  const policy = readFileSync(new URL('../../docs/execution-policy.md', import.meta.url), 'utf8');
+  for (const guidance of [policy, PROGRESS_BOUNDED_EXECUTION]) {
+    assert.match(guidance, /complexity and risk/);
+    assert.match(guidance, /differ from the parent's/);
+    assert.match(guidance, /separate self-contained assignment/);
+    assert.match(guidance, /completion criteria/);
+    assert.match(guidance, /only when materially necessary/);
+    assert.match(guidance, /prohibitions and protected boundaries/);
+    assert.match(guidance, /Delegation never expands/);
   }
 });
 

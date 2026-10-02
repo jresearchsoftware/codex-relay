@@ -43,7 +43,7 @@ def _stamp(info):
 
 def _consumer(value):
     value = json.loads(json.dumps(value))
-    value['defaultProfile'].setdefault('effort', 'ultra')
+    value['defaultProfile'].setdefault('effort', 'medium')
     return value
 
 

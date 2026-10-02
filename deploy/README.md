@@ -158,7 +158,17 @@ registration and protected state. A valid protected snapshot compares complete
 environment intent when available. Its absence is reported as an unavailable
 comparison for owner review of the selected durable configuration; it is not
 another required generated artifact. Invalid or different snapshots, unknown
-units and unsupported overrides block before mutation. Establish quiescent runners/workers first;
+units and unsupported overrides block before mutation. The defensive scan also
+classifies unknown top-level `/etc/systemd/system/*.service` symlinks: targets
+must remain in protected `/etc/systemd/system`, `/usr/lib/systemd/system` or
+`/lib/systemd/system` unit roots (including the proven `/lib -> usr/lib` alias).
+Bounded unit-link chains and verified `/dev/null` masks are classified without
+arbitrary traversal; dangling, unsafe or unclassifiable links report
+`REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE` and require inspection of top-level
+systemd service links. Namespace references in non-comment lines block retirement.
+Known Relay-managed units still require their regular-file topology. The scan
+does not inventory all vendor units or expand mutation authority.
+Establish quiescent runners/workers first;
 the helper will not kill a running or unknown job. Decommission stops/disables
 the proven managed services, retires activation markers and moves the managed
 runtime into a protected recovery archive. It retains complete intended runner

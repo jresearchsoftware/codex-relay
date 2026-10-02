@@ -44,7 +44,8 @@ does not itself close an Issue or authorize merge. -->
 Omit effort/Subagents to use the AGENTS.md execution policy. For an explicit
 override add Codex reasoning effort and/or Subagents fields. Automatic admission
 uses the shared resolver; explicit consumer profile settings remain overrides.
-There is no repository-wide Codex model default. The backend
+The ordinary project default is gpt-6.1-sol / medium / Subagents On; explicit
+live Task/CR and consumer settings remain overrides. The backend
 determines support; do not substitute a profile during execution. For a manual
 launch the owner selects model/effort in the UI. -->
 

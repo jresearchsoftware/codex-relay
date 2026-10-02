@@ -100,6 +100,47 @@ def checked_systemctl(runner, *args):
     return result.stdout
 
 
+def unknown_unit_text(path, root, owner_uid):
+    """Read only a bounded, protected systemd unit chain; never arbitrary targets."""
+    roots = [root / value for value in ['etc/systemd/system', 'usr/lib/systemd/system',
+                                       'lib/systemd/system']]
+    try:
+        for _ in range(16):
+            # Debian's usr-merge alias is the sole accepted directory symlink.
+            if path.is_relative_to(root / 'lib') and (root / 'lib').is_symlink():
+                protected(root, root, owner_uid, directory=True)
+                alias = root / 'lib'
+                require(alias.lstat().st_uid == owner_uid and os.readlink(alias) in
+                        ['usr/lib', '/usr/lib'], 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                path = root / 'usr/lib' / path.relative_to(root / 'lib')
+            require(any(path.is_relative_to(base) for base in roots)
+                    and path.suffix == '.service', 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+            protected(path.parent, root, owner_uid, directory=True)
+            info = path.lstat()
+            require(info.st_uid == owner_uid, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+            if stat.S_ISLNK(info.st_mode):
+                target = Path(os.readlink(path))
+                logical = root / str(target).lstrip('/') if target.is_absolute() else path.parent / target
+                path = Path(os.path.normpath(logical))
+                # A systemd mask is classified by device identity, without reading it.
+                if path == root / 'dev/null':
+                    protected(path.parent, root, owner_uid, directory=True)
+                    masked = path.lstat()
+                    require(stat.S_ISCHR(masked.st_mode) and masked.st_uid == owner_uid
+                            and masked.st_rdev == os.makedev(1, 3), 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                    return ''
+                continue
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                    and not info.st_mode & 0o022, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd) as stream:
+                require(os.fstat(stream.fileno()) == info, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                return stream.read()
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError('REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links') from None
+    raise ValueError('REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links')
+
+
 def inspect_units(config, paths, root, owner_uid, runner):
     units = {}
     names = unit_names(config)
@@ -107,12 +148,12 @@ def inspect_units(config, paths, root, owner_uid, runner):
     systemd_root = root / 'etc/systemd/system'
     protected(systemd_root, root, owner_uid, directory=True)
     for path in systemd_root.glob('*.service'):
-        if path.name in names or path.is_symlink() or not path.is_file():
+        if path.name in names:
             continue
         # A missing deployment snapshot cannot let a newly selected unit name
         # hide a differently named service still using this runtime namespace.
         if any(prefix in line and not line.lstrip().startswith(('#', ';'))
-               for line in path.read_text().splitlines()):
+               for line in unknown_unit_text(path, root, owner_uid).splitlines()):
             raise ValueError('REINSTALL_UNSUPPORTED_RUNTIME_UNIT')
     for name in names:
         path = root / 'etc/systemd/system' / name

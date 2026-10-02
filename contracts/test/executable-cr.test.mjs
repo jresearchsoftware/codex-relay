@@ -39,7 +39,7 @@ test('omitted structured effort and permission resolve once and survive admissio
     const args = structuredClone(input);
     for (const key of fields) delete args.change_request[key];
     const resolved = await admitPublished(args, { ...publication, body: block(wire(args.change_request)) });
-    assert.equal(resolved.codex_effort, fields.includes('codex_effort') ? 'ultra' : input.change_request.codex_effort);
+    assert.equal(resolved.codex_effort, fields.includes('codex_effort') ? 'medium' : input.change_request.codex_effort);
     assert.equal(resolved.subagents_allowed, fields.includes('subagents_allowed') ? true : false);
   }
   for (const key of ['review_model', 'review_effort', 'review_reasoning_effort', 'review_profile']) {

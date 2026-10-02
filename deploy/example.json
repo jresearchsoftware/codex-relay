@@ -40,7 +40,7 @@
       "email": "example-remediation@example.invalid"
     },
     "defaultProfile": {
-      "cliModelId": "example-model"
+      "cliModelId": "gpt-6.1-sol"
     },
     "runtimeUser": "relay-codex",
     "paths": {
