@@ -85,6 +85,12 @@ boundary; local tests do not qualify its deployment adapters.
 
 ## Owner Step metadata procedure
 
+Steps decompose progress toward the Task's authorized goal and boundaries as
+work evolves; the Task does not predefine their number, numbering, or scope.
+Step completion does not imply Task completion, and one Codex thread may span
+successive Steps. Historical Task descriptions do not govern future Step
+decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename).
+
 The ChatGPT/owner orchestration that authors and publishes the review also
 performs these small native metadata operations. They are not additional human
 launch actions and do not grant the Reviewer App label permissions.

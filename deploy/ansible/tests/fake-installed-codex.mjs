@@ -48,6 +48,8 @@ if (input.includes('fixture-mode=rust-development')) {
   process.exit(0);
 }
 if (smoke) {
+  assert.match(input, /\nSubagents: Off\n/);
+  assert.doesNotMatch(input, /\nSubagents: On/);
   assert.equal(execFileSync('git', ['remote'], { encoding: 'utf8' }), '');
   assert.equal(execFileSync('git', ['config', 'protocol.allow'], { encoding: 'utf8' }).trim(), 'never');
   assert.equal(readFileSync('SMOKE.txt', 'utf8'), 'local non-routing smoke\n');

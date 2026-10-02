@@ -96,7 +96,10 @@ def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
         admission('CONSUMER_CONFIG_INVALID')
         reconciliation = temp / 'consumer-root-reconcile.yml'
         reconciliation.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
-            'vars': values, 'tasks': [task(runtime, 'Create namespaced relay directories')]}]))
+            'vars': values, 'tasks': [
+                task(runtime, 'Inspect directory ownership identities in check mode'),
+                task(runtime, 'Create namespaced relay directories'),
+            ]}]))
         command = ['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(reconciliation)]
         run(command, env=env, capture_output=True, umask=deploy_umask)
         admission('REQUEST_INVALID')
@@ -144,7 +147,7 @@ def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
     # Directory ownership remains independent of the shared root; these are
     # the actual deployed directories and rendered non-secret config files.
     boundaries = [
-        ('certs', 24004, 24005, 0o750, {'relay', 'relay-reviewer'}, {'relay'}),
+        ('certs', 0, 24005, 0o750, {'relay-reviewer'}, set()),
         ('reviewer-credentials', 0, 24005, 0o750, {'relay-reviewer'}, set()),
         ('writer-credentials', 0, 0, 0o700, set(), set()),
         ('codex-credentials', 24002, 24002, 0o700, {'relay-codex'}, {'relay-codex'}),
@@ -648,6 +651,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         # seam. The closure probe fails if it is replaced by a standalone copy.
         codex_tasks = ROOT / 'roles/relay_codex_runtime/tasks/main.yml'
         tasks = [
+            task(ROOT / 'roles/relay_runtime/tasks/main.yml', 'Inspect directory ownership identities in check mode'),
             task(ROOT / 'roles/relay_runtime/tasks/main.yml', 'Create namespaced relay directories'),
             task(artifacts, 'Create the exact relay release namespace'),
             task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),

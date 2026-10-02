@@ -22,6 +22,15 @@ when necessary.
 ## Task identity and startup rename
 
 `Task N` is canonical GitHub Issue `#N`, not a separately allocated number.
+A Task/Issue defines the authorized goal, boundaries, and completion/closure
+intent. Steps are execution-time decomposition of progress toward that Task.
+A Task does not predefine, own, or constrain the number, numbering, or scope of
+its Steps. Steps may be introduced as work evolves; a Task may require one Step
+or arbitrarily many. Completing a Step does not imply completing the Task.
+Codex thread continuity is independent of Step boundaries: one physical thread
+may execute multiple successive Steps when useful. Step descriptions embedded
+in historical Task text are not authority over future Step decomposition.
+
 Use these complete titles, with a concise purpose:
 
 - Implementation: `Task N — Step S — <purpose>`.
