@@ -76,7 +76,7 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function collectFieldValues(source, labels) {
+function collectFieldValues(source, labels, maximum = MAX_FIELD_VALUES) {
   const values = [];
   for (const rawLine of source.split("\n")) {
     const line = stripListPrefix(rawLine).replace(/^([*_]{1,2})([^:\n]+:)\1\s*/, '$2 ');
@@ -85,7 +85,7 @@ function collectFieldValues(source, labels) {
       const match = line.match(new RegExp("^[`*_~\\s]*" + escaped + "[`*_~\\s]*(?:\\s*[:=]\\s*|\\s+[-–—]\\s+)(.*?)\\s*$", "i"));
       if (match) {
         values.push(stripScalar(match[1]));
-        if (values.length >= MAX_FIELD_VALUES) return values;
+        if (values.length >= maximum) return values;
         break;
       }
     }
@@ -189,9 +189,11 @@ function normalizeClosure(value) {
 }
 
 function parseClosurePolicy(source, issueNumber, warnings, resolutions) {
-  const explicit = collectFieldValues(source, ["Issue closure policy", "Issue lifecycle"]);
+  const explicit = collectFieldValues(source, ["Issue closure policy", "Issue lifecycle"], MAX_FIELD_VALUES + 1);
   const legacy = [...source.matchAll(/Issue\s+#([1-9][0-9]*)\s+remains\s+open/gi)].map(match => match[1]);
-  const values = [...explicit];
+  // A bounded prefix cannot prove that later closure fields agree. Treat
+  // overflow as malformed instead of silently authorizing closure.
+  const values = explicit.length > MAX_FIELD_VALUES ? [""] : [...explicit];
   if (legacy.length === 1 && legacy[0] === issueIdentity(issueNumber)) values.push("keep-open");
   else if (legacy.length > 0) values.push("");
   const normalized = values.map(normalizeClosure);

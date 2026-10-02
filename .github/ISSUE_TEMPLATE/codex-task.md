@@ -29,7 +29,11 @@ Inspect dirty/unpublished work, normalize safely, then apply the SHA gate. -->
 
 - Issue closure policy: `keep-open`
 
-<!-- Use close-authorized only with explicit owner authority. Missing, malformed
+<!-- Keep exactly one explicit Issue closure policy field when publishing or
+updating the canonical Task, including when a CR producer updates its authority.
+Use close-authorized only with explicit owner authority; otherwise retain
+keep-open. Preserve this Issue decision when authoring a CR; CR completion does
+not independently authorize closure. Missing, malformed
 or conflicting closure falls back to keep-open with a visible warning. PR linkage
 is Related to #N for keep-open, or Closes #N for close-authorized. Review approval
 does not itself close an Issue or authorize merge. -->

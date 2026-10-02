@@ -1,6 +1,6 @@
 #!/usr/bin/node --experimental-default-type=module
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { qualifyRustDevelopment } from './rust-development-probe.mjs';
 if (process.argv[2] === '--version') {
@@ -70,6 +70,17 @@ writeFileSync('docs/work.md', JSON.stringify({ uid: process.getuid(), input: tru
   privateSandboxMode: statSync(arg0).mode & 0o777, privateSandboxOwner: statSync(arg0).uid }) + '\n');
 execFileSync('git', ['add', 'docs/work.md']);
 execFileSync('git', ['commit', '-m', 'installed child task progress']);
+if (input.includes('fixture-mode=generated-residue')) {
+  // A generated regular file can be visible to the collector even when only
+  // the worker can read it. Collection records its presence without adopting,
+  // deleting or publishing its bytes.
+  writeFileSync('validation-output.tmp', 'repeatable generated fixture output\n', { mode: 0o600 });
+} else if (input.includes('fixture-mode=unreadable-task-work')) {
+  // Replace the runner-owned baseline as a worker editor would; the worker
+  // cannot chmod another identity's file merely because it can write it.
+  writeFileSync('docs/.work-replacement', 'useful uncommitted task work inaccessible to collector\n', { mode: 0o600 });
+  renameSync('docs/.work-replacement', 'docs/work.md');
+}
 if (input.includes('fixture-mode=child-failure')) {
   process.stderr.write(`controlled child failure ${process.env.CODEX_ACCESS_TOKEN}\n`);
   process.exitCode = 9;

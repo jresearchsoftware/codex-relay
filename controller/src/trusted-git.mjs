@@ -33,9 +33,14 @@ export function classifyGitFailure(error) {
 function gitFailureDetails(error, args, token) {
   const raw = String(error?.stderr ?? error?.message ?? '');
   const preview = boundedDiagnosticText(raw, GIT_DIAGNOSTIC_BYTES, { githubToken: token ?? '' });
+  const operation = gitOperation(args);
+  let classification = classifyGitFailure(error);
+  // These checkout observations cannot contact a remote. Their permission
+  // errors describe collector filesystem access, not GitHub authorization.
+  if (['diff', 'ls-files'].includes(operation) && classification === 'GIT_AUTHORIZATION_REJECTED') classification = 'GIT_LOCAL_FAILURE';
   return {
-    code: 'TRUSTED_GIT_FAILED', classification: classifyGitFailure(error), primaryCause: classifyGitFailure(error),
-    operation: gitOperation(args), ...(Number.isInteger(error?.code) ? { gitExitCode: error.code } : {}),
+    code: 'TRUSTED_GIT_FAILED', classification, primaryCause: classification,
+    operation, ...(Number.isInteger(error?.code) ? { gitExitCode: error.code } : {}),
     ...(typeof error?.signal === 'string' ? { signal: error.signal } : {}), preview: preview.text,
     bytes: preview.bytes, truncated: preview.truncated
   };
@@ -50,15 +55,20 @@ export function gitEnvironment(token) {
 }
 // Call ONLY against a repository constructed by trusted code. Never point this
 // helper at the model checkout, even for a supposedly read-only Git command.
-export async function git(cwd, args, { token, allowFailure = false } = {}) {
+export async function git(cwd, args, { token, allowFailure = false, allowedExitCodes = [], rejectStderr = false } = {}) {
   try {
     // Fetch must be quiescent before checkout access is transferred or objects
     // are inspected. Detached maintenance can remove its lock during traversal.
-    return (await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', '-c', 'fetch.fsckObjects=true',
+    const result = await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', '-c', 'fetch.fsckObjects=true',
       '-c', 'protocol.file.allow=always', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args],
-      { cwd, env: gitEnvironment(token), maxBuffer: 100 * 1024 * 1024, timeout: 120000, windowsHide: true })).stdout;
+      { cwd, env: gitEnvironment(token), maxBuffer: 100 * 1024 * 1024, timeout: 120000, windowsHide: true });
+    // ls-files can exit zero while warning that a directory was unreadable.
+    // Such an observation cannot prove either a clean or a fully dirty tree.
+    if (rejectStderr && result.stderr.trim()) throw Object.assign(new Error('GIT_OBSERVATION_INCOMPLETE'), { code: 0, stderr: result.stderr });
+    return result.stdout;
   } catch (error) {
-    if (allowFailure && Number.isInteger(error.code)) return null;
+    if (Number.isInteger(error.code) && (allowFailure || allowedExitCodes.includes(error.code))
+      && !(rejectStderr && String(error.stderr ?? '').trim())) return null;
     const failure = new Error('TRUSTED_GIT_FAILED'); failure.code = 'TRUSTED_GIT_FAILED';
     failure.details = { failureDiagnostic: gitFailureDetails(error, args, token) };
     throw failure;
@@ -118,8 +128,12 @@ export async function collectProgress(checkout, e, options = {}) {
     await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);
     await git(dir, ['update-ref', 'refs/heads/progress', head]);
     await git(dir, ['read-tree', head]);
-    const dirty = await git(dir, [`--work-tree=${checkout}`, 'diff', '--no-ext-diff', '--no-textconv', '--exit-code', head], { allowFailure: true });
-    const untracked = await git(dir, [`--work-tree=${checkout}`, 'ls-files', '--others', '--exclude-standard', '-z']);
+    // Observe under the collector's real identity and permissions. A difference
+    // is known residue; an inaccessible path or other failed observation is
+    // unknown evidence and must not be downgraded to an uncommitted-work warning.
+    const dirty = await git(dir, [`--work-tree=${checkout}`, 'diff', '--no-ext-diff', '--no-textconv', '--exit-code', head],
+      { allowedExitCodes: [1], rejectStderr: true });
+    const untracked = await git(dir, [`--work-tree=${checkout}`, 'ls-files', '--others', '--exclude-standard', '-z'], { rejectStderr: true });
     const clean = dirty !== null && !untracked.split('\0').some(p => p && !p.startsWith('.git/'));
     const bundle = join(dir, 'progress.bundle');
     if (head === e.startHead) return { head, bundle: null, clean };

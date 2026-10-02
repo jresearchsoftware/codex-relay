@@ -29,7 +29,13 @@ when necessary.
 
 `Task N` is canonical GitHub Issue `#N`, not a separately allocated number.
 A Task/Issue defines the authorized goal, boundaries, and completion/closure
-intent. Steps are execution-time decomposition of progress toward that Task.
+intent. Canonical Task producers must include exactly one explicit
+`Issue closure policy: keep-open` or `Issue closure policy: close-authorized`
+field in the live Issue body, using `close-authorized` only with owner authority.
+CR producers preserve that Issue decision when updating canonical authority;
+a CR does not independently authorize closure. Missing, malformed or conflicting
+closure metadata remains `keep-open` with a visible warning.
+Steps are execution-time decomposition of progress toward that Task.
 A Task does not predefine, own, or constrain the number, numbering, or scope of
 its Steps. Steps may be introduced as work evolves; a Task may require one Step
 or arbitrarily many. Completing a Step does not imply completing the Task.
@@ -260,6 +266,11 @@ the canonical authority. Link required native checks instead of restating their
 reconstructible status; do not add an Outcome update solely to announce CI PASS.
 Distinguish implementation complete from independent acceptance. Do not post a
 Reviewer verdict for your own work.
+
+Material execution warnings remain mandatory decision inputs at the next owner
+or independent review boundary, including when the durable handoff is green.
+Assess the warning and its remaining work or evidence before acceptance or
+continuation; a successful orchestration status does not resolve the warning.
 
 Future task files include `## Recommended model budget` with recommended model,
 effort, rationale and escalation/de-escalation conditions. The task author

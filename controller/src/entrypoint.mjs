@@ -8,7 +8,7 @@ import { createAttemptStore } from './attempt-store.mjs';
 import { runAttempt } from './attempt.mjs';
 import { prepareCheckout, collectCheckout } from './attempt-runtime.mjs';
 import { REPOSITORY, OWNER, causalEvidence } from './execution-contract.mjs';
-import { emitAdmissionWarnings } from './outcome.mjs';
+import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 
@@ -55,6 +55,8 @@ export async function reportRoutingResult(run, { write = value => process.stdout
       const code = value.code ?? value.envelope?.admissionBlock?.code;
       writeError(`::warning title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Reconcile the terminal Outcome before another attempt.\n`);
     }
+    const warning = executionWarningSummary(value?.executionWarnings);
+    if (warning) writeError(`::warning title=Codex execution::${warning}\n`);
     write(JSON.stringify(value) + '\n');
     return 0;
   } catch (error) {

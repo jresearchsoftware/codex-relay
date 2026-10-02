@@ -100,6 +100,15 @@ orchestration creates those implementation artifacts only at the owner's
 explicit request. These metadata operations do not transfer implementation
 ownership or replace the Issue body's current Task contract with comments.
 
+Task and CR producers keep exactly one explicit `Issue closure policy` field in
+the linked canonical Issue: `keep-open`, or `close-authorized` only with owner
+authority. Preserve the current owner decision when updating the Issue for a CR;
+do not infer closure from a successful Step, an approval or a CR completion token.
+If closure metadata needs reconciliation, record the owner's decision in the
+Issue body rather than adding a competing CR field. The Task template supplies
+explicit `keep-open`; missing, malformed or conflicting metadata still selects
+safe `keep-open` with a visible warning.
+
 1. Read the linked canonical Issue and current PR. Require exactly one valid
    `step-N` on each, with equal N. For a **new** executable Change Request,
    put N+1 in structured `change_request.step` and its launch thread title.

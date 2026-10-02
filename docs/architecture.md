@@ -39,10 +39,17 @@ introduced blobs (including later-deleted secrets), rechecks live authority,
 and performs an ordinary non-force push.
 
 Useful task commits can be published even if execution returned blocked or a
-later readiness check failed. A successful contained result, clean worktree,
-verified publication and observed exact PR head permit a ready declaration and
-one terminal Outcome. Native CI, mergeability, independent exact-head review
-and the human merge decision remain separate gates.
+later readiness check failed. A successful contained result, complete worktree
+observation, verified publication and observed exact PR head permit a ready
+declaration and one terminal Outcome. Remaining uncommitted/non-ignored residue
+alone yields a successful handoff with `UNCOMMITTED_WORK_REMAINS`, retained in
+the terminal receipt and Outcome and emitted as a workflow warning. Codex must
+first reconcile task-owned work where safe. The controller never assumes residue
+is disposable or cleans, commits, publishes or retries it. Unknown execution,
+incomplete collection and failed/uncertain publication or evidence retention
+remain automation failures. Material warnings must inform the next owner/review
+decision. Native CI, mergeability, independent exact-head review and the human
+merge decision remain separate gates.
 
 Manual routing publishes a copyable handoff and ends automatic ownership. The
 owner-launched session follows its live authority and uses the owner-authorized

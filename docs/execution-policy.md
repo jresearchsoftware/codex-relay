@@ -21,6 +21,25 @@ Keep the admitted model/effort fixed. Completion requires applicable validation;
 report unavailable checks honestly and never replace independent acceptance
 with a worker's success claim.
 
+Before every terminal return, including BLOCKED, reconcile task-owned worktree
+state when safe. Preserve useful changes in ordinary task commits and leave
+unrelated work untouched. Remove only confirmed disposable generated residue;
+ignore repeatable artifacts only when doing so does not hide useful work.
+Determine the distinction from the actual work, ownership and permissions, not
+from a filename or a clean status claim. The worker and collector can have
+different filesystem access. Do not widen permissions, reset, blindly commit,
+publish or retry arbitrary residue to make a check green. Report remaining
+uncommitted/non-ignored work, its known cause and any reconciliation/access
+boundary in the terminal summary. Automatic workers hand commits to trusted
+Writer and retain no publication authority.
+
+A successful, contained, durable Task PR/Outcome handoff can carry a visible
+`UNCOMMITTED_WORK_REMAINS` warning when residue remains. That warning does not
+prove the residue is disposable or accepted: material execution warnings remain
+mandatory decision inputs at the next owner/review boundary. Incomplete
+collection, uncertain publication, lost evidence and unknown containment remain
+automation failures. No second worker pass or cleanup daemon is authorized.
+
 This policy applies inside one admitted invocation. Relay still reserves a
 single execution per attempt and refuses blind retries, including after a crash.
 Replaying returned-result verification/publication does not re-execute Codex.

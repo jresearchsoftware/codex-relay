@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, readFile, chmod } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -348,11 +348,16 @@ function helperFailureSpawn(payload) {
   };
 }
 
-for (const remediation of [false, true]) {
-  test(`the explicit ${remediation ? 'PR' : 'Issue'} recovery command continues the original readiness/Outcome without a new Codex call`, async t => {
+for (const remediation of [false, true]) for (const residue of [false, true]) {
+  test(`the explicit ${remediation ? 'PR' : 'Issue'} recovery command continues ${residue ? 'a handoff with generated residue' : 'the original readiness/Outcome'} without a new Codex call`, async t => {
     const f = await fixture(t, { remediation }); const journal = memoryStore(); let executions = 0;
+    const generatedPath = join(f.cwd, '__pycache__/generated.pyc');
     const execute = async () => {
       executions++; await f.commit('unanticipated-required-file.md');
+      if (residue) {
+        await mkdir(join(f.cwd, '__pycache__'));
+        await writeFile(generatedPath, 'generated local validation cache\n');
+      }
       return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
         result: { status: 'success', summary: 'Task-required repository change preserved.', validation: ['focused local checks passed'] } };
     };
@@ -369,9 +374,26 @@ for (const remediation of [false, true]) {
     assert.match(f.comments.find(c => c.id === outcomeId).body, /Status: IMPLEMENTED_PENDING_FRESH_REVIEW/);
     assert.match(f.comments.find(c => c.id === outcomeId).body, /Task-required repository change preserved/);
     assert.match(f.comments.find(c => c.id === outcomeId).body, /focused local checks passed/);
+    if (residue) {
+      assert.deepEqual(result.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+      assert.deepEqual((await journal.get(99)).outcome.executionWarnings, result.executionWarnings);
+      assert.deepEqual((await f.store.get(99)).outcome.executionWarnings, result.executionWarnings);
+      assert.match(f.comments.find(c => c.id === outcomeId).body, /Completion: COMPLETED_WITH_WARNINGS/);
+      assert.match(f.comments.find(c => c.id === outcomeId).body, /UNCOMMITTED_WORK_REMAINS/);
+      assert.equal((await journal.get(99)).collection.clean, false);
+      assert.equal(await readFile(generatedPath, 'utf8'), 'generated local validation cache\n');
+      assert.equal(await f.command(f.cwd, ['status', '--porcelain']), '?? __pycache__/');
+      assert.equal(await f.command(f.cwd, ['ls-tree', '--name-only', result.head, '__pycache__']), '');
+    }
     assert.equal((await f.api.get('/pulls/43')).draft, false);
     assert.deepEqual(await recoverAttemptPublication({ ...args, collect: () => assert.fail('receipt replay recollected') }), result);
     assert.equal((await runAttempt({ ...f, journal, execute })).head, result.head);
+    if (residue) {
+      const warnings = [];
+      assert.equal(await reportRoutingResult(() => recoverAttemptPublication({ ...args,
+        collect: () => assert.fail('CLI receipt replay recollected') }), { write() {}, writeError: text => warnings.push(text) }), 0);
+      assert.equal(warnings.filter(text => text.startsWith('::warning') && text.includes('UNCOMMITTED_WORK_REMAINS')).length, 1);
+    }
     assert.equal(executions, 1); assert.equal(f.pushes(), 2);
   });
 }
@@ -453,7 +475,7 @@ test('a real rejecting Git remote supplies the sanitized durable recovery previe
   assert.equal(await f.remoteHead(), f.envelope.startHead); assert.equal(f.pushes(), 2);
 });
 
-test('recovery cannot finish a blocked child or a changed/dirty checkout, and missing execution evidence cannot push', async t => {
+test('recovery cannot finish a blocked child with meaningful dirty work or a changed candidate, and missing execution evidence cannot push', async t => {
   const f = await fixture(t, { remediation: true }); const journal = memoryStore(); f.failPush(true);
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'blocked' } };

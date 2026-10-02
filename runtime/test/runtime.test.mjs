@@ -31,6 +31,10 @@ test('worker arguments resolve absent profiles and preserve explicit unknown ide
         assert.match(delivered, /Progress-bounded execution/);
         assert.match(delivered, /no fixed correction-count default/);
         assert.match(delivered, /Unknown prior execution state, ambiguous external mutation, uncontained prior execution/);
+        assert.match(delivered, /Before every terminal return, including blocked, reconcile task-owned worktree state when safe/);
+        assert.match(delivered, /worker and collector may have different access/);
+        assert.match(delivered, /Do not reset, blindly commit, publish, permission-repair or retry arbitrary residue/);
+        assert.match(delivered, /Material execution warnings remain decision inputs for the next owner\/review boundary/);
         assert.match(delivered, /does not authorize blind Relay retries/);
         return ['--model', profile.cliModelId, '--effort', profile.effort];
       },
