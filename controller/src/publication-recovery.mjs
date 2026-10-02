@@ -4,6 +4,7 @@ import { revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue }
 import { dispatchRunName } from './launch-metadata.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { ATTEMPT_RECORD_BYTES } from './attempt-store.mjs';
+import { findCurrentIssuePullRequest } from './publication-target.mjs';
 
 // A native owner comment authorizes one exact existing intent. Each subsequent
 // decision must name the previous consumed authorization, not queue retries.
@@ -83,9 +84,9 @@ export async function recoverPublication({ api, store, publisher, record: r, req
     if (!g.commits.length || !(await g.ancestor(e.startHead, g.head))
       || (intent.previous && !(await g.ancestor(intent.previous, g.head)))) fail('RECOVERY_HISTORY_INVALID');
     const a = await revalidateAuthority(api, e);
-    const prs = a.pr ? [a.pr] : await api.list(`/pulls?state=all&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(e.branch)}&base=${encodeURIComponent(CONSUMER.baseBranch)}`);
-    if (prs.length > 1 || prs.some(pr => pr.head?.sha !== intent.previous)) fail('REMOTE_HEAD_CHANGED');
-    for (const pr of prs) {
+    const pr = a.pr ?? await findCurrentIssuePullRequest(api, e, r.prNumber);
+    if (pr) {
+      if (pr.head?.sha !== intent.previous) fail('REMOTE_HEAD_CHANGED');
       assertPr(pr, e.target === 'pull_request' ? e.number : pr.number);
       if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
     }
