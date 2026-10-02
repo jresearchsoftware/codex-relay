@@ -72,6 +72,50 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
             check=False,
         )
 
+    def _installed_begin_fixture(self, directory, *, verifier_passes=True):
+        """A fixed synthetic checker records its binding and lock context."""
+        directory = Path(directory)
+        variables = self._variables(directory)
+        review_root = directory / "reviewed-source"
+        helper = review_root / "deploy" / "installed_config.py"
+        helper.parent.mkdir(parents=True)
+        invocation = directory / "installed-verification.json"
+        digest, consumer_revision = "f" * 64, "c" * 40
+        variables.update({
+            "relay_local_apply_source": "installed",
+            "relay_installed_config_reconcile": True,
+            "relay_installed_config_recovery_authorized": False,
+            "relay_review_root": str(review_root),
+            "relay_installed_config_expected_sha256": digest,
+            "relay_consumer_revision": consumer_revision,
+        })
+        helper.write_text(textwrap.dedent(f"""\
+            import fcntl
+            import json
+            import os
+            from pathlib import Path
+            import sys
+
+            assert sys.argv[1:] == {[HEAD, digest, consumer_revision]!r}
+            record = Path({variables['relay_production_operation_record_path']!r})
+            assert not record.exists(), 'record reserved before installed verification'
+            fd = os.open({variables['relay_production_operation_lock_path']!r}, os.O_RDONLY)
+            try:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    lock_held = True
+                else:
+                    raise AssertionError('transition lock not held during verification')
+            finally:
+                os.close(fd)
+            Path({str(invocation)!r}).write_text(json.dumps({{
+                'argv': sys.argv[1:], 'lockHeld': lock_held, 'recordPresent': record.exists(),
+            }}))
+            raise SystemExit({0 if verifier_passes else 1})
+            """), encoding="utf-8")
+        return variables, invocation
+
     @unittest.skipUnless(localhost_ansible_available(), "native Ansible is required for operation-state inspect checks")
     def test_inspect_without_record_is_read_only_and_supplies_begin_facts(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -317,6 +361,118 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PRODUCTION_OPERATION_BEGIN_RECORD_CHANGED", result.stdout + result.stderr)
             self.assertEqual(json.loads(record.read_text(encoding="utf-8")), original)
+
+
+    @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
+    def test_installed_apply_requires_explicit_owner_recovery_and_preserves_retained_evidence(self):
+        matching = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED",
+                    "phase": "apply", "target_head": HEAD}
+        pending = "PRODUCTION_INSTALLED_CONFIG_OPERATION_PENDING"
+        cases = [
+            ("ordinary-owner", False, False, matching, "apply", HEAD, pending),
+            ("ordinary-local", True, False, matching, "apply", HEAD, pending),
+            ("explicit-owner-recovery", False, True, matching, "apply", HEAD, None),
+            ("wrong-phase", False, True, {**matching, "phase": "activate"}, "activate", HEAD, pending),
+            ("wrong-head", False, True, {**matching, "target_head": "a" * 40}, "apply", "a" * 40, pending),
+            ("changed-record", False, True, {**matching, "target_head": "a" * 40}, "apply", HEAD,
+             "PRODUCTION_OPERATION_BEGIN_RECORD_CHANGED"),
+            ("local-recovery-flag", True, True, matching, "apply", HEAD, pending),
+            ("missing-record", False, True, None, "apply", HEAD,
+             "PRODUCTION_INSTALLED_CONFIG_RECOVERY_RECORD_MISSING"),
+        ]
+        with tempfile.TemporaryDirectory(prefix="relay-installed-begin-test-", dir="/run") as temporary:
+            for name, local, authorized, original, active_phase, active_head, error in cases:
+                with self.subTest(case=name):
+                    directory = Path(temporary) / name
+                    directory.mkdir()
+                    variables, invocation = self._installed_begin_fixture(directory)
+                    variables.update({
+                        "relay_installed_config_reconcile": local,
+                        "relay_installed_config_recovery_authorized": authorized,
+                        "relay_production_operation_recovery_required": original is not None,
+                        "relay_production_operation_active_phase": active_phase,
+                        "relay_production_operation_active_head": active_head,
+                    })
+                    record = directory / "operation.json"
+                    if original is not None:
+                        raw = json.dumps(original).encode()
+                        record.write_bytes(raw)
+                        record.chmod(0o600)
+                        before = record.stat()
+                    playbook = directory / "begin.yml"
+                    self._playbook(playbook, variables,
+                        f"- ansible.builtin.include_tasks: {json.dumps(str(ROOT / 'tasks/production-operation-state-begin.yml'))}")
+                    result = self._run(playbook)
+                    output = result.stdout + result.stderr
+                    if error is None:
+                        self.assertEqual(result.returncode, 0, output)
+                    else:
+                        self.assertNotEqual(result.returncode, 0, output)
+                        self.assertIn(error, output)
+                    # Existing evidence blocks local verification as well as
+                    # reservation. Owner recovery retains the exact same file.
+                    self.assertFalse(invocation.exists(), output)
+                    if original is None:
+                        self.assertFalse(record.exists(), output)
+                    else:
+                        self.assertEqual(record.read_bytes(), raw)
+                        after = record.stat()
+                        for field in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                                      "st_size", "st_mtime_ns", "st_ctime_ns"):
+                            self.assertEqual(getattr(after, field), getattr(before, field), field)
+                    self.assertEqual(list(directory.glob("operation.json.tmp.*")), [])
+
+    @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
+    def test_installed_source_keeps_matching_activation_and_runner_recovery_contract(self):
+        with tempfile.TemporaryDirectory(prefix="relay-installed-phase-test-", dir="/run") as temporary:
+            for phase in ("activate", "runner-enable"):
+                with self.subTest(phase=phase):
+                    directory = Path(temporary) / phase
+                    directory.mkdir()
+                    record = directory / "operation.json"
+                    raw = json.dumps({"schemaVersion": "1", "state": "RECOVERY_REQUIRED",
+                                      "phase": phase, "target_head": HEAD}).encode()
+                    record.write_bytes(raw)
+                    record.chmod(0o600)
+                    variables = self._variables(directory, phase=phase, recovery_required=True)
+                    variables.update(relay_local_apply_source="installed",
+                                     relay_installed_config_recovery_authorized=False,
+                                     relay_installed_config_reconcile=False)
+                    playbook = directory / "begin.yml"
+                    self._playbook(playbook, variables,
+                        f"- ansible.builtin.include_tasks: {json.dumps(str(ROOT / 'tasks/production-operation-state-begin.yml'))}")
+                    result = self._run(playbook)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(record.read_bytes(), raw)
+
+    @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
+    def test_installed_local_revalidates_bound_inputs_under_lock_before_reservation(self):
+        with tempfile.TemporaryDirectory(prefix="relay-installed-verify-test-", dir="/run") as temporary:
+            for accepted in (True, False):
+                with self.subTest(accepted=accepted):
+                    directory = Path(temporary) / ("accepted" if accepted else "changed-binding")
+                    directory.mkdir()
+                    variables, invocation = self._installed_begin_fixture(directory, verifier_passes=accepted)
+                    record = directory / "operation.json"
+                    playbook = directory / "begin.yml"
+                    self._playbook(playbook, variables,
+                        f"- ansible.builtin.include_tasks: {json.dumps(str(ROOT / 'tasks/production-operation-state-begin.yml'))}")
+                    result = self._run(playbook)
+                    output = result.stdout + result.stderr
+                    self.assertTrue(invocation.exists(), output)
+                    self.assertEqual(json.loads(invocation.read_text()), {
+                        "argv": [HEAD, "f" * 64, "c" * 40], "lockHeld": True, "recordPresent": False,
+                    })
+                    if accepted:
+                        self.assertEqual(result.returncode, 0, output)
+                        self.assertEqual(json.loads(record.read_text()), {
+                            "schemaVersion": "1", "state": "RECOVERY_REQUIRED",
+                            "phase": "apply", "target_head": HEAD,
+                        })
+                    else:
+                        self.assertNotEqual(result.returncode, 0, output)
+                        self.assertFalse(record.exists(), output)
+                    self.assertEqual(list(directory.glob("operation.json.tmp.*")), [])
 
 
     @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable Ansible required")

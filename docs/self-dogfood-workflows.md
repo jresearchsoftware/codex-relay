@@ -8,6 +8,7 @@ configuration remains `/etc/codex-relay/consumer.json`.
 | --- | --- |
 | [Routing](../.github/workflows/codex-relay-routing.yml) | Owner ready-label commands and optional owner dispatch on `main`; installed controller and fixed Writer/worker helpers |
 | [Publication recovery](../.github/workflows/manual-writer-publication-recovery.yml) | Owner dispatch on `main`; inspect or recover one retained attempt using its exact owner authorization comment |
+| [Production reconciliation](../.github/workflows/manual-main-production-deploy.yml) | Owner dispatch on `main`; one exact installed product SHA through the fixed production helper and protected deployment snapshot |
 | [Exact-head validation](../.github/workflows/relay-exact-head-validation.yml) | Disposable GitHub-hosted candidate checks at the exact PR head or pushed `main` commit |
 
 Routing uses the native names required by the
@@ -64,3 +65,42 @@ stable check name remains `Candidate checks`; native evidence must match the
 exact candidate head. It does not qualify installed sudoers, process isolation,
 credentials, ingress, runner restrictions or independent acceptance. See
 [contributor validation](../CONTRIBUTING.md#local-validation) for its check set.
+
+## Public production workflow
+
+`manual-main-production-deploy.yml` has no revision, target or other dispatch
+inputs. It accepts only owner `foal` as both original and triggering actor,
+`workflow_dispatch`, this repository and `refs/heads/main`. Scheduling explicitly
+selects organization runner group `codex-relay-runner` plus the accepted runner
+labels. There is no label-only fallback. Runner name and Unix user must both be
+`codex-relay-runner`; these checks supplement the external scheduling restriction.
+
+The owner must configure this production group's repository access to only
+`jresearchsoftware/codex-relay` and its workflow access to only:
+
+```text
+jresearchsoftware/codex-relay/.github/workflows/manual-main-production-deploy.yml@refs/heads/main
+```
+
+Never allow routing, recovery, candidate CI or the private DocReview deployment
+workflow into this group. Independently verify the saved external policy before
+registration or enablement. Source publication or a passing workflow test does
+not establish that policy.
+
+The job performs no checkout and downloads no action or candidate executable.
+It binds `github.sha` to the root-owned installed source identity, then calls
+only `/usr/bin/sudo -n /opt/codex-relay/relay-production-local-apply <SHA>`.
+The accepted deployment must first opt into
+[`localApply.source: installed`](../deploy/README.md#protected-self-dogfood-reconciliation)
+through owner configuration and public owner apply. The helper validates the
+private root-owned snapshot and rechecks current `main` immediately before
+reservation under the existing transition lock. It retains the exact installed
+product version and original consumer provenance. Failed or stale checks prevent
+apply. No workflow step receives the configuration or credential material.
+
+The workflow serializes production jobs without cancellation. The deployment
+operation boundary also excludes conflicting owner operations and preserves live
+services through reconciliation. Source upgrades and any deferred service
+transition remain separately authorized owner actions. Deploy and qualify an
+accepted main revision before dispatching that revision's workflow; a green
+source candidate must never be installed merely to make the job runnable.

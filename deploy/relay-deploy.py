@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Relay's owner-operated Debian deployment entrypoint (backend is private)."""
 import argparse
+from contextlib import ExitStack
 import fcntl
 import hashlib
 import json
@@ -111,18 +112,42 @@ def ingress_guard(target, key, values, revision):
     return process
 
 
+def apply_guard(target, key, namespace):
+    # The same reviewed stdlib-only lock implementation runs on the target for
+    # an owner apply and locally for the installed helper. No credential or
+    # user-selected command is passed to the holder.
+    source = (ROOT / 'deploy/deployment_lock.py').read_text()
+    remote = ['/usr/bin/python3', '-I', '-c', source,
+              '/var/lib/' + namespace + '-deployment.lock']
+    process = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(remote)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    with selectors.DefaultSelector() as ready:
+        ready.register(process.stdout, selectors.EVENT_READ)
+        acquired = bool(ready.select(timeout=30)) and process.stdout.readline().strip() == 'DEPLOYMENT_LOCK_READY'
+    if not acquired:
+        process.stdin.close()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        raise RuntimeError('host-apply-lock-unavailable')
+    return process
+
+
 def run_backend(argv, cwd, env, log, guard=None):
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
     try:
         while process.poll() is None:
             if guard is not None and guard.poll() is not None:
-                raise RuntimeError('ingress-operation-guard-lost;inspect-before-retry')
+                raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
             try:
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 pass
         if guard is not None and guard.poll() is not None:
-            raise RuntimeError('ingress-operation-guard-lost;inspect-before-retry')
+            raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
         return process.returncode
     finally:
         if process.poll() is None:
@@ -143,6 +168,9 @@ def arguments():
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
     p.add_argument('--local-reconcile', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
+    p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
+    p.add_argument('--authorize-apply-recovery', action='store_true',
+                   help='Owner-authorized matching installed-config apply recovery after diagnosis')
     p.add_argument('--authorize-reviewer-activation', action='store_true')
     p.add_argument('--authorize-runner-enable', action='store_true')
     p.add_argument('--authorize-general-runner-enable', action='store_true')
@@ -168,8 +196,19 @@ def arguments():
 def run(args):
     os.umask(0o077)
     config_path = args.config.absolute()
-    config = load(config_path, ROOT)
+    installed_digest = ''
+    installed_consumer_revision = None
+    if args.expected_installed_head:
+        require(args.local_reconcile and args.phase == 'apply' and args.consumer_revision is None
+                and config_path == ROOT.parent / 'deployment-config.json', 'installed-reconcile-interface')
+        from installed_config import verify
+        config, installed_digest, installed_consumer_revision = verify(ROOT, args.expected_installed_head)
+    else:
+        config = load(config_path, ROOT)
     values = compile_inputs(config)
+    require(not args.authorize_apply_recovery or
+            (args.phase == 'apply' and not args.local_reconcile and values['relay_local_apply_source'] == 'installed'),
+            'explicit-installed-apply-recovery')
     if args.phase == 'validate':
         print('RELAY_DEPLOYMENT_CONFIG=PASS;schemaVersion=1')
         return
@@ -182,7 +221,9 @@ def run(args):
         root_owned(config_path)
         identity = json.loads((ROOT / '.relay-source.json').read_text())
         require(ROOT == Path(values['relay_release_root']) / identity['revision'] / 'reviewed-source', 'installed-product-path')
-        consumer_revision = args.consumer_revision
+        require(config['environment']['localApply'].get('source') != 'installed'
+                or bool(args.expected_installed_head), 'installed-reconcile-interface')
+        consumer_revision = installed_consumer_revision or args.consumer_revision
         requested = identity['revision']  # explicit installed version, never pretend to resolve remote main
     else:
         require(args.consumer_revision is None, 'consumer-revision-from-git-only')
@@ -246,6 +287,9 @@ def run(args):
         'relay_deployment_profile': 'production',
         'relay_production_operation_phase': args.phase, 'relay_production_operation_target_head': revision,
         'relay_production_exact_head': revision, 'relay_reviewer_activation_exact_head': revision,
+        'relay_installed_config_reconcile': bool(args.expected_installed_head),
+        'relay_installed_config_expected_sha256': installed_digest,
+        'relay_installed_config_recovery_authorized': args.authorize_apply_recovery,
         'relay_production_runner_enable_exact_head': revision,
         'relay_service_state_management': 'preserve',
         'relay_service_activation_authorized': args.authorize_reviewer_activation,
@@ -281,6 +325,14 @@ def run(args):
         'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
                            'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
     })
+    if values['relay_local_apply_source'] == 'installed':
+        # Literal references only, frozen from this validated invocation. The
+        # private inventory and target snapshot never become public artifacts.
+        snapshot = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+        values['relay_installed_deployment_config'] = snapshot
+        values['relay_installed_deployment_config_sha256'] = hashlib.sha256(snapshot.encode('utf-8')).hexdigest()
+        require(not installed_digest or installed_digest == values['relay_installed_deployment_config_sha256'],
+                'installed-config-canonical')
     if args.phase == 'ingress':
         values.update(relay_docker_nginx_manage=True, relay_docker_nginx_service_enabled=True,
                       relay_docker_nginx_validation_mode='active')
@@ -322,13 +374,22 @@ def run(args):
             started = time.monotonic()
             log.write(f'requested_revision={requested};resolved_revision={revision};consumer_revision={consumer_revision}\n')
             log.flush()
-            guard = ingress_guard(target, key, values, revision) if args.phase == 'ingress' else None
-            try:
-                returncode = run_backend(argv, BACKEND, env, log, guard)
-            finally:
-                if guard is not None:
-                    guard.stdin.close()
-                    require(guard.wait(timeout=30) == 0, 'ingress-operation-guard-final-check;inspect-before-retry')
+            with ExitStack() as host_locks:
+                guard = None
+                if args.phase == 'apply':
+                    if args.local_reconcile:
+                        from deployment_lock import acquire
+                        host_locks.enter_context(acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock'))
+                    else:
+                        guard = apply_guard(target, key, values['relay_namespace'])
+                elif args.phase == 'ingress':
+                    guard = ingress_guard(target, key, values, revision)
+                try:
+                    returncode = run_backend(argv, BACKEND, env, log, guard)
+                finally:
+                    if guard is not None:
+                        guard.stdin.close()
+                        require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
             log.flush()
             evidence = Path(log_name).read_text()
             if returncode:
@@ -364,9 +425,11 @@ def run(args):
                 print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
             if args.local_reconcile:
                 require(f'PRODUCTION_LIFECYCLE_PRESERVED={revision};activation=owner-after-job' in evidence, 'local-live-lifecycle')
-                # Keep the existing trusted consumer workflow's receipt ABI.
-                print(f'PRODUCTION_APPLY_VALIDATED={consumer_revision}')
-                print(f'PRODUCTION_LIFECYCLE_PRESERVED={consumer_revision};activation=owner-after-job')
+                # Checkout mode retains the consumer workflow receipt ABI;
+                # installed mode admits the product SHA and reports that SHA.
+                receipt_head = revision if args.expected_installed_head else consumer_revision
+                print(f'PRODUCTION_APPLY_VALIDATED={receipt_head}')
+                print(f'PRODUCTION_LIFECYCLE_PRESERVED={receipt_head};activation=owner-after-job')
             print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};elapsed_seconds={int(time.monotonic()-started)};log={log_name}')
         finally:
             os.close(lock)

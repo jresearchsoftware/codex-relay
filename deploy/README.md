@@ -18,6 +18,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
 | `environment.generalRunner.scope`, `environment.generalRunner.group` | Optional general-runner registration scope and its dedicated organization runner group; omitted scope preserves repository registration |
+| `environment.localApply` | Either `{ "configPath": "deploy/relay.json" }` for a versioned consumer checkout, or `{ "source": "installed" }` for protected self-dogfood configuration |
 | `environment.compatibilityLinks` | Optional old invocation paths retained during a consumer's workflow migration |
 | `environment.ingress.publicAddresses` | Explicit public IPv4/IPv6 addresses for ACME; independent of SSH `target.host` |
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
@@ -404,6 +405,55 @@ version**, reports that version, and defers live service changes until the
 owner can act after the job. It does not claim to resolve remote `main`.
 Source/channel upgrades use the owner bootstrap transport; this preserves
 credential-free source access on private production hosts.
+
+### Protected self-dogfood reconciliation
+
+A self-dogfood consumer may keep deployment configuration private and select
+`"localApply": {"source": "installed"}`. This mode requires the consumer and
+product source repositories to match and uses `main`. It is mutually exclusive
+with `configPath`; existing checkout-based consumers keep their current contract.
+
+Owner apply stores the validated deployment input as
+`<exact release>/deployment-config.json`, owned by `root:root` with mode `0600`.
+The existing artifact manifest binds its SHA-256 digest and original consumer
+revision. Configuration contains only references to credentials; the snapshot
+does not contain credential bytes. Its content is suppressed in deployment logs
+and diffs. The source repository and workflow never receive this configuration.
+Changes to it still require owner deployment through the public interface.
+
+The same fixed `relay-production-local-apply <SHA>` command then reconciles the
+installed product using that protected snapshot. In this mode the argument is
+the native workflow's **product** SHA; it must match the installed release. The
+original consumer revision remains provenance and is not replaced by the
+workflow SHA. There is no runner checkout, caller-selected config, target,
+executable, inventory, credential, or source-upgrade option.
+
+Before reserving an apply operation, the installed code revalidates the exact
+release, protected configuration digest and current GitHub `main` under the
+existing production transition lock. A changed release/configuration, advanced
+`main`, invalid metadata, active operation or unavailable remote verification
+fails closed before install changes. The GitHub read uses normal TLS validation
+without a host credential. This mode therefore requires a publicly readable
+repository. The ordinary operation record and live-lifecycle preservation rules
+still apply; a workflow does not activate or restart its own runner.
+
+Public owner apply and installed reconciliation also hold the same host apply
+mutex for the complete operation. This excludes a concurrent apply of the same
+source SHA with different configuration; the durable recovery record alone does
+not provide that exclusion. Losing the owner transport lock holder stops the
+controller backend and retains ordinary recovery evidence; it does not prove
+that every remote descendant has stopped. Installed-mode apply refuses a retained
+operation by default. After diagnosing the interruption and establishing a safe
+recovery boundary, the owner may explicitly use `--authorize-apply-recovery` with
+public owner `apply` for the matching recorded apply/head. This flag is forbidden
+for the fixed runner helper and local reconciliation. It is not automatic retry
+or authority to discard an unknown operation. Legacy checkout-mode recovery is
+unchanged.
+
+Deploy and qualify the newly accepted product with the owner transport before
+dispatching its matching workflow. This is reconciliation of that installed
+release, not a workflow-based source upgrade. See the public consumer's
+[workflow and activation contract](../docs/self-dogfood-workflows.md).
 
 Existing ingress is described by consumer properties. Ordinary apply only
 discovers and validates the configured Docker gateway when requested; it does

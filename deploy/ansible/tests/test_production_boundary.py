@@ -199,6 +199,7 @@ class ProductionBoundaryTests(unittest.TestCase):
             helper = helper.replace("{{ relay_github_repository }}", "example/relay-consumer")
             helper = helper.replace("{{ relay_consumer_deployment_config_relative }}", "deploy/relay.json")
             helper = helper.replace("{{ relay_install_root }}", str(product))
+            helper = Environment(undefined=StrictUndefined).from_string(helper).render()
             helper_path = fixture_root / "relay-production-local-apply"
             helper_path.write_text(helper, encoding="utf-8")
             helper_path.chmod(0o750)

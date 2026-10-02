@@ -1,0 +1,55 @@
+---
+- name: Require the frozen validated snapshot identity
+  ansible.builtin.assert:
+    that:
+      - relay_installed_deployment_config | length > 0
+      - relay_installed_deployment_config_sha256 is match('^[0-9a-f]{64}$')
+      - relay_installed_deployment_config | hash('sha256') == relay_installed_deployment_config_sha256
+    fail_msg: INSTALLED_DEPLOYMENT_CONFIG_INPUT_INVALID
+  no_log: true
+
+- name: Inspect the exact release namespace for check-mode snapshot planning
+  ansible.builtin.stat:
+    path: '{{ relay_release_path }}'
+    follow: false
+  register: relay_snapshot_release
+
+- name: Refuse an unsafe snapshot publication namespace
+  ansible.builtin.assert:
+    that:
+      - not relay_snapshot_release.stat.exists or (relay_snapshot_release.stat.isdir and not relay_snapshot_release.stat.islnk and relay_snapshot_release.stat.pw_name == 'root' and relay_snapshot_release.stat.mode[-2] in ['0', '1', '4', '5'] and relay_snapshot_release.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: INSTALLED_DEPLOYMENT_CONFIG_PARENT_UNSAFE
+
+- name: Inspect an existing snapshot without reading its content
+  ansible.builtin.stat:
+    path: '{{ relay_release_path }}/deployment-config.json'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: relay_snapshot_existing
+
+- name: Refuse aliased snapshot state before publication
+  ansible.builtin.assert:
+    that:
+      - not relay_snapshot_existing.stat.exists or (relay_snapshot_existing.stat.isreg and not relay_snapshot_existing.stat.islnk and relay_snapshot_existing.stat.nlink == 1)
+    fail_msg: INSTALLED_DEPLOYMENT_CONFIG_FILE_UNSAFE
+
+- name: Publish only the private validated deployment snapshot
+  ansible.builtin.copy:
+    # Keep the frozen bytes as a string: Ansible otherwise converts JSON-looking
+    # text to a mapping and copy serializes different bytes than the bound hash.
+    content: '{{ relay_installed_deployment_config | string }}'
+    dest: '{{ relay_release_path }}/deployment-config.json'
+    owner: root
+    group: root
+    mode: '0600'
+    unsafe_writes: false
+  no_log: true
+  diff: false
+  when: not ansible_check_mode | bool or relay_snapshot_release.stat.exists
+
+- name: Report a private snapshot planned behind the missing release namespace
+  ansible.builtin.debug:
+    msg: INSTALLED_DEPLOYMENT_CONFIG_CHECK_MODE_PLAN=protected-snapshot-pending
+  changed_when: true
+  when: ansible_check_mode | bool and not relay_snapshot_release.stat.exists
