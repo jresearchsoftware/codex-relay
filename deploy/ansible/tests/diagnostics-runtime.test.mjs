@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, persistControllerFailureDiagnostic, redactDiagnosticText } from "../../../controller/src/diagnostics.mjs";
 import { normalizeDiagnosticRequest, writeDiagnosticBundle } from "../../../controller/src/diagnostic-store.mjs";
+import { reserveRuntimeDiagnostic } from "../../../controller/src/diagnostic-fallback.mjs";
 import { runGovernedCodexTask } from "../../../runtime/src/codex-runtime.mjs";
 import { buildChildDiagnostic } from "../roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs";
 import { CONSUMER } from "../../../consumer/consumer.mjs";
@@ -36,6 +37,7 @@ test("persisted launcher diagnostics retain validated inner child evidence indep
     await assert.rejects(runGovernedCodexTask({
       operation: "review-remediation", attemptId: example.name, inputText: "bounded fixture input", cwd: root,
       buildArgs: () => [], env: { PATH: "/usr/bin:/bin" }, evidence,
+      fallbackStore: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: join(root, 'fallback') }),
       spawnImpl(command, args) {
         assert.equal(command, "/usr/bin/sudo");
         assert.deepEqual(args.slice(0, 3), ["-n", "-u", CONSUMER.runtimeUser]);
@@ -116,6 +118,18 @@ test("debug bundle persists bounded redacted streams and safe metadata only", as
 
 test("root store rejects a request whose operator mode differs from configured mode", () => {
   assert.throws(() => normalizeDiagnosticRequest({ schemaVersion: "1.0", executionId: "mode-fixture", mode: "debug" }, { mode: "normal" }), error => error.code === "DIAGNOSTIC_MODE_INVALID");
+});
+
+test('primary retention always preserves the newly durable diagnostic and rejects an empty bound', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-primary-retention-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const bundle = executionId => createExecutionDiagnostic({ executionId, mode: 'normal' });
+  await writeDiagnosticBundle(bundle('old'), { root, retentionCount: 1 });
+  await writeDiagnosticBundle(bundle('new'), { root, retentionCount: 1 });
+  assert.equal(JSON.parse(await readFile(join(root, 'new.json'), 'utf8')).executionId, 'new');
+  await assert.rejects(readFile(join(root, 'old.json')), { code: 'ENOENT' });
+  await assert.rejects(writeDiagnosticBundle(bundle('invalid'), { root, retentionCount: 0 }), { code: 'DIAGNOSTIC_RETENTION_INVALID' });
+  assert.equal(JSON.parse(await readFile(join(root, 'new.json'), 'utf8')).executionId, 'new');
 });
 
 test("controller failure evidence stores a bounded redacted private stack and returns a safe reference", async () => {

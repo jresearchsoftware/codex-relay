@@ -4,7 +4,7 @@ import { boundedDiagnosticText } from './diagnostics.mjs';
 
 // One runner-owned journal records whether the potentially paid call happened.
 // Publication may be resumed; a reserved/unknown child is never relaunched.
-export async function runAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false }) {
+export async function runAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false, persistFailure }) {
   const e = validateEnvelope(envelope);
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId: e.runId, attemptId: e.attemptId, ...value });
   if (e.route === 'manual') return invoke('handoff');
@@ -86,8 +86,16 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
   } catch (error) {
     error.details = { ...error.details,
       ...(stage === 'execution' ? { causal: error.details?.causal ?? record.execution?.diagnostic } : {}),
+      childState: error.details?.childState ?? record.execution?.child ?? 'not_started',
+      containment: error.details?.containment ?? record.execution?.containment ?? 'not_required',
       executionId: e.attemptId };
     if (!error.details.lastSuccessfulBoundary && !error.details.causal?.lastSuccessfulBoundary) error.details.lastSuccessfulBoundary = lastSuccessfulBoundary;
+    // Preparation, collection and journal/finalization failures also need a
+    // durable diagnostic. The runtime capsule is reused when it already exists.
+    if (persistFailure && !safeDomainTerminal(error, record, stage)) {
+      const durable = await persistFailure({ executionId: e.attemptId, error, stage, lastSuccessfulBoundary });
+      error.details = { ...error.details, ...durable };
+    }
     record.diagnostic = causalEvidence(error, { child: record.execution ? (record.execution.child ?? 'unknown') : 'not_started',
       containment: record.execution?.containment ?? 'not_required', publishedHead: record.progress?.head, stage });
     const domain = safeDomainTerminal(error, record, stage);

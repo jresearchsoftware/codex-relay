@@ -143,6 +143,31 @@
       - relay_production_launcher_dependency.stat.checksum | default('') == lookup('file', role_path ~ '/files/relay-codex-diagnostic.mjs', rstrip=false) | hash('sha256')
     fail_msg: PRODUCTION_CODEX_DEPENDENCY_BINDING_INVALID
 
+- name: Inspect the installed sandbox cleanup dependency
+  ansible.builtin.stat:
+    path: '{{ relay_install_root }}/relay-codex-cleanup.py'
+    follow: false
+    checksum_algorithm: sha256
+  register: relay_production_cleanup_dependency
+
+- name: Resolve the expected exact-candidate sandbox cleanup rendering
+  ansible.builtin.set_fact:
+    relay_production_expected_cleanup_sha256: "{{ lookup('template', 'relay-codex-cleanup.py.j2') | hash('sha256') }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Require the exact governed sandbox cleanup dependency
+  ansible.builtin.assert:
+    that:
+      - relay_production_cleanup_dependency.stat.isreg | default(false)
+      - not relay_production_cleanup_dependency.stat.islnk | default(false)
+      - relay_production_cleanup_dependency.stat.pw_name | default('') == 'root'
+      - relay_production_cleanup_dependency.stat.gr_name | default('') == 'root'
+      - relay_production_cleanup_dependency.stat.mode | default('') == '0644'
+      - relay_production_cleanup_dependency.stat.checksum | default('') == relay_production_expected_cleanup_sha256
+    fail_msg: PRODUCTION_CODEX_CLEANUP_BINDING_INVALID
+
 - name: Execute the installed launcher import closure as the Codex user without credentials
   ansible.builtin.command:
     argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', '{{ relay_codex_launcher_path }}', '--check-runtime']

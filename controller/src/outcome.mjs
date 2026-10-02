@@ -1,6 +1,6 @@
 import { exactSha } from './execution-contract.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
-import { boundedDiagnosticText } from './diagnostics.mjs';
+import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
@@ -94,6 +94,9 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
   const profile = e?.profile && typeof e.profile === 'object' ? e.profile : {};
   const warnings = admissionWarningSummary(e?.admission?.warnings ?? e?.warnings);
   const admissionStatus = e?.admissionBlock ? 'BLOCKED_BEFORE_WORKER' : warnings ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED';
+  const runtime = safeFailureDiagnosticReference(d.runtime) ?? {};
+  const store = safeDiagnosticStoreReference(d.durable?.diagnosticStore);
+  const fallback = safeFallbackReference(d.durable?.fallbackReference);
   return [
     '## Codex Outcome',
     '',
@@ -112,6 +115,11 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Last successful boundary: ${safeBoundary(d.lastSuccessfulBoundary)}`,
     `Failure boundary: ${safeBoundary(d.failureBoundary)}`,
     `Cause summary: ${cause}`,
+    ...(runtime.operation ? [`Failed operation: ${runtime.operation}${runtime.syscall ? `; syscall: ${runtime.syscall}` : ''}${runtime.pathContext ? `; path context: ${runtime.pathContext}` : ''}`] : []),
+    ...(runtime.cleanup || runtime.persistence || runtime.retention ? [`Runtime state: cleanup=${runtime.cleanup ?? 'unknown'}; diagnostics=${runtime.persistence ?? 'unknown'}; artifacts=${runtime.retention ?? 'unknown'}`] : []),
+    ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
+    ...(store ? [`Primary diagnostics: ${store.status}; reference: ${store.executionId ?? 'UNAVAILABLE'}${store.storeCode ? `; store cause: ${store.storeCode}` : ''}`] : []),
+    ...(fallback ? [`Fallback diagnostics: ${fallback.status}; reference: ${fallback.executionId ?? 'UNAVAILABLE'}${Number.isInteger(fallback.slot) ? `; slot: ${fallback.slot}` : ''}${fallback.code ? `; cause: ${fallback.code}` : ''}`] : []),
     ...(d.taskSummary ? [`Worker summary (claim): ${safeText(d.taskSummary)}`] : []),
     ...(d.blockerSummary ? [`Worker blocker (claim): ${safeText(d.blockerSummary)}`] : []),
     `Result class: ${d.orchestration === 'COMPLETED' ? 'DOMAIN_BLOCKED (task remains incomplete)' : 'ORCHESTRATION_FAILURE_OR_UNCONFIRMED'}`,

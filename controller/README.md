@@ -197,6 +197,39 @@ The helper wire and terminal JSON preserve that safe primary preview in
 `diagnostic.publicationRecovery`. Raw stderr and protected diagnostics are never
 copied.
 
+## Runtime diagnostic retention
+
+Governed runtime attempts reserve an independent diagnostic capsule under
+`paths.attemptRoot/runtime-diagnostics` before launching the dispatcher. It is
+outside the runtime user's mutable checkout and separate from the root-owned
+primary diagnostic store. File and directory synchronization precede the stored
+reference. Each capsule contains only bounded, allowlisted execution/lifecycle
+fields, OS codes and syscalls, categorical path context, protected sandbox inode
+identity and sanitized store references. Primary bundles may additionally retain
+bounded redacted path context; Outcomes never include those paths or raw streams.
+
+There are eight atomically reserved slots. A capsule and at most one interrupted
+temporary write occupy each slot; unknown, failed or retained attempts are never
+automatically evicted. A full store blocks admission before child launch. A
+successful contained run marks its capsule released only after cleanup succeeds;
+the tiny completion trace remains until a new reservation replaces it under an
+exclusive reclamation claim. Interrupted reclamation also blocks slot reuse and
+preserves both bounded records. Released capsules never imply retained sandbox
+artifacts. A
+failed diagnostic capture/store or cleanup retains the protected attempt artifacts
+and its reference for owner inspection. Inspection and later disposal use the
+execution ID and slot to correlate with the attempt journal and configured work
+root; a separate owner-authorized operation must establish that useful evidence
+has been preserved before removing retained artifacts and freeing that slot.
+This retention policy grants no new arbitrary-delete or diagnostic-read authority.
+
+Physical failures during checkout preparation, attempt journaling, collection and
+terminal publication also use this independent evidence path. An existing runtime
+cause is preserved while a bounded controller cause is appended. Primary-store
+failure is itself recorded in the capsule; if the fallback filesystem is also
+unavailable, terminal evidence reports both unavailable stores explicitly without
+replacing the original exception or deleting attempt artifacts.
+
 Run focused regressions from the repository root with:
 
 ```sh

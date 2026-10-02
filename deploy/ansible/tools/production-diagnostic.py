@@ -565,11 +565,13 @@ def launcher_preflight(install_root: Path) -> dict[str, Any]:
     launcher = install_root / "relay-codex"
     launcher_module = install_root / "relay-codex.mjs"
     diagnostic_helper = install_root / "codex-runtime" / "relay-codex-diagnostic.mjs"
+    cleanup_helper = install_root / "relay-codex-cleanup.py"
     binary = install_root / "codex-runtime" / "bin" / "codex"
     result = {
         "launcher": "present" if launcher.is_file() else "absent",
         "launcherModule": "present" if launcher_module.is_file() else "absent",
         "diagnosticHelper": "present" if diagnostic_helper.is_file() else "absent",
+        "cleanupHelper": "present" if cleanup_helper.is_file() else "absent",
         "binary": "present" if binary.is_file() else "absent",
     }
     if not launcher.is_file():
