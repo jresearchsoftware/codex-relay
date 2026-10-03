@@ -170,7 +170,11 @@ Known Relay-managed units still require their regular-file topology. The scan
 does not inventory all vendor units or expand mutation authority.
 The helper admits active idle runner services only after proving their exact
 unit, Unix identity, MainPID ancestry, cgroup, executable and argument chain
-(`run.sh -> run-helper.sh -> Runner.Listener run`). Real or ambiguous jobs,
+(`run.sh -> run-helper.sh -> Runner.Listener run`). Missing or duplicate chain
+roles and any extra cgroup member (regardless of UID, including child cgroups)
+block admission. Each active runner cgroup must
+contain exactly that three-process chain, revalidated under the production
+operation lock before reservation. Real or ambiguous jobs,
 Codex execution and unknown processes block before reservation or service
 mutation; no manual stop/disable is required for proven idle listeners.
 After reserving recovery evidence, decommission stops/disables

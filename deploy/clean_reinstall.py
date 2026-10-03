@@ -223,6 +223,7 @@ def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_un
     proc = root / 'proc'
     require(proc.is_dir(), 'PROCESS_OBSERVATION_UNAVAILABLE')
     observed = {}
+    members = {name: set() for name in listeners or {}}
     for path in proc.iterdir():
         if not path.name.isdecimal():
             continue
@@ -230,12 +231,21 @@ def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_un
         try:
             uid = path.stat().st_uid
             protected_process = uid in ids.values()
+            groups = (path / 'cgroup').read_text().splitlines() if listeners or stopped_units else []
+            for line in groups:
+                group = line.split(':', 2)[2]
+                for name, listener in (listeners or {}).items():
+                    if group == listener['cgroup'] or group.startswith(listener['cgroup'] + '/'):
+                        # Account for every managed member before filtering by
+                        # UID, including foreign identities and child cgroups.
+                        members[name].add(path.name)
+                        protected_process = True
             status = dict(line.split(':', 1) for line in (path / 'status').read_text().splitlines() if ':' in line)
             uids = [int(value) for value in status['Uid'].split()]
             if stopped_units:
                 # MainPID zero does not prove that a unit has no surviving
                 # children (including Reviewer/root-owned service children).
-                for line in (path / 'cgroup').read_text().splitlines():
+                for line in groups:
                     group = line.split(':', 2)[2]
                     require(not any(group == '/system.slice/' + name or
                                     group.startswith('/system.slice/' + name + '/')
@@ -256,7 +266,6 @@ def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_un
             argv = (path / 'cmdline').read_bytes().rstrip(b'\0').decode().split('\0')
             exe = os.readlink(path / 'exe')
             cwd = os.readlink(path / 'cwd')
-            groups = (path / 'cgroup').read_text().splitlines()
             matches = [value for value in listeners.values() if ids[value['user']] == uid
                        and any(line == '0::' + value['cgroup'] or
                                line.split(':', 2)[1:] == ['name=systemd', value['cgroup']]
@@ -283,14 +292,19 @@ def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_un
                     'WORKERS_NOT_QUIESCENT')
             observed[path.name] = (status['PPid'].strip(), listener['pid'], role)
         except FileNotFoundError:
-            # A disappearing protected process leaves its execution state
-            # ambiguous. Pre-reservation diagnosis is safe; guessing is not.
+            # A disappearing protected identity or managed cgroup member
+            # leaves its execution state ambiguous; guessing is not safe.
             require(not protected_process, 'WORKERS_NOT_QUIESCENT')
         except (OSError, KeyError, UnicodeError, IndexError):
             raise ValueError('REINSTALL_WORKERS_NOT_QUIESCENT') from None
     if listeners:
-        for listener in listeners.values():
+        for name, listener in listeners.items():
             require(listener['pid'] in observed and observed[listener['pid']][2] == 'run.sh',
+                    'WORKERS_NOT_QUIESCENT')
+            require(len(members[name]) == 3 and all(
+                pid in observed and observed[pid][1] == listener['pid'] for pid in members[name]),
+                'WORKERS_NOT_QUIESCENT')
+            require({observed[pid][2] for pid in members[name]} == {'run.sh', 'run-helper.sh', 'listener'},
                     'WORKERS_NOT_QUIESCENT')
         for pid, (parent, main, role) in observed.items():
             if pid != main:

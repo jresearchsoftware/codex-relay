@@ -1,4 +1,5 @@
 """Native filesystem qualification of retirement and interruption containment."""
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import importlib.util
@@ -51,7 +52,8 @@ class Systemd:
             self.units[name] = 'inactive'
             if self.process_root and not self.keep_processes:
                 for process in self.process_root.iterdir():
-                    if (process / 'cgroup').read_text().strip() == '0::/system.slice/' + name:
+                    if any(line.split(':', 2)[2] == '/system.slice/' + name
+                           for line in (process / 'cgroup').read_text().splitlines()):
                         shutil.rmtree(process)
         return SimpleNamespace(returncode=0, stdout='')
 
@@ -123,7 +125,7 @@ def snapshot(path):
                                metadata.st_uid, metadata.st_gid, metadata.st_mtime_ns)
 
 
-def idle_listener(value, *, general=False):
+def idle_listener(value, *, general=False, cgroup_version=2):
     name = reinstall.unit_names(value.config)[4 if general else 3]
     directory = 'general-runner' if general else 'runner'
     base = '/opt/codex-relay/' + directory
@@ -144,16 +146,18 @@ def idle_listener(value, *, general=False):
         (process / 'status').write_text('Uid:\t' + '\t'.join([str(uid)] * 4) + '\nPPid:\t' + parent + '\n')
         (process / 'stat').write_text(pid + ' (fixture) S ' + parent + ' ' + '0 ' * 17 + '100 0\n')
         (process / 'cmdline').write_bytes(b'\0'.join(arg.encode() for arg in args) + b'\0')
-        (process / 'cgroup').write_text('0::/system.slice/' + name + '\n')
+        hierarchy = '0::' if cgroup_version == 2 else '1:name=systemd:'
+        (process / 'cgroup').write_text(hierarchy + '/system.slice/' + name + '\n')
         (process / 'exe').symlink_to(exe)
         (process / 'cwd').symlink_to(base)
     return value.root / 'proc' / str(first + 2)
 
 
 @pytest.mark.parametrize('general', [False, True])
-def test_active_idle_chain_is_retired_after_durable_reservation(installation, general):
+@pytest.mark.parametrize('cgroup_version', [1, 2])
+def test_active_idle_chain_is_retired_after_durable_reservation(installation, general, cgroup_version):
     value = installation
-    idle_listener(value, general=general)
+    idle_listener(value, general=general, cgroup_version=cgroup_version)
     def reserved():
         assert json.loads(value.paths['journal'].read_text())['stage'] == 'RESERVED'
         assert value.paths['operation'].is_file()
@@ -169,6 +173,104 @@ def test_both_idle_runner_units_are_retired_without_operator_stop(installation):
     idle_listener(value, general=True)
     assert run(value)['state'] == 'DECOMMISSIONED'
     assert list((value.root / 'proc').iterdir()) == []
+    assert all((value.paths['install'] / name / '.credentials').is_file()
+               for name in ['runner', 'general-runner'])
+
+
+CHAIN_DAMAGE = ['missing-chain', 'missing-helper', 'missing-listener', 'duplicate-helper',
+                'duplicate-listener', 'duplicate-branch', 'extra-protected', 'extra-root',
+                'extra-foreign', 'extra-root-child-cgroup', 'extra-foreign-child-cgroup',
+                'extra-missing-status']
+
+
+def damage_idle_chain(value, process, damage, monkeypatch):
+    helper = process.parent / str(int(process.name) - 1)
+    if damage in ['missing-chain', 'missing-helper', 'missing-listener']:
+        if damage != 'missing-listener':
+            shutil.rmtree(helper)
+        if damage != 'missing-helper':
+            shutil.rmtree(process)
+        return
+
+    def duplicate(source, pid):
+        extra = source.parent / pid
+        shutil.copytree(source, extra, symlinks=True)
+        if os.getuid() == 0:
+            os.chown(extra, source.stat().st_uid, source.stat().st_gid)
+        return extra
+
+    extra = duplicate(helper if damage in ['duplicate-helper', 'duplicate-branch'] else process, '999')
+    if damage == 'duplicate-branch':
+        branch = duplicate(process, '998')
+        status = branch / 'status'
+        status.write_text(status.read_text().replace('PPid:\t' + helper.name, 'PPid:\t999'))
+    if damage.startswith('duplicate-'):
+        return
+    (extra / 'exe').unlink()
+    (extra / 'exe').symlink_to('/usr/bin/sleep')
+    (extra / 'cmdline').write_bytes(b'/usr/bin/sleep\0infinity\0')
+    if 'child-cgroup' in damage:
+        cgroup = extra / 'cgroup'
+        cgroup.write_text(cgroup.read_text().strip() + '/child\n')
+    if damage == 'extra-missing-status':
+        (extra / 'status').unlink()
+    if 'root' in damage or 'foreign' in damage:
+        uid = 0 if 'root' in damage else 65533
+        (extra / 'status').write_text('Uid:\t' + '\t'.join([str(uid)] * 4) + '\nPPid:\t1\n')
+        if os.getuid() == 0:
+            os.chown(extra, uid, uid)
+        else:
+            original_stat = Path.stat
+            def foreign_stat(path, *args, **kwargs):
+                result = original_stat(path, *args, **kwargs)
+                if path == extra:
+                    fields = list(result)
+                    fields[4] = uid
+                    return os.stat_result(fields)
+                return result
+            monkeypatch.setattr(Path, 'stat', foreign_stat)
+
+
+@pytest.mark.parametrize('general', [False, True])
+@pytest.mark.parametrize('damage', CHAIN_DAMAGE)
+@pytest.mark.parametrize('under_lock', [False, True])
+@pytest.mark.parametrize('cgroup_version', [1, 2])
+def test_inexact_active_chain_blocks_before_any_retirement(installation, general, damage, under_lock,
+                                                          cgroup_version, monkeypatch):
+    value = installation
+    # Keep both units active so an intact chain cannot hide an inexact peer.
+    process = idle_listener(value, general=general, cgroup_version=cgroup_version)
+    idle_listener(value, general=not general)
+    mutated = False
+    def mutate():
+        nonlocal mutated
+        assert not value.paths['journal'].exists()
+        assert not value.paths['operation'].exists()
+        assert not any(operation in ['stop', 'disable'] for operation, _ in value.systemd.calls)
+        damage_idle_chain(value, process, damage, monkeypatch)
+        mutated = True
+    if under_lock:
+        original_lock = reinstall.operation_lock
+        @contextmanager
+        def change_after_lock(*args, **kwargs):
+            with original_lock(*args, **kwargs):
+                # Prove the mutation happens after acquisition, not before the
+                # initial observation or before entering the operation lock.
+                with value.paths['lock'].open('r') as contender:
+                    with pytest.raises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                mutate()
+                yield
+        monkeypatch.setattr(reinstall, 'operation_lock', change_after_lock)
+    else:
+        mutate()
+    with pytest.raises(ValueError, match='WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert mutated
+    assert not value.paths['journal'].exists()
+    assert not value.paths['operation'].exists()
+    assert not any(operation in ['stop', 'disable'] for operation, _ in value.systemd.calls)
+    assert (value.paths['install'] / 'current').is_symlink()
     assert all((value.paths['install'] / name / '.credentials').is_file()
                for name in ['runner', 'general-runner'])
 
