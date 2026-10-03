@@ -7,6 +7,7 @@ evidence for diagnosis, never implicit permission to retry.
 """
 from contextlib import contextmanager
 import fcntl
+import grp
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import re
 import shlex
 import stat
 import subprocess
+import sys
 
 
 def require(condition, code):
@@ -100,10 +102,15 @@ def checked_systemctl(runner, *args):
     return result.stdout
 
 
-def unknown_unit_text(path, root, owner_uid):
-    """Read only a bounded, protected systemd unit chain; never arbitrary targets."""
+def unknown_unit_text(path, root, owner_uid, metadata=None):
+    """Read bounded regular content through protected unit roots and link chains."""
     roots = [root / value for value in ['etc/systemd/system', 'usr/lib/systemd/system',
                                        'lib/systemd/system']]
+    def identity(info):
+        # A successful read may update atime; mutation checks need nanosecond
+        # modification/change times, not the lossy stat_result tuple or atime.
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_uid,
+                info.st_gid, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
     try:
         for _ in range(16):
             # Debian's usr-merge alias is the sole accepted directory symlink.
@@ -117,8 +124,8 @@ def unknown_unit_text(path, root, owner_uid):
                     and path.suffix == '.service', 'UNKNOWN_UNIT_UNCLASSIFIABLE')
             protected(path.parent, root, owner_uid, directory=True)
             info = path.lstat()
-            require(info.st_uid == owner_uid, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
             if stat.S_ISLNK(info.st_mode):
+                require(info.st_uid == owner_uid, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
                 target = Path(os.readlink(path))
                 logical = root / str(target).lstrip('/') if target.is_absolute() else path.parent / target
                 path = Path(os.path.normpath(logical))
@@ -131,17 +138,49 @@ def unknown_unit_text(path, root, owner_uid):
                     return ''
                 continue
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                    and not info.st_mode & 0o022, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                    and info.st_size <= 1024 * 1024, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd) as stream:
-                require(os.fstat(stream.fileno()) == info, 'UNKNOWN_UNIT_UNCLASSIFIABLE')
-                return stream.read()
+            with os.fdopen(fd, 'rb') as stream:
+                require(identity(os.fstat(stream.fileno())) == identity(info), 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                content = stream.read(1024 * 1024 + 1)
+                require(len(content) <= 1024 * 1024 and identity(os.fstat(stream.fileno())) == identity(info)
+                        and identity(path.lstat()) == identity(info), 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                text = content.decode('utf-8')
+                if metadata is not None:
+                    metadata.update(path=path, info=info)
+                return text
     except (OSError, UnicodeError, ValueError):
         raise ValueError('REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links') from None
     raise ValueError('REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links')
 
 
-def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, listeners=None):
+def foreign_unit_warning(unit, metadata, root, owner_uid):
+    info = metadata.get('info')
+    if info is None or (info.st_uid == owner_uid and not info.st_mode & 0o022):
+        return None
+    writers, lookup = [], 'not-group-writable'
+    if info.st_mode & 0o020:
+        try:
+            group = grp.getgrgid(info.st_gid)
+            writers = sorted({account.pw_uid for account in pwd.getpwall()
+                              if (account.pw_gid == info.st_gid or account.pw_name in group.gr_mem)
+                              and account.pw_uid != info.st_uid})
+            lookup = 'listed-other-writers' if writers else 'no-other-listed-account'
+        except KeyError:
+            lookup = 'group-unavailable'
+    return {'unit': '/' + str(unit.relative_to(root)),
+            'inspectedPath': '/' + str(metadata['path'].relative_to(root)),
+            'uid': info.st_uid, 'gid': info.st_gid, 'mode': format(stat.S_IMODE(info.st_mode), '04o'),
+            'groupWriters': writers, 'groupLookup': lookup}
+
+
+def emit_foreign_unit_warning(warning):
+    print('REINSTALL_FOREIGN_UNIT_WARNING;' + json.dumps(warning, sort_keys=True)
+          + ';review-unit-provenance-and-writers;current-content-unrelated;'
+          'content-and-group-membership-can-change-after-inspection', file=sys.stderr)
+
+
+def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, listeners=None, warnings=None):
     units = {}
     names = unit_names(config)
     prefix = '/opt/' + config['environment']['namespace'] + '/'
@@ -152,9 +191,17 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
             continue
         # A missing deployment snapshot cannot let a newly selected unit name
         # hide a differently named service still using this runtime namespace.
+        metadata = {}
         if any(prefix in line and not line.lstrip().startswith(('#', ';'))
-               for line in unknown_unit_text(path, root, owner_uid).splitlines()):
+               for line in unknown_unit_text(path, root, owner_uid, metadata).splitlines()):
             raise ValueError('REINSTALL_UNSUPPORTED_RUNTIME_UNIT')
+        warning = foreign_unit_warning(path, metadata, root, owner_uid)
+        if warning is not None:
+            identity = json.dumps(warning, sort_keys=True)
+            if warnings is None or identity not in warnings:
+                emit_foreign_unit_warning(warning)
+                if warnings is not None:
+                    warnings.add(identity)
     for name in names:
         path = root / 'etc/systemd/system' / name
         result = runner(['/bin/systemctl', 'show', name, '--no-pager',
@@ -430,7 +477,8 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
             require(stat.S_IMODE(path.stat().st_mode) == 0o600, 'ACTIVATION_MARKER_UNSAFE')
             markers.append(name)
     listeners = {}
-    units = inspect_units(config, paths, root, owner_uid, runner, listeners=listeners)
+    warnings = set()
+    units = inspect_units(config, paths, root, owner_uid, runner, listeners=listeners, warnings=warnings)
     workers_quiescent(config, root, user_ids, listeners=listeners)
     journal = {'schemaVersion': 1, 'stage': 'RESERVED', 'sourceRevision': release.name,
                'targetRevision': revision,
@@ -441,7 +489,7 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
     with operation_lock(paths['lock'], root, owner_uid):
         require(not present(paths['operation']) and not present(paths['journal']), 'RECOVERY_REQUIRED')
         listeners = {}
-        require(inspect_units(config, paths, root, owner_uid, runner, listeners=listeners) == units,
+        require(inspect_units(config, paths, root, owner_uid, runner, listeners=listeners, warnings=warnings) == units,
                 'UNIT_STATE_CHANGED')
         workers_quiescent(config, root, user_ids, listeners=listeners)
         # Any interruption from this point leaves a durable reservation. Neither
@@ -454,7 +502,7 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
                 journal['serviceTransition'] = {'unit': name, 'action': action}
                 update_journal(paths['journal'], journal, 'RESERVED')
                 checked_systemctl(runner, action, name)
-        units_after = inspect_units(config, paths, root, owner_uid, runner, stopped=True)
+        units_after = inspect_units(config, paths, root, owner_uid, runner, stopped=True, warnings=warnings)
         require(all(value in ['inactive', 'failed'] for value in units_after.values()), 'SERVICES_NOT_STOPPED')
         workers_quiescent(config, root, user_ids, stopped_units=units_after)
         journal.pop('serviceTransition')
@@ -539,6 +587,90 @@ def validate_remote_result(result, config, revision, report, action):
     return result
 
 
+def safe_reinstall_diagnostic(value):
+    """Admit bounded codes and only the helper's established actionable hints."""
+    if not isinstance(value, str) or not re.fullmatch(r'REINSTALL_[A-Z0-9_]{1,96}(?:;[^;\n\r]+)?', value):
+        return None
+    code, separator, hint = value.partition(';')
+    default = 'inspect-retained-operation-and-reinstall-evidence'
+    if separator and hint not in [default, 'inspect-top-level-systemd-service-links', 'inspect-before-retry']:
+        return None
+    return code + ';' + (hint if separator else default)
+
+
+def parse_remote_warning(line):
+    prefix = 'REINSTALL_FOREIGN_UNIT_WARNING;'
+    suffix = (';review-unit-provenance-and-writers;current-content-unrelated;'
+              'content-and-group-membership-can-change-after-inspection')
+    if not line.startswith(prefix) or not line.endswith(suffix) or len(line) > 65536:
+        return None
+
+    def unique_fields(pairs):
+        fields = {}
+        for key, value in pairs:
+            if key in fields:
+                raise ValueError('duplicate warning field')
+            fields[key] = value
+        return fields
+
+    try:
+        warning = json.loads(line[len(prefix):-len(suffix)], object_pairs_hook=unique_fields)
+    except (ValueError, RecursionError):
+        return None
+    keys = {'unit', 'inspectedPath', 'uid', 'gid', 'mode', 'groupWriters', 'groupLookup'}
+    if not isinstance(warning, dict) or warning.keys() != keys:
+        return None
+
+    def unit_path(value, roots, *, nested=False):
+        if not isinstance(value, str) or len(value) > 4096:
+            return False
+        for root in roots:
+            if value.startswith(root):
+                name = value[len(root):]
+                parts = name.split('/')
+                return ((nested or len(parts) == 1)
+                        and all(0 < len(part) <= 255 and part not in ['.', '..']
+                                and part.isprintable() for part in parts)
+                        and parts[-1].endswith('.service') and parts[-1] != '.service')
+        return False
+
+    roots = ['/etc/systemd/system/', '/usr/lib/systemd/system/', '/lib/systemd/system/']
+    if not unit_path(warning['unit'], roots[:1]) or not unit_path(warning['inspectedPath'], roots, nested=True):
+        return None
+    if any(type(warning[key]) is not int or warning[key] < 0 for key in ['uid', 'gid']):
+        return None
+    if not isinstance(warning['mode'], str) or not re.fullmatch('[0-7]{4}', warning['mode']):
+        return None
+    writers = warning['groupWriters']
+    if not isinstance(writers, list) or any(type(uid) is not int or uid < 0 for uid in writers):
+        return None
+    if warning['groupLookup'] not in ['not-group-writable', 'listed-other-writers',
+                                     'no-other-listed-account', 'group-unavailable']:
+        return None
+    return warning
+
+
+def forward_remote_diagnostics(error, returncode):
+    """Forward validated warnings without reflecting arbitrary remote stderr."""
+    lines = error.splitlines()
+    diagnostics = []
+    for line in lines:
+        warning = parse_remote_warning(line)
+        if warning is not None:
+            emit_foreign_unit_warning(warning)
+        elif returncode != 0:
+            diagnostic = safe_reinstall_diagnostic(line)
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    # SSH banners and opaque/malformed lines are never reflected or treated as
+    # new blockers. Failure still needs one unambiguous final helper diagnostic.
+    if returncode != 0:
+        diagnostic = safe_reinstall_diagnostic(lines[-1]) if lines else None
+        if diagnostic is None or len(diagnostics) != 1:
+            raise ValueError('REINSTALL_REMOTE_ACTION_FAILED;inspect-retained-operation-and-reinstall-evidence')
+        raise ValueError(diagnostic)
+
+
 def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None):
     """Transport config references only; helper never receives token material."""
     require(action in ['decommission', 'complete'], 'ACTION_INVALID')
@@ -555,8 +687,8 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '    result = complete(value["config"], value["revision"])\n'
     program += '    print(json.dumps(result, sort_keys=True))\n'
     program += ('except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:\n'
-                '    code = str(error) if re.fullmatch(r"REINSTALL_[A-Z0-9_]+", str(error)) else "REINSTALL_BLOCKED"\n'
-                '    print(code + ";inspect-retained-operation-and-reinstall-evidence", file=sys.stderr)\n'
+                '    diagnostic = safe_reinstall_diagnostic(str(error)) or safe_reinstall_diagnostic("REINSTALL_BLOCKED")\n'
+                '    print(diagnostic, file=sys.stderr)\n'
                 '    raise SystemExit(1)\n')
     command = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
                '-i', str(key), target['user'] + '@' + target['host'],
@@ -573,11 +705,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
                 break
             except subprocess.TimeoutExpired:
                 payload = None
-        if process.returncode != 0:
-            code = error.strip().split(';')[0]
-            if not re.fullmatch('REINSTALL_[A-Z0-9_]+', code):
-                code = 'REINSTALL_REMOTE_ACTION_FAILED'
-            raise ValueError(code + ';inspect-retained-operation-and-reinstall-evidence')
+        forward_remote_diagnostics(error, process.returncode)
         require(guard is None or guard.poll() is None, 'HOST_LOCK_LOST;inspect-before-retry')
         return validate_remote_result(json.loads(output), config, revision, report, action)
     finally:

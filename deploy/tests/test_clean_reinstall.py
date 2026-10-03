@@ -397,13 +397,17 @@ def test_new_unit_names_cannot_hide_old_namespace_services_without_snapshot(inst
     assert not value.paths['journal'].exists()
 
 
-def test_unknown_indirect_service_runtime_reference_blocks_retirement(installation):
+@pytest.mark.parametrize('mode', [0o644, 0o664, 0o666])
+def test_unknown_indirect_service_runtime_reference_blocks_retirement(installation, mode, capsys):
     value = installation
     unit = value.root / 'etc/systemd/system/owner-sidecar.service'
     unit.write_text('ExecStart=/usr/bin/node /opt/codex-relay/current/sidecar.mjs\n')
+    unit.chmod(mode)
     with pytest.raises(ValueError, match='UNSUPPORTED_RUNTIME_UNIT'):
         run(value)
     assert not value.paths['journal'].exists()
+    assert not value.paths['operation'].exists() and not value.systemd.calls
+    assert not capsys.readouterr().err
 
 
 @pytest.mark.parametrize('unit_root', ['etc/systemd/system', 'usr/lib/systemd/system',
@@ -442,9 +446,9 @@ def test_unrelated_symlink_chain_is_classified_without_retiring_it(installation,
     assert not any(name == link.name for _, name in value.systemd.calls)
 
 
-@pytest.mark.parametrize('shape', ['dangling', 'outside', 'writable', 'directory', 'fifo',
+@pytest.mark.parametrize('shape', ['dangling', 'outside', 'directory', 'fifo',
                                   'cycle', 'directory-link', 'writable-directory', 'hardlink',
-                                  'wrong-owner', 'wrong-link-owner'])
+                                  'wrong-link-owner'])
 def test_unclassifiable_unknown_symlink_fails_closed_without_reading_target(installation, shape, monkeypatch):
     value = installation
     base = value.root / 'usr/lib/systemd/system'
@@ -456,8 +460,6 @@ def test_unclassifiable_unknown_symlink_fails_closed_without_reading_target(inst
         target.unlink()
     elif shape == 'outside':
         target = value.paths['config'] / 'writer-private-key'
-    elif shape == 'writable':
-        target.chmod(0o666)
     elif shape in ['directory', 'fifo']:
         target.unlink()
         target.mkdir() if shape == 'directory' else os.mkfifo(target)
@@ -473,9 +475,9 @@ def test_unclassifiable_unknown_symlink_fails_closed_without_reading_target(inst
     elif shape == 'hardlink':
         os.link(target, base / 'duplicate.service')
     link.symlink_to('/' + str(target.relative_to(value.root)))
-    if shape in ['wrong-owner', 'wrong-link-owner']:
+    if shape == 'wrong-link-owner':
         original = Path.lstat
-        invalid = target if shape == 'wrong-owner' else link
+        invalid = link
         def lstat(path, *args, **kwargs):
             result = original(path, *args, **kwargs)
             if path == invalid:
@@ -493,6 +495,136 @@ def test_unclassifiable_unknown_symlink_fails_closed_without_reading_target(inst
         run(value)
     assert not value.paths['journal'].exists()
     assert not value.systemd.calls
+
+
+@pytest.mark.parametrize('mode', [0o664, 0o666])
+@pytest.mark.parametrize('linked', [False, True])
+def test_mutable_unrelated_foreign_unit_warns_and_is_preserved(installation, capsys, mode, linked):
+    value = installation
+    unit = value.root / 'etc/systemd/system/unrelated.service'
+    target = unit
+    if linked:
+        target = value.root / 'usr/lib/systemd/system/vendor.service'
+        target.parent.mkdir(parents=True)
+        unit.symlink_to('/usr/lib/systemd/system/vendor.service')
+    target.write_text('# /opt/codex-relay/comment\n; /opt/codex-relay/comment\nExecStart=/usr/bin/true\n')
+    target.chmod(mode)
+    before = snapshot(target)
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert snapshot(target) == before
+    assert not any(name == unit.name for _, name in value.systemd.calls)
+    warning = capsys.readouterr().err
+    assert warning.count('REINSTALL_FOREIGN_UNIT_WARNING;') == 1
+    assert '/etc/systemd/system/unrelated.service' in warning
+    assert '"mode": "' + format(mode, '04o') + '"' in warning
+    assert '"uid": ' + str(target.stat().st_uid) in warning
+    assert '"gid": ' + str(target.stat().st_gid) in warning
+    assert 'review-unit-provenance-and-writers' in warning
+    assert 'content-and-group-membership-can-change-after-inspection' in warning
+
+
+def test_normal_foreign_read_atime_change_does_not_count_as_mutation(installation, capsys):
+    value = installation
+    unit = value.root / 'etc/systemd/system/unrelated.service'
+    unit.write_text('ExecStart=/usr/bin/true\n')
+    unit.chmod(0o644)
+    os.utime(unit, ns=(1, unit.stat().st_mtime_ns))
+    before = snapshot(unit)
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert snapshot(unit) == before
+    assert not capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='actual foreign ownership requires root')
+@pytest.mark.parametrize('uid,gid,mode', [(65534, 65534, 0o644), (0, 65534, 0o664), (65534, 0, 0o664)])
+@pytest.mark.parametrize('reference', [False, True])
+def test_actual_foreign_owner_and_group_policy(installation, capsys, uid, gid, mode, reference):
+    value = installation
+    unit = value.root / 'etc/systemd/system/foreign-owner.service'
+    unit.write_text('ExecStart=' + ('/opt/codex-relay/current/sidecar' if reference else '/usr/bin/true') + '\n')
+    os.chown(unit, uid, gid)
+    unit.chmod(mode)
+    before = snapshot(unit)
+    if reference:
+        with pytest.raises(ValueError, match='REINSTALL_UNSUPPORTED_RUNTIME_UNIT'):
+            run(value)
+        assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+        assert not value.systemd.calls
+        assert not capsys.readouterr().err
+    else:
+        assert run(value)['state'] == 'DECOMMISSIONED'
+        warning = capsys.readouterr().err
+        assert '"uid": ' + str(uid) in warning and '"gid": ' + str(gid) in warning
+        assert '"groupLookup":' in warning and '"groupWriters":' in warning
+        if uid == 0 and gid == 65534:
+            assert 65534 in json.loads(warning.split(';')[1])['groupWriters']
+    assert snapshot(unit) == before
+
+
+@pytest.mark.parametrize('group_case', ['owner-only', 'primary', 'supplementary', 'unavailable'])
+def test_warning_analyzes_group_membership(installation, capsys, monkeypatch, group_case):
+    value = installation
+    unit = value.root / 'etc/systemd/system/group-writable.service'
+    unit.write_text('ExecStart=/usr/bin/true\n')
+    unit.chmod(0o664)
+    uid, gid = unit.stat().st_uid, unit.stat().st_gid
+    owner = SimpleNamespace(pw_name='owner', pw_uid=uid, pw_gid=gid)
+    writer = SimpleNamespace(pw_name='writer', pw_uid=uid + 100, pw_gid=gid if group_case == 'primary' else gid + 1)
+    if group_case == 'unavailable':
+        def missing_group(_):
+            raise KeyError('group unavailable')
+        monkeypatch.setattr(reinstall.grp, 'getgrgid', missing_group)
+    else:
+        monkeypatch.setattr(reinstall.grp, 'getgrgid', lambda _: SimpleNamespace(
+            gr_mem=['writer'] if group_case == 'supplementary' else []))
+    monkeypatch.setattr(reinstall.pwd, 'getpwall', lambda: [owner, writer])
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    warning = json.loads(capsys.readouterr().err.split(';')[1])
+    assert warning['groupWriters'] == ([writer.pw_uid] if group_case in ['primary', 'supplementary'] else [])
+    assert warning['groupLookup'] == ('group-unavailable' if group_case == 'unavailable' else
+                                     'listed-other-writers' if warning['groupWriters'] else 'no-other-listed-account')
+
+
+@pytest.mark.parametrize('shape', ['oversized', 'encoding', 'unreadable', 'changed-before-open'])
+def test_uninspectable_regular_foreign_unit_fails_before_reservation(installation, monkeypatch, shape):
+    value = installation
+    unit = value.root / 'etc/systemd/system/uninspectable.service'
+    unit.write_bytes(b'ExecStart=/usr/bin/true\n')
+    if shape == 'oversized':
+        unit.write_bytes(b'#' * (1024 * 1024 + 1))
+    elif shape == 'encoding':
+        unit.write_bytes(b'\xff')
+    else:
+        original = os.open
+        def altered_open(path, *args, **kwargs):
+            if Path(path) == unit:
+                if shape == 'unreadable':
+                    raise PermissionError('synthetic inaccessible unit')
+                unit.write_text('ExecStart=/opt/codex-relay/current/sidecar\n')
+            return original(path, *args, **kwargs)
+        monkeypatch.setattr(os, 'open', altered_open)
+    with pytest.raises(ValueError, match='UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links'):
+        run(value)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert not value.systemd.calls
+
+
+def test_foreign_reference_added_under_operation_lock_blocks_reservation(installation, monkeypatch):
+    value = installation
+    unit = value.root / 'etc/systemd/system/mutable.service'
+    unit.write_text('ExecStart=/usr/bin/true\n')
+    unit.chmod(0o664)
+    original = reinstall.operation_lock
+    @contextmanager
+    def change_after_lock(*args):
+        with original(*args):
+            unit.write_text('ExecStart=/opt/codex-relay/current/sidecar\n')
+            yield
+    monkeypatch.setattr(reinstall, 'operation_lock', change_after_lock)
+    with pytest.raises(ValueError, match='REINSTALL_UNSUPPORTED_RUNTIME_UNIT'):
+        run(value)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert all(action == 'show' for action, _ in value.systemd.calls)
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason='synthetic device identity requires root')

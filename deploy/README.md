@@ -158,14 +158,28 @@ registration and protected state. A valid protected snapshot compares complete
 environment intent when available. Its absence is reported as an unavailable
 comparison for owner review of the selected durable configuration; it is not
 another required generated artifact. Invalid or different snapshots, unknown
-units and unsupported overrides block before mutation. The defensive scan also
+runtime units and unsupported overrides block before mutation. The defensive scan also
 classifies unknown top-level `/etc/systemd/system/*.service` symlinks: targets
 must remain in protected `/etc/systemd/system`, `/usr/lib/systemd/system` or
 `/lib/systemd/system` unit roots (including the proven `/lib -> usr/lib` alias).
 Bounded unit-link chains and verified `/dev/null` masks are classified without
 arbitrary traversal; dangling, unsafe or unclassifiable links report
 `REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE` and require inspection of top-level
-systemd service links. Namespace references in non-comment lines block retirement.
+systemd service links. Regular foreign units need not meet Relay's managed-unit
+ownership/mode policy: otherwise safely readable current content is inspected
+through protected parents with no-follow opens, a 1 MiB limit and metadata
+rechecks. Namespace references in non-comment lines block retirement regardless
+of the foreign file's owner or permissions. Mutable or differently owned foreign
+files with unrelated inspected content continue with
+`REINSTALL_FOREIGN_UNIT_WARNING`. The warning identifies the original unit and
+inspected target, UID/GID, mode and other listed accounts that can write through
+the group (including primary and supplementary membership), or unavailable group
+lookup. An owner-only listed group is distinguished from listed other writers;
+the current account listing is not proof against future or unlisted identities.
+Review the unit's provenance and writers: content and group membership can change
+after inspection. This warning does not authorize changing the foreign unit.
+Uninspectable content, detected read-time mutation, unsafe parents/link chains,
+non-regular targets and multiple hard links remain fail closed.
 Known Relay-managed units still require their regular-file topology. The scan
 does not inventory all vendor units or expand mutation authority.
 The helper admits active idle runner services only after proving their exact
