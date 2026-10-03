@@ -205,7 +205,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
     for name in names:
         path = root / 'etc/systemd/system' / name
         result = runner(['/bin/systemctl', 'show', name, '--no-pager',
-                         '--property=LoadState,ActiveState,MainPID,ControlPID,FragmentPath,DropInPaths,ControlGroup'],
+                         '--property=LoadState,ActiveState,SubState,MainPID,ControlPID,FragmentPath,DropInPaths,ControlGroup'],
                         capture_output=True, text=True)
         require(result.returncode == 0, 'UNIT_OBSERVATION_UNAVAILABLE')
         fields = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
@@ -231,11 +231,22 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         require(all(value == allowed for value in drops), 'UNIT_OVERRIDE_UNSUPPORTED')
         for drop in drops:
             protected(root / drop.lstrip('/'), root, owner_uid)
-        require(fields.get('ActiveState') in ['active', 'inactive', 'failed']
-                and fields.get('ControlPID') == '0', 'UNIT_TRANSITION_PENDING')
-        require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
+        require(fields.get('ActiveState') in ['active', 'inactive', 'failed'], 'UNIT_TRANSITION_PENDING')
+        timer = name.endswith('.timer')
+        if timer:
+            # Timer units expose timing state, not service PID properties. The
+            # associated managed recovery service is checked independently.
+            require((fields['ActiveState'], fields.get('SubState')) in [
+                        ('active', 'waiting'), ('active', 'elapsed'),
+                        ('inactive', 'dead'), ('failed', 'failed')]
+                    and fields.get('MainPID', '0') == '0' and fields.get('ControlPID', '0') == '0'
+                    and not fields.get('ControlGroup'), 'UNIT_TRANSITION_PENDING')
+        else:
+            require(fields.get('ControlPID') == '0', 'UNIT_TRANSITION_PENDING')
+            require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
         if stopped:
-            require(fields.get('ActiveState') in ['inactive', 'failed'] and fields.get('MainPID') == '0',
+            require(fields.get('ActiveState') in ['inactive', 'failed']
+                    and (timer or fields.get('MainPID') == '0'),
                     'WORKERS_NOT_QUIESCENT')
         elif name in names[3:5] and fields['ActiveState'] == 'active':
             runner_root = '/opt/' + config['environment']['namespace'] + '/' + (

@@ -193,8 +193,12 @@ Codex execution and unknown processes block before reservation or service
 mutation; no manual stop/disable is required for proven idle listeners.
 After reserving recovery evidence, decommission stops/disables
 the proven managed services, retires activation markers and moves the managed
-runtime into a protected recovery archive. Every managed unit must have MainPID
-and ControlPID zero, and all runner/runtime identities must be process-free
+runtime into a protected recovery archive. The recovery timer is observed through
+its explicit stable `ActiveState`/`SubState`; service-only PID properties may be
+absent on a timer. A running/transitioning timer still blocks admission, and
+the associated recovery service is checked independently. The timer is stopped
+first and must then be `inactive/dead` or `failed/failed`. Every managed service
+must have MainPID and ControlPID zero, and all runner/runtime identities must be process-free
 after stop before the archive move. It retains complete intended runner
 directories at their original paths, all `/etc` and `/var/lib` consumer state,
 external credentials, TLS, and Writer/Reviewer durable evidence. Fresh apply

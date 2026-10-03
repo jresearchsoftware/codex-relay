@@ -39,6 +39,11 @@ class Systemd:
         _, operation, name, *_ = arguments
         self.calls.append((operation, name))
         if operation == 'show':
+            if name.endswith('.timer'):
+                return SimpleNamespace(returncode=0, stdout='\n'.join([
+                    'LoadState=loaded', 'ActiveState=' + self.units[name],
+                    'SubState=' + ('waiting' if self.units[name] == 'active' else 'dead'),
+                    'FragmentPath=/etc/systemd/system/' + name, 'DropInPaths=']))
             return SimpleNamespace(returncode=0, stdout='\n'.join([
                 'LoadState=loaded', 'ActiveState=' + self.units[name],
                 'MainPID=' + (self.main_pids.get(name, '42') if self.units[name] == 'active' else '0'),
@@ -117,6 +122,78 @@ def installation(tmp_path, request):
 def run(value):
     return reinstall.decommission(value.config, TARGET, value.report, root=value.root,
                                  owner_uid=os.getuid(), user_ids=value.user_ids, runner=value.systemd)
+
+
+@pytest.mark.parametrize('active,substate', [('active', 'waiting'), ('active', 'elapsed'),
+                                          ('inactive', 'dead'), ('failed', 'failed')])
+def test_real_timer_properties_without_service_pids_complete_retirement(installation, active, substate):
+    value = installation
+    timer = reinstall.unit_names(value.config)[0]
+    value.systemd.units[timer] = active
+    original = value.systemd
+    def observed_timer(arguments, **kwargs):
+        result = original(arguments, **kwargs)
+        if arguments[1:3] == ['show', timer] and value.systemd.units[timer] == active:
+            result.stdout = result.stdout.replace('SubState=waiting', 'SubState=' + substate)
+            result.stdout = result.stdout.replace('SubState=dead', 'SubState=' + substate)
+        return result
+    result = reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                                   owner_uid=os.getuid(), user_ids=value.user_ids, runner=observed_timer)
+    assert result['state'] == 'DECOMMISSIONED'
+    assert ('stop', timer) in value.systemd.calls and ('disable', timer) in value.systemd.calls
+    assert json.loads(value.paths['journal'].read_text())['units'][timer] == active
+
+
+@pytest.mark.parametrize('state', ['SubState=running', 'SubState=unknown', 'MainPID=123',
+                                  'ControlPID=123', 'ControlGroup=/system.slice/unexpected',
+                                  'ActiveState=activating', 'ActiveState=deactivating',
+                                  'ActiveState=inactive', 'SubState=', 'SubState'])
+def test_ambiguous_or_transitioning_timer_fails_before_reservation(installation, state):
+    value = installation
+    timer = reinstall.unit_names(value.config)[0]
+    value.systemd.units[timer] = 'active'
+    original = value.systemd
+    def timer_transition(arguments, **kwargs):
+        result = original(arguments, **kwargs)
+        if arguments[1:3] == ['show', timer]:
+            key = state.split('=', 1)[0]
+            result.stdout = '\n'.join(line for line in result.stdout.splitlines()
+                                      if not line.startswith(key + '=')) + '\n' + state
+        return result
+    with pytest.raises(ValueError, match='REINSTALL_UNIT_TRANSITION_PENDING'):
+        reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                               owner_uid=os.getuid(), user_ids=value.user_ids, runner=timer_transition)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert all(operation == 'show' for operation, _ in value.systemd.calls)
+
+
+@pytest.mark.parametrize('property_name,code', [('ControlPID', 'UNIT_TRANSITION_PENDING'),
+                                              ('MainPID', 'UNIT_IDENTITY_UNPROVEN')])
+def test_missing_pid_property_on_service_still_fails_closed(installation, property_name, code):
+    value = installation
+    service = reinstall.unit_names(value.config)[2]
+    original = value.systemd
+    def service_without_pid(arguments, **kwargs):
+        result = original(arguments, **kwargs)
+        if arguments[1:3] == ['show', service]:
+            result.stdout = '\n'.join(line for line in result.stdout.splitlines()
+                                      if not line.startswith(property_name + '='))
+        return result
+    with pytest.raises(ValueError, match='REINSTALL_' + code):
+        reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                               owner_uid=os.getuid(), user_ids=value.user_ids, runner=service_without_pid)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert all(operation == 'show' for operation, _ in value.systemd.calls)
+
+
+def test_active_recovery_service_still_blocks_with_stable_timer(installation):
+    value = installation
+    timer, service = reinstall.unit_names(value.config)[:2]
+    value.systemd.units[timer] = value.systemd.units[service] = 'active'
+    with pytest.raises(ValueError, match='REINSTALL_WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert all(operation == 'show' for operation, _ in value.systemd.calls)
 
 
 def snapshot(path):
