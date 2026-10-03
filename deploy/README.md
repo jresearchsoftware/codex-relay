@@ -158,14 +158,28 @@ registration and protected state. A valid protected snapshot compares complete
 environment intent when available. Its absence is reported as an unavailable
 comparison for owner review of the selected durable configuration; it is not
 another required generated artifact. Invalid or different snapshots, unknown
-units and unsupported overrides block before mutation. The defensive scan also
+runtime units and unsupported overrides block before mutation. The defensive scan also
 classifies unknown top-level `/etc/systemd/system/*.service` symlinks: targets
 must remain in protected `/etc/systemd/system`, `/usr/lib/systemd/system` or
 `/lib/systemd/system` unit roots (including the proven `/lib -> usr/lib` alias).
 Bounded unit-link chains and verified `/dev/null` masks are classified without
 arbitrary traversal; dangling, unsafe or unclassifiable links report
 `REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE` and require inspection of top-level
-systemd service links. Namespace references in non-comment lines block retirement.
+systemd service links. Regular foreign units need not meet Relay's managed-unit
+ownership/mode policy: otherwise safely readable current content is inspected
+through protected parents with no-follow opens, a 1 MiB limit and metadata
+rechecks. Namespace references in non-comment lines block retirement regardless
+of the foreign file's owner or permissions. Mutable or differently owned foreign
+files with unrelated inspected content continue with
+`REINSTALL_FOREIGN_UNIT_WARNING`. The warning identifies the original unit and
+inspected target, UID/GID, mode and other listed accounts that can write through
+the group (including primary and supplementary membership), or unavailable group
+lookup. An owner-only listed group is distinguished from listed other writers;
+the current account listing is not proof against future or unlisted identities.
+Review the unit's provenance and writers: content and group membership can change
+after inspection. This warning does not authorize changing the foreign unit.
+Uninspectable content, detected read-time mutation, unsafe parents/link chains,
+non-regular targets and multiple hard links remain fail closed.
 Known Relay-managed units still require their regular-file topology. The scan
 does not inventory all vendor units or expand mutation authority.
 The helper admits active idle runner services only after proving their exact
@@ -179,13 +193,27 @@ Codex execution and unknown processes block before reservation or service
 mutation; no manual stop/disable is required for proven idle listeners.
 After reserving recovery evidence, decommission stops/disables
 the proven managed services, retires activation markers and moves the managed
-runtime into a protected recovery archive. Every managed unit must have MainPID
-and ControlPID zero, and all runner/runtime identities must be process-free
+runtime into a protected recovery archive. The recovery timer is observed through
+its explicit stable `ActiveState`/`SubState`; service-only PID properties may be
+absent on a timer. A running/transitioning timer still blocks admission, and
+the associated recovery service is checked independently. The timer is stopped
+first and must then be `inactive/dead` or `failed/failed`. Every managed service
+must have MainPID and ControlPID zero, and all runner/runtime identities must be process-free
 after stop before the archive move. It retains complete intended runner
 directories at their original paths, all `/etc` and `/var/lib` consumer state,
 external credentials, TLS, and Writer/Reviewer durable evidence. Fresh apply
-and clean post-check follow while the host lock remains held. Reactivation and
-live qualification remain explicit owner transitions.
+and clean post-check follow while the host lock remains held. The validated
+same-invocation reinstall continuation restores the normal recovery timer during
+fresh apply; an unfinished apply record still prevents its helper from starting
+Reviewer or runners. Generic recovery without that journal binding stays
+deferred. Its activation-relative deadline supplies a fresh first tick when
+retained boot history and forgotten recovery-service timestamps leave no
+deadline after reinstall; the existing unit-relative interval supplies later
+ticks. Both clean and ordinary production post-check require the timer to be
+active/enabled and waiting with a finite monotonic deadline, or running its
+callback, through read-only inspection. An elapsed timer with no scheduled tick
+fails this gate. Reactivation and live qualification remain explicit owner
+transitions.
 
 Retirement reserves the normal production operation plus a bounded reinstall
 recovery journal before its first mutation. Unknown or failed transitions retain

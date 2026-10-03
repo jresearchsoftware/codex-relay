@@ -192,6 +192,50 @@
       check_mode: false
       when: relay_deployment_profile == 'production'
 
+    - name: Inspect the recovery timer during production post-check
+      ansible.builtin.command:
+        argv: ['systemctl', '{{ item }}', '{{ relay_reviewer_recovery_timer_name }}']
+      loop: [is-active, is-enabled]
+      register: relay_production_final_recovery_timer
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'post-check'
+
+    - name: Inspect the next recovery timer deadline during production post-check
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - '{{ relay_reviewer_recovery_timer_name }}'
+          - --property=SubState,NextElapseUSecMonotonic
+      register: relay_production_final_recovery_timer_schedule
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'post-check'
+
+    - name: Require the normal recovery timer after production install
+      ansible.builtin.assert:
+        that:
+          - relay_production_final_recovery_timer.results[0].stdout == 'active'
+          - relay_production_final_recovery_timer.results[1].stdout in ['enabled', 'enabled-runtime']
+          - relay_production_final_recovery_timer_schedule.rc == 0
+          - >-
+            'SubState=running' in relay_production_final_recovery_timer_schedule.stdout_lines or
+            (
+              'SubState=waiting' in relay_production_final_recovery_timer_schedule.stdout_lines and
+              relay_production_final_recovery_timer_schedule.stdout is search('(?m)^NextElapseUSecMonotonic=[1-9][^\r\n]*$')
+            )
+        fail_msg: 'PRODUCTION_RECOVERY_TIMER_POSTCHECK_FAILED'
+      when:
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'post-check'
+
     - name: Verify the actual Reviewer executable after owner apply or post-check
       ansible.builtin.include_tasks: tasks/production-reviewer-process-validation.yml
       when:
