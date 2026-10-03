@@ -13,6 +13,7 @@ import { CODEX_RESULT_SCHEMA, isBoundedCodexRuntimeIdentifier, normalizeCodexSem
 import { WriterBlockedError } from "./contracts.mjs";
 import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig } from "../../controller/src/diagnostics.mjs";
 import { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
+import { normalizeCodexUsage, usageFromCodexJsonLines } from "../../controller/src/codex-usage.mjs";
 
 export const CODEX_SUDO_PATH = "/usr/bin/sudo";
 export const CODEX_RUNTIME_USER = CONSUMER.runtimeUser;
@@ -190,8 +191,10 @@ export function parseLauncherDiagnostic(stderr, { truncated = false } = {}) {
     try {
       const value = JSON.parse(line);
       if (value?.source !== "relay-codex-launcher" || value?.schemaVersion !== 1) continue;
-      if (typeof value.code !== "string" || !/^[A-Z0-9_]+$/.test(value.code)) continue;
-      if (!Number.isInteger(value.bytes) || value.bytes < 0 || value.bytes > 1024 * 1024) continue;
+      if (typeof value.code !== "string" || !/^[A-Z0-9_]{1,80}$/.test(value.code)) continue;
+      // The launcher reports total observed bytes, which can exceed its capture
+      // cap. Bound the numeric representation, not that observation to the cap.
+      if (!Number.isSafeInteger(value.bytes) || value.bytes < 0) continue;
       if (typeof value.preview !== "string" || Buffer.byteLength(value.preview, "utf8") > 1024) continue;
       if (/[\u0000-\u001f\u007f-\u009f]/.test(value.preview)) continue;
       const debug = value.debug && typeof value.debug === "object" && typeof value.debug.stderr === "string" && Buffer.byteLength(value.debug.stderr, "utf8") <= MAX_DEBUG_DIAGNOSTIC_BYTES
@@ -226,6 +229,7 @@ function nativeIdentifier(event, names) {
 }
 
 export function parseCodexJsonLines(stdout, evidence = {}) {
+  evidence.codexUsage = usageFromCodexJsonLines(stdout, { truncated: evidence.codexStdoutTruncated === true });
   const lines = String(stdout ?? "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (lines.length === 0) throw new WriterBlockedError("CODEX_JSON_INVALID", "Codex must return structured JSON events");
   let threadId;
@@ -323,17 +327,28 @@ function timeoutFrom(source) {
   return Number.isInteger(configured) && configured >= 1000 && configured <= 2 * 60 * 60 * 1000 ? configured : DEFAULT_CODEX_RUNTIME_TIMEOUT_MS;
 }
 
-function addDiagnosticDetails(error, diagnostic, store, childExitCode, signal, childStarted) {
+function addDiagnosticDetails(error, diagnostic, store, childStarted) {
   if (!(error instanceof WriterBlockedError)) return;
   const details = error.details && typeof error.details === "object" ? error.details : {};
   const childActuallyStarted = diagnostic ? diagnostic.childStarted === true : childStarted === true;
   const resultParseFailure = ["CODEX_JSON_INVALID", "CODEX_RESULT_MISSING", "CODEX_RESULT_INVALID"].includes(error.code);
+  // The launcher process exit is not the inner Codex child's exit. Missing
+  // inner evidence stays unavailable, even when the outer process exited 64.
+  const inner = diagnostic ? {
+    diagnosticCode: diagnostic.code, diagnosticBytes: diagnostic.bytes, diagnosticTruncated: diagnostic.truncated,
+    childExitCode: diagnostic.childExitCode, signal: diagnostic.signal,
+    childStarted: diagnostic.childStarted, childState: diagnostic.childState,
+    primaryCause: /^[A-Z][A-Z0-9_]{0,79}$/.test(diagnostic.primaryCause ?? '') ? diagnostic.primaryCause
+      : !['CODEX_EXIT_OK', 'UNCLASSIFIED_CHILD_FAILURE'].includes(diagnostic.code) ? diagnostic.code : details.primaryCause ?? null
+  } : {};
   const enriched = {
     ...details,
-    ...(diagnostic ? { diagnosticCode: diagnostic.code, diagnosticBytes: diagnostic.bytes, diagnosticTruncated: diagnostic.truncated } : {}),
-    ...(Number.isInteger(childExitCode) ? { childExitCode } : {}),
-    ...(typeof signal === "string" ? { signal } : {}),
-    ...(diagnostic || typeof childStarted === "boolean" ? { childStarted: diagnostic ? diagnostic.childStarted : childStarted, childState: diagnostic?.childState ?? (typeof childStarted === "boolean" ? (childStarted ? "started" : "not_started") : "unknown"), primaryCause: diagnostic?.primaryCause ?? details.primaryCause ?? null } : {}),
+    ...(typeof childStarted === "boolean" ? { childStarted, childState: childStarted ? 'started' : 'not_started' } : {}),
+    ...inner,
+    // Refresh the nested reference too: an earlier generic runtime checkpoint
+    // must not shadow the diagnostic received from the governed launcher.
+    ...(diagnostic ? { failureDiagnostic: { ...details.failureDiagnostic, ...inner,
+      bytes: diagnostic.bytes, truncated: diagnostic.truncated } } : {}),
     ...(store ? { diagnosticStore: store } : {})
   };
   const failureDiagnostic = failureDiagnosticFromDetails(enriched, {
@@ -371,6 +386,7 @@ export async function runGovernedCodexTask({
   resultSchema = CODEX_RESULT_SCHEMA
 }) {
   const executionId = attemptId ?? `codex-${randomUUID()}`;
+  evidence.codexUsage = normalizeCodexUsage();
   // Reservation precedes workspace mutation and execution. A full or failed
   // independent store prevents another attempt from consuming evidence space.
   const capsule = await (existingFallback ? openFallback : fallbackStore)({ executionId });
@@ -510,11 +526,12 @@ export async function runGovernedCodexTask({
     childSignal = exit.signal;
     diagnosticPhases.push("child-closed");
     await checkpoint({ stage: 'codex-child', boundary: 'codex-child', operation: 'child-result',
-      childExitCode, signal: childSignal, lastSuccessfulBoundary: 'launcher' });
+      lastSuccessfulBoundary: 'launcher' });
     evidence.codexExitCode = childExitCode;
     evidence.codexStdoutBytes = stdoutBytes;
     evidence.codexStdoutCapturedBytes = stdoutCapturedBytes;
     evidence.codexStdoutTruncated = stdoutTruncated;
+    evidence.codexUsage = usageFromCodexJsonLines(stdout, { truncated: stdoutTruncated });
     if (childExitCode !== 0 || childSignal) {
       launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
       evidence.codexChildStarted = launcherDiagnostic.childStarted;
@@ -559,10 +576,14 @@ export async function runGovernedCodexTask({
     let store;
     const safeCode = (error, fallback) => /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : fallback;
     const cause = pendingError?.runtimeCause ?? pendingError;
+    if (pendingError && launcherDiagnostic) addDiagnosticDetails(pendingError, launcherDiagnostic, undefined, evidence.codexChildStarted);
     state = { ...state, childState: evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : state.childState,
-      ...(pendingError ? { primaryCause: pendingError.details?.primaryCause ?? pendingError.code,
-        failureDiagnostic: { code: pendingError.code, primaryCause: pendingError.details?.primaryCause ?? pendingError.code,
-          stage: state.stage, boundary: state.boundary, operation: state.operation,
+      ...(launcherDiagnostic ? { childExitCode: launcherDiagnostic.childExitCode, signal: launcherDiagnostic.signal } : {}),
+      ...(pendingError ? { primaryCause: pendingError.details?.primaryCause ?? (launcherDiagnostic ? null : pendingError.code),
+        failureDiagnostic: { ...pendingError.details?.failureDiagnostic, code: pendingError.code,
+          primaryCause: pendingError.details?.primaryCause ?? (launcherDiagnostic ? null : pendingError.code),
+          stage: pendingError.details?.failureDiagnostic?.stage ?? state.stage,
+          boundary: pendingError.details?.failureDiagnostic?.boundary ?? state.boundary, operation: state.operation,
           syscall: cause?.syscall, pathContext: state.pathContext } } : {}) };
     try {
       // This capsule already contains the operation about to run. Even a failed
@@ -609,7 +630,7 @@ export async function runGovernedCodexTask({
       failure.details = { ...state, ...failure.details, executionId, fallbackReference: capsule.reference,
         cleanup: state.cleanup, persistence: state.persistence, retention: state.retention,
         lastSuccessfulBoundary: state.lastSuccessfulBoundary, ...(store ? { diagnosticStore: store } : {}) };
-      addDiagnosticDetails(failure, launcherDiagnostic, store, childExitCode, childSignal, evidence.codexChildStarted);
+      addDiagnosticDetails(failure, launcherDiagnostic, store, evidence.codexChildStarted);
       // Do not carry Error objects or raw OS paths across the worker wire.
       delete failure.runtimeCause;
     }

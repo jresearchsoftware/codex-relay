@@ -96,16 +96,17 @@ class ConsumerWorkflowTests(unittest.TestCase):
     def test_candidate_keeps_disposable_exact_head_validation(self):
         self.assertEqual(set(self.validation['on']), {'pull_request', 'push'})
         self.assertEqual(self.validation['permissions'], {'contents': 'read'})
-        job, = self.validation['jobs'].values()
-        self.assertEqual(job['name'], 'Candidate checks')
-        self.assertEqual(job['runs-on'], 'ubuntu-24.04')
-        checkout = job['steps'][0]
-        self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.head.sha || github.sha }}')
-        self.assertIs(checkout['with']['persist-credentials'], False)
-        self.assertEqual(checkout['with']['fetch-depth'], 0)
-        for step in job['steps']:
-            if 'uses' in step:
-                self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
+        self.assertEqual(self.validation['jobs']['candidate']['name'], 'Candidate checks')
+        for job in self.validation['jobs'].values():
+            self.assertEqual(job['runs-on'], 'ubuntu-24.04')
+            self.assertNotIn('permissions', job)
+            checkout = job['steps'][0]
+            self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.head.sha || github.sha }}')
+            self.assertIs(checkout['with']['persist-credentials'], False)
+            self.assertEqual(checkout['with']['fetch-depth'], 0)
+            for step in job['steps']:
+                if 'uses' in step:
+                    self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
         self.assertFalse((WORKFLOWS / 'ci.yml').exists(), 'Avoid duplicate candidate check producers')
 
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')

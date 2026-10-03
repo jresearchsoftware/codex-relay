@@ -73,3 +73,48 @@ jobs:
 
       - name: Scan candidate
         run: python3 scripts/check-candidate.py
+
+  runtime:
+    name: Governed runtime qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Prepare disposable qualification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible-core python3-pytest python3-yaml python3-jinja2
+          # Installed wrappers intentionally use /usr/bin/node. Qualify that
+          # same path with the selected toolchain on this disposable VM only.
+          sudo install -m 0755 "$(command -v node)" /usr/bin/node
+          git rev-parse HEAD
+          /usr/bin/node --version
+          /usr/bin/python3 --version
+          /usr/bin/ansible-playbook --version
+
+      - name: Test deployment and launcher contracts
+        run: |
+          # Protected-path fixtures also need synthetic root ownership; this
+          # capability belongs only to the disposable hosted qualification VM.
+          sudo /usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests
+          node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
+
+      - name: Qualify exact official Codex release without model calls
+        run: /usr/bin/python3 deploy/ansible/tests/qualify_codex_cli.py
+
+      - name: Qualify installed runtime in disposable namespaces
+        # Synthetic users/credentials and transport only. This does not access
+        # an installed consumer or grant deployment/publication authority.
+        run: sudo /usr/bin/python3 deploy/ansible/tests/installed_runtime_proof.py

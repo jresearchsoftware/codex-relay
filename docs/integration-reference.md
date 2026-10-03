@@ -102,13 +102,27 @@ has only `status` (`success`/`blocked`), `summary`, `validation` (claims), and
 [result schema](../runtime/src/codex-result-schema.mjs). Native `thread_id` and
 `session_id`, when emitted, supply runtime identity; absent values stay unavailable.
 
+The pinned 0.160.0 CLI sends the output schema to its provider; Relay still
+validates the returned semantic result locally. One unambiguous native
+`turn.completed.usage` supplies bounded native session-total counters separately
+from the worker result. Missing fields remain `UNAVAILABLE`; total tokens and
+actual model/effort are not inferred. See the
+[version-specific contract and zero-counter caveat](codex/cli-integration.md).
+
 Stderr carries bounded diagnostics, not functional results. A launcher diagnostic
-is a JSON line with `source="relay-codex-launcher"`, `schemaVersion=1`, uppercase
-`code`, integer `bytes` (0–1048576), and a control-free `preview` (at most 1024
+is a JSON line with `source="relay-codex-launcher"`, `schemaVersion=1`, bounded uppercase
+`code`, safe integer `bytes` (0–9007199254740991), and a control-free `preview` (at most 1024
 bytes), plus `truncated`. Report inner `childStarted`/`childState`
 (`started`/`not_started`/`unknown`), optional `childExitCode`, `signal`, and
 `primaryCause` truthfully. Outer launcher exit is not evidence that Codex started.
 Optional debug data is bounded by the runtime parser and must be redacted.
+`bytes` counts all observed stderr, including bytes beyond the unchanged capture
+limit; that total must not cause a genuinely truncated diagnostic to be discarded.
+
+Terminal Outcomes expose only the categorized launcher code/cause, inner child
+state/exit/signal, diagnostic byte count/truncation and existing store status.
+Outer launcher/dispatcher exits do not establish an inner Codex exit. Diagnostic
+previews, raw streams and protected paths are not part of that public projection.
 
 The runtime builds the following environment **before sudo**:
 
