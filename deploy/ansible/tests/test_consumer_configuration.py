@@ -73,7 +73,7 @@ class ConsumerConfigurationTests(unittest.TestCase):
                     'import {CONSUMER} from "./consumer/consumer.mjs";console.log(JSON.stringify(CONSUMER.defaultProfile))'], cwd=ROOT,
                                        env={**os.environ, 'RELAY_CONSUMER_CONFIG': str(path)}, capture_output=True, text=True)
                 self.assertEqual(probe.returncode, 0, probe.stderr)
-                self.assertEqual(json.loads(probe.stdout)['effort'], expected['defaultProfile'].get('effort', 'medium'))
+                self.assertEqual(json.loads(probe.stdout)['effort'], expected['defaultProfile'].get('effort', 'xhigh'))
 
 
 

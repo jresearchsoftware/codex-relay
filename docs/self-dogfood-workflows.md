@@ -7,12 +7,12 @@ which are projected for both self-dogfood and external consumers. The protected
 consumer configuration remains `/etc/codex-relay/consumer.json`. Candidate CI
 remains specific to this repository.
 
-The current SHA-bound projection is retained until the owner selects an accepted
-product target, reconciles the derived workflow content, reviews and
-merges any changed projection, then installs and qualifies that target. Editing
-product templates does not silently rewrite or upgrade this installed consumer.
-The contract below describes the new projected behavior; the retained legacy
-projection still has its exact product SHA gate until migration through Task #44.
+The schema-2 projection binds the workflow contract and deterministic file
+digests instead of a product SHA. It is derived from an accepted exact product
+source through the public workflow projection interface and remains subject to
+consumer review/merge. Publishing this projection does not install or qualify
+that product. The installed release must provide the matching workflow contract
+before dispatch; installation and activation require separate owner authority.
 
 | Configured path | Execution boundary |
 | --- | --- |

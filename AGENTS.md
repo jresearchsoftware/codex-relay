@@ -140,7 +140,7 @@ is ambiguous, the same action fails without new evidence, or prior execution
 or external mutation is unknown or uncontained.
 
 For ordinary owner-admitted Relay/Codex work, the default model is
-`gpt-6.1-sol`, the default reasoning effort is `medium` and the default Subagents
+`gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents
 permission is `On`. Explicit live Task or Change Request values override these
 defaults; explicit consumer configuration remains owner-controlled. Subagent use
 remains discretionary and evidence-driven; permission does not weaken scope,

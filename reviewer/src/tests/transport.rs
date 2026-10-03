@@ -49,10 +49,7 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
         baseline["result"]["tools"][1]["inputSchema"]["properties"]["change_request"].clone();
     // Preserve the historical fixture. Admission now resolves optional effort
     // and permission from the common schema; all other constraints stay equal.
-    assert_eq!(
-        current_cr["properties"]["codex_effort"]["default"],
-        "medium"
-    );
+    assert_eq!(current_cr["properties"]["codex_effort"]["default"], "xhigh");
     assert_eq!(
         current_cr["properties"]["subagents_allowed"]["default"],
         true
