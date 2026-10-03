@@ -27,8 +27,12 @@ class Systemd:
     def __init__(self, config):
         self.units = {name: 'inactive' for name in reinstall.unit_names(config)}
         self.units[reinstall.unit_names(config)[2]] = 'active'
+        self.main_pids = {}
         self.calls = []
         self.fail_stop = False
+        self.process_root = None
+        self.keep_processes = False
+        self.before_stop = None
 
     def __call__(self, arguments, **kwargs):
         _, operation, name, *_ = arguments
@@ -36,12 +40,19 @@ class Systemd:
         if operation == 'show':
             return SimpleNamespace(returncode=0, stdout='\n'.join([
                 'LoadState=loaded', 'ActiveState=' + self.units[name],
-                'MainPID=' + ('42' if self.units[name] == 'active' else '0'),
-                'ControlPID=0', 'FragmentPath=/etc/systemd/system/' + name, 'DropInPaths=']))
+                'MainPID=' + (self.main_pids.get(name, '42') if self.units[name] == 'active' else '0'),
+                'ControlPID=0', 'FragmentPath=/etc/systemd/system/' + name, 'DropInPaths=',
+                'ControlGroup=/system.slice/' + name]))
         if operation == 'stop':
+            if self.before_stop:
+                self.before_stop()
             if self.fail_stop:
                 return SimpleNamespace(returncode=1, stdout='')
             self.units[name] = 'inactive'
+            if self.process_root and not self.keep_processes:
+                for process in self.process_root.iterdir():
+                    if (process / 'cgroup').read_text().strip() == '0::/system.slice/' + name:
+                        shutil.rmtree(process)
         return SimpleNamespace(returncode=0, stdout='')
 
 
@@ -83,6 +94,9 @@ def installation(tmp_path, request):
                              config['environment']['runner']['user'], config['environment']['generalRunner']['user']]))
         if name in identities:
             content += '\nUser=' + identities[name]
+        if name in reinstall.unit_names(config)[3:5]:
+            directory = 'runner' if name == reinstall.unit_names(config)[3] else 'general-runner'
+            content = 'ExecStart=/opt/codex-relay/' + directory + '/run.sh\nUser=' + identities[name]
         (root / 'etc/systemd/system' / name).write_text(content + '\n')
     user_ids = {name: os.getuid() for name in [config['consumer']['runtimeUser'],
                  config['environment']['runner']['user'], config['environment']['generalRunner']['user']]}
@@ -107,6 +121,124 @@ def snapshot(path):
     metadata = path.stat()
     return path.read_bytes(), (metadata.st_dev, metadata.st_ino, metadata.st_mode,
                                metadata.st_uid, metadata.st_gid, metadata.st_mtime_ns)
+
+
+def idle_listener(value, *, general=False):
+    name = reinstall.unit_names(value.config)[4 if general else 3]
+    directory = 'general-runner' if general else 'runner'
+    base = '/opt/codex-relay/' + directory
+    value.systemd.units[name] = 'active'
+    first = 142 if general else 42
+    value.systemd.main_pids[name] = str(first)
+    value.systemd.process_root = value.root / 'proc'
+    for pid, parent, exe, args in [
+        (str(first), '1', '/usr/bin/bash', ['/bin/bash', base + '/run.sh']),
+        (str(first + 1), str(first), '/usr/bin/bash', ['/bin/bash', base + '/run-helper.sh']),
+        (str(first + 2), str(first + 1), base + '/bin/Runner.Listener', ['./bin/Runner.Listener', 'run']),
+    ]:
+        process = value.root / 'proc' / pid
+        process.mkdir()
+        if os.getuid() == 0:
+            os.chown(process, 65534, 65534)
+        uid = process.stat().st_uid
+        (process / 'status').write_text('Uid:\t' + '\t'.join([str(uid)] * 4) + '\nPPid:\t' + parent + '\n')
+        (process / 'stat').write_text(pid + ' (fixture) S ' + parent + ' ' + '0 ' * 17 + '100 0\n')
+        (process / 'cmdline').write_bytes(b'\0'.join(arg.encode() for arg in args) + b'\0')
+        (process / 'cgroup').write_text('0::/system.slice/' + name + '\n')
+        (process / 'exe').symlink_to(exe)
+        (process / 'cwd').symlink_to(base)
+    return value.root / 'proc' / str(first + 2)
+
+
+@pytest.mark.parametrize('general', [False, True])
+def test_active_idle_chain_is_retired_after_durable_reservation(installation, general):
+    value = installation
+    idle_listener(value, general=general)
+    def reserved():
+        assert json.loads(value.paths['journal'].read_text())['stage'] == 'RESERVED'
+        assert value.paths['operation'].is_file()
+    value.systemd.before_stop = reserved
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert list((value.root / 'proc').iterdir()) == []
+    assert (value.paths['install'] / 'runner/.credentials').is_file()
+
+
+def test_both_idle_runner_units_are_retired_without_operator_stop(installation):
+    value = installation
+    idle_listener(value)
+    idle_listener(value, general=True)
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert list((value.root / 'proc').iterdir()) == []
+    assert all((value.paths['install'] / name / '.credentials').is_file()
+               for name in ['runner', 'general-runner'])
+
+
+@pytest.mark.parametrize('damage', ['worker', 'codex', 'unknown', 'cgroup', 'parent', 'arguments',
+                                  'cwd', 'uid', 'missing', 'deleted', 'zombie', 'root-owned-proc'])
+def test_real_or_ambiguous_execution_blocks_before_reservation(installation, damage, monkeypatch):
+    value = installation
+    process = idle_listener(value)
+    if damage in ['worker', 'codex', 'unknown', 'deleted']:
+        (process / 'exe').unlink()
+        (process / 'exe').symlink_to({'worker': '/opt/codex-relay/runner/bin/Runner.Worker',
+            'codex': '/opt/codex-relay/codex-runtime/codex', 'unknown': '/usr/bin/node',
+            'deleted': '/opt/codex-relay/runner/bin/Runner.Listener (deleted)'}[damage])
+    elif damage == 'cgroup':
+        (process / 'cgroup').write_text('0::/user.slice/foreign\n')
+    elif damage in ['parent', 'uid']:
+        status = process / 'status'
+        text = status.read_text()
+        status.write_text(text.replace('PPid:\t43', 'PPid:\t99') if damage == 'parent' else text.replace('Uid:', 'Other:'))
+    elif damage == 'arguments':
+        (process / 'cmdline').write_bytes(b'./bin/Runner.Listener\0run\0--unknown\0')
+    elif damage == 'cwd':
+        (process / 'cwd').unlink()
+        (process / 'cwd').symlink_to('/tmp/foreign')
+    elif damage == 'root-owned-proc':
+        original_stat = Path.stat
+        def stat_process(path, *args, **kwargs):
+            result = original_stat(path, *args, **kwargs)
+            if path == process:
+                fields = list(result)
+                fields[4] = 0
+                return os.stat_result(fields)
+            return result
+        monkeypatch.setattr(Path, 'stat', stat_process)
+    elif damage == 'missing':
+        (process / 'cmdline').unlink()
+    else:
+        (process / 'stat').write_text((process / 'stat').read_text().replace(' S ', ' Z '))
+    with pytest.raises(ValueError, match='WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert not value.paths['journal'].exists()
+    assert not any(operation == 'stop' for operation, _ in value.systemd.calls)
+
+
+def test_post_stop_surviving_listener_preserves_reservation_and_runtime(installation):
+    value = installation
+    idle_listener(value)
+    value.systemd.keep_processes = True
+    with pytest.raises(ValueError, match='WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert json.loads(value.paths['journal'].read_text())['stage'] == 'RESERVED'
+    assert value.paths['operation'].is_file()
+    assert (value.paths['install'] / 'current').is_symlink()
+
+
+def test_post_stop_service_child_blocks_even_with_unprotected_uid(installation):
+    value = installation
+    def add_child():
+        child = value.root / 'proc/999'
+        if child.exists():
+            return
+        child.mkdir()
+        (child / 'status').write_text('Uid: 0 0 0 0\n')
+        (child / 'cgroup').write_text('0::/system.slice/' + reinstall.unit_names(value.config)[2] + '/child\n')
+    value.systemd.before_stop = add_child
+    with pytest.raises(ValueError, match='WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert value.paths['operation'].is_file()
+    assert (value.paths['install'] / 'current').is_symlink()
 
 
 def test_retirement_preserves_registration_credentials_and_durable_records(installation):
@@ -325,6 +457,8 @@ def test_service_stop_failure_retains_durable_reservation_and_cannot_replay(inst
         run(value)
     assert value.paths['operation'].is_file()
     assert json.loads(value.paths['journal'].read_text())['stage'] == 'RESERVED'
+    assert json.loads(value.paths['journal'].read_text())['serviceTransition'] == {
+        'unit': reinstall.unit_names(value.config)[0], 'action': 'stop'}
     assert (value.paths['install'] / 'current').is_symlink()
     with pytest.raises(ValueError, match='RECOVERY_REQUIRED'):
         run(value)
@@ -404,6 +538,7 @@ def test_complete_needs_exact_fresh_install_and_cleared_operation(installation):
 
 def test_retired_tree_is_admitted_as_fresh_by_existing_apply_gate(installation):
     value = installation
+    idle_listener(value)
     run(value)
     spec = importlib.util.spec_from_file_location('reinstall_upgrade_gate',
              ROOT / 'deploy/ansible/scripts/verify_upgrade.py')
@@ -418,6 +553,7 @@ def test_retired_tree_is_admitted_as_fresh_by_existing_apply_gate(installation):
                     reason='root native Ansible required for protected operation-record composition')
 def test_actual_operation_inspection_and_begin_accept_reinstall_reservation(installation):
     value = installation
+    idle_listener(value)
     retired = run(value)
     before = snapshot(value.paths['operation'])
     variables = {

@@ -23,7 +23,7 @@ class ProductionWorkflowTests(unittest.TestCase):
             'group': 'codex-relay-runner', 'labels': ['self-hosted', 'Linux', 'X64', 'codex-relay']})
         self.assertNotIn('uses', self.step)
         self.assertEqual(self.step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
-        self.assertEqual(self.step['env'], {'EXPECTED_RELAY_HEAD': HEAD, 'NODE_OPTIONS': '', 'NODE_PATH': ''})
+        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1', 'NODE_OPTIONS': '', 'NODE_PATH': ''})
         self.assertNotIn('${{', self.step['run'])
         self.assertIn('test "$RUNNER_NAME" = codex-relay-runner', self.step['run'])
         self.assertIn('test "$(/usr/bin/id -un)" = codex-relay-runner', self.step['run'])
@@ -62,6 +62,9 @@ class ProductionWorkflowTests(unittest.TestCase):
             (install / 'current').symlink_to(release, target_is_directory=True)
             identity = release / 'reviewed-source/.relay-source.json'
             identity.write_text(json.dumps({'revision': HEAD}))
+            compatibility = release / 'reviewed-source/deploy/workflows/contract.json'
+            compatibility.parent.mkdir(parents=True)
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))
             # Replace only the fixed executable/path in the real workflow script.
             # The fixture records invocation; it never invokes sudo or deploys.
             stub = install / 'sudo-fixture'
@@ -73,16 +76,16 @@ class ProductionWorkflowTests(unittest.TestCase):
 
             def run(**overrides):
                 return subprocess.run([NODE, '--input-type=module', '-e', code], text=True, capture_output=True,
-                    env={**os.environ, 'EXPECTED_RELAY_HEAD': HEAD, 'GITHUB_SHA': 'c' * 40, **overrides})
+                    env={**os.environ, 'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1', 'GITHUB_SHA': 'c' * 40, **overrides})
 
             good = run()
             self.assertEqual(good.returncode, 0, good.stderr)
             line = next(line for line in good.stdout.splitlines() if line.startswith('FIXTURE_HELPER='))
             self.assertEqual(json.loads(line.split('=', 1)[1]),
                              ['-n', str(install / 'relay-production-local-apply'), HEAD + ':' + 'c' * 40])
-            for invalid in [{'EXPECTED_RELAY_HEAD': 'b' * 40}, {'EXPECTED_RELAY_HEAD': '../../candidate'},
-                            {'EXPECTED_RELAY_HEAD': ''}, {'GITHUB_SHA': 'main'}, {'GITHUB_SHA': ''},
-                            {'GITHUB_SHA': HEAD + ':' + HEAD}, {'EXPECTED_RELAY_HEAD': HEAD + ':' + HEAD}]:
+            for invalid in [{'EXPECTED_WORKFLOW_CONTRACT': 'b' * 40}, {'EXPECTED_WORKFLOW_CONTRACT': '../../candidate'},
+                            {'EXPECTED_WORKFLOW_CONTRACT': ''}, {'GITHUB_SHA': 'main'}, {'GITHUB_SHA': ''},
+                            {'GITHUB_SHA': HEAD + ':' + HEAD}, {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1' + ':' + HEAD}]:
                 blocked = run(**invalid)
                 self.assertNotEqual(blocked.returncode, 0)
                 self.assertNotIn('FIXTURE_HELPER=', blocked.stdout)
@@ -92,5 +95,18 @@ class ProductionWorkflowTests(unittest.TestCase):
             self.assertNotIn('FIXTURE_HELPER=', blocked.stdout)
             identity.write_text(json.dumps({'revision': HEAD}))
             self.assertEqual(run(FIXTURE_EXIT='64').returncode, 64)
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v2'}))
+            self.assertNotEqual(run().returncode, 0)
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))
+            next_head = 'd' * 40
+            next_release = install / 'releases' / next_head
+            shutil.copytree(release, next_release)
+            (next_release / 'reviewed-source/.relay-source.json').write_text(json.dumps({'revision': next_head}))
+            (install / 'current').unlink()
+            (install / 'current').symlink_to(next_release)
+            compatible = run()
+            self.assertEqual(compatible.returncode, 0, compatible.stderr)
+            line = next(line for line in compatible.stdout.splitlines() if line.startswith('FIXTURE_HELPER='))
+            self.assertEqual(json.loads(line.split('=', 1)[1])[-1], next_head + ':' + 'c' * 40)
             stub.unlink()
             self.assertNotEqual(run().returncode, 0)

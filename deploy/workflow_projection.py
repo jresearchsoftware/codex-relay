@@ -24,6 +24,16 @@ DIGEST = re.compile(r'[0-9a-f]{64}')
 MAX_BYTES = 65536
 
 
+def contract(source_root):
+    value = json.loads(_read(Path(source_root) / 'deploy/workflows/contract.json'),
+                       object_pairs_hook=unique_object)
+    require(isinstance(value, dict) and set(value) == {'workflowContract'}
+            and isinstance(value['workflowContract'], str)
+            and re.fullmatch(r'relay-workflows-v[1-9][0-9]*', value['workflowContract']),
+            'workflow-contract')
+    return value['workflowContract']
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -76,7 +86,7 @@ def render(config, revision, source_root):
     general_runs_on = ({'group': general['group'], 'labels': labels}
                        if general.get('scope', 'repository') == 'organization' else labels)
     values = {
-        'REVISION': revision,
+        'WORKFLOW_CONTRACT': contract(source_root),
         'REPOSITORY': consumer['repository'], 'OWNER': consumer['owner'],
         'BASE_BRANCH': consumer['baseBranch'],
         'BASE_BRANCH_YAML': json.dumps(consumer['baseBranch']),
@@ -108,8 +118,10 @@ def render(config, revision, source_root):
     return result
 
 
-def _manifest(config, revision, rendered):
-    return {'schemaVersion': 1, 'relayRevision': revision,
+def _manifest(config, source_root, rendered):
+    # Digests retain an independent purpose: refuse edits to the previous
+    # managed baseline before writing a new proposal. No product SHA pin.
+    return {'schemaVersion': 2, 'workflowContract': contract(source_root),
             'sourceRepository': config['source']['repository'],
             'consumerRepository': config['consumer']['repository'],
             'files': {path: sha256(data) for path, data in sorted(rendered.items())}}
@@ -121,12 +133,16 @@ def _existing(root):
         return None, {}
     raw = _read(manifest_path)
     manifest = json.loads(raw, object_pairs_hook=unique_object)
-    require(isinstance(manifest, dict) and set(manifest) == {
-        'schemaVersion', 'relayRevision', 'sourceRepository', 'consumerRepository', 'files'},
+    require(isinstance(manifest, dict), 'workflow-manifest-keys')
+    legacy = type(manifest.get('schemaVersion')) is int and manifest['schemaVersion'] == 1
+    identity = 'relayRevision' if legacy else 'workflowContract'
+    require(set(manifest) == {
+        'schemaVersion', identity, 'sourceRepository', 'consumerRepository', 'files'},
         'workflow-manifest-keys')
-    require(type(manifest['schemaVersion']) is int and manifest['schemaVersion'] == 1
-            and isinstance(manifest['relayRevision'], str)
-            and REVISION.fullmatch(manifest['relayRevision']), 'workflow-manifest-version')
+    require(type(manifest['schemaVersion']) is int and manifest['schemaVersion'] == (1 if legacy else 2)
+            and isinstance(manifest[identity], str)
+            and (REVISION.fullmatch(manifest[identity]) if legacy else
+                 re.fullmatch(r'relay-workflows-v[1-9][0-9]*', manifest[identity])), 'workflow-manifest-version')
     files = manifest['files']
     require(isinstance(files, dict) and 2 <= len(files) <= 3, 'workflow-manifest-files')
     observed = {MANIFEST: raw}
@@ -144,7 +160,7 @@ def _existing(root):
 def verify(config, revision, source_root, consumer_root):
     """Verify committed consumer projection matches the selected target source."""
     rendered = render(config, revision, source_root)
-    expected = _manifest(config, revision, rendered)
+    expected = _manifest(config, source_root, rendered)
     actual, observed = _existing(Path(consumer_root))
     require(actual == expected, 'workflow-projection-target-mismatch')
     require(all(observed[path] == content for path, content in rendered.items()),
@@ -175,7 +191,7 @@ def project(config, revision, source_root, consumer_root):
     """
     root = Path(consumer_root)
     rendered = render(config, revision, source_root)
-    expected = _manifest(config, revision, rendered)
+    expected = _manifest(config, source_root, rendered)
     previous, observed = _existing(root)
     if previous:
         require(previous['consumerRepository'] == expected['consumerRepository']
@@ -230,7 +246,7 @@ def prepare(config, revision, source_root, consumer_root, output_root):
     """
     consumer_root, output_root = Path(consumer_root), Path(output_root).absolute()
     rendered = render(config, revision, source_root)
-    expected = _manifest(config, revision, rendered)
+    expected = _manifest(config, source_root, rendered)
     previous, observed = _existing(consumer_root)
     if previous == expected:
         verify(config, revision, source_root, consumer_root)
