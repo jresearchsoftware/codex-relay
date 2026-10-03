@@ -1,6 +1,7 @@
 import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest } from './execution-contract.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
 import { boundedDiagnosticText } from './diagnostics.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // One runner-owned journal records whether the potentially paid call happened.
 // Publication may be resumed; a reserved/unknown child is never relaunched.
@@ -58,10 +59,12 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
       try {
         const returned = await execute(e);
         if (returned?.version !== VERSION || returned.attemptId !== e.attemptId) fail('CHILD_ENVELOPE_INVALID');
-        record.execution = { reserved: true, returned: true, child: returned.child, containment: returned.containment, result: returned.result };
+        record.execution = { reserved: true, returned: true, child: returned.child, containment: returned.containment, result: returned.result,
+          codexUsage: normalizeCodexUsage(returned.codexUsage) };
       } catch (error) {
         record.execution = { ...record.execution, returned: true, child: error.details?.childState ?? 'unknown',
           containment: error.details?.containment ?? 'unknown', errorCode: error.code ?? 'EXECUTION_FAILED',
+          codexUsage: normalizeCodexUsage(error.details?.codexUsage ?? error.details?.causal?.codexUsage),
           diagnostic: causalEvidence(error, { child: error.details?.childState ?? 'unknown', containment: error.details?.containment, stage: 'execution' }) };
       }
       await journal.put(e.runId, record);
@@ -93,6 +96,7 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
     if (!record.progress) fail('NO_DURABLE_PROGRESS');
     if (record.progress.head !== progress.head) fail('PUBLISHED_HEAD_REQUIRED');
     record.outcome = await invoke('finish', { head: record.progress.head,
+      codexUsage: normalizeCodexUsage(record.execution.codexUsage),
       executionWarnings: progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'],
       taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
     record.diagnostic = null; await journal.put(e.runId, record);
@@ -102,7 +106,7 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
       ...(stage === 'execution' ? { causal: error.details?.causal ?? record.execution?.diagnostic } : {}),
       childState: error.details?.childState ?? (record.execution ? record.execution.child ?? 'unknown' : 'not_started'),
       containment: error.details?.containment ?? (record.execution ? record.execution.containment ?? 'unknown' : 'not_required'),
-      executionId: e.attemptId };
+      executionId: e.attemptId, codexUsage: normalizeCodexUsage(record.execution?.codexUsage) };
     if (!error.details.lastSuccessfulBoundary && !error.details.causal?.lastSuccessfulBoundary) error.details.lastSuccessfulBoundary = lastSuccessfulBoundary;
     // Preparation, collection and journal/finalization failures also need a
     // durable diagnostic. The runtime capsule is reused when it already exists.

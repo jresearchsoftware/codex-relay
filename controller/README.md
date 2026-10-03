@@ -226,6 +226,17 @@ fields, OS codes and syscalls, categorical path context, protected sandbox inode
 identity and sanitized store references. Primary bundles may additionally retain
 bounded redacted path context; Outcomes never include those paths or raw streams.
 
+The automatic terminal Outcome projects the existing launcher diagnostic code,
+bounded categorical primary cause, inner Codex started state/exit code/signal,
+observed stderr byte count and truncation, and diagnostic-store availability.
+Missing values stay explicitly unavailable. Launcher, dispatcher and Git exits
+or signals never substitute for inner Codex observations. Diagnostic previews
+and stream contents remain protected; this projection creates no new store.
+Automatic Outcomes also preserve bounded native token counters from the original
+execution through replay/recovery. Their
+[native session-total semantics and limitations](../docs/codex/cli-integration.md#safe-automatic-evidence)
+are independent of worker semantic claims and billing.
+
 There are eight atomically reserved slots. A capsule and at most one interrupted
 temporary write occupy each slot; unknown, failed or retained attempts are never
 automatically evicted. A full store blocks admission before child launch. A

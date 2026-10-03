@@ -4,7 +4,7 @@
 # under UMask=0077 creates the package ancestors and release root as 0700.
 set -eu
 test "$1" = --release
-test "$2" = 0.154.0
+test "$2" = 0.160.0
 release="$CODEX_HOME/packages/standalone/releases/$2-x86_64-unknown-linux-musl"
 mkdir -p "$release" "$CODEX_INSTALL_DIR"
 # These descendants come from the official tar archive with preserved modes.
@@ -17,4 +17,4 @@ chmod 0755 "$release/bin/codex"
 chown 1001:1001 "$release/bin" "$release/bin/codex"
 ln -s "$release" "$CODEX_HOME/packages/standalone/current"
 ln -s "$CODEX_HOME/packages/standalone/current/bin/codex" "$CODEX_INSTALL_DIR/codex"
-printf 'Codex CLI 0.154.0 installed (disposable substitute)\n'
+printf 'Codex CLI 0.160.0 installed (disposable substitute)\n'

@@ -4,7 +4,7 @@ import { REPOSITORY, VERSION, WRITER, exactSha, fail, positive, validateEnvelope
 import { admitEnvelope, revalidateReadyEvent, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
 import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
-import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims } from './outcome.mjs';
+import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary } from './outcome.mjs';
 import { boundedThreadCorrelationIdentity, threadCorrelationIdentity } from './run-name.mjs';
 import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody } from './publication-recovery.mjs';
 import { assertStep, labelNames, stepLike } from './step-metadata.mjs';
@@ -302,7 +302,7 @@ export function createPublicationBroker({ api, store, publisher }) {
         if (pr.head.sha !== r.publishedHead) fail('PR_HEAD_OBSERVATION_STALE');
         const warningSummary = [admissionWarningSummary(e.admission?.warnings ?? e.warnings),
           executionWarningSummary(executionWarnings)].filter(Boolean).join('; ');
-        const body = `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable and ready head: ${r.publishedHead}\nObserved integration base: ${pr.base.sha}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native exact-head CI and GitHub mergeability were not evaluated by automatic completion.\nIndependent exact-head validation and review, integration/mergeability, and human merge remain required.`;
+        const body = `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(request.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable and ready head: ${r.publishedHead}\nObserved integration base: ${pr.base.sha}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native exact-head CI and GitHub mergeability were not evaluated by automatic completion.\nIndependent exact-head validation and review, integration/mergeability, and human merge remain required.`;
         if (pr.draft) await api.ready(pr.node_id);
         const after = await api.get(`/pulls/${pr.number}`);
         assertPr(after, pr.number);

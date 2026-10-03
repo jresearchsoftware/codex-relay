@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { git, collectProgress, REMOTE } from './trusted-git.mjs';
 import { fail, validateEnvelope } from './execution-contract.mjs';
 import { establishCanonicalCheckout } from './canonical-checkout.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
 import { grantSharedCheckoutAccess, runGovernedCodexTask, CODEX_WRITER_IDENTITY, CODEX_REMEDIATION_IDENTITY } from '../../runtime/src/codex-runtime.mjs';
 
 export const WORK_ROOT = CONSUMER.paths.workRoot;
@@ -45,9 +46,9 @@ export async function executeCodex(e, { runTask = runGovernedCodexTask } = {}) {
       ? ['exec', '--operation', 'review-remediation', '--json', '--model', profile.cliModelId, '--effort', profile.effort, '--input-file', inputPath, '--cwd', cwd, '--pull-request', String(e.number)]
       : ['exec', '--json', '--model', profile.cliModelId, '--effort', profile.effort, '--input-file', inputPath, '--cwd', cwd, '--issue', String(e.number)]
   });
-    return { version: e.version, attemptId: e.attemptId, result, child: 'started' };
+    return { version: e.version, attemptId: e.attemptId, result, child: 'started', codexUsage: normalizeCodexUsage(evidence.codexUsage) };
   } catch (error) {
-    error.details = { ...error.details, executionId: e.attemptId,
+    error.details = { ...error.details, executionId: e.attemptId, codexUsage: normalizeCodexUsage(evidence.codexUsage),
       childState: error.details?.childState ?? (evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : 'unknown'),
       lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? (evidence.codexChildStarted === true ? 'codex-child'
         : evidence.codexFailureClass && evidence.codexFailureClass !== 'UNCLASSIFIED_CHILD_FAILURE' ? 'launcher'

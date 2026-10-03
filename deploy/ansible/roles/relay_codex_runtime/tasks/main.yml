@@ -2,7 +2,7 @@
 - name: Require the pinned official Codex CLI contract
   ansible.builtin.assert:
     that:
-      - relay_codex_cli_version == '0.154.0'
+      - relay_codex_cli_version == '0.160.0'
       - relay_codex_installer_url == 'https://chatgpt.com/codex/install.sh'
       - relay_codex_user != 'root'
       - relay_codex_group == relay_codex_user

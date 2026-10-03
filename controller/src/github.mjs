@@ -5,6 +5,7 @@ import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
 const TERMINATION_GRACE_MS = 5000;
 function signalProcessGroup(pid, signal) {
   if (process.platform === "win32" || !pid) return;
@@ -73,6 +74,7 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
       const stderr = createBoundedUtf8Capture(64 * 1024);
       let closed = false; let timedOut = false; let cancelled = false; let termination; let spawnFailed = false;
       let value; let pendingError; let exit; let exitSignal; let processError; let runtimeLifecycle;
+      let codexUsage = normalizeCodexUsage();
       let containment = 'not_required';
       const reap = () => termination ??= terminateProcessTree(child, [], () => closed);
       const onSignal = () => { cancelled = true; void reap(); };
@@ -112,10 +114,12 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         if (!contained || timedOut || cancelled || exit !== 0 || out.truncated || value?.version !== VERSION || value?.attemptId !== envelope.attemptId) {
           const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
           throw Object.assign(new Error(code), { code, details: { causal: diagnostic, executionId: envelope.attemptId,
+            codexUsage: normalizeCodexUsage(err.truncated ? undefined : diagnostic?.codexUsage),
             childState: spawnFailed ? 'not_started' : diagnostic?.observed?.child ?? 'unknown', containment,
             primaryCause: diagnostic?.primaryCause ?? processError?.code ?? null, syscall: processError?.syscall,
             operation: 'dispatch', boundary: diagnostic?.failureBoundary ?? 'dispatcher' } });
         }
+        codexUsage = normalizeCodexUsage(value.codexUsage);
       } catch (error) { pendingError = error; }
       finally {
         process.removeListener('SIGTERM', onSignal); process.removeListener('SIGINT', onSignal);
@@ -142,6 +146,7 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         if (pendingError) {
           const original = pendingError.details ?? {};
           pendingError.details = { ...original, ...lifecycle, executionId: envelope.attemptId, containment,
+            codexUsage: normalizeCodexUsage(original.codexUsage ?? codexUsage),
             childState: original.childState ?? (child ? value?.child ?? 'unknown' : 'not_started'),
             primaryCause: original.primaryCause ?? lifecycle?.primaryCause,
             ...(original.causal ? { causal: original.causal } : {}),
@@ -151,7 +156,7 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         }
       }
       if (pendingError) throw pendingError;
-      return { ...value, containment: 'reaped', runtimeLifecycle };
+      return { ...value, codexUsage: normalizeCodexUsage(value.codexUsage), containment: 'reaped', runtimeLifecycle };
     }
   };
 }

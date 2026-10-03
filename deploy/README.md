@@ -791,10 +791,29 @@ Run product/runtime tests and the deployment suites from the repository root:
 
 ```sh
 python3 -m pytest -q deploy/tests deploy/ansible/tests
+python3 deploy/ansible/tests/qualify_codex_cli.py
 node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs \
   deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
 sudo python3 deploy/ansible/tests/installed_runtime_proof.py
 ```
+
+The governed standalone CLI is pinned to **0.160.0**. The credential-free
+release qualifier downloads that exact official release into a temporary home
+and exercises the real binary against a deterministic loopback Responses
+service. It verifies JSONL events, native thread IDs and usage counters,
+stdin task bytes, strict schema delivery and Relay semantic-result extraction,
+non-zero provider failure, isolated homes, and effective workspace/network
+policy. No model call, login or production installation occurs.
+
+The probe also preserves native limitations: missing backend usage becomes
+native zero counters; the CLI requests the output schema but Relay must still
+validate the returned result; and Ultra resolves through the native model
+catalog rather than necessarily reaching the provider as `ultra`. Subagents
+On/Off remains the resolved task instruction; the existing launcher does not
+toggle the native `multi_agent` feature. These observations do not establish
+live model access, backend effort, subagent compliance or OS sandbox enforcement.
+The installed proof below independently covers launcher environment, Git
+identity, containment, diagnostics and cleanup under the real Unix boundary.
 
 The installed proof uses private mount/PID/network namespaces, real Unix users,
 sudo, actual templates and product source. Fake GitHub/Codex transport avoids

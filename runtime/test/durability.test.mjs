@@ -86,7 +86,11 @@ test('diagnostic capture and primary store failure retain sandbox plus an indepe
     const f = await fixture(t);
     const fail = () => { throw Object.assign(new Error('private detail token=secret'), { code: 'ENOSPC' }); };
     const override = capture ? { createDiagnostic: fail } : { diagnosticStore: fail };
-    await assert.rejects(runGovernedCodexTask({ ...f.options, ...override, readDiagnosticConfig: async () => ({ mode: 'debug' }) }), { code: 'RUNTIME_DIAGNOSTICS_FAILED' });
+    await assert.rejects(runGovernedCodexTask({ ...f.options, ...override, readDiagnosticConfig: async () => ({ mode: 'debug' }) }), error => {
+      assert.equal(error.code, 'RUNTIME_DIAGNOSTICS_FAILED');
+      assert.equal(causalEvidence(error).primaryCause, 'ENOSPC');
+      return true;
+    });
     const reopened = await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot });
     const record = await reopened.read();
     assert.equal(record.persistence, 'failed'); assert.equal(record.diagnosticStore.storeCode, 'ENOSPC');

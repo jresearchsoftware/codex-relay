@@ -7,6 +7,7 @@ import { createLocalWriterAdapter } from './local-writer.mjs';
 import { reportRoutingResult } from './entrypoint.mjs';
 import { causalEvidence, digest, fail, positive, validateEnvelope } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // An explicit operator entrypoint, never called by the router or ordinary replay.
 // It has no prepare/execute callback: the original child receipt is mandatory.
@@ -42,6 +43,7 @@ export async function recoverAttemptPublication({ runId, attemptId, authorizatio
     if (!progress.clean && execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
     if (execution.result?.status !== 'success') fail(execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED');
     record.outcome = await invoke('finish', { head: published.publishedHead, recoveryAuthorizationId: authorizationId,
+      codexUsage: normalizeCodexUsage(execution.codexUsage),
       executionWarnings: progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'],
       taskResult: { summary: execution.result.summary, validation: execution.result.validation } });
     record.progress.prNumber = record.outcome.prNumber;
@@ -52,7 +54,8 @@ export async function recoverAttemptPublication({ runId, attemptId, authorizatio
     const failureDiagnostic = failureDiagnosticFromDetails(error?.details);
     record.diagnostic = { ...causalEvidence(error, { child: execution.child, containment: execution.containment,
       publishedHead: record.progress?.head, stage: 'writer-publication' }),
-      orchestration: 'FAILED', ...(failureDiagnostic ? { publicationRecovery: failureDiagnostic } : {}) };
+      orchestration: 'FAILED', codexUsage: normalizeCodexUsage(execution.codexUsage),
+      ...(failureDiagnostic ? { publicationRecovery: failureDiagnostic } : {}) };
     await journal.put(runId, record);
     error.details = { ...error.details, diagnostic: record.diagnostic };
     throw error;

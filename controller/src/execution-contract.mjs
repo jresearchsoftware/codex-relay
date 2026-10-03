@@ -2,8 +2,9 @@ import { safeModel, safeEffort } from '../../runtime/src/codex-profile.mjs';
 import { safeBranch as safeConsumerBranch } from '../../consumer/consumer-config.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createHash } from 'node:crypto';
-import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle } from './diagnostics.mjs';
+import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { NATIVE_CR_VALIDATIONS } from '../../contracts/src/executable-cr.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
 export const OWNER = CONSUMER.owner;
@@ -113,6 +114,7 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
     ...safeRuntimeLifecycle(detail) };
   const inheritedPublication = safeFailureDiagnosticReference(inherited.publication) ?? {};
   const inheritedRuntime = safeFailureDiagnosticReference(inherited.runtime) ?? {};
+  const launcher = { ...safeLauncherDiagnosticSummary(inherited.launcher), ...safeLauncherDiagnosticSummary(safeDiagnostic) };
   const observed = safeDiagnostic.childState ?? inherited.observed?.child ?? (typeof safeDiagnostic.childStarted === 'boolean' ? (safeDiagnostic.childStarted ? 'started' : 'not_started') : child);
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
   const parserFailure = ['CODEX_JSON_INVALID', 'CODEX_RESULT_INVALID', 'CODEX_RESULT_MISSING'].includes(code);
@@ -124,7 +126,10 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const operation = safeDiagnostic.operation ?? inheritedPublication.operation;
   const priorCause = safeDiagnostic.priorCause ?? inheritedPublication.priorCause;
   const gitExitCode = safeDiagnostic.gitExitCode ?? inheritedPublication.gitExitCode;
-  const signal = safeDiagnostic.signal ?? inherited.observed?.signal;
+  const gitDiagnostic = safeDiagnostic.gitExitCode !== undefined || safeDiagnostic.classification?.startsWith('GIT_') === true;
+  const childDiagnostic = safeDiagnostic.diagnosticCode !== undefined || safeDiagnostic.childExitCode !== undefined;
+  const signal = (!gitDiagnostic && childDiagnostic ? safeDiagnostic.signal : undefined) ?? inherited.observed?.signal;
+  const publicationSignal = (gitDiagnostic ? safeDiagnostic.signal : undefined) ?? inheritedPublication.signal;
   const runtime = {
     ...inheritedRuntime,
     ...(safeDiagnostic.syscall ? { syscall: safeDiagnostic.syscall } : {}),
@@ -135,12 +140,14 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const publication = {
     ...(operation ? { operation } : {}),
     ...(priorCause ? { priorCause } : {}),
-    ...(gitExitCode !== undefined ? { gitExitCode } : {})
+    ...(gitExitCode !== undefined ? { gitExitCode } : {}),
+    ...(publicationSignal ? { signal: publicationSignal } : {})
   };
   return {
+    codexUsage: normalizeCodexUsage(detail.codexUsage ?? inherited.codexUsage),
     observed: { child: ['started', 'not_started', 'unknown'].includes(observed) ? observed : 'unknown',
-      exitCode: Number.isInteger(exitCode) ? exitCode : null,
-      ...(/^SIG[A-Z0-9]+$/.test(signal ?? '') ? { signal } : {}) },
+      exitCode: Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255 ? exitCode : null,
+      ...(/^SIG[A-Z0-9]{1,29}$/.test(signal ?? '') ? { signal } : {}) },
     executionState: observed === 'started' ? 'confirmed' : observed === 'not_started' ? 'known-not-executed' : 'uncertain',
     executionId: /^[A-Za-z0-9_-]{1,128}$/.test(executionId ?? '') ? executionId : null,
     lastSuccessfulBoundary: boundary(detail.lastSuccessfulBoundary ?? inherited.lastSuccessfulBoundary),
@@ -153,6 +160,7 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
       ...(safeFallbackReference(detail.fallbackReference ?? diagnostic.fallbackReference ?? inherited.durable?.fallbackReference)
         ? { fallbackReference: safeFallbackReference(detail.fallbackReference ?? diagnostic.fallbackReference ?? inherited.durable?.fallbackReference) } : {}) },
     ...(Object.keys(runtime).length > 0 ? { runtime } : {}),
+    ...(Object.keys(launcher).length > 0 ? { launcher } : {}),
     ...(Object.keys(publication).length > 0 ? { publication } : {}),
     nextAction: publishedHead ? 'reconcile-published-progress-before-new-owner-attempt' : observed === 'not_started' ? 'correct-cause-before-new-owner-attempt' : 'inspect-attempt-before-new-owner-attempt'
   };

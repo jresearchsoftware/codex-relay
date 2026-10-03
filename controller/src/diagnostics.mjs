@@ -139,6 +139,8 @@ export function safeFailureDiagnosticReference(value, { fallbackCode, fallbackSt
   if (code) result.code = code;
   const classification = safeFailureDiagnosticCode(value.classification);
   if (classification) result.classification = classification;
+  const diagnosticCode = safeFailureDiagnosticCode(value.diagnosticCode);
+  if (diagnosticCode) result.diagnosticCode = diagnosticCode;
   const stage = safeFailureDiagnosticStage(value.stage) ?? safeFailureDiagnosticStage(fallbackStage);
   if (stage) result.stage = stage;
   const boundary = safeFailureDiagnosticStage(value.boundary) ?? safeFailureDiagnosticStage(fallbackBoundary);
@@ -182,6 +184,18 @@ export function safeFailureDiagnosticReference(value, { fallbackCode, fallbackSt
   const fallbackReference = safeFallbackReference(value.fallbackReference);
   if (fallbackReference) result.fallbackReference = fallbackReference;
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+// A public projection of existing launcher evidence, never a stream preview.
+// Keep it distinct from the outer terminal classification and process status.
+export function safeLauncherDiagnosticSummary(value) {
+  const safe = safeFailureDiagnosticReference({ diagnosticCode: value?.diagnosticCode, bytes: value?.bytes, truncated: value?.truncated });
+  if (!safe?.diagnosticCode) return undefined;
+  return {
+    ...(safe.diagnosticCode ? { diagnosticCode: safe.diagnosticCode } : {}),
+    ...(safe.bytes !== undefined ? { bytes: safe.bytes } : {}),
+    ...(safe.truncated !== undefined ? { truncated: safe.truncated } : {})
+  };
 }
 
 export function failureDiagnosticFromDetails(details, options = {}) {

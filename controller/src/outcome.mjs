@@ -1,6 +1,7 @@
 import { exactSha } from './execution-contract.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
-import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';
+import { normalizeCodexUsage } from './codex-usage.mjs';
+import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
@@ -93,6 +94,14 @@ function diagnosticCode(diagnostic) {
   return safeCode(diagnostic?.classification?.code ?? diagnostic?.classification);
 }
 
+export function usageOutcomeSummary(value) {
+  const usage = normalizeCodexUsage(value);
+  return [
+    `Native token usage: source=${usage.source}; scope=${usage.scope}`,
+    `Tokens: input=${usage.input_tokens}; cached input=${usage.cached_input_tokens}; cache write input=${usage.cache_write_input_tokens}; output=${usage.output_tokens}; reasoning output=${usage.reasoning_output_tokens}; total=${usage.total_tokens}`
+  ].join('\n');
+}
+
 export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagnostic } = {}) {
   const d = diagnostic && typeof diagnostic === 'object' ? diagnostic : {};
   const head = exactSha(publishedHead) ? publishedHead : 'NONE PUBLISHED';
@@ -103,6 +112,8 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
   const warnings = admissionWarningSummary(e?.admission?.warnings ?? e?.warnings);
   const admissionStatus = e?.admissionBlock ? 'BLOCKED_BEFORE_WORKER' : warnings ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED';
   const runtime = safeFailureDiagnosticReference(d.runtime) ?? {};
+  const launcher = safeLauncherDiagnosticSummary(d.launcher) ?? {};
+  const child = safeFailureDiagnosticReference({ childState: d.observed?.child, childExitCode: d.observed?.exitCode, signal: d.observed?.signal }) ?? {};
   const store = safeDiagnosticStoreReference(d.durable?.diagnosticStore);
   const fallback = safeFallbackReference(d.durable?.fallbackReference);
   return [
@@ -115,6 +126,7 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Attempt: ${safeText(e?.attemptId)}`,
     `Requested model: ${safeText(profile.cliModelId)}; effort: ${safeText(profile.effort)}`,
     'Actual model/effort: UNAVAILABLE',
+    usageOutcomeSummary(d.codexUsage),
     `Historical reviewed/starting head: ${exactSha(e?.startHead) ? e.startHead : 'UNAVAILABLE'}`,
     `Durable/published head: ${head}`,
     `Observed integration base: ${integrationBase}`,
@@ -123,6 +135,8 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Last successful boundary: ${safeBoundary(d.lastSuccessfulBoundary)}`,
     `Failure boundary: ${safeBoundary(d.failureBoundary)}`,
     `Cause summary: ${cause}`,
+    `Launcher diagnostic: ${safeCode(launcher.diagnosticCode)}; bytes: ${launcher.bytes ?? 'UNAVAILABLE'}; truncated: ${launcher.truncated === undefined ? 'UNAVAILABLE' : launcher.truncated}`,
+    `Codex child: ${child.childState ?? 'unknown'}; exit code: ${child.childExitCode ?? 'UNAVAILABLE'}; signal: ${child.signal ?? 'UNAVAILABLE'}`,
     ...(runtime.operation ? [`Failed operation: ${runtime.operation}${runtime.syscall ? `; syscall: ${runtime.syscall}` : ''}${runtime.pathContext ? `; path context: ${runtime.pathContext}` : ''}`] : []),
     ...(runtime.cleanup || runtime.persistence || runtime.retention ? [`Runtime state: cleanup=${runtime.cleanup ?? 'unknown'}; diagnostics=${runtime.persistence ?? 'unknown'}; artifacts=${runtime.retention ?? 'unknown'}`] : []),
     ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
