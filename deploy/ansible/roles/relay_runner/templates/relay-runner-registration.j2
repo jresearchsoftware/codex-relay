@@ -10,6 +10,7 @@ umask 077
 fail() { echo "RUNNER_REGISTRATION_FAIL code=$1" >&2; exit 1; }
 
 [[ "$(id -u)" == 0 ]] || fail ROOT_REQUIRED
+[[ ! -e '{{ relay_state_root }}-clean-reinstall.json' && ! -L '{{ relay_state_root }}-clean-reinstall.json' ]] || fail CLEAN_REINSTALL_RECOVERY_REQUIRED
 if (( $# > 0 )); then
   [[ $# == 2 && "$1" == --expect-binding && "${2:-}" == 'url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}' ]] || fail REGISTRATION_CONFIGURATION_MISMATCH
 fi
@@ -21,6 +22,54 @@ fi
 
 normalize_diagnostics() {
   find '{{ relay_runner_root }}/_diag' -maxdepth 1 -type f -exec chown '{{ relay_runner_user }}:{{ relay_runner_group }}' {} + -exec chmod 0640 {} + 2>/dev/null || true
+}
+
+pending_registration() {
+  # Reserve before the external mutation. A crash or unknown command result
+  # must survive a fresh invocation without storing ephemeral token bytes.
+  /usr/bin/python3 - "$1" '{{ relay_state_root }}' 'runner-registration-{{ relay_runner_name }}.pending' 'url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}' <<'PY'
+import json, os, stat, sys
+try:
+    action, root, name, binding = sys.argv[1:]
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    metadata = os.fstat(directory)
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise ValueError('parent')
+    expected = {'version': 1, 'binding': binding}
+    if action == 'create':
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=directory)
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(expected, stream, sort_keys=True)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(directory)
+    else:
+        try:
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=directory)
+        except FileNotFoundError:
+            if action == 'inspect':
+                print('absent')
+            sys.exit(0)
+        with os.fdopen(descriptor, encoding='utf-8') as stream:
+            metadata = os.fstat(stream.fileno())
+            if not (stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid()
+                    and stat.S_IMODE(metadata.st_mode) == 0o600 and metadata.st_nlink == 1
+                    and json.loads(stream.read(65537)) == expected):
+                raise ValueError('pending')
+        if action == 'clear':
+            os.unlink(name, dir_fd=directory)
+            os.fsync(directory)
+        elif action == 'inspect':
+            print('pending')
+        else:
+            raise ValueError('action')
+    os.close(directory)
+except (OSError, ValueError, TypeError):
+    sys.exit(1)
+PY
 }
 
 validate_registration() {
@@ -50,12 +99,18 @@ except (OSError, ValueError, TypeError, AttributeError):
 PY
 }
 
+pending_state=$(pending_registration inspect) || fail REGISTRATION_STATE_AMBIGUOUS
 if [[ -e '{{ relay_runner_registration_marker }}' || -L '{{ relay_runner_registration_marker }}' || -e '{{ relay_runner_credentials_marker }}' || -L '{{ relay_runner_credentials_marker }}' ]]; then
   validate_registration || fail REGISTRATION_STATE_AMBIGUOUS
+  pending_registration clear || fail REGISTRATION_STATE_AMBIGUOUS
   normalize_diagnostics
   echo 'RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} version=2.336.0 state=reused group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}'
   exit 0
 fi
+[[ "$pending_state" == absent ]] || fail REGISTRATION_STATE_AMBIGUOUS
+# RSA-only state can survive a remote registration before either local marker
+# was saved. Preserve it for diagnosis instead of requesting another token.
+[[ ! -e '{{ relay_runner_root }}/.credentials_rsaparams' && ! -L '{{ relay_runner_root }}/.credentials_rsaparams' ]] || fail REGISTRATION_STATE_AMBIGUOUS
 
 if [[ -t 0 ]]; then
   printf 'Enter the temporary runner-registration value for %s (input hidden): ' '{{ registration_url }}' >&2
@@ -64,6 +119,7 @@ IFS= read -r -s registration_value || registration_value=''
 [[ ! -t 0 ]] || printf '\n' >&2
 [[ -n "$registration_value" ]] || { echo 'fresh registration token required' >&2; fail FRESH_REGISTRATION_TOKEN_REQUIRED; }
 trap 'unset registration_value ACTIONS_RUNNER_INPUT_TOKEN HOME' EXIT HUP INT TERM
+pending_registration create || fail REGISTRATION_STATE_AMBIGUOUS
 export ACTIONS_RUNNER_INPUT_TOKEN="$registration_value"
 export HOME='{{ relay_runner_home }}'
 
@@ -76,14 +132,19 @@ if ! registration_output=$(runuser --preserve-environment --user '{{ relay_runne
   unset registration_value ACTIONS_RUNNER_INPUT_TOKEN
   normalize_diagnostics
   [[ ! -e '{{ relay_runner_registration_marker }}' && ! -L '{{ relay_runner_registration_marker }}' && ! -e '{{ relay_runner_credentials_marker }}' && ! -L '{{ relay_runner_credentials_marker }}' ]] || fail REGISTRATION_STATE_AMBIGUOUS
+  [[ ! -e '{{ relay_runner_root }}/.credentials_rsaparams' && ! -L '{{ relay_runner_root }}/.credentials_rsaparams' ]] || fail REGISTRATION_STATE_AMBIGUOUS
   # Recognized rejected credentials are retryable with fresh ephemeral input.
   # All other failures may have mutated GitHub and require diagnosis first.
   # Runner v2.336.0 ConfigurationManager.GetTenantCredential reports this
   # endpoint before its subsequent AddRunner/AddAgent registration mutation.
-  if [[ "$registration_output" == *'Bad credentials'* || "$registration_output" == *'Http response code: Unauthorized'* || "$registration_output" == *'token has expired'* || "$registration_output" == *'Token has expired'* ||
-        "$registration_output" == *"Http response code: NotFound from 'POST https://api.github.com/actions/runner-registration'"* ||
-        "$registration_output" == *"Http response code: Forbidden from 'POST https://api.github.com/actions/runner-registration'"* ]]; then
+  # An earlier rejected exchange may have succeeded on the runner's own retry.
+  # Once authentication progressed, its error text cannot prove no mutation.
+  if [[ "$registration_output" != *'Connected to GitHub'* &&
+        ( "$registration_output" == *"Http response code: Unauthorized from 'POST https://api.github.com/actions/runner-registration'"* ||
+          "$registration_output" == *"Http response code: NotFound from 'POST https://api.github.com/actions/runner-registration'"* ||
+          "$registration_output" == *"Http response code: Forbidden from 'POST https://api.github.com/actions/runner-registration'"* ) ]]; then
     unset registration_output
+    pending_registration clear || fail REGISTRATION_STATE_AMBIGUOUS
     echo 'fresh registration token required' >&2
     fail FRESH_REGISTRATION_TOKEN_REQUIRED
   fi
@@ -94,4 +155,5 @@ fi
 unset registration_value ACTIONS_RUNNER_INPUT_TOKEN registration_output
 normalize_diagnostics
 validate_registration || fail REGISTRATION_STATE_AMBIGUOUS
+pending_registration clear || fail REGISTRATION_STATE_AMBIGUOUS
 echo 'RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} version=2.336.0 state=registered group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}'

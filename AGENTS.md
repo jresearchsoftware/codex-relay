@@ -139,17 +139,47 @@ needs a human decision, authority is uncertain, the next material correction
 is ambiguous, the same action fails without new evidence, or prior execution
 or external mutation is unknown or uncontained.
 
-For future owner-admitted Relay/Codex work, the default reasoning effort is
-`ultra` and the default Subagents permission is `On`. An explicit live Task or
-Change Request may override either default. Subagent use remains discretionary
+For ordinary owner-admitted Relay/Codex work, the default model is
+`gpt-6.1-sol`, the default reasoning effort is `medium` and the default Subagents
+permission is `On`. Explicit live Task or Change Request values override these
+defaults; explicit consumer configuration remains owner-controlled. Subagent use remains discretionary
 and evidence-driven; permission does not weaken scope, authority, exact-head,
 publication, production, credential or protected-boundary rules. These defaults
-do not introduce a repository-wide model default or authorize nested Relay
-execution or retry loops.
+do not authorize nested Relay execution or retry loops.
+
+Select each subagent's model and reasoning effort independently for its
+assignment's complexity and risk; they may differ from the parent's profile.
+By default, provide a separate self-contained assignment with its goal,
+necessary facts/files, constraints and completion criteria, without automatically
+passing full conversation or execution history. Pass broader history only when
+materially necessary, preserving relevant prior decisions, constraints,
+prohibitions and protected boundaries. Delegation never expands Task/CR scope,
+external authority, credential access, publication or production rights.
 
 An inner correction does not itself need a new Issue, Step or execution.
 A manual task may publish through its explicitly authorized owner channel;
 an automatic worker delegates publication to Writer.
+
+## Material User/Operator Contract Change Gate
+
+Removing, replacing, renaming, disabling or materially changing an existing
+user/operator capability or workflow requires explicit authorization in the
+canonical Issue. Material surfaces include commands and entry points, required
+inputs, visible surfaces, actor responsibilities, automated/manual transitions,
+additional required actions, ChatGPT/GitHub paths, and material status, Outcome
+or recovery behavior. Internal refactoring with equivalent observable behavior
+needs no separate owner decision.
+
+If implementation, security work, tests, Reviewer feedback or remediation
+discovers preferable behavior outside that authority, preserve the existing
+behavior when safe or stop and surface an owner decision. A technical, security
+or test preference is not authorization for a material contract change.
+
+Before independent `APPROVE`, compare the material old and new behavior in every
+changed surface as well as the functional and security requirements. An
+unauthorized material delta is `OWNER_DECISION_REQUIRED` and blocks approval
+until the canonical Issue records explicit owner disposition. Never normalize
+an implementation-originated behavior change into policy after the fact.
 
 ## Minimum sufficient ceremony
 
@@ -280,8 +310,8 @@ continuation; a successful orchestration status does not resolve the warning.
 Future task files include `## Recommended model budget` with recommended model,
 effort, rationale and escalation/de-escalation conditions. The task author
 resolves the model explicitly or delegates it to the admitted consumer
-configuration; there is no repository-specific model default here. Omitted
-effort/Subagents fields inherit the repository defaults above; an explicit
+configuration, using the ordinary project profile above unless overridden.
+Omitted effort/Subagents fields inherit the repository defaults above; an explicit
 live Task/CR may override either.
 An interactive prompt cannot change the user's UI model/effort selection.
 Keep task-specific authority and execution evidence in the live Issue/PR,

@@ -365,6 +365,16 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             self.run_stage()
         self.assert_absent()
 
+    def test_pending_reinstall_refuses_credentials_after_apply_record_is_cleared(self):
+        journal = self.operation.with_name(self.install.name + '-clean-reinstall.json')
+        journal.write_text('{"stage":"DECOMMISSIONED"}')
+        journal.chmod(0o600)
+        self.assertFalse(self.operation.exists())
+        with self.assertRaisesRegex(ValueError, 'reinstall-recovery-required'):
+            self.run_stage()
+        self.assert_absent()
+        self.assertEqual(journal.read_text(), '{"stage":"DECOMMISSIONED"}')
+
     def test_persistent_guard_serializes_until_controller_pipe_closes(self):
         command = [sys.executable, str(TOOLS / 'bootstrap_guard.py'), '--hold']
         for name in ['lock_file', 'operation_record', 'manifest', 'exact_head']:

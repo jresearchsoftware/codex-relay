@@ -152,21 +152,6 @@ def verify(config, revision, source_root, consumer_root):
     return expected
 
 
-def _legacy(config, source_root, root, rendered):
-    legacy = json.loads(_read(Path(source_root) / 'deploy/workflows/legacy.json'),
-                        object_pairs_hook=unique_object)
-    require(config['consumer']['repository'] == legacy['consumerRepository']
-            and config['consumer']['owner'] == legacy['owner']
-            and set(rendered) == set(legacy['files']), 'workflow-legacy-consumer')
-    observed = {}
-    for path, expected in legacy['files'].items():
-        destination = _path(root, path)
-        require(destination.exists(), 'workflow-legacy-missing:' + path)
-        observed[path] = _read(destination)
-        require(sha256(observed[path]) == expected, 'workflow-legacy-drift:' + path)
-    return observed
-
-
 def _write(path, content):
     descriptor, name = tempfile.mkstemp(prefix='.relay-workflow-', dir=path.parent)
     try:
@@ -181,7 +166,7 @@ def _write(path, content):
             os.unlink(name)
 
 
-def project(config, revision, source_root, consumer_root, *, adopt_legacy=False):
+def project(config, revision, source_root, consumer_root):
     """Write reviewable projection only after checking all previous managed bytes.
 
     Existing consumer files are never adopted implicitly. An interrupted write
@@ -192,13 +177,10 @@ def project(config, revision, source_root, consumer_root, *, adopt_legacy=False)
     rendered = render(config, revision, source_root)
     expected = _manifest(config, revision, rendered)
     previous, observed = _existing(root)
-    require(not (adopt_legacy and previous), 'workflow-legacy-already-managed')
     if previous:
         require(previous['consumerRepository'] == expected['consumerRepository']
                 and previous['sourceRepository'] == expected['sourceRepository'], 'workflow-consumer-binding')
         require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
-    elif adopt_legacy:
-        observed = _legacy(config, source_root, root, rendered)
     else:
         for path in rendered:
             destination = _path(root, path)
@@ -236,3 +218,41 @@ def project(config, revision, source_root, consumer_root, *, adopt_legacy=False)
         lock.rmdir()
     verify(config, revision, source_root, root)
     return expected
+
+
+def prepare(config, revision, source_root, consumer_root, output_root):
+    """Derive missing install artifacts without adopting consumer-owned files.
+
+    A clean target needs no generated state. When consumer publication is still
+    required, return a deterministic review directory and stop before any host
+    mutation. Repeating the invocation after consumer review verifies the exact
+    same source/configuration binding. Managed drift always remains an error.
+    """
+    consumer_root, output_root = Path(consumer_root), Path(output_root).absolute()
+    rendered = render(config, revision, source_root)
+    expected = _manifest(config, revision, rendered)
+    previous, observed = _existing(consumer_root)
+    if previous == expected:
+        verify(config, revision, source_root, consumer_root)
+        return {'state': 'ready', 'revision': revision}
+    if previous:
+        require(previous['consumerRepository'] == expected['consumerRepository']
+                and previous['sourceRepository'] == expected['sourceRepository'], 'workflow-consumer-binding')
+        require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
+    for root in [Path(source_root).resolve(), consumer_root.resolve()]:
+        require(not output_root.resolve().is_relative_to(root), 'projection-output-outside-checkouts')
+    for parent in [*reversed(output_root.parents), output_root]:
+        if parent.exists() or parent.is_symlink():
+            _directory(parent)
+        else:
+            parent.mkdir(mode=0o700)
+    manifest = output_root / MANIFEST
+    if manifest.exists() or manifest.is_symlink():
+        # Output is an immutable proposal for one target; do not overwrite a
+        # previously edited or differently bound review directory.
+        verify(config, revision, source_root, output_root)
+    else:
+        project(config, revision, source_root, output_root)
+    return {'state': 'workflow-review-required', 'revision': revision,
+            'directory': str(output_root), 'files': [*rendered, MANIFEST],
+            'next': 'Review and publish these derived files through consumer authority, then rerun the same command.'}

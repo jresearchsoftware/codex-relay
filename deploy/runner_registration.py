@@ -53,7 +53,7 @@ def register_runner(target, key, values, revision, token, guard):
                        'REGISTRATION_COMMAND_FAILED_INSPECT_BEFORE_RETRY', 'ROOT_REQUIRED',
                        'REPOSITORY_CONTRACT', 'RUNNER_ROOT_INVALID', 'RUNNER_ROOT_OWNERSHIP',
                        'RUNNER_PACKAGE_NOT_READY', 'RUNNER_VERSION_MISMATCH',
-                       'REGISTRATION_CONFIGURATION_MISMATCH'}
+                       'REGISTRATION_CONFIGURATION_MISMATCH', 'CLEAN_REINSTALL_RECOVERY_REQUIRED'}
             code = codes[-1] if codes and codes[-1] in allowed else 'REGISTRATION_TRANSPORT_UNPROVEN'
             next_action = ('fresh registration token required' if code == 'FRESH_REGISTRATION_TOKEN_REQUIRED'
                            else 'inspect-before-retry')

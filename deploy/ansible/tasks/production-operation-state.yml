@@ -15,6 +15,24 @@
     fail_msg: 'PRODUCTION_OPERATION_STATE_INPUT_INVALID'
   when: relay_deployment_profile == 'production'
 
+- name: Require same-invocation continuation for a retained clean-reinstall journal
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - '{{ lookup("file", "../scripts/verify_reinstall_continuation.py") }}'
+      - '{{ relay_production_operation_record_path | dirname }}/{{ relay_namespace | default("codex-relay") }}-clean-reinstall.json'
+      - '{{ relay_production_operation_target_head }}'
+      - '{{ relay_production_operation_phase }}'
+      - '{{ relay_clean_reinstall_journal_sha256 | default("") }}'
+    stdin: '{{ relay_installed_deployment_config | default("") | string }}'
+    stdin_add_newline: false
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: relay_deployment_profile == 'production'
+
 - name: Inspect the durable production operation record without following links
   ansible.builtin.stat:
     path: '{{ relay_production_operation_record_path }}'

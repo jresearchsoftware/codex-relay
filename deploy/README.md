@@ -73,23 +73,33 @@ external runner-group workflow/ref restrictions described in the
 [activation boundary](../docs/self-dogfood-workflows.md#activation-boundary).
 Repository labels and a workflow's `if` expression cannot establish that policy.
 
-`validate` reports invalid local schema/identity/path prerequisites. `check`
-reports installation plans and protected target conflicts; `tls-check` distinguishes
-missing product bootstrap state from invalid existing TLS/CA state. These
-commands do not claim to read owner-admin GitHub settings: unavailable App
-installation/runner-group policy evidence requires owner verification, not a
-false claim that configuration validation proved it. Fresh runner registration
-is requested only after the intended installed runner cannot be reused.
+Before installation, prepare the distinct App installations and repository
+permissions listed in the integration reference, record the intended production
+and general runner groups, and restrict scheduling outside candidate-controlled
+YAML to the configured trusted workflows at `refs/heads/<baseBranch>`. Include
+the supported production deployment workflow in the production group's policy.
+Keep candidate validation on disposable runners. Place owner-provisioned App
+keys and the Codex token at the protected references in the durable config;
+registration tokens are supplied later only for missing runners. Configure the
+public DNS address set and the owner-controlled ingress before TLS issuance.
+
+`validate` reports invalid local schema/identity/path prerequisites. The
+[inventory and bootstrap interface](#inventory-and-clean-install) reports
+reusable target state, missing inputs, invalid state and owner-admin handoffs.
+`check` reports installation plans; `tls-check` validates protected TLS/CA state.
+Unavailable App/runner-policy verification is an explicit owner-admin handoff,
+not a claim that policy is missing or that local validation proved it.
 
 The supported sequence is:
 
 ```text
-GitHub preparation -> durable config -> validate -> workflow projection/review
--> check/apply -> scoped credential/TLS bootstrap -> ingress
+GitHub preparation -> durable config -> inventory -> required external inputs
+-> bootstrap derives workflow artifacts -> consumer review/publication
+-> bootstrap installs -> scoped credential/TLS bootstrap -> ingress
 -> Reviewer activation -> runner registration/enablement -> qualification -> post-check
 ```
 
-The first apply installs fixed bootstrap helpers. Each protected transition uses
+The first installation installs fixed bootstrap helpers. Each protected transition uses
 the same public entrypoint and explicit authorization flags from the tables
 below; separate capabilities need only their relevant credentials. Reuse the
 durable nonsecret config, accepted source and proven existing state on subsequent
@@ -97,6 +107,85 @@ invocations. A private ignored wrapper may hold the config path and current
 optional registration-token arguments for operator convenience. It is never
 product configuration or execution authority. Ordinary logs and durable
 configuration must not contain those tokens.
+
+### Inventory and clean install
+
+Reproduction starts with one accepted exact Relay source, one durable nonsecret
+owner configuration and explicitly external protected prerequisites. An empty
+target needs no installed runtime, workflow copies or projection manifest.
+Acquire a clean consumer checkout for its ordinary review/publication process;
+its commit is independent of the exact product source checkout.
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --resolved-revision "$target_sha" --phase inventory
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --resolved-revision "$target_sha" \
+  --phase bootstrap --authorize-bootstrap
+```
+
+`inventory` is read-only, including on pre-current installations. It reads only
+configured/product-owned paths, compares durable intent with a protected
+digest-bound snapshot when available, and identifies reusable local runner
+registration. Protected credential/TLS results are metadata observations;
+scoped credential, TLS and live App qualification still verify their contents
+and remote identity. `ownerAdmin` lists the separate GitHub and ingress
+verification handoffs. A successful observation grants no mutation authority.
+
+`bootstrap` runs inventory and derives deterministic workflow artifacts from
+the selected exact source and configuration. If the consumer does not yet
+contain that projection, it writes a review directory under `--log-root`
+(optionally selected with `--projection-output`) and returns
+`RELAY_DEPLOYMENT_PENDING=WORKFLOW_REVIEW_REQUIRED` before host mutation.
+Review/reconcile and publish those files through normal consumer authority,
+then rerun the same command from the clean consumer checkout containing them.
+The derived directory is an output, never an independent reproduction input.
+Existing consumer-owned files are left intact; managed drift and edited
+proposals fail closed. Local proposals do not constitute review or merge proof.
+
+With the matching accepted consumer projection and explicit install authority,
+bootstrap performs ordinary install and a separate clean post-check under the
+same host deployment lock. Without `--authorize-bootstrap`, it reports the
+remaining install authorization transition. It does not register runners or
+activate services. Complete the credential/TLS, ingress and activation phases
+below only to the extent admitted by the owner, then run the final `post-check`.
+The result distinguishes installation from operational activation/qualification.
+
+For an explicitly owner-authorized replacement of a pre-current installation,
+use the same interface with `--phase reinstall --authorize-reinstall`. Inventory
+must prove equivalent installed consumer identity and unambiguous local
+registration and protected state. A valid protected snapshot compares complete
+environment intent when available. Its absence is reported as an unavailable
+comparison for owner review of the selected durable configuration; it is not
+another required generated artifact. Invalid or different snapshots, unknown
+units and unsupported overrides block before mutation. The defensive scan also
+classifies unknown top-level `/etc/systemd/system/*.service` symlinks: targets
+must remain in protected `/etc/systemd/system`, `/usr/lib/systemd/system` or
+`/lib/systemd/system` unit roots (including the proven `/lib -> usr/lib` alias).
+Bounded unit-link chains and verified `/dev/null` masks are classified without
+arbitrary traversal; dangling, unsafe or unclassifiable links report
+`REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE` and require inspection of top-level
+systemd service links. Namespace references in non-comment lines block retirement.
+Known Relay-managed units still require their regular-file topology. The scan
+does not inventory all vendor units or expand mutation authority.
+Establish quiescent runners/workers first;
+the helper will not kill a running or unknown job. Decommission stops/disables
+the proven managed services, retires activation markers and moves the managed
+runtime into a protected recovery archive. It retains complete intended runner
+directories at their original paths, all `/etc` and `/var/lib` consumer state,
+external credentials, TLS, and Writer/Reviewer durable evidence. Fresh apply
+and clean post-check follow while the host lock remains held. Reactivation and
+live qualification remain explicit owner transitions.
+
+Retirement reserves the normal production operation plus a bounded reinstall
+recovery journal before its first mutation. Unknown or failed transitions retain
+both evidence and retired bytes; the command does not erase or blindly retry
+them. Diagnose the reported stage before a separately authorized recovery.
+After a clean install/post-check, the journal is retained with the retired
+runtime as historical evidence. No consumer-specific workflow hash catalog or
+legacy provenance exception is involved. The same path applies to each known
+pre-current installation only after its own inventory and owner authorization;
+one consumer's state is never evidence for another's reinstall.
 
 ### First-install bootstrap and reusable state
 
@@ -302,13 +391,17 @@ drift. Local fixtures prove the implementation contract; live cohosted proof
 and clean-environment standalone qualification remain separate evidence.
 
 A thin trusted bootstrap may fetch the requested `main`, commit or tag, resolve
-`FETCH_HEAD^{commit}` once and check out that immutable commit. After reviewing
-its projection, a first installation invokes:
+`FETCH_HEAD^{commit}` once and check out that immutable commit. A first
+installation invokes:
 
 ```sh
 python3 deploy/relay-deploy.py --config /path/to/consumer/deploy/relay.json \
-  --requested-revision main --resolved-revision "$resolved_sha" --phase apply
+  --requested-revision main --resolved-revision "$resolved_sha" \
+  --phase bootstrap --authorize-bootstrap
 ```
+
+This derives any missing workflow review proposal. After consumer review and
+publication, the same invocation performs the installation.
 
 The product verifies its clean exact Git checkout and the consumer configuration
 checkout. Every source export, build, manifest, operation and post-check uses
@@ -383,12 +476,10 @@ belongs in either file. The owner configuration can remain outside Git when
 Every existing managed byte must match the previous manifest before an update;
 unmanaged collisions, direct edits, path changes, unsafe files and partial
 projection stop for reconciliation instead of being overwritten. Interrupted
-writes report changed paths; inspect the worktree before retrying. First
-self-dogfood migration can explicitly add `--adopt-legacy`, which recognizes
-only the byte-exact bundled pre-projection workflows from
-`48946e7bcabed73fa6f7809b266bf9f641ed71fc`. Modified or foreign workflows are
-not adopted. External consumers start at unused managed workflow paths or
-resolve existing consumer-owned collisions through their normal review process.
+writes report changed paths; inspect the worktree before retrying. Bootstrap
+derives a separate review proposal when the consumer has no managed manifest,
+including when older consumer workflows occupy the intended paths. Resolve
+those differences through the normal consumer review/publication process.
 
 After the projection is reviewed and merged, verify the clean consumer checkout:
 
@@ -457,10 +548,12 @@ operational boundary before upgrading.
 Rollback uses the same exact-target upgrade primitive with a previously
 qualified compatible revision that supports this contract and its reviewed
 projection. Existing release trees and durable Writer/Reviewer state are
-retained; no destructive release cleanup is disguised as rollback. Legacy
-installations without a protected deployment snapshot cannot prove preserved
-owner intent and need a separately admitted migration before this upgrade
-primitive. Do not bypass that check or manufacture a snapshot from guessed
+retained; no destructive release cleanup is disguised as rollback. Pre-current
+installations use the inventory and authorized clean-reinstall path above.
+Without a protected deployment snapshot, inventory reports that complete prior
+environment comparison is unavailable. The authorized clean-reinstall path
+uses the selected durable owner config and independently checks installed
+consumer/units/runner scope; it never manufactures a snapshot from guessed
 state. Keep the prior supported recovery path and exact source available.
 
 `activate --authorize-reviewer-activation` and
@@ -520,6 +613,12 @@ Replace the token and rerun the same authorized phase. Valid registration is
 reused, so a token refresh does not duplicate runners. Existing partial or
 mismatched registration and uncertain transport results require inspection
 before any retry; they are not treated as permission to register again.
+Before invoking the registration command, the helper reserves a root-owned,
+token-free pending marker bound to the intended runner. An unknown command
+result keeps that marker and blocks another registration attempt. A subsequent
+matching complete local registration reconciles it without invoking registration
+again; a proven pre-mutation authentication rejection permits a fresh token.
+There is no automatic force/clear bypass for an unknown remote result.
 
 Registration does not enable a service. Follow it with the separately authorized
 `runner-enable` or `general-runner-enable` phase after validating external

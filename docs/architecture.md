@@ -124,6 +124,17 @@ primitive with quiesce/drain/resume policy; the primitive does not invent that
 authority. Without authoritative latest-release information no update note is
 emitted, and availability of a newer revision is never itself a warning or gate.
 
+Fresh bootstrap derives workflow proposals from that exact accepted source and
+one durable owner configuration. A missing projection is an explicit consumer
+review/publication transition in the supported bootstrap UX, not a separate
+pre-existing installation input. Read-only inventory distinguishes reusable
+protected state, missing ephemeral inputs, invalid state and unavailable admin
+verification. An authorized clean reinstall may retire a proven pre-current
+runtime while retaining runner registrations, protected credentials and durable
+publication/review state. Retirement, fresh apply and post-check share the host
+deployment lock; uncertain transitions retain recovery evidence. Service
+activation and external consumer qualification keep their separate authority.
+
 The [Reviewer](../reviewer/README.md) is a narrow MCP HTTP service behind a
 trusted mTLS terminator. It verifies forwarded client identity and binds every
 GitHub request, review and check to the configured repository/App and exact head.

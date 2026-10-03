@@ -51,7 +51,7 @@
         "minLength": 1,
         "maxLength": 64,
         "format": "codex-argument",
-        "default": "ultra"
+        "default": "medium"
       },
       "subagents_allowed": {
         "type": "boolean",
