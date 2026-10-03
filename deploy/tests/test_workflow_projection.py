@@ -42,7 +42,7 @@ class ProjectionTests(unittest.TestCase):
         contents = {str(path.relative_to(self.root)): path.read_bytes()
                     for path in self.root.rglob('*') if path.is_file()}
         self.assertEqual(len(first['files']), 2)
-        self.assertEqual(first['relayRevision'], HEAD)
+        self.assertEqual(first['workflowContract'], 'relay-workflows-v1')
         self.assertEqual(first['consumerRepository'], 'example-org/sample-project')
         self.assertEqual(self.project(), first)
         self.assertEqual(contents, {str(path.relative_to(self.root)): path.read_bytes()
@@ -56,7 +56,7 @@ class ProjectionTests(unittest.TestCase):
             self.assertIn("github.repository == 'example-org/sample-project'", job['if'])
             self.assertIn("github.actor == 'example-owner'", job['if'])
             self.assertEqual(job['runs-on'], ['self-hosted', 'Linux', 'X64', 'relay'])
-            self.assertEqual(step['env']['EXPECTED_RELAY_HEAD'], HEAD)
+            self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v1')
             self.assertEqual(os.stat(self.root / path).st_mode & 0o777, 0o644)
 
     def test_general_runner_group_and_non_main_base_are_projected(self):
@@ -70,15 +70,50 @@ class ProjectionTests(unittest.TestCase):
             'group': 'general-only', 'labels': ['self-hosted', 'Linux', 'X64', 'relay']})
         self.assertIn("github.ref == 'refs/heads/stable/release'", routing['jobs']['route']['if'])
 
-    def test_changed_exact_target_requires_reprojection_but_retains_old_bytes_until_owner_projects(self):
+    def test_product_revision_alone_never_requires_reprojection(self):
         before = self.project()
+        contents = {path: (self.root / path).read_bytes() for path in [*before['files'], projection.MANIFEST]}
         next_head = 'b' * 40
-        with self.assertRaisesRegex(InvalidConfig, 'workflow-projection-target-mismatch'):
-            self.verify(next_head)
-        self.assertEqual(self.verify(), before)
-        after = self.project(next_head)
-        self.assertEqual(self.verify(next_head), after)
-        self.assertNotEqual(before, after)
+        self.assertEqual(self.verify(next_head), before)
+        self.assertEqual(self.project(next_head), before)
+        self.assertEqual(contents, {path: (self.root / path).read_bytes() for path in contents})
+        with tempfile.TemporaryDirectory(prefix='relay-proposal-') as output:
+            self.assertEqual(projection.prepare(self.config, next_head, ROOT, self.root, output)['state'], 'ready')
+            self.assertEqual(list(Path(output).iterdir()), [])
+
+    def test_content_and_contract_changes_require_review_without_mutating_consumer(self):
+        self.project()
+        before = {path: (self.root / path).read_bytes() for path in self.rendered}
+        for mode in ['content', 'contract']:
+            with tempfile.TemporaryDirectory(prefix='relay-source-') as source, tempfile.TemporaryDirectory(prefix='relay-proposal-') as output:
+                templates = Path(source) / 'deploy/workflows'
+                shutil.copytree(ROOT / 'deploy/workflows', templates)
+                if mode == 'content':
+                    with (templates / 'routing.yml.in').open('a') as stream:
+                        stream.write('# actual workflow content change\n')
+                else:
+                    (templates / 'contract.json').write_text('{"workflowContract":"relay-workflows-v2"}')
+                result = projection.prepare(self.config, 'b' * 40, source, self.root, output)
+                self.assertEqual(result['state'], 'workflow-review-required')
+                projection.verify(self.config, 'b' * 40, source, output)
+                self.assertEqual(before, {path: (self.root / path).read_bytes() for path in before})
+
+    def test_sha_bound_manifest_migrates_once_after_drift_verification(self):
+        legacy = {path: raw.replace(b'relay-workflows-v1', HEAD.encode()) for path, raw in self.rendered.items()}
+        for path, raw in legacy.items():
+            destination = self.root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+        manifest = {'schemaVersion': 1, 'relayRevision': HEAD,
+                    'sourceRepository': self.config['source']['repository'],
+                    'consumerRepository': self.config['consumer']['repository'],
+                    'files': {path: projection.sha256(raw) for path, raw in legacy.items()}}
+        (self.root / projection.MANIFEST).write_text(json.dumps(manifest))
+        with tempfile.TemporaryDirectory(prefix='relay-migration-') as output:
+            self.assertEqual(projection.prepare(self.config, HEAD, ROOT, self.root, output)['state'], 'workflow-review-required')
+            self.assertEqual(json.loads((self.root / projection.MANIFEST).read_text()), manifest)
+            shutil.copytree(output, self.root, dirs_exist_ok=True)
+            self.assertEqual(projection.prepare(self.config, 'b' * 40, ROOT, self.root, output)['state'], 'ready')
 
     def test_target_source_is_recomputed_instead_of_trusting_manifest(self):
         self.project()
@@ -143,10 +178,10 @@ class ProjectionTests(unittest.TestCase):
         self.project()
         manifest = self.root / projection.MANIFEST
         expected = manifest.read_text()
-        manifest.write_text(expected.replace('"schemaVersion": 1', '"schemaVersion": 1, "schemaVersion": 1'))
+        manifest.write_text(expected.replace('"schemaVersion": 2', '"schemaVersion": 2, "schemaVersion": 2'))
         with self.assertRaisesRegex(InvalidConfig, 'duplicate-key'):
             self.project()
-        manifest.write_text(expected.replace('"schemaVersion": 1', '"schemaVersion": true'))
+        manifest.write_text(expected.replace('"schemaVersion": 2', '"schemaVersion": true'))
         with self.assertRaisesRegex(InvalidConfig, 'workflow-manifest-version'):
             self.project()
         manifest.write_text(expected)
@@ -156,6 +191,7 @@ class ProjectionTests(unittest.TestCase):
 
     def test_partial_mutation_is_visible_and_cannot_be_blindly_retried(self):
         self.project()
+        self.config['environment']['generalRunner']['name'] = 'changed-runner'
         write = projection._write
         count = 0
 
@@ -175,6 +211,7 @@ class ProjectionTests(unittest.TestCase):
 
     def test_edit_between_individual_writes_is_retained_and_reported(self):
         self.project()
+        self.config['environment']['generalRunner']['name'] = 'changed-runner'
         write = projection._write
         paths = list(self.rendered)
         edited = self.root / paths[1]
@@ -206,6 +243,7 @@ class ProjectionTests(unittest.TestCase):
 
     def test_bootstrap_refuses_managed_drift_and_does_not_rewrite_a_reviewed_proposal(self):
         self.project()
+        self.config['environment']['generalRunner']['name'] = 'changed-runner'
         with tempfile.TemporaryDirectory(prefix='relay-bootstrap-artifacts-') as output:
             next_head = 'b' * 40
             projection.prepare(self.config, next_head, ROOT, self.root, output)
@@ -226,9 +264,12 @@ class ProjectionTests(unittest.TestCase):
 
     def test_projection_lock_blocks_overlapping_local_mutation(self):
         self.project()
+        original_name = self.config['environment']['generalRunner']['name']
+        self.config['environment']['generalRunner']['name'] = 'changed-runner'
         (self.root / '.github/.relay-workflows.lock').mkdir()
         with self.assertRaisesRegex(InvalidConfig, 'workflow-projection-in-progress'):
             self.project('b' * 40)
+        self.config['environment']['generalRunner']['name'] = original_name
         self.verify()
 
 

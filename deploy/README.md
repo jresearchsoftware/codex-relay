@@ -168,10 +168,20 @@ arbitrary traversal; dangling, unsafe or unclassifiable links report
 systemd service links. Namespace references in non-comment lines block retirement.
 Known Relay-managed units still require their regular-file topology. The scan
 does not inventory all vendor units or expand mutation authority.
-Establish quiescent runners/workers first;
-the helper will not kill a running or unknown job. Decommission stops/disables
+The helper admits active idle runner services only after proving their exact
+unit, Unix identity, MainPID ancestry, cgroup, executable and argument chain
+(`run.sh -> run-helper.sh -> Runner.Listener run`). Missing or duplicate chain
+roles and any extra cgroup member (regardless of UID, including child cgroups)
+block admission. Each active runner cgroup must
+contain exactly that three-process chain, revalidated under the production
+operation lock before reservation. Real or ambiguous jobs,
+Codex execution and unknown processes block before reservation or service
+mutation; no manual stop/disable is required for proven idle listeners.
+After reserving recovery evidence, decommission stops/disables
 the proven managed services, retires activation markers and moves the managed
-runtime into a protected recovery archive. It retains complete intended runner
+runtime into a protected recovery archive. Every managed unit must have MainPID
+and ControlPID zero, and all runner/runtime identities must be process-free
+after stop before the archive move. It retains complete intended runner
 directories at their original paths, all `/etc` and `/var/lib` consumer state,
 external credentials, TLS, and Writer/Reviewer durable evidence. Fresh apply
 and clean post-check follow while the host lock remains held. Reactivation and
@@ -465,8 +475,8 @@ python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
 ```
 
 This local operation writes the managed workflows and
-`.github/relay-workflows.json`, which binds the product source repository,
-exact revision, consumer repository and deterministic output digests. It does
+`.github/relay-workflows.json`, which binds the source repository, consumer
+repository, workflow contract and deterministic output digests. It does
 not commit, push, merge, install or activate anything. The manifest is a drift
 baseline, not acceptance authority. Review and publish the generated change
 through the consumer's normal authority. No credential or registration token
@@ -480,6 +490,26 @@ writes report changed paths; inspect the worktree before retrying. Bootstrap
 derives a separate review proposal when the consumer has no managed manifest,
 including when older consumer workflows occupy the intended paths. Resolve
 those differences through the normal consumer review/publication process.
+
+The product-owned [workflow contract](workflows/contract.json) versions only the
+interface used by the three workflows: installed routing/recovery invocation,
+environment/input meanings and the production helper argument. Change its
+identity only for an interface compatibility change; ordinary implementation,
+documentation, build or release revisions do not change it. Each workflow
+resolves `current` once, verifies the exact release path against the installed
+public source identity, and requires that release's workflow contract to match
+before invoking code. The installed revision is still logged and bound to the
+production helper; it is not embedded in consumer workflow bytes.
+
+When content, workflow contract and consumer inputs are unchanged, a different
+product SHA yields identical files and manifest, so bootstrap/reinstall requires
+no consumer PR. Actual managed content or compatibility changes yield a bounded
+proposal and stop for normal consumer review/merge. File digests remain solely
+as the previous managed drift baseline. Schema-1 SHA-bound manifests are read
+and drift-checked for a one-time schema-2 migration; they are not treated as
+current projection. Task #44 must perform the existing self-dogfood migration
+after the source correction is accepted. Product template changes do not
+publish that consumer diff or continue production operations.
 
 After the projection is reviewed and merged, verify the clean consumer checkout:
 
@@ -518,8 +548,9 @@ The later runner role checks the retained shared state parent's type, root
 owner and mode even when its group is still only planned. That pending group
 assignment counts as a change; apply still requires and enforces the real group.
 
-An upgrade requires the reviewed workflow projection of one exact accepted
-target, then the explicit public primitive from that target's clean source:
+An upgrade requires consumer workflows matching the selected accepted target's
+content and workflow contract, then the explicit public primitive from that
+target's clean exact source:
 
 ```sh
 python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \

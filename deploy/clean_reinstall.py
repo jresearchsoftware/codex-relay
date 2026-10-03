@@ -141,7 +141,7 @@ def unknown_unit_text(path, root, owner_uid):
     raise ValueError('REINSTALL_UNKNOWN_UNIT_UNCLASSIFIABLE;inspect-top-level-systemd-service-links')
 
 
-def inspect_units(config, paths, root, owner_uid, runner):
+def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, listeners=None):
     units = {}
     names = unit_names(config)
     prefix = '/opt/' + config['environment']['namespace'] + '/'
@@ -158,7 +158,7 @@ def inspect_units(config, paths, root, owner_uid, runner):
     for name in names:
         path = root / 'etc/systemd/system' / name
         result = runner(['/bin/systemctl', 'show', name, '--no-pager',
-                         '--property=LoadState,ActiveState,MainPID,ControlPID,FragmentPath,DropInPaths'],
+                         '--property=LoadState,ActiveState,MainPID,ControlPID,FragmentPath,DropInPaths,ControlGroup'],
                         capture_output=True, text=True)
         require(result.returncode == 0, 'UNIT_OBSERVATION_UNAVAILABLE')
         fields = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
@@ -186,33 +186,136 @@ def inspect_units(config, paths, root, owner_uid, runner):
             protected(root / drop.lstrip('/'), root, owner_uid)
         require(fields.get('ActiveState') in ['active', 'inactive', 'failed']
                 and fields.get('ControlPID') == '0', 'UNIT_TRANSITION_PENDING')
-        if name in names[3:]:
+        require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
+        if stopped:
             require(fields.get('ActiveState') in ['inactive', 'failed'] and fields.get('MainPID') == '0',
+                    'WORKERS_NOT_QUIESCENT')
+        elif name in names[3:5] and fields['ActiveState'] == 'active':
+            runner_root = '/opt/' + config['environment']['namespace'] + '/' + (
+                'runner' if name == names[3] else 'general-runner')
+            require('ExecStart=' + runner_root + '/run.sh' in lines
+                    and fields['MainPID'] != '0'
+                    and fields.get('ControlGroup') == '/system.slice/' + name,
+                    'WORKERS_NOT_QUIESCENT')
+            if listeners is not None:
+                listeners[name] = {'pid': fields['MainPID'], 'root': runner_root,
+                                   'user': identities[name], 'cgroup': fields['ControlGroup']}
+        elif name in names[3:5]:
+            require(fields['MainPID'] == '0', 'WORKERS_NOT_QUIESCENT')
+        elif name in [names[1], *names[5:]]:
+            require(fields['ActiveState'] in ['inactive', 'failed'] and fields['MainPID'] == '0',
                     'WORKERS_NOT_QUIESCENT')
         units[name] = fields['ActiveState']
     return units
 
 
-def workers_quiescent(config, root, user_ids=None):
+def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_units=None):
     names = [config['consumer']['runtimeUser'], config['environment']['runner']['user'],
              config['environment']['generalRunner']['user']]
-    ids = set()
+    ids = {}
     for name in names:
         try:
             value = user_ids[name] if user_ids is not None else pwd.getpwnam(name).pw_uid
-            ids.add(value[0] if isinstance(value, tuple) else value)
+            ids[name] = value[0] if isinstance(value, tuple) else value
         except KeyError:
             raise ValueError('REINSTALL_WORKER_IDENTITY_UNPROVEN') from None
-    require(0 not in ids, 'WORKER_IDENTITY_UNPROVEN')
+    require(0 not in ids.values(), 'WORKER_IDENTITY_UNPROVEN')
     proc = root / 'proc'
     require(proc.is_dir(), 'PROCESS_OBSERVATION_UNAVAILABLE')
+    observed = {}
+    members = {name: set() for name in listeners or {}}
     for path in proc.iterdir():
         if not path.name.isdecimal():
             continue
+        protected_process = False
         try:
-            require(path.stat().st_uid not in ids, 'WORKERS_NOT_QUIESCENT')
+            uid = path.stat().st_uid
+            protected_process = uid in ids.values()
+            groups = (path / 'cgroup').read_text().splitlines() if listeners or stopped_units else []
+            for line in groups:
+                group = line.split(':', 2)[2]
+                for name, listener in (listeners or {}).items():
+                    if group == listener['cgroup'] or group.startswith(listener['cgroup'] + '/'):
+                        # Account for every managed member before filtering by
+                        # UID, including foreign identities and child cgroups.
+                        members[name].add(path.name)
+                        protected_process = True
+            status = dict(line.split(':', 1) for line in (path / 'status').read_text().splitlines() if ':' in line)
+            uids = [int(value) for value in status['Uid'].split()]
+            if stopped_units:
+                # MainPID zero does not prove that a unit has no surviving
+                # children (including Reviewer/root-owned service children).
+                for line in groups:
+                    group = line.split(':', 2)[2]
+                    require(not any(group == '/system.slice/' + name or
+                                    group.startswith('/system.slice/' + name + '/')
+                                    for name in stopped_units), 'WORKERS_NOT_QUIESCENT')
+            protected_process = protected_process or bool(set(uids) & set(ids.values()))
+            if not protected_process:
+                continue
+            require(listeners, 'WORKERS_NOT_QUIESCENT')
+            # Only the fixed idle runner chain, in its proven systemd cgroup,
+            # may survive admission. Names alone do not establish idle state.
+            def birth():
+                fields = (path / 'stat').read_text().rsplit(') ', 1)[1].split()
+                require(fields[0] not in ['Z', 'X'], 'WORKERS_NOT_QUIESCENT')
+                return fields[19]
+            before = birth()
+            require(uids == [uid] * 4,
+                    'WORKERS_NOT_QUIESCENT')
+            argv = (path / 'cmdline').read_bytes().rstrip(b'\0').decode().split('\0')
+            exe = os.readlink(path / 'exe')
+            cwd = os.readlink(path / 'cwd')
+            matches = [value for value in listeners.values() if ids[value['user']] == uid
+                       and any(line == '0::' + value['cgroup'] or
+                               line.split(':', 2)[1:] == ['name=systemd', value['cgroup']]
+                               for line in groups)]
+            require(len(matches) == 1, 'WORKERS_NOT_QUIESCENT')
+            listener = matches[0]
+            base = listener['root']
+            # The supported run.sh unit has no arguments. Relative paths are
+            # resolved only against that exact runner working directory.
+            require(cwd == base and argv, 'WORKERS_NOT_QUIESCENT')
+            executable = argv[0] if argv[0].startswith('/') else base + '/' + argv[0].removeprefix('./')
+            shell = exe in ['/usr/bin/bash', '/bin/bash']
+            if shell:
+                require(len(argv) == 2 and argv[0] in ['/bin/bash', '/usr/bin/bash', 'bash'],
+                        'WORKERS_NOT_QUIESCENT')
+                script = argv[1] if argv[1].startswith('/') else base + '/' + argv[1].removeprefix('./')
+                require(script in [base + '/run.sh', base + '/run-helper.sh'], 'WORKERS_NOT_QUIESCENT')
+                role = script.removeprefix(base + '/')
+            else:
+                require(exe == base + '/bin/Runner.Listener' and executable == exe
+                        and argv[1:] == ['run'], 'WORKERS_NOT_QUIESCENT')
+                role = 'listener'
+            require(birth() == before and path.stat().st_uid == uid,
+                    'WORKERS_NOT_QUIESCENT')
+            observed[path.name] = (status['PPid'].strip(), listener['pid'], role)
         except FileNotFoundError:
-            pass
+            # A disappearing protected identity or managed cgroup member
+            # leaves its execution state ambiguous; guessing is not safe.
+            require(not protected_process, 'WORKERS_NOT_QUIESCENT')
+        except (OSError, KeyError, UnicodeError, IndexError):
+            raise ValueError('REINSTALL_WORKERS_NOT_QUIESCENT') from None
+    if listeners:
+        for name, listener in listeners.items():
+            require(listener['pid'] in observed and observed[listener['pid']][2] == 'run.sh',
+                    'WORKERS_NOT_QUIESCENT')
+            require(len(members[name]) == 3 and all(
+                pid in observed and observed[pid][1] == listener['pid'] for pid in members[name]),
+                'WORKERS_NOT_QUIESCENT')
+            require({observed[pid][2] for pid in members[name]} == {'run.sh', 'run-helper.sh', 'listener'},
+                    'WORKERS_NOT_QUIESCENT')
+        for pid, (parent, main, role) in observed.items():
+            if pid != main:
+                require(parent in observed and (role, observed[parent][2]) in [
+                    ('run-helper.sh', 'run.sh'), ('listener', 'run-helper.sh')], 'WORKERS_NOT_QUIESCENT')
+            visited = set()
+            while pid != main:
+                require(pid in observed and pid not in visited and observed[pid][1] == main,
+                        'WORKERS_NOT_QUIESCENT')
+                visited.add(pid)
+                pid = observed[pid][0]
 
 
 def retained_paths_outside_runtime(config, install):
@@ -326,8 +429,9 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
             protected(path, root, owner_uid)
             require(stat.S_IMODE(path.stat().st_mode) == 0o600, 'ACTIVATION_MARKER_UNSAFE')
             markers.append(name)
-    workers_quiescent(config, root, user_ids)
-    units = inspect_units(config, paths, root, owner_uid, runner)
+    listeners = {}
+    units = inspect_units(config, paths, root, owner_uid, runner, listeners=listeners)
+    workers_quiescent(config, root, user_ids, listeners=listeners)
     journal = {'schemaVersion': 1, 'stage': 'RESERVED', 'sourceRevision': release.name,
                'targetRevision': revision,
                'previousEnvironmentComparison': report['configuration']['deployment'],
@@ -336,17 +440,24 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
                'activationMarkers': markers, 'units': units}
     with operation_lock(paths['lock'], root, owner_uid):
         require(not present(paths['operation']) and not present(paths['journal']), 'RECOVERY_REQUIRED')
+        listeners = {}
+        require(inspect_units(config, paths, root, owner_uid, runner, listeners=listeners) == units,
+                'UNIT_STATE_CHANGED')
+        workers_quiescent(config, root, user_ids, listeners=listeners)
         # Any interruption from this point leaves a durable reservation. Neither
         # this helper nor public reinstall automatically resets or replays it.
         write_new(paths['journal'], journal)
         write_new(paths['operation'], {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
                                       'phase': 'apply', 'target_head': revision})
         for name in units:
-            checked_systemctl(runner, 'stop', name)
-            checked_systemctl(runner, 'disable', name)
-        units_after = inspect_units(config, paths, root, owner_uid, runner)
+            for action in ['stop', 'disable']:
+                journal['serviceTransition'] = {'unit': name, 'action': action}
+                update_journal(paths['journal'], journal, 'RESERVED')
+                checked_systemctl(runner, action, name)
+        units_after = inspect_units(config, paths, root, owner_uid, runner, stopped=True)
         require(all(value in ['inactive', 'failed'] for value in units_after.values()), 'SERVICES_NOT_STOPPED')
-        workers_quiescent(config, root, user_ids)
+        workers_quiescent(config, root, user_ids, stopped_units=units_after)
+        journal.pop('serviceTransition')
         update_journal(paths['journal'], journal, 'SERVICES_STOPPED')
         archive.mkdir(mode=0o700)
         fsync_dir(archive.parent)

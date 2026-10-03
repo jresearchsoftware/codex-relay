@@ -115,9 +115,9 @@ is reported. Selecting a version does not grant deployment authority.
 
 Product source revision, installed product revision, consumer authority revision
 and latest accepted product revision are independent. Routing and recovery use
-the installed revision pinned by the reviewed workflow projection; advancing
+the exact installed revision with the reviewed workflow compatibility contract; advancing
 either repository does not upgrade or invalidate it. An owner selects one exact
-accepted target, reviews its generated projection, and uses the public upgrade
+accepted target, reviews any changed generated workflow bytes, and uses the public upgrade
 primitive to apply and verify that same target under the existing host lock.
 Unknown or failed transitions retain recovery evidence. Task #25 may wrap this
 primitive with quiesce/drain/resume policy; the primitive does not invent that

@@ -80,7 +80,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_RELAY_HEAD'], HEAD)
+                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v1')
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
                 self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
@@ -184,6 +184,9 @@ for (const value of [condition, recovery.jobs.recover.if]) {
             manifest.chmod(0o640)
             identity = release / 'reviewed-source/.relay-source.json'
             identity.write_text(json.dumps({'revision': HEAD}))
+            compatibility = release / 'reviewed-source/deploy/workflows/contract.json'
+            compatibility.parent.mkdir(parents=True)
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))
             identity.chmod(0o644)
             (source / 'entrypoint.mjs').write_text(
                 'export async function main() { console.log("FIXTURE_ROUTING_STARTED"); }\n'
@@ -219,7 +222,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
             def execute(value, overrides=None):
                 _, step = control_step(value)
                 code = javascript(step).replace('/opt/codex-relay', install.as_posix()).replace('/usr/bin/node', node)
-                environment = {**os.environ, 'EXPECTED_RELAY_HEAD': HEAD, 'GITHUB_SHA': HEAD,
+                environment = {**os.environ, 'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1', 'GITHUB_SHA': HEAD,
                                'RECOVERY_OPERATION': 'inspect', 'RECOVERY_RUN_ID': '99',
                                'RECOVERY_ATTEMPT_ID': 'run-99', 'RECOVERY_AUTHORIZATION_ID': '',
                                **(overrides or {})}
@@ -230,7 +233,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
             self.assertEqual(started.returncode, 0, started.stderr)
             self.assertIn('FIXTURE_ROUTING_STARTED', started.stdout)
             for value in (self.routing, self.recovery):
-                for invalid in ({'EXPECTED_RELAY_HEAD': 'b' * 40}, {'EXPECTED_RELAY_HEAD': '../../candidate'}):
+                for invalid in ({'EXPECTED_WORKFLOW_CONTRACT': 'b' * 40}, {'EXPECTED_WORKFLOW_CONTRACT': '../../candidate'}):
                     blocked = execute(value, invalid)
                     self.assertNotEqual(blocked.returncode, 0)
                     self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
@@ -268,6 +271,28 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 self.assertNotEqual(blocked.returncode, 0)
                 self.assertIn('RECOVERY_REQUEST_INVALID', blocked.stderr)
                 self.assertNotIn('fixtureRequest', blocked.stdout)
+
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v2'}))
+            for value in (self.routing, self.recovery):
+                blocked = execute(value)
+                self.assertNotEqual(blocked.returncode, 0)
+                self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
+            compatibility.unlink()
+            self.assertNotEqual(execute(self.routing).returncode, 0)
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))
+
+            # An owner-installed compatible product can change without another
+            # workflow projection. The resolved revision remains observable.
+            next_head = 'd' * 40
+            next_release = install / 'releases' / next_head
+            shutil.copytree(release, next_release)
+            (next_release / 'reviewed-source/.relay-source.json').write_text(json.dumps({'revision': next_head}))
+            (install / 'current').unlink()
+            (install / 'current').symlink_to(next_release)
+            for value in (self.routing, self.recovery):
+                continued = execute(value)
+                self.assertEqual(continued.returncode, 0, continued.stderr)
+                self.assertEqual(json.loads(continued.stdout.splitlines()[0])['installedRelayHead'], next_head)
 
 
 if __name__ == '__main__':
