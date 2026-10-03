@@ -109,6 +109,22 @@ class ConsumerWorkflowTests(unittest.TestCase):
                     self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
         self.assertFalse((WORKFLOWS / 'ci.yml').exists(), 'Avoid duplicate candidate check producers')
 
+    def test_runtime_qualification_scopes_privilege_to_installed_proof(self):
+        steps = self.validation['jobs']['runtime']['steps']
+        contracts = next(step for step in steps if '-m pytest' in step.get('run', ''))
+        self.assertNotIn('sudo', contracts['run'])
+        self.assertIn('/usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests', contracts['run'])
+        for suite in ('codex-launcher-*.test.mjs', 'diagnostics-*.test.mjs', 'diagnostic-snapshot.test.mjs'):
+            self.assertIn('deploy/ansible/tests/' + suite, contracts['run'])
+        release = next(step for step in steps if 'qualify_codex_cli.py' in step.get('run', ''))
+        self.assertEqual(release['run'], '/usr/bin/python3 deploy/ansible/tests/qualify_codex_cli.py')
+        installed = next(step for step in steps if 'installed_runtime_proof.py' in step.get('run', ''))
+        self.assertEqual(installed['run'], 'sudo /usr/bin/python3 deploy/ansible/tests/installed_runtime_proof.py')
+        for step in (contracts, release, installed):
+            self.assertNotIn('if', step)
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('||', step['run'])
+
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')
     def test_native_names_and_owner_event_conditions(self):
         # Evaluate the small GitHub expression subset actually used by these

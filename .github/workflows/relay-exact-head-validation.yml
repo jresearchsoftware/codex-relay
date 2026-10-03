@@ -106,9 +106,9 @@ jobs:
 
       - name: Test deployment and launcher contracts
         run: |
-          # Protected-path fixtures also need synthetic root ownership; this
-          # capability belongs only to the disposable hosted qualification VM.
-          sudo /usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests
+          # Keep ordinary-UID permission tests in their intended context.
+          # The installed-runtime proof has a separate sudo boundary below.
+          /usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests
           node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
 
       - name: Qualify exact official Codex release without model calls

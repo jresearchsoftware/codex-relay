@@ -233,8 +233,17 @@ class ProductionDiagnosticTests(unittest.TestCase):
             "LC_ALL": "C",
             "HOME": "/tmp",
         }
+        # Model the legacy CommonJS parser even when the installed Node can
+        # detect ESM syntax. The repaired wrapper must not need that inference.
+        node_help = subprocess.run(
+            ["/usr/bin/node", "--help"], capture_output=True, text=True, check=True,
+            env=launcher_environment,
+        ).stdout
+        if "--no-experimental-detect-module" in node_help:
+            launcher_environment["NODE_OPTIONS"] = "--no-experimental-detect-module"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            (root / "package.json").write_text('{"type":"commonjs"}\n', encoding="utf-8")
             module = root / "relay-codex.mjs"
             legacy_launcher = root / "relay-codex-legacy"
             wrapper = root / "relay-codex"
