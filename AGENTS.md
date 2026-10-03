@@ -142,19 +142,29 @@ or external mutation is unknown or uncontained.
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `medium` and the default Subagents
 permission is `On`. Explicit live Task or Change Request values override these
-defaults; explicit consumer configuration remains owner-controlled. Subagent use remains discretionary
-and evidence-driven; permission does not weaken scope, authority, exact-head,
-publication, production, credential or protected-boundary rules. These defaults
-do not authorize nested Relay execution or retry loops.
+defaults; explicit consumer configuration remains owner-controlled. Subagent use
+remains discretionary and evidence-driven; permission does not weaken scope,
+authority, exact-head, publication, production, credential or protected-boundary
+rules. These defaults do not authorize nested Relay execution or retry loops.
 
-Select each subagent's model and reasoning effort independently for its
-assignment's complexity and risk; they may differ from the parent's profile.
-By default, provide a separate self-contained assignment with its goal,
-necessary facts/files, constraints and completion criteria, without automatically
-passing full conversation or execution history. Pass broader history only when
-materially necessary, preserving relevant prior decisions, constraints,
-prohibitions and protected boundaries. Delegation never expands Task/CR scope,
-external authority, credential access, publication or production rights.
+## Shared subagent workflow
+
+Upstream: `jresearchsoftware/codex-model-landscape`, `SUBAGENTS.md` from
+`main`. The local copy is adopted when integrating or updating this guidance.
+
+When Subagents is On and delegation is allowed by the live Task/CR and session,
+read [the shared subagent guidance](docs/codex/SUBAGENTS.md) before substantial
+work and follow it. Proactive delegation is highly recommended for useful
+independent assignments at every supported parent effort, including non-Ultra
+levels, but there is no minimum helper count and unsuitable work may remain
+single-agent. Select each child's model, effort, context and bounded assignment
+using that guidance within Relay's allowed profiles.
+
+Relay's local Task/CR authority, explicit model/effort contracts, Subagents Off,
+runtime restrictions, exact-head review, Writer/Reviewer separation and all
+publication, credential, production and protected-boundary rules remain
+authoritative. Keep the parent's selected profile unchanged. Delegation never
+expands Task/CR scope or external authority.
 
 An inner correction does not itself need a new Issue, Step or execution.
 A manual task may publish through its explicitly authorized owner channel;
