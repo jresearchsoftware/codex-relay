@@ -10,11 +10,11 @@ import { fixture } from '../../controller/test/fixture.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
 
 test('ordinary project defaults match schema, deployment inputs and canonical policy', () => {
-  assert.deepEqual(EXECUTION_DEFAULTS, { effort: 'medium', subagentsAllowed: true });
+  assert.deepEqual(EXECUTION_DEFAULTS, { effort: 'xhigh', subagentsAllowed: true });
   const policy = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
-  assert.match(policy, /default model is\s+`gpt-6\.1-sol`, the default reasoning effort is `medium` and the default Subagents\s+permission is `On`/);
+  assert.match(policy, /default model is\s+`gpt-6\.1-sol`, the default reasoning effort is `xhigh` and the default Subagents\s+permission is `On`/);
   const example = JSON.parse(readFileSync(new URL('../../deploy/example.json', import.meta.url), 'utf8'));
-  assert.deepEqual(validateConsumer(example.consumer).defaultProfile, { cliModelId: 'gpt-6.1-sol', effort: 'medium' });
+  assert.deepEqual(validateConsumer(example.consumer).defaultProfile, { cliModelId: 'gpt-6.1-sol', effort: 'xhigh' });
   const backend = readFileSync(new URL('../../deploy/ansible/group_vars/all.yml', import.meta.url), 'utf8');
   assert.match(backend, /^relay_default_model: gpt-6\.1-sol$/m);
   assert.deepEqual(resolveExecutionDefaults({ effort: 'max', subagentsAllowed: false }),
@@ -23,9 +23,10 @@ test('ordinary project defaults match schema, deployment inputs and canonical po
 
 test('consumer model stays required and omitted effort resolves without altering explicit config digests', () => {
   const omitted = { ...CONSUMER, defaultProfile: { cliModelId: 'explicit-model' } };
-  assert.deepEqual(validateConsumer(omitted).defaultProfile, { cliModelId: 'explicit-model', effort: 'medium' });
-  for (const effort of ['max', 'high', 'ultra', 'future-effort']) {
+  assert.deepEqual(validateConsumer(omitted).defaultProfile, { cliModelId: 'explicit-model', effort: 'xhigh' });
+  for (const effort of ['medium', 'max', 'high', 'ultra', 'future-effort']) {
     const explicit = { ...omitted, defaultProfile: { cliModelId: 'explicit-model', effort } };
+    assert.deepEqual(validateConsumer(explicit).defaultProfile, explicit.defaultProfile);
     assert.equal(consumerDigest(validateConsumer(explicit)), consumerDigest(explicit));
   }
   for (const defaultProfile of [{}, { effort: 'ultra' }, { cliModelId: 'm', effort: null },
@@ -61,6 +62,7 @@ test('Issue authority preserves explicit permissions and blocks ambiguous permis
 test('Issue defaults and explicit overrides reach the worker unchanged', async t => {
   for (const [fields, effort, allowed] of [
     ['', CONSUMER.defaultProfile.effort, true],
+    ['Codex effort: medium\nSubagents: On', 'medium', true],
     ['Codex effort: max\nSubagents: Off', 'max', false],
     ['Codex effort: high\nSubagents: On', 'high', true]
   ]) {

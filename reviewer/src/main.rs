@@ -1239,7 +1239,7 @@ mod tests {
             assert_eq!(
                 cr["codex_effort"],
                 if omitted.contains(&"codex_effort") {
-                    "medium"
+                    "xhigh"
                 } else {
                     "max"
                 }

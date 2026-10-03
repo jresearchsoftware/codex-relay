@@ -507,9 +507,9 @@ no consumer PR. Actual managed content or compatibility changes yield a bounded
 proposal and stop for normal consumer review/merge. File digests remain solely
 as the previous managed drift baseline. Schema-1 SHA-bound manifests are read
 and drift-checked for a one-time schema-2 migration; they are not treated as
-current projection. Task #44 must perform the existing self-dogfood migration
-after the source correction is accepted. Product template changes do not
-publish that consumer diff or continue production operations.
+current projection. Existing SHA-bound consumers, including self-dogfood,
+migrate through this same supported projection interface. Product template
+changes do not publish that consumer diff or continue production operations.
 
 After the projection is reviewed and merged, verify the clean consumer checkout:
 

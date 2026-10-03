@@ -28,7 +28,7 @@ resolved explicit model/effort. Relay never reads a moving Model Landscape.
 With no explicit consumer effort override, the shared execution resolver uses
 the schema representation of [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal).
 Omitted Subagents uses that same resolver. Explicit Task/CR values take priority.
-The ordinary project profile is `gpt-6.1-sol` / `medium` / Subagents `On`.
+The ordinary project profile is `gpt-6.1-sol` / `xhigh` / Subagents `On`.
 Consumer configuration still supplies the required model; the deployment
 example and backend default use this project model. Explicit consumer profiles
 and their digests are preserved, as are explicit live Task/CR overrides.

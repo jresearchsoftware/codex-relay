@@ -31,7 +31,7 @@ test('new Issue admission safely defaults recoverable metadata and publishes war
   assert.equal(f.envelope.branch, 'codex/task-42');
   assert.equal(f.envelope.thread, 'Task 42 — Step 1 — defaulted admission');
   assert.equal(f.envelope.closure, 'Related to #42');
-  assert.deepEqual(f.envelope.profile, { cliModelId: 'example-model', effort: 'medium' });
+  assert.deepEqual(f.envelope.profile, { cliModelId: 'example-model', effort: 'xhigh' });
   assert.equal(f.envelope.subagentsAllowed, true);
   assert.ok(!('allowedPaths' in f.envelope));
   assert.ok(f.envelope.admission.warnings.some(warning => warning.code === 'CODEX_MODEL_DEFAULTED'));
