@@ -3,7 +3,10 @@
 The systemd action is replaced by a constrained local command that records its
 rendered options. This proves conditional routing, not live systemd behavior.
 The rendered recovery helper is also exercised without host service access.
+Native systemd-analyze checks the independently anchored timer configuration;
+it does not prove scheduling. Two actual callbacks remain a live qualification.
 """
+import configparser
 import copy
 import json
 import os
@@ -157,16 +160,66 @@ def test_pending_apply_timer_callback_cannot_start_any_service(tmp_path):
     assert (record.read_bytes(), marker.read_bytes()) == before
 
 
+@pytest.mark.skipif(not shutil.which('systemd-analyze'), reason='native systemd analyzer required')
+@pytest.mark.parametrize('interval', ['7s', '2min 15s'])
+def test_rendered_timer_has_independent_start_anchor_and_valid_fixed_unit(tmp_path, interval):
+    service_name = TIMER.removesuffix('.timer') + '.service'
+    timer = tmp_path / TIMER
+    timer.write_text(Environment(undefined=StrictUndefined).from_string(
+        (TEMPLATES / 'reviewer-mcp-recovery.timer.j2').read_text()).render(
+            relay_reviewer_recovery_interval=interval,
+            relay_reviewer_recovery_service_name=service_name))
+    settings = configparser.ConfigParser(interpolation=None)
+    settings.optionxform = str
+    settings.read_string(timer.read_text())
+    # OnActiveSec supplies the first future deadline even after the boot
+    # deadline elapsed and the triggered service lost activation timestamps.
+    assert settings['Timer']['OnActiveSec'] == interval
+    assert settings['Timer']['OnBootSec'] == interval
+    assert settings['Timer']['OnUnitActiveSec'] == interval
+    assert settings['Timer']['Unit'] == service_name
+    service = tmp_path / service_name
+    service.write_text('[Unit]\nDescription=Non-executed timer configuration fixture\n'
+                       '[Service]\nType=oneshot\nExecStart=/bin/true\n')
+    runtime = tmp_path / 'analyzer-runtime'
+    runtime.mkdir(mode=0o700)
+    # User-mode offline analysis keeps runtime scratch state within this owned
+    # fixture; it parses the same timer options without requiring host /run.
+    result = subprocess.run(['systemd-analyze', '--user', 'verify', str(timer), str(service)],
+                            capture_output=True, text=True, timeout=20,
+                            env={**os.environ, 'SYSTEMD_LOG_COLOR': '0',
+                                 'XDG_RUNTIME_DIR': str(runtime)})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.skipif(not shutil.which('ansible-playbook'), reason='native Ansible required')
-@pytest.mark.parametrize('active,enabled,passes', [
-    ('active', 'enabled', True),
-    ('inactive', 'disabled', False),
-    ('active', 'disabled', False),
-    ('inactive', 'enabled', False),
+@pytest.mark.parametrize('active,enabled,schedule,show_rc,passes', [
+    pytest.param('active', 'enabled', 'SubState=waiting\nNextElapseUSecMonotonic=1h 42min',
+                 0, True, id='waiting-finite-deadline'),
+    pytest.param('active', 'enabled', 'SubState=running\nNextElapseUSecMonotonic=infinity',
+                 0, True, id='running-callback-pending'),
+    pytest.param('active', 'enabled', 'SubState=elapsed\nNextElapseUSecMonotonic=infinity',
+                 0, False, id='elapsed-inert-timer'),
+    pytest.param('active', 'enabled', 'SubState=waiting\nNextElapseUSecMonotonic=infinity',
+                 0, False, id='waiting-without-deadline'),
+    pytest.param('active', 'enabled', 'SubState=waiting\nNextElapseUSecMonotonic=0',
+                 0, False, id='waiting-zero-deadline'),
+    pytest.param('active', 'enabled', 'SubState=unexpected\nNextElapseUSecMonotonic=123456789',
+                 0, False, id='unknown-timer-substate'),
+    pytest.param('active', 'enabled', 'SubState=waiting', 0, False, id='missing-deadline'),
+    pytest.param('active', 'enabled', 'SubState=waiting\nNextElapseUSecMonotonic=123456789',
+                 1, False, id='property-observation-failed'),
+    pytest.param('inactive', 'disabled', 'SubState=dead\nNextElapseUSecMonotonic=infinity',
+                 0, False, id='inactive-disabled'),
+    pytest.param('active', 'disabled', 'SubState=waiting\nNextElapseUSecMonotonic=123456789',
+                 0, False, id='active-disabled'),
+    pytest.param('inactive', 'enabled', 'SubState=dead\nNextElapseUSecMonotonic=infinity',
+                 0, False, id='inactive-enabled'),
 ])
-def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, enabled, passes):
+def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, enabled, schedule, show_rc, passes):
     source = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     task_names = ['Inspect the recovery timer during production post-check',
+                  'Inspect the next recovery timer deadline during production post-check',
                   'Require the normal recovery timer after production install']
     tasks = [copy.deepcopy(next(task for play in source for task in play.get('post_tasks', [])
                                 if task.get('name') == name)) for name in task_names]
@@ -178,9 +231,14 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
                     'import json, os, pathlib, sys\n'
                     'with pathlib.Path(os.environ["FAKE_SYSTEMCTL_CALLS"]).open("a") as stream:\n'
                     '    stream.write(json.dumps(sys.argv[1:]) + "\\n")\n'
-                    'assert len(sys.argv) == 3 and sys.argv[2] == "synthetic-reviewer-recovery.timer"\n'
+                    'assert sys.argv[2] == "synthetic-reviewer-recovery.timer"\n'
                     'operation = sys.argv[1]\n'
-                    'assert operation in ["is-active", "is-enabled"], "mutating service-manager call"\n'
+                    'assert operation in ["is-active", "is-enabled", "show"], "mutating service-manager call"\n'
+                    'if operation == "show":\n'
+                    '    assert sys.argv[3:] == ["--property=SubState,NextElapseUSecMonotonic"]\n'
+                    '    print(os.environ["FAKE_TIMER_SCHEDULE"])\n'
+                    '    sys.exit(int(os.environ["FAKE_TIMER_SHOW_RC"]))\n'
+                    'assert len(sys.argv) == 3\n'
                     'value = os.environ["FAKE_TIMER_ACTIVE" if operation == "is-active" else "FAKE_TIMER_ENABLED"]\n'
                     'print(value)\n'
                     'sys.exit(0 if value in ["active", "enabled"] else 3)\n')
@@ -193,7 +251,8 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
                  'relay_reviewer_recovery_timer_name': TIMER},
         'environment': {'PATH': str(bin_root) + ':/usr/bin:/bin',
                         'FAKE_SYSTEMCTL_CALLS': str(calls),
-                        'FAKE_TIMER_ACTIVE': active, 'FAKE_TIMER_ENABLED': enabled},
+                        'FAKE_TIMER_ACTIVE': active, 'FAKE_TIMER_ENABLED': enabled,
+                        'FAKE_TIMER_SCHEDULE': schedule, 'FAKE_TIMER_SHOW_RC': str(show_rc)},
         'tasks': tasks,
     }]))
     result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local',
@@ -203,4 +262,5 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
     assert (result.returncode == 0) is passes, result.stdout + result.stderr
     assert calls.exists(), result.stdout + result.stderr
     assert [json.loads(line) for line in calls.read_text().splitlines()] == [
-        ['is-active', TIMER], ['is-enabled', TIMER]]
+        ['is-active', TIMER], ['is-enabled', TIMER],
+        ['show', TIMER, '--property=SubState,NextElapseUSecMonotonic']]

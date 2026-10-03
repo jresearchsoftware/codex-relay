@@ -206,9 +206,14 @@ and clean post-check follow while the host lock remains held. The validated
 same-invocation reinstall continuation restores the normal recovery timer during
 fresh apply; an unfinished apply record still prevents its helper from starting
 Reviewer or runners. Generic recovery without that journal binding stays
-deferred. Both clean and ordinary production post-check require the timer to be
-active and enabled through read-only inspection. Reactivation and live
-qualification remain explicit owner transitions.
+deferred. Its activation-relative deadline supplies a fresh first tick when
+retained boot history and forgotten recovery-service timestamps leave no
+deadline after reinstall; the existing unit-relative interval supplies later
+ticks. Both clean and ordinary production post-check require the timer to be
+active/enabled and waiting with a finite monotonic deadline, or running its
+callback, through read-only inspection. An elapsed timer with no scheduled tick
+fails this gate. Reactivation and live qualification remain explicit owner
+transitions.
 
 Retirement reserves the normal production operation plus a bounded reinstall
 recovery journal before its first mutation. Unknown or failed transitions retain
