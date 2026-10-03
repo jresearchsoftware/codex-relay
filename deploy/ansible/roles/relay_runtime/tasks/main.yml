@@ -383,7 +383,16 @@
   when:
     - relay_deployment_profile == 'production'
     - not ansible_check_mode | bool
-    - not relay_production_operation_recovery_required | default(false) | bool
+    # Clean reinstall reserves its apply record before entering this role.
+    # The public controller's exact journal digest is verified by the
+    # production-operation-state preflight; other recovery stays deferred.
+    - >-
+      not (relay_production_operation_recovery_required | default(false) | bool) or
+      (
+        relay_production_operation_phase | default('') == 'apply' and
+        relay_production_operation_recovery_matching | default(false) | bool and
+        (relay_clean_reinstall_journal_sha256 | default('')) is match('^[0-9a-f]{64}\Z')
+      )
 
 - name: Install secret-free relay environment contract
   ansible.builtin.template:

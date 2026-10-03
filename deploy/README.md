@@ -202,8 +202,13 @@ must have MainPID and ControlPID zero, and all runner/runtime identities must be
 after stop before the archive move. It retains complete intended runner
 directories at their original paths, all `/etc` and `/var/lib` consumer state,
 external credentials, TLS, and Writer/Reviewer durable evidence. Fresh apply
-and clean post-check follow while the host lock remains held. Reactivation and
-live qualification remain explicit owner transitions.
+and clean post-check follow while the host lock remains held. The validated
+same-invocation reinstall continuation restores the normal recovery timer during
+fresh apply; an unfinished apply record still prevents its helper from starting
+Reviewer or runners. Generic recovery without that journal binding stays
+deferred. Both clean and ordinary production post-check require the timer to be
+active and enabled through read-only inspection. Reactivation and live
+qualification remain explicit owner transitions.
 
 Retirement reserves the normal production operation plus a bounded reinstall
 recovery journal before its first mutation. Unknown or failed transitions retain
