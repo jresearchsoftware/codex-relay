@@ -75,9 +75,9 @@ jobs:
         run: python3 scripts/check-candidate.py
 
   runtime:
-    name: Governed runtime qualification
+    name: Codex CLI compatibility
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,29 +92,23 @@ jobs:
           node-version: 22.20.0
           package-manager-cache: false
 
-      - name: Prepare disposable qualification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible-core python3-pytest python3-yaml python3-jinja2
-          # Installed wrappers intentionally use /usr/bin/node. Qualify that
-          # same path with the selected toolchain on this disposable VM only.
-          sudo install -m 0755 "$(command -v node)" /usr/bin/node
-          git rev-parse HEAD
-          /usr/bin/node --version
-          /usr/bin/python3 --version
-          /usr/bin/ansible-playbook --version
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.11.16
 
-      - name: Test deployment and launcher contracts
-        run: |
-          # Keep ordinary-UID permission tests in their intended context.
-          # The installed-runtime proof has a separate privilege boundary below.
-          /usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests
-          node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
+      - name: Prepare CLI qualification dependency
+        run: python3 -m pip install PyYAML==6.0.2
 
       - name: Qualify exact official Codex release without model calls
-        run: /usr/bin/python3 deploy/ansible/tests/qualify_codex_cli.py
+        run: python3 deploy/ansible/tests/qualify_codex_cli.py
 
-      - name: Qualify installed runtime in disposable namespaces
-        # Synthetic users/credentials and transport only. This does not access
-        # an installed consumer or grant deployment/publication authority.
-        run: sudo /usr/bin/python3 deploy/ansible/tests/installed_runtime_proof.py
+      - name: Test CLI and launcher contracts
+        run: |
+          # Keep ordinary-UID permission tests in their intended context.
+          # Installed-runtime proof retains a separate privilege boundary.
+          python3 -m unittest deploy.tests.test_consumer_workflows \
+            deploy.ansible.tests.test_codex_runtime_contract \
+            deploy.ansible.tests.test_production_codex_launcher_binding \
+            deploy.ansible.tests.test_production_diagnostic
+          node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs

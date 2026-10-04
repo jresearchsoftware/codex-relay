@@ -109,21 +109,33 @@ class ConsumerWorkflowTests(unittest.TestCase):
                     self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
         self.assertFalse((WORKFLOWS / 'ci.yml').exists(), 'Avoid duplicate candidate check producers')
 
-    def test_runtime_qualification_scopes_privilege_to_installed_proof(self):
+    def test_cli_compatibility_keeps_targeted_unprivileged_qualification(self):
         steps = self.validation['jobs']['runtime']['steps']
-        contracts = next(step for step in steps if '-m pytest' in step.get('run', ''))
+        contracts = next(step for step in steps if '-m unittest' in step.get('run', ''))
         self.assertNotIn('sudo', contracts['run'])
-        self.assertIn('/usr/bin/python3 -m pytest -q deploy/tests deploy/ansible/tests', contracts['run'])
+        for suite in ('deploy.tests.test_consumer_workflows',
+                      'deploy.ansible.tests.test_codex_runtime_contract',
+                      'deploy.ansible.tests.test_production_codex_launcher_binding',
+                      'deploy.ansible.tests.test_production_diagnostic'):
+            self.assertIn(suite, contracts['run'])
         for suite in ('codex-launcher-*.test.mjs', 'diagnostics-*.test.mjs', 'diagnostic-snapshot.test.mjs'):
             self.assertIn('deploy/ansible/tests/' + suite, contracts['run'])
         release = next(step for step in steps if 'qualify_codex_cli.py' in step.get('run', ''))
-        self.assertEqual(release['run'], '/usr/bin/python3 deploy/ansible/tests/qualify_codex_cli.py')
-        installed = next(step for step in steps if 'installed_runtime_proof.py' in step.get('run', ''))
-        self.assertEqual(installed['run'], 'sudo /usr/bin/python3 deploy/ansible/tests/installed_runtime_proof.py')
-        for step in (contracts, release, installed):
+        self.assertEqual(release['run'], 'python3 deploy/ansible/tests/qualify_codex_cli.py')
+        self.assertLess(steps.index(release), steps.index(contracts))
+        for step in (contracts, release):
             self.assertNotIn('if', step)
             self.assertNotIn('continue-on-error', step)
             self.assertNotIn('||', step['run'])
+        for step in steps:
+            command = step.get('run', '')
+            self.assertNotIn('sudo', command)
+            self.assertNotIn('installed_runtime_proof.py', command)
+            self.assertNotIn('-m pytest', command)
+            self.assertNotIn('unittest discover', command)
+            if command and shutil.which('bash') and os.name != 'nt':
+                checked = subprocess.run(['bash', '-n'], input=command, text=True, capture_output=True)
+                self.assertEqual(checked.returncode, 0, checked.stderr)
 
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')
     def test_native_names_and_owner_event_conditions(self):

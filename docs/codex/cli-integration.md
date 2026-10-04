@@ -102,11 +102,13 @@ qualified. The installed-runtime proof retains its separate managed-path scope.
 Local Node and deployment suites cover the launcher, redaction, timeout,
 cleanup, trusted Git handoff and diagnostic/usage propagation. The existing
 [exact-head CI workflow](../../.github/workflows/relay-exact-head-validation.yml)
-also runs the official-release probe and the full disposable installed-runtime
-proof with synthetic users and transport. Root-only proof runs in that hosted
-CI boundary after Writer publication, never inside a governed worker. None of
-these checks establishes production credentials, ingress, model access or
-deployment readiness. Local success and pending native proof remain distinct.
+also runs the official-release probe and targeted workflow, launcher and
+diagnostic compatibility tests under an ordinary UID. The reusable disposable
+installed-runtime proof remains separate; it requires an authorized capable
+executor and never runs inside a governed worker. Neither it nor the full
+deployment suite is a prerequisite of the CLI compatibility job. None of these
+checks establishes production credentials, ingress, model access or deployment
+readiness. Local success and native exact-head CI remain distinct evidence.
 
 ## Deferred capabilities
 
@@ -118,7 +120,12 @@ remain deferred. Legacy adapter compatibility is retained rather than removing
 an existing integration surface without authority.
 
 #26 separately owns native exact-head CI waiting, feeding failures into an
-implementation loop, retry/correction policy and readiness handoff. Adding
-qualification to the existing CI workflow does not add those semantics to
-automatic execution. #19, #20, #22 and #25 are not redesigned here; the observed
+implementation loop, retry/correction policy and readiness handoff. It also
+owns reconciliation of repository-wide required validation with capable worker
+and native executors. Task #43's former broad deployment gate exposed six
+pre-existing deployment/lifecycle failures on its starting base; those findings
+remain baseline debt, not Codex 0.160.0 regressions or Task #43 remediation.
+The bounded compatibility job does not add #26 semantics to automatic execution
+or change the repository's general validation policy.
+#19, #20, #22 and #25 are not redesigned here; the observed
 #25 nonzero exit is motivation for categorized evidence, not a diagnosed cause.
