@@ -5,11 +5,30 @@ human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
 Task/Step admission, an installed Relay consumer, Codex UI tools or these
 optional developer hooks to propose a change.
 
-Read the live canonical Issue or Change Request, the exact starting head/base
-and relevant native checks before changing code. Repository files explain the
-product; the admitted task defines the goal and allowed external actions.
-Read [architecture](docs/architecture.md) before changing orchestration or a
-trust boundary, and the affected component contract before changing its API.
+## Context loading and governance layering
+
+Start owner-admitted work with only this file, the live canonical Issue or
+Change Request, the current PR when one exists, and the exact Git/check facts
+needed for the current decision. The live authority identifies the active goal;
+do not preload broad repository history, status documents, component manuals or
+old task artifacts merely because they may become relevant.
+
+Load detail just in time. Read [architecture](docs/architecture.md) before a
+change to orchestration or a trust boundary, the affected component contract
+before changing its API, [CONTRIBUTING.md](CONTRIBUTING.md) when environment or
+validation detail is needed, and deployment/hook/subagent documentation only
+when those surfaces are active. Prefer a targeted section, path, diff or exact
+live fact over a broad reread.
+
+Keep this file limited to durable cross-task invariants and stable routing
+pointers. Component mechanics, platform detail, deployment procedures and tool
+qualification belong in their canonical component documents. A lower-level
+document may specialize an explicit extension point but cannot weaken Task/CR
+authority, security, publication, review or protected-boundary rules.
+
+After a mutation, recovery or compaction, refresh only mutable authority and
+facts that could have changed. Do not restart broad discovery or treat cached
+history as current truth.
 
 The live Issue body is the mutable canonical Task contract. Keep current
 requirements, owner corrections, scope/boundary decisions and task status in
@@ -105,30 +124,13 @@ execution warnings even when the result is green.
 
 ## Execution context and shells
 
-Identify the actual execution environment before choosing command syntax and
-paths. Use the shortest qualified parser/transport path that preserves the
-admitted boundary. From Windows, use `wsl.exe --distribution <distro> --exec`
-with the Linux executable and its arguments when Linux execution is needed.
-When already inside Debian/Linux, execute directly; do not add a WSL hop or an
-unnecessary shell. Use native Linux paths there. Runtime/filesystem boundary
-checks need a native Linux filesystem as described in
-[CONTRIBUTING.md](CONTRIBUTING.md#local-validation).
-
-Use PowerShell Core (`pwsh`) for PowerShell-oriented work on Windows or
-WSL/Linux when Bash is not the implementation boundary. Use Bash when a
-source-controlled `.sh` entrypoint or Bash-specific behavior requires it.
-Prefer direct argument passing or a script file (`pwsh -File` or `bash <script>`)
-over nested command strings. Do not carry non-trivial commands, JSON, patches
-or Markdown through multiple shells for reinterpretation; use files, structured
-tool arguments or a single native parser. This routing rule does not replace
-an admitted entrypoint or authorize a different credential/security boundary.
-
-For material PowerShell-to-native calls, propagate failure immediately before
-dependent work. `$ErrorActionPreference = 'Stop'` alone does not establish that
-native nonzero exits stop execution. Use supported native error propagation or
-capture `$LASTEXITCODE` immediately and throw/exit on unexpected failure.
-Handle intentionally expected nonzero results explicitly; do not let a later
-successful command hide the material command's failure.
+Identify the actual execution environment and use the shortest qualified
+transport that preserves the admitted implementation and authority boundary.
+Read the detailed [execution environment and shell routing](CONTRIBUTING.md#execution-environment-and-shell-routing)
+rules just in time when command routing, WSL/native-filesystem behavior or
+PowerShell/native failure propagation matters. A transport choice never replaces
+a source-controlled protected entrypoint or grants different credential,
+production or mutation authority.
 
 ## Work within the admitted goal
 
@@ -150,21 +152,12 @@ rules. These defaults do not authorize nested Relay execution or retry loops.
 ## Shared subagent workflow
 
 Upstream: `jresearchsoftware/codex-model-landscape`, `SUBAGENTS.md` from
-`main`. The local copy is adopted when integrating or updating this guidance.
-
-When Subagents is On and delegation is allowed by the live Task/CR and session,
-read [the shared subagent guidance](docs/codex/SUBAGENTS.md) before substantial
-work and follow it. Proactive delegation is highly recommended for useful
-independent assignments at every supported parent effort, including non-Ultra
-levels, but there is no minimum helper count and unsuitable work may remain
-single-agent. Select each child's model, effort, context and bounded assignment
-using that guidance within Relay's allowed profiles.
-
-Relay's local Task/CR authority, explicit model/effort contracts, Subagents Off,
-runtime restrictions, exact-head review, Writer/Reviewer separation and all
-publication, credential, production and protected-boundary rules remain
-authoritative. Keep the parent's selected profile unchanged. Delegation never
-expands Task/CR scope or external authority.
+`main`. When Subagents is On and useful delegation is allowed, read the
+[adopted shared guidance](docs/codex/SUBAGENTS.md) just in time before the first
+substantial delegation. There is no minimum helper count. Keep the parent's
+admitted profile unchanged; local Task/CR authority, execution boundaries and
+Writer/Reviewer separation override reusable delegation guidance. Delegation
+never expands scope or external authority.
 
 An inner correction does not itself need a new Issue, Step or execution.
 A manual task may publish through its explicitly authorized owner channel;
@@ -253,11 +246,19 @@ entrypoint, identifier, shell or execution context. Deterministic PASS does not
 replace independent judgment. Keep inner corrections within the admitted goal
 and the progress-bounded stops above.
 
-Promote accepted reusable decisions through the next suitable authorized,
-bounded Task/Change Request when the correction is independently useful.
-Do not require completion of the unrelated remainder of a later backlog item
-or create a separate ceremony-only task. Keep the correction within the
-admitted goal and put it in the existing policy or component contract.
+An accepted reusable architecture, process, governance, security,
+qualification or operational decision from owner/ChatGPT discussion must not
+remain chat-only. Before the next related execution, carry a decision that
+changes executable authority into the live Issue/CR; promote an independently
+reusable rule through the next suitable authorized bounded Task/CR into its
+existing policy, architecture, runbook or component contract. If it is not
+durable policy, classify it explicitly as task-local, temporary, experimental
+or rejected when that distinction matters to later execution.
+
+Do not promote casual observations, unaccepted speculation or one-off diagnostic
+facts, and do not create a decision ledger or ceremony-only task. A bounded
+reusable correction may be promoted without completing the unrelated remainder
+of a later backlog item.
 
 Optional [developer hooks](.codex/hooks/README.md) provide bounded diagnostic
 reads, session-owned recovery and a bounded Stop reminder. They are not Relay
@@ -295,30 +296,15 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
-- Follow the [first-install bootstrap contract](deploy/README.md#first-install-bootstrap-and-reusable-state).
-  Classify missing state by ownership before asking the owner for paths. Reuse
-  supported existing protected state when it validates; otherwise use the
-  product-managed bootstrap for product-owned state. In particular, a valid
-  matching TLS lineage may be reused, while a missing lineage and missing
-  OpenAI client CA are normal bootstrap states rather than evidence of an
-  undisclosed server path. Ask only for true external prerequisites such as
-  DNS or owner-provisioned App credentials. If the needed bootstrap exists only
-  in the private Ansible backend and the public deployment interface cannot
-  perform it, treat that as a source/interface defect instead of bypassing the
-  public API or inventing a manual secret path.
-- Keep first-install stages least-privilege and public-interface complete.
-  Reusable protected state must be expressible through supported configuration;
-  product-owned bootstrap must be reachable through the public deployment
-  entrypoint; and a staged Reviewer qualification must not demand unrelated
-  Writer/Codex/runner secrets. Keep SSH target identity separate from public
-  ingress/DNS identity when both are supported. Treat violations as reusable
-  source/interface defects rather than owner-local workarounds.
-- A successful upgrade or second consumer on an already prepared host does not
-  prove standalone bootstrap. Keep clean-environment qualification as separately
-  admitted work when it needs distinct infrastructure; do not retroactively make
-  it a gate for an unrelated/cohosted task. Still add proportional local
-  clean-state regression coverage for any bootstrap defect corrected in the
-  current task, and keep external prerequisites explicit.
+- Follow the [first-install/bootstrap and deployment contracts](deploy/README.md)
+  just in time for install, upgrade, reinstall or activation work. Reuse only
+  validated supported protected state; product-owned bootstrap must remain
+  reachable through the public interface, and true external prerequisites stay
+  owner-provided. A private-backend-only requirement is a source/interface
+  defect, not authority to bypass the public path. Keep clean-environment
+  qualification separately admitted when it needs distinct infrastructure;
+  successful work on an already prepared host does not prove standalone
+  bootstrap or retroactively gate an unrelated task.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 
