@@ -115,6 +115,65 @@ containment, collection, authority, evidence or publication remain failures.
 Run `npm test` here and the affected runtime/contract suites. Consumer-owned
 installed runtime/user/sudo proof requires its separate integration checks.
 
+## Lifecycle admission and drain
+
+The root-only, credential-free `relay-admission` helper controls automatic
+Issue and CR admission. Its durable gate is
+`paths.claimRoot/admission-v1.json`, outside runner and worker write access.
+The gate and Writer share `publication-v2.lock`. New automatic admission checks
+the gate and reserves `controllerLifecycle` in the existing Writer attempt
+record under that same lock, before consuming the ready label. Quiesce closes
+the gate under the lock, so it cannot race an admitted execution reservation.
+A refused automatic launch reports `ADMISSION_QUIESCED`, starts no worker and
+does not claim a terminal Outcome. Manual handoff and publication-only recovery
+retain their existing authority and remain available.
+
+An automatic reservation covers the complete controller invocation: checkout,
+Codex execution and containment, collection, Writer publication, and durable
+terminal receipts. An already admitted invocation may finish while admission
+is quiesced. A model exit or an idle runner does not establish drain. The last
+trusted controller operation asks root to release its reservation; root reads
+the matching runner journal itself and requires known containment, matching
+terminal receipts and no unresolved publication intent. Caller JSON cannot
+assert that proof. Earlier attempts without `controllerLifecycle` require the
+same existing terminal journal evidence. Missing, mismatched or unknown
+execution and ambiguous publication fail closed.
+
+Drain polls bounded snapshots and releases the Writer lock between snapshots,
+allowing admitted controllers to finish. It emits only bounded active/unknown
+counts and elapsed time on stderr every thirty seconds; stdout remains one JSON
+receipt. Timeout, unreadable state or an unknown attempt preserves quiesce for
+owner inspection. Drain neither relaunches Codex nor discards retained work or
+diagnostics. Registered runners remain online; graceful stop disables new
+automatic admission without stopping those runners.
+
+The gate binds one lifecycle operation UUID, the exact selected target and the
+consumer digest. Its phases are `open`, `quiesced`, `drained`, `applying`,
+`verified` and `recovery-required`. A successful graceful stop retains
+`drained`, which is still quiesced admission. Initial installation initializes a
+missing gate but preserves existing state. Managed lifecycle installation only
+reads the required gate; a missing gate fails closed. No restart, failed apply or recovery
+implicitly reopens admission. Resume requires an explicitly verified installed
+revision and no active or unknown attempts. The public deployment coordinator
+owns deployment authority and same-operation verification; the helper stores
+only lifecycle control state and reuses the existing attempt records.
+
+During `applying`, the trusted backend records its original Reviewer,
+production-runner and general-runner activity/enablement intent through
+`snapshot --operation UUID` with bounded JSON on stdin. The gate stores the
+first complete known snapshot in `previousActive` and returns that same intent
+on subsequent calls for the operation. A failed activation therefore cannot
+replace formerly active intent with the failure's current inactive state.
+Recovery retains this snapshot; successful resume clears it. Unknown or
+incomplete activity cannot establish a snapshot or deployment proof.
+
+An explicitly owner-authorized recovery may select an exact accepted rollback
+revision through the root-only `recovery-target --operation UUID --target SHA`
+operation. It requires the bound `recovery-required` phase and no active or
+unknown controller records. It changes only the target, retaining the original
+service intent for the same operation. Ordinary apply cannot retarget its
+admission; rollback still requires installed verification before resume.
+
 ## Reviewed base reconciliation
 
 A dirty reviewed PR may enter remediation through the owner's ready label or optional dispatch.

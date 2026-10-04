@@ -35,14 +35,16 @@ class UpgradeCliTests(unittest.TestCase):
         return self.invoke('--phase', 'upgrade', '--authorize-upgrade',
                            '--resolved-revision', self.revision, *extra)
 
-    def test_upgrade_retains_lifecycle_and_proves_independent_post_check(self):
+    def test_upgrade_proves_lifecycle_once_without_equivalent_post_check(self):
         result = self.upgrade()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f'RELAY_UPGRADE_RESULT=PASS;installed={self.revision};projection={self.revision};post_check=clean',
+        self.assertIn(f'RELAY_UPGRADE_RESULT=PASS;installed={self.revision};projection={self.revision};verification=same-operation',
                       result.stdout)
         values = json.loads(self.capture.read_text())
-        self.assertEqual(values['relay_production_operation_phase'], 'post-check')
-        self.assertTrue(values['_test_check_mode'])
+        self.assertEqual(values['relay_production_operation_phase'], 'apply')
+        self.assertFalse(values['_test_check_mode'])
+        self.assertTrue(values['relay_upgrade_lifecycle_managed'])
+        self.assertIn('RELAY_LIFECYCLE_PROGRESS=OPEN', result.stdout)
         self.assertFalse(values['relay_service_activation_authorized'])
         self.assertFalse(values['relay_runner_registration_authorized'])
         self.assertEqual(values['relay_runner_service_state_management'], 'preserve')
@@ -56,19 +58,20 @@ class UpgradeCliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.capture.exists())
 
-    def test_upgrade_post_check_drift_fails_without_success(self):
+    def test_upgrade_missing_same_operation_activation_proof_stays_closed(self):
         backend = self.bin / 'ansible-playbook'
         original = backend.read_text()
-        backend.write_text(original + "\nif '--check' in sys.argv: print('changed=1')\n")
+        backend.write_text(original.replace("print('RELAY_UPGRADE_ACTIVATION_VALIDATED='+head)", 'pass'))
         try:
             result = self.upgrade()
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('upgrade-post-check-drift', result.stderr)
+            self.assertIn('upgrade-same-operation-activation-proof', result.stderr)
             self.assertNotIn('RELAY_UPGRADE_RESULT=PASS', result.stdout)
+            self.assertNotIn('RELAY_LIFECYCLE_PROGRESS=RESUME', result.stdout)
         finally:
             backend.write_text(original)
 
-    def test_upgrade_never_continues_failed_apply_to_post_check(self):
+    def test_upgrade_never_resumes_failed_apply(self):
         backend = self.bin / 'ansible-playbook'
         original = backend.read_text()
         backend.write_text(original + '\nsys.exit(4)\n')
@@ -80,8 +83,33 @@ class UpgradeCliTests(unittest.TestCase):
             self.assertTrue(values['relay_upgrade_requested'])
             self.assertFalse(values['_test_check_mode'])
             self.assertIn('diagnose-operation-before-retry', result.stderr)
+            self.assertNotIn('RELAY_LIFECYCLE_PROGRESS=RESUME', result.stdout)
         finally:
             backend.write_text(original)
+
+    def test_upgrade_cannot_apply_until_trusted_drain_passes(self):
+        marker = self.base / 'drain-fail'
+        marker.touch()
+        try:
+            result = self.upgrade()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.capture.exists())
+            self.assertNotIn('RELAY_LIFECYCLE_PROGRESS=APPLY', result.stdout)
+        finally:
+            marker.unlink()
+
+    def test_explicit_supported_recovery_reuses_operation_and_verifies_before_resume(self):
+        operation = '12345678-1234-1234-1234-123456789abc'
+        calls = self.base / 'admission-calls'
+        calls.unlink(missing_ok=True)
+        result = self.upgrade('--authorize-lifecycle-recovery', '--lifecycle-recovery-operation', operation)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        evidence = calls.read_text()
+        self.assertNotIn(' quiesce ', evidence)
+        self.assertNotIn(' drain ', evidence)
+        self.assertIn(' status --operation ' + operation, evidence)
+        self.assertIn('--phase verified --revision ' + self.revision, evidence)
+        self.assertLess(evidence.index('--phase verified'), evidence.index(' resume '))
 
     def test_private_durable_config_can_name_separate_consumer_checkout(self):
         private = self.base / 'private-config.json'

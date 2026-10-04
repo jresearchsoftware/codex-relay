@@ -59,6 +59,7 @@ class DisposableSystemdLifecycle:
     RECOVERY_OFF_MARKER = "/run/lifecycle/reviewer-recovery-requires-activation"
     REVIEWER_USER = "relay-reviewer"
     RUNNER_USER = "relay-runner"
+    GENERAL_RUNNER_USER = "relay-general-runner"
 
     def __init__(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -189,6 +190,19 @@ exit 0
             runner_environment.get_template("relay-runner.service.j2").render(**context),
             encoding="utf-8",
         )
+        general_context = {
+            **context,
+            "relay_runner_service_name": "relay-general-runner.service",
+            "relay_runner_user": self.GENERAL_RUNNER_USER,
+            "relay_runner_group": self.GENERAL_RUNNER_USER,
+            "relay_runner_root": "/run/lifecycle/general-runner",
+            "relay_runner_work_root": "/run/lifecycle/general-runner-work",
+            "relay_runner_home": "/run/lifecycle/general-runner-home",
+        }
+        (self.root / "relay-general-runner.service").write_text(
+            runner_environment.get_template("relay-runner.service.j2").render(**general_context),
+            encoding="utf-8",
+        )
         for template_name, output_name in {
             "relay-production-operation-state.j2": "relay-production-operation-state",
             "relay-reviewer-start-guard.j2": "relay-reviewer-start-guard",
@@ -297,23 +311,29 @@ exit 0
             "set -eu; "
             "groupadd --system relay-reviewer; "
             "groupadd --system relay-runner; "
+            "groupadd --system relay-general-runner; "
             "useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --gid relay-reviewer relay-reviewer; "
             "useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --gid relay-runner relay-runner; "
+            "useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --gid relay-general-runner relay-general-runner; "
             "mkdir -p /usr/local/libexec /etc/systemd/system "
             "/run/lifecycle/state/reviewer /run/lifecycle/evidence/reviewer "
             "/run/lifecycle/runtime /run/lifecycle/log "
             "/run/lifecycle/runner /run/lifecycle/runner-work /run/lifecycle/runner-home "
+            "/run/lifecycle/general-runner /run/lifecycle/general-runner-work /run/lifecycle/general-runner-home "
             "/run/lifecycle/writer-claims /run/lifecycle/diagnostics /run/lifecycle/codex "
             "/run/lifecycle/dispatch-state /run/lifecycle/dispatch-work "
             "/run/lifecycle/dispatch-home /run/lifecycle/dispatch-remediation "
             "/run/lifecycle/dispatch-evidence; "
             "chown relay-reviewer:relay-reviewer /run/lifecycle/state/reviewer /run/lifecycle/evidence/reviewer; "
             "chown relay-runner:relay-runner /run/lifecycle/runner /run/lifecycle/runner-work /run/lifecycle/runner-home; "
+            "chown relay-general-runner:relay-general-runner /run/lifecycle/general-runner /run/lifecycle/general-runner-work /run/lifecycle/general-runner-home; "
             "chmod 0755 /run/lifecycle; "
             f"{helper_copy} "
             "cp /opt/lifecycle/reviewer-mcp.service /etc/systemd/system/reviewer-mcp.service; "
             "cp /opt/lifecycle/relay-runner.service /etc/systemd/system/relay-runner.service; "
+            "cp /opt/lifecycle/relay-general-runner.service /etc/systemd/system/relay-general-runner.service; "
             "chown root:root /etc/systemd/system/reviewer-mcp.service /etc/systemd/system/relay-runner.service; "
+            "chown root:root /etc/systemd/system/relay-general-runner.service; "
             "systemctl daemon-reload",
             timeout=30,
         )
@@ -325,6 +345,7 @@ exit 0
                 "verify",
                 "/etc/systemd/system/reviewer-mcp.service",
                 "/etc/systemd/system/relay-runner.service",
+                "/etc/systemd/system/relay-general-runner.service",
             ]
         )
 
@@ -563,17 +584,46 @@ class ReviewerRunnerNativeSystemdLifecycleTests(unittest.TestCase):
             # A real apply restart must preserve an already active PartOf
             # runner while both start guards observe the held apply lock.
             old_pid = fixture.systemctl('show', '--property=MainPID', '--value', 'reviewer-mcp.service').stdout.strip()
+            fixture.wait_for_listener()
+            candidate_general_unit = (fixture.root / 'relay-general-runner.service').read_text()
+            legacy_general_unit = candidate_general_unit.replace(
+                'After=network-online.target reviewer-mcp.service\n',
+                'After=network-online.target reviewer-mcp.service\nPartOf=reviewer-mcp.service\n')
+            fixture.write_file('/etc/systemd/system/relay-general-runner.service',
+                               legacy_general_unit, mode='0644')
+            fixture.systemctl('daemon-reload')
+            fixture.systemctl('enable', '--now', 'relay-general-runner.service')
+            fixture.wait_for_state('relay-general-runner.service', 'active', 'enabled')
+            self.assertNotEqual(fixture.main_process_uid('relay-general-runner.service'), '0')
+            general_process_before = fixture.systemctl('show', '--property=MainPID,ExecMainStartTimestampMonotonic',
+                                                     'relay-general-runner.service').stdout
+            # The first accepted lifecycle upgrades a running legacy transport.
+            # Daemon-reload must adopt only the dependency removal without
+            # replacing that process before Reviewer activation begins.
+            fixture.write_file('/etc/systemd/system/relay-general-runner.service',
+                               candidate_general_unit, mode='0644')
+            fixture.systemctl('daemon-reload')
+            self.assertEqual(general_process_before,
+                             fixture.systemctl('show', '--property=MainPID,ExecMainStartTimestampMonotonic',
+                                               'relay-general-runner.service').stdout)
+            self.assertNotIn('reviewer-mcp.service',
+                             fixture.systemctl('show', '--property=PartOf', '--value',
+                                               'relay-general-runner.service').stdout)
             fixture.write_operation('apply')
             restart = fixture.run_helper('relay-reviewer-operation-restart')
             self.assertEqual(restart.returncode, 0, restart.stderr)
             fixture.wait_for_state('reviewer-mcp.service', 'active', 'enabled')
             fixture.wait_for_state('relay-runner.service', 'active', 'enabled')
             self.assertNotEqual(old_pid, fixture.systemctl('show', '--property=MainPID', '--value', 'reviewer-mcp.service').stdout.strip())
+            self.assertEqual(general_process_before,
+                             fixture.systemctl('show', '--property=MainPID,ExecMainStartTimestampMonotonic',
+                                               'relay-general-runner.service').stdout)
             fixture.remove(fixture.OPERATION_RECORD)
 
             fixture.systemctl("stop", "reviewer-mcp.service")
             fixture.wait_for_state("reviewer-mcp.service", "inactive", "enabled")
             fixture.wait_for_state("relay-runner.service", "inactive", "enabled")
+            fixture.wait_for_state('relay-general-runner.service', 'active', 'enabled')
 
             fixture.write_recovery_off_marker()
             blocked_off = fixture.run_helper("relay-reviewer-recovery")

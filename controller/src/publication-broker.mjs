@@ -10,9 +10,10 @@ import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody } 
 import { assertStep, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 
-// Caller serializes this broker across processes. Store contains only immutable
-// admission and mutation intents/receipts, never child, retry or lifecycle state.
-export function createPublicationBroker({ api, store, publisher }) {
+// Caller serializes this broker across processes. Store contains immutable
+// admission, trusted controller reservation/completion and mutation receipts.
+// Runtime observations remain in the separate protected runner journal.
+export function createPublicationBroker({ api, store, publisher, admission }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   async function mirrorStep(r, pr) {
     const e = r.envelope;
@@ -165,6 +166,10 @@ export function createPublicationBroker({ api, store, publisher }) {
           // terminal boundary; admission replay must not bypass that path.
           return receipt({ envelope: e, resumed: true });
         }
+        // Installed helpers hold the same root lock as lifecycle quiesce.
+        // Reserve full controller ownership in this existing attempt before
+        // the ready event is consumed or a child can be launched.
+        if (request.route === 'auto') await admission?.assertOpen();
         const admitted = await admitEnvelope(api, request);
         const envelope = admitted.blocked ? blockedAdmissionEnvelope(admitted) : validateEnvelope(admitted);
         // Reserve the native event in the existing attempt record, under the
@@ -182,6 +187,7 @@ export function createPublicationBroker({ api, store, publisher }) {
           await revalidateReadyEvent(api, envelope);
         }
         const r = { envelope, ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
+          ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };
         await store.put(request.runId, r);
         if (envelope.transport === 'label') {

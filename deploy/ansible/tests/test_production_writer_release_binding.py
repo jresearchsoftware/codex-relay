@@ -5,6 +5,7 @@ import re
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -96,10 +97,64 @@ class ProductionWriterReleaseBindingTests(unittest.TestCase):
         self.assertIn('state: absent', self.controller_tasks)
         self.assertNotIn('remediation-state.yml', self.writer_tasks)
 
-    def test_publication_lock_is_os_owned_and_lifecycle_state_is_retired(self):
-        self.assertIn('/usr/bin/flock -n', self.template)
+    def test_publication_lock_is_os_owned_and_waits_for_short_lifecycle_snapshots(self):
+        self.assertIn('/usr/bin/flock -w 5', self.template)
         self.assertIn('publication-v2.lock', self.template)
         self.assertNotIn('remediation-state.json', self.writer_tasks)
+
+    def test_lifecycle_admission_helper_is_root_only_credential_free_and_shares_writer_lock(self):
+        template = (ROOT / 'roles/relay_controller/templates/relay-admission.j2').read_text(encoding='utf-8')
+        self.assertIn('publication-v2.lock', template)
+        self.assertIn('/usr/bin/env -i', template)
+        self.assertIn('current/reviewed-source/controller/src/admission-cli.mjs', template)
+        self.assertNotIn('CREDENTIAL', template)
+        self.assertNotIn('relay-admission', self.sudoers)
+        tasks = yaml.safe_load(self.writer_tasks)
+        install = next(task['ansible.builtin.template'] for task in tasks
+                       if task.get('ansible.builtin.template', {}).get('src') == 'relay-admission.j2')
+        self.assertEqual((install['owner'], install['group'], install['mode']), ('root', 'root', '0750'))
+        initialize = next(task for task in tasks if task.get('ansible.builtin.command', {}).get('argv', [])[-1:] == ['initialize'])
+        self.assertIn('not ansible_check_mode | bool', initialize['when'])
+        self.assertIn('not relay_upgrade_lifecycle_managed | default(false) | bool', initialize['when'])
+        preserve = next(task for task in tasks if task.get('register') == 'relay_admission_preserved')
+        self.assertEqual(preserve['ansible.builtin.command']['argv'][-1], 'status')
+        self.assertIn('relay_upgrade_lifecycle_managed | default(false) | bool', preserve['when'])
+
+    @unittest.skipUnless(localhost_ansible_available(), 'native Ansible is required for admission preservation regression')
+    def test_managed_install_requires_existing_gate_without_reinitializing_it(self):
+        tasks = [task for task in yaml.safe_load(self.writer_tasks)
+                 if task.get('register') in ['relay_admission_initialized', 'relay_admission_preserved']]
+        with tempfile.TemporaryDirectory(prefix='relay-gate-install-') as temporary:
+            root = Path(temporary)
+            gate = root / 'admission-v1.json'
+            calls = root / 'calls'
+            helper = root / 'relay-admission'
+            helper.write_text('#!/bin/sh\nset -eu\n'
+                + "printf '%s\\n' \"$1\" >> " + shlex.quote(str(calls)) + '\n'
+                + 'case "$1" in\n'
+                + 'status) test -f ' + shlex.quote(str(gate)) + ' ;;\n'
+                + 'initialize) test -f ' + shlex.quote(str(gate)) + ' || printf open > '
+                + shlex.quote(str(gate)) + ' ;;\n'
+                + '*) exit 41 ;;\nesac\n', encoding='utf-8')
+            helper.chmod(0o700)
+            playbook = root / 'playbook.yml'
+            playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
+                'vars': {'relay_install_root': str(root), 'relay_upgrade_lifecycle_managed': True},
+                'tasks': tasks}], sort_keys=False), encoding='utf-8')
+            command = ['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)]
+            environment = {**os.environ, 'ANSIBLE_REMOTE_TEMP': str(root / 'ansible-remote'),
+                           'ANSIBLE_LOCAL_TEMP': str(root / 'ansible-local')}
+            missing = subprocess.run(command, env=environment, text=True, capture_output=True, timeout=30)
+            self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+            self.assertFalse(gate.exists())
+            self.assertTrue(calls.exists(), missing.stdout + missing.stderr)
+            self.assertEqual(calls.read_text(encoding='utf-8'), 'status\n')
+            calls.unlink()
+            gate.write_text('retained-applying-state', encoding='utf-8')
+            existing = subprocess.run(command, env=environment, text=True, capture_output=True, timeout=30)
+            self.assertEqual(existing.returncode, 0, existing.stdout + existing.stderr)
+            self.assertEqual(gate.read_text(encoding='utf-8'), 'retained-applying-state')
+            self.assertEqual(calls.read_text(encoding='utf-8'), 'status\n')
 
     def test_final_validation_rejects_concrete_old_release_binding(self):
         self.assertIn("production-writer-binding-validation.yml", self.final_validation)

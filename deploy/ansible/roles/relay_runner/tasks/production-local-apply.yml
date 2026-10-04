@@ -8,6 +8,8 @@
       - relay_production_local_apply_checkout_root == (relay_state_root ~ '/runner/work/' ~ relay_github_repository.split('/')[-1] ~ '/' ~ relay_github_repository.split('/')[-1])
       - relay_production_local_apply_stage_root == (relay_state_root ~ '/production-apply')
       - relay_runner_user == relay_production_runner_user
+      - (relay_owner_lifecycle_helper_path | default('/usr/local/sbin/' ~ relay_namespace ~ '-owner-lifecycle')) == ('/usr/local/sbin/' ~ relay_namespace ~ '-owner-lifecycle')
+      - (relay_owner_lifecycle_sudoers_file | default('/etc/sudoers.d/' ~ relay_namespace ~ '-owner-lifecycle')) == ('/etc/sudoers.d/' ~ relay_namespace ~ '-owner-lifecycle')
     fail_msg: 'PRODUCTION_LOCAL_APPLY_BOUNDARY_INPUT_INVALID'
 
 # This boundary runs before relay_runtime creates the installation layout.
@@ -65,6 +67,23 @@
   ansible.builtin.template:
     src: relay-production-local-apply.sudoers.j2
     dest: '{{ relay_production_local_apply_sudoers_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+
+- name: Install the fixed protected owner lifecycle entrypoint
+  ansible.builtin.template:
+    src: relay-owner-lifecycle.j2
+    dest: '{{ relay_owner_lifecycle_helper_path | default("/usr/local/sbin/" ~ relay_namespace ~ "-owner-lifecycle") }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the narrow general runner owner lifecycle sudoers rule
+  ansible.builtin.template:
+    src: relay-owner-lifecycle.sudoers.j2
+    dest: '{{ relay_owner_lifecycle_sudoers_file | default("/etc/sudoers.d/" ~ relay_namespace ~ "-owner-lifecycle") }}'
     owner: root
     group: root
     mode: '0440'

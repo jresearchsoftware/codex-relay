@@ -18,6 +18,32 @@
     group: root
     mode: '0750'
 
+- name: Install the root-only credential-free lifecycle admission helper
+  ansible.builtin.template:
+    src: relay-admission.j2
+    dest: '{{ relay_install_root }}/relay-admission'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Initialize missing lifecycle admission state without reopening retained state
+  ansible.builtin.command:
+    argv: ['{{ relay_install_root }}/relay-admission', 'initialize']
+  register: relay_admission_initialized
+  changed_when: false
+  when:
+    - not ansible_check_mode | bool
+    - not relay_upgrade_lifecycle_managed | default(false) | bool
+
+- name: Preserve the required admission gate during managed lifecycle installation
+  ansible.builtin.command:
+    argv: ['{{ relay_install_root }}/relay-admission', 'status']
+  register: relay_admission_preserved
+  changed_when: false
+  when:
+    - not ansible_check_mode | bool
+    - relay_upgrade_lifecycle_managed | default(false) | bool
+
 - name: Install the narrowly scoped runner sudoers rule for the Writer helper
   ansible.builtin.template:
     src: relay-writer-controller.sudoers.j2

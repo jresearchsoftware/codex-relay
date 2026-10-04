@@ -216,10 +216,10 @@ def test_rendered_timer_has_independent_start_anchor_and_valid_fixed_unit(tmp_pa
     pytest.param('inactive', 'enabled', 'SubState=dead\nNextElapseUSecMonotonic=infinity',
                  0, False, id='inactive-enabled'),
 ])
-def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, enabled, schedule, show_rc, passes):
+def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, enabled, schedule, show_rc, passes, phase='post-check'):
     source = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
-    task_names = ['Inspect the recovery timer during production post-check',
-                  'Inspect the next recovery timer deadline during production post-check',
+    task_names = ['Inspect the recovery timer during production final validation',
+                  'Inspect the next recovery timer deadline during production final validation',
                   'Require the normal recovery timer after production install']
     tasks = [copy.deepcopy(next(task for play in source for task in play.get('post_tasks', [])
                                 if task.get('name') == name)) for name in task_names]
@@ -247,7 +247,7 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
     fixture.write_text(yaml.safe_dump([{
         'hosts': 'localhost', 'gather_facts': False,
         'vars': {'ansible_connection': 'local', 'ansible_python_interpreter': sys.executable,
-                 'relay_deployment_profile': 'production', 'relay_production_operation_phase': 'post-check',
+                 'relay_deployment_profile': 'production', 'relay_production_operation_phase': phase,
                  'relay_reviewer_recovery_timer_name': TIMER},
         'environment': {'PATH': str(bin_root) + ':/usr/bin:/bin',
                         'FAKE_SYSTEMCTL_CALLS': str(calls),
@@ -255,8 +255,10 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
                         'FAKE_TIMER_SCHEDULE': schedule, 'FAKE_TIMER_SHOW_RC': str(show_rc)},
         'tasks': tasks,
     }]))
-    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local',
-                             '--check', str(fixture)], capture_output=True, text=True, timeout=60,
+    command = ['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(fixture)]
+    if phase == 'post-check':
+        command.append('--check')
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60,
                             env={**os.environ, 'ANSIBLE_NOCOLOR': '1',
                                  'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
     assert (result.returncode == 0) is passes, result.stdout + result.stderr
@@ -264,3 +266,11 @@ def test_real_post_check_observes_timer_without_mutating_it(tmp_path, active, en
     assert [json.loads(line) for line in calls.read_text().splitlines()] == [
         ['is-active', TIMER], ['is-enabled', TIMER],
         ['show', TIMER, '--property=SubState,NextElapseUSecMonotonic']]
+
+
+@pytest.mark.skipif(not shutil.which('ansible-playbook'), reason='native Ansible required')
+@pytest.mark.parametrize('active,enabled,passes', [('active', 'enabled', True), ('inactive', 'disabled', False)])
+def test_ordinary_apply_proves_timer_in_the_same_operation(tmp_path, active, enabled, passes):
+    test_real_post_check_observes_timer_without_mutating_it(
+        tmp_path, active, enabled, 'SubState=waiting\nNextElapseUSecMonotonic=123456789',
+        0, passes, phase='apply')

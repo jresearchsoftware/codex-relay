@@ -183,6 +183,7 @@ class ProductionOperationFixture:
 
     def _render_helpers(self):
         context = {
+            "relay_install_root": str(self.install_root),
             "relay_deployment_profile": "production",
             "relay_reviewer_service_name": "reviewer-mcp.service",
             "relay_runner_service_name": "relay-runner.service",

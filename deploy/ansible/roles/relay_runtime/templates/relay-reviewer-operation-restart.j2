@@ -7,6 +7,22 @@ activation_marker='{{ relay_reviewer_activation_marker }}'
 recovery_off_marker='{{ relay_reviewer_recovery_off_marker }}'
 operation_state='{{ relay_production_operation_state_path }}'
 operation_lock='{{ relay_production_operation_lock_path }}'
+expected_listener='{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
+operation_record='{{ relay_production_operation_record_path }}'
+admission_helper='{{ relay_install_root }}/relay-admission'
+
+recover_active=false
+recovery_operation=''
+if [[ "$#" -ne 0 ]]; then
+  [[ "$#" -eq 2 && "$1" == --recover-active &&
+     "$2" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
+     "$(/usr/bin/id -u)" == 0 ]] || {
+    echo 'REVIEWER_OPERATION_RESTART_ARGUMENTS_INVALID' >&2
+    exit 40
+  }
+  recover_active=true
+  recovery_operation="$2"
+fi
 
 [[ -f "$activation_marker" && ! -L "$activation_marker" ]] || exit 0
 read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marker")
@@ -31,7 +47,55 @@ fi
 # active runner inside the same live-owner lock; an inactive runner stays off.
 runner_was_active=false
 if /bin/systemctl is-active "$runner_service" >/dev/null 2>&1; then runner_was_active=true; fi
-/bin/systemctl try-restart "$reviewer_service"
-if [[ "$runner_was_active" == true ]]; then
+reviewer_was_active=false
+if /bin/systemctl is-active "$reviewer_service" >/dev/null 2>&1; then reviewer_was_active=true; fi
+runner_should_activate="$runner_was_active"
+if [[ "$recover_active" == true ]]; then
+  recovery_activity="$("$admission_helper" status --operation "$recovery_operation" |
+    /usr/bin/python3 -c '
+import json, sys
+gate = json.load(sys.stdin)
+with open(sys.argv[2], encoding="utf-8") as stream:
+    record = json.load(stream)
+previous = gate.get("previousActive")
+if (gate.get("operationId") != sys.argv[1] or gate.get("phase") != "applying"
+        or gate.get("target") != record.get("target_head")
+        or not isinstance(previous, dict) or previous.get("reviewer", {}).get("active") is not True
+        or type(previous.get("production", {}).get("active")) is not bool):
+    raise SystemExit("REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_UNPROVEN")
+print("true" if previous["production"]["active"] else "false")
+' "$recovery_operation" "$operation_record")"
+  runner_should_activate="$recovery_activity"
+  [[ "$runner_was_active" == false || "$runner_should_activate" == true ]] || {
+    echo 'REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_CHANGED' >&2
+    exit 47
+  }
+fi
+if [[ "$recover_active" == true && "$reviewer_was_active" == false ]]; then
+  /bin/systemctl start "$reviewer_service"
+else
+  /bin/systemctl try-restart "$reviewer_service"
+fi
+if [[ "$runner_should_activate" == true || "$recover_active" == true ]]; then
+  # Type=simple can return before Reviewer binds its socket. Keep the existing
+  # apply lock while waiting for the readiness required by the dependent runner.
+  ready=false
+  for attempt in {1..30}; do
+    if /bin/systemctl is-active "$reviewer_service" >/dev/null 2>&1 &&
+       ss -H -ltn | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { exit !found }'; then
+      ready=true
+      break
+    fi
+    /bin/sleep 1
+  done
+  [[ "$ready" == true ]] || {
+    echo 'REVIEWER_OPERATION_RESTART_READINESS_FAILED' >&2
+    exit 46
+  }
+fi
+if [[ "$runner_should_activate" == true ]]; then
+  if [[ "$recover_active" == true && "$reviewer_was_active" == false && "$runner_was_active" == true ]]; then
+    /bin/systemctl try-restart "$runner_service"
+  fi
   /bin/systemctl start "$runner_service"
 fi

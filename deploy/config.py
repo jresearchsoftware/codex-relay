@@ -215,6 +215,8 @@ def compile_inputs(c):
         'relay_codex_user': consumer['runtimeUser'], 'relay_codex_group': consumer['runtimeUser'],
         'relay_codex_work_group': e['codexWorkGroup'], 'relay_codex_token_required': e['codexTokenRequired'],
         'relay_production_local_apply_checkout_root': state + '/runner/work/' + '/'.join([consumer['repository'].split('/')[1]] * 2),
+        'relay_production_local_apply_stage_root': state + '/production-apply',
+        'relay_owner_lifecycle_helper_path': '/usr/local/sbin/' + ns + '-owner-lifecycle',
         'relay_local_apply_source': e['localApply'].get('source', 'checkout'),
         'relay_consumer_deployment_config_relative': e['localApply'].get('configPath', ''),
         'relay_reviewer_bind_mode': 'nexus_gateway' if bind['mode'] == 'docker_gateway' else 'a_only_loopback',
@@ -271,7 +273,7 @@ def compile_inputs(c):
             'relay_superseded_proxy_service_name': ns + '-openai-mtls-proxy.service',
         })
     for suffix, kind in [('codex', 'codex'), ('writer', 'writer'), ('diagnostics', 'diagnostics'),
-                         ('production-apply', 'production_local_apply')]:
+                         ('production-apply', 'production_local_apply'), ('owner-lifecycle', 'owner_lifecycle')]:
         result['relay_' + kind + '_sudoers_file'] = '/etc/sudoers.d/' + ns + '-' + suffix
     fields = {'repository':'github_repository', 'owner':'owner_actor', 'baseBranch':'github_base_branch',
               'taskBranchPrefix':'task_branch_prefix', 'routingWorkflow':'routing_workflow',

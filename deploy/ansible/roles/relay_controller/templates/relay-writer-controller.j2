@@ -13,5 +13,5 @@ exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' \
   RELAY_WRITER_CREDENTIAL_ENV='{{ relay_writer_credential_env_file }}' \
   RELAY_WRITER_CREDENTIAL_KEY_FILE='{{ relay_writer_credential_key_file }}' \
   RELAY_WRITER_CLAIM_ROOT='{{ relay_writer_claim_root }}' \
-  /usr/bin/flock -n '{{ relay_writer_claim_root }}/publication-v2.lock' \
+  /usr/bin/flock -w 5 '{{ relay_writer_claim_root }}/publication-v2.lock' \
   /usr/bin/node '{{ relay_writer_helper_release_path }}'

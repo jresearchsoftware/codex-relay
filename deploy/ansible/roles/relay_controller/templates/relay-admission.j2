@@ -1,0 +1,20 @@
+#!/bin/sh
+# managed-by: codex-relay
+# Root-only lifecycle operations use no Writer or worker credentials.
+set -eu
+test "$(/usr/bin/id -u)" -eq 0 || exit 40
+case "${1-}" in
+  drain)
+    # The CLI locks one snapshot at a time so admitted controllers can finish.
+    exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' \
+      PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+      /usr/bin/node '{{ relay_install_root }}/current/reviewed-source/controller/src/admission-cli.mjs' "$@"
+    ;;
+  initialize|quiesce|status|drain-check|phase|snapshot|recovery-target|resume)
+    exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' \
+      PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+      /usr/bin/flock -w 180 '{{ relay_writer_claim_root }}/publication-v2.lock' \
+      /usr/bin/node '{{ relay_install_root }}/current/reviewed-source/controller/src/admission-cli.mjs' "$@"
+    ;;
+  *) exit 40 ;;
+esac

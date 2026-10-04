@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.dont_write_bytecode = True
 from config import load, compile_inputs, require, selector
@@ -160,10 +161,24 @@ def apply_guard(target, key, namespace):
     return process
 
 
+def remote_admission(target, key, namespace, *arguments):
+    remote = ['/opt/' + namespace + '/relay-admission', *arguments]
+    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'],
+        shlex.join(remote)], text=True, capture_output=True, timeout=1860)
+    require(result.returncode == 0, 'trusted-admission-operation-failed;inspect-before-recovery')
+    return json.loads(result.stdout)
+
+
 def run_backend(argv, cwd, env, log, guard=None):
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
+    started = time.monotonic()
+    next_progress = started + 30
     try:
         while process.poll() is None:
+            if time.monotonic() >= next_progress:
+                print(f'RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds={int(time.monotonic()-started)}', flush=True)
+                next_progress = time.monotonic() + 30
             if guard is not None and guard.poll() is not None:
                 raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
             try:
@@ -201,6 +216,12 @@ def arguments():
     p.add_argument('--general-runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
     p.add_argument('--local-reconcile', action='store_true', help=argparse.SUPPRESS)
+    p.add_argument('--local-lifecycle', action='store_true', help=argparse.SUPPRESS)
+    p.add_argument('--lifecycle-operation', help=argparse.SUPPRESS)
+    p.add_argument('--lifecycle-lock-fd', type=int, help=argparse.SUPPRESS)
+    p.add_argument('--authorize-lifecycle-recovery', action='store_true',
+                   help='After diagnosis/disposition, recover or roll back a retained quiesced operation')
+    p.add_argument('--lifecycle-recovery-operation', help='Exact retained admission operation UUID')
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--workflow-consumer-revision', help=argparse.SUPPRESS)
@@ -242,6 +263,16 @@ def run(args):
     require(args.general_runner_registration_token is None or args.phase == 'general-runner-register',
             'general-runner-token-phase')
     require(not args.local_reconcile or args.consumer_root is None, 'local-consumer-root-forbidden')
+    require(not args.local_lifecycle or (os.geteuid() == 0 and not args.local_reconcile
+            and args.phase in ['apply', 'upgrade', 'post-check']
+            and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', args.lifecycle_operation or '')
+            and args.lifecycle_lock_fd is not None), 'protected-local-lifecycle')
+    require(args.local_lifecycle or (args.lifecycle_operation is None and args.lifecycle_lock_fd is None),
+            'lifecycle-internal-options')
+    require(args.authorize_lifecycle_recovery == bool(args.lifecycle_recovery_operation)
+            and (not args.authorize_lifecycle_recovery or (args.phase == 'upgrade' and not args.local_lifecycle
+                 and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', args.lifecycle_recovery_operation))),
+            'explicit-lifecycle-recovery')
     require((bool(re.fullmatch('[0-9a-f]{40}', args.workflow_consumer_revision or ''))
              if args.expected_installed_head else args.workflow_consumer_revision is None),
             'installed-workflow-consumer-revision')
@@ -256,6 +287,22 @@ def run(args):
     else:
         config = load(config_path, ROOT)
     values = compile_inputs(config)
+    if args.local_lifecycle:
+        root_owned(ROOT)
+        root_owned(config_path)
+        lock_path = Path('/var/lib/' + values['relay_namespace'] + '-deployment.lock')
+        lock_info = os.fstat(args.lifecycle_lock_fd)
+        current_lock = lock_path.lstat()
+        require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == lock_info.st_gid == 0
+                and stat.S_IMODE(lock_info.st_mode) == 0o600 and lock_info.st_nlink == 1
+                and (lock_info.st_dev, lock_info.st_ino) == (current_lock.st_dev, current_lock.st_ino),
+                'lifecycle-host-lock-binding')
+        fcntl.flock(args.lifecycle_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        gate_result = command([values['relay_install_root'] + '/relay-admission', 'status',
+                               '--operation', args.lifecycle_operation])
+        gate_state = json.loads(gate_result)
+        require(gate_state['phase'] == 'applying' and gate_state['target'] == args.resolved_revision,
+                'lifecycle-admission-binding')
     require(not args.authorize_apply_recovery or
             (args.phase == 'apply' and not args.local_reconcile and values['relay_local_apply_source'] == 'installed'),
             'explicit-installed-apply-recovery')
@@ -327,7 +374,7 @@ def run(args):
     else:
         require(not any([args.issue_number, args.issue_body_sha256, args.pull_request, args.review_id,
             args.reviewed_head, args.change_request_id, args.branch, args.base_branch_sha]), 'diagnostic-flags')
-    if args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or (args.phase == 'apply' and not args.local_reconcile):
+    if args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile):
         from workflow_projection import project, verify
         if args.phase == 'workflow-project':
             project(config, revision, ROOT, consumer_root)
@@ -337,9 +384,15 @@ def run(args):
         if args.phase in ['workflow-project', 'workflow-verify']:
             print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
             return
+    if args.local_lifecycle and args.phase == 'post-check':
+        # A later graceful resume observes current consumer projection bytes,
+        # but does not rewrite the installed manifest's original provenance.
+        from installed_config import verify
+        _, _, consumer_revision = verify(Path(values['relay_install_root']) / 'releases' /
+                                         revision / 'reviewed-source', revision)
     target = config['target']
     key = Path(target['identityFile']).expanduser()
-    if not args.local_reconcile:
+    if not args.local_reconcile and not args.local_lifecycle:
         require(key.is_file() and not key.is_symlink(), 'operator-key')
         require(command(['ssh-keygen', '-lf', key]).split()[1] == target['identityFingerprint'], 'operator-key-identity')
         known = command(['ssh-keygen', '-F', target['host']])
@@ -370,12 +423,17 @@ def run(args):
         if args.phase == 'bootstrap' and not args.authorize_bootstrap:
             print('RELAY_DEPLOYMENT_PENDING=INSTALL_AUTHORIZATION_REQUIRED;flag=--authorize-bootstrap;target_unchanged=true')
             return
+    admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
+        (args.lifecycle_recovery_operation or str(uuid.uuid4()) if args.phase == 'upgrade' else ''))
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
         'relay_deployment_profile': 'production',
         'relay_production_operation_phase': 'apply' if args.phase == 'upgrade' or install_flow else args.phase,
         'relay_upgrade_requested': args.phase == 'upgrade',
+        'relay_upgrade_lifecycle_managed': args.phase == 'upgrade' or (args.local_lifecycle and args.phase == 'apply'),
+        'relay_admission_operation_id': admission_operation_id,
+        'relay_admission_recovery_authorized': args.authorize_lifecycle_recovery,
         'relay_owner_apply_requested': (args.phase == 'apply' or install_flow) and not args.local_reconcile,
         'relay_production_operation_target_head': revision,
         'relay_production_exact_head': revision, 'relay_reviewer_activation_exact_head': revision,
@@ -465,8 +523,8 @@ def run(args):
                 git(ROOT, 'archive', '--format=tar', '--output=' + str(archive), revision)
                 values['relay_source_archive'] = str(archive)
             inventory = {'all': {'children': {'relay': {'hosts': {target['host']: {**values,
-                'ansible_user': target['user'], 'ansible_connection': 'local' if args.local_reconcile else 'ssh',
-                'ansible_become': not args.local_reconcile}}}}}}
+                'ansible_user': target['user'], 'ansible_connection': 'local' if args.local_reconcile or args.local_lifecycle else 'ssh',
+                'ansible_become': not (args.local_reconcile or args.local_lifecycle)}}}}}}
             (work / 'inventory.json').write_text(json.dumps(inventory))
             env = {k: os.environ[k] for k in ['HOME', 'PATH', 'USER', 'LANG', 'LC_ALL', 'SSH_AUTH_SOCK'] if k in os.environ}
             env.update({'ANSIBLE_CONFIG': str(BACKEND / 'ansible.cfg'), 'ANSIBLE_ROLES_PATH': str(BACKEND / 'roles'),
@@ -483,7 +541,9 @@ def run(args):
             with ExitStack() as host_locks:
                 guard = None
                 if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
-                    if args.local_reconcile:
+                    if args.local_lifecycle:
+                        pass  # inherited, validated host lock covers the complete lifecycle
+                    elif args.local_reconcile:
                         from deployment_lock import acquire
                         host_locks.enter_context(acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock'))
                     else:
@@ -491,6 +551,28 @@ def run(args):
                 elif args.phase == 'ingress':
                     guard = ingress_guard(target, key, values, revision)
                 try:
+                    lifecycle_operation = None
+                    if args.phase == 'upgrade' and not args.local_lifecycle:
+                        from lifecycle import progress
+                        lifecycle_operation = admission_operation_id
+                        if not args.authorize_lifecycle_recovery:
+                            progress('QUIESCE', revision)
+                            remote_admission(target, key, values['relay_namespace'], 'quiesce',
+                                             '--operation', lifecycle_operation, '--target', revision)
+                        progress('DRAIN', revision)
+                        if args.authorize_lifecycle_recovery:
+                            state = remote_admission(target, key, values['relay_namespace'], 'status',
+                                                     '--operation', lifecycle_operation)
+                            require(state['phase'] == 'recovery-required' and not state['active']
+                                    and not state['unknown'], 'lifecycle-recovery-drain-unproven')
+                            remote_admission(target, key, values['relay_namespace'], 'recovery-target',
+                                             '--operation', lifecycle_operation, '--target', revision)
+                        else:
+                            remote_admission(target, key, values['relay_namespace'], 'drain',
+                                             '--operation', lifecycle_operation, '--timeout', '1800')
+                        remote_admission(target, key, values['relay_namespace'], 'phase',
+                                         '--operation', lifecycle_operation, '--phase', 'applying')
+                        progress('APPLY', revision)
                     if install_flow:
                         # Re-observe under the host mutex; a read-only report is
                         # never itself a destructive or installation capability.
@@ -513,6 +595,12 @@ def run(args):
                                 args.phase + '-final-runtime-proof')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
                                 args.phase + '-installed-identity-proof')
+                        if args.phase == 'upgrade':
+                            require(f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in apply_evidence,
+                                    'upgrade-same-operation-activation-proof')
+                        # Bootstrap/reinstall keep their independent qualification
+                        # check; ordinary upgrades already establish final proof.
+                    if install_flow:
                         # Keep the existing host apply mutex held across the
                         # independent read-only check. No new recovery ledger:
                         # apply retains its normal durable operation semantics.
@@ -531,6 +619,27 @@ def run(args):
                                 args.phase + '-post-check-installed-identity-proof')
                         if args.phase == 'reinstall':
                             remote_action(target, key, config, revision, observed, action='complete', guard=guard)
+                    if args.local_lifecycle and args.phase in ['apply', 'upgrade']:
+                        log.flush()
+                        require(returncode == 0
+                                and f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in Path(log_name).read_text(),
+                                'lifecycle-same-operation-activation-proof')
+                    if lifecycle_operation:
+                        require(guard is not None and guard.poll() is None, 'lifecycle-host-lock-lost')
+                        progress('ACTIVATE/VERIFY', revision)
+                        remote_admission(target, key, values['relay_namespace'], 'phase',
+                                         '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
+                        progress('RESUME', revision)
+                        remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
+                        progress('OPEN', revision)
+                except Exception:
+                    if lifecycle_operation:
+                        try:
+                            remote_admission(target, key, values['relay_namespace'], 'phase',
+                                '--operation', lifecycle_operation, '--phase', 'recovery-required')
+                        except Exception:
+                            pass  # the last durable state remains closed
+                    raise
                 finally:
                     if guard is not None:
                         guard.stdin.close()
@@ -569,7 +678,9 @@ def run(args):
                 require(previous is not None, 'previous-revision-proof')
                 print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
             if args.phase == 'upgrade':
-                print(f'RELAY_UPGRADE_RESULT=PASS;installed={revision};projection={revision};post_check=clean')
+                print(f'RELAY_UPGRADE_RESULT=PASS;installed={revision};projection={revision};verification=same-operation')
+            if args.local_lifecycle:
+                print(f'RELAY_LIFECYCLE_VERIFIED={revision}')
             if install_flow:
                 print(f'RELAY_BOOTSTRAP_RESULT=PASS;phase={args.phase};installed={revision};post_check=clean;activation=owner-required')
             if args.local_reconcile:
