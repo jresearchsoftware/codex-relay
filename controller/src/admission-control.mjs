@@ -81,11 +81,24 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       && ['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW'].includes(record.outcome.status) && positive(record.outcome.outcomeId)
       && ['status', 'head', 'prNumber', 'outcomeId'].every(key => record.outcome[key] === execution.outcome[key]);
   }
+  function prCreationResolved(record) {
+    if (record.prIntent === undefined || record.prIntent === null || record.prIntent === false) return true;
+    if (record.prIntent !== true) return false;
+    if (Object.hasOwn(record, 'prNumber')) return positive(record.prNumber) && record.prNumber === record.outcome?.prNumber;
+    // Earlier Writer releases retained prIntent after creation and recorded
+    // the observed PR only in the terminal Outcome. Matching terminal journal
+    // evidence below, plus the exact published head, resolves that old receipt
+    // without changing it or interpreting a pending current intent as complete.
+    const outcome = record.outcome;
+    return !Object.hasOwn(record, 'controllerLifecycle') && record.envelope.target === 'issue'
+      && positive(outcome?.prNumber) && exactSha(outcome.head) && record.publishedHead === outcome.head
+      && (outcome.status === 'BLOCKED' ? record.finalHead === null : record.finalHead === outcome.head);
+  }
   async function contained(record) {
     const e = record.envelope;
     const saved = await journal.get(e.runId);
     if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)) return null;
-    if (!terminalMatches(record, saved) || record.publicationIntent || (record.prIntent && !positive(record.prNumber)) || record.commentIntent) return null;
+    if (!terminalMatches(record, saved) || record.publicationIntent || !prCreationResolved(record) || record.commentIntent) return null;
     if (saved.execution === null) return { child: 'not_started', containment: 'not_required' };
     const execution = saved.execution;
     if (execution?.reserved !== true || execution.returned !== true || !['started', 'not_started'].includes(execution.child)
@@ -204,6 +217,10 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (lifecycle?.status === 'complete') return { complete: true };
       const evidence = await contained(record);
       if (!evidence) fail('ADMISSION_COMPLETION_UNKNOWN');
+      // This older receipt is already complete through its matching terminal
+      // journal. Adding only lifecycle metadata would lose the legacy binding
+      // on the next inventory; preserve both trusted receipts unchanged.
+      if (!Object.hasOwn(record, 'controllerLifecycle') && record.prIntent === true && !Object.hasOwn(record, 'prNumber')) return { complete: true };
       record.controllerLifecycle = { version: 1, status: 'complete', ...evidence };
       await store.put(runId, record);
       return { complete: true };

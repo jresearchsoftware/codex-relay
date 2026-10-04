@@ -577,6 +577,231 @@ def complete(config, revision, *, root=Path('/'), owner_uid=0):
         return _complete(config, revision, root=root, owner_uid=owner_uid)
 
 
+RECOVERY_LIMIT = 65536
+
+
+def _recovery_json(raw):
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            require(key not in value, 'RECOVERY_EVIDENCE_INVALID')
+            value[key] = item
+        return value
+    require(len(raw) <= RECOVERY_LIMIT, 'RECOVERY_EVIDENCE_INVALID')
+    value = json.loads(raw, object_pairs_hook=unique)
+    require(isinstance(value, dict), 'RECOVERY_EVIDENCE_INVALID')
+    return value
+
+
+def _recovery_bytes(path, root, owner_uid, owner_gid, *, private=False):
+    protected(path, root, owner_uid)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid == owner_uid and before.st_size <= RECOVERY_LIMIT
+                and (not private or (before.st_gid == owner_gid
+                     and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE')
+        raw = stream.read(RECOVERY_LIMIT + 1)
+        def stamp(info):
+            return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,
+                    info.st_size, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
+        require(len(raw) <= RECOVERY_LIMIT and stamp(before) == stamp(os.fstat(stream.fileno()))
+                and stamp(before) == stamp(path.lstat()), 'RECOVERY_EVIDENCE_CHANGED')
+    return raw
+
+
+def _recovery_identity(release, revision, root, owner_uid, owner_gid):
+    protected(release, root, owner_uid, directory=True)
+    manifest = _recovery_json(_recovery_bytes(release / 'artifact-manifest.json', root, owner_uid, owner_gid))
+    identity = _recovery_json(_recovery_bytes(release / 'reviewed-source/.relay-source.json', root, owner_uid, owner_gid))
+    require(manifest.get('commit') == revision and identity.get('revision') == revision
+            and all(manifest.get(key, revision) == revision for key in ['installedRevision', 'resolvedRevision'])
+            and isinstance(manifest.get('gitTree'), str) and re.fullmatch('[0-9a-f]{40}', manifest['gitTree'])
+            and identity.get('tree') == manifest['gitTree'], 'RECOVERY_RUNTIME_IDENTITY_UNPROVEN')
+    return manifest
+
+
+def _recovery_processes(config, paths, root):
+    """Reject a namespace backend outside the governed service cgroups."""
+    references = [str(path.relative_to(root)) for key, path in paths.items()
+                  if key in ['install', 'config', 'state', 'operation', 'journal']]
+    references = ['/' + value for value in references] + unit_names(config)
+    patterns = [re.compile(r'(?:^|[= :])' + re.escape(reference) + r'(?:/|$|[ :])')
+                for reference in references]
+    for path in (root / 'proc').iterdir():
+        if not path.name.isdecimal() or (root == Path('/') and int(path.name) == os.getpid()):
+            continue
+        try:
+            raw = (path / 'cmdline').read_bytes()
+            require(len(raw) <= 1048576, 'RECOVERY_PROCESS_OBSERVATION_UNAVAILABLE')
+            arguments = raw.rstrip(b'\0').decode().split('\0')
+            cwd = os.readlink(path / 'cwd')
+            executable = os.readlink(path / 'exe')
+            require(not any(pattern.search(argument) for pattern in patterns
+                            for argument in [*arguments, cwd, executable]), 'RECOVERY_NAMESPACE_PROCESS_PRESENT')
+        except FileNotFoundError:
+            # A disappearing unrelated process is ordinary /proc churn. The
+            # worker/cgroup observation independently rejects protected churn.
+            continue
+        except (OSError, UnicodeError):
+            raise ValueError('REINSTALL_RECOVERY_PROCESS_OBSERVATION_UNAVAILABLE') from None
+
+
+def _archive_recovery_bytes(path, raw):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    fsync_dir(path.parent)
+
+
+def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
+            runner=subprocess.run, user_ids=None, admission_probe=None):
+    """Disposition a proven interrupted reinstall without applying its target.
+
+    The caller holds the public host deployment mutex. Original evidence and
+    runtime bytes remain in the existing retirement archive; no target, config,
+    admission state or activation authority is rewritten. A partial archive or
+    repeated invocation fails closed instead of replaying the transition.
+    """
+    root = Path(root)
+    require(re.fullmatch('[0-9a-f]{40}', revision or ''), 'RECOVERY_TARGET_INVALID')
+    paths = namespace_paths(config, root)
+    for key in ['install', 'config', 'state']:
+        protected(paths[key], root, owner_uid, directory=True)
+    with operation_lock(paths['lock'], root, owner_uid):
+        require(not present(paths['journal'].with_name(paths['journal'].name + '.next')),
+                'RECOVERY_JOURNAL_INTERRUPTED')
+        journal_raw = _recovery_bytes(paths['journal'], root, owner_uid, owner_gid, private=True)
+        operation_raw = _recovery_bytes(paths['operation'], root, owner_uid, owner_gid, private=True)
+        journal = _recovery_json(journal_raw)
+        operation = _recovery_json(operation_raw)
+        require(journal.keys() == {'schemaVersion', 'stage', 'sourceRevision', 'targetRevision',
+                'previousEnvironmentComparison', 'configurationSha256', 'archive', 'runners',
+                'activationMarkers', 'units'} and type(journal['schemaVersion']) is int
+                and journal['schemaVersion'] == 1 and journal['stage'] == 'DECOMMISSIONED'
+                and journal['targetRevision'] == revision
+                and isinstance(journal['sourceRevision'], str)
+                and re.fullmatch('[0-9a-f]{40}', journal['sourceRevision'])
+                and journal['sourceRevision'] != revision
+                and journal['previousEnvironmentComparison'] in ['equivalent', 'unavailable']
+                and journal['configurationSha256'] == hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
+                'RECOVERY_BINDING_CHANGED')
+        require(operation == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                              'phase': 'apply', 'target_head': revision}, 'RECOVERY_OPERATION_MISMATCH')
+        require(isinstance(journal['runners'], list) and len(journal['runners']) == len(set(journal['runners']))
+                and set(journal['runners']) <= {'runner', 'general-runner'}
+                and isinstance(journal['activationMarkers'], list)
+                and len(journal['activationMarkers']) == len(set(journal['activationMarkers']))
+                and set(journal['activationMarkers']) <= {'reviewer-activation-authorized', 'reviewer-recovery-requires-activation'}
+                and isinstance(journal['units'], dict) and set(journal['units']) <= set(unit_names(config))
+                and all(value in ['active', 'inactive', 'failed'] for value in journal['units'].values()),
+                'RECOVERY_BINDING_CHANGED')
+        archive = paths['install'].parent / ('.' + paths['install'].name + '-retired-' + journal['sourceRevision'] + '-' + revision)
+        require(journal['archive'] == '/' + str(archive.relative_to(root)), 'RECOVERY_ARCHIVE_BINDING_CHANGED')
+        protected(archive, root, owner_uid, directory=True)
+        require(archive.lstat().st_gid == owner_gid and stat.S_IMODE(archive.lstat().st_mode) == 0o700,
+                'RECOVERY_ARCHIVE_UNSAFE')
+        journal_archive, operation_archive = archive / 'recovery-journal.json', archive / 'failed-apply.json'
+        require(not any(present(path) for path in [journal_archive, operation_archive, archive / 'decommission.json']),
+                'RECOVERY_ARCHIVE_RECORD_EXISTS')
+        for marker in ['reviewer-activation-authorized', 'reviewer-recovery-requires-activation']:
+            require(not present(paths['config'] / marker), 'RECOVERY_ACTIVATION_MARKER_PRESENT')
+            require(present(archive / marker) == (marker in journal['activationMarkers']),
+                    'RECOVERY_ARCHIVE_BINDING_CHANGED')
+            if marker in journal['activationMarkers']:
+                _recovery_bytes(archive / marker, root, owner_uid, owner_gid, private=True)
+        old_runtime = archive / 'runtime'
+        runtime_layout(old_runtime, root, owner_uid)
+        old_current = old_runtime / 'current'
+        require(old_current.is_symlink() and old_current.lstat().st_uid == owner_uid
+                and os.readlink(old_current) in [str(paths['install'] / 'releases' / journal['sourceRevision']),
+                                                'releases/' + journal['sourceRevision']],
+                'RECOVERY_ARCHIVE_IDENTITY_UNPROVEN')
+        _recovery_identity(old_runtime / 'releases' / journal['sourceRevision'], journal['sourceRevision'],
+                           root, owner_uid, owner_gid)
+        runtime_layout(paths['install'], root, owner_uid)
+        current = paths['install'] / 'current'
+        require(current.is_symlink() and current.lstat().st_uid == owner_uid
+                and current.resolve(strict=True) == paths['install'] / 'releases' / revision,
+                'RECOVERY_RUNTIME_IDENTITY_UNPROVEN')
+        release = paths['install'] / 'releases' / revision
+        manifest = _recovery_identity(release, revision, root, owner_uid, owner_gid)
+        require(all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision']),
+                'RECOVERY_RUNTIME_IDENTITY_UNPROVEN')
+        snapshot_raw = _recovery_bytes(release / 'deployment-config.json', root, owner_uid, owner_gid, private=True)
+        require(manifest.get('deploymentConfigSha256') == hashlib.sha256(snapshot_raw).hexdigest()
+                and _recovery_json(snapshot_raw) == config, 'RECOVERY_CONFIGURATION_CHANGED')
+        consumer = _recovery_json(_recovery_bytes(paths['config'] / 'consumer.json', root, owner_uid, owner_gid))
+        expected_consumer = json.loads(json.dumps(config['consumer']))
+        for value in [consumer, expected_consumer]:
+            value['defaultProfile'].setdefault('effort', 'xhigh')
+        require(consumer == expected_consumer, 'RECOVERY_CONFIGURATION_CHANGED')
+        retained_paths_outside_runtime(config, paths['install'])
+        for name, identity in [('runner', config['environment']['runner']['user']),
+                               ('general-runner', config['environment']['generalRunner']['user'])]:
+            path = paths['install'] / name
+            require(present(path) == (name in journal['runners']) and not present(old_runtime / name),
+                    'RECOVERY_RUNNER_BINDING_CHANGED')
+            if name in journal['runners']:
+                value = user_ids[identity] if user_ids is not None else pwd.getpwnam(identity).pw_uid
+                uid = value[0] if isinstance(value, tuple) else value
+                info = path.lstat()
+                require(stat.S_ISDIR(info.st_mode) and info.st_uid == uid and not info.st_mode & 0o022,
+                        'RECOVERY_RUNNER_BINDING_CHANGED')
+        def admission_contained():
+            if admission_probe is not None:
+                status = admission_probe()
+            else:
+                protected(paths['install'] / 'relay-admission', root, owner_uid)
+                result = runner([str(paths['install'] / 'relay-admission'), 'status'], capture_output=True, text=True)
+                require(result.returncode == 0, 'RECOVERY_ADMISSION_UNAVAILABLE')
+                status = _recovery_json(result.stdout)
+            require(isinstance(status, dict) and status.get('phase') in ['open', 'quiesced', 'drained', 'recovery-required']
+                    and status.get('active') == [] and status.get('unknown') == [], 'ADMISSION_NOT_CONTAINED')
+        warnings = set()
+        units = inspect_units(config, paths, root, owner_uid, runner, warnings=warnings)
+        require(set(units) == set(journal['units']) and all(value in ['inactive', 'failed']
+                for name, value in units.items() if not name.endswith('.timer')), 'RECOVERY_SERVICES_NOT_STOPPED')
+        workers_quiescent(config, root, user_ids, stopped_units=units)
+        _recovery_processes(config, paths, root)
+        admission_contained()
+        timer = unit_names(config)[0]
+        if units.get(timer) == 'active':
+            checked_systemctl(runner, 'stop', timer)
+        stopped = inspect_units(config, paths, root, owner_uid, runner, stopped=True, warnings=warnings)
+        require(set(stopped) == set(units), 'RECOVERY_UNIT_STATE_CHANGED')
+        workers_quiescent(config, root, user_ids, stopped_units=stopped)
+        _recovery_processes(config, paths, root)
+        admission_contained()
+        require(_recovery_bytes(paths['journal'], root, owner_uid, owner_gid, private=True) == journal_raw
+                and _recovery_bytes(paths['operation'], root, owner_uid, owner_gid, private=True) == operation_raw,
+                'RECOVERY_EVIDENCE_CHANGED')
+        # Commit both unchanged evidence files without replacing a prior
+        # archive. Only durable verified copies permit retiring active names.
+        _archive_recovery_bytes(journal_archive, journal_raw)
+        _archive_recovery_bytes(operation_archive, operation_raw)
+        require(_recovery_bytes(journal_archive, root, owner_uid, owner_gid, private=True) == journal_raw
+                and _recovery_bytes(operation_archive, root, owner_uid, owner_gid, private=True) == operation_raw,
+                'RECOVERY_EVIDENCE_CHANGED')
+        require(_recovery_bytes(paths['journal'], root, owner_uid, owner_gid, private=True) == journal_raw
+                and _recovery_bytes(paths['operation'], root, owner_uid, owner_gid, private=True) == operation_raw,
+                'RECOVERY_EVIDENCE_CHANGED')
+        # Retire the journal first. An interrupted pair keeps the apply record
+        # as a fail-closed reservation; recovery never replays a partial archive.
+        paths['journal'].unlink()
+        fsync_dir(paths['journal'].parent)
+        paths['operation'].unlink()
+        fsync_dir(paths['operation'].parent)
+    return {'state': 'DISPOSITIONED', 'sourceRevision': journal['sourceRevision'], 'targetRevision': revision,
+            'archive': journal['archive'], 'journalSha256': hashlib.sha256(journal_raw).hexdigest(),
+            'operationSha256': hashlib.sha256(operation_raw).hexdigest(), 'units': journal['units'],
+            'activationMarkers': journal['activationMarkers'], 'runners': journal['runners']}
+
+
 def validate_remote_result(result, config, revision, report, action):
     require(isinstance(result, dict), 'REMOTE_RESULT_INVALID')
     namespace = config['environment']['namespace']
@@ -589,6 +814,22 @@ def validate_remote_result(result, config, revision, report, action):
                 and re.fullmatch('[0-9a-f]{64}', result['journalSha256'])
                 and result['recoveryPath'] == '/var/lib/' + namespace + '-clean-reinstall.json',
                 'REMOTE_RESULT_INVALID')
+    elif action == 'recover':
+        require(result.keys() == {'state', 'sourceRevision', 'targetRevision', 'archive', 'journalSha256',
+                                  'operationSha256', 'units', 'activationMarkers', 'runners'}
+                and result['state'] == 'DISPOSITIONED' and result['targetRevision'] == revision
+                and isinstance(result['sourceRevision'], str) and re.fullmatch('[0-9a-f]{40}', result['sourceRevision'])
+                and result['sourceRevision'] != revision
+                and result['archive'] == '/opt/.' + namespace + '-retired-' + result['sourceRevision'] + '-' + revision
+                and all(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key])
+                        for key in ['journalSha256', 'operationSha256'])
+                and isinstance(result['units'], dict) and set(result['units']) <= set(unit_names(config))
+                and all(value in ['active', 'inactive', 'failed'] for value in result['units'].values())
+                and isinstance(result['activationMarkers'], list)
+                and len(result['activationMarkers']) == len(set(result['activationMarkers']))
+                and set(result['activationMarkers']) <= {'reviewer-activation-authorized', 'reviewer-recovery-requires-activation'}
+                and isinstance(result['runners'], list) and len(result['runners']) == len(set(result['runners']))
+                and set(result['runners']) <= {'runner', 'general-runner'}, 'REMOTE_RESULT_INVALID')
     else:
         require(result.keys() == {'state', 'installedRevision', 'archive'}
                 and result['state'] == 'COMPLETE' and result['installedRevision'] == revision
@@ -682,9 +923,33 @@ def forward_remote_diagnostics(error, returncode):
         raise ValueError(diagnostic)
 
 
+def recovery_admission_program(config):
+    """Use the selected controller's classifier on protected existing receipts.
+
+    Recovery can precede installation of a compatibility correction. Reuse the
+    candidate admission implementation, with dependencies from the independently
+    verified retained release; no attempt records or admission state are changed.
+    """
+    namespace = config['environment']['namespace']
+    require(re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace), 'NAMESPACE')
+    base = '/opt/' + namespace + '/current/reviewed-source/'
+    source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
+    for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
+                               ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs')]:
+        require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
+        source = source.replace("'" + relative + "'", json.dumps(absolute))
+    source += '\nimport { CONSUMER, CONSUMER_DIGEST } from ' + json.dumps(base + 'consumer/consumer.mjs') + ';\n'
+    source += 'import { assertRootConsumer } from ' + json.dumps(base + 'consumer/consumer-config.mjs') + ';\n'
+    source += 'import { createAttemptStore } from ' + json.dumps(base + 'controller/src/attempt-store.mjs') + ';\n'
+    source += "assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n"
+    source += "const admission = createAdmissionControl({root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST, store: createAttemptStore(CONSUMER.paths.claimRoot + '/publication-v2'), journal: createAttemptStore(CONSUMER.paths.attemptRoot)});\n"
+    source += "process.stdout.write(JSON.stringify(await admission.status()) + '\\n');\n"
+    return source
+
+
 def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None):
     """Transport config references only; helper never receives token material."""
-    require(action in ['decommission', 'complete'], 'ACTION_INVALID')
+    require(action in ['decommission', 'complete', 'recover'], 'ACTION_INVALID')
     source = Path(__file__).read_text()
     inventory_source = Path(__file__).with_name('inventory.py').read_text()
     program = source + '\nimport sys\ntry:\n'
@@ -694,6 +959,15 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '    exec(' + repr(inventory_source) + ', probe)\n'
         program += '    current_report = probe["inspect"](value["config"])\n'
         program += '    result = decommission(value["config"], value["revision"], current_report)\n'
+    elif action == 'recover':
+        admission_source = recovery_admission_program(config)
+        program += '    def candidate_admission_probe():\n'
+        program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
+        program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
+        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", ' + repr(admission_source) + '], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
+        program += '        require(result.returncode == 0, "RECOVERY_ADMISSION_UNAVAILABLE")\n'
+        program += '        return _recovery_json(result.stdout)\n'
+        program += '    result = recover(value["config"], value["revision"], admission_probe=candidate_admission_probe)\n'
     else:
         program += '    result = complete(value["config"], value["revision"])\n'
     program += '    print(json.dumps(result, sort_keys=True))\n'

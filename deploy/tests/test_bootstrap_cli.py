@@ -56,6 +56,17 @@ elif '\\n    result = complete(value["config"], value["revision"])\\n' in sys.ar
     print(json.dumps({{'state': 'COMPLETE', 'installedRevision': request['revision'],
                       'archive': '/opt/.' + request['config']['environment']['namespace']
                                  + '-retired-' + 'b' * 40 + '-' + request['revision']}}))
+elif 'result = recover(' in sys.argv[-1]:
+    request = json.loads(sys.stdin.read())
+    assert guard.exists(), 'recovery requires live host mutex'
+    assert 'candidate_admission_probe' in sys.argv[-1] and 'prCreationResolved' in sys.argv[-1]
+    event('recover')
+    print(json.dumps({{'state': 'DISPOSITIONED', 'sourceRevision': 'a' * 40,
+                      'targetRevision': request['revision'],
+                      'archive': '/opt/.' + request['config']['environment']['namespace']
+                                 + '-retired-' + 'a' * 40 + '-' + request['revision'],
+                      'journalSha256': 'd' * 64, 'operationSha256': 'e' * 64,
+                      'units': {{}}, 'activationMarkers': [], 'runners': []}}))
 elif 'def remote_inventory(' in sys.argv[-1]:
     request = json.loads(sys.stdin.read())
     event('inventory')
@@ -123,6 +134,33 @@ if '--check' in a and Path({str(cls.post_failure)!r}).exists():
         line = next(value for value in result.stdout.splitlines()
                     if value.startswith('RELAY_BOOTSTRAP_PROJECTION='))
         return json.loads(line.split('=', 1)[1])
+
+    def test_recovery_explicitly_binds_old_target_without_backend_or_retarget(self):
+        old = 'c' * 40
+        result = self.invoke('--phase', 'reinstall-recover', '--authorize-reinstall-recovery',
+                             '--reinstall-recovery-target', old, '--resolved-revision', self.revision)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(next(line.split('=', 1)[1] for line in result.stdout.splitlines()
+                                if line.startswith('RELAY_REINSTALL_RECOVERY=')))
+        self.assertEqual(report['targetRevision'], old)
+        self.assertIn('controller_revision=' + self.revision, result.stdout)
+        self.assertFalse(self.history.exists())
+        self.assertEqual([json.loads(line)['event'] for line in self.events.read_text().splitlines()],
+                         ['guard-acquired', 'recover', 'guard-released'])
+
+    def test_recovery_requires_authorization_and_exact_retained_target(self):
+        for flags in [[], ['--authorize-reinstall-recovery'],
+                      ['--reinstall-recovery-target', 'c' * 40],
+                      ['--authorize-reinstall-recovery', '--reinstall-recovery-target', 'main']]:
+            result = self.invoke('--phase', 'reinstall-recover', '--resolved-revision', self.revision, *flags)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('explicit-reinstall-recovery', result.stderr)
+        for phase in ['inventory', 'apply']:
+            result = self.invoke('--phase', phase, '--authorize-reinstall-recovery',
+                                 '--reinstall-recovery-target', 'c' * 40)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('explicit-reinstall-recovery', result.stderr)
+        self.assertFalse(self.events.exists())
 
     def test_fresh_config_derives_review_artifacts_without_host_mutation(self):
         root, config = self.fresh_consumer()
