@@ -85,13 +85,17 @@ def test_unprivileged_archive_modes_are_repaired_without_changing_other_source(t
     assert all(stat.S_IMODE((source / 'deploy' / name).stat().st_mode) == 0o664 for name in names)
     before = {path.relative_to(source): (path.lstat().st_mode, path.read_bytes()
               if path.is_file() else None) for path in source.rglob('*')}
-    tasks = [copy.deepcopy(proof.task(STAGE, name)) for name in [PARENTS, CLOSURE]]
+    artifacts = ROOT / 'roles/relay_artifacts/tasks/main.yml'
+    tasks = [copy.deepcopy(proof.task(artifacts,
+             'Allow runtime traversal only to the reviewed release executable namespace')),
+             *[copy.deepcopy(proof.task(STAGE, name)) for name in [PARENTS, CLOSURE]]]
     for entry in tasks:
         # Substitute only identity in this ordinary-UID test. Root ownership
         # and the unchanged fixed helper are exercised by the native proof.
         entry['ansible.builtin.file'].update(owner=pwd.getpwuid(os.getuid()).pw_name,
                                            group=grp.getgrgid(os.getgid()).gr_name)
-    values = {'relay_release_path': str(release), 'ansible_remote_tmp': str(tmp_path / 'remote-tmp')}
+    values = {'relay_release_path': str(release), 'relay_group': grp.getgrgid(os.getgid()).gr_name,
+              'ansible_remote_tmp': str(tmp_path / 'remote-tmp')}
     ansible(tmp_path, values, tasks)
     allowed = {Path('deploy'), *[Path('deploy') / name for name in names]}
     for relative, (mode, content) in before.items():

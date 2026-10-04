@@ -632,7 +632,8 @@ command the owner must reproduce for each compatible update.
 Source installation and retained-release reconciliation normalize the fixed
 owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`, `config.py`,
 `installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
-parent to root:root `0755`, and `reviewed-source` to root:root `0751`. Other
+parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
+and its release parents, retaining their assigned groups and modes. Other
 archived source modes remain unchanged. The fixed bootstrap still rejects
 writable, non-root-owned or aliased code and unsafe substitution parents before
 executing root Python. This requires no additional owner action. An older

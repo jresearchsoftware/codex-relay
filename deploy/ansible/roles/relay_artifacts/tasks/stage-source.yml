@@ -29,15 +29,14 @@
 # installation and retained-release reconciliation. Keep its fail-closed check.
 - name: Protect owner lifecycle code substitution parents
   ansible.builtin.file:
-    path: '{{ relay_release_path }}/reviewed-source{{ item.suffix }}'
+    # The enclosing reviewed-source/release parents are already normalized by
+    # the artifact/runtime directory tasks. Preserve their assigned groups.
+    path: '{{ relay_release_path }}/reviewed-source/deploy'
     state: directory
     owner: root
     group: root
-    mode: '{{ item.mode }}'
+    mode: '0755'
     follow: false
-  loop:
-    - {suffix: '', mode: '0751'}
-    - {suffix: '/deploy', mode: '0755'}
   when: not ansible_check_mode | bool
 
 - name: Protect the fixed owner lifecycle Python dependency closure
