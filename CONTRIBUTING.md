@@ -12,6 +12,36 @@ documentation corrections only need relevant consistency checks. The maintainer
 reviews scope and trust boundaries before merge. `AGENTS.md` and `.codex/hooks/`
 describe the owner's optional Codex workflow, not human contribution gates.
 
+## Execution environment and shell routing
+
+Use syntax native to the environment where the command actually executes. Prefer
+the shortest qualified transport that preserves the required implementation
+language and authority: native Windows PowerShell for Windows-local work;
+`wsl.exe --distribution <distro> --exec` with the Linux executable and arguments
+when Linux execution is needed from Windows; direct execution when already in
+Debian/WSL/Linux; and a source-controlled `.sh` entrypoint when Bash-specific
+behavior is the implementation boundary. Use native Linux paths inside Linux and
+do not add an unnecessary WSL or shell hop.
+
+Use PowerShell Core (`pwsh`) for PowerShell-oriented work on Windows or Linux
+when Bash is not required. Prefer direct argument passing, structured tool
+arguments, stdin, or a script file (`pwsh -File` / `bash <script>`) over nested
+command strings. Do not carry non-trivial JSON, patches, Markdown or commands
+through multiple shells for reinterpretation.
+
+A transport choice does not replace a source-controlled protected entrypoint or
+authorize another credential/security boundary. For material PowerShell-to-native
+calls, propagate failure immediately before dependent work:
+`$ErrorActionPreference = 'Stop'` alone does not establish native fail-fast
+behavior; use supported native error propagation or inspect `$LASTEXITCODE`
+immediately and throw/exit on unexpected nonzero results. Handle intentionally
+expected nonzero results explicitly so a later successful command cannot hide
+the material failure.
+
+Runtime/filesystem boundary checks require the native Linux filesystem described
+below. A Windows-mounted checkout is not evidence for those Linux
+filesystem/security invariants.
+
 ## Local validation
 
 Run from the repository root on a native Linux filesystem, including WSL.
