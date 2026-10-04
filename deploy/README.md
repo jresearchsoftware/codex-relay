@@ -629,6 +629,17 @@ requires ordinary consumer review/merge before apply and causes no automatic
 publication. That consumer transition is authority, not a low-level deployment
 command the owner must reproduce for each compatible update.
 
+Source installation and retained-release reconciliation normalize the fixed
+owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`, `config.py`,
+`installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
+parent to root:root `0755`, and `reviewed-source` to root:root `0751`. Other
+archived source modes remain unchanged. The fixed bootstrap still rejects
+writable, non-root-owned or aliased code and unsafe substitution parents before
+executing root Python. This requires no additional owner action. An older
+installed helper that already fails this bootstrap cannot apply its own repair;
+install the accepted correction through a separately authorized supported public
+deployment/reconciliation operation before qualifying the ordinary workflow.
+
 Quiesce atomically closes the root-owned admission gate using the existing Writer
 lock. Already admitted automatic controllers retain their reservation through
 child containment, publication and terminal evidence; queued/new Tasks and CRs

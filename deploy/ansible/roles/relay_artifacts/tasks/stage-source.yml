@@ -24,6 +24,38 @@
     group: root
   when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
 
+# Git archives normally carry 0664 files and 0775 directories. Normalize only
+# code executed as root by the fixed owner-lifecycle bootstrap, on both new
+# installation and retained-release reconciliation. Keep its fail-closed check.
+- name: Protect owner lifecycle code substitution parents
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/reviewed-source{{ item.suffix }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '{{ item.mode }}'
+    follow: false
+  loop:
+    - {suffix: '', mode: '0751'}
+    - {suffix: '/deploy', mode: '0755'}
+  when: not ansible_check_mode | bool
+
+- name: Protect the fixed owner lifecycle Python dependency closure
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/reviewed-source/deploy/{{ item }}'
+    state: file
+    owner: root
+    group: root
+    mode: '0644'
+    follow: false
+  loop:
+    - owner_lifecycle.py
+    - lifecycle.py
+    - config.py
+    - installed_config.py
+    - deployment_lock.py
+  when: not ansible_check_mode | bool
+
 - name: Record the acquired Git identity for installed product reconciliation
   ansible.builtin.copy:
     content: '{{ relay_source_identity | to_nice_json }}
