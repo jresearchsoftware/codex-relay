@@ -59,6 +59,90 @@ The policy is supplied to the governed worker and manual handoff from the
 shared [execution-policy module](../runtime/src/execution-policy.mjs). The
 [routing contract](../controller/README.md) defines continuation mechanics.
 
+
+## Proportional controls and operator usability
+
+Mandatory controls must scale to a concrete accepted risk. A control is not
+justified solely because it can prevent a defect or because a stricter pattern
+exists. Prefer the cheapest mechanism that keeps the material risk acceptable.
+
+Behaviorally free hardening may be applied without a separate owner decision
+when it preserves existing supported workflows and adds no material operator
+work, platform restriction, prerequisite, gate, trust boundary, recovery burden
+or false-positive surface. Examples include setting safe attributes on an
+already-owned file, avoiding secret logging, or choosing an equivalently usable
+safer API.
+
+A cost-bearing security or validation control requires explicit canonical owner
+authorization before it becomes mandatory. Treat a control as cost-bearing when
+it does any of the following materially:
+
+- blocks or narrows an existing or common supported workflow or environment;
+- adds an operator command, separate checkout, platform/filesystem requirement,
+  administrative prerequisite, credential step, or recovery step;
+- introduces or tightens a trust, privilege, sandbox, ACL or execution boundary;
+- adds a mandatory validation gate, broadens the required validation surface, or
+  makes unrelated baseline debt block the current task;
+- adds persistent state, synchronization, lifecycle or failure modes; or
+- materially increases execution time, maintenance, review friction, false
+  positives, or control-induced defects.
+
+Before proposing such a control, make the justification decision-grade: state
+the attacker or failure capability, the concrete path to harm, the resulting
+impact or privilege, why existing controls are insufficient, and the operator
+and maintenance cost of the proposed control. Treat accepting the risk or doing
+nothing as a valid option; a security or test preference is not authority.
+
+Evaluate human behavior as part of control effectiveness. Consider how often an
+ordinary user will encounter the control, whether the compliant path is
+materially harder than an obvious workaround, and whether friction is likely to
+cause disabling, bypass, unsafe local storage, duplicated state or abandonment
+of the product. A control that predictably drives users toward a simpler unsafe
+workaround is not automatically a security improvement.
+
+For visible, local, reversible failures that are cheap to diagnose and rerun,
+prefer simple detection, warning and recovery over recurring preventive
+machinery unless a concrete accepted risk requires blocking. Retain stronger
+prevention for silent, propagating or irreversible failures and for material
+credential, privacy/compliance, production, publication, merge or other
+protected-boundary risks.
+
+Common supported environments should work by default. A filesystem, platform,
+permission shape, unrelated service or other unusual local condition is not by
+itself a reason for a hard failure merely because a stricter configuration is
+possible. Bind a hard block to a material accepted invariant and use a warning
+or bounded recovery when that preserves the invariant with lower operator cost.
+
+Independent review of a change that affects controls or operator workflow must
+also exercise the simplest owner-facing black-box path required by canonical
+authority. Review for unnecessary state, gates, authority coupling, prerequisites
+and operator-visible actions in addition to implementation correctness. An
+unauthorized material operator-contract delta remains
+`OWNER_DECISION_REQUIRED` under the repository's existing contract-change gate.
+
+## Execution warning disposition
+
+Execution warnings remain decision inputs even after a successful run. Before
+review, continuation, merge, closure or an owner decision, inspect the primary
+warning surfaces that are applicable to the execution:
+
+- Relay/Codex Outcomes, including explicit warning fields and
+  `COMPLETED_WITH_WARNINGS`;
+- GitHub workflow/run-level annotations and platform policy warnings; and
+- Relay/controller/Actions execution annotations associated with the attempt.
+
+Do not replace inspection of those primary surfaces with a text search for the
+word `warning` in job logs. Compiler, test, installer, Git and similar warnings
+are secondary unless they are surfaced as execution warnings or materially
+affect authority, security, correctness, acceptance or operability.
+
+Disposition every material warning with its source/provenance, impact, relation
+to current scope, resolution or remaining limitation, next action/owner/deadline
+when applicable, and effect on the current verdict or continuation decision.
+Green status is not a disposition. If a required primary warning or annotation
+surface cannot be inspected, state the evidence gap and do not claim that no
+warnings were observed.
+
 ## Developer stop evidence
 
 During repository development, a terminal BLOCKED handoff states established
