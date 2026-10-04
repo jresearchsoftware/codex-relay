@@ -198,6 +198,8 @@ relay_writer_app_id: '1002'
 relay_writer_app_installation_id: '2002'
 relay_writer_expected_actor: example-writer[bot]
 relay_github_repository: example/relay-consumer
+relay_owner_lifecycle_helper_path: '/usr/local/sbin/{{ relay_namespace }}-owner-lifecycle'
+relay_owner_lifecycle_sudoers_file: '/etc/sudoers.d/{{ relay_namespace }}-owner-lifecycle'
 relay_credential_cleanup_authorized: false
 relay_reviewer_relay_enabled: true
 

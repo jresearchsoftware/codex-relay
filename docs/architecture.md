@@ -13,6 +13,7 @@ which encodes the policy in `AGENTS.md`; reusable code chooses no model.
 | --- | --- | --- |
 | Consumer/owner | Task scope, model/effort policy, launch commands, deployment, merge and release decisions | Reviewer verdict identity |
 | Routing controller | Event binding, one execution reservation, attempt journal and terminal handoff | New task authority or retry permission |
+| Lifecycle admission | Durable automatic admission gate and full controller drain under the Writer lock | Task authority, new executions, deployment acceptance or implicit resume |
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
 | Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR progress and Outcome | Worker execution lifecycle or Reviewer verdicts |
 | External ChatGPT review/caller | Reads the diff, authors substantive verdict/findings and supplies structured CR | Writer implementation identity or automatic launch authority |
@@ -61,12 +62,23 @@ publication path. Writer availability is not a manual publication prerequisite.
 | --- | --- | --- |
 | GitHub/Git | Issue/CR, owner event/run, Step labels, commits/ref/PR, checks, reviews and Outcome | Authority, durable progress and acceptance truth |
 | Runner | Configured `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic |
-| Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable admission, pending mutation intent, verified head and recovery receipts |
+| Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable admission, full automatic controller reservation/completion, pending mutation intent, verified head and recovery receipts |
+| Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
 | Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
 
 Configuration is validated once and frozen. A digest accompanies admission;
 another configuration cannot resume the same attempt. Configuration/state
 migrations require reconciliation under the original qualified revision.
+
+The automatic gate and admission reservation share the root Writer lock.
+Quiesce prevents new automatic Issue/CR execution while admitted controllers
+finish through containment, collection, publication and durable terminal
+receipts. Drain checks those existing attempt records and matching protected
+runner journals; a model exit or an idle runner is insufficient. Its bounded
+polls release the lock so active controllers can finish. Unknown execution,
+missing containment or ambiguous publication fails closed and preserves
+quiesce. The worker cannot write gate or Writer state. This lifecycle state
+does not replace GitHub Task authority or add a task ledger.
 
 Starting/reviewed head, local progress head, observed remote head and head
 declared ready are distinct. A worker's claims do not establish any of these
@@ -119,9 +131,13 @@ the exact installed revision with the reviewed workflow compatibility contract; 
 either repository does not upgrade or invalidate it. An owner selects one exact
 accepted target, reviews any changed generated workflow bytes, and uses the public upgrade
 primitive to apply and verify that same target under the existing host lock.
-Unknown or failed transitions retain recovery evidence. Task #25 may wrap this
-primitive with quiesce/drain/resume policy; the primitive does not invent that
-authority. Without authoritative latest-release information no update note is
+The owner lifecycle coordinator quiesces and drains automatic admission before
+applying that primitive. Registered runners remain online. Only explicit
+same-operation verification of the installed revision permits resume; a
+restart, failed or unknown transition retains quiesce and recovery evidence.
+Graceful stop retains quiesced admission without stopping registered runners.
+Manual handoff and publication-only recovery keep their existing authority.
+Without authoritative latest-release information no update note is
 emitted, and availability of a newer revision is never itself a warning or gate.
 
 Fresh bootstrap derives workflow proposals from that exact accepted source and

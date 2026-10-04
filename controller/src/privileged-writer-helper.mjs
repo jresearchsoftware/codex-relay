@@ -9,6 +9,8 @@ import { createGitPublisher } from './trusted-git.mjs';
 import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { installedAdmissionControl } from './admission-cli.mjs';
+import { REPOSITORY, VERSION } from './execution-contract.mjs';
 
 export function resolveWriterDeploymentContract(env = process.env) {
   const profile = { credentialEnv: CONSUMER.paths.credentialEnv, credentialKeyFile: CONSUMER.paths.credentialKeyFile, claimRoot: CONSUMER.paths.claimRoot };
@@ -24,10 +26,14 @@ export async function main() {
   let size = 0; const chunks = [];
   for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
   let request; try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
+  const admission = installedAdmissionControl();
+  if (request?.operation === 'complete-execution') {
+    return { version: VERSION, repository: REPOSITORY, ...await admission.complete(request) };
+  }
   const value = await token();
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken: request.workflowReadToken }),
     store: createAttemptStore(`${deployment.claimRoot}/publication-v2`),
-    publisher: createGitPublisher({ token: value, root: deployment.claimRoot }) }).dispatch(request);
+    publisher: createGitPublisher({ token: value, root: deployment.claimRoot }), admission }).dispatch(request);
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

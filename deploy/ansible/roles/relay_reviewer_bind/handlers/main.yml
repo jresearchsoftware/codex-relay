@@ -26,6 +26,7 @@
   changed_when: true
   when:
     - not relay_production_defer_lifecycle | default(false) | bool
+    - not relay_upgrade_lifecycle_managed | default(false) | bool
     - not ansible_check_mode | bool
     - not (
         relay_deployment_profile == 'production' and
@@ -46,6 +47,7 @@
   changed_when: true
   when:
     - not relay_production_defer_lifecycle | default(false) | bool
+    - not relay_upgrade_lifecycle_managed | default(false) | bool
     - relay_deployment_profile == 'production'
     - relay_production_operation_record_present | default(false) | bool
     - relay_production_operation_phase | default('') == 'apply'

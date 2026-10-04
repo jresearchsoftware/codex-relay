@@ -12,13 +12,14 @@ digests instead of a product SHA. It is derived from an accepted exact product
 source through the public workflow projection interface and remains subject to
 consumer review/merge. Publishing this projection does not install or qualify
 that product. The installed release must provide the matching workflow contract
-before dispatch; installation and activation require separate owner authority.
+before dispatch. The owner lifecycle workflow supplies explicit apply, stop or
+resume authority; merely publishing its projection grants none of those actions.
 
 | Configured path | Execution boundary |
 | --- | --- |
 | [Routing](../.github/workflows/codex-relay-routing.yml) | Owner ready-label commands and optional owner dispatch on `main`; installed controller and fixed Writer/worker helpers |
 | [Publication recovery](../.github/workflows/manual-writer-publication-recovery.yml) | Owner dispatch on `main`; inspect or recover one retained attempt using its exact owner authorization comment |
-| [Production reconciliation](../.github/workflows/manual-main-production-deploy.yml) | Owner dispatch on `main`; one exact installed product SHA through the fixed production helper and protected deployment snapshot |
+| [Owner lifecycle](../.github/workflows/manual-main-production-deploy.yml) | Owner dispatch on `main`; apply accepted Relay `main`, gracefully stop, or resume through the fixed protected lifecycle helper |
 | [Exact-head validation](../.github/workflows/relay-exact-head-validation.yml) | Disposable GitHub-hosted candidate checks at the exact PR head or pushed `main` commit |
 
 Routing uses the native names required by the
@@ -63,8 +64,9 @@ default repository registration scope and labels are not workflow allowlists.
 The public deployment interface also supports an explicit organization-scoped
 general runner in a separate group restricted to this repository and exactly
 `jresearchsoftware/codex-relay/.github/workflows/codex-relay-routing.yml@refs/heads/main`
+`jresearchsoftware/codex-relay/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/main`,
 and
-`jresearchsoftware/codex-relay/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/main`.
+`jresearchsoftware/codex-relay/.github/workflows/manual-main-production-deploy.yml@refs/heads/main`.
 This option requires owner acceptance of the registration scope and independent
 qualification of the external group ACL; it does not migrate an existing runner
 or establish that the public consumer has adopted the option. Candidate CI must
@@ -81,46 +83,61 @@ exact candidate head. It does not qualify installed sudoers, process isolation,
 credentials, ingress, runner restrictions or independent acceptance. See
 [contributor validation](../CONTRIBUTING.md#local-validation) for its check set.
 
-## Public production workflow
+## Public owner lifecycle workflow
 
-`manual-main-production-deploy.yml` has no revision, target or other dispatch
-inputs. It accepts only owner `foal` as both original and triggering actor,
-`workflow_dispatch`, this repository and `refs/heads/main`. Scheduling explicitly
-selects organization runner group `codex-relay-runner` plus the accepted runner
-labels. There is no label-only fallback. Runner name and Unix user must both be
-`codex-relay-runner`; these checks supplement the external scheduling restriction.
+`manual-main-production-deploy.yml` has one action selector: `apply` (the
+default), `stop`, or `resume`. There is no revision, target, config or executable
+input. It accepts only owner `foal` as both original and triggering actor,
+`workflow_dispatch`, this repository and `refs/heads/main`.
 
-The owner must configure this production group's repository access to only
-`jresearchsoftware/codex-relay` and its workflow access to only:
-
-```text
-jresearchsoftware/codex-relay/.github/workflows/manual-main-production-deploy.yml@refs/heads/main
-```
-
-Never allow routing, recovery, candidate CI or the private DocReview deployment
-workflow into this group. Independently verify the saved external policy before
-registration or enablement. Source publication or a passing workflow test does
-not establish that policy.
+The job runs on the separate general runner, whose name and Unix user must both
+be `codex-relay-general-runner`. Reviewer lifecycle changes can restart its
+dependent production runner; the general runner keeps the owner operation's
+transport alive. An organization-scoped general runner uses its configured
+dedicated group with the trusted workflow/ref allowlist above. Repository-scoped
+registration retains its separately qualified external trust boundary. Add the
+owner lifecycle workflow to that boundary through owner administration before
+dispatch; publishing YAML cannot update or prove the external policy. Candidate
+CI must have no access to either persistent runner.
 
 The job performs no checkout and downloads no action or candidate executable.
 It verifies the workflow contract and exact release path against the root-owned
 installed source identity, then calls only the fixed helper:
-`/usr/bin/sudo -n /opt/codex-relay/relay-production-local-apply <product-SHA>:<consumer-SHA>`.
-The single typed argument binds both the resolved installed product and native dispatch
-commit. The helper rechecks that exact installed product before executing its
-code, preventing a concurrent installation switch from changing the target.
-The accepted deployment must first opt into
+`/usr/bin/sudo -n /usr/local/sbin/codex-relay-owner-lifecycle <action>:<installed-product-SHA>:<consumer-SHA>`.
+The single typed argument binds the action, resolved installed product and native
+dispatch commit. The root-owned installed coordinator rechecks that installed
+identity and uses the protected configuration snapshot. The accepted deployment
+must first install this helper and opt into
 [`localApply.source: installed`](../deploy/README.md#protected-self-dogfood-reconciliation)
-through owner configuration and public owner apply. The helper validates the
-private root-owned snapshot and rechecks the dispatched consumer commit against current `main`
-immediately before
-reservation under the existing transition lock. It retains the exact installed
-product version and original consumer provenance. Failed or stale checks prevent
-apply. No workflow step receives the configuration or credential material.
+through owner configuration and the public deployment interface. No workflow
+step receives configuration or credential material. The older fixed
+`relay-production-local-apply` reconciliation API remains available for its
+existing compatibility and recovery paths.
 
-The workflow serializes production jobs without cancellation. The deployment
-operation boundary also excludes conflicting owner operations and preserves live
-services through reconciliation. Source upgrades and any deferred service
-transition remain separately authorized owner actions. Deploy and qualify an
-accepted main revision before dispatching that revision's workflow; a green
-source candidate must never be installed merely to make the job runnable.
+For `apply`, the coordinator resolves accepted public Relay `main` once at the
+start and freezes that exact product target. It obtains clean root-owned source
+and consumer trees without a GitHub credential, verifies the reviewed consumer
+projection against the selected target's exact templates and configuration, and
+then quiesces admission and drains admitted work. If that product is already
+installed, it reconciles and verifies it. Otherwise it uses the existing public
+upgrade primitive for the same exact target. Apply, activation, verification and
+resume belong to that one owner action. Logs identify the target and progress;
+moving `main` later neither changes it nor starts another operation. A source
+candidate does not become an accepted target solely because its CI passes.
+
+Projection verification compares the exact rendered workflow bytes, contract,
+repository bindings and digests. Schema 2 carries no product SHA, so unchanged
+templates need no new consumer commit for every product revision. Changed
+managed bytes require normal consumer review/publication: the operation reports
+`WORKFLOW_REVIEW_REQUIRED` before quiescing or changing the host. It never pushes,
+merges or substitutes an unreviewed projection. Publish the reviewed consumer
+change through existing authority, then invoke the owner action again.
+
+`stop` quiesces and drains gracefully; `resume` restores the retained qualified
+state through the same protected lifecycle boundary. The workflow serializes
+owner lifecycle jobs without cancellation; the host operation lock also excludes
+conflicting owner transitions. Failure or uncertain execution retains recovery
+evidence and keeps the installation quiesced for inspection rather than claiming
+successful resume. This workflow's dispatch is lifecycle authority for these
+actions; merge, Issue closure, credential provisioning and runner registration
+retain their separate owner authority.

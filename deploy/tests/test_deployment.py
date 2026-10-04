@@ -268,6 +268,7 @@ if '-F' in sys.argv: print('fixture-known-host')
 else: print('256 SHA256:' + ('B' if sys.argv[-1]=='-' else 'A')*43 + ' fixture')
 ''',
             'ssh': f'''import sys
+import json
 from pathlib import Path
 Path({str(cls.calls)!r}).write_text("strict-preflight")
 if 'DEPLOYMENT_LOCK_READY' in sys.argv[-1]:
@@ -277,6 +278,11 @@ elif '--hold' in sys.argv[-1]:
     print('BOOTSTRAP_GUARD_READY', flush=True)
     sys.stdin.read()
     if Path({str(cls.base / 'guard-fail')!r}).exists(): sys.exit(1)
+elif '/relay-admission' in sys.argv[-1]:
+    with Path({str(cls.base / 'admission-calls')!r}).open('a') as stream:
+        stream.write(sys.argv[-1]+'\\n')
+    if ' drain ' in sys.argv[-1] and Path({str(cls.base / 'drain-fail')!r}).exists(): sys.exit(1)
+    print(json.dumps({{'phase':'recovery-required','active':[],'unknown':[]}}))
 ''',
             'ansible-playbook': f'''import json,sys
 from pathlib import Path
@@ -291,6 +297,7 @@ print('192.0.2.10 : ok=1 changed=0 unreachable=0 failed=0')
 print('PRODUCTION_APPLY_VALIDATED='+head)
 print('PRODUCTION_CHECK_VALIDATED='+head+';state=stable-no-op;recovery=none')
 print('RELAY_INSTALLED_REVISION='+head+';consumer='+consumer+';previous=none')
+if v.get('relay_upgrade_lifecycle_managed'): print('RELAY_UPGRADE_ACTIVATION_VALIDATED='+head)
 print('TLS_BOOTSTRAP_CHECK=PASS;head='+head)
 print('TLS_BOOTSTRAP_RESULT=PASS;phase='+v['relay_tls_phase']+';head='+head)
 print('REVIEWER_CREDENTIAL_STAGE=PASS;head='+head)

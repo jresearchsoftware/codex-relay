@@ -1,0 +1,91 @@
+---
+# Admission is already quiesced and drained. Installation must remember actual
+# activity rather than derive activation authority from an enabled unit. The
+# gate retains the FIRST snapshot so recovery cannot reinterpret a failed
+# activation as owner intent to keep a formerly active component off.
+- name: Inspect managed upgrade service activity before installation
+  ansible.builtin.command:
+    argv:
+      - /bin/systemctl
+      - show
+      - '{{ item }}'
+      - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
+  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}']
+  register: relay_upgrade_lifecycle_initial_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require known service activity before a managed upgrade
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search('(?m)^LoadState=(loaded|not-found)$')
+      - item.stdout is search('(?m)^ActiveState=(active|inactive|failed)$')
+      - >-
+        item.stdout is search('(?m)^LoadState=not-found$') or
+        item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$')
+      - >-
+        not (item.stdout is search('(?m)^ActiveState=active$')) or
+        (
+          item.rc == 0 and
+          item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
+          item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$') and
+          item.stdout is search('(?m)^SubState=running$') and
+          item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime)$')
+        )
+    fail_msg: RELAY_UPGRADE_SERVICE_ACTIVITY_UNPROVEN
+  loop: '{{ relay_upgrade_lifecycle_initial_services.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Build the bounded observed activation intent for the exact admission operation
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_observed_activity: >-
+      {{
+        (relay_upgrade_lifecycle_observed_activity | default({})) |
+        combine({item.name: {
+          'active': relay_upgrade_lifecycle_initial_services.results[item.index].stdout is search('(?m)^ActiveState=active$'),
+          'enabled': (relay_upgrade_lifecycle_initial_services.results[item.index].stdout | regex_findall('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$') | first | default('disabled')),
+          'load': (relay_upgrade_lifecycle_initial_services.results[item.index].stdout | regex_findall('(?m)^LoadState=(loaded|not-found)$') | first)
+        }})
+      }}
+  loop:
+    - {name: reviewer, index: 0}
+    - {name: production, index: 1}
+    - {name: general, index: 2}
+
+- name: Retain the first activation snapshot in the exact protected admission operation
+  ansible.builtin.command:
+    argv: ['{{ relay_install_root }}/relay-admission', snapshot, --operation, '{{ relay_admission_operation_id }}']
+    stdin: '{{ relay_upgrade_lifecycle_observed_activity | to_json }}'
+    stdin_add_newline: false
+  register: relay_upgrade_lifecycle_retained_snapshot
+  changed_when: false
+  check_mode: false
+
+- name: Read the original activation intent retained across recovery
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_previous_active: '{{ (relay_upgrade_lifecycle_retained_snapshot.stdout | from_json).previousActive }}'
+
+- name: Retain the previously active components and general transport identity
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_reviewer_was_active: '{{ relay_upgrade_lifecycle_previous_active.reviewer.active }}'
+    relay_upgrade_lifecycle_production_was_active: '{{ relay_upgrade_lifecycle_previous_active.production.active }}'
+    relay_upgrade_lifecycle_general_was_active: '{{ relay_upgrade_lifecycle_previous_active.general.active }}'
+
+- name: Require exact retained intent before any managed recovery activation
+  ansible.builtin.assert:
+    that:
+      - not relay_upgrade_lifecycle_observed_activity[item].active or relay_upgrade_lifecycle_previous_active[item].active
+      - >-
+        not relay_upgrade_lifecycle_previous_active[item].active or
+        relay_upgrade_lifecycle_observed_activity[item].active or
+        (item != 'general' and relay_admission_recovery_authorized | default(false) | bool)
+    fail_msg: RELAY_UPGRADE_RETAINED_ACTIVITY_RECOVERY_REQUIRED
+  loop: [reviewer, production, general]
+
+- name: Require the active production runner to retain its Reviewer prerequisite
+  ansible.builtin.assert:
+    that:
+      - not relay_upgrade_lifecycle_production_was_active | bool or relay_upgrade_lifecycle_reviewer_was_active | bool
+    fail_msg: RELAY_UPGRADE_PRODUCTION_REVIEWER_ACTIVITY_UNPROVEN

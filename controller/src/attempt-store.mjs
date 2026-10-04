@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises';
+import { mkdir, readFile, open, rename, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { positive, fail } from './execution-contract.mjs';
 export const ATTEMPT_RECORD_BYTES = 512 * 1024;
@@ -17,7 +17,11 @@ export function createAttemptStore(root) {
       if (Buffer.byteLength(bytes) > ATTEMPT_RECORD_BYTES) fail('ATTEMPT_RECORD_TOO_LARGE');
       await mkdir(root, { recursive: true, mode: 0o700 });
       const temp = `${path(id)}.tmp-${process.pid}`;
-      await writeFile(temp, bytes, { mode: 0o600 }); await rename(temp, path(id));
+      const file = await open(temp, 'w', 0o600);
+      try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
+      await rename(temp, path(id));
+      const directory = await open(root, 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
     },
     async all() {
       let names; try { names = await readdir(root); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }

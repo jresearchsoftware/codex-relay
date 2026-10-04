@@ -70,6 +70,46 @@ class ProjectionTests(unittest.TestCase):
             'group': 'general-only', 'labels': ['self-hosted', 'Linux', 'X64', 'relay']})
         self.assertIn("github.ref == 'refs/heads/stable/release'", routing['jobs']['route']['if'])
 
+    def test_owner_lifecycle_uses_configured_general_runner_and_fixed_namespace_helper(self):
+        self.config = self_config()
+        self.config['environment']['generalRunner'].update(scope='organization', group='general-only')
+        validate(self.config, ROOT)
+        rendered = projection.render(self.config, HEAD, ROOT)
+        lifecycle = yaml.safe_load(rendered[projection.PRODUCTION])
+        job, = lifecycle['jobs'].values()
+        step, = job['steps']
+        self.assertEqual(job['runs-on'], {
+            'group': 'general-only', 'labels': ['self-hosted', 'Linux', 'X64', 'codex-relay']})
+        self.assertIn('/usr/local/sbin/codex-relay-owner-lifecycle', step['run'])
+        self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
+        self.assertEqual(lifecycle[True]['workflow_dispatch']['inputs']['action']['options'],
+                         ['apply', 'stop', 'resume'])
+
+    def test_lifecycle_projection_change_requires_consumer_review_before_target_verification(self):
+        self.config = self_config()
+        with tempfile.TemporaryDirectory(prefix='relay-prior-source-') as source:
+            templates = Path(source) / 'deploy/workflows'
+            shutil.copytree(ROOT / 'deploy/workflows', templates)
+            production = templates / 'production.yml.in'
+            production.write_text(production.read_text().replace(
+                '/usr/local/sbin/@@NAMESPACE@@-owner-lifecycle',
+                '/opt/@@NAMESPACE@@/relay-production-local-apply'))
+            previous = projection.project(self.config, HEAD, source, self.root)
+            before = {path: (self.root / path).read_bytes() for path in [*previous['files'], projection.MANIFEST]}
+            with tempfile.TemporaryDirectory(prefix='relay-lifecycle-proposal-') as output:
+                target = 'b' * 40
+                proposal = projection.prepare(self.config, target, ROOT, self.root, output)
+                self.assertEqual(proposal['state'], 'workflow-review-required')
+                self.assertEqual(proposal['revision'], target)
+                self.assertEqual(before, {path: (self.root / path).read_bytes() for path in before})
+                with self.assertRaisesRegex(InvalidConfig, 'workflow-projection-target-mismatch'):
+                    projection.verify(self.config, target, ROOT, self.root)
+                projection.verify(self.config, target, ROOT, output)
+                # Consumer review/merge supplies the target bytes; projection
+                # preparation itself never commits or publishes the proposal.
+                shutil.copytree(output, self.root, dirs_exist_ok=True)
+                projection.verify(self.config, target, ROOT, self.root)
+
     def test_product_revision_alone_never_requires_reprojection(self):
         before = self.project()
         contents = {path: (self.root / path).read_bytes() for path in [*before['files'], projection.MANIFEST]}

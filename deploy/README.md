@@ -576,9 +576,57 @@ The later runner role checks the retained shared state parent's type, root
 owner and mode even when its group is still only planned. That pending group
 assignment counts as a change; apply still requires and enforces the real group.
 
-An upgrade requires consumer workflows matching the selected accepted target's
-content and workflow contract, then the explicit public primitive from that
-target's clean exact source:
+The ordinary owner surface for an installed self-consumer is the projected
+**Owner Relay lifecycle** GitHub workflow. Choose `apply` to bind accepted
+public Relay `main` once, reconcile an already installed exact target or upgrade
+to that immutable target, and finish this sequence under the existing host mutex:
+
+`OPEN -> QUIESCE -> DRAIN -> APPLY -> ACTIVATE/VERIFY -> RESUME -> OPEN`
+
+The protected coordinator resolves the target anonymously and never follows
+later movement of `main`. It verifies the frozen consumer dispatch's reviewed
+projection against the exact selected source. Identical workflow bytes and
+contract remain compatible across product revisions; a changed projection
+requires ordinary consumer review/merge before apply and causes no automatic
+publication. That consumer transition is authority, not a low-level deployment
+command the owner must reproduce for each compatible update.
+
+Quiesce atomically closes the root-owned admission gate using the existing Writer
+lock. Already admitted automatic controllers retain their reservation through
+child containment, publication and terminal evidence; queued/new Tasks and CRs
+cannot launch Codex. Drain releases that lock between observations, waits up to
+30 minutes for valid work and rejects unknown execution or publication evidence.
+No service or runner is stopped to drain. Registered runners remain online.
+
+Managed apply snapshots actual service activity and uses the existing supported
+upgrade backend. It consolidates try-restart of the previously active Reviewer
+and production dependency, verifies the real executable and process adoption,
+installed identity, service health, recovery timer, preserved activation intent,
+and exact projected workflows before reopening admission. The general runner
+is transport and retains its PID/start identity across planned Reviewer
+transitions; its initial readiness check is preserved. Inactive/unregistered
+components remain inactive. A general transport software, unit or group change
+requiring restart fails closed for explicit recovery instead of killing the job.
+
+The operation emits phase/count progress without model calls. An ordinary apply
+runs one mutable primitive, with no mandatory pre-check or immediate equivalent
+post-check. Its own final runtime proof is required. Bootstrap/reinstall retain
+their independent clean-state post-check; an explicit `post-check` remains useful
+for later installed qualification, diagnosis and recovery.
+
+Choose `stop` for `OPEN -> QUIESCE -> DRAIN -> QUIESCED`, without disabling or
+unregistering runners. Choose `resume` after that graceful stop to independently
+revalidate the same installed accepted revision and current runtime/projection
+with the public read-only post-check, then reopen admission. It does not repeat
+mutable apply. Ordinary resume rejects retained uncertain apply/recovery state.
+Root-only `relay-admission status` provides bounded state and pending/unknown
+counts for diagnosis. Missing, malformed or untrusted state fails closed. The
+same gate retains original activity/enablement intent across failed activation
+and rollback; failed services cannot become an inferred intention to leave
+them off.
+
+The supported low-level upgrade primitive remains available for explicitly
+selected accepted targets and recovery through the same lifecycle:
 
 ```sh
 python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
@@ -586,23 +634,22 @@ python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
   --phase upgrade --authorize-upgrade
 ```
 
-The primitive verifies the projection before contacting the target, validates
-the protected existing installation and owner configuration, and runs apply
-plus a required clean post-check under one host apply lock. Only source revision
+The primitive verifies the projection before contacting the target, establishes
+quiesce/drain under the host apply lock and validates the protected existing
+installation and owner configuration. Only source revision
 selection may differ from the protected configuration snapshot. Credentials,
 runner registration, service activation intent, TLS/mTLS, consumer identity and
 Writer/Reviewer separation are preserved. Configuration changes are separate
 owner reconciliation. Upgrade never supplies tokens, registers runners or
-implicitly authorizes activation. Existing operation/recovery evidence blocks
+implicitly starts inactive components. Existing operation/recovery evidence blocks
 an upgrade; diagnose it through the existing recovery interface. Failed or
-ambiguous apply/post-check never becomes a successful upgrade receipt.
+ambiguous apply/activation/verification never becomes a successful upgrade receipt.
 
 Ordinary owner apply verifies the workflow target and permits first installation
 or reconciliation of the same installed revision. Changing the installed
 revision requires `upgrade`. Moving Relay `main` does not trigger either action.
-This primitive does not implement Task #25's separate quiesce/drain/resume
-lifecycle or authorize its transitions. The owner must establish the appropriate
-operational boundary before upgrading.
+The old fixed local-apply reconciliation helper remains an implementation/recovery
+interface with its existing ABI. It is not a competing ordinary workflow.
 
 Rollback uses the same exact-target upgrade primitive with a previously
 qualified compatible revision that supports this contract and its reviewed
@@ -614,6 +661,22 @@ environment comparison is unavailable. The authorized clean-reinstall path
 uses the selected durable owner config and independently checks installed
 consumer/units/runner scope; it never manufactures a snapshot from guessed
 state. Keep the prior supported recovery path and exact source available.
+
+After diagnosing a failed operation and safely dispositioning any retained
+production mutation record through its existing interface, an owner may use
+`upgrade --authorize-upgrade --authorize-lifecycle-recovery
+--lifecycle-recovery-operation <retained-UUID>` from the exact previously accepted
+target source. This reuses the closed admission operation and existing upgrade
+primitive, proves no active/unknown execution, and resumes only after the restored
+revision passes the same-operation final proof. Failed or uncertain rollback
+stays quiesced. No automatic rollback, record reset or blind retry is supplied.
+If the originally active general transport has been lost, apply does not start
+it: restore that transport through its existing protected owner boundary or a
+separately admitted recovery before attempting this path. A generic rerun is
+not evidence that transport or execution containment is known.
+An installation lacking this admission primitive requires separately admitted
+rollout/qualification before the normal lifecycle surface can be used; this
+source implementation does not qualify a live installation.
 
 `activate --authorize-reviewer-activation` and
 `runner-enable --authorize-runner-enable` and
@@ -718,7 +781,7 @@ fixed host namespace transition and no caller-selected executable or config
 path. It reconciles that consumer input with the **explicit installed Relay
 version**, reports that version, and defers live service changes until the
 owner can act after the job. It does not claim to resolve remote `main`.
-Source/channel upgrades use the owner bootstrap transport; this preserves
+Source/channel upgrades use the protected owner lifecycle and the existing public primitive; this preserves
 credential-free source access on private production hosts.
 
 ### Protected self-dogfood reconciliation
@@ -769,9 +832,11 @@ for the fixed runner helper and local reconciliation. It is not automatic retry
 or authority to discard an unknown operation. Legacy checkout-mode recovery is
 unchanged.
 
-Review the projection and deploy/qualify its selected accepted product through
-the owner transport before dispatching that workflow. This is reconciliation of that installed
-release, not a workflow-based source upgrade. See the public consumer's
+Review the lifecycle projection and install/qualify its selected accepted product
+before dispatching the new owner workflow. Routine compatible accepted updates
+then use its single `apply` action; the protected coordinator invokes this same
+public upgrade interface. The legacy installed helper remains bounded to
+reconciliation. See the public consumer's
 [workflow and activation contract](../docs/self-dogfood-workflows.md).
 
 Existing ingress is described by consumer properties. Ordinary apply only

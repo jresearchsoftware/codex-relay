@@ -2,7 +2,9 @@
 Description=Docs evolution self-hosted runner boundary
 {% if relay_deployment_profile == 'production' %}
 After=network-online.target {{ relay_reviewer_service_name }}
+{% if relay_runner_service_name == relay_production_runner_service_name %}
 PartOf={{ relay_reviewer_service_name }}
+{% endif %}
 {% else %}
 After=network-online.target
 {% endif %}

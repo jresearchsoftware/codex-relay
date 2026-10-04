@@ -27,17 +27,19 @@ export async function main() {
   } catch (error) {
     // These live admission decisions prove no new execution was authorized.
     // The Actions warning is the safe surface when no Writer target is admitted.
-    if (error.code === 'OWNER_RUN_NOT_ADMITTED') return { status: 'BLOCKED', code: error.code };
+    if (['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)) return { status: 'BLOCKED', code: error.code };
     throw error;
   }
   emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
   if (admitted.status === 'BLOCKED') return admitted;
   const dispatcher = createOnDemandDispatchAdapter();
+  let failure;
   try {
     return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
       journal: createAttemptStore(CONSUMER.paths.attemptRoot), persistFailure: persistAttemptFailureDiagnostic,
       prepare: prepareCheckout, execute: e => dispatcher.dispatch(e), collect: collectCheckout });
   } catch (error) {
+    failure = error;
     // Includes a failed journal write before/inside the normal catch path.
     // Never rerun the operation just because its normal evidence store failed.
     if (!error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
@@ -46,6 +48,17 @@ export async function main() {
       error.details = { ...error.details, ...durable };
     }
     throw error;
+  } finally {
+    if (admitted.envelope.route === 'auto') {
+      // This is the last trusted controller operation, after containment,
+      // collection, publication and the durable terminal runner receipt.
+      // Root reads that receipt itself; caller JSON cannot assert completion.
+      try { await broker.invoke({ operation: 'complete-execution', runId: admitted.envelope.runId, attemptId: admitted.envelope.attemptId }); }
+      catch (error) {
+        if (!failure) throw error;
+        failure.details = { ...failure.details, admissionCompletion: { status: 'unknown', code: error.code ?? 'ADMISSION_COMPLETION_UNKNOWN' } };
+      }
+    }
   }
 }
 export async function reportRoutingResult(run, { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value) } = {}) {
@@ -53,7 +66,9 @@ export async function reportRoutingResult(run, { write = value => process.stdout
     const value = await run();
     if (value?.status === 'BLOCKED') {
       const code = value.code ?? value.envelope?.admissionBlock?.code;
-      writeError(`::warning title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Reconcile the terminal Outcome before another attempt.\n`);
+      writeError(code === 'ADMISSION_QUIESCED'
+        ? '::warning title=Codex admission::Automatic admission is quiesced; no worker started.\n'
+        : `::warning title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Reconcile the terminal Outcome before another attempt.\n`);
     }
     const warning = executionWarningSummary(value?.executionWarnings);
     if (warning) writeError(`::warning title=Codex execution::${warning}\n`);

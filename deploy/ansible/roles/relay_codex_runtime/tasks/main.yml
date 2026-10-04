@@ -110,6 +110,7 @@
   when:
     - not ansible_check_mode | bool
     - not relay_production_defer_lifecycle | default(false) | bool
+    - not relay_upgrade_lifecycle_managed | default(false) | bool
     - relay_runner_codex_group_membership.changed | bool
     - ansible_facts.services[relay_production_runner_service_name] is defined
     - ansible_facts.services[relay_production_runner_service_name].state == 'running'

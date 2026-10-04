@@ -1,0 +1,31 @@
+#!/bin/bash -p
+set -euo pipefail
+umask 077
+export PATH=/usr/bin:/bin
+unset BASH_ENV CDPATH ENV
+[[ "$#" -eq 1 && "$1" =~ ^(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}$ ]] || exit 64
+[[ "$(/usr/bin/id -u)" == 0 ]] || exit 64
+# Never use runner-controlled Git, Python environment or executable paths.
+PRODUCT_ROOT="$(/usr/bin/python3 -I - '{{ relay_install_root }}' <<'PY'
+import os, re, stat, sys
+from pathlib import Path
+install = Path(sys.argv[1])
+current = install / 'current'
+info = current.lstat()
+assert stat.S_ISLNK(info.st_mode) and info.st_uid == 0
+release = Path(os.readlink(current))
+assert re.fullmatch('[0-9a-f]{40}', release.name) and release == install / 'releases' / release.name
+root = release / 'reviewed-source'
+for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py']:
+    path = root / 'deploy' / name
+    for entry in [path, *path.parents]:
+        info = entry.lstat()
+        assert info.st_uid == 0 and not info.st_mode & 0o022
+        assert (stat.S_ISREG(info.st_mode) and info.st_nlink == 1) if entry == path else stat.S_ISDIR(info.st_mode)
+print(root)
+PY
+)"
+cd /
+exec /usr/bin/nsenter --mount=/proc/1/ns/mnt -- /usr/bin/env -i \
+  HOME=/root PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 "$PRODUCT_ROOT/deploy/owner_lifecycle.py" "$1"

@@ -15,19 +15,23 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.workflow = workflow('manual-main-production-deploy.yml')
         self.job, self.step = control_step(self.workflow)
 
-    def test_only_manual_owner_main_can_schedule_in_explicit_production_group(self):
-        self.assertEqual(self.workflow['on'], {'workflow_dispatch': None})
+    def test_only_manual_owner_main_can_schedule_lifecycle_on_separate_general_runner(self):
+        self.assertEqual(self.workflow['on'], {'workflow_dispatch': {'inputs': {'action': {
+            'description': 'Apply accepted Relay main, gracefully stop, or resume',
+            'required': True, 'default': 'apply', 'type': 'choice',
+            'options': ['apply', 'stop', 'resume']}}}})
         self.assertEqual(self.workflow['permissions'], {'contents': 'read'})
         self.assertEqual(self.workflow['concurrency'], {'group': 'codex-relay-production', 'cancel-in-progress': False})
-        self.assertEqual(self.job['runs-on'], {
-            'group': 'codex-relay-runner', 'labels': ['self-hosted', 'Linux', 'X64', 'codex-relay']})
+        self.assertEqual(self.job['runs-on'], ['self-hosted', 'Linux', 'X64', 'codex-relay'])
+        self.assertEqual(self.job['timeout-minutes'], 120)
         self.assertNotIn('uses', self.step)
         self.assertEqual(self.step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
-        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1', 'NODE_OPTIONS': '', 'NODE_PATH': ''})
+        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1',
+            'RELAY_LIFECYCLE_ACTION': '${{ inputs.action }}', 'NODE_OPTIONS': '', 'NODE_PATH': ''})
         self.assertNotIn('${{', self.step['run'])
-        self.assertIn('test "$RUNNER_NAME" = codex-relay-runner', self.step['run'])
-        self.assertIn('test "$(/usr/bin/id -un)" = codex-relay-runner', self.step['run'])
-        for forbidden in ['checkout', 'ansible', 'ssh ', 'inputs.', 'GITHUB_TOKEN']:
+        self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', self.step['run'])
+        self.assertIn('test "$(/usr/bin/id -un)" = codex-relay-general-runner', self.step['run'])
+        for forbidden in ['checkout', 'ansible', 'ssh ', 'inputs.', 'GITHUB_TOKEN', 'fetch(', 'api.github.com']:
             self.assertNotIn(forbidden, self.step['run'])
         if shutil.which('bash') and os.name != 'nt':
             checked = subprocess.run(['bash', '-n'], input=self.step['run'], text=True, capture_output=True)
@@ -54,7 +58,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(checked.returncode, 0, checked.stderr)
 
     @unittest.skipUnless(NODE and os.name != 'nt', 'Installed-state execution requires Linux')
-    def test_single_typed_argument_binds_pinned_product_and_distinct_consumer(self):
+    def test_single_typed_argument_binds_action_installed_product_and_distinct_consumer(self):
         with tempfile.TemporaryDirectory(prefix='relay-production-workflow-') as temporary:
             install = Path(temporary)
             release = install / 'releases' / HEAD
@@ -76,16 +80,24 @@ class ProductionWorkflowTests(unittest.TestCase):
 
             def run(**overrides):
                 return subprocess.run([NODE, '--input-type=module', '-e', code], text=True, capture_output=True,
-                    env={**os.environ, 'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1', 'GITHUB_SHA': 'c' * 40, **overrides})
+                    env={**os.environ, 'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1',
+                         'GITHUB_SHA': 'c' * 40, 'RELAY_LIFECYCLE_ACTION': 'apply', **overrides})
 
             good = run()
             self.assertEqual(good.returncode, 0, good.stderr)
             line = next(line for line in good.stdout.splitlines() if line.startswith('FIXTURE_HELPER='))
             self.assertEqual(json.loads(line.split('=', 1)[1]),
-                             ['-n', str(install / 'relay-production-local-apply'), HEAD + ':' + 'c' * 40])
+                             ['-n', '/usr/local/sbin/codex-relay-owner-lifecycle', 'apply:' + HEAD + ':' + 'c' * 40])
+            for action in ['stop', 'resume']:
+                selected = run(RELAY_LIFECYCLE_ACTION=action)
+                self.assertEqual(selected.returncode, 0, selected.stderr)
+                line = next(line for line in selected.stdout.splitlines() if line.startswith('FIXTURE_HELPER='))
+                self.assertEqual(json.loads(line.split('=', 1)[1])[-1], action + ':' + HEAD + ':' + 'c' * 40)
             for invalid in [{'EXPECTED_WORKFLOW_CONTRACT': 'b' * 40}, {'EXPECTED_WORKFLOW_CONTRACT': '../../candidate'},
                             {'EXPECTED_WORKFLOW_CONTRACT': ''}, {'GITHUB_SHA': 'main'}, {'GITHUB_SHA': ''},
-                            {'GITHUB_SHA': HEAD + ':' + HEAD}, {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1' + ':' + HEAD}]:
+                            {'GITHUB_SHA': HEAD + ':' + HEAD}, {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v1' + ':' + HEAD},
+                            {'RELAY_LIFECYCLE_ACTION': ''}, {'RELAY_LIFECYCLE_ACTION': 'upgrade'},
+                            {'RELAY_LIFECYCLE_ACTION': 'apply:' + HEAD}, {'RELAY_LIFECYCLE_ACTION': 'apply; touch /tmp/bad'}]:
                 blocked = run(**invalid)
                 self.assertNotEqual(blocked.returncode, 0)
                 self.assertNotIn('FIXTURE_HELPER=', blocked.stdout)
@@ -107,6 +119,6 @@ class ProductionWorkflowTests(unittest.TestCase):
             compatible = run()
             self.assertEqual(compatible.returncode, 0, compatible.stderr)
             line = next(line for line in compatible.stdout.splitlines() if line.startswith('FIXTURE_HELPER='))
-            self.assertEqual(json.loads(line.split('=', 1)[1])[-1], next_head + ':' + 'c' * 40)
+            self.assertEqual(json.loads(line.split('=', 1)[1])[-1], 'apply:' + next_head + ':' + 'c' * 40)
             stub.unlink()
             self.assertNotEqual(run().returncode, 0)

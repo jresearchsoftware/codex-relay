@@ -30,6 +30,17 @@
     create_home: false
     home: '{{ relay_runner_home }}'
     shell: /usr/sbin/nologin
+  register: relay_general_runtime_identity
+
+- name: Refuse stale identity or supplementary groups in the live general transport
+  ansible.builtin.assert:
+    that:
+      - not relay_general_runtime_identity.changed | bool
+    fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_IDENTITY_RESTART_REQUIRED
+  when:
+    - relay_upgrade_lifecycle_managed | default(false) | bool
+    - relay_upgrade_lifecycle_general_was_active | default(false) | bool
+    - not ansible_check_mode | bool
 
 # These are the existing generic routing namespaces, not production runner
 # state. Preserve journal bytes and old attempts; never transfer worker-owned

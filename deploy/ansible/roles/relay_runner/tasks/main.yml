@@ -506,6 +506,31 @@
     - ansible_check_mode | bool
     - not relay_runner_unit.stat.exists
 
+- name: Read the active general transport unit before managed reconciliation
+  ansible.builtin.slurp:
+    src: '{{ relay_runner_service_unit_path }}'
+  register: relay_upgrade_lifecycle_general_unit
+  when:
+    - relay_upgrade_lifecycle_managed | default(false) | bool
+    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_upgrade_lifecycle_general_was_active | default(false) | bool
+    - not ansible_check_mode | bool
+
+# Removing PartOf is a live dependency update after daemon-reload. Any other
+# unit change may require replacing this job's transport and needs recovery.
+- name: Refuse general transport changes that require process replacement
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_upgrade_lifecycle_general_unit.content | b64decode | replace('PartOf=' ~ relay_reviewer_service_name ~ '\n', '')) ==
+        lookup('template', 'relay-runner.service.j2')
+    fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_RESTART_REQUIRED
+  when:
+    - relay_upgrade_lifecycle_managed | default(false) | bool
+    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_upgrade_lifecycle_general_was_active | default(false) | bool
+    - not ansible_check_mode | bool
+
 - name: Install runner service structure
   ansible.builtin.template:
     src: relay-runner.service.j2

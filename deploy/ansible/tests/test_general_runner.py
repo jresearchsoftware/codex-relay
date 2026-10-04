@@ -76,6 +76,7 @@ class GeneralRunnerTests(unittest.TestCase):
             self.assertIn('PrivateTmp=true', unit)
             self.assertIn('NoNewPrivileges=false', unit)
             self.assertIn('ExecStartPre=+/opt/codex-relay/relay-reviewer-readiness', unit)
+            self.assertEqual('PartOf=reviewer-mcp.service' in unit, values is production)
             self.assertNotIn('/production-apply', unit)
             self.assertNotIn('{{', unit)
         self.assertEqual(len(set(targets)), 4)

@@ -56,6 +56,14 @@
     - name: Resolve reviewed artifact identity before runtime templates
       ansible.builtin.include_tasks: roles/relay_artifacts/tasks/resolve-identities.yml
 
+    - name: Retain previously authorized activity before managed upgrade mutations
+      ansible.builtin.include_tasks: tasks/upgrade-lifecycle-snapshot.yml
+      when:
+        - relay_upgrade_lifecycle_managed | default(false) | bool
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool
+
     - name: Begin or retain the exact ordinary apply operation
       ansible.builtin.include_tasks: tasks/production-operation-state-begin.yml
       when:
@@ -109,6 +117,14 @@
 
     - name: Flush relay handlers before final production validation
       ansible.builtin.meta: flush_handlers
+
+    - name: Activate the exact installed target under the managed upgrade operation
+      ansible.builtin.include_tasks: tasks/upgrade-lifecycle-activate.yml
+      when:
+        - relay_upgrade_lifecycle_managed | default(false) | bool
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool
 
     - name: Inspect the final production release, configuration, and units
       ansible.builtin.stat:
@@ -192,7 +208,7 @@
       check_mode: false
       when: relay_deployment_profile == 'production'
 
-    - name: Inspect the recovery timer during production post-check
+    - name: Inspect the recovery timer during production final validation
       ansible.builtin.command:
         argv: ['systemctl', '{{ item }}', '{{ relay_reviewer_recovery_timer_name }}']
       loop: [is-active, is-enabled]
@@ -202,9 +218,10 @@
       check_mode: false
       when:
         - relay_deployment_profile == 'production'
-        - relay_production_operation_phase | default('') == 'post-check'
+        - relay_production_operation_phase | default('') in ['apply', 'post-check']
+        - relay_production_operation_phase == 'post-check' or not ansible_check_mode | bool
 
-    - name: Inspect the next recovery timer deadline during production post-check
+    - name: Inspect the next recovery timer deadline during production final validation
       ansible.builtin.command:
         argv:
           - systemctl
@@ -217,7 +234,8 @@
       check_mode: false
       when:
         - relay_deployment_profile == 'production'
-        - relay_production_operation_phase | default('') == 'post-check'
+        - relay_production_operation_phase | default('') in ['apply', 'post-check']
+        - relay_production_operation_phase == 'post-check' or not ansible_check_mode | bool
 
     - name: Require the normal recovery timer after production install
       ansible.builtin.assert:
@@ -234,7 +252,8 @@
         fail_msg: 'PRODUCTION_RECOVERY_TIMER_POSTCHECK_FAILED'
       when:
         - relay_deployment_profile == 'production'
-        - relay_production_operation_phase | default('') == 'post-check'
+        - relay_production_operation_phase | default('') in ['apply', 'post-check']
+        - relay_production_operation_phase == 'post-check' or not ansible_check_mode | bool
 
     - name: Verify the actual Reviewer executable after owner apply or post-check
       ansible.builtin.include_tasks: tasks/production-reviewer-process-validation.yml
@@ -295,6 +314,14 @@
         - relay_deployment_profile == 'production'
         - relay_production_operation_phase in ['apply', 'post-check']
         - relay_production_operation_phase == 'post-check' or not ansible_check_mode | bool
+
+    - name: Prove activity and transport continuity before managed upgrade commit
+      ansible.builtin.include_tasks: tasks/upgrade-lifecycle-validation.yml
+      when:
+        - relay_upgrade_lifecycle_managed | default(false) | bool
+        - relay_deployment_profile == 'production'
+        - relay_production_operation_phase | default('') == 'apply'
+        - not ansible_check_mode | bool
 
     - name: Clear apply recovery evidence after complete production validation
       ansible.builtin.include_tasks: tasks/production-operation-state-clear.yml

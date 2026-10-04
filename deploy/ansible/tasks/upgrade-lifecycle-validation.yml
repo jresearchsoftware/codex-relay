@@ -1,0 +1,76 @@
+---
+- name: Inspect managed upgrade service activity after exact installed proof
+  ansible.builtin.command:
+    argv:
+      - /bin/systemctl
+      - show
+      - '{{ item }}'
+      - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
+  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}']
+  register: relay_upgrade_lifecycle_final_services
+  changed_when: false
+  check_mode: false
+
+- name: Require preserved activation intent and healthy previously active components
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search('(?m)^LoadState=loaded$')
+      - item.stdout is search('(?m)^NeedDaemonReload=no$')
+      - >-
+        (
+          (relay_upgrade_lifecycle_previous_active[component].active | bool) and
+          item.stdout is search('(?m)^ActiveState=active$') and
+          item.stdout is search('(?m)^SubState=running$') and
+          item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
+          item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$')
+        ) or
+        (
+          not (relay_upgrade_lifecycle_previous_active[component].active | bool) and
+          item.stdout is search('(?m)^ActiveState=(inactive|failed)$')
+        )
+      - >-
+        (
+          relay_upgrade_lifecycle_previous_active[component].load == 'not-found' and
+          item.stdout is search('(?m)^UnitFileState=disabled$')
+        ) or
+        (
+          [relay_upgrade_lifecycle_previous_active[component].enabled] ==
+          (item.stdout | regex_findall('(?m)^UnitFileState=(.*)$'))
+        )
+    fail_msg: RELAY_UPGRADE_SERVICE_ACTIVATION_UNPROVEN
+  loop: '{{ relay_upgrade_lifecycle_final_services.results }}'
+  loop_control:
+    index_var: service_index
+    label: '{{ item.item }}'
+  vars:
+    component: "{{ ['reviewer', 'production', 'general'][service_index] }}"
+
+- name: Prove active Reviewer and production processes adopted the installed transition
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[service_index].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$')) !=
+        (relay_upgrade_lifecycle_final_services.results[service_index].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
+    fail_msg: RELAY_UPGRADE_ACTIVE_PROCESS_NOT_REPLACED
+  loop: [0, 1]
+  loop_control:
+    loop_var: service_index
+  when:
+    - relay_upgrade_lifecycle_previous_active[['reviewer', 'production'][service_index]].active | bool
+    - relay_upgrade_lifecycle_initial_services.results[service_index].stdout is search('(?m)^ActiveState=active$')
+
+- name: Prove the general runner transport stayed in the same live process
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[2].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[2].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$'))
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[2].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[2].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
+    fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_CHANGED
+  when: relay_upgrade_lifecycle_general_was_active | bool
+
+- name: Report same-operation activation and general transport proof
+  ansible.builtin.debug:
+    msg: 'RELAY_UPGRADE_ACTIVATION_VALIDATED={{ relay_production_operation_target_head }};transport=preserved;activation=previously-active'

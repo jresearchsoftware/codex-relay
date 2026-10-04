@@ -19,7 +19,8 @@ export function memoryStore() {
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
 export async function fixture(t, { remediation = false, instruction = '', installed = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
-  mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
+  mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission,
+  profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
   // root. Give each fixture its own admitted event namespace so a concurrent
   // test or a later proof subprocess cannot prepare, collect, or clean up
@@ -175,9 +176,10 @@ export async function fixture(t, { remediation = false, instruction = '', instal
       if (observationFailure) throw observationFailure;
       return staleObservation ? null : observedHead ?? g.observe();
     } })) };
-  const brokerImpl = createPublicationBroker({ api, store, publisher });
+  const admissionControl = createAdmission ? await createAdmission({ root, store }) : undefined;
+  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
-  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest });
+  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl });
   const admission = await broker.invoke(admissionRequest);
   const { envelope } = admission;
   taskBranch = envelope.branch ?? taskBranch;
@@ -190,7 +192,7 @@ export async function fixture(t, { remediation = false, instruction = '', instal
   const { name, email } = remediation ? CONSUMER.remediationIdentity : CONSUMER.writerIdentity;
   const identity = { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email };
   const commit = async (path = 'docs/work.md', text = 'changed\n') => { await writeFile(join(cwd, path), text); await command(cwd, ['add', path]); await command(cwd, ['commit', '-m', 'task progress'], identity); return command(cwd, ['rev-parse', 'HEAD']); };
-  return { root, remote, source, command, api, issue, pr, run, events, admissionRequest, admission, review, store, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
+  return { root, remote, source, command, api, issue, pr, run, events, admissionRequest, admission, admissionControl, review, store, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
     prepare: e => prepareCheckout(e, { root: workRoot, remote, token: null }),
     collect: e => collectProgress(cwd, e, { root, remote }),
     checksReady: () => { checksReady = true; }, pushes: () => pushes,

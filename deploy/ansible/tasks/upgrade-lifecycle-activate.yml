@@ -1,0 +1,37 @@
+---
+# Notifications are suppressed during managed installation. The accepted
+# operation helper consolidates Reviewer try-restart and preserves only an
+# already active production runner under the existing transition lock.
+- name: Try-restart the previously active Reviewer and production dependency
+  ansible.builtin.command:
+    argv: >-
+      {{ [relay_reviewer_operation_restart_path] +
+         (['--recover-active', relay_admission_operation_id] if relay_admission_recovery_authorized | default(false) | bool else []) }}
+  changed_when: true
+  when: relay_upgrade_lifecycle_reviewer_was_active | bool
+
+- name: Wait for the previously active Reviewer listener after activation
+  ansible.builtin.wait_for:
+    host: '{{ relay_reviewer_bind_address }}'
+    port: '{{ relay_reviewer_bind_port }}'
+    state: started
+    timeout: 30
+  when: relay_upgrade_lifecycle_reviewer_was_active | bool
+
+- name: Require previously active services to become healthy in the same operation
+  ansible.builtin.command:
+    argv: [/bin/systemctl, show, '{{ item.unit }}', '--property=MainPID,ActiveState,SubState']
+  loop:
+    - {unit: '{{ relay_reviewer_service_name }}', active: '{{ relay_upgrade_lifecycle_reviewer_was_active }}'}
+    - {unit: '{{ relay_production_runner_service_name }}', active: '{{ relay_upgrade_lifecycle_production_was_active }}'}
+    - {unit: '{{ relay_general_runner_service_name }}', active: '{{ relay_upgrade_lifecycle_general_was_active }}'}
+  register: relay_upgrade_lifecycle_health
+  changed_when: false
+  until:
+    - relay_upgrade_lifecycle_health.rc == 0
+    - relay_upgrade_lifecycle_health.stdout is search('(?m)^MainPID=[1-9][0-9]*$')
+    - relay_upgrade_lifecycle_health.stdout is search('(?m)^ActiveState=active$')
+    - relay_upgrade_lifecycle_health.stdout is search('(?m)^SubState=running$')
+  retries: 30
+  delay: 1
+  when: item.active | bool
