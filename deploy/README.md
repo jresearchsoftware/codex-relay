@@ -554,6 +554,44 @@ create an impossible circular binding. Publishing product templates alone does
 not migrate an installed consumer. Existing legacy self-dogfood workflows stay
 unchanged until this explicit owner transition.
 
+### Subsequent-invocation failed reinstall recovery
+
+After diagnosing a retained `DECOMMISSIONED` clean-reinstall journal and its
+matching failed `apply` record, an explicitly authorized owner may use a clean
+exact product checkout that implements this recovery interface:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
+  --consumer-root /path/to/consumer --resolved-revision "$controller_sha" \
+  --phase reinstall-recover --authorize-reinstall-recovery \
+  --reinstall-recovery-target "$retained_target_sha"
+```
+
+The controller revision and retained operation target are separate identities.
+This command never retargets the original journal or installs the controller
+revision. Inside the protected boundary it derives the journal digest, verifies
+the exact retained target, configuration, matching operation, retired source and
+partially installed target, and requires contained admission and runtime state.
+It stops only the configured recovery timer after proving all other managed
+services and execution are stopped. Foreign units remain outside its mutation
+scope. Unsupported stages, changed configuration, unsafe paths, mismatched
+operation evidence, unknown admission, or incomplete containment fail closed.
+
+Recovery archives both original records byte for byte in the existing retired
+runtime archive. It leaves credentials, registrations, retired runtime bytes,
+activation evidence and admission state intact; it does not activate services or
+reopen admission. Its result includes the original service/activation intent
+needed to assess a separately authorized installation and activation. A new
+target requires a subsequent ordinary authorized `reinstall` from its own clean
+committed source, with the reviewed compatible workflow projection. Historical
+activation intent must be assessed before restoring previously active services;
+an inactive or unregistered component is not implicitly activated.
+
+A completed disposition cannot be replayed. Missing or partially archived
+records require diagnosis; the command neither resets them nor guesses that an
+interrupted operation completed. Source selection remains governed by the
+canonical owner authority and is not granted by this recovery flag.
+
 ## Lifecycle, upgrade and rollback
 
 Normal apply reconciles installable state and preserves existing separately

@@ -224,6 +224,83 @@ test('contained pre-child terminal decisions release only after a matching termi
     { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' });
 });
 
+function legacyPublication() {
+  const record = {
+    envelope: { version: VERSION, runId: 99, attemptId: 'run-99', route: 'auto', consumerDigest: CONSUMER_DIGEST,
+      target: 'issue', number: 27, issueNumber: 27 },
+    prIntent: true, publicationIntent: null, commentIntent: null, publishedHead: target, finalHead: null,
+    outcome: { status: 'BLOCKED', head: target, prNumber: 38, outcomeId: 12 }
+  };
+  const saved = { version: VERSION, envelope: structuredClone(record.envelope),
+    execution: { reserved: true, returned: true, child: 'started', containment: 'reaped' },
+    outcome: structuredClone(record.outcome) };
+  return { record, saved };
+}
+
+test('legacy PR creation is resolved by matching terminal journal and exact published head without rewriting receipts', async t => {
+  for (const status of ['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW']) {
+    const { admission, store, journal } = await control(t);
+    const { record, saved } = legacyPublication();
+    record.outcome.status = saved.outcome.status = status;
+    if (status === 'IMPLEMENTED_PENDING_FRESH_REVIEW') record.finalHead = target;
+    await store.put(99, record); await journal.put(99, saved);
+    assert.deepEqual((await admission.status()).unknown, []);
+    assert.deepEqual(await store.get(99), record);
+    assert.deepEqual(await journal.get(99), saved);
+    await admission.quiesce({ operationId, target });
+    assert.equal((await admission.drained({ operationId })).drained, true);
+    await admission.complete({ runId: 99, attemptId: 'run-99' });
+    assert.deepEqual((await admission.status()).unknown, []);
+    assert.equal((await admission.drained({ operationId })).drained, true);
+    assert.deepEqual(await store.get(99), record);
+    assert.deepEqual(await journal.get(99), saved);
+  }
+});
+
+test('legacy PR receipt compatibility does not resolve ambiguous publication, identity or containment', async t => {
+  const cases = [
+    ['missing terminal journal', (_, state) => { state.saved = null; }],
+    ['different journal envelope', (_, state) => { state.saved.envelope.attemptId = 'run-100'; }],
+    ['different terminal PR', (_, state) => { state.saved.outcome.prNumber = 39; }],
+    ['different terminal head', (_, state) => { state.saved.outcome.head = 'b'.repeat(40); }],
+    ['different terminal Outcome', (_, state) => { state.saved.outcome.outcomeId = 13; }],
+    ['missing PR receipt', record => { record.outcome.prNumber = null; }],
+    ['invalid Outcome receipt', record => { record.outcome.outcomeId = 0; }],
+    ['missing published head', record => { record.publishedHead = null; }],
+    ['different published head', record => { record.publishedHead = 'b'.repeat(40); }],
+    ['invalid published head', record => { record.publishedHead = record.outcome.head = 'invalid'; }],
+    ['conflicting resolved PR', record => { record.prNumber = 39; }],
+    ['invalid resolved PR', record => { record.prNumber = 0; }],
+    ['explicit unresolved PR', record => { record.prNumber = null; }],
+    ['invalid PR intent', record => { record.prIntent = 'true'; }],
+    ['new controller reservation', record => { record.controllerLifecycle = { version: 1, status: 'active' }; }],
+    ['pending push', record => { record.publicationIntent = { previous: null, head: target }; }],
+    ['pending comment', record => { record.commentIntent = { key: 'outcome', number: 38 }; }],
+    ['inconsistent final head', record => { record.finalHead = target; }],
+    ['missing successful final head', record => { record.outcome.status = 'IMPLEMENTED_PENDING_FRESH_REVIEW'; }],
+    ['unknown child', (_, state) => { state.saved.execution.child = 'unknown'; }],
+    ['unknown containment', (_, state) => { state.saved.execution.containment = 'unknown'; }],
+    ['unreturned execution', (_, state) => { state.saved.execution.returned = false; }]
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async t => {
+      const { admission, store, journal } = await control(t);
+      const state = legacyPublication();
+      mutate(state.record, state);
+      // Changes to the Writer receipt alone remain mirrored unless the case
+      // specifically exercises conflicting journal identity.
+      if (state.saved && !name.startsWith('different terminal')) state.saved.outcome = structuredClone(state.record.outcome);
+      await store.put(99, state.record);
+      if (state.saved) await journal.put(99, state.saved);
+      assert.deepEqual((await admission.status()).unknown, [99]);
+      await admission.quiesce({ operationId, target });
+      await assert.rejects(admission.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+      await assert.rejects(admission.complete({ runId: 99, attemptId: 'run-99' }), { code: 'ADMISSION_COMPLETION_UNKNOWN' });
+      assert.deepEqual(await store.get(99), state.record);
+    });
+  }
+});
+
 test('unsafe, malformed, missing or differently bound gate state never implies admission is open', async t => {
   const { admission, root } = await control(t);
   const pathname = join(root, 'admission-v1.json'); const source = await readFile(pathname, 'utf8');

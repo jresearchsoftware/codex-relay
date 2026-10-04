@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
 PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post-check': 'site.yml',
           'inventory': None, 'bootstrap': 'site.yml', 'reinstall': 'site.yml',
+          'reinstall-recover': None,
           'workflow-project': None, 'workflow-verify': None,
           'runner-register': None, 'general-runner-register': None,
           'diagnose': 'relay-production-diagnostic.yml', 'activate': 'relay-reviewer-activation.yml',
@@ -209,6 +210,9 @@ def arguments():
     p.add_argument('--authorize-workflow-projection', action='store_true')
     p.add_argument('--authorize-bootstrap', action='store_true', help='install after inventory and consumer workflow review')
     p.add_argument('--authorize-reinstall', action='store_true', help='retire proven managed runtime and install the exact target')
+    p.add_argument('--authorize-reinstall-recovery', action='store_true',
+                   help='Safely archive a diagnosed failed reinstall without retargeting its journal')
+    p.add_argument('--reinstall-recovery-target', help='Exact target of the retained failed reinstall')
     p.add_argument('--projection-output', type=Path, help='optional directory for derived workflow review files')
     p.add_argument('--authorize-runner-register', action='store_true')
     p.add_argument('--authorize-general-runner-register', action='store_true')
@@ -255,6 +259,10 @@ def run(args):
     require(args.authorize_workflow_projection == (args.phase == 'workflow-project'), 'explicit-workflow-projection')
     require(not args.authorize_bootstrap or args.phase == 'bootstrap', 'explicit-bootstrap')
     require(args.authorize_reinstall == (args.phase == 'reinstall'), 'explicit-reinstall')
+    require(args.authorize_reinstall_recovery == (args.phase == 'reinstall-recover')
+            and (bool(re.fullmatch('[0-9a-f]{40}', args.reinstall_recovery_target or ''))
+                 if args.authorize_reinstall_recovery else args.reinstall_recovery_target is None)
+            and not (args.authorize_reinstall_recovery and args.local_reconcile), 'explicit-reinstall-recovery')
     require(args.projection_output is None or args.phase in ['bootstrap', 'reinstall'], 'projection-output-phase')
     require(args.authorize_runner_register == (args.phase == 'runner-register'), 'explicit-runner-registration')
     require(args.authorize_general_runner_register == (args.phase == 'general-runner-register'),
@@ -336,7 +344,7 @@ def run(args):
     require(args.resolved_revision is None or args.resolved_revision == identity['revision'], 'resolved-revision-mismatch')
     require(args.phase == 'inventory' or re.fullmatch('[0-9a-f]{40}', consumer_revision or ''), 'consumer-revision')
     revision = identity['revision']
-    if args.phase in ['upgrade', 'workflow-project', 'workflow-verify', 'inventory', 'bootstrap', 'reinstall']:
+    if args.phase in ['upgrade', 'workflow-project', 'workflow-verify', 'inventory', 'bootstrap', 'reinstall', 'reinstall-recover']:
         require(args.resolved_revision == revision and not args.local_reconcile, 'explicit-exact-product-target')
     require(not re.fullmatch('[0-9a-f]{40}', requested) or requested == revision, 'selected-commit-mismatch')
     require(args.authorize_reviewer_activation == (args.phase == 'activate'), 'explicit-activation')
@@ -514,10 +522,24 @@ def run(args):
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             require(os.fstat(lock).st_uid == os.getuid() and not os.fstat(lock).st_mode & 0o077, 'invocation-lock')
-            if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
+            if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall', 'reinstall-recover', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # A normal source archive is only an internal transport detail.
             # No consumer lock, helper hash, distribution bundle or host cache.
+            if args.phase == 'reinstall-recover':
+                from clean_reinstall import remote_action
+                guard = apply_guard(target, key, values['relay_namespace'])
+                try:
+                    recovered = remote_action(target, key, config, args.reinstall_recovery_target,
+                                              action='recover', guard=guard)
+                    log.write(json.dumps(recovered, sort_keys=True) + '\n')
+                    log.flush()
+                finally:
+                    guard.stdin.close()
+                    require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
+                print('RELAY_REINSTALL_RECOVERY=' + json.dumps(recovered, sort_keys=True), flush=True)
+                print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase=reinstall-recover;controller_revision={revision};log={log_name}', flush=True)
+                return
             if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not args.local_reconcile:
                 archive = work / 'source.tar'
                 git(ROOT, 'archive', '--format=tar', '--output=' + str(archive), revision)
