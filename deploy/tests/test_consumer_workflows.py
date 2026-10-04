@@ -96,17 +96,46 @@ class ConsumerWorkflowTests(unittest.TestCase):
     def test_candidate_keeps_disposable_exact_head_validation(self):
         self.assertEqual(set(self.validation['on']), {'pull_request', 'push'})
         self.assertEqual(self.validation['permissions'], {'contents': 'read'})
-        job, = self.validation['jobs'].values()
-        self.assertEqual(job['name'], 'Candidate checks')
-        self.assertEqual(job['runs-on'], 'ubuntu-24.04')
-        checkout = job['steps'][0]
-        self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.head.sha || github.sha }}')
-        self.assertIs(checkout['with']['persist-credentials'], False)
-        self.assertEqual(checkout['with']['fetch-depth'], 0)
-        for step in job['steps']:
-            if 'uses' in step:
-                self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
+        self.assertEqual(self.validation['jobs']['candidate']['name'], 'Candidate checks')
+        for job in self.validation['jobs'].values():
+            self.assertEqual(job['runs-on'], 'ubuntu-24.04')
+            self.assertNotIn('permissions', job)
+            checkout = job['steps'][0]
+            self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.head.sha || github.sha }}')
+            self.assertIs(checkout['with']['persist-credentials'], False)
+            self.assertEqual(checkout['with']['fetch-depth'], 0)
+            for step in job['steps']:
+                if 'uses' in step:
+                    self.assertRegex(step['uses'], r'^[A-Za-z0-9_/-]+@[0-9a-f]{40}$')
         self.assertFalse((WORKFLOWS / 'ci.yml').exists(), 'Avoid duplicate candidate check producers')
+
+    def test_cli_compatibility_keeps_targeted_unprivileged_qualification(self):
+        steps = self.validation['jobs']['runtime']['steps']
+        contracts = next(step for step in steps if '-m unittest' in step.get('run', ''))
+        self.assertNotIn('sudo', contracts['run'])
+        for suite in ('deploy.tests.test_consumer_workflows',
+                      'deploy.ansible.tests.test_codex_runtime_contract',
+                      'deploy.ansible.tests.test_production_codex_launcher_binding',
+                      'deploy.ansible.tests.test_production_diagnostic'):
+            self.assertIn(suite, contracts['run'])
+        for suite in ('codex-launcher-*.test.mjs', 'diagnostics-*.test.mjs', 'diagnostic-snapshot.test.mjs'):
+            self.assertIn('deploy/ansible/tests/' + suite, contracts['run'])
+        release = next(step for step in steps if 'qualify_codex_cli.py' in step.get('run', ''))
+        self.assertEqual(release['run'], 'python3 deploy/ansible/tests/qualify_codex_cli.py')
+        self.assertLess(steps.index(release), steps.index(contracts))
+        for step in (contracts, release):
+            self.assertNotIn('if', step)
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('||', step['run'])
+        for step in steps:
+            command = step.get('run', '')
+            self.assertNotIn('sudo', command)
+            self.assertNotIn('installed_runtime_proof.py', command)
+            self.assertNotIn('-m pytest', command)
+            self.assertNotIn('unittest discover', command)
+            if command and shutil.which('bash') and os.name != 'nt':
+                checked = subprocess.run(['bash', '-n'], input=command, text=True, capture_output=True)
+                self.assertEqual(checked.returncode, 0, checked.stderr)
 
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')
     def test_native_names_and_owner_event_conditions(self):

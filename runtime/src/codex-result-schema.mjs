@@ -39,9 +39,9 @@ function boundedString(value, field, maximumBytes, { allowEmpty = true } = {}) {
   return value;
 }
 
-// JSON Schema validation is enforced by the governed launcher. This second
-// bounded normalizer protects unit/integration seams that inject a fake child
-// process and therefore bypass the launcher itself.
+// The governed launcher requests structured output from Codex. This bounded
+// normalizer enforces the semantic contract locally; an upstream schema request
+// alone does not prove that the returned text satisfies it.
 export function normalizeCodexSemanticResult(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("CODEX_RESULT_OBJECT_INVALID");
   const keys = Object.keys(value).sort().join("\0");

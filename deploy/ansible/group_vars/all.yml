@@ -215,7 +215,7 @@ relay_codex_work_group: relay-codex-work
 relay_codex_runtime_root: '{{ relay_install_root }}/codex-runtime'
 relay_codex_install_dir: '{{ relay_codex_runtime_root }}/bin'
 relay_codex_home: '{{ relay_state_root }}/codex-home'
-relay_codex_cli_version: '0.154.0'
+relay_codex_cli_version: '0.160.0'
 relay_codex_installer_url: https://chatgpt.com/codex/install.sh
 relay_codex_installer_path: '{{ relay_runner_package_cache_root }}/codex-install.sh'
 relay_codex_binary_path: '{{ relay_codex_install_dir }}/codex'

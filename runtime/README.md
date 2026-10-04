@@ -5,6 +5,10 @@ orchestration. This component provides the governed Codex runtime, semantic
 result schema, Issue parser and a small adapter for isolated runtime probes.
 Run `npm test` here for the runtime contract tests.
 
+The [governed CLI integration](../docs/codex/cli-integration.md) records the exact
+0.160.0 baseline, native event/usage semantics, compatibility decisions and
+qualification limits.
+
 The runtime uses the deployment-owned [consumer contract](../consumer/README.md)
 for the model, explicit effort overrides, commit identities, runtime user and
 paths. Omitted effort/Subagents uses the [shared contract resolver](../contracts/README.md).

@@ -143,8 +143,8 @@ test('Codex child exit remains an execution exit and is not confused with public
     setImmediate(() => {
       child.emit('spawn');
       child.stdout.end();
-      child.stderr.end(`${JSON.stringify({ source: 'relay-codex-launcher', schemaVersion: 1, code: 'CODEX_RESULT_MISSING', bytes: 0, preview: '', childStarted: true })}\n`);
-      child.emit('close', 7, null);
+      child.stderr.end(`${JSON.stringify({ source: 'relay-codex-launcher', schemaVersion: 1, code: 'CODEX_RESULT_MISSING', bytes: 0, preview: '', childStarted: true, childExitCode: 7 })}\n`);
+      child.emit('close', 64, null);
     });
     return child;
   };

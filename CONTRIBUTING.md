@@ -50,7 +50,13 @@ candidate SHA and resolved tool versions. Actions are pinned to full commit
 SHAs, checkout credentials are not persisted, and workflow permissions are
 limited to read-only repository contents. Public CI needs no configured secrets,
 Relay installation or consumer state. Its candidate checks do not run the
-separate [deployment qualification](deploy/README.md#qualification).
+consumer deployment. The `Codex CLI compatibility` job in the same exact-head
+workflow runs the credential-free probe of the exact official Codex release and
+targeted workflow, launcher and diagnostic tests under an ordinary UID. It uses
+hosted disposable infrastructure and mock transport; it does not access a
+consumer installation or call a model. The full deployment suite and
+[disposable installed-runtime proof](deploy/README.md#qualification) retain
+their separate validation scope and execution requirements.
 
 The repository's separate [self-dogfood control workflows](docs/self-dogfood-workflows.md)
 use an accepted installed Relay revision. Their presence does not qualify public

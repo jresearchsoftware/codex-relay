@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync
 import { execFileSync } from 'node:child_process';
 import { qualifyRustDevelopment } from './rust-development-probe.mjs';
 if (process.argv[2] === '--version') {
-  process.stdout.write('codex-cli 0.154.0\n');
+  process.stdout.write('codex-cli 0.160.0\n');
   process.exit(0);
 }
 const chunks = [];
@@ -20,7 +20,7 @@ assert.equal(process.env.CODEX_ACCESS_TOKEN, 'fixture-only-credential');
 for (const key of ['GITHUB_TOKEN', 'OPENAI_API_KEY', 'SSH_AUTH_SOCK', 'NODE_OPTIONS', 'workflowReadToken']) assert.equal(process.env[key], undefined);
 assert.equal(process.env.CODEX_HOME, `${cwd}/.codex-sandbox/home`);
 assert.equal(process.env.HOME, process.env.CODEX_HOME);
-// Codex 0.154.0 creates a runtime-owned private descendant despite the shared
+// Codex 0.160.0 creates a runtime-owned private descendant despite the shared
 // work group. The general runner cannot traverse it; mode must stay private.
 const arg0 = `${process.env.CODEX_HOME}/tmp/arg0`;
 mkdirSync(arg0, { recursive: true });
