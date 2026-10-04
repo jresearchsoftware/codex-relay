@@ -173,6 +173,52 @@ class GeneralRunnerTests(unittest.TestCase):
                 with self.subTest(scope=scope, mismatch=mismatch):
                     self.assertFalse(assertions_pass(contract, {**values, 'general_marker': {**marker, **mismatch}}))
 
+    def test_effective_sudo_policy_accepts_all_installed_helpers_and_rejects_other_grants(self):
+        tasks = yaml.safe_load((ROLE / 'tasks/general-validation.yml').read_text())
+        contract = next(task for task in tasks if task['name'] ==
+                        'Reject additional sudo commands or run-as identities including indirect root shells')
+        templates = (
+            ROOT / 'roles/relay_controller/templates/relay-writer-controller.sudoers.j2',
+            ROOT / 'roles/relay_controller/templates/relay-diagnostics.sudoers.j2',
+            ROOT / 'roles/relay_codex_runtime/templates/relay-codex.sudoers.j2',
+            ROLE / 'templates/relay-owner-lifecycle.sudoers.j2',
+        )
+        for scope in ('repository', 'organization'):
+            with self.subTest(scope=scope):
+                values = instance(True, scope)
+                # Reproduce sudo -l from the actual installed policy templates,
+                # including the owner grant installed before general validation.
+                grants = []
+                for template in templates:
+                    rendered = ENV.from_string(template.read_text()).render(values)
+                    rule = next(line for line in rendered.splitlines() if ' ALL=' in line)
+                    grants.append(rule.split(' ALL=', 1)[1])
+                expected = [ENV.from_string(rule).render(values)
+                            for rule in contract['vars']['general_runner_expected_sudo']]
+
+                def accepts(observed):
+                    return assertions_pass(contract, {
+                        **values,
+                        'general_runner_expected_sudo': expected,
+                        'general_runner_effective_sudo': {'stdout_lines': [
+                            'Matching Defaults entries for the general runner:',
+                            '    !setenv',
+                            *('    ' + grant for grant in observed),
+                        ]},
+                    })
+
+                self.assertTrue(accepts(list(reversed(grants))))
+                for extra in ('(root) NOPASSWD: /bin/sh', '(root) NOPASSWD: ALL',
+                              '(ALL) NOPASSWD: ' + values['relay_owner_lifecycle_helper_path']):
+                    with self.subTest(extra=extra):
+                        self.assertFalse(accepts([*grants, extra]))
+                for missing in range(len(grants)):
+                    with self.subTest(missing=missing):
+                        self.assertFalse(accepts(grants[:missing] + grants[missing + 1:]))
+                self.assertFalse(accepts([
+                    *grants[:-1], '(root) NOPASSWD: /usr/local/sbin/other-owner-lifecycle',
+                ]))
+
     def test_owner_enable_cannot_install_software_or_reconcile_another_runner(self):
         play = yaml.safe_load((ROOT / 'relay-general-runner.yml').read_text())[0]
         includes = [task['ansible.builtin.include_role'] for task in play['tasks'] if 'ansible.builtin.include_role' in task]

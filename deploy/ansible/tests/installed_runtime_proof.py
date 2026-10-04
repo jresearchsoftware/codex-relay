@@ -317,7 +317,8 @@ def general_runner_proof(temp, values, env):
         'relay_production_exact_head': 'c' * 40,
     }
     # Production's rule is rendered with its original identity, then the real
-    # general role installs its three separately named rules and runtime state.
+    # general role installs its rules and runtime state. The owner lifecycle
+    # grant is installed separately before the same effective-policy gate.
     tasks = [
         {'ansible.builtin.template': {
             'src': str(ROOT / 'roles/relay_runner/templates/relay-production-local-apply.sudoers.j2'),
@@ -327,6 +328,9 @@ def general_runner_proof(temp, values, env):
             'src': str(ROOT / 'roles/relay_controller/templates/relay-writer-controller.j2'),
             'dest': '{{ relay_writer_helper_path }}', 'mode': '0750'}},
         {'ansible.builtin.include_role': {'name': 'relay_runner', 'tasks_from': 'general-runtime.yml'}},
+        {'ansible.builtin.template': {
+            'src': str(ROOT / 'roles/relay_runner/templates/relay-owner-lifecycle.sudoers.j2'),
+            'dest': '{{ relay_owner_lifecycle_sudoers_file }}', 'mode': '0440'}},
         {'ansible.builtin.include_role': {'name': 'relay_runner', 'tasks_from': 'general-validation.yml'}},
     ]
     playbook = temp / 'general.yml'

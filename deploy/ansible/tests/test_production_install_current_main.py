@@ -57,12 +57,15 @@ class ProductionInstallCompositionTests(unittest.TestCase):
             systemd = directory / 'etc/systemd/system'
             sudoers = directory / 'etc/sudoers.d'
             sudoers.mkdir(parents=True)
+            sbin = directory / 'usr/local/sbin'
+            sbin.mkdir(parents=True)
             tasks_path = role / 'tasks/production-local-apply.yml'
             # Redirect host paths, preserving the real task order, templates,
             # root ownership checks and visudo validation. No runner is started.
             tasks_path.write_text(tasks_path.read_text().replace(
                 '/etc/systemd/system/', str(systemd) + '/').replace(
-                '/etc/sudoers.d/', str(sudoers) + '/'))
+                '/etc/sudoers.d/', str(sudoers) + '/').replace(
+                '/usr/local/sbin/', str(sbin) + '/'))
             write_yaml(role / 'handlers/main.yml', [{
                 'name': 'Reload runner unit',
                 'ansible.builtin.debug': {'msg': 'fixture daemon reload'},
@@ -78,6 +81,8 @@ class ProductionInstallCompositionTests(unittest.TestCase):
                 'relay_production_runner_user': 'root',
                 'relay_production_runner_service_name': 'fixture-relay-runner.service',
                 'relay_production_local_apply_sudoers_file': str(sudoers / 'fixture-relay-production-apply'),
+                'relay_owner_lifecycle_helper_path': str(sbin / 'fixture-relay-owner-lifecycle'),
+                'relay_owner_lifecycle_sudoers_file': str(sudoers / 'fixture-relay-owner-lifecycle'),
             }
             tasks = [{'ansible.builtin.include_role': {
                 'name': 'relay_runner', 'tasks_from': 'production-local-apply.yml',
@@ -93,6 +98,11 @@ class ProductionInstallCompositionTests(unittest.TestCase):
             self.assertEqual(install.stat().st_uid, 0)
             self.assertEqual(stat.S_IMODE(install.stat().st_mode), 0o755)
             self.assertEqual(stat.S_IMODE(helper.stat().st_mode), 0o750)
+            for owned, mode in ((sbin / 'fixture-relay-owner-lifecycle', 0o750),
+                                (sudoers / 'fixture-relay-owner-lifecycle', 0o440)):
+                self.assertTrue(owned.is_file())
+                self.assertEqual(owned.stat().st_uid, 0)
+                self.assertEqual(stat.S_IMODE(owned.stat().st_mode), mode)
 
             # The runtime later assigns its service group to this parent.
             # Early reconciliation must not reset that group on every apply.

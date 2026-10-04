@@ -37,6 +37,7 @@
     general_runner_expected_sudo:
       - '(root) NOPASSWD: {{ relay_writer_helper_path }}'
       - '(root) NOPASSWD: {{ relay_diagnostics_store_path }}'
+      - '(root) NOPASSWD: {{ relay_owner_lifecycle_helper_path }}'
       - '({{ relay_codex_user }}) NOPASSWD: {{ relay_codex_launcher_path }}'
 
 - name: Prove the production user retains the same narrow helper permission
