@@ -225,6 +225,14 @@ or schema.
 
 ## Minimum sufficient ceremony
 
+Before introducing or enforcing a new security, validation, privilege,
+filesystem/platform, or operator gate, read
+[proportional controls and operator usability](docs/execution-policy.md#proportional-controls-and-operator-usability).
+Behaviorally free hardening may remain an implementation detail; a cost-bearing
+control requires explicit canonical owner authority. For control or
+operator-workflow changes, independent review must also test the simplest
+owner-facing path defined by canonical authority.
+
 Use the least complex process that preserves source truth, reproducible checks,
 authority and independent acceptance. Prefer live Issue/CR, PR diff, exact Git
 facts, native checks and one Outcome over duplicate ledgers, receipts or packets.
@@ -346,8 +354,11 @@ Reviewer verdict for your own work.
 
 Material execution warnings remain mandatory decision inputs at the next owner
 or independent review boundary, including when the durable handoff is green.
-Assess the warning and its remaining work or evidence before acceptance or
-continuation; a successful orchestration status does not resolve the warning.
+Inspect and disposition them under
+[execution warning disposition](docs/execution-policy.md#execution-warning-disposition).
+A successful orchestration status does not resolve a warning. If a required
+primary warning or annotation surface cannot be inspected, state the evidence
+gap and do not claim that no warnings were observed.
 
 Future task files include `## Recommended model budget` with recommended model,
 effort, rationale and escalation/de-escalation conditions. The task author
