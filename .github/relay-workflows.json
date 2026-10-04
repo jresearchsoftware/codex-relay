@@ -2,7 +2,7 @@
   "consumerRepository": "jresearchsoftware/codex-relay",
   "files": {
     ".github/workflows/codex-relay-routing.yml": "a3213c0a4ad10c6674cfc72489908aa1b229a205e255d91ff9308421818f0425",
-    ".github/workflows/manual-main-production-deploy.yml": "34d35f554ae734d23ce3ba223f6c9d400c6bc8dcc8ef251984440c766856a48d",
+    ".github/workflows/manual-main-production-deploy.yml": "527a5883434a7235286caaad10bcdeda471ecee78cc17b1a9c67101017453a87",
     ".github/workflows/manual-writer-publication-recovery.yml": "0055c65472a824836ff2d74f5560c331d53a5aac29983d19a2faee78856673c4"
   },
   "schemaVersion": 2,
