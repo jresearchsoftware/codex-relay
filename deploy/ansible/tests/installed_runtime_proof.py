@@ -623,13 +623,18 @@ def live_smoke_proof(install, release, env, token):
         assert len(added_work) == (1 if retained else 0), (proof, added_work)
         new_capsules = set(fallback_root.glob('*/*.json')) - capsules_before
         assert (fallback_root.stat().st_uid, stat.S_IMODE(fallback_root.stat().st_mode)) == (24003, 0o700)
-        assert len(new_capsules) == (0 if expected_code == 'GENERAL_RUNNER_SMOKE_PASS' else 1), new_capsules
+        # Success releases the slot with a durable tombstone; the next
+        # reservation may reclaim it, while failed-attempt evidence stays live.
+        assert len(new_capsules) == 1, new_capsules
         for capsule in new_capsules:
             raw = capsule.read_text()
             assert len(raw.encode('utf8')) <= 16 * 1024 and 'fixture-only-credential' not in raw
             state = json.loads(raw)
+            assert state.get('released', False) == (expected_code == 'GENERAL_RUNNER_SMOKE_PASS'), state
             assert state['containment'] in ['reaped', 'not_required'], state
             assert state['cleanup'] == ('retained' if retained else 'complete'), state
+            if expected_code == 'GENERAL_RUNNER_SMOKE_PASS':
+                assert state['retention'] == 'none' and state['persistence'] == 'not_required', state
             assert (capsule.stat().st_uid, stat.S_IMODE(capsule.stat().st_mode)) == (24003, 0o600)
             for user, allowed in [('relay-general-runner', True), ('relay-codex', False), ('relay-runner', False)]:
                 access = subprocess.run(['runuser', '-u', user, '--', 'test', '-r', str(capsule)], capture_output=True)
