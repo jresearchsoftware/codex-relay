@@ -175,11 +175,13 @@ until labels, title and applicable authority agree.
 
 ### Legacy publication migration recovery
 
-New Reviewer operations retain the exact Issue/PR Step binding before native
-publication. A historical published SQLite record may lack that binding. The
+New Reviewer operations retain the exact Issue/PR Step binding and initial PR
+title before native publication. A historical published SQLite record may lack
+that binding or its initial-title field. The
 Reviewer may accept such a record only when both labels and the canonical
 explicit-CR-ID title are already synchronized; it never invents an old anchor
-or silently mutates a newly linked Issue. Otherwise it returns
+or silently mutates a newly linked Issue. Existing authority hashes must still
+match when upgrading an older anchor. Otherwise it returns
 `LEGACY_STEP_BINDING_REQUIRED` and preserves the original native review.
 
 After this error, the owner can explicitly authorize the bounded

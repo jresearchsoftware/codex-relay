@@ -1,7 +1,7 @@
 use super::*;
 
 fn issue(labels: Value) -> Value {
-    json!({"number":24,"state":"open","user":{"login":"owner"},"body":"Canonical task authority","labels":labels})
+    json!({"number":24,"state":"open","user":{"login":"example-owner","type":"User"},"body":"Canonical task authority","labels":labels})
 }
 
 #[test]
@@ -159,8 +159,42 @@ async fn issue_and_title_authority_fail_before_new_review() {
 }
 
 #[tokio::test]
+async fn only_configured_human_owner_issue_can_authorize_metadata_projection() {
+    for user in [
+        json!({"login":"another-owner","type":"User"}),
+        json!({"login":"example-owner","type":"Bot"}),
+        json!({"login":"example-owner"}),
+        json!({"type":"User"}),
+        Value::Null,
+    ] {
+        let state = MockState::default();
+        let mut target = issue(json!([{"name":"step-1"}]));
+        target["user"] = user;
+        *state.issue.lock().unwrap() = Some(target);
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let result = publish(&http, &url, &cr_fixture()).await;
+        assert_eq!(result["result"]["content"][0]["text"], "ISSUE_NOT_ADMITTED");
+        assert!(state.reviews.lock().unwrap().is_empty());
+        assert!(!state.requests.lock().unwrap().iter().any(|r| {
+            r.starts_with("PUT ")
+                || r.starts_with("PATCH ")
+                || (r.starts_with("POST ") && !r.ends_with("/access_tokens"))
+        }));
+    }
+}
+
+#[tokio::test]
 async fn changed_authority_blocks_partial_recovery_before_another_metadata_write() {
-    for change in ["issue-body", "pr-body", "head", "review", "foreign-step"] {
+    for change in [
+        "issue-body",
+        "issue-author",
+        "pr-body",
+        "head",
+        "review",
+        "foreign-step",
+        "title-previous-step",
+        "title-next-step",
+    ] {
         let state = MockState::default();
         *state.metadata_failure.lock().unwrap() = Some("issues/25/labels".into());
         let (http, url) = client_with_state(true, None, state.clone()).await;
@@ -173,6 +207,10 @@ async fn changed_authority_blocks_partial_recovery_before_another_metadata_write
         match change {
             "issue-body" => {
                 state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!("New authority")
+            }
+            "issue-author" => {
+                state.issue.lock().unwrap().as_mut().unwrap()["user"] =
+                    json!({"login":"another-owner","type":"User"})
             }
             "pr-body" => {
                 let mut pr = live_pr();
@@ -191,6 +229,15 @@ async fn changed_authority_blocks_partial_recovery_before_another_metadata_write
             }
             "foreign-step" => {
                 state.issue.lock().unwrap().as_mut().unwrap()["labels"] = json!([{"name":"step-7"}])
+            }
+            "title-previous-step" | "title-next-step" => {
+                let mut pr = live_pr();
+                pr["title"] = json!(if change == "title-previous-step" {
+                    "Task 24 · Step 1 · Different owner phase"
+                } else {
+                    "Task 24 · Step 2 · CR-other · Different authority"
+                });
+                *state.pr.lock().unwrap() = Some(pr);
             }
             _ => unreachable!(),
         }
@@ -292,4 +339,83 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
         .unwrap()
         .iter()
         .any(|r| r.starts_with("PUT ") || r.starts_with("PATCH ")));
+}
+
+#[tokio::test]
+async fn historical_anchor_without_exact_title_only_upgrades_complete_unchanged_projection() {
+    for scenario in ["partial", "complete", "changed-authority"] {
+        let state = MockState::default();
+        let args = cr_fixture();
+        let operation = operation_id(&[], &args);
+        state.reviews.lock().unwrap().push(json!({
+            "commit_id":HEAD,"event":"REQUEST_CHANGES",
+            "body":native_review_body(&[], &args, &operation)
+        }));
+        let store = store::Store::open(":memory:").unwrap();
+        store.reserve(&operation, "digest").unwrap();
+        let app = App {
+            policy: test_policy(),
+            repository: TEST_REPOSITORY.into(),
+            enabled: true,
+            store: Arc::new(Mutex::new(store)),
+            github: github::Github::mock_api(mock_api(state.clone()).await),
+            trusted_client_ca: Arc::new(Vec::new()),
+            observed_arguments: Default::default(),
+        };
+        step_sync::prepare(&app, &operation, &args).await.unwrap();
+        let anchor = app
+            .store
+            .lock()
+            .unwrap()
+            .step_binding(&operation)
+            .unwrap()
+            .unwrap();
+        let mut old: Value = serde_json::from_str(&anchor).unwrap();
+        old.as_object_mut().unwrap().remove("initial_pr_title");
+        let old_text = old.to_string();
+        assert!(app
+            .store
+            .lock()
+            .unwrap()
+            .upgrade_step_binding(&operation, &anchor, &old_text)
+            .unwrap());
+        if scenario != "partial" {
+            *state.issue.lock().unwrap() = Some(issue(json!([{"name":"step-2"}])));
+            let mut pr = live_pr();
+            pr["labels"] = json!([{"name":"step-2"}]);
+            pr["title"] = json!(step_sync::projection_title(24, &args).unwrap());
+            *state.pr.lock().unwrap() = Some(pr);
+        }
+        if scenario == "changed-authority" {
+            state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!("Changed goal");
+        }
+        let result = step_sync::synchronize(&app, &operation, 1, &args).await;
+        assert_eq!(
+            result,
+            match scenario {
+                "complete" => Ok(()),
+                "partial" => Err("LEGACY_STEP_BINDING_REQUIRED"),
+                _ => Err("AUTHORITY_CHANGED"),
+            }
+        );
+        let stored = app
+            .store
+            .lock()
+            .unwrap()
+            .step_binding(&operation)
+            .unwrap()
+            .unwrap();
+        let stored: Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(
+            stored["initial_pr_title"].is_string(),
+            scenario == "complete"
+        );
+        assert!(!state
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.starts_with("PUT ") || r.starts_with("PATCH ")));
+        assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    }
 }

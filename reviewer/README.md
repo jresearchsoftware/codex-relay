@@ -56,7 +56,8 @@ mutation or model call. Its advertised output schema distinguishes `available`,
 `absent`, `unavailable`, `permission_denied` and `truncated` for each source.
 The reader verifies the PR binding before and after collection, returns native
 check/suite/run identifiers and URLs, and projects exact-head Writer Outcomes
-from the canonical linked Issue. An exact-head Writer Outcome's native
+from the reviewed PR and canonical linked Issue, preserving the comment target
+and native comment ID. An exact-head Writer Outcome's native
 `Attempt: run-N` binds a relevant routing execution and its check-suite
 annotations even when that workflow ran on the trusted base revision. Evidence
 preserves the actual execution head separately from the reviewed candidate head.
@@ -71,17 +72,27 @@ Acquisition is limited to 256 KiB per response, 2 MiB aggregate transfer,
 Every budget or source failure remains visible. No response URL, redirect,
 caller-selected path or pagination cursor is followed.
 
-This is partial primary-surface coverage. The documented
-[REST workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
-and [GraphQL Checks API](https://docs.github.com/en/graphql/reference/checks)
-do not expose run-level/platform-warning banners. The response always marks
-that primary surface `unavailable`, with exact run UI links, and keeps
-`required_surfaces_complete=false` and `warning_observation=unknown` even
-when all inspected check annotations are empty. The supported
-[check-run annotation API](https://docs.github.com/en/rest/checks/runs#list-check-run-annotations)
-does not establish absence of platform warnings. Task 56 capability A therefore
-still needs an owner disposition of this API gap; this reader alone cannot
-replace all primary-warning inspection required for independent review.
+Mandatory automated evidence covers warnings/annotations produced after actual
+job, check or Relay/Reviewer runtime execution has begun and exposed through
+supported GitHub/runtime APIs. The reader acquires supported
+[check-run annotations](https://docs.github.com/en/rest/checks/runs#list-check-run-annotations),
+exact-head check/run state, and bound Relay execution Outcome warning fields.
+`required_surfaces_complete` reports completeness within that scope;
+`warning_observation` is `observed`, `none_observed` or `unknown`.
+A required in-scope source that is unavailable, permission-denied or truncated
+prevents an absence claim. An empty successfully inspected source means absence
+on that source; it does not establish absence on other sources.
+
+GitHub service-level or pre-execution workflow annotations and platform policy
+banners visible only in the UI are outside mandatory automated acquisition.
+The `github_workflow_run_platform_annotations` source retains an explicit
+`unavailable` limitation, native run links and `required_for_completeness=false`;
+that excluded source alone does not make supported evidence incomplete or block
+independent review. No rendered HTML scraping, browser cookies/session state or
+public-repository fallback is used. API completeness or `none_observed` does not
+prove that no UI-only warning exists. This exclusion can change only when GitHub
+exposes a supported API suitable for public and private repositories. Evidence
+completeness does not itself establish independent acceptance or warning disposition.
 
 `submit_pr_review` has two action-specific inputs. `APPROVE` needs only the
 target (`repository`, `pr_number`, `expected_head_sha`), action and a bounded
@@ -112,8 +123,14 @@ re-reads the binding, labels and title before reporting success. Partial failure
 resume the same native review ID and authored Step through existing publication
 recovery; approval changes no Step. Ordinary owner post-CR synchronization is
 retired. Owner new-phase choice remains separate from this bounded projection.
-A historical published SQLite record without the new pre-publication Step anchor
-may continue only when labels and canonical title are already fully synchronized.
+The configured human owner must author the canonical linked Issue. Deployment
+projects that identity from the existing consumer `owner`; no new owner input is
+needed. The existing operation binding retains the exact initial PR title, and
+recovery accepts only that title or the canonical projection of the same CR.
+A historical published SQLite record without the pre-publication Step anchor or
+its exact initial-title field may continue only when labels and canonical title
+are already fully synchronized. An existing anchor's authority hashes must
+still match before the same operation can acquire the title field.
 Otherwise `LEGACY_STEP_BINDING_REQUIRED` preserves the existing review for
 [explicit bounded owner migration recovery](../contracts/README.md#legacy-publication-migration-recovery),
 then replay of the original payload and native review ID. That exception grants
@@ -123,12 +140,26 @@ invalid tokens/Step, unsafe text and payload/rendering overflow fail closed.
 Operation identity binds the rendered body and all findings; repeated calls
 retain existing duplicate suppression and uncertain-publication recovery.
 
-Installation tokens request only `metadata:read`, `actions:read`, `issues:write`,
-`pull_requests:write` and `checks:write` in the configured repository. The added
-Actions read serves evidence acquisition; Issue write serves bounded Step
-synchronization. The evidence reader requests a separate token with read-only
-`metadata`, `pull_requests`, `checks`, `actions` and `issues` permissions. Live App permission reconciliation and deployment require
-separate owner authorization; source implementation does not grant those actions.
+The minimum Reviewer installation permission set remains `metadata:read`,
+`actions:read`, `issues:write`, `pull_requests:write` and `checks:write`:
+
+| Permission | Supported purpose |
+| --- | --- |
+| `metadata:read` | Repository/installation identity and access qualification |
+| `actions:read` | [List/get workflow runs](https://docs.github.com/en/rest/actions/workflow-runs), including run/check-suite/attempt binding for execution evidence in private repositories |
+| `issues:write` | Deterministic post-CR Issue/PR Step-label synchronization; read access also supplies linked Issue authority and Outcome comments |
+| `pull_requests:write` | Native review publication and bounded PR-title synchronization; read access supplies PR/head and decisive-review binding |
+| `checks:write` | Reviewer check publication; read access supplies check suites/runs and annotations |
+
+Excluding UI-only warnings does not remove the supported Actions run-binding
+requirement. No Actions write or additional permission is needed. Repository
+tokens are restricted to the configured repository; the evidence reader requests
+a separate token with only read permissions for `metadata`, `pull_requests`,
+`checks`, `actions` and `issues`. The host-local App qualification checks the exact
+installation permission set and uses a metadata-only probe token; it does not
+prove live evidence endpoint access. Live App permission reconciliation and
+deployment require separate owner authorization; source implementation does not
+grant those actions.
 The native review body remains sole executable CR authority, linked to the
 canonical Issue for Task identity. Native `1.0` read and `2.0` publication versions
 remain unchanged.

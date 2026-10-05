@@ -51,6 +51,7 @@ def test_legacy_identities_and_isolated_rendered_units_do_not_overlap():
     reviewer = json.loads(render(isolated, template + 'reviewer-mcp.json.j2'))
     assert reviewer['service']['bind_port'] == 18787
     assert reviewer['repository'] == isolated['consumer']['repository']
+    assert reviewer['owner'] == isolated['consumer']['owner']
     assert 'mutation' not in reviewer
     for name in ['relay-reviewer-readiness.j2', 'relay-reviewer-recovery.j2',
                  'relay-runner-enable-start.j2', 'relay-production-operation-stale-disposition.j2']:

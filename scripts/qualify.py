@@ -58,7 +58,7 @@ def qualify_binary(executable):
             with socket.socket() as reserve:
                 reserve.bind(('127.0.0.1', 0))
                 port = reserve.getsockname()[1]
-            config = {'repository': c['repository'], 'baseBranch': c['baseBranch'],
+            config = {'repository': c['repository'], 'owner': c['owner'], 'baseBranch': c['baseBranch'],
                       'reviewCheckName': f'{consumer}-review', 'writerActor': c['writerApp']['expectedActor'],
                       'githubApp': c['reviewerApp'], 'validationNames': c.get('validationNames', []), 'artifact': {'commit': 'a' * 40, 'sha256': 'b' * 64},
                       'service': {'name': 'reviewer-mcp', 'bind_mode': 'a_only_loopback', 'bind_address': '127.0.0.1',

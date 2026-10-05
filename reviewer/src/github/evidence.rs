@@ -58,7 +58,7 @@ pub fn output_schema() -> Value {
     json!({"type": "object", "additionalProperties": false,
         "required": ["repository", "pr_number", "expected_head_sha", "required_surfaces_complete", "warning_observation", "surfaces", "limits", "target"],
         "properties": {"repository": {"type": "string", "maxLength": 140}, "pr_number": {"type": "integer", "minimum": 1}, "expected_head_sha": sha,
-            "required_surfaces_complete": {"const": false}, "warning_observation": {"const": "unknown"},
+            "required_surfaces_complete": {"type": "boolean"}, "warning_observation": {"enum": ["observed", "none_observed", "unknown"]},
             "observed_check_annotation_warnings": {"type": "integer", "minimum": 0, "maximum": ANNOTATIONS},
             "requests_observed": {"type": "integer", "minimum": 0, "maximum": REQUESTS},
             "response_byte_budget_used": {"type": "integer", "minimum": 0, "maximum": TOTAL_BYTES},
@@ -76,6 +76,7 @@ pub fn output_schema() -> Value {
                     "items": {"type": "array", "maxItems": ITEMS, "items": {"anyOf": [suite, run, check, outcome]}},
                     "native_urls": {"type": "array", "maxItems": ITEMS * 2, "items": {"type": "string", "maxLength": 256}},
                     "additional_api_paths": {"type": "array", "maxItems": ITEMS, "items": {"type": "string", "maxLength": 512}},
+                    "required_for_completeness": {"type": "boolean"},
                     "explanation": {"type": "string", "maxLength": 512}}}}}})
 }
 
@@ -195,8 +196,22 @@ impl ReadSession<'_> {
     }
 
     async fn list(&mut self, path: &str, key: Option<&str>, max_items: usize) -> Listing {
+        self.list_pages(path, key, max_items, PAGES).await
+    }
+
+    async fn list_pages(
+        &mut self,
+        path: &str,
+        key: Option<&str>,
+        max_items: usize,
+        pages: usize,
+    ) -> Listing {
         let mut listing = Listing::new(path);
-        for page in 1..=PAGES {
+        if pages == 0 || max_items == 0 {
+            listing.fail(Failure::truncated("GITHUB_ITEM_LIMIT"));
+            return listing;
+        }
+        for page in 1..=pages {
             let separator = if path.contains('?') { '&' } else { '?' };
             let page_path = format!("{path}{separator}per_page={PAGE_SIZE}&page={page}");
             let (payload, next) = match self.get(&page_path, false).await {
@@ -251,7 +266,7 @@ impl ReadSession<'_> {
                 listing.fail(Failure::unavailable("GITHUB_PAGINATION_INCONSISTENT"));
                 return listing;
             }
-            if page == PAGES || listing.items.len() == max_items {
+            if page == pages || listing.items.len() == max_items {
                 listing.fail(Failure::truncated("GITHUB_PAGINATION_LIMIT"));
                 return listing;
             }
@@ -375,6 +390,18 @@ fn state(value: Option<&Value>) -> Value {
             value.len() <= 32 && value.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
         })
         .map_or(Value::Null, |value| json!(value))
+}
+
+fn complete_source(source: &Value) -> bool {
+    matches!(
+        source["availability"].as_str(),
+        Some("available" | "absent")
+    ) && source["items"].as_array().is_some_and(|items| {
+        items.iter().all(|item| {
+            item["text_redacted_or_truncated"] != true
+                && (item.get("annotations").is_none() || complete_source(&item["annotations"]))
+        })
+    })
 }
 
 fn exact_sha(sha: &str) -> bool {
@@ -548,101 +575,128 @@ impl Github {
         verify_pr(&pr, repository, pr_number, sha)?;
         let linked_issue = crate::step_sync::linked_issue(&pr);
         let mut execution_pointers = vec![];
-        let runtime = match linked_issue {
-            Ok(issue) => {
-                let mut outcomes = session
-                    .list(
-                        &format!("/repos/{repository}/issues/{issue}/comments"),
-                        None,
-                        ITEMS,
-                    )
-                    .await;
-                let mut items = vec![];
-                for comment in &outcomes.items {
-                    if comment.pointer("/user/login").and_then(Value::as_str) != Some(writer_actor)
-                    {
-                        continue;
-                    }
-                    let Some(body) = comment.get("body").and_then(Value::as_str) else {
-                        continue;
-                    };
-                    if !body.starts_with("## Codex Outcome\n") {
-                        continue;
-                    }
-                    let heads: Vec<_> = body
-                        .lines()
-                        .filter_map(|line| {
-                            line.strip_prefix("Durable/published head: ")
-                                .or_else(|| line.strip_prefix("Latest durable and ready head: "))
-                        })
-                        .collect();
-                    if heads.len() != 1 || heads[0] != sha {
-                        continue;
-                    }
-                    let Some(id) = identifier(comment.get("id")) else {
-                        outcomes.availability = "unavailable";
-                        outcomes.reason = Some("GITHUB_RESPONSE_INVALID");
-                        continue;
-                    };
-                    // Native admission emits Attempt: run-N from runId. Only an
-                    // already exact-head/Writer-bound Outcome supplies a pointer.
-                    let attempts: Vec<_> = body
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("Attempt: "))
-                        .collect();
-                    let run_id = if attempts.len() == 1 {
-                        attempts[0]
-                            .strip_prefix("run-")
-                            .filter(|id| !id.starts_with('0'))
-                            .and_then(|id| id.parse::<u64>().ok())
-                            .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
-                    } else {
-                        None
-                    };
-                    if let Some(run_id) = run_id {
-                        execution_pointers.push((issue, id, run_id));
-                    }
-                    let mut altered = false;
-                    let warning_fields = body
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("Warning summary: "))
-                        .collect::<Vec<_>>();
-                    if warning_fields.len() > 10 {
-                        altered = true;
-                    }
-                    let warning_summaries: Vec<Value> = warning_fields
-                        .into_iter()
-                        .take(10)
-                        .map(|summary| text(Some(&json!(summary)), 2048, &mut altered))
-                        .collect();
-                    items.push(json!({"comment_id": id, "issue_number": issue, "head_sha": sha, "actor": writer_actor,
-                        "native_url": format!("https://github.com/{repository}/issues/{issue}#issuecomment-{id}"),
-                        "workflow_run_id": run_id, "warning_summaries": warning_summaries, "text_redacted_or_truncated": altered}));
-                }
-                // Successful inspection with no bound Outcome is absence on this
-                // source, not absence of warnings on uninspected sources.
-                if outcomes.reason.is_none() {
-                    outcomes.availability = if items.is_empty() {
-                        "absent"
-                    } else {
-                        "available"
-                    };
-                }
-                outcomes.rendered("github_relay_execution_outcomes", &items)
+        let mut missing_execution_pointer = false;
+        // Writer publishes on the current PR, or on the canonical Issue when
+        // no PR exists yet. Inspect both bounded native comment collections.
+        let runtime_path = format!("/repos/{repository}/issues/{pr_number}/comments");
+        let mut outcomes = Listing::new(&runtime_path);
+        let mut targets = vec![pr_number as u64];
+        match linked_issue {
+            Ok(issue) if issue != pr_number as u64 => targets.push(issue),
+            Ok(_) => {}
+            Err(reason) => outcomes.fail(Failure::unavailable(reason)),
+        }
+        let mut runtime_items = vec![];
+        let mut additional_outcome_paths = vec![];
+        let mut comments_observed = 0;
+        for (index, target) in targets.iter().enumerate() {
+            let path = format!("/repos/{repository}/issues/{target}/comments");
+            if index > 0 {
+                additional_outcome_paths.push(path.clone());
             }
-            Err(reason) => {
-                json!({"source": "github_relay_execution_outcomes", "availability": "unavailable", "reason": reason, "items": []})
+            // Reserve a page for every remaining collection. The combined
+            // source retains its three-page / 75-comment input/output bound.
+            let pages = PAGES.saturating_sub(outcomes.pages + targets.len() - index - 1);
+            let current = session
+                .list_pages(&path, None, ITEMS - comments_observed, pages)
+                .await;
+            outcomes.pages += current.pages;
+            comments_observed += current.items.len();
+            if let Some(reason) = current.reason {
+                outcomes.fail(Failure {
+                    availability: current.availability,
+                    reason,
+                });
             }
-        };
+            for comment in &current.items {
+                if comment.pointer("/user/login").and_then(Value::as_str) != Some(writer_actor) {
+                    continue;
+                }
+                let Some(body) = comment.get("body").and_then(Value::as_str) else {
+                    continue;
+                };
+                if !body.starts_with("## Codex Outcome\n") {
+                    continue;
+                }
+                let heads: Vec<_> = body
+                    .lines()
+                    .filter_map(|line| {
+                        line.strip_prefix("Durable/published head: ")
+                            .or_else(|| line.strip_prefix("Latest durable and ready head: "))
+                    })
+                    .collect();
+                if heads.len() != 1 || heads[0] != sha {
+                    continue;
+                }
+                let Some(id) = identifier(comment.get("id")) else {
+                    outcomes.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
+                    continue;
+                };
+                let attempts: Vec<_> = body
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("Attempt: "))
+                    .collect();
+                let run_id = if attempts.len() == 1 {
+                    attempts[0]
+                        .strip_prefix("run-")
+                        .filter(|id| !id.starts_with('0'))
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
+                } else {
+                    None
+                };
+                if let Some(run_id) = run_id {
+                    execution_pointers.push((*target, id, run_id));
+                } else {
+                    missing_execution_pointer = true;
+                }
+                let mut altered = false;
+                let warning_fields = body
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("Warning summary: "))
+                    .collect::<Vec<_>>();
+                if warning_fields.len() > 10 {
+                    altered = true;
+                }
+                let warning_summaries: Vec<Value> = warning_fields
+                    .into_iter()
+                    .take(10)
+                    .map(|summary| text(Some(&json!(summary)), 2048, &mut altered))
+                    .collect();
+                if body.contains("COMPLETED_WITH_WARNINGS") && warning_summaries.is_empty() {
+                    outcomes.fail(Failure::unavailable(
+                        "GITHUB_OUTCOME_WARNING_SUMMARY_UNAVAILABLE",
+                    ));
+                }
+                runtime_items.push(json!({"comment_id": id, "issue_number": target, "head_sha": sha, "actor": writer_actor,
+                    "native_url": format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),
+                    "workflow_run_id": run_id, "warning_summaries": warning_summaries, "text_redacted_or_truncated": altered}));
+            }
+        }
+        if outcomes.reason.is_none() {
+            outcomes.availability = if runtime_items.is_empty() {
+                "absent"
+            } else {
+                "available"
+            };
+        }
+        let mut runtime = outcomes.rendered("github_relay_execution_outcomes", &runtime_items);
+        runtime["additional_api_paths"] = json!(additional_outcome_paths);
         let mut execution = Listing::new(&format!("/repos/{repository}/actions/runs"));
         execution.reason = Some("GITHUB_EXECUTION_RUN_POINTER_UNAVAILABLE");
+        if runtime_items.is_empty() && complete_source(&runtime) {
+            execution.availability = "absent";
+            execution.reason = None;
+        }
         let mut execution_run_items = vec![];
         let mut seen_runs = std::collections::HashSet::new();
         for pointer @ (_, _, run_id) in execution_pointers {
             if !seen_runs.insert(run_id) {
                 continue;
             }
-            if execution.reason == Some("GITHUB_EXECUTION_RUN_POINTER_UNAVAILABLE") {
+            if !missing_execution_pointer
+                && execution.reason == Some("GITHUB_EXECUTION_RUN_POINTER_UNAVAILABLE")
+            {
                 execution.availability = "available";
                 execution.reason = None;
             }
@@ -832,9 +886,9 @@ impl Github {
                 "annotations": annotations.rendered("github_check_run_annotations", &annotation_items)}));
         }
         let primary = json!({"source": "github_workflow_run_platform_annotations", "availability": "unavailable",
-            "reason": "GITHUB_PUBLIC_API_SURFACE_UNAVAILABLE", "items": [],
+            "reason": "GITHUB_UI_ONLY_SERVICE_ANNOTATIONS_OUT_OF_SCOPE", "required_for_completeness": false, "items": [],
             "native_urls": run_items.iter().chain(execution_run_items.iter()).map(|run| run["native_url"].clone()).take(ITEMS * 2).collect::<Vec<_>>(),
-            "explanation": "GitHub's documented REST workflow-run and GraphQL WorkflowRun/CheckSuite APIs do not expose primary run-level/platform annotations. Check-run annotations do not establish absence on that surface."});
+            "explanation": "UI-only GitHub service-level/pre-execution annotations are outside mandatory automated evidence acquisition. No HTML or browser-session fallback is used. Complete in-scope API evidence does not prove absence of GitHub UI warnings."});
         let mut check_surface = checks.rendered("github_check_runs", &check_items);
         check_surface["additional_api_paths"] = json!(additional_check_paths);
         evidence["surfaces"] = json!([
@@ -863,6 +917,27 @@ impl Github {
         evidence["requests_observed"] = json!(session.requests);
         evidence["response_byte_budget_used"] = json!(session.bytes);
         redact_exact_credentials(&mut evidence, &[&session.token, &session.jwt]);
+        let complete = final_binding["binding_verified"] == true
+            && evidence["surfaces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|surface| {
+                    surface["required_for_completeness"] == false || complete_source(surface)
+                });
+        evidence["required_surfaces_complete"] = json!(complete);
+        let runtime_warnings = runtime_items.iter().any(|item| {
+            item["warning_summaries"]
+                .as_array()
+                .is_some_and(|warnings| !warnings.is_empty())
+        });
+        evidence["warning_observation"] = json!(if !complete {
+            "unknown"
+        } else if warning_count > 0 || runtime_warnings {
+            "observed"
+        } else {
+            "none_observed"
+        });
         Ok(evidence)
     }
 }

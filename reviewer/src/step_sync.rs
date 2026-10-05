@@ -122,11 +122,18 @@ fn hash(value: &Value) -> String {
     )
 }
 
-fn binding(pr: &Value, issue: &Value, next: u64) -> Result<Value, &'static str> {
+fn authority_binding(
+    app: &App,
+    pr: &Value,
+    issue: &Value,
+    next: u64,
+) -> Result<Value, &'static str> {
     let issue_number = linked_issue(pr)?;
     if issue["number"].as_u64() != Some(issue_number)
         || issue["state"] != "open"
         || issue.get("pull_request").is_some()
+        || issue.pointer("/user/login").and_then(Value::as_str) != Some(app.policy.owner.as_str())
+        || issue.pointer("/user/type").and_then(Value::as_str) != Some("User")
         || !issue["body"].is_string()
         || !pr.pointer("/head/ref").is_some_and(Value::is_string)
     {
@@ -136,6 +143,18 @@ fn binding(pr: &Value, issue: &Value, next: u64) -> Result<Value, &'static str> 
         json!({"issue":issue_number,"step":next,"issue_authority":hash(&json!([issue["body"],issue["user"]])),
         "pr_authority":hash(&json!([pr["body"],pr["head"]["ref"],pr["base"]["ref"],pr["base"]["repo"]["full_name"]]))}),
     )
+}
+
+fn binding(
+    app: &App,
+    pr: &Value,
+    issue: &Value,
+    next: u64,
+    initial_title: &str,
+) -> Result<Value, &'static str> {
+    let mut value = authority_binding(app, pr, issue, next)?;
+    value["initial_pr_title"] = json!(initial_title);
+    Ok(value)
 }
 
 pub(crate) fn projection_title(issue: u64, arguments: &Value) -> Result<String, &'static str> {
@@ -236,7 +255,11 @@ fn save_binding(app: &App, operation: &str, fresh: &Value) -> Result<(), &'stati
         .step_binding(operation)
         .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     if let Some(prior) = prior {
-        if serde_json::from_str::<Value>(&prior).map_err(|_| "INTERNAL_RELAY_ERROR")? != *fresh {
+        let prior = serde_json::from_str::<Value>(&prior).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if !prior["initial_pr_title"].is_string() {
+            return Err("LEGACY_STEP_BINDING_REQUIRED");
+        }
+        if prior != *fresh {
             return Err("AUTHORITY_CHANGED");
         }
     } else {
@@ -257,7 +280,11 @@ pub(crate) async fn prepare(app: &App, operation: &str, args: &Value) -> Result<
     let (pr, issue) = state(app, args).await?;
     validate_metadata(&pr, &issue, next, false)?;
     projection_title(linked_issue(&pr)?, args)?;
-    save_binding(app, operation, &binding(&pr, &issue, next)?)
+    save_binding(
+        app,
+        operation,
+        &binding(app, &pr, &issue, next, pr["title"].as_str().unwrap())?,
+    )
 }
 
 async fn verified_state(
@@ -286,24 +313,55 @@ async fn verified_state(
     }
     let next = args["change_request"]["step"].as_u64().unwrap();
     validate_metadata(&pr, &issue, next, true)?;
-    let anchored = app
+    let anchor = app
         .store
         .lock()
         .map_err(|_| "INTERNAL_RELAY_ERROR")?
         .step_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        .is_some();
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    let title = projection_title(linked_issue(&pr)?, args)?;
+    let authority = authority_binding(app, &pr, &issue, next)?;
+    if let Some(prior_text) = anchor.as_ref() {
+        let mut prior =
+            serde_json::from_str::<Value>(prior_text).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if let Some(initial_title) = prior["initial_pr_title"].as_str() {
+            if pr["title"] != initial_title && pr["title"] != title {
+                return Err("AUTHORITY_CHANGED");
+            }
+            save_binding(
+                app,
+                operation,
+                &binding(app, &pr, &issue, next, initial_title)?,
+            )?;
+            return Ok((pr, issue));
+        }
+        // Older anchors bind Issue/PR authority but do not retain the exact
+        // initial title. Never guess it from a partially transported projection.
+        if prior != authority {
+            return Err("AUTHORITY_CHANGED");
+        }
+        if current_step(&pr)? != next || current_step(&issue)? != next || pr["title"] != title {
+            return Err("LEGACY_STEP_BINDING_REQUIRED");
+        }
+        prior["initial_pr_title"] = json!(title);
+        let upgraded = app
+            .store
+            .lock()
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .upgrade_step_binding(operation, prior_text, &prior.to_string())
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if !upgraded {
+            return Err("INTERNAL_RELAY_ERROR");
+        }
+        return Ok((pr, issue));
+    }
     // Historical publication records lack the pre-mutation Issue authority.
     // Adopt an already complete projection only; mixed-version partial state
     // needs explicit owner legacy reconciliation before this exact replay.
-    if !anchored
-        && (current_step(&pr)? != next
-            || current_step(&issue)? != next
-            || pr["title"] != projection_title(linked_issue(&pr)?, args)?)
-    {
+    if current_step(&pr)? != next || current_step(&issue)? != next || pr["title"] != title {
         return Err("LEGACY_STEP_BINDING_REQUIRED");
     }
-    save_binding(app, operation, &binding(&pr, &issue, next)?)?;
+    save_binding(app, operation, &binding(app, &pr, &issue, next, &title)?)?;
     Ok((pr, issue))
 }
 

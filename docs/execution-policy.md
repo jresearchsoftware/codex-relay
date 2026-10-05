@@ -124,11 +124,13 @@ unauthorized material operator-contract delta remains
 
 Execution warnings remain decision inputs even after a successful run. Before
 review, continuation, merge, closure or an owner decision, inspect the primary
-warning surfaces that are applicable to the execution:
+warning surfaces that are applicable to the execution and exposed through
+supported GitHub/runtime APIs after actual job, check or runtime execution has
+begun:
 
 - Relay/Codex Outcomes, including explicit warning fields and
   `COMPLETED_WITH_WARNINGS`;
-- GitHub workflow/run-level annotations and platform policy warnings; and
+- GitHub job/check execution annotations; and
 - Relay/controller/Actions execution annotations associated with the attempt.
 
 Do not replace inspection of those primary surfaces with a text search for the
@@ -141,7 +143,18 @@ to current scope, resolution or remaining limitation, next action/owner/deadline
 when applicable, and effect on the current verdict or continuation decision.
 Green status is not a disposition. If a required primary warning or annotation
 surface cannot be inspected, state the evidence gap and do not claim that no
-warnings were observed.
+warnings were observed within the required supported scope.
+
+GitHub service-level or pre-execution workflow annotations and platform policy
+banners visible only in the UI are outside mandatory automated acquisition until
+a supported API suitable for public and private repositories exists. Do not
+scrape rendered HTML or use browser cookies/session state as a fallback. The
+excluded surface alone does not block independent review or make supported
+execution evidence incomplete. Completeness describes acquisition within the
+required supported scope; `none_observed` means no warning was observed within
+that scope. Neither proves that no UI-only warning exists. An out-of-scope
+acquisition limit does not dispose of a material warning already known from
+other evidence.
 
 ## Developer stop evidence
 

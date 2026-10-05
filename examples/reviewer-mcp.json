@@ -1,5 +1,6 @@
 {
   "repository": "example-org/sample-project",
+  "owner": "example-owner",
   "baseBranch": "main",
   "reviewCheckName": "chatgpt-review",
   "writerActor": "example-writer[bot]",

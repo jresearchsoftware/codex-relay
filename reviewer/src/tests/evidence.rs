@@ -151,7 +151,7 @@ async fn handler(
         };
         return Json(json!({"total_count": 1, "workflow_runs": [{"id": 21, "name": "CI", "head_sha": SHA,
             "repository": {"full_name": repository}, "check_suite_id": 11, "run_attempt": 2, "workflow_id": 31,
-            "event": "pull_request", "status": "completed", "conclusion": "success"}]})).into_response();
+            "event": "pull_request", "status": "completed", "conclusion": if mock.mode == "preexecution" { "skipped" } else { "success" }}]})).into_response();
     }
     if uri.path().ends_with("/check-runs") {
         assert!(uri.query().unwrap().contains("filter=all"));
@@ -189,9 +189,21 @@ async fn handler(
         } else {
             SHA
         };
+        if mock.mode == "preexecution" {
+            let mut skipped = check(12, sha);
+            skipped["conclusion"] = json!("skipped");
+            skipped["started_at"] = Value::Null;
+            return Json(json!({"total_count": 1, "check_runs": [skipped]})).into_response();
+        }
         return Json(json!({"total_count": 1, "check_runs": [check(12, sha)]})).into_response();
     }
     if uri.path().ends_with("/annotations") {
+        if matches!(
+            mock.mode,
+            "clean" | "executiononlyruntimewarning" | "preexecution"
+        ) {
+            return Json(json!([])).into_response();
+        }
         if mock.mode == "rawcredential" {
             return Json(json!([
                 annotation("synthetic-evidence-token"),
@@ -235,11 +247,20 @@ async fn handler(
         )]))
         .into_response();
     }
+    if uri.path() == format!("/repos/{REPOSITORY}/issues/25/comments") {
+        if mock.mode == "runtimepr403" {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        if matches!(mock.mode, "executionpr" | "executionpartial") {
+            return Json(json!([comment(71, WRITER, &format!("## Codex Outcome\nAttempt: run-41\nDurable/published head: {SHA}\nWarning summary: PR execution warning"))])).into_response();
+        }
+        return Json(json!([])).into_response();
+    }
     if uri.path() == format!("/repos/{REPOSITORY}/issues/56/comments") {
         if mock.mode == "runtime403" {
             return StatusCode::FORBIDDEN.into_response();
         }
-        let attempt = if mock.mode.starts_with("execution") {
+        let attempt = if mock.mode.starts_with("execution") && mock.mode != "executionpartial" {
             "Attempt: run-41\n"
         } else {
             ""
@@ -249,6 +270,12 @@ async fn handler(
         let stale = comment(63, WRITER, &format!("## Codex Outcome\nDurable/published head: {OTHER_SHA}\nWarning summary: do-not-return-stale-warning"));
         let wrong_marker = comment(64, WRITER, &format!("Quoted ## Codex Outcome\nDurable/published head: {SHA}\nWarning summary: do-not-return-quoted-warning"));
         let double_head = comment(65, WRITER, &format!("## Codex Outcome\nDurable/published head: {SHA}\nLatest durable and ready head: {OTHER_SHA}\nWarning summary: do-not-return-ambiguous-warning"));
+        if matches!(mock.mode, "clean" | "preexecution" | "executionpr") {
+            return Json(json!([])).into_response();
+        }
+        if mock.mode == "runtimesummarymissing" {
+            return Json(json!([comment(61, WRITER, &format!("## Codex Outcome\nAttempt: run-41\nDurable/published head: {SHA}\nCompletion: COMPLETED_WITH_WARNINGS"))])).into_response();
+        }
         if mock.mode == "runtimeabsent" {
             return Json(json!([foreign_actor, stale, wrong_marker, double_head])).into_response();
         }
@@ -373,6 +400,11 @@ async fn supported_evidence_is_exact_head_scoped_read_only_and_honest_about_prim
     );
     let primary = surface(&evidence, "github_workflow_run_platform_annotations");
     assert_eq!(primary["availability"], "unavailable");
+    assert_eq!(primary["required_for_completeness"], false);
+    assert_eq!(
+        primary["reason"],
+        "GITHUB_UI_ONLY_SERVICE_ANNOTATIONS_OUT_OF_SCOPE"
+    );
     assert_eq!(
         primary["native_urls"],
         json!([format!("https://github.com/{REPOSITORY}/actions/runs/21")])
@@ -419,6 +451,61 @@ async fn different_repositories_and_invalid_targets_fail_before_authentication()
     }
     assert!(mock.calls.lock().unwrap().is_empty());
     task.abort();
+}
+
+#[tokio::test]
+async fn supported_completeness_excludes_ui_only_service_annotations() {
+    for (mode, observation) in [
+        ("execution", "observed"),
+        ("executiononlyruntimewarning", "observed"),
+        ("clean", "none_observed"),
+        ("preexecution", "none_observed"),
+    ] {
+        let (result, calls) = acquire(mode).await;
+        let evidence = result.unwrap();
+        assert_eq!(evidence["required_surfaces_complete"], true, "{mode}");
+        assert_eq!(evidence["warning_observation"], observation, "{mode}");
+        let excluded = surface(&evidence, "github_workflow_run_platform_annotations");
+        assert_eq!(excluded["availability"], "unavailable");
+        assert_eq!(excluded["required_for_completeness"], false);
+        assert!(calls.iter().skip(1).all(|call| {
+            call["path"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("/repos/{REPOSITORY}/"))
+        }));
+    }
+}
+
+#[tokio::test]
+async fn pr_writer_outcomes_bind_runtime_runs_and_collection_failures_preclude_absence() {
+    let (result, calls) = acquire("executionpr").await;
+    let evidence = result.unwrap();
+    let outcomes = surface(&evidence, "github_relay_execution_outcomes");
+    assert_eq!(outcomes["items"][0]["comment_id"], 71);
+    assert_eq!(outcomes["items"][0]["issue_number"], 25);
+    let run = &surface(&evidence, "github_relay_execution_workflow_runs")["items"][0];
+    assert_eq!(run["outcome_comment_id"], 71);
+    assert_eq!(run["issue_number"], 25);
+    assert_eq!(run["head_sha"], OTHER_SHA);
+    assert_eq!(run["reviewed_head_sha"], SHA);
+    assert_eq!(evidence["required_surfaces_complete"], true);
+    assert_eq!(evidence["warning_observation"], "observed");
+    assert!(calls
+        .iter()
+        .any(|call| call["path"] == format!("/repos/{REPOSITORY}/issues/25/comments")));
+    for mode in [
+        "runtimepr403",
+        "executionpartial",
+        "runtimesummarymissing",
+        "annotation404",
+        "longtext",
+        "finaldenied",
+    ] {
+        let evidence = acquire(mode).await.0.unwrap();
+        assert_eq!(evidence["required_surfaces_complete"], false, "{mode}");
+        assert_eq!(evidence["warning_observation"], "unknown", "{mode}");
+    }
 }
 
 #[tokio::test]
@@ -516,7 +603,14 @@ async fn denied_hidden_absent_and_malformed_sources_remain_distinct() {
             expected,
             "{mode}"
         );
-        assert_eq!(evidence["warning_observation"], "unknown");
+        assert_eq!(
+            evidence["warning_observation"],
+            if mode == "runtimeabsent" {
+                "observed"
+            } else {
+                "unknown"
+            }
+        );
     }
     for mode in ["annotation404", "annotationbad"] {
         let evidence = acquire(mode).await.0.unwrap();

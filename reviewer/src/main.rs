@@ -105,7 +105,7 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
         executable_cr::input_schema(validation_names);
     let mut evidence = check.clone();
     evidence["name"] = json!("read_pr_review_evidence");
-    evidence["description"] = json!("Read bounded exact-head native check/Actions evidence and authoritative execution warnings. Required primary surfaces that GitHub does not expose remain explicit unavailable gaps; an empty result is never proof of no warnings.");
+    evidence["description"] = json!("Read bounded exact-head execution warning evidence through supported GitHub/runtime APIs. Required source failures remain explicit gaps. UI-only service/pre-execution annotations are excluded from automated completeness; none_observed covers only inspected in-scope sources.");
     evidence["outputSchema"] = github::evidence::output_schema();
     json!([check, submit, evidence])
 }
@@ -321,6 +321,7 @@ fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
 #[derive(Clone, Debug, PartialEq)]
 struct ReviewPolicy {
     validation_names: Vec<String>,
+    owner: String,
     base_branch: String,
     check_name: String,
     slug: String,
@@ -339,6 +340,7 @@ fn review_policy(config: &Value) -> ReviewPolicy {
     };
     let policy = ReviewPolicy {
         validation_names: executable_cr::validation_names(config),
+        owner: field(&config["owner"]),
         base_branch: field(&config["baseBranch"]),
         check_name: field(&config["reviewCheckName"]),
         slug: field(&config["githubApp"]["slug"]),
@@ -347,6 +349,10 @@ fn review_policy(config: &Value) -> ReviewPolicy {
         actor: field(&config["githubApp"]["expectedActor"]),
         writer_actor: field(&config["writerActor"]),
     };
+    assert!(
+        valid_repository(&format!("{}/task", policy.owner)),
+        "Invalid owner identity"
+    );
     let branch = &policy.base_branch;
     assert!(
         !branch.is_empty()
@@ -1151,6 +1157,7 @@ mod tests {
     fn test_policy() -> ReviewPolicy {
         ReviewPolicy {
             validation_names: Vec::new(),
+            owner: "example-owner".into(),
             base_branch: "main".into(),
             check_name: "chatgpt-review".into(),
             slug: "example-reviewer".into(),
@@ -1906,13 +1913,13 @@ mod tests {
                 .unwrap_or_else(|| { let mut pr = live_pr_for_repository(&state.repository); pr["base"]["ref"] = json!(state.policy.base_branch); pr }),
             (Method::GET, "issues/24") => state.issue.lock().unwrap().clone().unwrap_or_else(|| {
                 let labels = state.pr.lock().unwrap().as_ref().map(|pr| pr["labels"].clone()).unwrap_or_else(|| json!([{"name":"step-1"}]));
-                json!({"number":24,"state":"open","user":{"login":"owner"},"body":"Canonical task authority","labels":labels})
+                json!({"number":24,"state":"open","user":{"login":state.policy.owner,"type":"User"},"body":"Canonical task authority","labels":labels})
             }),
             (Method::GET, value) if value.starts_with("labels/step-") => json!({"name":value.strip_prefix("labels/").unwrap()}),
             (Method::PUT, "issues/24/labels") => {
                 let payload: Value = serde_json::from_slice(&body).unwrap();
                 let mut issue = state.issue.lock().unwrap();
-                let mut value = issue.clone().unwrap_or_else(|| json!({"number":24,"state":"open","user":{"login":"owner"},"body":"Canonical task authority"}));
+                let mut value = issue.clone().unwrap_or_else(|| json!({"number":24,"state":"open","user":{"login":state.policy.owner,"type":"User"},"body":"Canonical task authority"}));
                 value["labels"] = json!(payload["labels"].as_array().unwrap().iter().map(|l| json!({"name":l})).collect::<Vec<_>>());
                 *issue = Some(value.clone()); value["labels"].clone()
             },
@@ -2131,7 +2138,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": HEAD, "sha256": "b".repeat(64)},
             "service": {"name": "reviewer-mcp", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         assert_eq!(
@@ -2161,7 +2168,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": "UNAVAILABLE_UNTIL_RELEASE_STAGING", "sha256": "UNAVAILABLE_UNTIL_RELEASE_STAGING"},
             "service": {"name": "reviewer-mcp", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         let result = std::panic::catch_unwind(|| load_runtime_config(path.to_str().unwrap()));
@@ -2185,6 +2192,7 @@ mod tests {
         template
             .render(context! {
                 relay_github_repository => repository,
+                relay_owner_actor => "example-owner",
                 relay_release_commit => HEAD,
                 relay_release_sha256 => "b".repeat(64),
                 relay_reviewer_exec_start => "/opt/relay-example/current/bin/reviewer-mcp-http --config /etc/relay-example/reviewer-mcp.json",
@@ -2271,7 +2279,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": HEAD, "sha256": "b".repeat(64)},
             "service": {"name": "reviewer-mcp", "execBoundary": "/opt/relay-example/current/bin/reviewer-mcp-http --config /etc/relay-example/reviewer-mcp.json", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         assert_eq!(load_runtime_config(path.to_str().unwrap()).port, 8787);

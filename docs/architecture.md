@@ -168,9 +168,14 @@ Writer and Reviewer credentials are separate. Raw credentials and diagnostic
 streams never belong in an Outcome.
 
 The evidence reader uses a read-only installation token and binds applicable
-execution checks through exact-head Writer Outcomes. It reports unavailable
-primary run/platform-warning surfaces explicitly; supported check annotations
-cannot prove the absence of warnings in GitHub UI-only surfaces. See the
+execution checks through exact-head Writer Outcomes on the reviewed PR and
+canonical linked Issue. Mandatory completeness covers execution-time warnings
+available through supported check/job/runtime APIs; unavailable, denied or
+truncated required evidence prevents an absence claim. UI-only service-level or
+pre-execution annotations/platform banners are explicitly excluded from that
+automated contract and do not alone block review. No HTML or browser-session
+fallback is used. Supported API completeness cannot prove absence of UI-only
+warnings or replace independent warning disposition. See the
 [evidence contract and API limitation](../reviewer/README.md).
 
 Local qualification tests real modules/handlers against synthetic Git and

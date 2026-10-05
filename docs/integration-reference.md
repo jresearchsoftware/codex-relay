@@ -196,12 +196,25 @@ Writer installation tokens request `metadata:read`, `contents:write`,
 `issues:write`, `pull_requests:write`, `workflows:write`, restricted to the
 configured repository. Reviewer tokens request `metadata:read`, `actions:read`,
 `issues:write`, `pull_requests:write`, `checks:write`, also restricted to that
-repository. Actions read serves bounded evidence acquisition; Issues write serves
-same-review post-CR Step synchronization. These permissions grant no worker,
+repository. Actions read supplies supported workflow-run/check-suite/attempt
+binding, including private repositories; Checks write publishes the Reviewer
+check and supplies read access to check annotations. Issues write serves
+same-review post-CR Step-label synchronization; PR write serves native review
+publication and bounded PR-title synchronization. Metadata read qualifies
+repository/installation identity. These permissions grant no worker,
 Writer or owner launch role. The evidence tool requests only read permissions
 for metadata, Issues, PRs, checks and Actions; no repository mutation is reachable
-through it. Its [bounded schema and primary-surface limitation](../reviewer/README.md)
-preserve unavailable and permission-denied evidence instead of an absence claim.
+through it. Its [bounded evidence contract](../reviewer/README.md) covers supported
+execution-time check/job/runtime warnings and exact-head Writer Outcomes on the
+reviewed PR and canonical linked Issue. It preserves unavailable, permission-denied
+and truncated evidence instead of an absence claim. Completeness and warning
+observation apply only to mandatory supported sources. UI-only service-level or
+pre-execution workflow annotations/platform banners are explicitly excluded;
+their unsupported surface does not alone block review, and no HTML/cookies
+fallback is used. Complete API evidence does not prove no UI-only warning exists.
+All five installation permissions remain required for the supported behavior;
+the exact permission qualification adds no Actions write authority and its
+metadata-only probe does not qualify live evidence endpoint access.
 Live App permission reconciliation and installation upgrade need separate owner
 authority; source changes and local qualification do not authorize either.
 Install separate Apps with the corresponding repository permissions; live App

@@ -41,7 +41,9 @@ worker-writable directories. Never share credentials or state roots across
 consumers. Installed wrappers and sudoers must bind the same reviewed paths.
 
 Reviewer uses its deployment-owned `reviewer-mcp.json`: `repository`,
-`baseBranch`, `reviewCheckName`, `writerActor`, and `githubApp` are required.
+`owner`, `baseBranch`, `reviewCheckName`, `writerActor`, and `githubApp` are required.
+The deployment projects `owner` from the existing consumer owner; Reviewer
+requires that human owner's canonical linked Issue before Step mutation.
 Its App and installation IDs must match its credential environment; the live
 App ID/slug, returned review actor and returned check slug must match the
 configuration. Bind settings, operator-recorded artifact metadata and the separate Reviewer

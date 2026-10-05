@@ -125,6 +125,18 @@ impl Store {
         Ok(())
     }
 
+    pub fn upgrade_step_binding(
+        &self,
+        id: &str,
+        previous: &str,
+        binding: &str,
+    ) -> rusqlite::Result<bool> {
+        Ok(self.db.execute(
+            "UPDATE operations SET step_binding=?3 WHERE operation_id=?1 AND step_binding=?2",
+            (id, previous, binding),
+        )? == 1)
+    }
+
     fn event(&self, id: &str, event: &str) -> rusqlite::Result<()> {
         self.db.execute(
             "INSERT INTO events(operation_id,event_type,created_at) VALUES(?1,?2,unixepoch())",
