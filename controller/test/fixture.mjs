@@ -18,7 +18,7 @@ export function memoryStore() {
   const rows = new Map();
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
-export async function fixture(t, { remediation = false, instruction = '', installed = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
+export async function fixture(t, { remediation = false, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
   mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission,
   profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
@@ -188,7 +188,9 @@ export async function fixture(t, { remediation = false, instruction = '', instal
   // The installed test may invoke this same cleanup while another fixture is
   // collecting progress; it must therefore own a distinct checkout path.
   const removeCheckout = () => rm(cwd, { recursive: true, force: true });
-  if (installed) t.after(removeCheckout);
+  // Failed installed cleanup retains protected synthetic evidence until the
+  // disposable namespace ends; an explicit fixture must not remove it here.
+  if (installed && !retainCheckout) t.after(removeCheckout);
   const { name, email } = remediation ? CONSUMER.remediationIdentity : CONSUMER.writerIdentity;
   const identity = { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email };
   const commit = async (path = 'docs/work.md', text = 'changed\n') => { await writeFile(join(cwd, path), text); await command(cwd, ['add', path]); await command(cwd, ['commit', '-m', 'task progress'], identity); return command(cwd, ['rev-parse', 'HEAD']); };

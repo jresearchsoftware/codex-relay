@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, lstat, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { fixture } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
@@ -69,9 +69,11 @@ test('installed former production runner cannot reserve migrated general-runner 
   assert.equal(f.comments.length, 0);
 });
 
-async function withoutCheckout(f, journal, args) {
-  await f.removeCheckout();
-  await assert.rejects(access(f.cwd), { code: 'ENOENT' });
+async function terminalReplay(f, journal, args, { retainCheckout = false } = {}) {
+  if (!retainCheckout) {
+    await f.removeCheckout();
+    await assert.rejects(access(f.cwd), { code: 'ENOENT' });
+  }
   const forbidden = boundary => () => assert.fail(`terminal replay invoked ${boundary}`);
   return { ...args, admissionResumed: true,
     journal: { get: journal.get, put: forbidden('journal mutation') },
@@ -104,7 +106,7 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     await assert.rejects(access(`${f.cwd}/.codex-sandbox`), { code: 'ENOENT' });
     assert.equal(artifact.model, cliModelId); assert.equal(artifact.effort, effort);
     assert.equal(artifact.identity, remediation ? 'example-remediation' : 'example-writer');
-    assert.deepEqual(await runAttempt(await withoutCheckout(f, journal, args)), result);
+    assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args)), result);
     assert.deepEqual(await journal.get(f.envelope.runId), saved);
     assert.equal(calls, 1); assert.equal(f.pushes(), 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
@@ -204,7 +206,9 @@ for (const [mode, code, state] of [
   ['package-eacces', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
 ]) {
   test(`installed ${mode} preserves cause, correlation, progress and no duplicate`, async t => {
-    const f = await fixture(t, { installed: true, remediation: true, instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+    const retainCheckout = mode === 'missing-import';
+    const f = await fixture(t, { installed: true, remediation: true, retainCheckout,
+      instruction: `fixture-mode=${mode}; Маркер UTF-8` });
     const journal = attemptStore(f);
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const path = mode === 'missing-token' ? '/etc/codex-relay/codex-credentials/access-token'
@@ -229,7 +233,8 @@ for (const [mode, code, state] of [
     const saved = await journal.get(f.envelope.runId); const d = saved.diagnostic;
     assert.equal(d.executionState, state); assert.equal(d.executionId, f.envelope.attemptId);
     assert.equal(d.durable.diagnosticStore.status, 'stored');
-    assert.equal(d.durable.diagnosticStore.executionId, f.envelope.attemptId);
+    assert.equal(d.durable.diagnosticStore.executionId,
+      retainCheckout ? `${f.envelope.attemptId}-cleanup` : f.envelope.attemptId);
     assert.ok(d.lastSuccessfulBoundary); assert.ok(d.failureBoundary);
     if (mode === 'invalid-result') assert.equal(d.primaryCause, 'CODEX_RESULT_MISSING');
     if (mode === 'missing-token') assert.equal(d.primaryCause, 'CODEX_LAUNCHER_ACCESS_TOKEN_UNAVAILABLE');
@@ -251,6 +256,26 @@ for (const [mode, code, state] of [
       assert.equal(saved.progress.head, await f.remoteHead());
       assert.equal(d.durable.publishedHead, saved.progress.head);
     }
+    let retainedCapsule, retainedState, retainedSandbox;
+    if (retainCheckout) {
+      // The shared import fails before both exec and cleanup. Keep the original
+      // launch error and the independent cleanup diagnostic, without teardown
+      // by the unprivileged fixture or release of an occupied failure slot.
+      assert.equal(d.runtime.cleanup, 'failed');
+      assert.equal(d.runtime.retention, 'retained');
+      assert.equal(saved.execution.containment, 'reaped');
+      retainedCapsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId });
+      assert.ok(retainedCapsule);
+      retainedState = await retainedCapsule.read();
+      assert.equal(retainedState.executionId, f.envelope.attemptId);
+      assert.equal(retainedState.cleanup, 'failed');
+      assert.equal(retainedState.retention, 'retained');
+      assert.notEqual(retainedState.released, true);
+      await assert.rejects(retainedCapsule.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
+      retainedSandbox = await lstat(`${f.cwd}/.codex-sandbox`, { bigint: true });
+      assert.ok(retainedSandbox.isDirectory());
+      assert.equal(f.pushes(), 0);
+    }
     const outcomes = () => f.comments.filter(c => c.body.includes('## Codex Outcome'));
     assert.equal(outcomes().length, 1);
     const body = outcomes()[0].body;
@@ -267,8 +292,8 @@ for (const [mode, code, state] of [
     assert.match(body, /Last successful boundary: [a-z][a-z0-9-]*/);
     assert.match(body, /Failure boundary: [a-z][a-z0-9-]*/);
     const pushes = f.pushes();
-    if (domain) assert.deepEqual(await runAttempt(await withoutCheckout(f, journal, args)), initialResult);
-    else await assert.rejects(runAttempt(await withoutCheckout(f, journal, args)), error => {
+    if (domain) assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args)), initialResult);
+    else await assert.rejects(runAttempt(await terminalReplay(f, journal, args, { retainCheckout })), error => {
       assert.equal(error.code, initialError.code);
       assert.equal(error.message, initialError.message);
       assert.deepEqual(error.details.diagnostic, initialError.details.diagnostic);
@@ -281,7 +306,12 @@ for (const [mode, code, state] of [
     assert.deepEqual(await journal.get(f.envelope.runId), saved);
     assert.equal(f.pushes(), pushes); assert.equal(calls, 1);
     assert.equal(outcomes().length, 1);
-    await retireVerifiedFixtureCapsule(f);
+    if (retainCheckout) {
+      assert.deepEqual(await retainedCapsule.read(), retainedState);
+      const after = await lstat(`${f.cwd}/.codex-sandbox`, { bigint: true });
+      assert.equal(after.dev, retainedSandbox.dev); assert.equal(after.ino, retainedSandbox.ino);
+      console.log('INSTALLED_IMPORT_AND_CLEANUP_FAILURE_PRESERVED cleanup=failed;retention=retained;release=denied;replay=once');
+    } else await retireVerifiedFixtureCapsule(f);
   });
 }
 
