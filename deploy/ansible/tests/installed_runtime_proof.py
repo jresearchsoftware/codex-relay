@@ -16,6 +16,7 @@ import importlib.util
 import os
 import platform
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -29,6 +30,21 @@ from test_production_install_current_main import RunnerPackageFixture
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
+
+
+def require_supported_node():
+    """Reject an unusable toolchain before downloading or mutating fixtures."""
+    prerequisite = 'INSTALLED_RUNTIME_NODE_REQUIRED: Node >=22 required'
+    try:
+        result = subprocess.run(['node', '--version'], text=True, capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired, UnicodeError) as error:
+        raise SystemExit(f'{prerequisite}; active node unavailable ({type(error).__name__})') from None
+    version = result.stdout.strip()
+    match = re.fullmatch(r'v(\d+)\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', version)
+    if result.returncode or not match:
+        raise SystemExit(f'{prerequisite}; active node --version failed or returned an invalid version')
+    if int(match.group(1)) < 22:
+        raise SystemExit(f'{prerequisite}; active node reports {version}')
 
 
 def run(args, **kwargs):
@@ -977,13 +993,14 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         print(f'INSTALLED_RUNTIME_COMPOSED_PROOF_PASS runner-package-metadata={"not-repeated" if runtime_only else "passed"}')
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--runtime-only', action='store_true', help='iterate the full runtime lane without repeating separate runner-package metadata tests')
     parser.add_argument('--consumer-only', action='store_true', help='qualify consumer ownership and installed Writer admission without Rust/Codex installation')
     parser.add_argument('--rust-archive', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    require_supported_node()
     if os.geteuid() != 0:
         raise SystemExit('root required for disposable namespace; use sudo on this test only')
     if not args.inside:
@@ -995,3 +1012,7 @@ if __name__ == '__main__':
     if os.getpid() != 1:
         raise SystemExit('private PID namespace required; do not invoke --inside directly')
     proof(args.runtime_only, args.rust_archive, args.consumer_only)
+
+
+if __name__ == '__main__':
+    main()

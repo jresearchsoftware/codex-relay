@@ -237,7 +237,11 @@ for (const [mode, code, state] of [
     if (mode === 'package-eacces') {
       assert.equal(d.primaryCause, 'EACCES');
       assert.equal(saved.execution.child, 'not_started');
-      assert.equal(d.lastSuccessfulBoundary, 'launcher');
+      // Finalization completed after the launcher rejection; the original
+      // failure boundary remains distinct from the latest successful boundary.
+      assert.equal(d.lastSuccessfulBoundary, 'cleanup');
+      assert.equal(d.runtime.cleanup, 'complete');
+      assert.equal(d.runtime.retention, 'none');
       assert.equal(d.failureBoundary, 'launcher');
       assert.equal(d.containment, 'reaped');
       assert.equal(f.pushes(), 0);

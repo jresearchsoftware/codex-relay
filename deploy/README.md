@@ -902,6 +902,10 @@ Docker-service prerequisite. The configured ingress must still be active.
 
 ## Qualification
 
+Use the [supported Node toolchain](../CONTRIBUTING.md#local-validation), Node
+22 or newer. The installed-runtime proof rejects an unavailable or unsupported
+active Node before downloading artifacts or entering its disposable namespaces.
+
 Run product/runtime tests and the deployment suites from the repository root:
 
 ```sh
