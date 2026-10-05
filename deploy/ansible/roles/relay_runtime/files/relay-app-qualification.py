@@ -27,8 +27,12 @@ TOKEN_TTL_MAX_SECONDS = 7200
 PERMISSION_LEVELS = {"none": 0, "read": 1, "write": 2, "admin": 3}
 SAFE_PERMISSION_LEVELS = {"read", "write"}
 EXPECTED_WRITE_PERMISSION_NAMES = {
-    "reviewer": {"pull_requests", "checks"},
+    "reviewer": {"pull_requests", "checks", "issues"},
     "writer": {"contents", "issues", "pull_requests", "workflows"},
+}
+EXPECTED_READ_PERMISSION_NAMES = {
+    "reviewer": {"metadata", "actions"},
+    "writer": {"metadata"},
 }
 
 
@@ -179,7 +183,7 @@ def expected_installation_permissions(config):
     configured_names = set(env_required("RELAY_EXPECTED_WRITE_PERMISSION_NAMES").split(","))
     if configured_names != EXPECTED_WRITE_PERMISSION_NAMES[config["role"]]:
         fail("EXPECTED_WRITE_PERMISSION_NAMES_INVALID")
-    result = {"metadata": "read"}
+    result = {name: "read" for name in EXPECTED_READ_PERMISSION_NAMES[config["role"]]}
     for name in EXPECTED_WRITE_PERMISSION_NAMES[config["role"]]:
         result[name] = "write"
     return result
@@ -202,7 +206,7 @@ def repository_name(repository):
     return repository.split("/", 1)[1]
 
 
-def validate_permissions(actual, required, field):
+def validate_permissions(actual, required, field, *, exact=False):
     actual = parse_permissions(actual, field)
     for name, level in required.items():
         if PERMISSION_LEVELS.get(actual.get(name, "none"), -1) < PERMISSION_LEVELS[level]:
@@ -212,6 +216,8 @@ def validate_permissions(actual, required, field):
             fail(f"{field}_PERMISSION_SCOPE_TOO_BROAD")
         if level == "admin":
             fail(f"{field}_ADMIN_PERMISSION_FORBIDDEN")
+        if exact and (name not in required or level != required[name]):
+            fail(f"{field}_PERMISSION_SCOPE_TOO_BROAD")
     return actual
 
 
@@ -239,7 +245,10 @@ def qualify(config):
         "APP_INSTALLATION",
     )
     installation_permissions = expected_installation_permissions(config)
-    validate_permissions(installation.get("permissions"), installation_permissions, "APP_INSTALLATION")
+    validate_permissions(
+        installation.get("permissions"), installation_permissions, "APP_INSTALLATION",
+        exact=config["role"] == "reviewer",
+    )
 
     repository_installation = validate_installation(
         request_json("GET", f"/repos/{config['repository']}/installation", app_jwt),
@@ -264,7 +273,10 @@ def qualify(config):
     if not isinstance(token, str) or not token:
         fail("TOKEN_MISSING")
     ttl = parse_expiry(token_response.get("expires_at"))
-    effective = validate_permissions(token_response.get("permissions"), requested_token_permissions, "TOKEN")
+    effective = validate_permissions(
+        token_response.get("permissions"), requested_token_permissions, "TOKEN",
+        exact=config["role"] == "reviewer",
+    )
     repository = require_object(
         request_json("GET", f"/repos/{config['repository']}", token),
         "REPOSITORY_PROBE",

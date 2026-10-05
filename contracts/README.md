@@ -86,68 +86,117 @@ boundary; local tests do not qualify its deployment adapters.
 ## Owner Step metadata procedure
 
 Steps decompose progress toward the Task's authorized goal and boundaries as
-work evolves; the Task does not predefine their number, numbering, or scope.
-Step completion does not imply Task completion, and one Codex thread may span
-successive Steps. Historical Task descriptions do not govern future Step
-decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename).
-
-The ChatGPT/owner orchestration that authors and publishes the review also
-performs these small native metadata operations. They are not additional human
-launch actions and do not grant the Reviewer App label permissions.
+work evolves; completing a Step does not complete the Task. One Codex thread
+may span successive Steps. Historical Task descriptions do not govern future
+Step decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename).
+The Issue body remains the current Task contract; the native review body is the
+sole executable CR authority, with the canonical Issue linked for Task identity.
 Implementation branch, commit and PR flow remains Codex-owned under
-[the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff);
-orchestration creates those implementation artifacts only at the owner's
-explicit request. These metadata operations do not transfer implementation
-ownership or replace the Issue body's current Task contract with comments.
+[the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
 
-Task and CR producers keep exactly one explicit `Issue closure policy` field in
-the linked canonical Issue: `keep-open`, or `close-authorized` only with owner
-authority. Preserve the current owner decision when updating the Issue for a CR;
-do not infer closure from a successful Step, an approval or a CR completion token.
-If closure metadata needs reconciliation, record the owner's decision in the
-Issue body rather than adding a competing CR field. The Task template supplies
-explicit `keep-open`; missing, malformed or conflicting metadata still selects
-safe `keep-open` with a visible warning.
+Task producers and updates preserve exactly one explicit `Issue closure policy`
+field in the canonical Issue: `keep-open`, or `close-authorized` only with owner
+authority. Approval, Step completion and CR outcome tokens do not authorize
+closure. Missing, malformed or conflicting metadata selects `keep-open` with
+a visible warning; record owner reconciliation in the Issue body.
 
-1. Read the linked canonical Issue and current PR. Require exactly one valid
-   `step-N` on each, with equal N. For a **new** executable Change Request,
-   put N+1 in structured `change_request.step` and its launch thread title.
-   Preserve reviewed-head, findings, profile, validation and boundary authority.
-2. Publish through the reserved Reviewer tool. A failed/uncertain publication
-   needs its existing publication-repair procedure. Do not change Step on that
-   basis or author another CR to repair transport. `APPROVE` changes no Step.
-   Immediately before a new native CR publication, Reviewer verifies its Step
-   is the current PR label plus one using its existing PR read. Its existing
-   duplicate/republication path preserves the already-published CR's Step.
-3. After successful native publication, use the ordinary owner-authenticated
-   GitHub connection to re-read that exact review, the current decisive review,
-   head and linked Issue. Ensure repository label `step-(N+1)` exists; replace
-   the one Step label on Issue and PR, preserving unrelated labels. Update the
-   PR's existing bounded `Task <Issue> · Step <N+1> · <CR purpose>` title so it
-   is available in the next label event payload. Re-read both targets and head.
-4. A partial failure leaves visible inconsistent metadata and blocks new launch.
-   Resume synchronization of the **same native review ID** and its already
-   authored Step; do not increment again. Only N or N+1 is eligible for this
-   transport repair. Missing/malformed/multiple labels or changed review/head
-   need owner reconciliation, not guesses. Apply a ready label only after sync.
+### Executable CR publication and synchronization
 
-[`step-synchronization.mjs`](src/step-synchronization.mjs) implements these reads
-and metadata writes for an ordinary authenticated owner client. It has no
-Reviewer publication, launch, merge, deployment or Issue-close capability. It
-verifies `/user` is the configured owner (`User`), rejecting Writer/Reviewer App identities.
-ChatGPT may perform the same native operations directly. An optional Linux
-adapter reads a bounded JSON request on stdin with `operation: "prepare"` and
-`pullRequest`, or `operation: "synchronize"`, `pullRequest` and the published
-`reviewId`; it uses the caller's ordinary owner `GITHUB_TOKEN`:
+1. For a **new** executable CR, read the current linked Issue and PR, requiring
+   exactly one valid `step-N` on each, with equal N. Put N+1 in structured
+   `change_request.step` and its launch thread title. Preserve exact reviewed
+   head, findings, profile, validation and boundary authority. The optional owner
+   `prepare` helper performs these authoring reads without mutating metadata.
+2. Publish through the reserved Reviewer tool. The Reviewer validates the exact
+   repository, linked Issue, PR and reviewed head before native publication.
+   After verified publication, the same Reviewer operation ensures `step-(N+1)`
+   exists, replaces each target's Step label while preserving unrelated labels,
+   updates the bounded `Task <Issue> · Step <N+1> · <CR ID> · <CR purpose>` PR title and
+   re-reads the targets. Successful `REQUEST_CHANGES` includes verified metadata
+   synchronization; ordinary owner orchestration no longer performs post-CR writes.
+3. A failed or uncertain review publication uses the existing duplicate/recovery
+   path. Partial synchronization also resumes that **same native review ID** and
+   authored Step, allowing only N or N+1, without another review or increment.
+   Changed head/review/binding or malformed/multiple labels fails closed. Apply
+   the ready label only after synchronization succeeds. `APPROVE` changes no Step.
+
+The Reviewer App now needs `actions:read` for admission/active-work reads and
+`issues:write` for bounded Step label synchronization, alongside existing
+`metadata:read`, `pull_requests:write` and `checks:write`. Tokens remain restricted
+to the configured repository. These source permissions do not approve a live
+App permission update or deployment; an existing consumer requires separately
+authorized permission reconciliation and upgrade. Native CR versions `1.0`
+(readable) and `2.0` (published) remain unchanged.
+
+### Explicit owner new-phase preparation
+
+For an explicitly owner-authorized **new implementation phase** of the same Task,
+including a reopened or split continuation, deterministic preparation reads the
+canonical Issue's current Step N and advances precisely to N+1. An existing PR
+is optional; when supplied it must link that exact Issue in the configured
+repository and keep its branch, base and head binding. Preserve unrelated labels
+and update only the bounded canonical Task/Issue/Step PR title. No phase is
+inferred from history, prose, prior Outcomes or a largest-ever Step.
+
+[`step-synchronization.mjs`](src/step-synchronization.mjs) verifies `/user` is the
+configured human owner (`User`), rejecting Writer/Reviewer App identities. Its
+bounded request accepts only the stated operation and fields:
+
+- `{operation:"prepare",pullRequest}`: read-only N+1 authoring assistance for a new CR.
+- `{operation:"advance-phase",issueNumber,currentStep,newPhaseAuthorized:true}`:
+  explicit owner new-phase preparation. Optional `pullRequest` requires a
+  single-line NFC `purpose` of 1–512 UTF-8 bytes; the helper constructs and bounds
+  the title instead of accepting arbitrary titles or other metadata.
+- `{operation:"keep-step",issueNumber,currentStep,pullRequest?}`: explicit read-only
+  bypass for execution retries and continuation within the same phase. Never call
+  `advance-phase` for those retries.
+- `{operation:"recover-legacy-review",pullRequest,reviewId,legacyPublicationRecoveryAuthorized:true}`:
+  exceptional, explicitly owner-authorized migration reconciliation only, as
+  described below; it does not replace normal Reviewer post-CR synchronization.
+
+`currentStep` binds the exact N to N+1 operation. A partial native label/title
+failure can resume that same request with only N/N+1 labels; repeating it cannot
+advance to N+2. Re-read verification exposes partial failures before launch.
+Phase requests cannot supply labels, body changes, arbitrary metadata or review
+IDs. The separate legacy recovery request accepts only the exact review ID and
+explicit migration authorization, never a new CR or arbitrary metadata. The
+former owner `synchronize` operation is retired; Reviewer publication is the sole normal post-CR metadata writer.
+
+The optional Linux adapter uses the caller's ordinary owner `GITHUB_TOKEN`:
 
 ```sh
 node contracts/src/step-synchronization.mjs < metadata-request.json
 ```
 
-This is a metadata helper, not a new workflow, Step registry or execution
-transport. GitHub has no transaction across an Issue and PR; the final read and
-fail-closed launch checks expose partial updates. Serialize owner metadata
-changes; do not concurrently replace labels from multiple owner clients.
+This helper grants no launch, review publication, merge, deployment or Issue-close
+capability. Step labels alone never launch work. GitHub has no transaction across
+an Issue and PR; serialize metadata operations and retain fail-closed admission
+until labels, title and applicable authority agree.
+
+### Legacy publication migration recovery
+
+New Reviewer operations retain the exact Issue/PR Step binding before native
+publication. A historical published SQLite record may lack that binding. The
+Reviewer may accept such a record only when both labels and the canonical
+explicit-CR-ID title are already synchronized; it never invents an old anchor
+or silently mutates a newly linked Issue. Otherwise it returns
+`LEGACY_STEP_BINDING_REQUIRED` and preserves the original native review.
+
+After this error, the owner can explicitly authorize the bounded
+`recover-legacy-review` helper operation. It verifies the configured `/user`
+human owner, exact current decisive Reviewer `CHANGES_REQUESTED` ID, repository,
+PR, canonical linked Issue and unchanged reviewed head. Step comes solely from
+that same executable review body. Only its N/N+1 metadata is eligible; unrelated
+labels and current Task/CR authority are preserved. The helper re-reads binding,
+review, labels and canonical title after updates. Repeating this migration repair
+cannot author a review, infer a Step, advance again or launch work.
+
+Then replay the **original Reviewer payload** through its existing
+publication-recovery path, retaining the same native review ID and Step.
+Changed authority, missing/malformed/multiple labels or ambiguous publication
+needs owner reconciliation. Do not invoke this exception for current Reviewer
+operations or normal post-CR synchronization; the former general `synchronize`
+owner operation remains retired.
 
 Remediation follows [progress-bounded execution](../docs/execution-policy.md)
 inside the admitted worker. Contract counts and Step metadata bind authority;

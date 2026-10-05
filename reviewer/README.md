@@ -1,6 +1,6 @@
 # Reviewer MCP service
 
-This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes exactly `check_pr_review_target` and `submit_pr_review`.
+This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review` and `read_pr_review_evidence`.
 
 It reads the admitted bind, repository, base branch, check name and App settings
 from `reviewer-mcp.json`. It publishes verdicts/findings authored by an external
@@ -35,8 +35,8 @@ owns TLS termination; the service also verifies the forwarded client certificate
 Do not bind this binary publicly.
 
 The configuration's top-level `repository` is the sole repository authority for
-the instance. Both tool schemas constrain the caller's required repository to
-that value, and both tools compare it exactly before contacting GitHub. There
+the instance. All tool schemas constrain the caller's required repository to
+that value, and all tools compare it exactly before contacting GitHub. There
 is no repository default or separate CLI/environment override. Configuration
 admission requires ASCII `owner/repository`: owner length 1–39 with letters,
 digits and single internal hyphens; repository length 1–100 with letters,
@@ -49,6 +49,39 @@ repository name is the sole entry in GitHub's `repositories` restriction, and
 the same `owner/repository` supplies subsequent GitHub API paths.
 
 All GitHub REST requests use the shared stable `User-Agent: codex-relay-reviewer/0.1.0`.
+
+`read_pr_review_evidence` accepts only `repository`, `pr_number` and
+`expected_head_sha`. It works with publication disabled and makes no repository
+mutation or model call. Its advertised output schema distinguishes `available`,
+`absent`, `unavailable`, `permission_denied` and `truncated` for each source.
+The reader verifies the PR binding before and after collection, returns native
+check/suite/run identifiers and URLs, and projects exact-head Writer Outcomes
+from the canonical linked Issue. An exact-head Writer Outcome's native
+`Attempt: run-N` binds a relevant routing execution and its check-suite
+annotations even when that workflow ran on the trusted base revision. Evidence
+preserves the actual execution head separately from the reviewed candidate head.
+Only allowlisted, bounded fields are returned;
+raw logs, artifacts, annotation `raw_details` and protected diagnostics are
+excluded. Text is bounded and known credential/protected-content markers are
+redacted. Redaction is not proof that arbitrary private text is public.
+
+Acquisition is limited to 256 KiB per response, 2 MiB aggregate transfer,
+40 requests including authentication, three pages of 25 items per source,
+250 annotations overall, five seconds per request and 30 seconds per read.
+Every budget or source failure remains visible. No response URL, redirect,
+caller-selected path or pagination cursor is followed.
+
+This is partial primary-surface coverage. The documented
+[REST workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
+and [GraphQL Checks API](https://docs.github.com/en/graphql/reference/checks)
+do not expose run-level/platform-warning banners. The response always marks
+that primary surface `unavailable`, with exact run UI links, and keeps
+`required_surfaces_complete=false` and `warning_observation=unknown` even
+when all inspected check annotations are empty. The supported
+[check-run annotation API](https://docs.github.com/en/rest/checks/runs#list-check-run-annotations)
+does not establish absence of platform warnings. Task 56 capability A therefore
+still needs an owner disposition of this API gap; this reader alone cannot
+replace all primary-warning inspection required for independent review.
 
 `submit_pr_review` has two action-specific inputs. `APPROVE` needs only the
 target (`repository`, `pr_number`, `expected_head_sha`), action and a bounded
@@ -71,11 +104,34 @@ is required or recorded as governance metadata.
 Reviewer validates the input before contacting GitHub, then renders a canonical
 human-readable CR plus the version `2.0` execution data inside the same native
 review. It checks the live PR binding and exact head, and verifies the returned
-CR body and native review state before reporting publication success. Duplicate
-keys, unknown fields, malformed identifiers, duplicate finding IDs/validation,
+CR body and native review state. For a new executable CR, synchronized Issue/PR
+Step N supplies N+1. After native publication, the same Reviewer operation
+ensures the Step label, replaces both targets' Step labels while preserving
+unrelated labels, updates the bounded canonical Task/Issue/Step/CR-ID PR title and
+re-reads the binding, labels and title before reporting success. Partial failures
+resume the same native review ID and authored Step through existing publication
+recovery; approval changes no Step. Ordinary owner post-CR synchronization is
+retired. Owner new-phase choice remains separate from this bounded projection.
+A historical published SQLite record without the new pre-publication Step anchor
+may continue only when labels and canonical title are already fully synchronized.
+Otherwise `LEGACY_STEP_BINDING_REQUIRED` preserves the existing review for
+[explicit bounded owner migration recovery](../contracts/README.md#legacy-publication-migration-recovery),
+then replay of the original payload and native review ID. That exception grants
+no new review, Step, execution or normal owner post-CR writer.
+Duplicate keys, unknown fields, malformed identifiers, duplicate finding IDs/validation,
 invalid tokens/Step, unsafe text and payload/rendering overflow fail closed.
 Operation identity binds the rendered body and all findings; repeated calls
 retain existing duplicate suppression and uncertain-publication recovery.
+
+Installation tokens request only `metadata:read`, `actions:read`, `issues:write`,
+`pull_requests:write` and `checks:write` in the configured repository. The added
+Actions read serves evidence acquisition; Issue write serves bounded Step
+synchronization. The evidence reader requests a separate token with read-only
+`metadata`, `pull_requests`, `checks`, `actions` and `issues` permissions. Live App permission reconciliation and deployment require
+separate owner authorization; source implementation does not grant those actions.
+The native review body remains sole executable CR authority, linked to the
+canonical Issue for Task identity. Native `1.0` read and `2.0` publication versions
+remain unchanged.
 
 See the [producer/consumer contract and fixtures](../contracts/README.md)
 for the semantic example, compatibility boundary and local checks. Cargo tests

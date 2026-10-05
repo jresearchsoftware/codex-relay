@@ -18,6 +18,73 @@ fn assert_no_publication(state: &MockState) {
 }
 
 #[tokio::test]
+async fn evidence_and_projection_never_accept_caller_selected_metadata_or_sources() {
+    let state = MockState::default();
+    let (http, url) = client_with_state(false, None, state.clone()).await;
+    for name in ["read_pr_review_evidence", "submit_pr_review"] {
+        for (key, value) in [
+            ("issue_number", json!(99)),
+            ("labels", json!(["step-99"])),
+            ("title", json!("Caller-selected title")),
+            ("api_path", json!("/issues/99")),
+            ("review_id", json!(9)),
+        ] {
+            let mut args = if name == "submit_pr_review" {
+                cr_fixture()
+            } else {
+                json!({"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD})
+            };
+            args[key] = value;
+            let result = rpc(
+                &http,
+                &url,
+                1,
+                "tools/call",
+                json!({"name":name,"arguments":args}),
+            )
+            .await;
+            assert_eq!(result["result"]["content"][0]["text"], "INVALID_PAYLOAD");
+        }
+        let mut wrong = if name == "submit_pr_review" {
+            cr_fixture()
+        } else {
+            json!({"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD})
+        };
+        wrong["repository"] = json!("foreign/repository");
+        let result = rpc(
+            &http,
+            &url,
+            1,
+            "tools/call",
+            json!({"name":name,"arguments":wrong}),
+        )
+        .await;
+        assert_eq!(
+            result["result"]["content"][0]["text"],
+            "REPOSITORY_NOT_ALLOWED"
+        );
+    }
+    assert!(state.requests.lock().unwrap().is_empty());
+    let result = rpc(
+        &http,
+        &url,
+        1,
+        "tools/call",
+        json!({"name":"read_pr_review_evidence","arguments":{
+        "repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}}),
+    )
+    .await;
+    assert_eq!(result["result"]["content"][0]["text"], "EVIDENCE_OBSERVED");
+    assert_no_publication(&state);
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|r| r.starts_with("PUT ")));
+}
+
+#[tokio::test]
 async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions() {
     let state = MockState::default();
     let (http, url) = client_with_state(true, None, state.clone()).await;
@@ -34,7 +101,7 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
         2
     );
     let schemas = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(schemas.len(), 2);
+    assert_eq!(schemas.len(), 3);
     let check_schema = &schemas[0]["inputSchema"];
     let submit_schema = &schemas[1]["inputSchema"];
     assert_eq!(schemas[0]["name"], "check_pr_review_target");
@@ -70,6 +137,8 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
         baseline_cr["properties"][field]["default"] =
             current_cr["properties"][field]["default"].clone();
     }
+    baseline_cr["properties"]["step"]["description"] =
+        current_cr["properties"]["step"]["description"].clone();
     for schema in [&mut current_cr, &mut baseline_cr] {
         for field in ["step", "remediation_thread_title"] {
             schema["properties"][field]
@@ -444,7 +513,7 @@ async fn managed_config_instances_bind_tools_tokens_and_publications_to_their_ow
     for (repository, token_repository, state, http, url) in &instances {
         let listed = rpc(http, url, 1, "tools/list", json!({})).await;
         let schemas = listed["result"]["tools"].as_array().unwrap();
-        assert_eq!(schemas.len(), 2);
+        assert_eq!(schemas.len(), 3);
         for tool in schemas {
             assert_eq!(
                 tool["inputSchema"]["properties"]["repository"]["const"],
@@ -522,7 +591,7 @@ async fn managed_config_instances_bind_tools_tokens_and_publications_to_their_ow
                     &json!({
                         "repositories": [token_repository],
                         "permissions": {
-                            "metadata": "read", "pull_requests": "write", "checks": "write"
+                            "metadata": "read", "pull_requests": "write", "checks": "write", "issues": "write", "actions": "read"
                         }
                     }),
                     "{repository}: {name} installation-token scope"

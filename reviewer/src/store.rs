@@ -39,6 +39,7 @@ impl Store {
             "ALTER TABLE operations ADD COLUMN finding_digest TEXT NOT NULL DEFAULT ''",
             [],
         );
+        let _ = db.execute("ALTER TABLE operations ADD COLUMN step_binding TEXT", []);
         Ok(Self { db })
     }
 
@@ -103,6 +104,25 @@ impl Store {
             [id],
             |r| Ok(Operation { status: r.get(0)?, review_id: r.get(1)?, review_url: r.get(2)?, actor_login: r.get(3)?, check_id: r.get(4)?, check_url: r.get(5)? }),
         ).optional()
+    }
+
+    pub fn step_binding(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        self.db
+            .query_row(
+                "SELECT step_binding FROM operations WHERE operation_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map(Option::flatten)
+    }
+
+    pub fn bind_step(&self, id: &str, binding: &str) -> rusqlite::Result<()> {
+        self.db.execute(
+            "UPDATE operations SET step_binding=?2 WHERE operation_id=?1 AND step_binding IS NULL",
+            (id, binding),
+        )?;
+        Ok(())
     }
 
     fn event(&self, id: &str, event: &str) -> rusqlite::Result<()> {

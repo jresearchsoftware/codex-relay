@@ -22,7 +22,7 @@ state, Reviewer build outputs and activation in separate protected paths.
 | Consumer's `paths.launcher` | Dispatcher via `/usr/bin/sudo -n -u <runtimeUser>` | Fixed executable; translates the launcher ABI below to its governed Codex installation; worker has no Writer/Reviewer authority |
 | `controller/src/diagnostic-store.mjs` | Fixed `paths.diagnosticsStore` wrapper, protected diagnostics identity | Stdin bounded diagnostic JSON (16 MiB); stdout store receipt, stderr failure JSON; `--check-runtime` probes loading only |
 | `controller/src/recover-attempt-publication.mjs` | Separately owner-authorized recovery workflow/operator | No argv; stdin `{operation:"inspect",runId,attemptId}` or `{runId,attemptId,authorizationId}`; stdout result/stderr failure; never starts Codex |
-| `contracts/src/step-synchronization.mjs` | Ordinary authenticated owner client | Stdin `{operation:"prepare",pullRequest}` or `{operation:"synchronize",pullRequest,reviewId}`; stdout JSON, stderr bounded failure; label/title metadata only |
+| `contracts/src/step-synchronization.mjs` | Ordinary authenticated owner client | Stdin `{operation:"prepare",pullRequest}`, `{operation:"advance-phase",issueNumber,currentStep,newPhaseAuthorized:true,pullRequest?,purpose?}`, `{operation:"keep-step",issueNumber,currentStep,pullRequest?}` or explicitly authorized legacy `{operation:"recover-legacy-review",pullRequest,reviewId,legacyPublicationRecoveryAuthorized:true}`; strict bounded fields, stdout JSON/stderr bounded failure; owner new-phase preparation or bounded legacy migration reconciliation only |
 | `reviewer-mcp-http` (`reviewer/src/main.rs`) | Dedicated Reviewer service identity behind trusted mTLS terminator | `--config /absolute/reviewer-mcp.json` (or `REVIEWER_MCP_CONFIG`); HTTP JSON-RPC on `/mcp`; startup logs expose effective publication mode |
 
 `runtime/src/controller.mjs` is an Issue execution library entry, not another
@@ -56,8 +56,13 @@ The routing entrypoint reads `GITHUB_EVENT_PATH`, `GITHUB_EVENT_NAME`,
 `GITHUB_REF`, `GITHUB_RUN_ID`, `GITHUB_TOKEN`, and `RELAY_CONSUMER_CONFIG`.
 The token is a workflow read token (contents/Issues/PR/Actions reads as needed),
 passed only to trusted authority/Git reads; it is not a worker token. Recovery
-also uses `GITHUB_TOKEN` for workflow reads. Step synchronization instead needs
-the configured human owner's ordinary token, including Issue/PR metadata writes.
+also uses `GITHUB_TOKEN` for workflow reads. Explicit owner new-phase preparation
+needs the configured human owner's ordinary token, including Issue/PR metadata
+writes; normal post-CR synchronization uses only the Reviewer App. A historical
+published record lacking a Step anchor can return `LEGACY_STEP_BINDING_REQUIRED`;
+only that migration case permits explicit owner `recover-legacy-review`, followed
+by replay of the exact original Reviewer payload and native review ID. See the
+[bounded migration procedure](../contracts/README.md#legacy-publication-migration-recovery).
 
 Dispatch and Writer adapters start helpers with only `PATH=/usr/bin:/bin`,
 `LANG=C`, `LC_ALL=C`; each fixed wrapper must recreate `RELAY_CONSUMER_CONFIG`
@@ -189,12 +194,21 @@ that the tests themselves remained trustworthy.
 
 Writer installation tokens request `metadata:read`, `contents:write`,
 `issues:write`, `pull_requests:write`, `workflows:write`, restricted to the
-configured repository. Reviewer tokens request `metadata:read`,
-`pull_requests:write`, `checks:write`, also restricted to that repository.
+configured repository. Reviewer tokens request `metadata:read`, `actions:read`,
+`issues:write`, `pull_requests:write`, `checks:write`, also restricted to that
+repository. Actions read serves bounded evidence acquisition; Issues write serves
+same-review post-CR Step synchronization. These permissions grant no worker,
+Writer or owner launch role. The evidence tool requests only read permissions
+for metadata, Issues, PRs, checks and Actions; no repository mutation is reachable
+through it. Its [bounded schema and primary-surface limitation](../reviewer/README.md)
+preserve unavailable and permission-denied evidence instead of an absence claim.
+Live App permission reconciliation and installation upgrade need separate owner
+authority; source changes and local qualification do not authorize either.
 Install separate Apps with the corresponding repository permissions; live App
 slug/ID, returned actor/check identity and configured installation IDs are bound.
-The workflow read token supplies Actions reads separately; do not broaden the
-worker's permissions to satisfy trusted API reads.
+The Writer's workflow read token supplies its Actions reads separately; the
+Reviewer uses its own restricted installation token. Do not broaden worker
+permissions to satisfy trusted API reads.
 
 ## Public dogfood trust
 
@@ -331,8 +345,9 @@ where these marker classes are insufficient; scan failures never print key bytes
    service validates and publishes `REQUEST_CHANGES` at B, with the readable
    findings plus canonical `reviewer-executable-cr` JSON, and a SHA-bound check.
    Its SQLite record supports duplicate/recovery handling.
-5. The ordinary owner client synchronizes Issue/PR to the CR's `step-2`. A fresh
-   owner launch `Auto remediation · Task 24 · Step 2 · PR #25` admits B exactly.
+5. The same Reviewer publication operation synchronizes Issue/PR and bounded
+   PR title to the CR's `step-2`, re-reading and verifying the projection. Partial
+   repair retains that native review ID and Step. A fresh owner launch `Auto remediation · Task 24 · Step 2 · PR #25` admits B exactly.
    The CR names declared checks, not command strings. Changed head, owner,
    repository, undeclared names or mismatched Step blocks admission.
 6. Remediation produces C. Exact-head validation and external review repeat for

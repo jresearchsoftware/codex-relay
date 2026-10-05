@@ -38,7 +38,7 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 9007199254740991,
-        "description": "For a new executable CR, current synchronized Issue/PR step-N plus one. After native publication the owner synchronizes both labels. Republication of the same CR preserves Step; never scan history."
+        "description": "For a new executable CR, current synchronized Issue/PR step-N plus one. Reviewer projects both labels and the bounded PR title after native publication. Recovery of the same review preserves Step; never scan history."
       },
       "codex_model": {
         "type": "string",

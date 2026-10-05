@@ -81,13 +81,91 @@ class AppQualificationTests(unittest.TestCase):
         self.assertIn("RELAY_EXPECTED_WRITE_PERMISSION_NAMES='contents,issues,pull_requests,workflows'", writer)
         self.assertNotIn("RELAY_EXPECTED_WRITE_PERMISSION_NAMES='contents,issues,pull_requests'", writer)
 
-    def test_reviewer_contract_remains_unchanged(self):
+    def reviewer_permissions(self):
+        with mock.patch.dict(os.environ, {"RELAY_EXPECTED_WRITE_PERMISSION_NAMES": "pull_requests,checks,issues"}, clear=False):
+            return self.helper.expected_installation_permissions({"role": "reviewer"})
+
+    def test_reviewer_contract_requires_actions_read_and_issues_write(self):
         self.assertEqual(
             self.helper.EXPECTED_WRITE_PERMISSION_NAMES["reviewer"],
-            {"pull_requests", "checks"},
+            {"pull_requests", "checks", "issues"},
+        )
+        self.assertEqual(
+            self.helper.EXPECTED_READ_PERMISSION_NAMES["reviewer"],
+            {"metadata", "actions"},
         )
         reviewer = (ROOT / "roles" / "relay_runtime" / "templates" / "relay-reviewer-app-qualification.j2").read_text(encoding="utf-8")
-        self.assertIn("RELAY_EXPECTED_WRITE_PERMISSION_NAMES='pull_requests,checks'", reviewer)
+        self.assertIn("RELAY_EXPECTED_WRITE_PERMISSION_NAMES='pull_requests,checks,issues'", reviewer)
+        required = self.reviewer_permissions()
+        self.assertEqual(required, {
+            "metadata": "read", "actions": "read", "pull_requests": "write",
+            "checks": "write", "issues": "write",
+        })
+        self.assertEqual(self.helper.validate_permissions(required, required, "APP_INSTALLATION", exact=True), required)
+
+    def test_reviewer_missing_or_weaker_permission_fails_closed(self):
+        required = self.reviewer_permissions()
+        for name, level in required.items():
+            with self.subTest(name=name, case="missing"):
+                actual = {key: value for key, value in required.items() if key != name}
+                with self.assertRaisesRegex(self.helper.QualificationFailure, "PERMISSION_INSUFFICIENT"):
+                    self.helper.validate_permissions(actual, required, "APP_INSTALLATION", exact=True)
+            with self.subTest(name=name, case="weaker"):
+                actual = {**required, name: "read" if level == "write" else "none"}
+                with self.assertRaisesRegex(self.helper.QualificationFailure, "PERMISSION_INSUFFICIENT"):
+                    self.helper.validate_permissions(actual, required, "APP_INSTALLATION", exact=True)
+
+    def test_reviewer_unexpected_or_stronger_permission_fails_closed(self):
+        required = self.reviewer_permissions()
+        for name in ("contents", "workflows", "administration", "repository_projects"):
+            for level in ("none", "read", "write", "admin"):
+                with self.subTest(name=name, level=level):
+                    with self.assertRaises(self.helper.QualificationFailure):
+                        self.helper.validate_permissions({**required, name: level}, required, "APP_INSTALLATION", exact=True)
+        for name in ("metadata", "actions"):
+            with self.subTest(name=name, case="stronger"):
+                with self.assertRaisesRegex(self.helper.QualificationFailure, "PERMISSION_SCOPE_TOO_BROAD"):
+                    self.helper.validate_permissions({**required, name: "write"}, required, "APP_INSTALLATION", exact=True)
+
+    def test_writer_additional_read_permission_remains_accepted(self):
+        with mock.patch.dict(os.environ, {"RELAY_EXPECTED_WRITE_PERMISSION_NAMES": "contents,issues,pull_requests,workflows"}, clear=False):
+            required = self.helper.expected_installation_permissions({"role": "writer"})
+        actual = {**required, "actions": "read"}
+        self.assertEqual(self.helper.validate_permissions(actual, required, "APP_INSTALLATION"), actual)
+
+    def test_reviewer_qualification_checks_exact_installation_and_probe_permissions(self):
+        required = self.reviewer_permissions()
+        config = {"role": "reviewer", "app_id": "1001", "slug": "expected",
+                  "installation_id": "2001", "repository": "example/relay-consumer",
+                  "expected_actor": "expected[bot]"}
+        installation = {"id": 2001, "app_id": 1001, "app_slug": "expected",
+                        "repository_selection": "selected", "permissions": required}
+        for unexpected_at in (None, "installation", "token"):
+            with self.subTest(unexpected_at=unexpected_at):
+                responses = [
+                    {"id": 1001, "slug": "expected"},
+                    {**installation, "permissions": {**required, "contents": "read"}} if unexpected_at == "installation" else installation,
+                    installation,
+                    {"token": "synthetic-token", "expires_at": "synthetic-expiry",
+                     "permissions": {"metadata": "read", "actions": "read"} if unexpected_at == "token" else {"metadata": "read"}},
+                    {"full_name": config["repository"]},
+                ]
+                with mock.patch.dict(os.environ, {
+                    "RELAY_EXPECTED_WRITE_PERMISSION_NAMES": "pull_requests,checks,issues",
+                    "RELAY_TOKEN_PERMISSIONS": "metadata:read",
+                }, clear=False), mock.patch.object(self.helper, "create_app_jwt", return_value="synthetic-jwt"), \
+                        mock.patch.object(self.helper, "parse_expiry", return_value=3600), \
+                        mock.patch.object(self.helper, "request_json", side_effect=responses) as request:
+                    if unexpected_at:
+                        with self.assertRaisesRegex(self.helper.QualificationFailure, "PERMISSION_SCOPE_TOO_BROAD"):
+                            self.helper.qualify(config)
+                    else:
+                        result = self.helper.qualify(config)
+                        self.assertEqual(result["token_permissions"], "metadata:read")
+                        self.assertEqual(request.call_args_list[3].kwargs["body"], {
+                            "repositories": ["relay-consumer"], "permissions": {"metadata": "read"},
+                        })
+                        self.assertEqual(request.call_args_list[-1].args[:2], ("GET", "/repos/example/relay-consumer"))
 
     def test_writer_missing_workflow_permission_fails_closed(self):
         with mock.patch.dict(os.environ, {"RELAY_EXPECTED_WRITE_PERMISSION_NAMES": "contents,issues,pull_requests,workflows"}, clear=False):

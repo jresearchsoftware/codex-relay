@@ -70,9 +70,11 @@ Use these complete titles, with a concise purpose:
 Preserve an exact title supplied by live task/CR authority, including an
 explicit phase qualifier. Step is a positive, explicitly resolved value.
 For Relay admission the canonical Issue has exactly one `step-S` label;
-the existing PR must agree. Fresh work starts at `step-1`. The owner chooses
-continuation Steps; a new executable CR advances synchronized S to S+1 through
-the [owner metadata procedure](contracts/README.md#owner-step-metadata-procedure).
+the existing PR must agree. Fresh work starts at `step-1`. An explicitly
+owner-authorized new implementation phase advances current S to S+1 through the
+[owner metadata procedure](contracts/README.md#owner-step-metadata-procedure).
+A new executable CR uses synchronized S+1, and the Reviewer publication operation
+synchronizes the Issue/PR labels and bounded PR title after native publication.
 Retrying execution or repairing publication of that same CR keeps its Step;
 approval does not increment it. Never infer Step from prose, old Outcomes,
 commits, runs or the largest historical Step. Missing or conflicting admission

@@ -10,8 +10,9 @@ on the configured base branch remains an optional fallback with `task`, `step`, 
 `pull_request`; those inputs must match current metadata and CR authority.
 
 The canonical Issue retains exactly one `step-N` label throughout its lifetime.
-Fresh work uses `step-1`; the owner explicitly chooses a reopened continuation's
-positive Step. Writer copies the Issue Step to
+Fresh work uses `step-1`; explicit owner new-phase preparation advances current
+N to N+1 for a reopened or split continuation. Same-phase retry explicitly keeps
+Step. Writer copies the Issue Step to
 its created PR, without incrementing or removing the Issue label. Step alone
 never launches work and grants no authority. Missing, multiple, malformed or
 mismatched labels block new admission. The `step` label namespace is reserved.
@@ -38,14 +39,21 @@ creation, and after completion of any preceding admitted run for this task.
 Stale commands and prewritten retries fail closed; no retry queue is created.
 
 A new executable `REQUEST_CHANGES` carries N+1 from the current synchronized
-Issue/PR labels. After successful Reviewer-native publication, ordinary owner
-orchestration synchronizes both labels and the existing PR Task/Step title via
-the [metadata procedure](../contracts/README.md#owner-step-metadata-procedure).
-The Reviewer App owns verdict publication only. Repeating the same authorized
-CR publication or metadata repair keeps its Step. Execution retries keep Step;
+Issue/PR labels. After successful native publication, the same Reviewer operation
+synchronizes both labels and the existing bounded PR Task/Step/CR-ID title via the
+[metadata procedure](../contracts/README.md#owner-step-metadata-procedure).
+The Reviewer App owns verdict publication and that bounded post-CR projection.
+Repeating publication or metadata repair retains the same native review ID and
+authored Step; ordinary owner orchestration no longer writes post-CR metadata.
+Explicit owner preparation is limited to a newly authorized implementation phase.
+Execution retries keep Step;
 `APPROVE` does not increment it. New remediation must match the current CR's
 required launch profile; Step display metadata never replaces that authority.
-There is no Step-history scan, counter, registry, ledger or workflow engine.
+A historical published record without a Reviewer Step anchor may require
+[explicit bounded migration recovery](../contracts/README.md#legacy-publication-migration-recovery)
+on `LEGACY_STEP_BINDING_REQUIRED`; replay retains its native review ID and Step.
+This is not a normal owner post-CR writer. There is no Step-history scan, counter,
+registry, ledger or workflow engine.
 
 Actions evaluates native metadata at run creation. Issue names use the Issue
 number and native label projection, for example
