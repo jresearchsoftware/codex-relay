@@ -16,6 +16,7 @@ import importlib.util
 import os
 import platform
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -31,6 +32,21 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
 
 
+def require_supported_node():
+    """Reject an unusable toolchain before downloading or mutating fixtures."""
+    prerequisite = 'INSTALLED_RUNTIME_NODE_REQUIRED: Node >=22 required'
+    try:
+        result = subprocess.run(['node', '--version'], text=True, capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired, UnicodeError) as error:
+        raise SystemExit(f'{prerequisite}; active node unavailable ({type(error).__name__})') from None
+    version = result.stdout.strip()
+    match = re.fullmatch(r'v(\d+)\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', version)
+    if result.returncode or not match:
+        raise SystemExit(f'{prerequisite}; active node --version failed or returned an invalid version')
+    if int(match.group(1)) < 22:
+        raise SystemExit(f'{prerequisite}; active node reports {version}')
+
+
 def run(args, **kwargs):
     result = subprocess.run(args, text=True, **kwargs)
     if result.returncode:
@@ -40,6 +56,132 @@ def run(args, **kwargs):
 
 def task(path, name):
     return next(t for t in yaml.safe_load(path.read_text()) if t.get('name') == name)
+
+
+def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
+    """Real Git archive/install/reconcile and fixed bootstrap, without mutation.
+
+    A missing private deployment snapshot stops the real coordinator before
+    network, quiesce or apply. Its bounded error proves root Python was reached;
+    the pre-correction archive modes must instead fail the shell precheck.
+    """
+    artifacts = ROOT / 'roles/relay_artifacts/tasks/main.yml'
+    stage = ROOT / 'roles/relay_artifacts/tasks/stage-source.yml'
+    normalization = {'Protect owner lifecycle code substitution parents',
+                     'Protect the fixed owner lifecycle Python dependency closure'}
+    names = ['owner_lifecycle.py', 'lifecycle.py', 'config.py',
+             'installed_config.py', 'deployment_lock.py']
+    fixture = Path(values['relay_install_root']).with_name('owner-lifecycle-trust-fixture')
+    fixture.mkdir()
+    install = fixture / 'relay'
+    release = install / 'releases' / values['relay_release_commit']
+    root = release / 'reviewed-source'
+    fixture_values = {**values, 'relay_install_root': str(install), 'relay_release_path': str(release)}
+    template = Environment(undefined=StrictUndefined).from_string(
+        (ROOT / 'roles/relay_runner/templates/relay-owner-lifecycle.j2').read_text())
+
+    def bootstrap(installation, accepted):
+        helper = temp / 'owner-lifecycle-helper'
+        helper.write_text(template.render(relay_install_root=str(installation)))
+        helper.chmod(0o750)
+        result = subprocess.run([str(helper), 'stop:' + values['relay_release_commit']
+                                 + ':' + values['relay_release_commit']],
+                                text=True, capture_output=True, timeout=15)
+        assert result.returncode == 1 and result.stdout == '', result
+        if accepted:
+            assert result.stderr == ('RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;'
+                                     'inspect-state-and-protected-deployment-log\n'), result.stderr
+        else:
+            assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' not in result.stderr, result.stderr
+            assert 'AssertionError' in result.stderr, result.stderr
+
+    def stage_source(tasks, *, retained=False):
+        playbook = temp / 'owner-lifecycle-source.yml'
+        playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
+            'vars': {**fixture_values, 'relay_release_manifest': {'stat': {'exists': retained}}},
+            'tasks': tasks}]))
+        return run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
+                   env=env, capture_output=True, umask=deploy_umask)
+
+    # Reproduce the existing product path without the two correcting tasks.
+    # No synthetic chmod is used to create the incident's 0664/0775 shape.
+    stage_source([
+        task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),
+        *[entry for entry in yaml.safe_load(stage.read_text()) if entry.get('name') not in normalization],
+    ])
+    (install / 'current').symlink_to(release)
+    assert stat.S_IMODE((root / 'deploy').stat().st_mode) == 0o775
+    assert all(stat.S_IMODE((root / 'deploy' / name).stat().st_mode) == 0o664 for name in names)
+    bootstrap(install, False)
+    before = {path.relative_to(root): (path.lstat().st_mode, path.read_bytes()
+              if path.is_file() else None) for path in root.rglob('*')}
+
+    # The manifest-present path skips extraction but must repair old modes.
+    stage_source([{'ansible.builtin.include_tasks': str(stage)}], retained=True)
+    assert 'changed=0' in stage_source(
+        [{'ansible.builtin.include_tasks': str(stage)}], retained=True).stdout
+    allowed = {Path('deploy'), *[Path('deploy') / name for name in names]}
+    for relative, (mode, content) in before.items():
+        path = root / relative
+        if relative not in allowed:
+            assert path.lstat().st_mode == mode, relative
+        if content is not None:
+            assert path.read_bytes() == content, relative
+
+    # Both the normal candidate installation and retained-release repair must
+    # establish the complete root ownership/substitution boundary.
+    for installed in [source, root]:
+        assert stat.S_IMODE(installed.stat().st_mode) == 0o751
+        assert stat.S_IMODE((installed / 'deploy').stat().st_mode) == 0o755
+        for name in names:
+            path = installed / 'deploy' / name
+            assert stat.S_IMODE(path.stat().st_mode) == 0o644
+            for entry in [path, *path.parents]:
+                info = entry.lstat()
+                assert info.st_uid == 0 and not info.st_mode & 0o022, entry
+                assert (stat.S_ISREG(info.st_mode) and info.st_nlink == 1) if entry == path else stat.S_ISDIR(info.st_mode)
+            assert path.stat().st_gid == 0
+        bootstrap(installed.parent.parent.parent, True)
+
+    # Unsafe code, substitution parents and current-release rebinding must
+    # continue to fail before executing any product Python as root.
+    parents = [root / 'deploy', root, release, release.parent, install]
+    for path in [*[root / 'deploy' / name for name in names], *parents]:
+        for damage in ['group-write', 'world-write', 'owner', 'symlink',
+                       *(['hardlink'] if path.is_file() else [])]:
+            original = path.lstat()
+            alias = path.with_name(path.name + '.unsafe-alias')
+            try:
+                if damage in ['group-write', 'world-write']:
+                    path.chmod(stat.S_IMODE(original.st_mode) | (0o020 if damage == 'group-write' else 0o002))
+                elif damage == 'owner':
+                    os.chown(path, 24003, 24003)
+                elif damage == 'symlink':
+                    path.rename(alias)
+                    path.symlink_to(alias)
+                else:
+                    os.link(path, alias)
+                bootstrap(install, False)
+            finally:
+                if damage == 'symlink':
+                    path.unlink()
+                    alias.rename(path)
+                elif damage == 'hardlink':
+                    alias.unlink()
+                else:
+                    os.chown(path, original.st_uid, original.st_gid)
+                    path.chmod(stat.S_IMODE(original.st_mode))
+    current = install / 'current'
+    current.unlink()
+    current.symlink_to(source.parent)
+    try:
+        bootstrap(install, False)
+    finally:
+        current.unlink()
+        current.symlink_to(release)
+    bootstrap(install, True)
+    print('OWNER_LIFECYCLE_TRUST_CLOSURE_PROOF_PASS archive-baseline-rejected;'
+          'install-and-reconcile-protected;unrelated-modes-preserved;unsafe-code-rejected', flush=True)
 
 
 def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
@@ -481,13 +623,18 @@ def live_smoke_proof(install, release, env, token):
         assert len(added_work) == (1 if retained else 0), (proof, added_work)
         new_capsules = set(fallback_root.glob('*/*.json')) - capsules_before
         assert (fallback_root.stat().st_uid, stat.S_IMODE(fallback_root.stat().st_mode)) == (24003, 0o700)
-        assert len(new_capsules) == (0 if expected_code == 'GENERAL_RUNNER_SMOKE_PASS' else 1), new_capsules
+        # Success releases the slot with a durable tombstone; the next
+        # reservation may reclaim it, while failed-attempt evidence stays live.
+        assert len(new_capsules) == 1, new_capsules
         for capsule in new_capsules:
             raw = capsule.read_text()
             assert len(raw.encode('utf8')) <= 16 * 1024 and 'fixture-only-credential' not in raw
             state = json.loads(raw)
+            assert state.get('released', False) == (expected_code == 'GENERAL_RUNNER_SMOKE_PASS'), state
             assert state['containment'] in ['reaped', 'not_required'], state
             assert state['cleanup'] == ('retained' if retained else 'complete'), state
+            if expected_code == 'GENERAL_RUNNER_SMOKE_PASS':
+                assert state['retention'] == 'none' and state['persistence'] == 'not_required', state
             assert (capsule.stat().st_uid, stat.S_IMODE(capsule.stat().st_mode)) == (24003, 0o600)
             for user, allowed in [('relay-general-runner', True), ('relay-codex', False), ('relay-runner', False)]:
                 access = subprocess.run(['runuser', '-u', user, '--', 'test', '-r', str(capsule)], capture_output=True)
@@ -644,8 +791,8 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         (release / 'bin').mkdir(parents=True)
         # Build an isolated index of the candidate working source, so local
         # fix/retry needs no commit and does not change the operator's index.
-        # The real archive/extract tasks below preserve Git modes even on a
-        # Windows checkout; never chmod the installed tree to public defaults.
+        # The real archive/extract tasks preserve Git modes even on a Windows
+        # checkout, except the fixed root-executed owner-lifecycle closure.
         artifacts = ROOT / 'roles/relay_artifacts/tasks/main.yml'
         git_env = {'PATH': '/usr/bin:/bin', 'GIT_INDEX_FILE': str(temp / 'candidate-index'),
                    'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
@@ -737,6 +884,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)], env=env, text=True, capture_output=True, umask=deploy_umask)
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
+        owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source)
         consumer_config = config / 'consumer.json'
         metadata = consumer_config.lstat()
         assert stat.S_ISREG(metadata.st_mode)
@@ -850,13 +998,14 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         print(f'INSTALLED_RUNTIME_COMPOSED_PROOF_PASS runner-package-metadata={"not-repeated" if runtime_only else "passed"}')
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--runtime-only', action='store_true', help='iterate the full runtime lane without repeating separate runner-package metadata tests')
     parser.add_argument('--consumer-only', action='store_true', help='qualify consumer ownership and installed Writer admission without Rust/Codex installation')
     parser.add_argument('--rust-archive', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    require_supported_node()
     if os.geteuid() != 0:
         raise SystemExit('root required for disposable namespace; use sudo on this test only')
     if not args.inside:
@@ -868,3 +1017,7 @@ if __name__ == '__main__':
     if os.getpid() != 1:
         raise SystemExit('private PID namespace required; do not invoke --inside directly')
     proof(args.runtime_only, args.rust_archive, args.consumer_only)
+
+
+if __name__ == '__main__':
+    main()

@@ -141,6 +141,15 @@ needs a human decision, authority is uncertain, the next material correction
 is ambiguous, the same action fails without new evidence, or prior execution
 or external mutation is unknown or uncontained.
 
+Default ordinary repository-only implementation or remediation to automatic
+Relay when its required unprivileged checks are available to the governed
+worker. Use owner-launched manual/standalone Codex for capabilities outside the
+worker/Writer boundary: root qualification, live host or environment mutation,
+owner-authenticated protected operations, or genuine human judgment or choice.
+For mixed work, normally keep source changes automatic and only the privileged
+or live portion manual when that split is useful. Route selection never expands
+Task/CR authority or overrides the progress-bounded execution stops above.
+
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents
 permission is `On`. Explicit live Task or Change Request values override these
