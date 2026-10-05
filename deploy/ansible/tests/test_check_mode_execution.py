@@ -102,6 +102,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "relay_reviewer_readiness_path": str(install_root / "relay-reviewer-readiness"),
                 "relay_evidence_root": str(fixture_root / "evidence"),
                 "relay_github_repository": "example/relay-consumer",
+                "relay_owner_actor": "example-owner",
                 "relay_release_commit": "a" * 40,
                 "relay_release_sha256": "b" * 64,
                 "relay_reviewer_exec_start": "/bin/true",

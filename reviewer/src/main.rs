@@ -18,6 +18,7 @@ use unicode_normalization::UnicodeNormalization;
 mod executable_cr;
 mod github;
 mod mtls_identity;
+mod step_sync;
 mod store;
 mod strict_json;
 #[derive(Clone, Parser)]
@@ -102,7 +103,11 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
         json!({"type": "array", "maxItems": 30, "items": finding});
     submit["inputSchema"]["properties"]["change_request"] =
         executable_cr::input_schema(validation_names);
-    json!([check, submit])
+    let mut evidence = check.clone();
+    evidence["name"] = json!("read_pr_review_evidence");
+    evidence["description"] = json!("Read bounded exact-head execution warning evidence through supported GitHub/runtime APIs. Required source failures remain explicit gaps. UI-only service/pre-execution annotations are excluded from automated completeness; none_observed covers only inspected in-scope sources.");
+    evidence["outputSchema"] = github::evidence::output_schema();
+    json!([check, submit, evidence])
 }
 fn valid_input(
     validation_names: &[String],
@@ -110,7 +115,8 @@ fn valid_input(
     name: &str,
     arguments: &Value,
 ) -> Result<(), &'static str> {
-    let expected: &[&str] = if name == "check_pr_review_target" {
+    let expected: &[&str] = if matches!(name, "check_pr_review_target" | "read_pr_review_evidence")
+    {
         &["repository", "pr_number", "expected_head_sha"]
     } else if name == "submit_pr_review" {
         &[
@@ -315,12 +321,14 @@ fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
 #[derive(Clone, Debug, PartialEq)]
 struct ReviewPolicy {
     validation_names: Vec<String>,
+    owner: String,
     base_branch: String,
     check_name: String,
     slug: String,
     app_id: String,
     installation_id: String,
     actor: String,
+    writer_actor: String,
 }
 fn review_policy(config: &Value) -> ReviewPolicy {
     let field = |value: &Value| {
@@ -332,13 +340,19 @@ fn review_policy(config: &Value) -> ReviewPolicy {
     };
     let policy = ReviewPolicy {
         validation_names: executable_cr::validation_names(config),
+        owner: field(&config["owner"]),
         base_branch: field(&config["baseBranch"]),
         check_name: field(&config["reviewCheckName"]),
         slug: field(&config["githubApp"]["slug"]),
         app_id: field(&config["githubApp"]["appId"]),
         installation_id: field(&config["githubApp"]["installationId"]),
         actor: field(&config["githubApp"]["expectedActor"]),
+        writer_actor: field(&config["writerActor"]),
     };
+    assert!(
+        valid_repository(&format!("{}/task", policy.owner)),
+        "Invalid owner identity"
+    );
     let branch = &policy.base_branch;
     assert!(
         !branch.is_empty()
@@ -526,6 +540,23 @@ async fn mcp(
                 arguments,
             ) {
                 json!({"content":[{"type":"text","text":code}],"isError":true})
+            } else if name == "read_pr_review_evidence" {
+                match app
+                    .github
+                    .review_evidence(
+                        &app.repository,
+                        arguments["repository"].as_str().unwrap_or(""),
+                        arguments["pr_number"].as_i64().unwrap_or(0),
+                        arguments["expected_head_sha"].as_str().unwrap_or(""),
+                        &app.policy.writer_actor,
+                    )
+                    .await
+                {
+                    Ok(evidence) => {
+                        json!({"content":[{"type":"text","text":"EVIDENCE_OBSERVED"}],"structuredContent":evidence})
+                    }
+                    Err(code) => json!({"content":[{"type":"text","text":code}],"isError":true}),
+                }
             } else if name == "check_pr_review_target" {
                 match app
                     .github
@@ -664,6 +695,20 @@ async fn mcp(
                                     }
                                 }
                             } else {
+                                if arguments["action"] == "REQUEST_CHANGES" {
+                                    let synced = match known.as_ref().and_then(|x| x.review_id) {
+                                        Some(review_id) => {
+                                            step_sync::synchronize(
+                                                &app, &operation, review_id, arguments,
+                                            )
+                                            .await
+                                        }
+                                        None => Err("INTERNAL_RELAY_ERROR"),
+                                    };
+                                    if let Err(code) = synced {
+                                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":"REVIEW_PUBLISHED_METADATA_FAILED"}],"isError":true,"structuredContent":{"review_id":known.as_ref().and_then(|x| x.review_id),"error_code":code}}}))).into_response();
+                                    }
+                                }
                                 tracing::info!(event = "review_attempt", outcome = "DUPLICATE_SUPPRESSED", operation = %operation);
                                 json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"status":known.as_ref().map(|x| &x.status),"review_id":known.as_ref().and_then(|x| x.review_id),"review_url":known.as_ref().and_then(|x| x.review_url.as_ref())}})
                             }
@@ -690,9 +735,23 @@ async fn mcp(
                             Ok(None) => {
                                 // Existing review/transport recovery above preserves
                                 // its authorized Step. Only a genuinely new native
-                                // CR advances from the current PR label. Owner
-                                // orchestration checks the Issue and mutates labels.
+                                // CR advances from synchronized Issue/PR metadata.
                                 if let Some(code) = new_cr_step_rejection(&pr, arguments) {
+                                    let _ = app
+                                        .store
+                                        .lock()
+                                        .expect("store lock")
+                                        .retryable_failure(&operation);
+                                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
+                                }
+                                if let Err(code) =
+                                    step_sync::prepare(&app, &operation, arguments).await
+                                {
+                                    let _ = app
+                                        .store
+                                        .lock()
+                                        .expect("store lock")
+                                        .retryable_failure(&operation);
                                     return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
                                 }
                                 let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":native_review_body(&app.policy.validation_names, arguments, &operation)});
@@ -758,6 +817,9 @@ async fn complete_check(
 ) -> Value {
     let repository = arguments["repository"].as_str().unwrap_or("");
     let sha = arguments["expected_head_sha"].as_str().unwrap_or("");
+    if let Err(code) = step_sync::synchronize(app, operation, review_id, arguments).await {
+        return json!({"content":[{"type":"text","text":"REVIEW_PUBLISHED_METADATA_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"error_code":code}});
+    }
     let check = match app.github.find_check(repository, sha, operation).await {
         Ok(Some(check)) => check,
         Ok(None) => {
@@ -1095,17 +1157,21 @@ mod tests {
     fn test_policy() -> ReviewPolicy {
         ReviewPolicy {
             validation_names: Vec::new(),
+            owner: "example-owner".into(),
             base_branch: "main".into(),
             check_name: "chatgpt-review".into(),
             slug: "example-reviewer".into(),
             app_id: "102".into(),
             installation_id: "202".into(),
             actor: "example-reviewer[bot]".into(),
+            writer_actor: "example-writer[bot]".into(),
         }
     }
 
     use super::*;
+    mod evidence;
     mod portability;
+    mod step_metadata;
     mod transport;
     use axum::{
         http::{Method, Uri},
@@ -1163,12 +1229,36 @@ mod tests {
             process::{Command, Stdio},
         };
         let driver = fixture_path("../../test-support/roundtrip-driver.mjs");
-        let mut child = Command::new("node")
-            .env(
-                "RELAY_CONSUMER_CONFIG",
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join(format!("../consumer/fixtures/{consumer}.json")),
+        // Source fixtures are data, not installed protected configuration. Copy
+        // them with safe permissions so governed group-writable checkouts can
+        // exercise the real loader without relaxing its admission boundary.
+        static CONFIG_SEQUENCE: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let config_path = std::env::temp_dir().join(format!(
+            "relay-roundtrip-{}-{}.json",
+            std::process::id(),
+            CONFIG_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options
+            .open(&config_path)
+            .unwrap()
+            .write_all(
+                &fs::read(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join(format!("../consumer/fixtures/{consumer}.json")),
+                )
+                .unwrap(),
             )
+            .unwrap();
+        let mut child = Command::new("node")
+            .env("RELAY_CONSUMER_CONFIG", &config_path)
             .arg(driver)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -1180,11 +1270,13 @@ mod tests {
             .take()
             .unwrap()
             .write_all(
-                &serde_json::to_vec(&json!({"arguments":arguments,"publication":publication}))
-                    .unwrap(),
+                &serde_json::to_vec(&json!({"arguments":arguments,"publication":publication,
+                    "projectionTitle": step_sync::projection_title(24, arguments).unwrap()}))
+                .unwrap(),
             )
             .unwrap();
         let output = child.wait_with_output().unwrap();
+        fs::remove_file(config_path).unwrap();
         assert!(
             output.status.success(),
             "{}",
@@ -1279,10 +1371,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_cr_publication_roundtrips_through_owner_step_sync_and_matching_launch() {
+    async fn new_cr_publication_roundtrips_through_reviewer_step_sync_and_matching_launch() {
         let state = MockState::default();
         let mut pr = live_pr();
         pr["labels"] = json!([{"name":"step-5"}]);
+        pr["title"] = json!("Task 24 · Step 5 · Implementation");
         *state.pr.lock().unwrap() = Some(pr);
         let (http, url) = client_with_state(true, None, state.clone()).await;
         let mut args = cr_fixture();
@@ -1304,9 +1397,7 @@ mod tests {
         let reviews = state.reviews.lock().unwrap();
         assert_eq!(reviews.len(), 1);
         assert_consumer_admits(&args, &reviews[0]);
-        // Step metadata mutation is owned by the ordinary owner client, never
-        // the Reviewer App's native publication/check requests.
-        assert!(!state
+        assert!(state
             .requests
             .lock()
             .unwrap()
@@ -1682,6 +1773,9 @@ mod tests {
         pr: Arc<Mutex<Option<Value>>>,
         app_identity: Arc<Mutex<Option<Value>>>,
         review_response: Arc<Mutex<Option<Value>>>,
+        issue: Arc<Mutex<Option<Value>>>,
+        metadata_failure: Arc<Mutex<Option<String>>>,
+        decisive_override: Arc<Mutex<Option<Value>>>,
     }
 
     impl Default for MockState {
@@ -1697,6 +1791,9 @@ mod tests {
                 pr: Default::default(),
                 app_identity: Default::default(),
                 review_response: Default::default(),
+                issue: Default::default(),
+                metadata_failure: Default::default(),
+                decisive_override: Default::default(),
             }
         }
     }
@@ -1706,9 +1803,9 @@ mod tests {
     }
 
     fn live_pr_for_repository(repository: &str) -> Value {
-        json!({"number":25,"state":"open","draft":false,"merged":false,"labels":[{"name":"step-1"}],
+        json!({"number":25,"state":"open","draft":false,"merged":false,"labels":[{"name":"step-1"}],"body":"Related to #24","title":"Task 24 · Step 1 · Implementation",
             "base":{"ref":"main","repo":{"full_name":repository}},
-            "head":{"sha":HEAD,"repo":{"full_name":repository}},"user":{"login":"author"}})
+            "head":{"sha":HEAD,"ref":"codex/task-24","repo":{"full_name":repository}},"user":{"login":"author"}})
     }
 
     fn native_review(payload: &Value) -> Value {
@@ -1783,6 +1880,12 @@ mod tests {
             .path()
             .strip_prefix(&repository_prefix)
             .unwrap_or(uri.path());
+        if matches!(method, Method::PUT | Method::PATCH)
+            && state.metadata_failure.lock().unwrap().as_deref() == Some(path)
+        {
+            *state.metadata_failure.lock().unwrap() = None;
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
         if method == Method::POST && path == "check-runs" {
             if check_mode == Some("transient") && check_attempt == Some("1") {
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -1808,16 +1911,42 @@ mod tests {
                 .unwrap()
                 .clone()
                 .unwrap_or_else(|| { let mut pr = live_pr_for_repository(&state.repository); pr["base"]["ref"] = json!(state.policy.base_branch); pr }),
+            (Method::GET, "issues/24") => state.issue.lock().unwrap().clone().unwrap_or_else(|| {
+                let labels = state.pr.lock().unwrap().as_ref().map(|pr| pr["labels"].clone()).unwrap_or_else(|| json!([{"name":"step-1"}]));
+                json!({"number":24,"state":"open","user":{"login":state.policy.owner,"type":"User"},"body":"Canonical task authority","labels":labels})
+            }),
+            (Method::GET, value) if value.starts_with("labels/step-") => json!({"name":value.strip_prefix("labels/").unwrap()}),
+            (Method::PUT, "issues/24/labels") => {
+                let payload: Value = serde_json::from_slice(&body).unwrap();
+                let mut issue = state.issue.lock().unwrap();
+                let mut value = issue.clone().unwrap_or_else(|| json!({"number":24,"state":"open","user":{"login":state.policy.owner,"type":"User"},"body":"Canonical task authority"}));
+                value["labels"] = json!(payload["labels"].as_array().unwrap().iter().map(|l| json!({"name":l})).collect::<Vec<_>>());
+                *issue = Some(value.clone()); value["labels"].clone()
+            },
+            (Method::PUT, "issues/25/labels") => {
+                let payload: Value = serde_json::from_slice(&body).unwrap();
+                let mut pr = state.pr.lock().unwrap();
+                let mut value = pr.clone().unwrap_or_else(|| { let mut pr = live_pr_for_repository(&state.repository); pr["base"]["ref"] = json!(state.policy.base_branch); pr });
+                value["labels"] = json!(payload["labels"].as_array().unwrap().iter().map(|l| json!({"name":l})).collect::<Vec<_>>());
+                *pr = Some(value.clone()); value["labels"].clone()
+            },
+            (Method::PATCH, "pulls/25") => {
+                let payload: Value = serde_json::from_slice(&body).unwrap();
+                let mut pr = state.pr.lock().unwrap();
+                let mut value = pr.clone().unwrap_or_else(|| { let mut pr = live_pr_for_repository(&state.repository); pr["base"]["ref"] = json!(state.policy.base_branch); pr });
+                value["title"] = payload["title"].clone(); *pr = Some(value.clone()); value
+            },
             (Method::GET, "/app") => state.app_identity.lock().unwrap().clone().unwrap_or_else(
                 || json!({"slug":state.policy.slug,"id":state.policy.app_id.parse::<u64>().unwrap()}),
             ),
-            (Method::GET, "pulls/25/reviews") => json!(state
+            (Method::GET, "pulls/25/reviews") => state.decisive_override.lock().unwrap().clone().unwrap_or_else(|| json!(state
                 .reviews
                 .lock()
                 .unwrap()
                 .iter()
-                .map(|payload| { let mut review = native_review(payload); review["user"]["login"] = json!(state.policy.actor); review })
-                .collect::<Vec<_>>()),
+                .enumerate()
+                .map(|(index, payload)| { let mut review = native_review(payload); review["id"] = json!(index + 1); review["user"]["login"] = json!(state.policy.actor); review })
+                .collect::<Vec<_>>())),
             (Method::POST, "pulls/25/reviews") => {
                 let payload: Value = serde_json::from_slice(&body).unwrap();
                 let response = state
@@ -1825,7 +1954,7 @@ mod tests {
                     .lock()
                     .unwrap()
                     .clone()
-                    .unwrap_or_else(|| { let mut review = native_review(&payload); review["user"]["login"] = json!(state.policy.actor); review });
+                    .unwrap_or_else(|| { let mut review = native_review(&payload); review["id"] = json!(state.reviews.lock().unwrap().len() + 1); review["user"]["login"] = json!(state.policy.actor); review });
                 state.reviews.lock().unwrap().push(payload);
                 response
             }
@@ -1930,7 +2059,7 @@ mod tests {
     }
 
     #[test]
-    fn exposes_exactly_two_tools_and_only_accepted_actions() {
+    fn exposes_three_bounded_tools_and_only_accepted_actions() {
         let listed = tools(&[], TEST_REPOSITORY);
         let names = listed
             .as_array()
@@ -1938,7 +2067,14 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(names, vec!["check_pr_review_target", "submit_pr_review"]);
+        assert_eq!(
+            names,
+            vec![
+                "check_pr_review_target",
+                "submit_pr_review",
+                "read_pr_review_evidence"
+            ]
+        );
         assert_eq!(
             valid_input(
                 &[],
@@ -2002,7 +2138,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": HEAD, "sha256": "b".repeat(64)},
             "service": {"name": "reviewer-mcp", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         assert_eq!(
@@ -2032,7 +2168,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": "UNAVAILABLE_UNTIL_RELEASE_STAGING", "sha256": "UNAVAILABLE_UNTIL_RELEASE_STAGING"},
             "service": {"name": "reviewer-mcp", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         let result = std::panic::catch_unwind(|| load_runtime_config(path.to_str().unwrap()));
@@ -2056,6 +2192,7 @@ mod tests {
         template
             .render(context! {
                 relay_github_repository => repository,
+                relay_owner_actor => "example-owner",
                 relay_release_commit => HEAD,
                 relay_release_sha256 => "b".repeat(64),
                 relay_reviewer_exec_start => "/opt/relay-example/current/bin/reviewer-mcp-http --config /etc/relay-example/reviewer-mcp.json",
@@ -2142,7 +2279,7 @@ mod tests {
             "repository": "example-org/sample-project",
             "artifact": {"commit": HEAD, "sha256": "b".repeat(64)},
             "service": {"name": "reviewer-mcp", "execBoundary": "/opt/relay-example/current/bin/reviewer-mcp-http --config /etc/relay-example/reviewer-mcp.json", "bind_mode": "private_gateway", "bind_address": "172.18.0.1", "bind_network": "example-network", "gateway_validated": true, "bind_port": 8787, "mount_path": "/mcp"},
-            "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
+            "owner":"example-owner", "baseBranch":"main", "reviewCheckName":"chatgpt-review", "writerActor":"example-writer[bot]",
             "githubApp": {"slug": "example-reviewer", "appId": "102", "installationId": "202", "expectedActor": "example-reviewer[bot]"}
         }).to_string()).expect("write config");
         assert_eq!(load_runtime_config(path.to_str().unwrap()).port, 8787);
@@ -2281,7 +2418,7 @@ mod tests {
                 .and_then(Value::as_array)
                 .unwrap()
                 .len(),
-            2
+            3
         );
         let checked = rpc(&http, &url, 3, "tools/call", json!({"name":"check_pr_review_target","arguments":{"repository":"example-org/sample-project","pr_number":25,"expected_head_sha":HEAD}})).await;
         assert_eq!(

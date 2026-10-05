@@ -9,14 +9,15 @@ import { extractRemediationContract, validateRemediationContract } from '../src/
 import { admitEnvelope, readAuthority, revalidateAuthority } from '../../controller/src/live-authority.mjs';
 import { dispatchRunName } from '../../controller/src/launch-metadata.mjs';
 import { REPOSITORY, REVIEWER, OWNER, NATIVE_VALIDATIONS, validateEnvelope } from '../../controller/src/execution-contract.mjs';
-import { prepareReviewStep, synchronizeReviewStep } from '../src/step-synchronization.mjs';
+import { reviewStepTitle } from '../../controller/src/step-metadata.mjs';
 
-export async function admitPublished(arguments_, publication) {
+export async function admitPublished(arguments_, publication, projectionTitle) {
   assert.equal(publication.event, 'REQUEST_CHANGES');
   assert.equal(publication.commit_id, arguments_.expected_head_sha);
   const contract = validateRemediationContract(extractRemediationContract(publication.body),
     { pullRequest: arguments_.pr_number, reviewedHeadSha: publication.commit_id });
   const input = arguments_.change_request;
+  if (projectionTitle !== undefined) assert.equal(projectionTitle, reviewStepTitle(contract, 24));
   const resolved = resolveExecutionDefaults({ effort: input.codex_effort, subagentsAllowed: input.subagents_allowed });
   assert.equal(contract.change_request_id, input.change_request_id);
   assert.equal(contract.step, input.step);
@@ -31,25 +32,18 @@ export async function admitPublished(arguments_, publication) {
   assert.ok(!('review_effort' in contract));
   assert.ok(contract.required_validation.every(v => NATIVE_VALIDATIONS.has(v)));
   assert.deepEqual(contract.required_validation, [...input.required_validation].sort());
-  const labels = [{ name: `step-${input.step > 1 ? input.step - 1 : input.step}` }];
+  const labels = [{ name: `step-${input.step}` }];
   const issue = { number: 24, labels: structuredClone(labels), state: 'open', user: { login: OWNER }, body: '# Task 24\nImplement the admitted serialization change.\nIssue closure policy: keep-open' };
   const pr = { number: arguments_.pr_number, state: 'open', merged: false, draft: false, body: 'Related to #24',
-    labels: structuredClone(labels), title: 'Task 24 serialization', base: { ref: CONSUMER.baseBranch, sha: publication.commit_id, repo: { full_name: REPOSITORY } },
+    labels: structuredClone(labels), title: reviewStepTitle(contract, 24), base: { ref: CONSUMER.baseBranch, sha: publication.commit_id, repo: { full_name: REPOSITORY } },
     head: { ref: `${CONSUMER.taskBranchPrefix}task-24`, sha: publication.commit_id, repo: { full_name: REPOSITORY } } };
   const review = { id: 17, state: 'CHANGES_REQUESTED', commit_id: publication.commit_id,
     user: { login: REVIEWER }, body: publication.body };
-  // The historical Step-1 fixture remains parseable. A new CR advances from
-  // current labels through owner orchestration; retries retain its exact Step.
+  // Consume the post-publication Reviewer projection. Historical Step-1 native
+  // fixtures remain parseable; admission retries retain the same CR Step.
   for (const step of [input.step, input.step]) {
     const launch = { runId: 99, route: 'auto', target: 'pull_request', number: pr.number, issueNumber: issue.number, step };
     const api = {
-      viewer: async () => ({ login: OWNER, type: 'User' }),
-      ensureStepLabel: async value => assert.equal(value, input.step),
-      patch: async (path, body) => {
-        const subject = path === '/issues/24' ? issue : [`/issues/${pr.number}`, `/pulls/${pr.number}`].includes(path) ? pr : assert.fail(path);
-        if (body.labels) subject.labels = body.labels.map(name => ({ name }));
-        if (body.title) subject.title = body.title;
-      },
       getRun: async () => ({ id: 99, repository: { full_name: REPOSITORY }, actor: { login: OWNER },
         status: 'in_progress', path: CONSUMER.routingWorkflow, event: 'workflow_dispatch',
         head_branch: CONSUMER.baseBranch, run_attempt: 1, display_title: dispatchRunName(launch) }),
@@ -64,10 +58,6 @@ export async function admitPublished(arguments_, publication) {
         return [structuredClone(review)];
       }
     };
-    if (input.step > 1) {
-      if (issue.labels[0].name !== `step-${input.step}`) assert.equal((await prepareReviewStep(api, pr.number)).step, input.step);
-      assert.equal((await synchronizeReviewStep(api, pr.number, review.id)).step, input.step);
-    }
     const envelope = await admitEnvelope(api, launch);
     assert.ok(!envelope.blocked, JSON.stringify(envelope.block));
     assert.equal(envelope.step, step);
@@ -92,7 +82,7 @@ export async function admitPublished(arguments_, publication) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let input = '';
   for await (const chunk of process.stdin) input += chunk;
-  const { arguments: arguments_, publication } = JSON.parse(input);
-  await admitPublished(arguments_, publication);
+  const { arguments: arguments_, publication, projectionTitle } = JSON.parse(input);
+  await admitPublished(arguments_, publication, projectionTitle);
   process.stdout.write('REVIEWER_PUBLICATION_REMEDIATION_ROUNDTRIP_PASS\n');
 }

@@ -4,6 +4,7 @@
   "validationNames": {{ relay_validation_names | to_json }},
 {% endif %}
   "repository": "{{ relay_github_repository }}",
+  "owner": {{ relay_owner_actor | to_json }},
   "baseBranch": {{ relay_github_base_branch | to_json }},
   "reviewCheckName": {{ relay_review_check_name | to_json }},
   "writerActor": {{ relay_writer_expected_actor | to_json }},

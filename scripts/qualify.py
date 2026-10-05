@@ -58,7 +58,7 @@ def qualify_binary(executable):
             with socket.socket() as reserve:
                 reserve.bind(('127.0.0.1', 0))
                 port = reserve.getsockname()[1]
-            config = {'repository': c['repository'], 'baseBranch': c['baseBranch'],
+            config = {'repository': c['repository'], 'owner': c['owner'], 'baseBranch': c['baseBranch'],
                       'reviewCheckName': f'{consumer}-review', 'writerActor': c['writerApp']['expectedActor'],
                       'githubApp': c['reviewerApp'], 'validationNames': c.get('validationNames', []), 'artifact': {'commit': 'a' * 40, 'sha256': 'b' * 64},
                       'service': {'name': 'reviewer-mcp', 'bind_mode': 'a_only_loopback', 'bind_address': '127.0.0.1',
@@ -122,9 +122,16 @@ def main():
     executable = build('test', True)
     artifact_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
     subprocess.run([str(executable), 'two_consumer_same_artifact', '--nocapture'], cwd=RUST, check=True)
-    for consumer in ['example', 'canary', 'inventory']:
-        env = {**os.environ, 'RELAY_CONSUMER_CONFIG': str(ROOT / f'consumer/fixtures/{consumer}.json')}
-        subprocess.run(['node', '--test', 'consumer/test/portability.test.mjs'], cwd=ROOT, env=env, check=True)
+    # Synthetic source fixtures are not installed consumer configuration. Keep
+    # loader qualification valid in a governed group-writable checkout while
+    # retaining the production configuration permission checks.
+    with tempfile.TemporaryDirectory(prefix='relay-node-consumers-') as directory:
+        for consumer in ['example', 'canary', 'inventory']:
+            fixture = Path(directory) / f'{consumer}.json'
+            fixture.write_bytes((ROOT / f'consumer/fixtures/{consumer}.json').read_bytes())
+            fixture.chmod(0o600)
+            env = {**os.environ, 'RELAY_CONSUMER_CONFIG': str(fixture)}
+            subprocess.run(['node', '--test', 'consumer/test/portability.test.mjs'], cwd=ROOT, env=env, check=True)
     if (source_digest() != before or hashlib.sha256(executable.read_bytes()).hexdigest() != artifact_hash
             or hashlib.sha256(production.read_bytes()).hexdigest() != production_hash):
         raise RuntimeError('Qualification candidate changed')

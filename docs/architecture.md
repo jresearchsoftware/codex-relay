@@ -17,7 +17,7 @@ which encodes the policy in `AGENTS.md`; reusable code chooses no model.
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
 | Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR progress and Outcome | Worker execution lifecycle or Reviewer verdicts |
 | External ChatGPT review/caller | Reads the diff, authors substantive verdict/findings and supplies structured CR | Writer implementation identity or automatic launch authority |
-| Rust Reviewer publication service | Exact-head target check, native review/check publication and duplicate recovery | Substantive review authorship, implementation, launch commands, Step-label mutation or merge |
+| Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, native review/check publication, same-review Step-label/title synchronization and duplicate recovery | Substantive review authorship, implementation, launch commands, owner new-phase choice or merge |
 
 The owner applies `codex-ready-auto` or `codex-ready-manual` to a canonical
 Issue or remediation PR. The trusted workflow uses the configured base branch,
@@ -25,6 +25,16 @@ not PR-controlled code. Writer checks native owner/event/run identity, Task/Step
 current Issue or decisive native Change Request and exact starting head/base.
 It consumes the ready event after reservation. `step-N` is persistent display
 and authority-binding metadata, never permission to execute on its own.
+New executable CR publication synchronizes Issue/PR Step and bounded Task/Step/CR-ID PR title
+inside the Reviewer operation; retry/repair retains the same native review ID
+and authored Step. Explicit owner new-phase preparation advances current N to
+N+1 independently of CR publication. Same-phase execution retries preserve N.
+The native review body remains sole CR authority, linked to the canonical Issue
+for Task identity; no Step history or competing normal post-CR owner writer is introduced.
+A legacy published record lacking its pre-publication Step anchor stops with
+`LEGACY_STEP_BINDING_REQUIRED` unless its projection is already synchronized.
+Explicit bounded owner migration repair preserves that review ID and Step before
+replay of the original Reviewer payload; it does not launch execution.
 
 For automatic work, the runner creates the checkout, reserves execution once,
 and invokes the fixed credential-free launcher. Codex makes ordinary task
@@ -156,6 +166,17 @@ trusted mTLS terminator. It verifies forwarded client identity and binds every
 GitHub request, review and check to the configured repository/App and exact head.
 Writer and Reviewer credentials are separate. Raw credentials and diagnostic
 streams never belong in an Outcome.
+
+The evidence reader uses a read-only installation token and binds applicable
+execution checks through exact-head Writer Outcomes on the reviewed PR and
+canonical linked Issue. Mandatory completeness covers execution-time warnings
+available through supported check/job/runtime APIs; unavailable, denied or
+truncated required evidence prevents an absence claim. UI-only service-level or
+pre-execution annotations/platform banners are explicitly excluded from that
+automated contract and do not alone block review. No HTML or browser-session
+fallback is used. Supported API completeness cannot prove absence of UI-only
+warnings or replace independent warning disposition. See the
+[evidence contract and API limitation](../reviewer/README.md).
 
 Local qualification tests real modules/handlers against synthetic Git and
 loopback GitHub. It does not test a consumer's installed wrappers, reverse proxy,

@@ -130,7 +130,7 @@ published verdict grants merge, release or production authority.
 | --- | --- |
 | `controller/` | Owner launch routing, attempt journal, trusted Git import, Writer admission/publication/recovery |
 | `runtime/` | Governed Codex execution, Issue parsing and semantic worker results |
-| `contracts/` | Native executable Change Requests, owner Step synchronization and secret scan |
+| `contracts/` | Native executable Change Requests, owner continuation Step preparation and secret scan |
 | `consumer/` | Explicit validated consumer configuration and portability fixtures |
 | `reviewer/` | Rust MCP service, exact-head review/check publication and durable deduplication |
 | `scripts/` | Credential-free local qualification and candidate checks |

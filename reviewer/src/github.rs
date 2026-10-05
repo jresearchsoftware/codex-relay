@@ -1,4 +1,5 @@
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+pub mod evidence;
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::{
@@ -105,7 +106,7 @@ impl Github {
             .header("Authorization", format!("Bearer {jwt}"))
             .json(&json!({
                 "repositories": [name],
-                "permissions": {"metadata": "read", "pull_requests": "write", "checks": "write"}
+                "permissions": {"metadata": "read", "pull_requests": "write", "checks": "write", "issues": "write", "actions": "read"}
             }))
             .send()
             .await
@@ -176,6 +177,126 @@ impl Github {
     pub async fn app_identity(&self) -> Result<Value, &'static str> {
         self.app_request(self.client.get(format!("{}/app", self.api)))
             .await
+    }
+    pub(crate) async fn get_issue(
+        &self,
+        repository: &str,
+        number: u64,
+    ) -> Result<Value, &'static str> {
+        self.request(
+            repository,
+            self.client
+                .get(format!("{}/repos/{repository}/issues/{number}", self.api)),
+        )
+        .await
+    }
+
+    pub(crate) async fn decisive_review(
+        &self,
+        repository: &str,
+        number: i64,
+        actor: &str,
+    ) -> Result<Option<Value>, &'static str> {
+        let mut decisive: Option<Value> = None;
+        for page in 1..=20 {
+            let payload = self
+                .request(
+                    repository,
+                    self.client.get(format!(
+                        "{}/repos/{repository}/pulls/{number}/reviews?per_page=100&page={page}",
+                        self.api
+                    )),
+                )
+                .await?;
+            let items = payload.as_array().ok_or("GITHUB_RESPONSE_INVALID")?;
+            for review in items {
+                if review.pointer("/user/login").and_then(Value::as_str) == Some(actor)
+                    && matches!(
+                        review["state"].as_str(),
+                        Some("CHANGES_REQUESTED" | "APPROVED" | "DISMISSED")
+                    )
+                {
+                    let id = review["id"]
+                        .as_i64()
+                        .filter(|id| *id > 0)
+                        .ok_or("GITHUB_RESPONSE_INVALID")?;
+                    if decisive
+                        .as_ref()
+                        .is_none_or(|previous| previous["id"].as_i64().unwrap_or(0) < id)
+                    {
+                        decisive = Some(review.clone());
+                    }
+                }
+            }
+            if items.len() < 100 {
+                return Ok(decisive);
+            }
+        }
+        Err("GITHUB_PAGINATION_LIMIT")
+    }
+
+    // Internal projection primitives. No MCP caller can supply these paths or payloads.
+    pub(crate) async fn ensure_step_label(
+        &self,
+        repository: &str,
+        step: u64,
+    ) -> Result<(), &'static str> {
+        let label = format!("step-{step}");
+        match self
+            .request(
+                repository,
+                self.client
+                    .get(format!("{}/repos/{repository}/labels/{label}", self.api)),
+            )
+            .await
+        {
+            Ok(value) if value["name"] == label => Ok(()),
+            Ok(_) => Err("STEP_LABEL_INVALID"),
+            Err("GITHUB_NOT_FOUND") => {
+                self.request(
+                    repository,
+                    self.client
+                        .post(format!("{}/repos/{repository}/labels", self.api))
+                        .json(&json!({"name": label, "color": "ededed"})),
+                )
+                .await?;
+                Ok(())
+            }
+            Err(code) => Err(code),
+        }
+    }
+    pub(crate) async fn project_step_labels(
+        &self,
+        repository: &str,
+        number: u64,
+        labels: &[String],
+    ) -> Result<(), &'static str> {
+        self.request(
+            repository,
+            self.client
+                .put(format!(
+                    "{}/repos/{repository}/issues/{number}/labels",
+                    self.api
+                ))
+                .json(&json!({"labels":labels})),
+        )
+        .await?;
+        Ok(())
+    }
+    pub(crate) async fn project_step_title(
+        &self,
+        repository: &str,
+        number: i64,
+        title: &str,
+    ) -> Result<(), &'static str> {
+        self.request(
+            repository,
+            self.client
+                .patch(format!("{}/repos/{repository}/pulls/{number}", self.api))
+                .json(&json!({"title":title})),
+        )
+        .await?;
+        Ok(())
     }
     pub async fn find_review(
         &self,

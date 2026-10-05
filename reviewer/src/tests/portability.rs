@@ -7,6 +7,7 @@ async fn two_consumer_same_artifact_reviewer_to_writer_qualification() {
             .join(format!("../consumer/fixtures/{consumer}.json"));
         let config: Value = serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
         let policy = review_policy(&json!({
+            "owner":config["owner"],
             "baseBranch":config["baseBranch"], "reviewCheckName":format!("{consumer}-review"),
             "githubApp":config["reviewerApp"], "writerActor":config["writerApp"]["expectedActor"],
             "validationNames":config.get("validationNames").cloned().unwrap_or(json!([]))
@@ -211,15 +212,23 @@ async fn disabled_publication_has_no_github_mutation_for_either_action() {
 
 #[test]
 fn consumer_policy_has_no_implicit_identity_or_base() {
-    let base = json!({"baseBranch":"trunk", "reviewCheckName":"fixture-review", "writerActor":"fixture-writer[bot]",
+    let base = json!({"owner":"fixture-owner", "baseBranch":"trunk", "reviewCheckName":"fixture-review", "writerActor":"fixture-writer[bot]",
         "githubApp":{"slug":"fixture-reviewer", "appId":"702", "installationId":"802", "expectedActor":"fixture-reviewer[bot]"}});
     assert_eq!(review_policy(&base).base_branch, "trunk");
-    for field in ["baseBranch", "reviewCheckName", "writerActor", "githubApp"] {
+    for field in [
+        "owner",
+        "baseBranch",
+        "reviewCheckName",
+        "writerActor",
+        "githubApp",
+    ] {
         let mut config = base.clone();
         config.as_object_mut().unwrap().remove(field);
         assert!(std::panic::catch_unwind(|| review_policy(&config)).is_err());
     }
     for (pointer, value) in [
+        ("/owner", json!("not/an-owner")),
+        ("/owner", json!("owner--invalid")),
         ("/baseBranch", json!("../main")),
         ("/githubApp/appId", json!("unknown")),
         ("/writerActor", json!("malformed actor[bot]")),
