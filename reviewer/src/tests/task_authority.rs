@@ -333,6 +333,18 @@ async fn typed_pr_cr_uses_native_review_check_and_recoverable_step_projection() 
     );
     assert_eq!(recovered["structuredContent"]["check"]["head_sha"], HEAD);
     assert_eq!(
+        recovered["structuredContent"]["pr_lifecycle"],
+        json!({"operation":"begin-remediation","prNumber":25,"reviewId":1,"head":HEAD})
+    );
+    state.pr.lock().unwrap().as_mut().unwrap()["draft"] = json!(true);
+    let replay = publish(&http, &url, &cr).await;
+    assert_ne!(replay["isError"], true, "{replay}");
+    assert_eq!(
+        replay["structuredContent"]["pr_lifecycle"],
+        recovered["structuredContent"]["pr_lifecycle"]
+    );
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(
         state.issue.lock().unwrap().as_ref().unwrap()["labels"],
         json!([{"name":"task"},{"name":"step-2"}])
     );

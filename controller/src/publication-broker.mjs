@@ -1,6 +1,6 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
-import { REPOSITORY, VERSION, WRITER, OWNER, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
+import { REPOSITORY, VERSION, WRITER, OWNER, digest, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
 import { canonicalAuthorityJson, validateAuthorityRecord, renderAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
 import { admitEnvelope, revalidateReadyEvent, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
 import { secretFree } from './trusted-git.mjs';
@@ -12,17 +12,27 @@ import { assertStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepL
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
 import { nonClosingTaskBody } from './task-relationship.mjs';
+import { transitionPr, beginRemediation } from './pr-lifecycle.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   // The typed publisher projects the exact Request purpose, bounded by Unicode
   // characters. Do not normalize it through the legacy prose-title parser.
   const titleFor = e => secretFree(e.request
     ? projectedRequestTitle(e.request)
     : boundedThreadCorrelationIdentity(e.thread));
+  async function prepareRemediation(e) {
+    if (e.target !== 'pull_request') return;
+    if (!lifecycleStore) fail('PR_LIFECYCLE_STORE_REQUIRED');
+    // The current native CR supplies the same exact action as Reviewer
+    // pr_lifecycle. Consume it before reserving a worker or emitting a handoff,
+    // even when the owner launches through the ordinary routing entrypoint.
+    await beginRemediation({ api, store: lifecycleStore, authorityDigest: e.authorityDigest,
+      request: { operation: 'begin-remediation', prNumber: e.number, reviewId: e.reviewId, head: e.startHead } });
+  }
   async function mirrorStep(r, pr) {
     const e = r.envelope;
     assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
@@ -67,6 +77,9 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
     if (matches.length > 1) fail('COMMENT_AMBIGUOUS');
     if (matches.length === 1) {
       if (matches[0].body !== `${body}\n\n${marker}`) fail('COMMENT_CONTENT_CHANGED');
+      if (r.commentIntent?.key === key && r.commentIntent.number === number) {
+        r.commentIntent = null; await store.put(r.envelope.runId, r);
+      }
       return matches[0];
     }
     // An ambiguous POST must never be blindly repeated after a failed GET.
@@ -142,28 +155,17 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
   }
 
   async function observeReadiness(r, pr) {
-    let readiness = prReadiness(pr, r.publishedHead);
-    const draft = readiness.status !== 'READY';
-    if (pr.draft !== draft) {
-      await api[draft ? 'draft' : 'ready'](pr.node_id);
-      pr = await api.get(`/pulls/${pr.number}`);
-      assertPr(pr, pr.number);
-      readiness = prReadiness(pr, r.publishedHead);
-      if (pr.draft !== draft) fail('READY_OBSERVATION_CHANGED');
-      // A formerly mergeable PR may become unresolved/conflicting during the
-      // native mutation. Preserve progress and restore draft without probing
-      // by push or inventing a conflict from an unresolved observation.
-      if (!pr.draft && readiness.status !== 'READY') {
-        await api.draft(pr.node_id);
-        pr = await api.get(`/pulls/${pr.number}`);
-        assertPr(pr, pr.number);
-        readiness = prReadiness(pr, r.publishedHead);
-        if (!pr.draft) fail('DRAFT_OBSERVATION_CHANGED');
-      }
+    return { pr, readiness: prReadiness(pr, r.publishedHead) };
+  }
+
+  async function successfulOutcomeIntent(r, body, head, prNumber, metadata = {}) {
+    if (r.successOutcomeIntent) {
+      if (r.successOutcomeIntent.head !== head || r.successOutcomeIntent.prNumber !== prNumber) fail('OUTCOME_BINDING_CHANGED');
+      return r.successOutcomeIntent.body;
     }
-    if (pr.draft && readiness.status === 'READY') readiness = { ...readiness,
-      status: 'PENDING', code: 'READINESS_REOBSERVATION_REQUIRED' };
-    return { pr, readiness };
+    r.successOutcomeIntent = { body: secretFree(body), head, prNumber, ...metadata };
+    await store.put(r.envelope.runId, r);
+    return body;
   }
 
   async function reconcileReadinessOutcome(r) {
@@ -185,7 +187,7 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
       const observed = await api.get(path);
       if (observed.body !== body || observed.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
     }
-    r.outcome = { ...r.outcome, readiness: intent.readiness, draft: intent.draft };
+    r.outcome = { ...r.outcome, readiness: intent.readiness, draft: intent.draft, bodySha256: sha256Body(body) };
     r.readinessIntent = null;
     await store.put(e.runId, r);
   }
@@ -210,17 +212,14 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
 
   async function terminalOutcome(r, { terminalCode, diagnostic, publishedHead } = {}) {
     if (r.outcome) return r.outcome;
+    if (r.successOutcomeIntent) fail('SUCCESS_OUTCOME_PUBLICATION_UNCERTAIN');
     const e = r.envelope;
     let pr = null;
     if (!r.admissionBlock) {
       // Do not hide an unknown PR/readiness state behind an Issue fallback.
       pr = await existingPullRequest(r);
-      if (pr && !pr.draft) {
-        await api.draft(pr.node_id);
-        pr = await api.get(`/pulls/${pr.number}`);
-        assertPr(pr, pr.number);
-        if (!pr.draft) fail('DRAFT_OBSERVATION_CHANGED');
-      }
+      if (pr) pr = await transitionPr({ api, store, key: e.runId, record: r, head: pr.head.sha, draft: true,
+        readPr: () => existingPullRequest(r) });
     }
     const number = e.target === 'pull_request' ? e.number : pr?.number ?? e.issueNumber;
     const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic }),
@@ -234,6 +233,10 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
 
   return {
     async dispatch(request) {
+      if (request?.operation === 'begin-remediation') {
+        if (!lifecycleStore) fail('PR_LIFECYCLE_STORE_REQUIRED');
+        return receipt(await beginRemediation({ api, store: lifecycleStore, request }));
+      }
       if (!request || !positive(request.runId)) fail('BROKER_REQUEST_INVALID');
       if (request.operation === 'admit') {
         const existing = await store.get(request.runId);
@@ -270,8 +273,12 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
             if (run.status !== 'completed' || !Number.isFinite(Date.parse(run.updated_at))
               || Date.parse(envelope.readyEventAt) <= Date.parse(run.updated_at)) fail('READY_EVENT_QUEUED');
           }
-          await revalidateReadyEvent(api, envelope);
         }
+        // Keep lifecycle failure before execution reservation and ready-command
+        // consumption. The same CR/head can reconcile its pending Draft intent
+        // without creating an unknown execution or publishing another review.
+        if (!admitted.blocked) await prepareRemediation(envelope);
+        if (envelope.transport === 'label') await revalidateReadyEvent(api, envelope);
         const r = { envelope, ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
           ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
           ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
@@ -289,7 +296,7 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
         return receipt({ envelope });
       }
       const r = await bound(request, request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication'].includes(request.operation) ? { revalidate: false } : {}); const e = r.envelope;
+        : ['publication-state', 'recover-publication', 'complete-handoff'].includes(request.operation) ? { revalidate: false } : {}); const e = r.envelope;
       if (request.operation === 'publication-state') {
         return receipt({ envelope: e, publicationIntent: r.publicationIntent, publishedHead: r.publishedHead,
           recovery: r.publicationRecoveries?.find(value => value.authorizationId === request.authorizationId) ?? null,
@@ -298,6 +305,42 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
       }
       if (request.operation === 'recover-publication') {
         return receipt(await recoverPublication({ api, store, publisher, record: r, request }));
+      }
+      if (request.operation === 'complete-handoff') {
+        if (r.handoffComplete) return receipt(r.outcome);
+        const saved = await journal?.get(e.runId);
+        if (e.route !== 'auto' || !saved || digest(saved.envelope) !== digest(e)
+          || saved.version !== VERSION || saved.diagnostic
+          || saved.execution?.reserved !== true || saved.execution.returned !== true
+          || saved.execution.child !== 'started' || saved.execution.containment !== 'reaped'
+          || saved.execution.result?.status !== 'success'
+          || typeof saved.collection?.clean !== 'boolean' || saved.collection.head !== r.finalHead
+          || r.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
+          || !['status', 'head', 'prNumber', 'outcomeId'].every(key => saved.outcome?.[key] === r.outcome[key])
+          || r.publicationIntent || r.commentIntent) fail('EXECUTION_HANDOFF_NOT_PROVEN');
+        // Full controller completion is recorded from the protected journal,
+        // before any Ready mutation. No caller claims can replace this proof.
+        await admission?.complete({ runId: e.runId, attemptId: e.attemptId });
+        // admission.complete may have updated the same protected record.
+        const completed = await store.get(e.runId);
+        Object.assign(r, completed);
+        if (!r.outcome.prNumber) {
+          r.handoffComplete = true; await store.put(e.runId, r); return receipt(r.outcome);
+        }
+        const outcome = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
+        if (outcome.user?.login !== WRITER || !outcome.body?.endsWith(`<!-- relay:${e.attemptId}:outcome -->`)
+          || !outcome.body.startsWith('## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\n')
+          || sha256Body(outcome.body) !== r.outcome.bodySha256) fail('COMMENT_CONTENT_CHANGED');
+        const pr = await transitionPr({ api, store, key: e.runId, record: r, head: r.finalHead, draft: false,
+          readPr: async () => {
+            await revalidateAuthority(api, e);
+            const current = await existingPullRequest(r);
+            if (!current || current.number !== r.outcome.prNumber) fail('PR_AUTHORITY_CHANGED');
+            return current;
+          } });
+        r.outcome.draft = pr.draft; r.handoffComplete = true;
+        await store.put(e.runId, r);
+        return receipt(r.outcome);
       }
       if (request.operation === 'preflight') {
         const a = await revalidateAuthority(api, e);
@@ -317,10 +360,8 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
           if (a.pr.title !== title) await api.patch(`/pulls/${a.pr.number}`, { title });
         }
         if (a.pr && !a.pr.draft && !r.finalHead) {
-          await api.draft(a.pr.node_id);
-          const after = await api.get(`/pulls/${a.pr.number}`);
-          assertPr(after, a.pr.number);
-          if (!after.draft || after.head.sha !== a.pr.head.sha) fail('DRAFT_OBSERVATION_CHANGED');
+          await transitionPr({ api, store, key: e.runId, record: r, head: a.pr.head.sha, draft: true,
+            readPr: () => existingPullRequest(r) });
         }
         return receipt({ envelope: e, publishedHead: r.publishedHead, finalHead: r.finalHead,
           ...(r.finalHead ? { outcome: receipt(r.outcome) } : {}) });
@@ -399,7 +440,6 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
           || canonicalAuthorityJson(result.request) !== canonicalAuthorityJson(e.requestReference)) fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID');
         if (r.manualResultAuthorization && (r.manualResultAuthorization.id !== source.id
           || r.manualResultAuthorization.sha256 !== sha256Body(source.body))) fail('MANUAL_OUTCOME_AUTHORIZATION_CHANGED');
-        if (r.outcome) return receipt(r.outcome);
         let pr = null;
         if (result.parent.kind === 'pull_request') {
           pr = await api.get(`/pulls/${result.parent.number}`);
@@ -415,11 +455,38 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
         r.manualResultAuthorization = { id: source.id, sha256: sha256Body(source.body) }; await store.put(e.runId, r);
         const after = await api.get(`/issues/comments/${source.id}`);
         if (sha256Body(after.body) !== r.manualResultAuthorization.sha256 || after.user?.id !== owner.id) fail('MANUAL_OUTCOME_AUTHORIZATION_CHANGED');
+        const transitionManual = async draft => {
+          if (!pr || pr.state !== 'open' || pr.merged) return;
+          if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
+          pr = await transitionPr({ api, store, key: e.runId, record: r, head: pr.head.sha, draft,
+            readPr: async () => {
+              await revalidateAuthority(api, e);
+              const current = await api.get(`/pulls/${pr.number}`); assertPr(current, pr.number);
+              if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber
+                || !current.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
+              return current;
+            } });
+        };
+        if (result.status !== 'implemented') await transitionManual(true);
+        if (r.outcome) {
+          if (result.status === 'implemented') {
+            const durable = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
+            if (durable.user?.login !== WRITER || sha256Body(durable.body) !== r.outcome.bodySha256) fail('COMMENT_CONTENT_CHANGED');
+            await transitionManual(false);
+          }
+          return receipt(r.outcome);
+        }
         const body = `## Codex Outcome\n\nStatus: ${result.status === 'implemented' ? 'IMPLEMENTED_PENDING_FRESH_REVIEW' : 'BLOCKED'}\nAttempt: ${e.attemptId}\nManual result source: #${source.id}\n\n${renderAuthorityRecord(result)}`;
-        const outcome = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, body);
+        let outcome = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, body);
+        const expectedBody = outcome.body;
+        outcome = await api.get(`/issues/comments/${outcome.id}`);
+        if (outcome.body !== expectedBody || outcome.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
         r.outcome = { status: result.status === 'implemented' ? 'IMPLEMENTED_PENDING_FRESH_REVIEW' : 'BLOCKED',
-          head: exactSha(result.result.revision) ? result.result.revision : null, prNumber: pr?.number ?? null, outcomeId: outcome.id, manual: true };
-        await store.put(e.runId, r); return receipt(r.outcome);
+          head: exactSha(result.result.revision) ? result.result.revision : null, prNumber: pr?.number ?? null,
+          outcomeId: outcome.id, bodySha256: sha256Body(outcome.body), manual: true };
+        await store.put(e.runId, r);
+        if (result.status === 'implemented') await transitionManual(false);
+        return receipt(r.outcome);
       }
       if (request.operation === 'finish-no-change') {
         if (r.outcome) return receipt(r.outcome);
@@ -428,15 +495,22 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
         const pr = await existingPullRequest(r);
         if (pr && pr.head.sha !== e.startHead) fail('PR_HEAD_OBSERVATION_STALE');
         const number = pr?.number ?? e.issueNumber;
-        const body = boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent Task review remains required.`, { pr, head: e.startHead });
-        const outcome = await commentOnce(r, 'outcome', number, body);
-        r.finalHead = e.startHead;
-        r.outcome = { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: e.startHead, prNumber: pr?.number ?? null, outcomeId: outcome.id, noChange: true };
+        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent Task review remains required.`, { pr, head: e.startHead }), e.startHead, pr?.number ?? null);
+        let outcome = await commentOnce(r, 'outcome', number, body);
+        const expectedBody = outcome.body;
+        outcome = await api.get(`/issues/comments/${outcome.id}`);
+        if (outcome.body !== expectedBody || outcome.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
+        r.finalHead = e.startHead; r.handoffComplete = false; r.successOutcomeIntent = null;
+        r.outcome = { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: e.startHead, prNumber: pr?.number ?? null,
+          outcomeId: outcome.id, bodySha256: sha256Body(outcome.body), ...(pr ? { draft: pr.draft } : {}), noChange: true };
         await store.put(e.runId, r);
         return receipt(r.outcome);
       }
       if (request.operation === 'handoff') {
         if (e.route !== 'manual') fail('MANUAL_ROUTE_REQUIRED');
+        // Manual routing skips worker preflight. Revalidate the native CR/head
+        // and verified Draft state here, including admission/handoff replay.
+        if (!r.outcome) await prepareRemediation(e);
         const url = e.reviewId ? `https://github.com/${REPOSITORY}/pull/${e.number}#pullrequestreview-${e.reviewId}` : `https://github.com/${REPOSITORY}/issues/${e.issueNumber}`;
         const requestBinding = e.requestReference ? `\nCurrent execution request: https://github.com/${REPOSITORY}/${e.requestReference.parent.kind === 'issue' ? 'issues' : 'pull'}/${e.requestReference.parent.number}#${e.requestReference.kind === 'review' ? 'pullrequestreview' : 'issuecomment'}-${e.requestReference.id}\nRequest SHA-256: ${e.requestReference.sha256}\nRead the stable Task charter plus this exact complete request and its selected source references. Verify it remains current; historical prose and ordinary comments grant no execution authority.\n` : '';
         const body = `MANUAL_CODEX_HANDOFF_READY\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nModel: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\n\nCopyable prompt:\n\n\`\`\`text\nExecute the project-defined procedure for this canonical authority:\n${url}${requestBinding}\nThread: ${e.thread}\nCodex model: ${e.profile.cliModelId}\nCodex effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\nFollow repository instructions and live authority. Commit and push safe task-owned work before handoff.\n\n${PROGRESS_BOUNDED_EXECUTION}\n\`\`\``;
@@ -475,10 +549,14 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
           if (r.publicationIntent || recovery?.result?.status !== 'PUBLISHED'
             || recovery.result.publishedHead !== r.publishedHead) fail('RECOVERED_OUTCOME_REQUIRED');
         }
-        const { pr, readiness } = await observeReadiness(r, await pullRequest(r));
+        await pullRequest(r);
+        const drafted = await transitionPr({ api, store, key: e.runId, record: r, head: r.publishedHead, draft: true,
+          readPr: () => existingPullRequest(r) });
+        const { pr, readiness } = await observeReadiness(r, drafted);
         const warningSummary = [admissionWarningSummary(e.admission?.warnings ?? e.warnings),
           executionWarningSummary(executionWarnings)].filter(Boolean).join('; ');
-        const body = boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(request.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable candidate head: ${r.publishedHead}\n${readinessOutcomeLines(readiness, pr.draft)}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native candidate-head CI was not evaluated by automatic completion. Mergeability is a snapshot of the observed base; it does not establish independent acceptance or authorize base reconciliation.\nIndependent exact-head validation and review plus safe integration remain required before the authorized squash continuation.`, { pr, head: r.publishedHead, executionWarnings });
+        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(request.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable candidate head: ${r.publishedHead}\n${readinessOutcomeLines(readiness)}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native candidate-head CI was not evaluated by automatic completion. Mergeability is a snapshot of the observed base; it does not establish independent acceptance or authorize base reconciliation.\nNative Ready means successful execution handoff only. Independent exact-head validation and review plus safe integration remain required before the authorized squash continuation.`, { pr, head: r.publishedHead, executionWarnings }), r.publishedHead, pr.number, { readiness });
+        const outcomeReadiness = r.successOutcomeIntent.readiness;
         let outcome;
         if (r.outcome?.status === 'BLOCKED') {
           const path = `/issues/comments/${r.outcome.outcomeId}`;
@@ -493,8 +571,12 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
             if (outcome.body !== desired || outcome.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
           }
         } else outcome = await commentOnce(r, 'outcome', pr.number, body);
-        r.finalHead = r.publishedHead;
-        r.outcome = { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: r.finalHead, prNumber: pr.number, outcomeId: outcome.id, readiness, draft: pr.draft,
+        const expectedBody = outcome.body;
+        outcome = await api.get(`/issues/comments/${outcome.id}`);
+        if (outcome.body !== expectedBody || outcome.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
+        r.finalHead = r.publishedHead; r.handoffComplete = false; r.successOutcomeIntent = null;
+        r.outcome = { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: r.finalHead, prNumber: pr.number, outcomeId: outcome.id,
+          bodySha256: sha256Body(outcome.body), readiness: outcomeReadiness, draft: pr.draft,
           ...(executionWarnings.length ? { executionWarnings } : {}) };
         await store.put(e.runId, r);
         return receipt(r.outcome);

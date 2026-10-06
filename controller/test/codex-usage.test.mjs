@@ -13,7 +13,7 @@ const usage = normalizeCodexUsage({ source: 'codex-exec-turn-completed', scope: 
 
 for (const status of ['success', 'blocked', 'failed']) {
   test(`native usage survives ${status} execution, journal, Outcome and same-attempt replay`, async t => {
-    const f = await fixture(t); const journal = memoryStore(); let executions = 0;
+    const f = await fixture(t); const journal = f.journal; let executions = 0;
     const execute = async () => {
       executions++;
       await f.commit();
@@ -37,7 +37,7 @@ for (const status of ['success', 'blocked', 'failed']) {
 }
 
 test('worker result usage claims do not become runtime evidence in an Outcome', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await runAttempt({ ...f, journal, execute: async () => {
     await f.commit();
     return { version: f.envelope.version, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
@@ -50,7 +50,7 @@ test('worker result usage claims do not become runtime evidence in an Outcome', 
 });
 
 test('publication recovery reuses the original runtime usage without executing a worker', async t => {
-  const f = await fixture(t); const journal = memoryStore(); const head = 'c'.repeat(40);
+  const f = await fixture(t); const journal = f.journal; const head = 'c'.repeat(40);
   await journal.put(f.envelope.runId, { version: f.envelope.version, envelope: f.envelope,
     execution: { reserved: true, returned: true, child: 'started', containment: 'reaped', codexUsage: usage,
       result: { status: 'success', summary: 'done', validation: [] } },
@@ -59,7 +59,7 @@ test('publication recovery reuses the original runtime usage without executing a
   const broker = { invoke: async request => {
     if (request.operation === 'publication-state') return { envelope: f.envelope, recovery: { result: { status: 'PUBLISHED' } } };
     if (request.operation === 'recover-publication') return { publishedHead: head };
-    assert.equal(request.operation, 'finish'); finish = request;
+    if (request.operation !== 'complete-handoff') { assert.equal(request.operation, 'finish'); finish = request; }
     return { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head, prNumber: 43 };
   } };
   await recoverAttemptPublication({ runId: f.envelope.runId, attemptId: f.envelope.attemptId, authorizationId: 123,

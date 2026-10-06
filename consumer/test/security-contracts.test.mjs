@@ -16,7 +16,7 @@ import { buildCheckoutCodexEnvironment, buildCodexProcessSpec } from '../../runt
 test('dogfood trust: Writer can publish workflow bytes; ready does not certify candidate CI', async t => {
   const f = await fixture(t);
   assert.equal(WRITER_TOKEN_PERMISSIONS.workflows, 'write');
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+  const result = await runAttempt({ ...f, journal: f.journal, execute: async () => {
     await mkdir(join(f.cwd, '.github/workflows'), { recursive: true });
     await f.commit('.github/workflows/model-authored.yml', 'on: push\njobs:\n  candidate:\n    runs-on: self-hosted\n    steps:\n      - run: echo synthetic\n');
     return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
@@ -26,7 +26,7 @@ test('dogfood trust: Writer can publish workflow bytes; ready does not certify c
   assert.equal(result.head, await f.remoteHead());
   assert.equal(f.pushes(), 1);
   assert.match(f.comments.at(-1).body, /Native candidate-head CI was not evaluated/);
-  assert.match(f.comments.at(-1).body, /Review readiness: READY \(MERGEABLE\)/);
+  assert.match(f.comments.at(-1).body, /Integration readiness: READY \(MERGEABLE\)/);
   f.run.head_branch = f.envelope.branch;
   await assert.rejects(admitEnvelope(f.api, f.admissionRequest), { code: 'OWNER_RUN_NOT_ADMITTED' });
 });

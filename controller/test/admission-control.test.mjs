@@ -32,13 +32,12 @@ async function control(t, { store = memoryStore(), journal = memoryStore() } = {
   return { root, admission, store, journal };
 }
 async function fixtureWithGate(t, options = {}) {
-  const journal = memoryStore();
-  const f = await fixture(t, { ...options, createAdmission: async ({ root, store }) => {
+  const f = await fixture(t, { ...options, createAdmission: async ({ root, store, journal }) => {
     const gateRoot = join(root, 'claims'); await mkdir(gateRoot, { mode: 0o700 });
     const admission = createAdmissionControl({ root: gateRoot, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false });
     await admission.initialize(); return admission;
   } });
-  return { ...f, journal };
+  return f;
 }
 
 test('a non-regular gate fails closed without waiting for a FIFO writer', { timeout: 2000 }, async t => {
@@ -170,14 +169,32 @@ test('quiesce allows the existing admitted automatic controller to finish throug
       child: 'started', containment: 'reaped', result: { status: 'success', summary: 'completed', validation: [] } };
   } });
   assert.equal(returned.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
-  // A contained model exit alone never releases complete controller ownership.
-  assert.deepEqual((await gate.status()).active, [f.envelope.runId]);
+  // Ready is returned only after the durable journal and controller completion.
+  assert.equal(returned.draft, false);
+  assert.deepEqual((await gate.status()).active, []);
   await gate.complete({ runId: f.envelope.runId, attemptId: f.envelope.attemptId });
   assert.deepEqual((await gate.status()).active, []);
   assert.equal((await gate.drained({ operationId })).drained, true);
   assert.equal(f.pushes(), 1);
   await gate.complete({ runId: f.envelope.runId, attemptId: f.envelope.attemptId });
   assert.equal(f.pushes(), 1);
+});
+
+test('failed Ready handoff remains an unresolved drain boundary until exact transition recovery', async t => {
+  const f = await fixtureWithGate(t); const gate = f.admissionControl; const ready = f.api.ready;
+  f.api.ready = async () => { throw Object.assign(new Error('Ready failed'), { code: 'READY_MUTATION_FAILED' }); };
+  const args = { ...f, execute: async () => {
+    await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId,
+      child: 'started', containment: 'reaped', result: { status: 'success' } };
+  } };
+  await assert.rejects(runAttempt(args), { code: 'READY_MUTATION_FAILED' });
+  assert.deepEqual((await gate.status()).unknown, [99]);
+  await gate.quiesce({ operationId, target });
+  await assert.rejects(gate.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  f.api.ready = ready;
+  assert.equal((await runAttempt(args)).draft, false);
+  assert.equal((await gate.drained({ operationId })).drained, true);
+  assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
 });
 
 test('manual handoff remains available while automatic admission is quiesced', async t => {

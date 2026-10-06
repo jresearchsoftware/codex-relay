@@ -31,7 +31,7 @@ for (const example of [
   { name: 'missing launcher diagnostic', missing: true, exit: null, signal: null },
   { name: 'primary store unavailable', exit: 7, signal: null, cause: 'PROCESS_IO_ERROR', storeFails: true }
 ]) test(`automatic Outcome preserves ${example.name} across runtime, dispatcher, Writer and replay`, async t => {
-  const f = await fixture(t); const journal = memoryStore(); let capsule; let launches = 0;
+  const f = await fixture(t); const journal = f.journal; let capsule; let launches = 0;
   const primary = [];
   const diagnosticStore = async value => {
     if (example.storeFails) throw Object.assign(new Error(privateText), { code: 'ENOSPC' });

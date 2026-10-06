@@ -11,7 +11,12 @@ import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // An explicit operator entrypoint, never called by the router or ordinary replay.
 // It has no prepare/execute callback: the original child receipt is mandatory.
-export async function recoverAttemptPublication({ runId, attemptId, authorizationId, broker, journal, collect }) {
+export async function recoverAttemptPublication(options) {
+  const outcome = await recoverContainedPublication(options);
+  return options.broker.invoke({ operation: 'complete-handoff', runId: options.runId, attemptId: options.attemptId });
+}
+
+async function recoverContainedPublication({ runId, attemptId, authorizationId, broker, journal, collect }) {
   if (!positive(runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(attemptId ?? '') || !positive(authorizationId)) fail('RECOVERY_REQUEST_INVALID');
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId, attemptId, ...value });
   const state = await invoke('publication-state', { authorizationId });

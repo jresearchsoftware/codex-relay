@@ -20,7 +20,7 @@ async function completed(t, mergeable, options = {}) {
     return path === '/pulls/43' ? { ...pr, mergeable: observed,
       base: { ...pr.base, sha: observedBase ?? pr.base.sha } } : pr;
   };
-  const journal = memoryStore(); let executions = 0;
+  const journal = f.journal; let executions = 0;
   const args = { ...f, journal, execute: async () => {
     executions++; await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
       result: { status: 'success', summary: 'Candidate complete.', validation: ['local candidate validation'] } };
@@ -72,11 +72,11 @@ for (const mergeable of [null, false]) {
     const f = await completed(t, mergeable);
     assert.equal(f.outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
     assert.equal(f.outcome.readiness.status, mergeable === null ? 'PENDING' : 'BLOCKED');
-    assert.equal(f.outcome.draft, true); assert.equal(f.pushes(), 1);
+    assert.equal(f.outcome.draft, false); assert.equal(f.pushes(), 1);
     assert.equal(f.outcome.head, await f.remoteHead());
     assert.match(f.comments[0].body, /Latest durable candidate head:/);
     assert.doesNotMatch(f.comments[0].body, /Latest durable and ready head:/);
-    assert.match(f.comments[0].body, /Review readiness: (PENDING|BLOCKED)/);
+    assert.match(f.comments[0].body, /Integration readiness: (PENDING|BLOCKED)/);
     await runAttempt(f.args);
     assert.equal(f.executions(), 1); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
   });
@@ -89,7 +89,7 @@ test('one bounded observation resolves transient mergeability on the same Outcom
   const result = await f.broker.invoke(request);
   assert.equal(result.readiness.status, 'READY'); assert.equal(result.draft, false);
   assert.equal(result.outcomeId, f.outcome.outcomeId); assert.equal(f.comments.length, 1);
-  assert.match(f.comments[0].body, /Review readiness: READY/);
+  assert.match(f.comments[0].body, /Integration readiness: READY/);
   assert.match(f.comments[0].body, /Candidate complete\./);
   assert.deepEqual(await f.broker.invoke(request), result);
   assert.equal(f.executions(), 1); assert.equal(f.pushes(), 1);
@@ -101,7 +101,7 @@ test('later base movement refreshes a readiness snapshot while keeping the exact
     attemptId: f.envelope.attemptId, head: f.outcome.head });
   assert.equal(result.readiness.status, 'BLOCKED'); assert.equal(result.readiness.observedBase, base);
   assert.equal(result.head, f.outcome.head); assert.equal(await f.remoteHead(), f.outcome.head);
-  assert.equal(result.draft, true); assert.equal(f.pushes(), 1); assert.equal(f.executions(), 1);
+  assert.equal(result.draft, false); assert.equal(f.pushes(), 1); assert.equal(f.executions(), 1);
   assert.equal(f.comments.length, 1);
 });
 
@@ -143,12 +143,12 @@ test('a changed native candidate cannot be adopted by a readiness observation', 
   assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
 });
 
-test('mergeability becoming unresolved during native ready mutation returns pending and restores draft', async t => {
-  const f = await completed(t, null); f.observe(true);
-  const ready = f.api.ready.bind(f.api);
-  f.api.ready = async node => { await ready(node); f.observe(null); };
+test('readiness observations never mutate the native lifecycle', async t => {
+  const f = await completed(t, true); f.observe(null);
+  f.api.ready = () => assert.fail('integration observation attempted Ready');
+  f.api.draft = () => assert.fail('integration observation attempted Draft');
   const result = await f.broker.invoke({ operation: 'observe-readiness', runId: f.envelope.runId,
     attemptId: f.envelope.attemptId, head: f.outcome.head });
-  assert.equal(result.readiness.status, 'PENDING'); assert.equal(result.readiness.code, 'MERGEABILITY_UNRESOLVED');
-  assert.equal(result.draft, true); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+  assert.equal(result.readiness.status, 'PENDING');
+  assert.equal(result.draft, false); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
 });

@@ -87,10 +87,27 @@ async fn partial_metadata_recovery_preserves_native_review_and_step_at_every_sta
             .iter()
             .filter(|r| r.starts_with("PUT ") || r.starts_with("PATCH "))
             .count();
+        assert_eq!(
+            recovered["result"]["structuredContent"]["pr_lifecycle"],
+            json!({"operation":"begin-remediation","prNumber":25,"reviewId":1,"head":HEAD})
+        );
+        // Simulate the independent Writer transition. Reviewer can recover
+        // this same CR on Draft, but does not perform that mutation itself.
+        state.pr.lock().unwrap().as_mut().unwrap()["draft"] = json!(true);
         let duplicate = publish(&http, &url, &args).await;
         assert_eq!(
             duplicate.pointer("/result/content/0/text"),
             Some(&json!("DUPLICATE_SUPPRESSED"))
+        );
+        assert_eq!(
+            duplicate["result"]["structuredContent"]["pr_lifecycle"],
+            recovered["result"]["structuredContent"]["pr_lifecycle"]
+        );
+        assert!(state.pr.lock().unwrap().as_ref().unwrap()["draft"] == true);
+        let approve = publish(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            approve["result"]["content"][0]["text"],
+            "DRAFT_PR_NOT_READY"
         );
         assert_eq!(
             state

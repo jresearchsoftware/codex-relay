@@ -43,7 +43,7 @@ test('a new Issue with no paths, base, branch or profile publishes task-required
   assert.equal(f.envelope.startHead, f.envelope.targetBase);
   assert.deepEqual(f.envelope.profile, CONSUMER.defaultProfile);
   assert.ok(!f.envelope.warnings.some(w => ['branch', 'accepted starting base', 'closure'].includes(w.field)));
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+  const result = await runAttempt({ ...f, journal: f.journal, execute: async () => {
     await f.commit('unanticipated-required-file.mjs', '// required by the admitted goal\n');
     return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
       result: { status: 'success', summary: 'Task-required repository change completed.', validation: ['local check passed'] } };
@@ -74,6 +74,9 @@ test('fresh owner dispatch retries keep Step; explicit continuation changes curr
   const f = await fixture(t, { remediation: true, step: 5 });
   for (const [runId, step] of [[100, 5], [101, 23], [102, 2]]) {
     const request = { ...f.admissionRequest, runId, step };
+    // A new CR phase has a new native publication identity. Reusing the same
+    // review for different authority would corrupt its exact lifecycle receipt.
+    if (f.issue.labels[0].name !== `step-${step}`) { f.review.id++; f.pr.draft = false; }
     f.issue.labels = f.pr.labels = [{ name: `step-${step}` }];
     f.review.body = f.review.body.replace(/Step [0-9]+/, `Step ${step}`);
     Object.assign(f.run, { id: runId, display_title: dispatchRunName(request) });
@@ -102,7 +105,7 @@ test('both worker operations receive supplied launch metadata despite historical
 test('remediation run uses linked Issue identity and supplied Step in PR metadata before publication', async t => {
   const f = await fixture(t, { remediation: true, step: 42 });
   let title;
-  await runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+  await runAttempt({ ...f, journal: f.journal, execute: async () => {
     title = (await f.api.get('/pulls/43')).title;
     await f.commit('needed-at-repository-root.md', 'task-required file\n');
     return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',

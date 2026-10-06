@@ -186,7 +186,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
     const noSource = a.request?.route === 'manual' && a.branch === null;
     if ((!noSource && target === 'issue' && targetBase !== a.historicalBase)
-      || (a.pr && (a.pr.head.sha !== a.startHead || (target === 'pull_request' && a.pr.draft)))) fail('STARTING_STATE_MISMATCH');
+      || (a.pr && a.pr.head.sha !== a.startHead)) fail('STARTING_STATE_MISMATCH');
     if (target === 'issue' && !noSource) {
       const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
       if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');

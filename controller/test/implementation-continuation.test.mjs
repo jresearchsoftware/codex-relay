@@ -26,7 +26,7 @@ test('the normal Issue label path continues the exact implementation head and re
   f.api.post = (path, body) => { assert.notEqual(path, '/pulls'); return post(path, body); };
   f.api.list = path => { assert.ok(!path.endsWith('/reviews')); return list(path); };
   let executions = 0;
-  const args = { ...f, journal: memoryStore(), execute: async () => {
+  const args = { ...f, journal: f.journal, execute: async () => {
     executions++;
     assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), f.envelope.startHead);
     assert.equal(await readFile(join(f.cwd, 'docs/prior.md'), 'utf8'), 'previous implementation progress\n');
@@ -118,7 +118,7 @@ test('an existing branch without continuation authority still follows the fresh-
 
 test('continuation remains available through the manual Issue handoff route', async t => {
   const f = await fixture(t, { continuation: true, route: 'manual' });
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: () => assert.fail('manual route must not launch') });
+  const result = await runAttempt({ ...f, journal: f.journal, execute: () => assert.fail('manual route must not launch') });
   assert.equal(result.status, 'handed-off');
   assert.equal(f.pushes(), 0);
   assert.match(f.comments[0].body, /MANUAL_CODEX_HANDOFF_READY/);

@@ -64,7 +64,7 @@ test('safe admission blockers publish exactly one truthful terminal Outcome with
 });
 
 test('a live malformed starting head terminalizes as a normal blocked Outcome', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   f.issue.body += '\nAccepted starting main: malformed';
   const result = await runAttempt({ ...f, journal, execute: () => assert.fail('head blocker must not launch the worker') });
   assert.equal(result.status, 'BLOCKED');
@@ -99,7 +99,7 @@ function helperFailureSpawn(payload) {
 }
 
 test('composed owner path finishes once with exact-head CI pending and mergeability unknown', async t => {
-  const f = await fixture(t); const journal = createAttemptStore(join(f.root, 'journal')); let executions = 0;
+  const f = await fixture(t, { createJournal: root => createAttemptStore(join(root, 'journal')) }); const journal = f.journal; let executions = 0;
   const get = f.api.get.bind(f.api);
   f.api.get = async path => {
     const value = await get(path);
@@ -115,12 +115,12 @@ test('composed owner path finishes once with exact-head CI pending and mergeabil
   assert.match(f.comments[0].body, /Native candidate-head CI was not evaluated/);
   assert.doesNotMatch(f.comments[0].body, /check \d+ passed|GitHub reports mergeable/);
   assert.equal(result.readiness.status, 'PENDING');
-  assert.equal((await f.api.get('/pulls/43')).draft, true);
+  assert.equal((await f.api.get('/pulls/43')).draft, false);
   await runAttempt(args); assert.equal(executions, 1);
 });
 
 test('one terminal Outcome retains substantive worker evidence separately from trusted head and CI observations', async t => {
-  const f = await fixture(t, { remediation: true, step: 2 }); const journal = memoryStore();
+  const f = await fixture(t, { remediation: true, step: 2 }); const journal = f.journal;
   const baseline = '1111111111111111111111111111111111111111';
   const startingMain = '2222222222222222222222222222222222222222';
   const summary = `External factual evidence baseline ${baseline}; starting main ${startingMain}. `
@@ -159,7 +159,7 @@ test('untrusted Outcome claims remain redacted and bounded after presentation es
   assert.ok(!claims.includes('forged')); assert.match(claims, /TRUNCATED/);
 });
 test('automatic finish still refuses a stale PR-head observation before readiness', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   const broker = { invoke: async request => {
     const result = await f.broker.invoke(request);
     if (request.operation === 'publish-progress') {
@@ -191,7 +191,7 @@ test('manual routing remains a handoff and does not enter automatic completion',
 });
 
 for (const remediation of [false, true]) test(`one ${remediation ? 'remediation' : 'implementation'} worker preserves multiple corrections without relaunch`, async t => {
-  const f = await fixture(t, { remediation }); const journal = memoryStore();
+  const f = await fixture(t, { remediation }); const journal = f.journal;
   let executions = 0; let finalHead;
   const args = { ...f, journal, execute: async () => {
     executions++;
@@ -210,7 +210,7 @@ for (const remediation of [false, true]) test(`one ${remediation ? 'remediation'
   assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
 });
 test('blocked model commits are durable and never asserted ready', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   const result = await runAttempt({ ...f, journal, execute: async () => { await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'blocked' } }; } });
   assert.equal(result.status, 'BLOCKED');
   assert.equal((await journal.get(99)).progress.head, await f.remoteHead());
@@ -218,19 +218,20 @@ test('blocked model commits are durable and never asserted ready', async t => {
   assert.match(f.comments[0].body, new RegExp(`Durable/published head: ${await f.remoteHead()}`));
   assert.match(f.comments[0].body, /Cause summary: UNAVAILABLE/);
 });
-test('a failed ready transition cannot publish a completion Outcome', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+test('a failed ready transition retains the durable successful Outcome and Draft', async t => {
+  const f = await fixture(t); const journal = f.journal;
   f.api.ready = async () => { throw Object.assign(new Error('READY_FAILED'), { code: 'READY_FAILED' }); };
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
   } }), { code: 'READY_FAILED' });
   assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
-  assert.match(f.comments[0].body, /Terminal code: READY_FAILED/);
+  assert.match(f.comments[0].body, /Status: IMPLEMENTED_PENDING_FRESH_REVIEW/);
+  assert.equal((await f.api.get('/pulls/43')).draft, true);
   assert.equal((await journal.get(99)).progress.head, await f.remoteHead());
 });
 
 test('automatic failure before durable publication publishes one blocked Issue Outcome', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     throw Object.assign(new Error('worker unavailable'), { code: 'CODEX_RESULT_MISSING' });
   } }), { code: 'CONTAINMENT_NOT_PROVEN' });
@@ -242,7 +243,7 @@ test('automatic failure before durable publication publishes one blocked Issue O
 });
 
 test('blocked remediation publishes its terminal Outcome on the existing PR', async t => {
-  const f = await fixture(t, { remediation: true }); const journal = memoryStore();
+  const f = await fixture(t, { remediation: true }); const journal = f.journal;
   const result = await runAttempt({ ...f, journal, execute: async () => {
     return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'blocked' } };
   } });
@@ -266,7 +267,7 @@ test('blocked Outcome uses structured route state instead of Issue\/CR token pro
 });
 
 test('Outcome publication failure is explicit in terminal execution evidence', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   const post = f.api.post.bind(f.api);
   f.api.post = async (path, body) => path.endsWith('/comments')
     ? Promise.reject(Object.assign(new Error('comment unavailable'), { code: 'GITHUB_REQUEST_FAILED' }))
@@ -390,7 +391,7 @@ test('publication process exit stays separate from Codex child exit in causal ev
   assert.equal(child.publication, undefined);
 });
 test('publication cause survives broker, privileged helper, local adapter, and terminal diagnostics', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   const headerValue = Buffer.from('x-access-token:synthetic-not-secret').toString('base64');
   const pushCause = Object.assign(new Error('remote authentication failed'), {
     code: 128,
@@ -434,7 +435,7 @@ test('publication cause survives broker, privileged helper, local adapter, and t
 for (const observationCause of ['GIT_TIMEOUT', 'GIT_AUTHORIZATION_REJECTED', 'GIT_TRANSPORT_FAILED', 'GIT_LOCAL_FAILURE', 'GIT_UNKNOWN_FAILURE', null]) {
   for (const failedPush of [false, true]) {
     test(`terminal observation cause ${observationCause ?? 'unavailable'} after ${failedPush ? 'failed' : 'successful'} push stays attributable without retry`, async t => {
-      const f = await fixture(t); const journal = memoryStore();
+      const f = await fixture(t); const journal = f.journal;
       if (failedPush) f.failPush({ details: { failureDiagnostic: {
         classification: 'GIT_REF_CONFLICT', primaryCause: 'GIT_REF_CONFLICT', operation: 'push', gitExitCode: 1, preview: 'push rejected'
       } } });
@@ -478,7 +479,7 @@ for (const observationCause of ['GIT_TIMEOUT', 'GIT_AUTHORIZATION_REJECTED', 'GI
 }
 
 test('failed push with confirmed unchanged existing head retains push cause in terminal diagnostics', async t => {
-  const f = await fixture(t, { remediation: true }); const journal = memoryStore();
+  const f = await fixture(t, { remediation: true }); const journal = f.journal;
   f.failPush({ details: { failureDiagnostic: {
     classification: 'GIT_AUTHORIZATION_REJECTED', primaryCause: 'GIT_AUTHORIZATION_REJECTED',
     operation: 'push', gitExitCode: 128, preview: 'remote authentication failed'
@@ -507,7 +508,7 @@ test('failed push with confirmed unchanged existing head retains push cause in t
   assert.equal(f.pushes(), 1);
 });
 test('unknown execution reservation cannot be relaunched', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await journal.put(99, { version: VERSION, envelope: f.envelope, execution: { reserved: true, returned: false } });
   await assert.rejects(runAttempt({ ...f, journal, execute: () => assert.fail('duplicate child') }), { code: 'EXECUTION_UNKNOWN_NO_RETRY' });
   assert.equal((await journal.get(99)).diagnostic.observed.child, 'unknown');
@@ -517,7 +518,7 @@ test('missing journal after admission remains unknown and cannot launch a child'
   await assert.rejects(runAttempt({ ...f, admissionResumed: true, journal: memoryStore(), execute: () => assert.fail('duplicate') }), { code: 'JOURNAL_MISSING_EXECUTION_UNKNOWN' });
 });
 test('a journal without execution evidence cannot be treated as a new attempt', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await journal.put(99, { version: VERSION, envelope: f.envelope });
   await assert.rejects(runAttempt({ ...f, journal, execute: () => assert.fail('duplicate') }), { code: 'JOURNAL_MISSING_EXECUTION_UNKNOWN' });
 });
@@ -613,7 +614,7 @@ test('missing runtime evidence preserves unknown primary cause and execution', (
 });
 test('composed remediation preserves historical reviewed head and publishes a new ready head', async t => {
   const f = await fixture(t, { remediation: true });
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+  const result = await runAttempt({ ...f, journal: f.journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
   } });
   assert.equal(result.head, await f.remoteHead()); assert.notEqual(result.head, f.review.commit_id);

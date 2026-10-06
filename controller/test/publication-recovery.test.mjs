@@ -365,7 +365,7 @@ function helperFailureSpawn(payload) {
 
 for (const remediation of [false, true]) for (const residue of [false, true]) {
   test(`the explicit ${remediation ? 'PR' : 'Issue'} recovery command continues ${residue ? 'a handoff with generated residue' : 'the original readiness/Outcome'} without a new Codex call`, async t => {
-    const f = await fixture(t, { remediation }); const journal = memoryStore(); let executions = 0;
+    const f = await fixture(t, { remediation }); const journal = f.journal; let executions = 0;
     const generatedPath = join(f.cwd, '__pycache__/generated.pyc');
     const execute = async () => {
       executions++; await f.commit('unanticipated-required-file.md');
@@ -414,7 +414,7 @@ for (const remediation of [false, true]) for (const residue of [false, true]) {
 }
 
 test('an ambiguous Outcome update resumes by observation of the same comment without another push', async t => {
-  const f = await fixture(t, { remediation: true }); const journal = memoryStore(); f.failPush(true);
+  const f = await fixture(t, { remediation: true }); const journal = f.journal; f.failPush(true);
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
   } }), { code: 'PUBLICATION_UNCERTAIN' });
@@ -428,7 +428,7 @@ test('an ambiguous Outcome update resumes by observation of the same comment wit
 });
 
 test('recovery failure preview survives the durable store, helper wire and terminal JSON with explicit truncation', async t => {
-  const f = await fixture(t, { remediation: true }); const journal = memoryStore(); f.failPush(true);
+  const f = await fixture(t, { remediation: true }); const journal = f.journal; f.failPush(true);
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
   } }), { code: 'PUBLICATION_UNCERTAIN' });
@@ -491,7 +491,7 @@ test('a real rejecting Git remote supplies the sanitized durable recovery previe
 });
 
 test('recovery cannot finish a blocked child with meaningful dirty work or a changed candidate, and missing execution evidence cannot push', async t => {
-  const f = await fixture(t, { remediation: true }); const journal = memoryStore(); f.failPush(true);
+  const f = await fixture(t, { remediation: true }); const journal = f.journal; f.failPush(true);
   await assert.rejects(runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'blocked' } };
   } }), { code: 'PUBLICATION_UNCERTAIN' });

@@ -28,7 +28,7 @@ async function advanceAgain(f) {
 }
 
 test('owner dispatch reaches one bounded Codex child from a truly dirty reviewed PR and publishes both behaviors', async t => {
-  const f = await reviewed(t, { nativeReview: true }); const journal = memoryStore(); let children = 0; let merge;
+  const f = await reviewed(t, { nativeReview: true }); const journal = f.journal; let children = 0; let merge;
   assert.equal(f.envelope.attemptId, 'run-99'); assert.equal(f.envelope.step, 3);
   assert.equal((await f.api.get('/pulls/43')).mergeable, false);
   const args = { ...f, journal, execute: async e => {
@@ -91,7 +91,7 @@ for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-iss
     if (change === 'main') await advanceAgain(f);
     // Some changed PR identities also prevent publishing a terminal comment.
     // In every case, the security property is zero child and publication calls.
-    await runAttempt({ ...f, journal: memoryStore(), execute: () => { children++; assert.fail('protected mismatch reached child'); } }).catch(error => {
+    await runAttempt({ ...f, journal: f.journal, execute: () => { children++; assert.fail('protected mismatch reached child'); } }).catch(error => {
       assert.ok(error.code);
     });
     assert.equal(children, 0); assert.equal(f.pushes(), 0);
