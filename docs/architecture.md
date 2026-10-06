@@ -9,6 +9,16 @@ which encodes the policy in `AGENTS.md`; reusable code chooses no model.
 
 ## Components and flow
 
+Tasks explicitly migrated to `Authority model: github-native-v1` use the stable
+Issue charter plus one complete trusted execution request. The shared
+[authority contract](../contracts/README.md#github-native-task-authority) defines
+native identity, publisher Bot identity, version, target binding, verified
+source references and explicit linear supersession. Selected ordinary comments
+are contextual evidence. The controller resolves records deterministically and
+never asks the worker to reconstruct authority from discussion history.
+Legacy Tasks retain the flow below until they finish or cross that explicit
+migration boundary. The two authority parsers cannot govern the same launch.
+
 | Component | Owns | Does not own |
 | --- | --- | --- |
 | Consumer/owner | Task scope, model/effort policy, launch commands, deployment, merge and release decisions | Reviewer verdict identity |
@@ -73,12 +83,27 @@ first reconcile task-owned work where safe. The controller never assumes residue
 is disposable or cleans, commits, publishes or retries it. Unknown execution,
 incomplete collection and failed/uncertain publication or evidence retention
 remain automation failures. Material warnings must inform the next owner/review
-decision. Native CI, mergeability, independent exact-head review and the human
-merge decision remain separate gates.
+decision. Candidate-head CI, mergeability and independent exact-head review
+remain separate gates. Publication completion records a READY, PENDING or
+BLOCKED integration observation without a second push or infrastructure failure.
+The base SHA is an observation, never permission to rebase or test a synthetic
+merge. A later bounded readiness observation updates the same Outcome.
+
+Task Requests keep Issue authority independently of the result artifact. Writer
+publishes a typed Outcome on the unique durably bound PR, or the Issue when no
+PR exists. Known PR publication uncertainty prevents Issue fallback. Contained
+no-change completion needs neither an empty commit nor an artificial PR.
+Independent Task acceptance uses a trusted Issue Task Approval bound to the
+current Request, Outcome and applicable immutable results, including when a
+disposable PR was closed. Task findings are review evidence; further execution
+requires a complete next Task Request. Genuine PR review remains native.
 
 Manual routing publishes a copyable handoff and ends automatic ownership. The
 owner-launched session follows its live authority and uses the owner-authorized
-publication path. Writer availability is not a manual publication prerequisite.
+publication path. Writer availability is not a manual execution prerequisite.
+Legacy manual publication retains its owner channel. Migrated manual results
+reach the bounded trusted Writer operation before typed independent acceptance;
+the Task Approval never treats an ordinary owner comment as a Writer Outcome.
 
 ## Durable state
 

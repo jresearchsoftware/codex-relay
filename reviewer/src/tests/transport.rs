@@ -101,7 +101,7 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
         2
     );
     let schemas = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(schemas.len(), 3);
+    assert_eq!(schemas.len(), 4);
     let check_schema = &schemas[0]["inputSchema"];
     let submit_schema = &schemas[1]["inputSchema"];
     assert_eq!(schemas[0]["name"], "check_pr_review_target");
@@ -513,7 +513,7 @@ async fn managed_config_instances_bind_tools_tokens_and_publications_to_their_ow
     for (repository, token_repository, state, http, url) in &instances {
         let listed = rpc(http, url, 1, "tools/list", json!({})).await;
         let schemas = listed["result"]["tools"].as_array().unwrap();
-        assert_eq!(schemas.len(), 3);
+        assert_eq!(schemas.len(), 4);
         for tool in schemas {
             assert_eq!(
                 tool["inputSchema"]["properties"]["repository"]["const"],

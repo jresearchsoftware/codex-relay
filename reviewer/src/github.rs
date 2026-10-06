@@ -1,4 +1,5 @@
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+pub mod authority;
 pub mod evidence;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -26,6 +27,7 @@ impl Github {
         Self {
             client: Client::builder()
                 .user_agent(USER_AGENT)
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("HTTP client"),
             api: API.into(),
@@ -46,6 +48,7 @@ impl Github {
         Self {
             client: Client::builder()
                 .user_agent(USER_AGENT)
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("HTTP client"),
             api: base,

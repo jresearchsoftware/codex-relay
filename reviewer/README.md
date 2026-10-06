@@ -1,6 +1,6 @@
 # Reviewer MCP service
 
-This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review` and `read_pr_review_evidence`.
+This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review`, `read_pr_review_evidence` and `publish_task_authority`.
 
 It reads the admitted bind, repository, base branch, check name and App settings
 from `reviewer-mcp.json`. It publishes verdicts/findings authored by an external
@@ -33,6 +33,86 @@ private across restarts. `artifact.commit`/`artifact.sha256` are operator-record
 shape-validated metadata, not verification by the running binary. The consumer
 owns TLS termination; the service also verifies the forwarded client certificate.
 Do not bind this binary publicly.
+
+`publish_task_authority` implements the opted-in
+[`github-native-v1` authority contract](../contracts/README.md). Its input is
+`repository` and one structured `record`: Decision, Task Request, PR-only Change
+Request, Task review evidence, or Task Approval. The publisher uses the shared
+version `3.0` schema and canonical `relay-authority` envelope; callers cannot
+choose an API path, credential, native author, arbitrary GitHub body, labels or
+PR title. Writer Outcomes remain a separate trusted Writer responsibility and
+this tool rejects their publication.
+
+Typed publication requires both the enabled publication mode and runtime
+`githubNativeAuthorityEnabled: true`; the latter defaults to false for existing
+configurations and rejects publication before any GitHub access. Managed source
+deployment enables it only with the paired controller/workflow contract. Install
+and qualify that same release and reviewed workflow projection before adding
+the exact `Authority model: github-native-v1` line to an owner-authored Issue.
+An old binary cannot recognize a new charter marker; manual mixing of old and
+new components is unsupported. An unmarked Issue retains legacy CR behavior.
+The new binary rejects legacy CR2 publication on a marked Issue; native PR
+`APPROVE` remains available for a genuine exact-head PR.
+
+The service re-reads the owner-authored Issue and hashes its entire UTF-8 body,
+including the marker, as the stable charter. It resolves configured owner,
+Reviewer and Writer logins through GitHub to native user IDs and types. Typed
+Decisions and Requests must carry the trusted Reviewer Bot identity; Outcomes
+must carry the separate trusted Writer Bot identity. The configured App ID and
+slug are also verified. Every selected SourceRef is fetched again by its native
+ID, checked against the configured repository and native parent URL, and
+compared with its exact body digest. Sources may be the canonical Issue body,
+Issue comments, native PR reviews or review comments on a PR linked to that
+Issue. Caller text cannot establish native identity or source provenance.
+
+The complete bounded native Request chain determines currentness through exact
+supersession references. A new Task Request supersedes its current predecessor;
+a new PR CR uses the same chain and advances Step, while a correction of the
+same CR identity and reviewed head may retain Step. Cited Decisions are checked
+for trust, supersession and normalization into the complete Request snapshot.
+PR-scoped Decisions apply only to a Request bound to that same existing PR.
+Selected context remains native references in the durable record; the response
+returns bounded native author and digest provenance. Native review findings for
+a Task are durable `task-review` evidence, then context for the next Task Request.
+They never fabricate an executable PR CR.
+
+Task Approval binds the current, non-superseded Task Request, its explicit Step,
+a trusted native Writer Outcome on the Issue or a linked PR, and identical
+immutable result identities. Git results bind an
+exact SHA; deployment, qualification, evidence and no-change results bind an
+immutable revision or native run/result identities. Approval preserves every
+Outcome warning's source and impact, records its disposition and evidence gaps,
+and retains all Outcome limitations. This rule applies to automatic and manual
+Requests. A Task can be approved without a PR; a closed disposable PR may supply
+context and the Writer Outcome without being reopened. The service creates no
+PR and closes no Issue.
+Missing or conflicting closure metadata stays `keep-open` with a visible warning.
+
+The publisher reserves the existing SQLite operation journal before mutation.
+Operation identity binds the canonical record, and a returned publication is
+re-read by its native ID before being reported durable. An uncertain POST can
+recover only one exact native body and trusted author; an absent or ambiguous
+match stops without another POST. Partial Step projection resumes the same
+native identity and requires the reserved PR title or its canonical projection;
+changed authority stops recovery. After publication, Task Request/CR Step labels and the bounded
+existing PR title are deterministic projections, preserving unrelated labels.
+This is one trusted publisher, not a second ordinary owner metadata workflow.
+Each source response is limited to 256 KiB and five seconds; native collection
+reads stop at 500 records, selected context at 250 KiB, and the operation at
+60 seconds. Unavailable, oversized or truncated authority fails closed.
+
+A native exact-head PR `APPROVE` also returns the bounded
+`native-approve-exact-head-squash-v1` continuation policy. It authorizes automatic
+continuation only for that reviewed head, squash merge, passing native required
+checks and verified mergeability. Unresolved checks block continuation;
+an explicit hold blocks continuation, and `keep-open`, an incomplete Task or
+remaining Task work blocks Issue closure. Native next-request or selected Task
+Decision references are re-read before publication. `execution_supported: false` makes explicit
+that this Reviewer implementation publishes the policy and performs neither a
+merge nor closure. Execution belongs to a separately authorized trusted owner
+channel, never the worker. `REQUEST_CHANGES` requires an owner-authorized
+publication after review preview; a preview alone grants no mutation authority.
+Task Approval is independent acceptance of the bound result, not PR approval.
 
 The configuration's top-level `repository` is the sole repository authority for
 the instance. All tool schemas constrain the caller's required repository to
@@ -147,7 +227,7 @@ The minimum Reviewer installation permission set remains `metadata:read`,
 | --- | --- |
 | `metadata:read` | Repository/installation identity and access qualification |
 | `actions:read` | [List/get workflow runs](https://docs.github.com/en/rest/actions/workflow-runs), including run/check-suite/attempt binding for execution evidence in private repositories |
-| `issues:write` | Deterministic post-CR Issue/PR Step-label synchronization; read access also supplies linked Issue authority and Outcome comments |
+| `issues:write` | Typed Task authority comments and deterministic Issue/PR Step-label synchronization; read access also supplies linked Issue authority and Outcome comments |
 | `pull_requests:write` | Native review publication and bounded PR-title synchronization; read access supplies PR/head and decisive-review binding |
 | `checks:write` | Reviewer check publication; read access supplies check suites/runs and annotations |
 
@@ -160,9 +240,10 @@ installation permission set and uses a metadata-only probe token; it does not
 prove live evidence endpoint access. Live App permission reconciliation and
 deployment require separate owner authorization; source implementation does not
 grant those actions.
-The native review body remains sole executable CR authority, linked to the
-canonical Issue for Task identity. Native `1.0` read and `2.0` publication versions
-remain unchanged.
+The native review body remains sole executable PR CR authority, linked to the
+canonical Issue for Task identity. Legacy native `1.0` read and `2.0` publication
+remain unchanged for unmarked Issues; marked Issues use the shared `3.0` typed
+envelope and native Request chain.
 
 See the [producer/consumer contract and fixtures](../contracts/README.md)
 for the semantic example, compatibility boundary and local checks. Cargo tests

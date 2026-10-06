@@ -163,8 +163,8 @@ export async function fixture(t, { remediation = false, continuation = false, co
       subject.labels = subject.labels.filter(l => l.name !== path.split('/').at(-1));
     },
     async patch(path, body) {
-      if (path === '/pulls/43' && Object.keys(body).join() === 'title') {
-        pr.title = body.title; return copy(pr);
+      if (path === '/pulls/43' && Object.keys(body).every(key => ['title', 'body'].includes(key))) {
+        Object.assign(pr, body); return copy(pr);
       }
       const comment = comments.find(c => path === `/issues/comments/${c.id}`);
       if (!comment) throw new Error('Unexpected comment PATCH');

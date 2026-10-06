@@ -298,6 +298,9 @@ function parseContinuation(source, resolutions) {
 
 export function parseIssueAuthority(body, { issueNumber, repository, issueTitle, step, targetBaseSha } = {}) {
   const source = requireBody(body);
+  // A migrated charter cannot fall through a compatibility entrypoint and
+  // become a second body-derived executable snapshot.
+  if (/^\s*(?:[-*]\s*)?Authority model\s*:/im.test(source)) fail('TYPED_REQUEST_REQUIRED', 'Resolve the trusted typed execution request', 'authority model');
   if (issueNumber !== undefined && (!Number.isInteger(issueNumber) || issueNumber < 1)) fail("ISSUE_AUTHORITY_INVALID", "Issue number must be a positive integer", "issue number");
   const warnings = [];
   const resolutions = [];

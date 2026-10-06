@@ -79,6 +79,14 @@ closure selects `keep-open` with an operator-visible warning.
 
 ## Issue-authorized implementation continuation
 
+The fields in this section describe legacy Tasks. After explicit migration to
+`github-native-v1`, a complete trusted Task Request supplies starting-state,
+Step, route, profile, scope and permission bindings. Historical body execution
+prose is not parsed. The publisher projects Step labels and the bounded PR
+title; a projection mismatch is a visible blocker. Ordinary owner Step helpers
+cannot become a competing writer for migrated Tasks. See the
+[authority contract](../contracts/README.md#github-native-task-authority).
+
 To continue implementation on an existing task branch, update the canonical
 Issue's current goal and starting-state authority with these fields:
 
@@ -126,10 +134,38 @@ service or state registry is introduced.
 
 ## Issue publication and worker handoff
 
-Only an open PR for the admitted repository, branch and configured base may
-receive Issue publication. Closed and merged PRs using that branch remain
+For a migrated Task, authority parent and result surface are separate. Writer
+records the native Request reference in the attempt and PR binding. It posts
+the terminal typed Outcome on the unique durably known PR, or the Issue before
+PR creation and for legitimate no-PR/no-change work. A pending PR creation
+intent or ambiguous artifact blocks surface selection; it cannot fall back to
+the Issue. No-change success requires a contained successful worker, complete
+clean collection at the admitted source head and current authority; it performs
+no push and creates no PR. The ordinary native `issue_comment` event on that
+typed Outcome is the completion signal: automation verifies Writer identity,
+Request, attempt and immutable result before acting. No additional label,
+receipt comment, Check or parallel completion ledger is needed.
+
+A manual non-source Request may omit branch/base/head and receives the same
+minimal handoff. Manual results use the existing trusted Writer protocol's
+bounded `manual-outcome` operation with the admitted `runId`, `attemptId` and
+one native owner `authorizationId`. The source comment on the Task contains
+only a canonical typed `outcome` object in a `relay-manual-result` fence. This
+is authorization to publish that manual result, not execution authority or an
+ordinary comment that changes scope. Writer verifies the owner native identity,
+the current Request, charter and exact result bytes, reserves the source ID and
+digest, re-reads it and publishes one typed Outcome. It does not import Git,
+launch work, approve, deploy, merge or close anything. The manual result can
+identify immutable checks/runs without inventing a Git head. A PR result must
+be uniquely bound to the Task and the Request digest in the PR body, including
+a disposable PR already closed without merge; Writer does not reopen it.
+
+For automatic Git publication, only an open PR for the admitted repository,
+branch and configured base may receive publication. Closed and merged PRs using that branch remain
 history: they neither block a fresh PR nor receive labels, readiness changes or
-terminal Outcomes. A single current PR must retain the exact repository, branch
+automatic terminal Outcomes. The manual-result exception above uses the exact
+already-disposed artifact without changing its lifecycle. A single current PR
+must retain the exact repository, branch
 and Issue linkage; multiple current candidates fail closed. Before mutating a
 resolved target, Writer records its PR number in the existing attempt receipt.
 A missing or replaced target then blocks continuation rather than creating or
@@ -257,6 +293,34 @@ push and exact remote-head checks. PR mergeability, native exact-head validation
 and independent review remain separate completion gates; admission of a dirty
 input never means its unresolved output is approved.
 
+### Publication and review readiness
+
+Successful publication remains `IMPLEMENTED_PENDING_FRESH_REVIEW`, with the
+durable candidate head preserved independently of readiness. Writer observes
+native PR mergeability for that exact head and reports `readiness.status`:
+`PENDING` for null/unavailable mergeability, `BLOCKED` for a proven conflict,
+or `READY` for observed mergeability. Pending/conflicting PRs remain native
+drafts; they retain published commits and one successful implementation
+Outcome. They are domain readiness results, not controller execution failures.
+Neither publication nor readiness supplies an independent review verdict.
+
+Ordinary `finish` replay returns its stored receipt without republishing.
+The bounded Writer `observe-readiness` operation accepts the admitted run and
+attempt plus the exact completed candidate `head`. It revalidates live
+authority and the same open PR, observes mergeability and base, adjusts native
+draft state, and updates the existing Outcome's readiness snapshot. It neither
+executes a worker nor pushes, polls, rebases or merges. A caller cannot use it
+to finish blocked execution or substitute another candidate. A changing base
+is an observed snapshot; reconciling it requires its own existing Task/CR
+authority. Candidate validation and independent review remain bound to the
+candidate commit, rather than a GitHub-generated synthetic merge commit.
+
+The native draft lifecycle remains the existing progress/blocked and completion
+projection. Drafting a PR immediately on publication of a new remediation CR
+is a separate lifecycle design choice; this change does not introduce that
+Reviewer mutation. Public consumers also retain `pull_request_target` label
+routing under the [owner Actions event-policy procedure](../deploy/README.md#actions-event-policy-for-public-repositories).
+
 ## Writer publication recovery
 
 Ordinary `publish-progress` replay still observes an existing publication intent
@@ -313,12 +377,23 @@ recorded previous head blocks a new recovery push.
 
 ## Readiness and diagnostics
 
+Migrated PRs use `Related to #Task` even when closure is authorized. Writer
+projects a legacy canonical closing reference to this nonclosing relationship
+during preflight, preserving other PR text and verifying the exact readback.
+Native manually linked closing relationships are inspected by the trusted owner
+continuation adapter before merge. Issue closure happens explicitly after
+independent acceptance, Task completion and remaining-work checks; repository
+auto-closing settings are not changed by this worker or Writer.
+
 Successful recovery can continue the existing `finish` path without replaying
 the original routing workflow. It retains the original execution receipt, checks
-the exact checkout head and worktree state, observes the PR head, marks the PR ready and updates
+the exact checkout head and worktree state, observes the PR head, projects its
+current readiness to draft/ready state and updates
 the original Writer-owned blocked Outcome comment in place. A partially failed
 finish can be resumed using the same successful publication receipt; it cannot
-push again. A blocked/unknown original execution cannot claim readiness. Known
+push again. Unresolved integration stays pending; proven conflict blocks
+readiness while retaining successful publication. A blocked/unknown original
+execution cannot claim readiness. Known
 successful execution with residue retains the same actionable warning as normal
 completion; collection failures remain red. Native exact-head validation, independent review, merge, deployment
 and Issue closure retain their separate gates.

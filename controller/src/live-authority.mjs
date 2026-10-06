@@ -3,8 +3,10 @@ import { parseIssueAuthority } from '../../runtime/src/issue-authority.mjs';
 import { extractRemediationContract, validateRemediationContract } from '../../contracts/src/contracts.mjs';
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, labelRunMatches, launchStep, remediationThreadTitle } from './launch-metadata.mjs';
-import { assertStep, currentStep, changeRequestStep, assertPrStepTitle, labelNames, READY_LABELS } from './step-metadata.mjs';
+import { assertStep, currentStep, changeRequestStep, assertPrStepTitle, projectedRequestTitle, labelNames, READY_LABELS } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
+import { readTaskAuthority } from './task-authority.mjs';
+import { taskReferences } from './task-relationship.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -51,7 +53,7 @@ export function authorityFingerprint({ issue, review, contract, execution }) {
     contract: canonicalContract });
 }
 export function linkedIssue(body) {
-  const ids = [...new Set([...String(body).matchAll(/\b(?:Closes|Fixes|Resolves|Related to)\s+#([1-9][0-9]*)\b/gi)].map(m => Number(m[1])))];
+  const ids = taskReferences(body, REPOSITORY);
   if (ids.length !== 1) fail('CANONICAL_ISSUE_AMBIGUOUS');
   return ids[0];
 }
@@ -70,6 +72,34 @@ export async function readAuthority(api, target, number, { targetBase, step } = 
   if (issue.state !== 'open' || issue.user?.login !== OWNER || issue.pull_request) fail('ISSUE_NOT_ADMITTED');
   assertStep(issue.labels, step);
   if (pr) assertStep(pr.labels, step);
+  const typed = await readTaskAuthority(api, issue, pr, step);
+  if (typed) {
+    const q = typed.request;
+    const noSource = q.route === 'manual' && q.branch === null && q.base_sha === null && q.starting_head === null;
+    if (!noSource && (!q.branch || !exactSha(q.base_sha) || !exactSha(q.starting_head))) fail('AUTHORITY_STARTING_STATE_INVALID');
+    if (q.branch) branchName(q.branch);
+    if (pr && pr.head.ref !== q.branch) fail('STARTING_STATE_MISMATCH');
+    const continuation = !pr && (q.existing_pr !== null || q.starting_head !== q.base_sha)
+      ? { head: q.starting_head, pullRequest: q.existing_pr } : null;
+    const thread = `Task ${issueNumber} — Step ${q.step} — ${q.kind === 'change-request' ? `${q.change_request_id} — ` : ''}${q.purpose}`;
+    const execution = { issue, ...(pr ? { pr, review: { ...typed.record, commit_id: q.reviewed_head_sha } } : {}),
+      issueNumber, branch: q.branch, historicalBase: q.base_sha, startHead: q.starting_head,
+      profile: { cliModelId: q.model, effort: q.effort }, subagentsAllowed: q.subagents,
+      thread, title: `Task ${issueNumber} · Step ${q.step}${q.kind === 'change-request' ? ` · ${q.change_request_id}` : ''} · ${q.purpose}`,
+      // Typed acceptance closes the Issue explicitly after task_complete and
+      // remaining-work checks. A PR closing keyword would bypass those checks.
+      closure: `Related to #${issueNumber}`,
+      input: typed.input, validation: q.validation, request: q, requestReference: typed.reference,
+      authorityDigest: typed.authorityDigest,
+      admission: { kind: 'github-native-request', warnings: typed.warnings.map(code => ({ code, field: 'closure', resolved: 'keep-open' })) },
+      ...(continuation ? { continuation } : {}) };
+    if (continuation?.pullRequest) {
+      execution.pr = await findCurrentIssuePullRequest(api, execution, continuation.pullRequest);
+      assertStep(execution.pr.labels, step); assertPrStepTitle(execution.pr, issueNumber, step);
+    }
+    if (execution.pr && execution.pr.title !== projectedRequestTitle(q)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
+    return execution;
+  }
   if (!pr) {
     const a = parseIssueAuthority(issue.body, { issueNumber, repository: REPOSITORY, issueTitle: issue.title, targetBaseSha: targetBase, step });
     const execution = { issue, issueNumber, branch: a.branch, historicalBase: a.baseSha, startHead: a.continuation?.head ?? a.baseSha,
@@ -146,6 +176,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     targetBase = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object.sha;
     if (!exactSha(targetBase)) fail('TARGET_BASE_INVALID');
     const a = await readAuthority(api, target, number, { targetBase, step });
+    if (a.request && a.request.route !== route) fail('AUTHORITY_ROUTE_MISMATCH');
     if (a.issueNumber !== issueNumber) fail('CANONICAL_ISSUE_AMBIGUOUS');
     if (transport === 'label') {
       const subject = target === 'issue' ? a.issue : a.pr;
@@ -153,9 +184,10 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       if (!labelRunMatches(run.display_title, { route, target, number }, subject)) fail('STEP_DISPLAY_MISMATCH');
     }
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
-    if ((target === 'issue' && targetBase !== a.historicalBase)
+    const noSource = a.request?.route === 'manual' && a.branch === null;
+    if ((!noSource && target === 'issue' && targetBase !== a.historicalBase)
       || (a.pr && (a.pr.head.sha !== a.startHead || (target === 'pull_request' && a.pr.draft)))) fail('STARTING_STATE_MISMATCH');
-    if (target === 'issue') {
+    if (target === 'issue' && !noSource) {
       const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
       if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
       const exact = refs.filter(r => r.ref === `refs/heads/${a.branch}`);
@@ -173,6 +205,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       profile: a.profile, thread: a.thread, title: a.title, closure: a.closure,
       input: a.input, validation: a.validation, subagentsAllowed: a.subagentsAllowed,
       admission: a.admission, warnings: a.warnings, resolutions: a.resolutions,
+      ...(a.request ? { request: a.request, requestReference: a.requestReference } : {}),
       ...(a.continuation ? { continuation: a.continuation } : {}) };
   } catch (error) {
     if (!isAdmissionDomainBlock(error)) throw error;
@@ -216,6 +249,7 @@ export async function revalidateAuthority(api, e) {
   const a = await readAuthority(api, e.target, e.number, { targetBase: e.targetBase, step: e.step });
   if (a.authorityDigest !== e.authorityDigest || a.branch !== e.branch || a.startHead !== e.startHead
     || a.issueNumber !== e.issueNumber || (a.review?.id ?? null) !== e.reviewId) fail('AUTHORITY_CHANGED');
+  if (a.request && a.request.route !== e.route) fail('AUTHORITY_CHANGED');
   return a;
 }
 

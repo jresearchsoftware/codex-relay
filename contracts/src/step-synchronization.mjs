@@ -5,6 +5,7 @@ import { assertPr, linkedIssue } from '../../controller/src/live-authority.mjs';
 import { currentStep, labelNames, assertStep, changeRequestStep, reviewStepTitle } from '../../controller/src/step-metadata.mjs';
 import { boundedThreadCorrelationIdentity } from '../../controller/src/run-name.mjs';
 import { extractRemediationContract, validateRemediationContract } from './contracts.mjs';
+import { authorityMode } from './github-authority.mjs';
 
 async function owner(api) {
   const actor = await api.viewer();
@@ -14,6 +15,7 @@ async function canonicalTask(api, issueNumber, pullRequest) {
   if (!positive(issueNumber) || (pullRequest !== undefined && !positive(pullRequest))) fail('ROUTE_INVALID');
   const issue = await api.get(`/issues/${issueNumber}`);
   if (issue?.number !== issueNumber || issue.state !== 'open' || issue.user?.login !== OWNER || issue.pull_request) fail('ISSUE_NOT_ADMITTED');
+  if (authorityMode(issue.body) !== 'legacy') fail('TYPED_REQUEST_PROJECTION_OWNED_BY_PUBLISHER');
   const pr = pullRequest === undefined ? null : await api.get(`/pulls/${pullRequest}`);
   if (pr) {
     assertPr(pr, pullRequest);

@@ -80,7 +80,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v1')
+                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v2')
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
                 self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])

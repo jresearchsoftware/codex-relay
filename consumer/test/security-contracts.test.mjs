@@ -25,7 +25,8 @@ test('dogfood trust: Writer can publish workflow bytes; ready does not certify c
   assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
   assert.equal(result.head, await f.remoteHead());
   assert.equal(f.pushes(), 1);
-  assert.match(f.comments.at(-1).body, /Native exact-head CI and GitHub mergeability were not evaluated/);
+  assert.match(f.comments.at(-1).body, /Native candidate-head CI was not evaluated/);
+  assert.match(f.comments.at(-1).body, /Review readiness: READY \(MERGEABLE\)/);
   f.run.head_branch = f.envelope.branch;
   await assert.rejects(admitEnvelope(f.api, f.admissionRequest), { code: 'OWNER_RUN_NOT_ADMITTED' });
 });

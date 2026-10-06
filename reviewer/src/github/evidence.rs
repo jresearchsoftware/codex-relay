@@ -623,6 +623,7 @@ impl Github {
                     .filter_map(|line| {
                         line.strip_prefix("Durable/published head: ")
                             .or_else(|| line.strip_prefix("Latest durable and ready head: "))
+                            .or_else(|| line.strip_prefix("Latest durable candidate head: "))
                     })
                     .collect();
                 if heads.len() != 1 || heads[0] != sha {
