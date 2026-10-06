@@ -14,7 +14,7 @@ const report = run => reportRoutingResult(run, { write() {}, writeError() {} });
 
 for (const progress of [false, true]) {
   test(`safe worker BLOCKED ${progress ? 'with published progress' : 'without progress'} stays green on replay`, async t => {
-    const f = await fixture(t); const journal = memoryStore(); let executions = 0;
+    const f = await fixture(t); const journal = f.journal; let executions = 0;
     const args = { ...f, journal, execute: async () => { executions++; if (progress) await f.commit(); return result(f.envelope); } };
     assert.equal(await report(() => runAttempt(args)), 0);
     const saved = await journal.get(99);
@@ -28,7 +28,7 @@ for (const progress of [false, true]) {
 
 for (const code of ['CODEX_RESULT_MISSING', 'CODEX_RESULT_INVALID', 'CODEX_JSON_INVALID', 'CODEX_NONZERO_EXIT', 'CODEX_OUTPUT_TOO_LARGE', 'CODEX_RUNTIME_TIMEOUT']) {
   test(`known contained worker ${code} preserves progress once and terminalizes non-red`, async t => {
-    const f = await fixture(t); const journal = memoryStore();
+    const f = await fixture(t); const journal = f.journal;
     const args = { ...f, journal, execute: async () => {
       await f.commit(); throw failure(code, { childState: 'started', containment: 'reaped' });
     } };
@@ -42,7 +42,7 @@ for (const code of ['CODEX_RESULT_MISSING', 'CODEX_RESULT_INVALID', 'CODEX_JSON_
 
 for (const code of ['INTERNAL_FAILURE', 'DISPATCH_NOT_STARTED', 'PROCESS_START_FAILED', 'WRITER_HELPER_TIMEOUT', 'TRUSTED_GIT_FAILED']) {
   test(`physical ${code} stays red even with known containment and a published Outcome`, async t => {
-    const f = await fixture(t); const journal = memoryStore();
+    const f = await fixture(t); const journal = f.journal;
     const args = { ...f, journal, execute: async () => { throw failure(code, { childState: 'not_started', containment: 'not_required' }); } };
     assert.equal(await report(() => runAttempt(args)), 1);
     assert.equal(await report(() => runAttempt(args)), 1);
@@ -52,14 +52,14 @@ for (const code of ['INTERNAL_FAILURE', 'DISPATCH_NOT_STARTED', 'PROCESS_START_F
 
 test('blocked remediation is draft, including a no-progress result', async t => {
   const f = await fixture(t, { remediation: true });
-  assert.equal(await report(() => runAttempt({ ...f, journal: memoryStore(), execute: async () => result(f.envelope) })), 0);
+  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => result(f.envelope) })), 0);
   assert.equal((await f.api.get('/pulls/43')).draft, true);
 });
 
 for (const committed of [false, true]) {
   test(`uncommitted work remains a physical preservation failure with ${committed ? 'some' : 'no'} commits`, async t => {
     const f = await fixture(t);
-    assert.equal(await report(() => runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+    assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => {
       if (committed) await f.commit();
       await writeFile(join(f.cwd, 'docs/work.md'), 'unsaved task work\n'); return result(f.envelope);
     } })), 1);
@@ -69,7 +69,7 @@ for (const committed of [false, true]) {
 }
 
 test('contained successful handoff with generated residue stays green with a durable actionable warning on replay', async t => {
-  const f = await fixture(t); const journal = memoryStore(); let executions = 0; let returned;
+  const f = await fixture(t); const journal = f.journal; let executions = 0; let returned;
   const residue = join(f.cwd, '__pycache__/generated.pyc');
   const stdout = []; const warnings = [];
   const reporting = { write: text => stdout.push(text), writeError: text => warnings.push(text) };
@@ -82,7 +82,7 @@ test('contained successful handoff with generated residue stays green with a dur
   assert.equal(await reportRoutingResult(async () => { returned = await runAttempt(args); return returned; }, reporting), 0);
   assert.equal(returned.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
   assert.deepEqual(returned.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
-  assert.deepEqual((await journal.get(99)).outcome, returned);
+  assert.deepEqual((await journal.get(99)).outcome, { ...returned, draft: true });
   assert.deepEqual((await f.store.get(99)).outcome.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
   assert.equal((await journal.get(99)).collection.clean, false);
   assert.equal((await f.api.get('/pulls/43')).draft, false);
@@ -103,7 +103,7 @@ test('contained successful handoff with generated residue stays green with a dur
 });
 
 test('replay restores the Writer warning receipt when completion preceded the runner terminal journal write', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   const residue = join(f.cwd, 'validation-cache.tmp');
   const completed = await runAttempt({ ...f, journal, execute: async () => {
     await f.commit(); await writeFile(residue, 'generated validation residue\n');
@@ -124,16 +124,16 @@ test('replay restores the Writer warning receipt when completion preceded the ru
   assert.equal(await reportRoutingResult(async () => { restored = await runAttempt(args); return restored; },
     { write() {}, writeError: text => warnings.push(text) }), 0);
   assert.deepEqual(restored, completed);
-  assert.deepEqual(operations, ['preflight']);
+  assert.deepEqual(operations, ['preflight', 'complete-handoff']);
   assert.deepEqual((await journal.get(99)).outcome, completed);
   assert.equal(warnings.filter(text => text.startsWith('::warning') && text.includes('UNCOMMITTED_WORK_REMAINS')).length, 1);
-  assert.deepEqual(await runAttempt({ ...args, broker: { invoke: () => assert.fail('restored receipt contacted Writer') } }), completed);
+  assert.deepEqual(await runAttempt({ ...args, broker: { invoke: request => { assert.equal(request.operation, 'complete-handoff'); return f.broker.invoke(request); } } }), completed);
   assert.equal(await readFile(residue, 'utf8'), 'generated validation residue\n');
   assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
 });
 
 test('a failed terminal journal write remains red on replay even after Writer persisted successful handoff with a warning', async t => {
-  const f = await fixture(t); const journal = memoryStore(); const put = journal.put;
+  const f = await fixture(t); const journal = f.journal; const put = journal.put;
   let writeFailed = false;
   journal.put = async (id, record) => {
     if (record.outcome?.status === 'IMPLEMENTED_PENDING_FRESH_REVIEW' && !writeFailed) {
@@ -148,6 +148,7 @@ test('a failed terminal journal write remains red on replay even after Writer pe
   const failed = await journal.get(99);
   assert.equal(failed.outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
   assert.deepEqual(failed.outcome.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);
+  assert.equal((await f.api.get('/pulls/43')).draft, true);
   assert.equal(failed.diagnostic.orchestration, 'FAILED');
   assert.equal(failed.diagnostic.classification.code, 'JOURNAL_WRITE_FAILED');
   assert.equal(await report(() => runAttempt({ ...f, journal,
@@ -161,7 +162,7 @@ test('a failed terminal journal write remains red on replay even after Writer pe
 
 for (const boundary of ['collection', 'clean-observation', 'publication', 'authority', 'containment', 'outcome', 'journal']) {
   test(`successful worker with generated residue stays red when ${boundary} is uncertain or failed`, async t => {
-    const f = await fixture(t); const journal = memoryStore();
+    const f = await fixture(t); const journal = f.journal;
     const residue = join(f.cwd, 'validation-cache.tmp');
     const broker = { invoke: async request => {
       if (boundary === 'publication' && request.operation === 'publish-progress') throw failure('PUBLICATION_UNCERTAIN');
@@ -189,7 +190,7 @@ for (const boundary of ['collection', 'clean-observation', 'publication', 'autho
 }
 
 test('known success without changes is a normal incomplete result, never ready', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   assert.equal(await report(() => runAttempt({ ...f, journal, execute: async () => result(f.envelope, 'success') })), 0);
   assert.equal((await journal.get(99)).outcome.status, 'BLOCKED'); assert.equal(f.pushes(), 0);
 });
@@ -210,7 +211,7 @@ test('a domain-looking code cannot hide unknown execution, containment or public
 });
 
 test('loss of scope with an unknown reserved execution remains red', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await journal.put(99, { version: f.envelope.version, envelope: f.envelope, execution: { reserved: true, returned: false } });
   f.issue.body = '# lost scope';
   assert.equal(await report(() => runAttempt({ ...f, journal, execute: () => assert.fail('duplicate') })), 1);
@@ -218,7 +219,7 @@ test('loss of scope with an unknown reserved execution remains red', async t => 
 
 for (const boundary of ['collection', 'publication', 'outcome', 'journal', 'draft']) {
   test(`failure at ${boundary} cannot turn a worker domain result green`, async t => {
-    const f = await fixture(t, { remediation: boundary === 'draft' }); const journal = memoryStore();
+    const f = await fixture(t, { remediation: boundary === 'draft' }); const journal = f.journal;
     const broker = { invoke: async request => {
       if (boundary === 'publication' && request.operation === 'publish-progress') throw failure('PUBLICATION_UNCERTAIN');
       if (boundary === 'outcome' && request.operation === 'terminal-outcome') throw failure('COMMENT_PUBLICATION_UNCERTAIN');
@@ -235,7 +236,7 @@ for (const boundary of ['collection', 'publication', 'outcome', 'journal', 'draf
 
 test('defaulted base remains immutable when live main advances after admission', async t => {
   const f = await fixture(t, { issueBody: '# Task 42\nRequired branch: codex/test-42\nComplete the task-required repository changes.' });
-  assert.equal(await report(() => runAttempt({ ...f, journal: memoryStore(), execute: async () => {
+  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => {
     await writeFile(join(f.source, 'unrelated.md'), 'main advance\n');
     await f.command(f.source, ['add', '.']); await f.command(f.source, ['commit', '-m', 'main advance']); await f.command(f.source, ['push', f.remote, 'main']);
     await f.commit(); return result(f.envelope, 'success');
@@ -245,7 +246,7 @@ test('defaulted base remains immutable when live main advances after admission',
 });
 
 test('resumed admission revalidates authority within the normal terminal boundary', async t => {
-  const f = await fixture(t); const journal = memoryStore();
+  const f = await fixture(t); const journal = f.journal;
   await journal.put(99, { version: f.envelope.version, envelope: f.envelope, execution: null });
   f.issue.body = '# lost scope';
   const admitted = await f.broker.invoke(f.admissionRequest);
@@ -266,7 +267,7 @@ test('a worker capability blocker reaches the Outcome as a bounded redacted clai
   const value = result(f.envelope);
   value.result.summary = 'Applicable local checks passed';
   value.result.blockedReason = 'Capability unavailable; password=synthetic-private-value';
-  assert.equal(await report(() => runAttempt({ ...f, journal: memoryStore(), execute: async () => value })), 0);
+  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => value })), 0);
   assert.match(f.comments[0].body, /Worker summary \(claim\): Applicable local checks passed/);
   assert.match(f.comments[0].body, /Worker blocker \(claim\): Capability unavailable/);
   assert.doesNotMatch(f.comments[0].body, /synthetic-private-value/);

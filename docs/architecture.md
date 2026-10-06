@@ -25,7 +25,7 @@ migration boundary. The two authority parsers cannot govern the same launch.
 | Routing controller | Event binding, one execution reservation, attempt journal and terminal handoff | New task authority or retry permission |
 | Lifecycle admission | Durable automatic admission gate and full controller drain under the Writer lock | Task authority, new executions, deployment acceptance or implicit resume |
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
-| Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR progress and Outcome | Worker execution lifecycle or Reviewer verdicts |
+| Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR execution Draft/Ready lifecycle and Outcome | Worker execution lifecycle or Reviewer verdicts |
 | External ChatGPT review/caller | Reads the diff, authors substantive verdict/findings and supplies structured CR | Writer implementation identity or automatic launch authority |
 | Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, native review/check publication, same-review Step-label/title synchronization and duplicate recovery | Substantive review authorship, implementation, launch commands, owner new-phase choice or merge |
 
@@ -75,8 +75,11 @@ and performs an ordinary non-force push.
 
 Useful task commits can be published even if execution returned blocked or a
 later readiness check failed. A successful contained result, complete worktree
-observation, verified publication and observed exact PR head permit a ready
-declaration and one terminal Outcome. Remaining uncommitted/non-ignored residue
+observation, verified publication and observed exact PR head permit one successful terminal Outcome. After the protected controller
+receipt proves execution handoff, Writer verifies native Ready for that exact
+PR/head. Draft/Ready follows execution ownership; integration observations
+never mutate it. Successful native Change Request publication supplies a bounded
+Writer action that verifies Draft before remediation continuation. Remaining uncommitted/non-ignored residue
 alone yields a successful handoff with `UNCOMMITTED_WORK_REMAINS`, retained in
 the terminal receipt and Outcome and emitted as a workflow warning. Codex must
 first reconcile task-owned work where safe. The controller never assumes residue
@@ -112,6 +115,7 @@ the Task Approval never treats an ordinary owner comment as a Writer Outcome.
 | GitHub/Git | Issue/CR, owner event/run, Step labels, commits/ref/PR, checks, reviews and Outcome | Authority, durable progress and acceptance truth |
 | Runner | Configured `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic |
 | Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable admission, full automatic controller reservation/completion, pending mutation intent, verified head and recovery receipts |
+| Writer | Configured `paths.claimRoot/pr-lifecycle-v1/<review-id>.json` | Exact native CR/head Draft intent and reconciliation before an execution run exists; no Task or launch authority |
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
 | Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
 

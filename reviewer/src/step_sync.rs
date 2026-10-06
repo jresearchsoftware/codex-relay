@@ -210,13 +210,17 @@ pub(crate) fn projection_title(issue: u64, arguments: &Value) -> Result<String, 
     ))
 }
 
-async fn state(app: &App, args: &Value) -> Result<(Value, Value), &'static str> {
+async fn state(app: &App, args: &Value, published: bool) -> Result<(Value, Value), &'static str> {
     let pr = app
         .github
         .get_pr(&app.repository, args["pr_number"].as_i64().unwrap())
         .await?;
+    let mut publication_pr = pr.clone();
+    if published && pr["draft"] == true {
+        publication_pr["draft"] = json!(false);
+    }
     if let Some(code) = target_binding_rejection(&app.policy, &pr, args)
-        .or_else(|| publication_rejection(&pr, &args["expected_head_sha"]))
+        .or_else(|| publication_rejection(&publication_pr, &args["expected_head_sha"]))
     {
         return Err(code);
     }
@@ -286,7 +290,7 @@ pub(crate) async fn prepare(app: &App, operation: &str, args: &Value) -> Result<
     let next = args["change_request"]["step"]
         .as_u64()
         .ok_or("CHANGE_REQUEST_STEP_INVALID")?;
-    let (pr, issue) = state(app, args).await?;
+    let (pr, issue) = state(app, args, false).await?;
     validate_metadata(&pr, &issue, next, false)?;
     projection_title(linked_issue(&pr)?, args)?;
     save_binding(
@@ -302,7 +306,7 @@ async fn verified_state(
     review_id: i64,
     args: &Value,
 ) -> Result<(Value, Value), &'static str> {
-    let (pr, issue) = state(app, args).await?;
+    let (pr, issue) = state(app, args, true).await?;
     let review = app
         .github
         .decisive_review(

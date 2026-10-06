@@ -307,33 +307,78 @@ push and exact remote-head checks. PR mergeability, native exact-head validation
 and independent review remain separate completion gates; admission of a dirty
 input never means its unresolved output is approved.
 
-### Publication and review readiness
+### Publication, execution handoff and integration readiness
 
-Successful publication remains `IMPLEMENTED_PENDING_FRESH_REVIEW`, with the
-durable candidate head preserved independently of readiness. Writer observes
-native PR mergeability for that exact head and reports `readiness.status`:
-`PENDING` for null/unavailable mergeability, `BLOCKED` for a proven conflict,
-or `READY` for observed mergeability. Pending/conflicting PRs remain native
-drafts; they retain published commits and one successful implementation
-Outcome. They are domain readiness results, not controller execution failures.
-Neither publication nor readiness supplies an independent review verdict.
+Native PR Draft/Ready state projects Codex execution handoff only. Writer keeps
+an active implementation/remediation PR Draft. Blocked, incomplete, failed and
+unconfirmed execution stays Draft, including a domain `BLOCKED` Outcome and a
+controller/journal failure after a successful worker return.
 
-Ordinary `finish` replay returns its stored receipt without republishing.
-The bounded Writer `observe-readiness` operation accepts the admitted run and
-attempt plus the exact completed candidate `head`. It revalidates live
-authority and the same open PR, observes mergeability and base, adjusts native
-draft state, and updates the existing Outcome's readiness snapshot. It neither
-executes a worker nor pushes, polls, rebases or merges. A caller cannot use it
-to finish blocked execution or substitute another candidate. A changing base
-is an observed snapshot; reconciling it requires its own existing Task/CR
-authority. Candidate validation and independent review remain bound to the
-candidate commit, rather than a GitHub-generated synthetic merge commit.
+Successful `finish` publishes and reads back one successful exact-candidate
+Outcome while the PR is still Draft. `complete-handoff` then reads the protected
+runner journal: returned successful execution, containment, complete collection,
+exact candidate and matching durable Outcome are required. Writer completes the
+controller reservation, reserves the exact native lifecycle intent, revalidates
+authority, marks that PR Ready and reads back the same open PR/head/state.
+Ready means execution was durably handed off for independent review. It supplies
+no review verdict, check proof, merge authority or integration proof.
 
-The native draft lifecycle remains the existing progress/blocked and completion
-projection. Drafting a PR immediately on publication of a new remediation CR
-is a separate lifecycle design choice; this change does not introduce that
-Reviewer mutation. Public consumers also retain `pull_request_target` label
-routing under the [owner Actions event-policy procedure](../deploy/README.md#actions-event-policy-for-public-repositories).
+A failed Ready mutation retains the successful Outcome and Draft. A lost response
+or unavailable readback retains the exact pending intent; no Ready success is
+claimed. Native state may be uncertain until a fresh read reconciles it. Same-run
+replay, or the bounded Writer `complete-handoff` operation with the original
+`runId`/`attemptId`, resumes this transition without another worker, push or
+Outcome POST. A matching observed Ready state reconciles an accepted mutation;
+a fresh observed Draft permits the same idempotent transition. Changed head,
+PR, authority or Outcome stops recovery. Completed replay returns the stored
+receipt. The runner's terminal receipt precedes Ready; the Writer's lifecycle
+receipt records its verified native state. A pending transition prevents a
+controller drain from claiming completion.
+
+After successful native `REQUEST_CHANGES` publication, the owner orchestration
+channel immediately calls the bounded Writer lifecycle action returned in
+Reviewer `structuredContent.pr_lifecycle`, before automatic remediation launch
+or manual handoff:
+
+```js
+import { continueAfterChangeRequest } from './src/pr-lifecycle.mjs';
+await continueAfterChangeRequest(reviewerPublicationResult, writerAdapter);
+```
+
+Writer's `begin-remediation` accepts only the PR number, native review ID and
+exact head. It re-reads the current executable CR, canonical Task, Step and
+trusted Reviewer Bot identity, reserves the transition in an atomic lifecycle
+receipt keyed by that native review, converts the PR to Draft and verifies the
+exact target again. This grants no launch, push, Outcome, review, merge or closure
+permission. Failure/uncertainty stops remediation continuation; replay reconciles
+that same current CR/head. Reviewer publishes review authority and projections,
+never the Draft mutation. Preflight also verifies Draft before worker execution.
+Draft is a valid remediation starting state, and publication recovery of the
+same CR remains supported after Writer drafts it. Fresh review still requires
+Ready. No new routing event, credential or App permission is introduced.
+
+Manual results retain the existing owner-authorized `manual-outcome` operation.
+An open PR requires the successful exact Git candidate and durable successful
+Outcome before its verified Ready transition; blocked results draft it. Replay
+reuses that Outcome. Disposed manual qualification artifacts retain their state.
+No-PR results keep the canonical Outcome and existing notification path; they
+create no additional completion signal.
+
+Successful publication remains `IMPLEMENTED_PENDING_FRESH_REVIEW` independently
+of integration readiness. Writer reports `readiness.status`: `PENDING` for
+null/unavailable mergeability, `BLOCKED` for a proven conflict, or `READY` for
+observed mergeability. Pending/conflicting candidates can be native Ready after
+successful execution handoff. Checks, base movement and review/integration
+problems do not draft a completed candidate. Further source work starts through
+a new independent `REQUEST_CHANGES` and its verified Draft transition.
+
+The bounded Writer `observe-readiness` operation revalidates the completed exact
+candidate and current authority, observes mergeability/base and updates the same
+Outcome's integration snapshot. It never mutates Draft/Ready, executes a worker,
+pushes, polls, rebases or merges. Candidate validation and independent review
+remain bound to the candidate commit, rather than a synthetic merge commit.
+Public consumers retain `pull_request_target` label routing under the
+[owner Actions event-policy procedure](../deploy/README.md#actions-event-policy-for-public-repositories).
 
 ## Writer publication recovery
 
@@ -401,8 +446,8 @@ auto-closing settings are not changed by this worker or Writer.
 
 Successful recovery can continue the existing `finish` path without replaying
 the original routing workflow. It retains the original execution receipt, checks
-the exact checkout head and worktree state, observes the PR head, projects its
-current readiness to draft/ready state and updates
+the exact checkout head and worktree state, observes the PR head, publishes and verifies its
+successful Outcome before the protected execution handoff makes it Ready, and updates
 the original Writer-owned blocked Outcome comment in place. A partially failed
 finish can be resumed using the same successful publication receipt; it cannot
 push again. Unresolved integration stays pending; proven conflict blocks

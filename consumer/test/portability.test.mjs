@@ -19,7 +19,7 @@ test(`same modules: ${CONSUMER.repository} Issue and remediation publication and
     assert.equal(f.envelope.repository, CONSUMER.repository);
     assert.equal(f.envelope.consumerDigest, CONSUMER_DIGEST);
     assert.ok(f.envelope.branch.startsWith(CONSUMER.taskBranchPrefix));
-    const journal = memoryStore(); let calls = 0;
+    const journal = f.journal; let calls = 0;
     const execute = async () => {
       calls++; await f.commit();
       return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',

@@ -122,7 +122,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         if (lifecycle.status === 'complete') {
           if (!['started', 'not_started'].includes(lifecycle.child)
             || !(lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))
-            || !record.outcome || record.publicationIntent || (record.prIntent && !positive(record.prNumber)) || record.commentIntent) unknown.push(e.runId);
+            || !record.outcome || record.publicationIntent || (record.prIntent && !positive(record.prNumber)) || record.commentIntent
+            || record.lifecycleIntent || record.handoffComplete === false) unknown.push(e.runId);
           continue;
         }
         // A terminal record with unknown containment or external mutation is

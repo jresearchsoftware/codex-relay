@@ -33,6 +33,8 @@ export async function main() {
   const value = await token();
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken: request.workflowReadToken }),
     store: createAttemptStore(`${deployment.claimRoot}/publication-v2`),
+    lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
+    journal: createAttemptStore(CONSUMER.paths.attemptRoot),
     publisher: createGitPublisher({ token: value, root: deployment.claimRoot }), admission }).dispatch(request);
 }
 export function serializeWriterFailure(error) {

@@ -250,7 +250,21 @@ for the semantic example, compatibility boundary and local checks. Cargo tests
 invoke the real Node admission consumer against an intercepted mock publication.
 Source implementation and CI do not deploy the Reviewer or authorize a canary.
 
-The Writer readiness contract is separate from Reviewer publication: the trusted Writer App must fetch live PR state immediately before `DRAFT -> READY_FOR_REVIEW` and return exact repository, Issue, PR, branch, base, expected/current head, open/unmerged/draft state, Writer actor, outcome, and timestamps. The Reviewer never performs this mutation.
+The [Writer execution lifecycle](../controller/README.md#publication-execution-handoff-and-integration-readiness)
+is separate from Reviewer publication. Successful native `REQUEST_CHANGES`
+publication (including duplicate recovery) returns `structuredContent.pr_lifecycle`
+with the bounded `begin-remediation` Writer action. The owner orchestration
+channel performs and verifies it immediately before automatic launch or manual
+remediation handoff; a failed action stops continuation. Reviewer performs no
+Draft/Ready mutation and requires no new App permission. Recovery of the same
+already-published CR is allowed after Writer drafts it; a fresh review or approval
+still requires a Ready candidate.
+
+Writer marks Ready only after durable exact-candidate publication, successful
+Outcome readback and protected controller execution handoff. It revalidates and
+reads back the same open PR/head and native state, retaining an idempotent pending
+intent when mutation/readback fails. Mergeability, checks, base movement and
+independent acceptance remain separate evidence and never control Draft/Ready.
 
 GitHub App endpoints (`GET /app` and installation-token creation) use the short-lived App JWT. Repository endpoints use only the installation access token.
 

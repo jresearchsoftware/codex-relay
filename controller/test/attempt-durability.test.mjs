@@ -20,7 +20,7 @@ function unavailablePrimary(f) {
 
 test('checkout failure and unavailable primary diagnostics retain a private capsule and sanitized Outcome reference', async t => {
   const f = await fixture(t);
-  const journal = memoryStore();
+  const journal = f.journal;
   const diagnostic = unavailablePrimary(f);
   const secret = 'private-fixture-value';
   await assert.rejects(runAttempt({ ...f, journal, persistFailure: diagnostic.persistFailure,
@@ -74,7 +74,7 @@ test('a journal write failure after a returned child retains known child state a
 
 test('normal pre-execution domain decisions still terminalize without creating physical failure capsules', async t => {
   const f = await fixture(t);
-  const result = await runAttempt({ ...f, journal: memoryStore(),
+  const result = await runAttempt({ ...f, journal: f.journal,
     prepare: async () => { throw Object.assign(new Error('existing checkout'), { code: 'CHECKOUT_ALREADY_EXISTS' }); },
     execute: () => assert.fail('domain blocker must not execute'),
     persistFailure: () => assert.fail('normal domain blocker needs no physical failure capsule') });
@@ -90,7 +90,7 @@ test('fallback reservation failure stays known-not-executed rather than becoming
     reserveDiagnostic: async () => { throw Object.assign(new Error('no diagnostic slot'), { code: 'DIAGNOSTIC_RETENTION_LIMIT' }); },
     spawnImpl: () => assert.fail('no child may start without a capsule'),
     finalizeArtifacts: () => assert.fail('unreserved runtime must not finalize') });
-  await assert.rejects(runAttempt({ ...f, journal: memoryStore(), persistFailure: diagnostic.persistFailure,
+  await assert.rejects(runAttempt({ ...f, journal: f.journal, persistFailure: diagnostic.persistFailure,
     execute: value => dispatcher.dispatch(value) }), error => {
     assert.equal(error.code, 'DIAGNOSTIC_RETENTION_LIMIT');
     assert.equal(error.details.diagnostic.observed.child, 'not_started');

@@ -70,7 +70,7 @@ test('typed semantic authority failures are visible domain blockers', () => {
 });
 
 test('contained no-change Task completion publishes one Issue Outcome with immutable request/result binding and no PR', async t => {
-  const f = await migrated(t); const journal = memoryStore(); let calls = 0;
+  const f = await migrated(t); const journal = f.journal; let calls = 0;
   const args = { ...f, journal, execute: async () => { calls++; return success(f.envelope); } };
   const result = await runAttempt(args);
   assert.equal(result.noChange, true); assert.equal(result.prNumber, null);
@@ -86,7 +86,7 @@ test('contained no-change Task completion publishes one Issue Outcome with immut
 
 test('Task source publication binds its typed Outcome to the unique durable PR', async t => {
   const f = await migrated(t);
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: async () => { await f.commit(); return success(f.envelope); } });
+  const result = await runAttempt({ ...f, journal: f.journal, execute: async () => { await f.commit(); return success(f.envelope); } });
   assert.equal(result.prNumber, 43); assert.equal(f.pushes(), 1);
   const outcome = extractAuthorityRecord(f.comments[0].body);
   assert.deepEqual(outcome.parent, { kind: 'pull_request', number: 43 });
@@ -95,7 +95,7 @@ test('Task source publication binds its typed Outcome to the unique durable PR',
 
 test('Task blocked without progress publishes an Issue Outcome without creating a review artifact', async t => {
   const f = await migrated(t);
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: async () => ({ ...success(f.envelope), result: { status: 'blocked' } }) });
+  const result = await runAttempt({ ...f, journal: f.journal, execute: async () => ({ ...success(f.envelope), result: { status: 'blocked' } }) });
   assert.equal(result.status, 'BLOCKED'); assert.equal(f.pushes(), 0); assert.equal(result.prNumber, null);
   assert.equal(extractAuthorityRecord(f.comments[0].body).status, 'blocked');
 });
@@ -116,7 +116,7 @@ test('same-Step Task Request supersession changes live authority deterministical
 test('manual non-source Task creates a handoff without requiring a meaningless Git head', async t => {
   const f = await migrated(t, { route: 'manual', noSource: true });
   assert.equal(f.envelope.startHead, null); assert.equal(f.envelope.branch, null);
-  const result = await runAttempt({ ...f, journal: memoryStore(), execute: () => assert.fail('manual handoff launched worker') });
+  const result = await runAttempt({ ...f, journal: f.journal, execute: () => assert.fail('manual handoff launched worker') });
   assert.equal(result.status, 'handed-off'); assert.equal(f.pushes(), 0);
 });
 
@@ -126,24 +126,57 @@ test('route and Step projections mismatch visibly instead of becoming another au
   assert.equal(f.pushes(), 0);
 });
 
-async function manualEvidence(t, { disposablePr = false, spoof = false } = {}) {
+async function manualEvidence(t, { disposablePr = false, spoof = false, openPr = false, status = 'implemented' } = {}) {
   const f = await migrated(t, { route: 'manual', noSource: true });
   const owner = { login: OWNER, type: 'User', id: 56 };
   const result = { schema_version: '3.0', kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: { kind: disposablePr ? 'pull_request' : 'issue', number: disposablePr ? 55 : 42 }, charter_sha256: f.request.charter_sha256,
-    request: f.envelope.requestReference, attempt: f.envelope.attemptId, status: 'implemented',
-    result: { kind: 'qualification', revision: null, identities: [{ kind: 'github-check', id: 'immutable-check-789' }] },
+    request: f.envelope.requestReference, attempt: f.envelope.attemptId, status,
+    result: openPr ? { kind: 'git', revision: 'a'.repeat(40), identities: [] }
+      : { kind: 'qualification', revision: null, identities: [{ kind: 'github-check', id: 'immutable-check-789' }] },
     warnings: [], limitations: ['The disposable qualification artifact was closed without merge.'], summary: 'Manual qualification completed.' };
   const source = { id: 905, user: spoof ? { ...owner, id: 57 } : owner,
     issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`, body: `\`\`\`relay-manual-result\n${canonicalAuthorityJson(result)}\n\`\`\`\n` };
-  const pr = { number: 55, state: 'closed', merged: false, body: `Related to #42\nExecution request digest: ${f.envelope.requestReference.sha256}`,
-    base: { repo: { full_name: REPOSITORY } }, head: { ref: 'codex/disposable', repo: { full_name: REPOSITORY } } };
+  const pr = { number: 55, state: openPr ? 'open' : 'closed', node_id: 'PR_manual', draft: status === 'implemented',
+    merged: false, body: `Related to #42\nExecution request digest: ${f.envelope.requestReference.sha256}`,
+    base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: REPOSITORY } },
+    head: { ref: 'codex/disposable', sha: 'a'.repeat(40), repo: { full_name: REPOSITORY } } };
   const get = f.api.get.bind(f.api); const list = f.api.list.bind(f.api); const identity = f.api.userIdentity.bind(f.api);
   f.api.get = async path => path === '/issues/comments/905' ? structuredClone(source) : path === '/pulls/55' ? structuredClone(pr) : get(path);
   f.api.list = async path => path.startsWith('/pulls?state=all') ? [structuredClone(pr)] : list(path);
   f.api.userIdentity = async login => login === OWNER ? owner : identity(login);
+  if (openPr) {
+    f.api.ready = async id => { assert.equal(id, 'PR_manual'); pr.draft = false; };
+    f.api.draft = async id => { assert.equal(id, 'PR_manual'); pr.draft = true; };
+  }
   return { ...f, source, result, operation: { operation: 'manual-outcome', runId: 99, attemptId: f.envelope.attemptId, authorizationId: 905 } };
 }
+
+for (const status of ['implemented', 'blocked']) {
+  test(`manual open PR ${status} uses the same verified execution lifecycle`, async t => {
+    const f = await manualEvidence(t, { disposablePr: true, openPr: true, status });
+    const ready = f.api.ready;
+    if (status === 'implemented') f.api.ready = async id => {
+      assert.equal(f.comments.length, 1);
+      assert.equal((await f.store.get(99)).outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+      await ready(id);
+    };
+    await f.broker.invoke(f.operation);
+    assert.equal((await f.api.get('/pulls/55')).draft, status === 'blocked');
+    await f.broker.invoke(f.operation);
+    assert.equal(f.comments.length, 1); assert.equal(f.pushes(), 0);
+  });
+}
+
+test('manual Ready failure recovers the same durable successful Outcome', async t => {
+  const f = await manualEvidence(t, { disposablePr: true, openPr: true }); const ready = f.api.ready;
+  f.api.ready = async () => { throw Object.assign(new Error('Ready failed'), { code: 'READY_MUTATION_FAILED' }); };
+  await assert.rejects(f.broker.invoke(f.operation), { code: 'READY_MUTATION_FAILED' });
+  assert.equal(f.comments.length, 1); assert.equal((await f.api.get('/pulls/55')).draft, true);
+  f.api.ready = ready;
+  await f.broker.invoke(f.operation);
+  assert.equal(f.comments.length, 1); assert.equal((await f.api.get('/pulls/55')).draft, false);
+});
 
 for (const disposablePr of [false, true]) {
   test(`manual result publication follows ${disposablePr ? 'the closed disposable PR' : 'the Issue'} without manufacturing review artifacts`, async t => {
@@ -199,7 +232,7 @@ test('typed PR remediation publishes a new head and completes under the unchange
       : path === '/issues/43/comments' ? [decisionComment, ...await list(path)] : list(path);
   } });
   assert.equal(f.envelope.request.kind, 'change-request');
-  const completed = await runAttempt({ ...f, journal: memoryStore(), execute: async () => { await f.commit(); return success(f.envelope); } });
+  const completed = await runAttempt({ ...f, journal: f.journal, execute: async () => { await f.commit(); return success(f.envelope); } });
   assert.equal(completed.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
   assert.notEqual(completed.head, request.reviewed_head_sha); assert.equal(f.pushes(), 1);
   const outcome = extractAuthorityRecord(f.comments[0].body);
@@ -217,7 +250,7 @@ test('typed PR remediation publishes a new head and completes under the unchange
 
 test('a descriptive title projection mismatch after typed publication blocks visibly without a second push', async t => {
   const f = await migrated(t);
-  const completed = await runAttempt({ ...f, journal: memoryStore(), execute: async () => { await f.commit(); return success(f.envelope); } });
+  const completed = await runAttempt({ ...f, journal: f.journal, execute: async () => { await f.commit(); return success(f.envelope); } });
   await f.api.patch('/pulls/43', { title: 'Task 42 · Step 1 · Unrelated purpose' });
   await assert.rejects(f.broker.invoke({ operation: 'observe-readiness', runId: 99, attemptId: f.envelope.attemptId, head: completed.head }),
     { code: 'AUTHORITY_TITLE_PROJECTION_MISMATCH' });

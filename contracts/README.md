@@ -360,6 +360,21 @@ for ambiguous or incomplete opted-in authority. Publisher idempotence and
 reservation-before-mutation use the existing native operation journal; this
 contract creates no authority registry or parallel Task ledger.
 
+### Continuation after changes requested
+
+A successful native PR `REQUEST_CHANGES` begins the next remediation ownership
+cycle. Both legacy and typed publication receipts carry a bounded
+`pr_lifecycle` Writer action identifying only the PR, native CR review and exact
+head. The owner orchestration channel calls the
+[Writer lifecycle continuation](../controller/README.md#publication-execution-handoff-and-integration-readiness)
+immediately after publication, before launch or manual remediation handoff.
+Writer independently re-reads current executable authority and verifies Draft
+for that exact target. A failed/uncertain transition stops continuation and is
+recoverable for the same current CR/head. Reviewer remains the review authority
+publisher; neither its receipt nor Draft state grants execution authority.
+Ready subsequently means a durable successful Codex execution handoff, regardless
+of current checks, mergeability or independent review acceptance.
+
 ### Authorized continuation after independent acceptance
 
 Task Requests and Change Requests may include

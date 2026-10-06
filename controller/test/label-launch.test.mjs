@@ -49,7 +49,7 @@ for (const remediation of [false, true]) test(`one fresh auto ready event runs b
   assert.equal(f.envelope.attemptId, 'run-99');
   assert.equal(currentStep(f.issue.labels), 5);
   assert.ok(!(f.pr ?? f.issue).labels.some(l => l.name === 'codex-ready-auto'));
-  const journal = memoryStore(); let calls = 0;
+  const journal = f.journal; let calls = 0;
   const run = () => runAttempt({ ...f, journal, execute: async () => {
     calls++; await f.commit(); return receipt(f.envelope);
   } });
@@ -63,7 +63,7 @@ for (const remediation of [false, true]) test(`one fresh auto ready event runs b
 
 for (const remediation of [false, true]) test(`manual ready label makes a copyable ${remediation ? 'CR' : 'Issue'} handoff without a worker`, async t => {
   const f = await fixture(t, { remediation, labelLaunch: true, route: 'manual', step: 5 });
-  const run = () => runAttempt({ ...f, journal: memoryStore(), execute: async () => assert.fail('manual started Codex') });
+  const run = () => runAttempt({ ...f, journal: f.journal, execute: async () => assert.fail('manual started Codex') });
   assert.equal((await run()).status, 'handed-off'); assert.equal((await run()).status, 'handed-off');
   assert.equal(f.comments.length, 1); assert.equal(f.pushes(), 0);
   assert.match(f.comments[0].body, /MANUAL_CODEX_HANDOFF_READY[\s\S]*```text/);

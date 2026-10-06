@@ -19,7 +19,7 @@ export function memoryStore() {
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
 export async function fixture(t, { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
-  mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission,
+  mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
   profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
   // root. Give each fixture its own admitted event namespace so a concurrent
@@ -177,7 +177,8 @@ export async function fixture(t, { remediation = false, continuation = false, co
   function assertLabelPath(path) {
     if (!labelLaunch || path !== `/issues/${launch.number}/labels/codex-ready-${route}`) throw new Error('Unexpected label mutation');
   }
-  const store = memoryStore(); const realPublisher = createGitPublisher({ remote, root });
+  const store = memoryStore(); const journal = createJournal(root); const lifecycleStore = memoryStore();
+  const realPublisher = createGitPublisher({ remote, root });
   const publisher = { inspect: (e, bundle, fn) => realPublisher.inspect(e, bundle, g => fn({ ...g,
     push: async () => {
       publicationOperations.push('push');
@@ -193,8 +194,8 @@ export async function fixture(t, { remediation = false, continuation = false, co
       if (observationFailure) throw observationFailure;
       return staleObservation ? null : observedHead ?? g.observe();
     } })) };
-  const admissionControl = createAdmission ? await createAdmission({ root, store }) : undefined;
-  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl });
+  const admissionControl = createAdmission ? await createAdmission({ root, store, journal }) : undefined;
+  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
   await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead });
   const admission = await broker.invoke(admissionRequest);
@@ -211,7 +212,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
   const { name, email } = remediation ? CONSUMER.remediationIdentity : CONSUMER.writerIdentity;
   const identity = { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email };
   const commit = async (path = 'docs/work.md', text = 'changed\n') => { await writeFile(join(cwd, path), text); await command(cwd, ['add', path]); await command(cwd, ['commit', '-m', 'task progress'], identity); return command(cwd, ['rev-parse', 'HEAD']); };
-  return { root, remote, source, command, api, issue, pr, run, events, admissionRequest, admission, admissionControl, review, store, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
+  return { root, remote, source, command, api, issue, pr, run, events, admissionRequest, admission, admissionControl, review, store, journal, lifecycleStore, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
     prepare: e => prepareCheckout(e, { root: workRoot, remote, token: null }),
     collect: e => collectProgress(cwd, e, { root, remote }),
     checksReady: () => { checksReady = true; }, pushes: () => pushes,

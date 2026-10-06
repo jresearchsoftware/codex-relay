@@ -616,8 +616,27 @@ async fn mcp(
                 json!({"content":[{"type":"text","text":"RELAY_DISABLED"}],"isError":true})
             } else if name == "submit_pr_review" {
                 let pr = match app.github.get_pr(arguments["repository"].as_str().unwrap_or(""),arguments["pr_number"].as_i64().unwrap_or(0)).await { Ok(value)=>value, Err(code)=>return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response() };
+                // Writer may already have drafted this exact published CR.
+                // Permit its own publication recovery, never a new review of
+                // an active Draft candidate or an approval of that candidate.
+                let mut publication_pr = pr.clone();
+                if arguments["action"] == "REQUEST_CHANGES"
+                    && pr["draft"] == true
+                    && app
+                        .store
+                        .lock()
+                        .expect("store lock")
+                        .known(&operation_id(&app.policy.validation_names, arguments))
+                        .ok()
+                        .flatten()
+                        .is_some_and(|state| state.review_id.is_some())
+                {
+                    publication_pr["draft"] = json!(false);
+                }
                 if let Some(outcome) = target_binding_rejection(&app.policy, &pr, arguments)
-                    .or_else(|| publication_rejection(&pr, &arguments["expected_head_sha"]))
+                    .or_else(|| {
+                        publication_rejection(&publication_pr, &arguments["expected_head_sha"])
+                    })
                 {
                     tracing::info!(event = "review_attempt", outcome, repository = %arguments["repository"], pr_number = ?arguments["pr_number"]);
                     if outcome == "DRAFT_PR_NOT_READY" {
@@ -725,7 +744,7 @@ async fn mcp(
                                     }
                                 }
                                 tracing::info!(event = "review_attempt", outcome = "DUPLICATE_SUPPRESSED", operation = %operation);
-                                json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"status":known.as_ref().map(|x| &x.status),"review_id":known.as_ref().and_then(|x| x.review_id),"review_url":known.as_ref().and_then(|x| x.review_url.as_ref())}})
+                                json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"status":known.as_ref().map(|x| &x.status),"review_id":known.as_ref().and_then(|x| x.review_id),"review_url":known.as_ref().and_then(|x| x.review_url.as_ref()),"pr_lifecycle":remediation_lifecycle_action(arguments, known.as_ref().and_then(|x| x.review_id))}})
                             }
                         }
                         Ok(true) => match app
@@ -911,7 +930,15 @@ async fn complete_check(
     } else {
         Value::Null
     };
-    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha,"post_review_continuation":continuation}})
+    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha,"post_review_continuation":continuation,"pr_lifecycle":remediation_lifecycle_action(arguments, Some(review_id))}})
+}
+
+pub(crate) fn remediation_lifecycle_action(arguments: &Value, review_id: Option<i64>) -> Value {
+    if arguments["action"] != "REQUEST_CHANGES" || review_id.is_none() {
+        return Value::Null;
+    }
+    json!({"operation":"begin-remediation","prNumber":arguments["pr_number"],
+        "reviewId":review_id,"head":arguments["expected_head_sha"]})
 }
 
 async fn approval_continuation_plan(app: &App, arguments: &Value, review_id: i64) -> Value {

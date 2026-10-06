@@ -10,6 +10,6 @@ export function prReadiness(pr, head) {
     head, observedBase: pr.base.sha, mergeable: typeof pr.mergeable === 'boolean' ? pr.mergeable : null };
 }
 
-export function readinessOutcomeLines(readiness, draft) {
-  return `Review readiness: ${readiness.status} (${readiness.code})\nReadiness observed head: ${readiness.head}\nObserved integration base: ${readiness.observedBase}\nNative PR draft: ${draft ? 'true' : 'false'}`;
+export function readinessOutcomeLines(readiness) {
+  return `Integration readiness: ${readiness.status} (${readiness.code})\nReadiness observed head: ${readiness.head}\nObserved integration base: ${readiness.observedBase}`;
 }

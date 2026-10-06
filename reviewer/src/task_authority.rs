@@ -1335,7 +1335,11 @@ async fn published_native(
         json!({"content":[{"type":"text","text":outcome}],"structuredContent":{
         "reference":reference,"native_url":url,"actor":normalized_author(&reread["user"]),"record":record,
         "context_provenance":provenance["context_provenance"],"issue_closure_policy":closure,
-        "warnings":warnings,"check":check_reference,"issue_closure_performed":false,"merge_performed":false}}),
+        "warnings":warnings,"check":check_reference,"issue_closure_performed":false,"merge_performed":false,
+        "pr_lifecycle": if record["kind"] == "change-request" {
+            crate::remediation_lifecycle_action(&json!({"action":"REQUEST_CHANGES","pr_number":record["parent"]["number"],
+                "expected_head_sha":record["reviewed_head_sha"]}), reference["id"].as_i64())
+        } else {Value::Null}}}),
     )
 }
 
@@ -1390,7 +1394,11 @@ pub(crate) async fn publish(app: &App, args: &Value) -> Value {
                         return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
                     }
                     return Ok(
-                        json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"reference":reference,"native_url":known.native_url,"actor":normalized_author(&native["user"]),"merge_performed":false,"issue_closure_performed":false}}),
+                        json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"reference":reference,"native_url":known.native_url,"actor":normalized_author(&native["user"]),"merge_performed":false,"issue_closure_performed":false,
+                        "pr_lifecycle":if record["kind"] == "change-request" {
+                            crate::remediation_lifecycle_action(&json!({"action":"REQUEST_CHANGES","pr_number":record["parent"]["number"],
+                                "expected_head_sha":record["reviewed_head_sha"]}), Some(id))
+                        } else {Value::Null}}}),
                     );
                 }
                 return published_native(

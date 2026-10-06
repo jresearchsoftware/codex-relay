@@ -5,7 +5,16 @@ import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // One runner-owned journal records whether the potentially paid call happened.
 // Publication may be resumed; a reserved/unknown child is never relaunched.
-export async function runAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false, persistFailure }) {
+export async function runAttempt(options) {
+  const outcome = await runContainedAttempt(options);
+  if (options.envelope.route !== 'auto' || outcome.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW') return outcome;
+  // Outside the execution catch: a failed/uncertain Ready transition retains
+  // the successful durable Outcome and can resume without another model call.
+  return options.broker.invoke({ operation: 'complete-handoff', runId: options.envelope.runId,
+    attemptId: options.envelope.attemptId });
+}
+
+async function runContainedAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false, persistFailure }) {
   const e = validateEnvelope(envelope);
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId: e.runId, attemptId: e.attemptId, ...value });
   if (e.route === 'manual') return invoke('handoff');
