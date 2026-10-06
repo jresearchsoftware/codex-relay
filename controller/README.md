@@ -157,8 +157,22 @@ the current Request, charter and exact result bytes, reserves the source ID and
 digest, re-reads it and publishes one typed Outcome. It does not import Git,
 launch work, approve, deploy, merge or close anything. The manual result can
 identify immutable checks/runs without inventing a Git head. A PR result must
-be uniquely bound to the Task and the Request digest in the PR body, including
-a disposable PR already closed without merge; Writer does not reopen it.
+be uniquely bound to the Task in the PR body, including a disposable PR already
+closed without merge; Writer does not reopen it. When the Request has no
+`existing_pr`, Reviewer discovers its artifact by branch and requires both
+exact standalone binding lines in that body:
+
+```text
+Execution request native ID: <reference.id>
+Execution request digest: <reference.sha256>
+```
+
+Copy both values from the trusted Task Request publisher's returned `reference`.
+The digest covers the complete native Request comment, including publication
+provenance, not only its JSON payload. Retain the ordinary `Related to #N` Task
+linkage. Automatic Writer PR creation already emits both lines; an owner-created
+manual PR needs the same binding for Reviewer discovery and Task Approval,
+including after the disposable artifact has been closed.
 
 For automatic Git publication, only an open PR for the admitted repository,
 branch and configured base may receive publication. Closed and merged PRs using that branch remain
