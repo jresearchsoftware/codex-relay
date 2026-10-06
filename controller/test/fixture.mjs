@@ -140,7 +140,14 @@ export async function fixture(t, { remediation = false, continuation = false, co
     async list(path) {
       if (path.endsWith('/events')) return copy(events);
       if (path === '/pulls/43/reviews') return [copy(review)];
-      if (path.startsWith('/pulls?')) return pr ? [await this.get('/pulls/43')] : [];
+      if (path.startsWith('/pulls?')) {
+        if (!pr) return [];
+        // GitHub's PR list response omits detail-only mergeability fields.
+        const summary = await this.get('/pulls/43');
+        delete summary.mergeable;
+        delete summary.mergeable_state;
+        return [summary];
+      }
       if (path.endsWith('/comments')) return copy(comments);
       throw new Error(`Unexpected list ${path}`);
     },

@@ -97,7 +97,7 @@ for (const [name, mutate, code] of [
   ['stale PR head', f => {
     const list = f.api.list.bind(f.api);
     f.api.list = async path => (await list(path)).map(pr => path.startsWith('/pulls?') ? { ...pr, head: { ...pr.head, sha: 'b'.repeat(40) } } : pr);
-  }, 'STARTING_STATE_MISMATCH']
+  }, 'PR_AUTHORITY_CHANGED']
 ]) {
   test(`continuation admission blocks ${name} before worker access`, async t => {
     const f = await fixture(t, { continuation: true, continuationPr: name !== 'missing branch', beforeAdmission: mutate });
