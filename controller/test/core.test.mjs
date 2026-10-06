@@ -112,9 +112,10 @@ test('composed owner path finishes once with exact-head CI pending and mergeabil
   assert.equal(saved.progress.head, await f.remoteHead()); assert.equal(f.pushes(), 1);
   assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW'); assert.equal(executions, 1); assert.equal(f.pushes(), 1);
   assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
-  assert.match(f.comments[0].body, /Native exact-head CI and GitHub mergeability were not evaluated/);
+  assert.match(f.comments[0].body, /Native candidate-head CI was not evaluated/);
   assert.doesNotMatch(f.comments[0].body, /check \d+ passed|GitHub reports mergeable/);
-  assert.equal((await f.api.get('/pulls/43')).draft, false);
+  assert.equal(result.readiness.status, 'PENDING');
+  assert.equal((await f.api.get('/pulls/43')).draft, true);
   await runAttempt(args); assert.equal(executions, 1);
 });
 
@@ -139,9 +140,9 @@ test('one terminal Outcome retains substantive worker evidence separately from t
   assert.ok(body.includes(summary)); // Full bounded summary, including content beyond 512 bytes.
   assert.match(body, /Worker summary \(claim\):/);
   assert.match(body, /Portable launcher-profile and local routing checks passed/);
-  assert.match(body, /Native exact-head CI and GitHub mergeability were not evaluated/);
+  assert.match(body, /Native candidate-head CI was not evaluated/);
   assert.match(body, /Actual model\/effort: UNAVAILABLE/);
-  assert.ok(body.includes(`Latest durable and ready head: ${await f.remoteHead()}`));
+  assert.ok(body.includes(`Latest durable candidate head: ${await f.remoteHead()}`));
   assert.ok(!body.includes(secret)); assert.ok(!body.includes('<script>'));
   assert.equal((body.match(/^## Codex Outcome$/gm) ?? []).length, 1);
   assert.deepEqual(await runAttempt(args), outcome);

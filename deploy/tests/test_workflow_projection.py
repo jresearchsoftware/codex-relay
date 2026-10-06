@@ -42,7 +42,7 @@ class ProjectionTests(unittest.TestCase):
         contents = {str(path.relative_to(self.root)): path.read_bytes()
                     for path in self.root.rglob('*') if path.is_file()}
         self.assertEqual(len(first['files']), 2)
-        self.assertEqual(first['workflowContract'], 'relay-workflows-v1')
+        self.assertEqual(first['workflowContract'], 'relay-workflows-v2')
         self.assertEqual(first['consumerRepository'], 'example-org/sample-project')
         self.assertEqual(self.project(), first)
         self.assertEqual(contents, {str(path.relative_to(self.root)): path.read_bytes()
@@ -56,7 +56,7 @@ class ProjectionTests(unittest.TestCase):
             self.assertIn("github.repository == 'example-org/sample-project'", job['if'])
             self.assertIn("github.actor == 'example-owner'", job['if'])
             self.assertEqual(job['runs-on'], ['self-hosted', 'Linux', 'X64', 'relay'])
-            self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v1')
+            self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v2')
             self.assertEqual(os.stat(self.root / path).st_mode & 0o777, 0o644)
 
     def test_general_runner_group_and_non_main_base_are_projected(self):
@@ -132,14 +132,14 @@ class ProjectionTests(unittest.TestCase):
                     with (templates / 'routing.yml.in').open('a') as stream:
                         stream.write('# actual workflow content change\n')
                 else:
-                    (templates / 'contract.json').write_text('{"workflowContract":"relay-workflows-v2"}')
+                    (templates / 'contract.json').write_text('{"workflowContract":"relay-workflows-v3"}')
                 result = projection.prepare(self.config, 'b' * 40, source, self.root, output)
                 self.assertEqual(result['state'], 'workflow-review-required')
                 projection.verify(self.config, 'b' * 40, source, output)
                 self.assertEqual(before, {path: (self.root / path).read_bytes() for path in before})
 
     def test_sha_bound_manifest_migrates_once_after_drift_verification(self):
-        legacy = {path: raw.replace(b'relay-workflows-v1', HEAD.encode()) for path, raw in self.rendered.items()}
+        legacy = {path: raw.replace(b'relay-workflows-v2', HEAD.encode()) for path, raw in self.rendered.items()}
         for path, raw in legacy.items():
             destination = self.root / path
             destination.parent.mkdir(parents=True, exist_ok=True)

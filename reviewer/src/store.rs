@@ -8,6 +8,8 @@ pub struct Operation {
     pub actor_login: Option<String>,
     pub check_id: Option<i64>,
     pub check_url: Option<String>,
+    pub native_id: Option<i64>,
+    pub native_url: Option<String>,
 }
 
 pub struct Store {
@@ -40,6 +42,8 @@ impl Store {
             [],
         );
         let _ = db.execute("ALTER TABLE operations ADD COLUMN step_binding TEXT", []);
+        let _ = db.execute("ALTER TABLE operations ADD COLUMN native_id INTEGER", []);
+        let _ = db.execute("ALTER TABLE operations ADD COLUMN native_url TEXT", []);
         Ok(Self { db })
     }
 
@@ -100,10 +104,29 @@ impl Store {
 
     pub fn known(&self, id: &str) -> rusqlite::Result<Option<Operation>> {
         self.db.query_row(
-            "SELECT status,review_id,review_url,actor_login,check_id,check_url FROM operations WHERE operation_id=?1",
+            "SELECT status,review_id,review_url,actor_login,check_id,check_url,native_id,native_url FROM operations WHERE operation_id=?1",
             [id],
-            |r| Ok(Operation { status: r.get(0)?, review_id: r.get(1)?, review_url: r.get(2)?, actor_login: r.get(3)?, check_id: r.get(4)?, check_url: r.get(5)? }),
+            |r| Ok(Operation { status: r.get(0)?, review_id: r.get(1)?, review_url: r.get(2)?, actor_login: r.get(3)?, check_id: r.get(4)?, check_url: r.get(5)?, native_id: r.get(6)?, native_url: r.get(7)? }),
         ).optional()
+    }
+
+    pub fn authority_published(
+        &self,
+        id: &str,
+        native_id: i64,
+        url: &str,
+        actor: &str,
+    ) -> rusqlite::Result<()> {
+        self.db.execute(
+            "UPDATE operations SET status='AUTHORITY_PUBLISHED',native_id=?2,native_url=?3,actor_login=?4 WHERE operation_id=?1",
+            (id, native_id, url, actor),
+        )?;
+        self.event(id, "AUTHORITY_PUBLISHED")
+    }
+
+    pub fn authority_complete(&self, id: &str) -> rusqlite::Result<()> {
+        self.db.execute("UPDATE operations SET status='PUBLISHED' WHERE operation_id=?1 AND native_id IS NOT NULL", [id])?;
+        self.event(id, "AUTHORITY_COMPLETE")
     }
 
     pub fn step_binding(&self, id: &str) -> rusqlite::Result<Option<String>> {

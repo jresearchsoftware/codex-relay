@@ -269,7 +269,7 @@ async fn approve_never_projects_step_metadata() {
         .lock()
         .unwrap()
         .iter()
-        .any(|r| r.starts_with("PUT ") || r.starts_with("PATCH ") || r.contains("/issues/")));
+        .any(|r| r.starts_with("PUT ") || r.starts_with("PATCH ")));
 }
 
 #[tokio::test]

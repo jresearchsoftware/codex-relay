@@ -84,6 +84,27 @@
     mode: preserve
   when: not ansible_check_mode | bool
 
+- name: Create protected shared Reviewer schema build inputs
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0750'
+  loop:
+    - '{{ relay_release_path }}/contracts'
+    - '{{ relay_release_path }}/contracts/src'
+
+- name: Stage the exact shared GitHub authority schema for the Reviewer build
+  ansible.builtin.copy:
+    src: '{{ relay_release_path }}/reviewed-source/contracts/src/github-authority-v1.json'
+    dest: '{{ relay_release_path }}/contracts/src/github-authority-v1.json'
+    remote_src: true
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0640'
+  when: not ansible_check_mode | bool
+
 - name: Reconcile the shared pinned Rust toolchain for builds and development
   ansible.builtin.include_tasks: rust-toolchain.yml
 

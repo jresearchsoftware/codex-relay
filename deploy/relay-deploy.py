@@ -95,7 +95,7 @@ def source_identity(root):
                 'controller/src', 'runtime/src', 'runtime/config', 'contracts/src', 'reviewer/src/executable-cr-v2.json'),
             'codexLauncherSourceTreeSha256': digest('deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2',
                 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-cleanup.py.j2'),
-            'reviewerSourceTreeSha256': digest('reviewer'),
+            'reviewerSourceTreeSha256': digest('reviewer', 'contracts/src/github-authority-v1.json'),
             'reviewerBuildInputsTreeSha256': digest('deploy/ansible/group_vars/all.yml', 'deploy/ansible/site.yml',
                 'deploy/ansible/roles/relay_base', 'deploy/ansible/roles/relay_preflight',
                 'deploy/ansible/roles/relay_artifacts', 'deploy/ansible/roles/relay_runtime',

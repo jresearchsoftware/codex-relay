@@ -90,6 +90,61 @@ reusable target state, missing inputs, invalid state and owner-admin handoffs.
 Unavailable App/runner-policy verification is an explicit owner-admin handoff,
 not a claim that policy is missing or that local validation proved it.
 
+### Actions event policy for public repositories
+
+GitHub's [September 17, 2026 announcement](https://github.blog/changelog/2026-09-17-workflow-execution-protections-in-github-actions-generally-available/)
+sets November 2, 2026 enforcement for affected public repositories' default
+`pull_request_target` restriction. Relay retains its PR-label routing event.
+The owner must explicitly permit it in an applicable Actions event policy;
+workflow YAML cannot override an administrative denial.
+
+Use [Actions Policies](https://docs.github.com/en/actions/how-tos/administer/control-workflow-execution)
+at repository scope, or an organization policy restricted to the consumer
+repository and exact routing workflow. The minimal event allowance preserves
+`issues`, `pull_request_target` and `workflow_dispatch` for that workflow.
+Generate a reviewable proposal without contacting GitHub:
+
+```sh
+python3 deploy/actions_policy.py --repository example-owner/example-repo \
+  --workflow .github/workflows/relay-routing.yml --proposal
+```
+
+`--organization` adds the exact repository-name condition. The repository
+administrator or organization owner separately authorizes and applies the
+proposal through Settings → Actions → Policies, or the documented
+[policy API](https://docs.github.com/en/rest/actions/policies). This source Task
+does not authorize a live administrative change. Do not use a repository-wide
+exception when an exact routing workflow suffices, or replace its existing
+actor and runner restrictions.
+
+After independent acceptance, the owner reads back effective event policy:
+
+```sh
+python3 deploy/actions_policy.py --repository example-owner/example-repo \
+  --workflow .github/workflows/relay-routing.yml
+```
+
+This owner-local interface uses authenticated `gh api` **GET** requests only.
+It lists repository policies with `has_parents=true`, reads each policy at its
+native repository, organization or enterprise endpoint, and checks all active
+applicable event rules. An inherited denial remains blocking. Disabled or
+evaluate-only allowances do not establish active policy. Complex workflow
+patterns, denied APIs, changed/incomplete responses or unavailable credentials
+yield an explicit owner-admin verification handoff. GitHub currently documents
+Administration **write** permission even for these reads; do not grant it to
+the worker, Writer or Reviewer to make qualification convenient. The helper
+does not access a token file, modify policy, or persist credentials.
+
+The result qualifies only event allowances. The owner must also inspect any
+applicable actor policies and prove one representative, owner-applied PR ready
+label reaches the accepted installed routing workflow. Complete that live
+read-back and representative trigger before November 2, 2026 for affected
+public consumers. Local mocked read-back and projection tests cannot supply
+this live proof. Keep same-repository PR, owner and triggering-actor checks,
+read-only workflow permissions, externally restricted installed runners and
+exact live Task/CR admission intact. The event exception supplies none of
+those boundaries and grants no execution, deployment, merge or closure authority.
+
 The supported sequence is:
 
 ```text

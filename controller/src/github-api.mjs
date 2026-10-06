@@ -10,6 +10,14 @@ export function createGithubApi({ token, runToken, fetchImpl = fetch } = {}) {
     return response.status === 204 ? null : response.json();
   }
   return {
+    async userIdentity(login) {
+      // Callers select the configured publisher, never a worker-supplied actor.
+      const response = await fetchImpl(`https://api.github.com/users/${encodeURIComponent(login)}`, {
+        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`,
+          'x-github-api-version': '2022-11-28' }, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) fail('AUTHORITY_PUBLISHER_UNAVAILABLE');
+      return response.json();
+    },
     async ensureStepLabel(step) {
       if (!Number.isSafeInteger(step) || step < 1) fail('STEP_LABEL_INVALID');
       const name = `step-${step}`;

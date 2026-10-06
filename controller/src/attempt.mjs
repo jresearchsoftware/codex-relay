@@ -93,6 +93,12 @@ export async function runAttempt({ envelope, broker, journal, prepare, execute, 
       throw Object.assign(new Error(code), { code, details: { childState: record.execution.child,
         causal: record.execution.diagnostic, primaryCause: record.execution.diagnostic?.primaryCause ?? null } });
     }
+    if (!record.progress && e.request?.kind === 'task-request' && progress.clean && progress.head === e.startHead) {
+      record.outcome = await invoke('finish-no-change', { head: progress.head,
+        taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
+      record.diagnostic = null; await journal.put(e.runId, record);
+      return record.outcome;
+    }
     if (!record.progress) fail('NO_DURABLE_PROGRESS');
     if (record.progress.head !== progress.head) fail('PUBLISHED_HEAD_REQUIRED');
     record.outcome = await invoke('finish', { head: record.progress.head,

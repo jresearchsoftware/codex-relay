@@ -33,6 +33,14 @@ export function assertPrStepTitle(pr, issueNumber, step) {
   if (pr.title !== prefix && !pr.title?.startsWith(`${prefix} · `)) fail('STEP_DISPLAY_MISMATCH');
 }
 
+export function projectedRequestTitle(request) {
+  const cr = request.kind === 'change-request' ? ` · ${request.change_request_id}` : '';
+  const text = `Task ${request.task} · Step ${request.step}${cr} · ${request.purpose}`;
+  const characters = Array.from(text);
+  return characters.length <= RUN_NAME_IDENTITY_MAX_CHARS ? text
+    : `${characters.slice(0, RUN_NAME_IDENTITY_MAX_CHARS - 1).join('')}…`;
+}
+
 // Same bounded native projection as Reviewer; CR identity is explicit even when
 // the caller's descriptive thread title omitted it. Task comes from live linkage.
 export function reviewStepTitle(contract, issueNumber) {

@@ -30,7 +30,7 @@ After a mutation, recovery or compaction, refresh only mutable authority and
 facts that could have changed. Do not restart broad discovery or treat cached
 history as current truth.
 
-The live Issue body is the mutable canonical Task contract. Keep current
+For legacy Tasks, the live Issue body is the mutable canonical Task contract. Keep current
 requirements, owner corrections, scope/boundary decisions and task status in
 that body. Comments hold discussion, evidence, Outcomes, handoffs and history;
 they must not become a competing current Task contract. Native Change Requests
@@ -58,6 +58,13 @@ closure metadata remains `keep-open` with a visible warning.
 Nearby prose should explain why the Issue stays open and what outcome would make closure
 appropriate. This is ordinary Task prose, not another required structured field
 or an automatic closure rule.
+After an explicit `Authority model: github-native-v1` migration, the Issue is
+the stable charter and the current trusted typed execution request is the sole
+Step/profile/route/scope snapshot. Decisions amend durable semantics; ordinary
+comments remain selected evidence. Use the
+[GitHub-native contract](contracts/README.md#github-native-task-authority) and
+paired deployed Reviewer/controller. Labels and bounded titles are projections,
+not a second Step authority; legacy owner metadata helpers cannot write them.
 Steps are execution-time decomposition of progress toward that Task.
 A Task does not predefine, own, or constrain the number, numbering, or scope of
 its Steps. Steps may be introduced as work evolves; a Task may require one Step

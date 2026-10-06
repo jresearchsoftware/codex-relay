@@ -21,6 +21,7 @@ mod mtls_identity;
 mod step_sync;
 mod store;
 mod strict_json;
+mod task_authority;
 #[derive(Clone, Parser)]
 struct Args {
     #[arg(long, env = "REVIEWER_MCP_CONFIG")]
@@ -107,7 +108,7 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
     evidence["name"] = json!("read_pr_review_evidence");
     evidence["description"] = json!("Read bounded exact-head execution warning evidence through supported GitHub/runtime APIs. Required source failures remain explicit gaps. UI-only service/pre-execution annotations are excluded from automated completeness; none_observed covers only inspected in-scope sources.");
     evidence["outputSchema"] = github::evidence::output_schema();
-    json!([check, submit, evidence])
+    json!([check, submit, evidence, task_authority::tool(repository)])
 }
 fn valid_input(
     validation_names: &[String],
@@ -115,6 +116,9 @@ fn valid_input(
     name: &str,
     arguments: &Value,
 ) -> Result<(), &'static str> {
+    if name == "publish_task_authority" {
+        return task_authority::valid_input(repository, arguments);
+    }
     let expected: &[&str] = if matches!(name, "check_pr_review_target" | "read_pr_review_evidence")
     {
         &["repository", "pr_number", "expected_head_sha"]
@@ -321,6 +325,7 @@ fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
 #[derive(Clone, Debug, PartialEq)]
 struct ReviewPolicy {
     validation_names: Vec<String>,
+    github_native_authority_enabled: bool,
     owner: String,
     base_branch: String,
     check_name: String,
@@ -340,6 +345,14 @@ fn review_policy(config: &Value) -> ReviewPolicy {
     };
     let policy = ReviewPolicy {
         validation_names: executable_cr::validation_names(config),
+        github_native_authority_enabled: config
+            .get("githubNativeAuthorityEnabled")
+            .map(|value| {
+                value
+                    .as_bool()
+                    .expect("githubNativeAuthorityEnabled must be a boolean")
+            })
+            .unwrap_or(false),
         owner: field(&config["owner"]),
         base_branch: field(&config["baseBranch"]),
         check_name: field(&config["reviewCheckName"]),
@@ -540,6 +553,8 @@ async fn mcp(
                 arguments,
             ) {
                 json!({"content":[{"type":"text","text":code}],"isError":true})
+            } else if name == "publish_task_authority" {
+                task_authority::publish(&app, arguments).await
             } else if name == "read_pr_review_evidence" {
                 match app
                     .github
@@ -891,7 +906,54 @@ async fn complete_check(
     {
         return json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true});
     }
-    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha}})
+    let continuation = if arguments["action"] == "APPROVE" {
+        approval_continuation_plan(app, arguments, review_id).await
+    } else {
+        Value::Null
+    };
+    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha,"post_review_continuation":continuation}})
+}
+
+async fn approval_continuation_plan(app: &App, arguments: &Value, review_id: i64) -> Value {
+    let result: Result<Value, &'static str> = async {
+        let pr = app.github.get_pr(&app.repository, arguments["pr_number"].as_i64().unwrap()).await?;
+        if let Some(code) = target_binding_rejection(&app.policy, &pr, arguments)
+            .or_else(|| publication_rejection(&pr, &arguments["expected_head_sha"])) { return Err(code); }
+        let native = app.github.authority_source(&app.repository, "review", arguments["pr_number"].as_u64().unwrap(), review_id as u64).await?;
+        if native["id"].as_i64() != Some(review_id) || native["state"] != "APPROVED"
+            || native["commit_id"] != arguments["expected_head_sha"]
+            || native["user"]["login"] != app.policy.actor || native["user"]["type"] != "Bot"
+            || native["pull_request_url"] != format!("https://api.github.com/repos/{}/pulls/{}",app.repository,arguments["pr_number"])
+            || native["body"] != native_review_body(&app.policy.validation_names, arguments, &operation_id(&app.policy.validation_names, arguments)) {
+            return Err("APPROVAL_NATIVE_BINDING_MISMATCH");
+        }
+        let issue_number = step_sync::linked_issue(&pr)?;
+        let issue = app.github.get_issue(&app.repository, issue_number).await?;
+        if issue["number"].as_u64() != Some(issue_number)
+            || issue.get("pull_request").is_some()
+            || issue["user"]["login"] != app.policy.owner || issue["user"]["type"] != "User" {
+            return Err("ISSUE_NOT_ADMITTED");
+        }
+        let body = issue["body"].as_str().ok_or("ISSUE_NOT_ADMITTED")?;
+        let lines: Vec<_> = body.lines().filter(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("issue closure policy")).collect();
+        let close_authorized = lines.len() == 1 && lines[0] == "Issue closure policy: close-authorized";
+        let valid_closure = lines.len() == 1 && matches!(lines[0], "Issue closure policy: close-authorized" | "Issue closure policy: keep-open");
+        let typed = body.lines().any(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("authority model"));
+        let request = if typed { task_authority::approved_continuation(app, &issue, &pr, &arguments["expected_head_sha"]).await? } else { Value::Null };
+        let held = request["continuation"]["hold"] == true;
+        let task_complete = !typed || request["continuation"]["task_complete"] == true;
+        let remaining_task_work = request["continuation"]["next"]["task"].as_u64() == Some(issue_number);
+        Ok(json!({"policy":"native-approve-exact-head-squash-v1","repository":app.repository,
+            "task":issue_number,"pr_number":arguments["pr_number"],"review_id":review_id,
+            "approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash",
+            "automatic_continuation_authorized":!held,"required_native_checks":"must_pass_for_exact_head",
+            "mergeability":"must_be_verified","unresolved_checks":"block_continuation",
+            "issue_closure_policy":if close_authorized {"close-authorized"} else {"keep-open"},
+            "close_issue_authorized":close_authorized && task_complete && !held && !remaining_task_work,"hold":held,"task_complete":task_complete,"remaining_task_work":remaining_task_work,"request_authority":request,"warnings":if valid_closure {json!([])} else {json!(["ISSUE_CLOSURE_POLICY_INVALID"])},
+            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
+    }.await;
+    result.unwrap_or_else(|code| json!({"policy":"native-approve-exact-head-squash-v1","approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash","required_native_checks":"must_pass_for_exact_head","automatic_continuation_authorized":false,"close_issue_authorized":false,
+        "error_code":code,"execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
 }
 
 async fn record_review(
@@ -940,7 +1002,7 @@ async fn sse_not_supported() -> StatusCode {
 fn router(app: App) -> Router {
     Router::new()
         .route("/mcp", post(mcp).get(sse_not_supported))
-        .layer(DefaultBodyLimit::max(52_000))
+        .layer(DefaultBodyLimit::max(62_000))
         .route_layer(middleware::from_fn_with_state(
             app.trusted_client_ca.clone(),
             mtls_identity::require_identity_with_trust,
@@ -1157,6 +1219,7 @@ mod tests {
     fn test_policy() -> ReviewPolicy {
         ReviewPolicy {
             validation_names: Vec::new(),
+            github_native_authority_enabled: false,
             owner: "example-owner".into(),
             base_branch: "main".into(),
             check_name: "chatgpt-review".into(),
@@ -1172,6 +1235,7 @@ mod tests {
     mod evidence;
     mod portability;
     mod step_metadata;
+    mod task_authority;
     mod transport;
     use axum::{
         http::{Method, Uri},
@@ -1776,6 +1840,10 @@ mod tests {
         issue: Arc<Mutex<Option<Value>>>,
         metadata_failure: Arc<Mutex<Option<String>>>,
         decisive_override: Arc<Mutex<Option<Value>>>,
+        authority_comments: Arc<Mutex<Vec<Value>>>,
+        authority_pr_comments: Arc<Mutex<Vec<Value>>>,
+        authority_sources: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
+        authority_publication_mode: Arc<Mutex<Option<String>>>,
     }
 
     impl Default for MockState {
@@ -1794,6 +1862,10 @@ mod tests {
                 issue: Default::default(),
                 metadata_failure: Default::default(),
                 decisive_override: Default::default(),
+                authority_comments: Default::default(),
+                authority_pr_comments: Default::default(),
+                authority_sources: Default::default(),
+                authority_publication_mode: Default::default(),
             }
         }
     }
@@ -1811,7 +1883,8 @@ mod tests {
     fn native_review(payload: &Value) -> Value {
         json!({"id":1,"html_url":"https://example/reviews/1","commit_id":payload["commit_id"],
             "body":payload["body"],"state":if payload["event"] == "APPROVE" { "APPROVED" } else { "CHANGES_REQUESTED" },
-            "user":{"login":"example-reviewer[bot]"}})
+            "pull_request_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/pulls/25"),
+            "user":{"login":"example-reviewer[bot]","id":2,"type":"Bot"}})
     }
 
     fn encoded_certificate() -> String {
@@ -1880,6 +1953,11 @@ mod tests {
             .path()
             .strip_prefix(&repository_prefix)
             .unwrap_or(uri.path());
+        if method == Method::GET {
+            if let Some(value) = state.authority_sources.lock().unwrap().get(path) {
+                return Json(value.clone()).into_response();
+            }
+        }
         if matches!(method, Method::PUT | Method::PATCH)
             && state.metadata_failure.lock().unwrap().as_deref() == Some(path)
         {
@@ -1915,6 +1993,47 @@ mod tests {
                 let labels = state.pr.lock().unwrap().as_ref().map(|pr| pr["labels"].clone()).unwrap_or_else(|| json!([{"name":"step-1"}]));
                 json!({"number":24,"state":"open","user":{"login":state.policy.owner,"type":"User"},"body":"Canonical task authority","labels":labels})
             }),
+            (Method::GET, value) if value.starts_with("/users/") => {
+                let login = value.strip_prefix("/users/").unwrap().replace("%5B", "[").replace("%5D", "]");
+                let (id, kind) = if login == state.policy.owner { (1, "User") }
+                    else if login == state.policy.actor { (2, "Bot") }
+                    else if login == state.policy.writer_actor { (3, "Bot") }
+                    else { return StatusCode::NOT_FOUND.into_response(); };
+                json!({"login":login,"id":id,"type":kind})
+            },
+            (Method::GET, "issues/24/comments") => json!(*state.authority_comments.lock().unwrap()),
+            (Method::GET, "issues/25/comments") => json!(*state.authority_pr_comments.lock().unwrap()),
+            (Method::GET, "pulls") => json!([]),
+            (Method::GET, value) if value.starts_with("issues/comments/") => {
+                let id = value.strip_prefix("issues/comments/").unwrap().parse::<u64>().unwrap_or(0);
+                let found = state.authority_comments.lock().unwrap().iter().find(|comment| comment["id"].as_u64() == Some(id)).cloned();
+                let found = found.or_else(|| state.authority_pr_comments.lock().unwrap().iter().find(|comment| comment["id"].as_u64() == Some(id)).cloned());
+                match found {
+                    Some(value) => value,
+                    None => return StatusCode::NOT_FOUND.into_response(),
+                }
+            },
+            (Method::GET, value) if value.starts_with("pulls/25/reviews/") => {
+                let id = value.strip_prefix("pulls/25/reviews/").unwrap().parse::<usize>().unwrap_or(0);
+                match state.reviews.lock().unwrap().get(id.wrapping_sub(1)) {
+                    Some(payload) => { let mut review = native_review(payload); review["id"] = json!(id); review },
+                    None => return StatusCode::NOT_FOUND.into_response(),
+                }
+            },
+            (Method::POST, path @ ("issues/24/comments" | "issues/25/comments")) => {
+                let payload: Value = serde_json::from_slice(&body).unwrap();
+                let mode = state.authority_publication_mode.lock().unwrap().take();
+                if mode.as_deref() == Some("missing") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+                let parent = path.split('/').nth(1).unwrap();
+                let id = 1000 + state.authority_comments.lock().unwrap().len() + state.authority_pr_comments.lock().unwrap().len();
+                let mut comments = if parent == "24" { state.authority_comments.lock().unwrap() } else { state.authority_pr_comments.lock().unwrap() };
+                let comment = json!({"id":id,"body":payload["body"],"html_url":format!("https://github.com/{}/issues/{parent}#issuecomment-{id}",state.repository),
+                    "issue_url":format!("https://api.github.com/repos/{}/issues/{parent}",state.repository),
+                    "user":{"login":state.policy.actor,"id":2,"type":"Bot"}});
+                comments.push(comment.clone());
+                if mode.as_deref() == Some("ambiguous") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+                comment
+            },
             (Method::GET, value) if value.starts_with("labels/step-") => json!({"name":value.strip_prefix("labels/").unwrap()}),
             (Method::PUT, "issues/24/labels") => {
                 let payload: Value = serde_json::from_slice(&body).unwrap();
@@ -2059,7 +2178,7 @@ mod tests {
     }
 
     #[test]
-    fn exposes_three_bounded_tools_and_only_accepted_actions() {
+    fn exposes_four_bounded_tools_and_only_accepted_actions() {
         let listed = tools(&[], TEST_REPOSITORY);
         let names = listed
             .as_array()
@@ -2072,7 +2191,8 @@ mod tests {
             vec![
                 "check_pr_review_target",
                 "submit_pr_review",
-                "read_pr_review_evidence"
+                "read_pr_review_evidence",
+                "publish_task_authority"
             ]
         );
         assert_eq!(
@@ -2234,7 +2354,10 @@ mod tests {
         assert_eq!(
             loaded,
             RuntimeConfig {
-                policy: test_policy(),
+                policy: ReviewPolicy {
+                    github_native_authority_enabled: true,
+                    ..test_policy()
+                },
                 repository: TEST_REPOSITORY.into(),
                 host: "172.18.0.1".into(),
                 port: 18787,
@@ -2418,7 +2541,7 @@ mod tests {
                 .and_then(Value::as_array)
                 .unwrap()
                 .len(),
-            3
+            4
         );
         let checked = rpc(&http, &url, 3, "tools/call", json!({"name":"check_pr_review_target","arguments":{"repository":"example-org/sample-project","pr_number":25,"expected_head_sha":HEAD}})).await;
         assert_eq!(

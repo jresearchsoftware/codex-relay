@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { NATIVE_CR_VALIDATIONS } from '../../contracts/src/executable-cr.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
+import { validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
 export const OWNER = CONSUMER.owner;
@@ -40,7 +41,22 @@ export const NORMAL_DOMAIN_BLOCK_CODES = new Set([
   'BRANCH_INVALID', 'ISSUE_PROFILE_INVALID', 'ISSUE_BRANCH_INVALID', 'ISSUE_CLOSURE_POLICY_INVALID', 'TARGET_BASE_INVALID',
   'LAUNCH_STEP_INVALID', 'LAUNCH_TASK_INVALID', 'LAUNCH_PR_INVALID', 'LAUNCH_METADATA_TOO_LONG',
   'CHECKOUT_ALREADY_EXISTS', 'CHECKOUT_DIRTY', 'CHECKOUT_UNPUBLISHED', 'CANONICAL_BRANCH_MISSING',
-  'REQUIRED_VALIDATION_UNSUPPORTED', 'NO_DURABLE_PROGRESS'
+  'REQUIRED_VALIDATION_UNSUPPORTED', 'NO_DURABLE_PROGRESS',
+  'AUTHORITY_MODEL_INVALID', 'AUTHORITY_CHARTER_INVALID', 'AUTHORITY_RECORD_INVALID', 'AUTHORITY_TARGET_MISMATCH',
+  'AUTHORITY_PARENT_MISMATCH', 'AUTHORITY_STARTING_STATE_INVALID', 'AUTHORITY_CR_BINDING_INVALID',
+  'AUTHORITY_VALIDATION_UNKNOWN', 'AUTHORITY_REFERENCE_DUPLICATE', 'AUTHORITY_RESULT_INVALID',
+  'AUTHORITY_MIGRATION_REQUIRED', 'AUTHORITY_CHARTER_MISMATCH', 'AUTHORITY_CLOSURE_MISMATCH',
+  'AUTHORITY_BODY_INVALID', 'AUTHORITY_BLOCK_AMBIGUOUS', 'AUTHORITY_JSON_INVALID', 'AUTHORITY_JSON_NONCANONICAL',
+  'AUTHORITY_RECORDS_INVALID', 'AUTHORITY_NATIVE_RECORD_INVALID', 'AUTHORITY_NATIVE_RECORD_DUPLICATE',
+  'AUTHORITY_SOURCE_MISMATCH', 'AUTHORITY_NATIVE_PARENT_MISMATCH', 'AUTHORITY_NATIVE_KIND_MISMATCH',
+  'AUTHORITY_DECISION_UNTRUSTED', 'AUTHORITY_DECISION_MISMATCH', 'AUTHORITY_DECISION_SUPERSESSION_INVALID',
+  'AUTHORITY_DECISION_NOT_NORMALIZED', 'AUTHORITY_DECISION_EMPTY', 'AUTHORITY_DECISION_SCOPE_MISMATCH',
+  'AUTHORITY_DECISION_SUPERSEDED', 'AUTHORITY_WARNING_DUPLICATE', 'AUTHORITY_FINDING_DUPLICATE',
+  'AUTHORITY_CONTEXT_TOO_LARGE', 'AUTHORITY_TRUST_BINDING_INVALID',
+  'AUTHORITY_REQUEST_MISSING', 'AUTHORITY_SUPERSESSION_INVALID', 'AUTHORITY_SUPERSESSION_AMBIGUOUS',
+  'AUTHORITY_STEP_INVALID', 'AUTHORITY_STEP_MISMATCH', 'AUTHORITY_REQUEST_TARGET_MISMATCH',
+  'AUTHORITY_SOURCE_TARGET_MISMATCH', 'AUTHORITY_ROUTE_MISMATCH', 'AUTHORITY_REQUEST_SUPERSEDED',
+  'AUTHORITY_CONTINUATION_INVALID', 'AUTHORITY_TITLE_PROJECTION_MISMATCH'
 ]);
 export const isNormalDomainBlock = value => NORMAL_DOMAIN_BLOCK_CODES.has(typeof value === 'string' ? value : value?.code);
 export const isAdmissionDomainBlock = value => {
@@ -91,14 +107,24 @@ export function validateEnvelope(e) {
   // smoke; neither path invents Step metadata for a new automatic admission.
   const nativeDispatch = e && positive(e.step) && e.attemptId === `run-${e.runId}`;
   const legacyEvent = e && positive(e.eventId) && e.attemptId === `event-${e.eventId}`;
+  const manualNoSource = e?.route === 'manual' && e?.request?.kind === 'task-request'
+    && e.branch === null && e.startHead === null && e.historicalBase === null;
   if (!e || e.version !== VERSION || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
     || !safeModel(e.profile?.cliModelId) || !safeEffort(e.profile?.effort)
     || !positive(e.runId) || (!nativeDispatch && !legacyEvent)
     || !['issue', 'pull_request'].includes(e.target) || !positive(e.number) || !positive(e.issueNumber)
-    || !['auto', 'manual'].includes(e.route) || !exactSha(e.startHead) || !exactSha(e.historicalBase)
+    || !['auto', 'manual'].includes(e.route) || (!manualNoSource && (!exactSha(e.startHead) || !exactSha(e.historicalBase)))
     || !exactSha(e.targetBase) || typeof e.authorityDigest !== 'string'
     || !/^[a-f0-9]{64}$/.test(e.authorityDigest)) fail('EXECUTION_ENVELOPE_INVALID');
-  branchName(e.branch);
+  if (!manualNoSource) branchName(e.branch);
+  if (e.request) {
+    validateAuthorityRecord(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
+    if (e.request.step !== e.step || e.request.route !== e.route || e.request.branch !== e.branch
+      || e.request.starting_head !== e.startHead || e.request.base_sha !== e.historicalBase
+      || e.request.model !== e.profile.cliModelId || e.request.effort !== e.profile.effort
+      || e.request.subagents !== e.subagentsAllowed || !e.requestReference
+      || !/^[a-f0-9]{64}$/.test(e.requestReference.sha256 ?? '')) fail('EXECUTION_ENVELOPE_INVALID');
+  }
   if (e.continuation && (e.target !== 'issue' || !exactSha(e.continuation.head) || e.continuation.head !== e.startHead
     || (e.continuation.pullRequest !== null && !positive(e.continuation.pullRequest)))) fail('EXECUTION_ENVELOPE_INVALID');
   if (nativeDispatch && typeof e.subagentsAllowed !== 'boolean') fail('SUBAGENTS_PERMISSION_INVALID');

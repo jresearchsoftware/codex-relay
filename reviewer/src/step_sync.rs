@@ -5,7 +5,7 @@ use crate::*;
 const MAX_STEP: u64 = 9_007_199_254_740_991;
 const TITLE_LIMIT: usize = 56; // controller/src/run-name.mjs: 80 - validation prefix
 
-fn current_step(subject: &Value) -> Result<u64, &'static str> {
+pub(crate) fn current_step(subject: &Value) -> Result<u64, &'static str> {
     let labels = subject["labels"].as_array().ok_or("STEP_LABEL_MISSING")?;
     let names: Vec<&str> = labels
         .iter()
@@ -129,6 +129,15 @@ fn authority_binding(
     next: u64,
 ) -> Result<Value, &'static str> {
     let issue_number = linked_issue(pr)?;
+    if issue["body"].as_str().is_some_and(|body| {
+        body.lines().any(|line| {
+            line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*')
+                .to_ascii_lowercase()
+                .starts_with("authority model")
+        })
+    }) {
+        return Err("TYPED_CHANGE_REQUEST_REQUIRED");
+    }
     if issue["number"].as_u64() != Some(issue_number)
         || issue["state"] != "open"
         || issue.get("pull_request").is_some()
