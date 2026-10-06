@@ -166,7 +166,7 @@ function taskTitle(value, issueNumber) {
   return result.replace(/^Task\s+#?[0-9]+[A-Za-z]*\b\s*(?:[-–—:·|]+\s*)?/i, "").trim() || `Task ${id}`;
 }
 
-function parseBranch(source, issueNumber, warnings, resolutions) {
+function parseBranch(source, issueNumber, warnings, resolutions, continuation = false) {
   const values = collectFieldValues(source, ["Current implementation branch", "Required branch", "Implementation branch"]);
   const normalized = values.map(safeBranch);
   const valid = normalized.filter(Boolean);
@@ -177,6 +177,7 @@ function parseBranch(source, issueNumber, warnings, resolutions) {
     if (values.length > 1) addWarning(warnings, "ISSUE_BRANCH_DUPLICATE_EQUIVALENT", "branch", "Branch metadata contained duplicate equivalent values; one canonical value was retained", safeRequestedValue(values), resolved);
     return resolved;
   }
+  if (continuation) fail("ISSUE_CONTINUATION_INVALID", "Continuation requires one explicit valid implementation branch", "branch");
   const resolved = `${CONSUMER.taskBranchPrefix}task-${issueIdentity(issueNumber)}`;
   addResolution(resolutions, "branch", safeRequestedValue(values), resolved, "derived-from-issue-identity");
   if (values.length > 0) addWarning(warnings, "ISSUE_BRANCH_DEFAULTED", "branch", "Branch metadata was malformed; a deterministic codex branch was derived", safeRequestedValue(values), resolved);
@@ -277,6 +278,24 @@ function parseProjectDefaults(source, warnings, resolutions) {
   };
 }
 
+function parseContinuation(source, resolutions) {
+  const heads = collectFieldValues(source, ["Implementation continuation head"]);
+  const prs = collectFieldValues(source, ["Implementation pull request"]);
+  if (!heads.length && !prs.length) return null;
+  const head = authoringScalar(heads[0]);
+  if (heads.length !== 1 || !SAFE_SHA.test(head)) {
+    fail("ISSUE_CONTINUATION_INVALID", "Continuation requires exactly one full starting SHA", "implementation continuation head");
+  }
+  const pr = prs.length === 1 ? /^#?([1-9][0-9]*)$/.exec(authoringScalar(prs[0])) : null;
+  if (prs.length && (!pr || !Number.isSafeInteger(Number(pr[1])))) {
+    fail("ISSUE_CONTINUATION_INVALID", "Continuation PR must be one explicit positive number", "implementation pull request");
+  }
+  const continuation = { head: head.toLowerCase(), pullRequest: pr ? Number(pr[1]) : null };
+  addResolution(resolutions, "implementation continuation head", safeRequestedValue(heads), continuation.head, "explicit");
+  addResolution(resolutions, "implementation pull request", safeRequestedValue(prs), continuation.pullRequest, "explicit");
+  return continuation;
+}
+
 export function parseIssueAuthority(body, { issueNumber, repository, issueTitle, step, targetBaseSha } = {}) {
   const source = requireBody(body);
   if (issueNumber !== undefined && (!Number.isInteger(issueNumber) || issueNumber < 1)) fail("ISSUE_AUTHORITY_INVALID", "Issue number must be a positive integer", "issue number");
@@ -284,8 +303,9 @@ export function parseIssueAuthority(body, { issueNumber, repository, issueTitle,
   const resolutions = [];
   const displayTitle = normalizedText(stripScalar(issueTitle), 240) ?? titleFromBody(source) ?? `Task ${issueIdentity(issueNumber)}`;
   const title = taskTitle(displayTitle, issueNumber);
+  const continuation = parseContinuation(source, resolutions);
   const baseSha = parseStartingBase(source, targetBaseSha, warnings, resolutions);
-  const branch = parseBranch(source, issueNumber, warnings, resolutions);
+  const branch = parseBranch(source, issueNumber, warnings, resolutions, !!continuation);
   const threadTitle = `Task ${issueIdentity(issueNumber)} — Step ${launchStep(step)} — ${title}`;
   const cliProfile = parseProfile(source, warnings, resolutions);
   const closurePolicy = parseClosurePolicy(source, issueNumber, warnings, resolutions);
@@ -296,12 +316,13 @@ export function parseIssueAuthority(body, { issueNumber, repository, issueTitle,
     closurePolicy,
     baseSha,
     branch,
+    ...(continuation ? { continuation } : {}),
     prTitle: displayTitle,
     threadTitle,
     cliProfile,
     profile: { cliModelId: cliProfile.cliModelId, effort: cliProfile.effort },
     subagentsAllowed: projectDefaults.subagentsAllowed,
-    admission: { kind: "new-issue-implementation", warnings, resolutions },
+    admission: { kind: continuation ? "issue-implementation-continuation" : "new-issue-implementation", warnings, resolutions },
     warnings,
     resolutions
   };

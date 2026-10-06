@@ -5,6 +5,7 @@ import { dispatchRunName } from './launch-metadata.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { ATTEMPT_RECORD_BYTES } from './attempt-store.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
+import { assertStep, assertPrStepTitle } from './step-metadata.mjs';
 
 // A native owner comment authorizes one exact existing intent. Each subsequent
 // decision must name the previous consumed authorization, not queue retries.
@@ -73,7 +74,7 @@ export async function recoverPublication({ api, store, publisher, record: r, req
   const intent = r.publicationIntent;
   if (e.route !== 'auto' || r.finalHead || !intent || !exactSha(intent.head)
     || (intent.previous !== null && !exactSha(intent.previous)) || intent.head === intent.previous
-    || intent.previous !== (r.publishedHead ?? (e.target === 'pull_request' ? e.startHead : null))) fail('RECOVERY_INTENT_REQUIRED');
+    || intent.previous !== (r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null))) fail('RECOVERY_INTENT_REQUIRED');
   const last = recoveries.at(-1);
   const binding = recoveryAuthorization(e, intent, last?.authorizationId ?? null);
   await authorize(api, e, request.authorizationId, binding, last);
@@ -85,7 +86,12 @@ export async function recoverPublication({ api, store, publisher, record: r, req
       || (intent.previous && !(await g.ancestor(intent.previous, g.head)))) fail('RECOVERY_HISTORY_INVALID');
     const a = await revalidateAuthority(api, e);
     const pr = a.pr ?? await findCurrentIssuePullRequest(api, e, r.prNumber);
+    if (e.continuation && !e.continuation.pullRequest && !r.prNumber && pr) fail('PR_AUTHORITY_CHANGED');
     if (pr) {
+      if (e.continuation) {
+        assertStep(pr.labels, e.step);
+        assertPrStepTitle(pr, e.issueNumber, e.step);
+      }
       if (pr.head?.sha !== intent.previous) fail('REMOTE_HEAD_CHANGED');
       assertPr(pr, e.target === 'pull_request' ? e.number : pr.number);
       if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');

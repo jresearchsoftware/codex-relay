@@ -36,6 +36,20 @@ A legacy published record lacking its pre-publication Step anchor stops with
 Explicit bounded owner migration repair preserves that review ID and Step before
 replay of the original Reviewer payload; it does not launch execution.
 
+An Issue can explicitly authorize implementation continuation from an existing
+task branch at one exact starting head, binding its current PR when one exists
+under the [controller contract](../controller/README.md#issue-authorized-implementation-continuation).
+Admission checks the live branch ref and unique open PR, including repository,
+base, Task, Step and title bindings, and pins the admitted PR number. This remains
+Issue implementation with the Writer identity; it requires no Reviewer CR and
+grants no remediation integration merge. Same-phase retries keep Step; a new
+owner-authorized phase uses the existing N+1 procedure. Fresh Issue defaults and
+manual handoff remain available, using existing attempt records and services.
+Writer requires the admitted starting head, or its own later published head, as
+the exact previous remote ref and reobserves it before continuation's non-force
+push. Ref observations and the push do not provide atomic compare-and-swap against
+external ref changes.
+
 For automatic work, the runner creates the checkout, reserves execution once,
 and invokes the fixed credential-free launcher. Codex makes ordinary task
 commits and returns semantic status, summary, validation claims and a blocked

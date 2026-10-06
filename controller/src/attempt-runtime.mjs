@@ -16,7 +16,7 @@ export async function prepareCheckout(e, { root = WORK_ROOT, remote = REMOTE, to
   if (await lstat(cwd).catch(() => null)) fail('CHECKOUT_ALREADY_EXISTS');
   await mkdir(cwd, { recursive: true, mode: 0o2770 });
   await git(cwd, ['init']);
-  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' }, { remote, token });
+  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation }, { remote, token });
   if (e.target === 'pull_request') {
     await git(cwd, ['fetch', '--no-tags', remote, `refs/heads/${CONSUMER.baseBranch}:refs/remotes/main`], { token });
     if ((await git(cwd, ['rev-parse', 'refs/remotes/main'])).trim() !== e.targetBase) fail('STARTING_STATE_MISMATCH');

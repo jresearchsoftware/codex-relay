@@ -22,6 +22,16 @@ discussion, evidence, Outcomes, handoffs and history, not a competing contract.
 For fresh work, omitted base resolves to the exact current configured base branch
 at admission; omitted branch resolves to the configured prefix + task-N (normally
 codex/task-N). If pinning a base, add Required starting base with one exact SHA.
+For owner-authorized implementation continuation, add exactly one
+Implementation continuation head field with a full 40-character SHA and an
+explicit valid Implementation branch field naming the existing task branch.
+Existing branch-field synonyms remain supported. Add Implementation pull request
+with #N when a current open PR exists; omit it only when no open PR exists.
+The continuation head opts in; omit continuation fields for fresh work. Existing
+base fields retain their meaning separately from the continuation starting head.
+Continuation reuses the admitted PR and implementation identity without a
+Reviewer CR or its integration-merge authority. Duplicate, malformed or conflicting
+continuation fields, an invalid branch, mismatched heads or PR/Step bindings block.
 For remediation, use the native CR's existing PR branch and required starting head.
 Inspect dirty/unpublished work, normalize safely, then apply the SHA gate. -->
 
@@ -36,7 +46,11 @@ keep-open. Preserve this Issue decision when authoring a CR; CR completion does
 not independently authorize closure. Missing, malformed
 or conflicting closure falls back to keep-open with a visible warning. PR linkage
 is Related to #N for keep-open, or Closes #N for close-authorized. Review approval
-does not itself close an Issue or authorize merge. -->
+does not itself close an Issue or authorize merge.
+keep-open means known work or evidence is still expected after implementation.
+Explain in nearby prose why the Issue stays open and what outcome would make closure
+appropriate. This is ordinary prose, not another required field or automatic
+closure rule. -->
 
 ## Execution profile
 
@@ -56,7 +70,10 @@ from body text or history. Use Task N — Step S — <purpose>, or for remediati
 Task N — Step S — CR-N-NNN — <CR purpose>, preserving an exact authority-supplied
 title. A manual session performs the one-shot native startup rename in AGENTS.md.
 Issue creation and Step labels do not dispatch work. Ready labels may launch only
-through separately configured and owner-authorized consumer routing. -->
+through separately configured and owner-authorized consumer routing.
+An execution retry or continuation of the same unfinished phase keeps Step;
+an explicitly owner-authorized new implementation phase uses the existing N+1
+metadata procedure with the current PR when one exists. -->
 
 ## Recommended model budget
 

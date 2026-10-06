@@ -7,7 +7,7 @@ import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary } from './outcome.mjs';
 import { boundedThreadCorrelationIdentity, threadCorrelationIdentity } from './run-name.mjs';
 import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody } from './publication-recovery.mjs';
-import { assertStep, labelNames, stepLike } from './step-metadata.mjs';
+import { assertStep, assertPrStepTitle, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
@@ -70,7 +70,7 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
   }
   async function pullRequest(r) {
     const e = r.envelope;
-    const existing = await existingPullRequest(r);
+    const existing = await existingPullRequest(r, { allowStepMirror: true });
     if (existing) return mirrorStep(r, existing);
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
@@ -90,12 +90,19 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
       await store.put(r.envelope.runId, r);
     }
   }
-  async function existingPullRequest(r) {
+  async function existingPullRequest(r, { allowStepMirror = false } = {}) {
     const e = r.envelope;
     if (e.target === 'pull_request') {
       const pr = await api.get(`/pulls/${e.number}`); assertPr(pr, e.number); return pr;
     }
-    const pr = await findCurrentIssuePullRequest(api, e, r.prNumber);
+    const pr = await findCurrentIssuePullRequest(api, e, r.prNumber ?? e.continuation?.pullRequest);
+    if (e.continuation && !e.continuation.pullRequest && !r.publishedHead && pr) fail('PR_AUTHORITY_CHANGED');
+    if (e.continuation && pr) {
+      // Only our own newly created PR can finish a missing Step mirror.
+      // Every observed conflicting Step/title must stop before another push.
+      if (!allowStepMirror || e.continuation.pullRequest || labelNames(pr.labels).some(stepLike)) assertStep(pr.labels, e.step);
+      assertPrStepTitle(pr, e.issueNumber, e.step);
+    }
     if (pr) {
       // An uncertain POST has no number receipt yet. Reconcile its own native
       // attempt binding, not a different compatible PR created in the meantime.
@@ -188,6 +195,7 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
         }
         const r = { envelope, ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
           ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
+          ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };
         await store.put(request.runId, r);
         if (envelope.transport === 'label') {
@@ -215,9 +223,15 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
       if (request.operation === 'preflight') {
         const a = await revalidateAuthority(api, e);
         if (a.pr && a.pr.head.sha !== (r.publishedHead ?? e.startHead)) fail('REMOTE_HEAD_CHANGED');
+        if (e.continuation) {
+          const refs = await api.get(`/git/matching-refs/heads/${e.branch}`);
+          const exact = Array.isArray(refs) ? refs.filter(ref => ref.ref === `refs/heads/${e.branch}`) : [];
+          if (exact.length !== 1 || exact[0].object?.sha !== (r.publishedHead ?? e.startHead)) fail('REMOTE_HEAD_CHANGED');
+          await existingPullRequest(r);
+        }
         // A reviewed dirty PR is the resolver's input. Bind the observed main,
         // then let trusted checkout/publication validate its Git ancestry.
-        if (a.pr) await revalidateIntegrationBase(api, e);
+        if (e.target === 'pull_request') await revalidateIntegrationBase(api, e);
         if (a.pr && !r.finalHead) {
           const title = secretFree(boundedThreadCorrelationIdentity(e.thread));
           if (a.pr.title !== title) await api.patch(`/pulls/${a.pr.number}`, { title });
@@ -234,7 +248,7 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
       if (request.operation === 'publish-progress') {
         if (e.route !== 'auto' || r.finalHead) fail('PROGRESS_NOT_ADMITTED');
         return publisher.inspect(e, request.bundle, async g => {
-          const previous = r.publishedHead ?? (e.target === 'pull_request' ? e.startHead : null);
+          const previous = r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null);
           if (r.publicationIntent && r.publicationIntent.head !== g.head) fail('PUBLICATION_RECONCILIATION_REQUIRED');
           if (g.remoteHead === g.head) {
             if (!r.publicationIntent && r.publishedHead !== g.head) fail('UNATTRIBUTED_REMOTE_HEAD');
@@ -244,6 +258,11 @@ export function createPublicationBroker({ api, store, publisher, admission }) {
               || (previous && !(await g.ancestor(previous, g.head)))) fail('REMOTE_HEAD_CHANGED');
             if (!g.commits.length) fail('NO_PROGRESS');
             await revalidateAuthority(api, e);
+            if (e.continuation) {
+              const pr = await existingPullRequest(r);
+              if (pr && pr.head.sha !== previous) fail('REMOTE_HEAD_CHANGED');
+              if (await g.observe() !== previous) fail('REMOTE_HEAD_CHANGED');
+            }
             if (g.integrationBase) await revalidateIntegrationBase(api, e);
             r.publicationIntent = { previous, head: g.head }; await store.put(e.runId, r);
             // No force, lease, reset or rewrite. Any push error is followed

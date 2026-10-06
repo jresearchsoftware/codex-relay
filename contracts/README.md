@@ -99,6 +99,9 @@ field in the canonical Issue: `keep-open`, or `close-authorized` only with owner
 authority. Approval, Step completion and CR outcome tokens do not authorize
 closure. Missing, malformed or conflicting metadata selects `keep-open` with
 a visible warning; record owner reconciliation in the Issue body.
+`keep-open` means known work or evidence remains after implementation. Nearby
+prose should explain why the Issue stays open and what outcome would make closure appropriate.
+This adds no required structured field, parser gate or automatic closure rule.
 
 ### Executable CR publication and synchronization
 
@@ -137,6 +140,14 @@ is optional; when supplied it must link that exact Issue in the configured
 repository and keep its branch, base and head binding. Preserve unrelated labels
 and update only the bounded canonical Task/Issue/Step PR title. No phase is
 inferred from history, prose, prior Outcomes or a largest-ever Step.
+
+For [Issue-authorized implementation continuation](../controller/README.md#issue-authorized-implementation-continuation),
+record the current goal and explicit starting head, existing branch and applicable
+PR binding in the canonical Issue. An execution retry or continuation of the same
+unfinished phase keeps the current Step. Only an explicitly owner-authorized new
+implementation phase advances it through this procedure, including the existing
+PR when one is present. This uses Issue authority without manufacturing a Reviewer
+CR; metadata preparation alone grants no launch authority.
 
 [`step-synchronization.mjs`](src/step-synchronization.mjs) verifies `/user` is the
 configured human owner (`User`), rejecting Writer/Reviewer App identities. Its

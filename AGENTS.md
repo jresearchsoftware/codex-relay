@@ -54,6 +54,10 @@ field in the live Issue body, using `close-authorized` only with owner authority
 CR producers preserve that Issue decision when updating canonical authority;
 a CR does not independently authorize closure. Missing, malformed or conflicting
 closure metadata remains `keep-open` with a visible warning.
+`keep-open` means known work or evidence is still expected after implementation.
+Nearby prose should explain why the Issue stays open and what outcome would make closure
+appropriate. This is ordinary Task prose, not another required structured field
+or an automatic closure rule.
 Steps are execution-time decomposition of progress toward that Task.
 A Task does not predefine, own, or constrain the number, numbering, or scope of
 its Steps. Steps may be introduced as work evolves; a Task may require one Step
@@ -102,6 +106,14 @@ For repository changes assigned to Codex, Codex owns the implementation branch,
 commit and PR flow. ChatGPT/owner orchestration must not create implementation
 branches, commits or PRs unless the owner explicitly requests it. Automatic
 workers still delegate GitHub publication to trusted Writer.
+
+The canonical Issue may authorize implementation continuation on an existing
+task branch and its current PR when one exists through the explicit bindings in
+the [controller contract](controller/README.md#issue-authorized-implementation-continuation).
+This preserves Issue authority and implementation identity without a Reviewer
+CR or its integration-merge permission. Retrying an unfinished phase keeps Step;
+a new owner-authorized implementation phase uses the existing N+1 metadata
+procedure. Manual handoff remains available.
 
 Before applying an existing PR's starting-head gate, read its live repository,
 branch, base and required SHA. Inspect the current checkout, worktrees, dirty

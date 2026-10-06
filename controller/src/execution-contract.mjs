@@ -26,6 +26,7 @@ export const NORMAL_DOMAIN_BLOCK_CODES = new Set([
   'READY_EVENT_ALREADY_CONSUMED', 'READY_EVENT_QUEUED', 'READY_CONSUMPTION_UNCERTAIN',
   'ISSUE_AUTHORITY_MISSING', 'ISSUE_AUTHORITY_INVALID', 'ISSUE_AUTHORITY_AMBIGUOUS',
   'ISSUE_STARTING_HEAD_REQUIRED', 'ISSUE_STARTING_HEAD_INVALID',
+  'ISSUE_CONTINUATION_INVALID', 'TASK_BRANCH_MISSING',
   'ISSUE_NOT_ADMITTED', 'SUBAGENTS_PERMISSION_INVALID',
   'CURRENT_CHANGE_REQUEST_MISSING', 'CURRENT_TASK_AUTHORITY_MISSING', 'CURRENT_METADATA_MISSING',
   'CURRENT_VALIDATION_MISSING', 'REVIEW_BODY_INVALID', 'MALFORMED_CONTRACT', 'CONTRACT_COUNT_INVALID', 'CONTRACT_YAML_INVALID',
@@ -98,6 +99,8 @@ export function validateEnvelope(e) {
     || !exactSha(e.targetBase) || typeof e.authorityDigest !== 'string'
     || !/^[a-f0-9]{64}$/.test(e.authorityDigest)) fail('EXECUTION_ENVELOPE_INVALID');
   branchName(e.branch);
+  if (e.continuation && (e.target !== 'issue' || !exactSha(e.continuation.head) || e.continuation.head !== e.startHead
+    || (e.continuation.pullRequest !== null && !positive(e.continuation.pullRequest)))) fail('EXECUTION_ENVELOPE_INVALID');
   if (nativeDispatch && typeof e.subagentsAllowed !== 'boolean') fail('SUBAGENTS_PERMISSION_INVALID');
   if (!Array.isArray(e.validation) || !e.validation.length || e.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
   return e;

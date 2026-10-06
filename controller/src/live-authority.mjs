@@ -4,6 +4,7 @@ import { extractRemediationContract, validateRemediationContract } from '../../c
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, labelRunMatches, launchStep, remediationThreadTitle } from './launch-metadata.mjs';
 import { assertStep, currentStep, changeRequestStep, assertPrStepTitle, labelNames, READY_LABELS } from './step-metadata.mjs';
+import { findCurrentIssuePullRequest } from './publication-target.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -33,6 +34,7 @@ function executableAuthority(a) {
   return { issueNumber: a.issueNumber, branch: a.branch, startHead: a.startHead,
     profile: { cliModelId: a.profile.cliModelId, effort: a.profile.effort },
     closure: a.closure, validation: sortedSet(a.validation),
+    ...(a.continuation ? { continuation: a.continuation } : {}),
     ...(a.subagentsAllowed !== undefined ? { subagentsAllowed: a.subagentsAllowed } : {}) };
 }
 export function authorityFingerprint({ issue, review, contract, execution }) {
@@ -70,11 +72,17 @@ export async function readAuthority(api, target, number, { targetBase, step } = 
   if (pr) assertStep(pr.labels, step);
   if (!pr) {
     const a = parseIssueAuthority(issue.body, { issueNumber, repository: REPOSITORY, issueTitle: issue.title, targetBaseSha: targetBase, step });
-    const execution = { issue, issueNumber, branch: a.branch, historicalBase: a.baseSha, startHead: a.baseSha,
+    const execution = { issue, issueNumber, branch: a.branch, historicalBase: a.baseSha, startHead: a.continuation?.head ?? a.baseSha,
       profile: a.profile, thread: a.threadTitle, title: a.prTitle,
       closure: a.closingReference, input: issue.body, validation: ['diff-check', 'secret-scan'],
       subagentsAllowed: a.subagentsAllowed, admission: a.admission,
-      warnings: a.warnings, resolutions: a.resolutions };
+      warnings: a.warnings, resolutions: a.resolutions,
+      ...(a.continuation ? { continuation: a.continuation } : {}) };
+    if (a.continuation?.pullRequest) {
+      execution.pr = await findCurrentIssuePullRequest(api, execution, a.continuation.pullRequest);
+      assertStep(execution.pr.labels, step);
+      assertPrStepTitle(execution.pr, issueNumber, step);
+    }
     return { ...execution, authorityDigest: authorityFingerprint({ issue, execution }) };
   }
   const review = currentReview(await api.list(`/pulls/${number}/reviews`));
@@ -140,15 +148,22 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     const a = await readAuthority(api, target, number, { targetBase, step });
     if (a.issueNumber !== issueNumber) fail('CANONICAL_ISSUE_AMBIGUOUS');
     if (transport === 'label') {
-      const subject = a.pr ?? a.issue;
+      const subject = target === 'issue' ? a.issue : a.pr;
       if (a.pr) assertPrStepTitle(a.pr, issueNumber, step);
       if (!labelRunMatches(run.display_title, { route, target, number }, subject)) fail('STEP_DISPLAY_MISMATCH');
     }
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
-    if ((target === 'issue' && targetBase !== a.startHead) || (a.pr && (a.pr.head.sha !== a.startHead || a.pr.draft))) fail('STARTING_STATE_MISMATCH');
+    if ((target === 'issue' && targetBase !== a.historicalBase)
+      || (a.pr && (a.pr.head.sha !== a.startHead || (target === 'pull_request' && a.pr.draft)))) fail('STARTING_STATE_MISMATCH');
     if (target === 'issue') {
       const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
-      if (!Array.isArray(refs) || refs.some(r => r.ref === `refs/heads/${a.branch}`)) fail('TASK_BRANCH_ALREADY_EXISTS');
+      if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
+      const exact = refs.filter(r => r.ref === `refs/heads/${a.branch}`);
+      if (a.continuation) {
+        if (!exact.length) fail('TASK_BRANCH_MISSING');
+        if (exact.length !== 1 || exact[0].object?.sha !== a.startHead) fail('STARTING_STATE_MISMATCH');
+        if (!a.continuation.pullRequest && await findCurrentIssuePullRequest(api, a)) fail('PR_AUTHORITY_CHANGED');
+      } else if (exact.length) fail('TASK_BRANCH_ALREADY_EXISTS');
     }
     return { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
       target, number, issueNumber: a.issueNumber, route, step,
@@ -157,7 +172,8 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       reviewId: a.review?.id ?? null, authorityDigest: a.authorityDigest,
       profile: a.profile, thread: a.thread, title: a.title, closure: a.closure,
       input: a.input, validation: a.validation, subagentsAllowed: a.subagentsAllowed,
-      admission: a.admission, warnings: a.warnings, resolutions: a.resolutions };
+      admission: a.admission, warnings: a.warnings, resolutions: a.resolutions,
+      ...(a.continuation ? { continuation: a.continuation } : {}) };
   } catch (error) {
     if (!isAdmissionDomainBlock(error)) throw error;
     // The event identity is known, but executable authority is not. Preserve
