@@ -335,10 +335,18 @@ receipt. The runner's terminal receipt precedes Ready; the Writer's lifecycle
 receipt records its verified native state. A pending transition prevents a
 controller drain from claiming completion.
 
-After successful native `REQUEST_CHANGES` publication, the owner orchestration
-channel immediately calls the bounded Writer lifecycle action returned in
-Reviewer `structuredContent.pr_lifecycle`, before automatic remediation launch
-or manual handoff:
+After successful native `REQUEST_CHANGES` publication, Reviewer returns the
+bounded Writer lifecycle action in `structuredContent.pr_lifecycle`. The normal
+production routing entrypoint consumes the equivalent action from the verified
+current native CR during Writer admission, before reserving automatic execution
+or consuming the ready command. Both label and workflow-dispatch routing follow
+this path, for automatic and manual remediation. The action is bound to the
+admitted CR's authority digest as well as its native review ID and exact head.
+Manual handoff revalidates the same Draft transition before publication because
+manual routing has no worker preflight.
+
+An owner orchestration channel with the successful Reviewer response can also
+complete the same idempotent transition directly:
 
 ```js
 import { continueAfterChangeRequest } from './src/pr-lifecycle.mjs';
@@ -351,7 +359,13 @@ trusted Reviewer Bot identity, reserves the transition in an atomic lifecycle
 receipt keyed by that native review, converts the PR to Draft and verifies the
 exact target again. This grants no launch, push, Outcome, review, merge or closure
 permission. Failure/uncertainty stops remediation continuation; replay reconciles
-that same current CR/head. Reviewer publishes review authority and projections,
+that same current CR/head. An admission-time lifecycle failure leaves the ready
+command and execution reservation untouched. A lost mutation response is
+reconciled by exact native readback; an unavailable readback retains the lifecycle
+intent for replay without republishing review authority or launching a worker.
+Admission replay for an existing execution does not draft a completed candidate;
+its protected attempt journal and normal preflight govern continuation.
+Reviewer publishes review authority and projections,
 never the Draft mutation. Preflight also verifies Draft before worker execution.
 Draft is a valid remediation starting state, and publication recovery of the
 same CR remains supported after Writer drafts it. Fresh review still requires

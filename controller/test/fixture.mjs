@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
+import { admitEnvelope } from '../src/live-authority.mjs';
 import { createGitPublisher, collectProgress, gitEnvironment } from '../src/trusted-git.mjs';
 import { prepareCheckout } from '../src/attempt-runtime.mjs';
 import { dispatchRunName, labelRunName } from '../src/launch-metadata.mjs';
@@ -19,7 +20,7 @@ export function memoryStore() {
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
 export async function fixture(t, { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
-  mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
+  mainAdvance = false, unrelatedMain = false, nativeReview = false, deferAdmission = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
   profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
   // root. Give each fixture its own admitted event namespace so a concurrent
@@ -63,7 +64,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
     pr = { number: 43, title: `Task 42 · Step ${step} · core`, labels: [{ name: `step-${step}` }], node_id: 'PR_node', state: 'open', merged: false, draft: false, body: 'Closes #42',
       base: { ref: CONSUMER.baseBranch, sha: base, repo: { full_name: REPOSITORY } },
       head: { ref: `${CONSUMER.taskBranchPrefix}test-42`, sha: continuationHead ?? base, repo: { full_name: REPOSITORY } }, mergeable: true };
-    if (remediation) review = { id: 17, user: { login: REVIEWER }, state: 'CHANGES_REQUESTED', commit_id: base, body: [
+    if (remediation) review = { id: 17, user: { login: REVIEWER, id: 701, type: 'Bot' }, state: 'CHANGES_REQUESTED', commit_id: base, body: [
       'F1: correct the documentation.', '```yaml', 'schema_version: "1.0"', 'change_request_id: CR-42-001',
       `repository: ${REPOSITORY}`, 'pull_request: 43', `reviewed_head_sha: ${base}`, `required_starting_head: ${base}`,
       `remediation_thread_title: Task 42 - Step ${step} - CR-42-001 core`, `codex_model: ${profile.cliModelId}`, `codex_effort: ${profile.effort}`,
@@ -119,6 +120,10 @@ export async function fixture(t, { remediation = false, continuation = false, co
   const remoteHead = async () => (await command(root, ['ls-remote', remote, `refs/heads/${taskBranch}`])).split(/\s+/)[0] || null;
   const api = {
     getRun: async () => copy(run),
+    userIdentity: async login => {
+      if (login !== REVIEWER) throw new Error('Unexpected user identity');
+      return { login: REVIEWER, id: 701, type: 'Bot' };
+    },
     async get(path) {
       if (/^\/issues\/comments\/[1-9][0-9]*$/.test(path)) {
         const comment = comments.find(c => c.id === Number(path.split('/').at(-1)));
@@ -205,7 +210,8 @@ export async function fixture(t, { remediation = false, continuation = false, co
   const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
   await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead });
-  const admission = await broker.invoke(admissionRequest);
+  const admission = deferAdmission ? { envelope: await admitEnvelope(api, admissionRequest) }
+    : await broker.invoke(admissionRequest);
   const { envelope } = admission;
   taskBranch = envelope.branch ?? taskBranch;
   const workRoot = installed ? CONSUMER.paths.workRoot : join(root, 'work'); await mkdir(workRoot, { recursive: true });

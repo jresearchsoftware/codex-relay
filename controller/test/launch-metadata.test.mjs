@@ -74,6 +74,9 @@ test('fresh owner dispatch retries keep Step; explicit continuation changes curr
   const f = await fixture(t, { remediation: true, step: 5 });
   for (const [runId, step] of [[100, 5], [101, 23], [102, 2]]) {
     const request = { ...f.admissionRequest, runId, step };
+    // A new CR phase has a new native publication identity. Reusing the same
+    // review for different authority would corrupt its exact lifecycle receipt.
+    if (f.issue.labels[0].name !== `step-${step}`) { f.review.id++; f.pr.draft = false; }
     f.issue.labels = f.pr.labels = [{ name: `step-${step}` }];
     f.review.body = f.review.body.replace(/Step [0-9]+/, `Step ${step}`);
     Object.assign(f.run, { id: runId, display_title: dispatchRunName(request) });

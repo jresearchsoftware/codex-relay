@@ -253,9 +253,13 @@ Source implementation and CI do not deploy the Reviewer or authorize a canary.
 The [Writer execution lifecycle](../controller/README.md#publication-execution-handoff-and-integration-readiness)
 is separate from Reviewer publication. Successful native `REQUEST_CHANGES`
 publication (including duplicate recovery) returns `structuredContent.pr_lifecycle`
-with the bounded `begin-remediation` Writer action. The owner orchestration
-channel performs and verifies it immediately before automatic launch or manual
-remediation handoff; a failed action stops continuation. Reviewer performs no
+with the bounded `begin-remediation` Writer action. Production routing derives
+that same action from the verified current native CR and performs it during
+Writer admission before automatic execution reservation or manual handoff.
+Manual handoff revalidates the transition before publication. The owner
+orchestration channel can also consume the returned action directly; a failed
+or uncertain action stops continuation and retains same-CR/head recovery.
+Reviewer performs no
 Draft/Ready mutation and requires no new App permission. Recovery of the same
 already-published CR is allowed after Writer drafts it; a fresh review or approval
 still requires a Ready candidate.

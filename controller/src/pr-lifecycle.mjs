@@ -30,17 +30,21 @@ export async function transitionPr({ api, store, key, record, readPr, head, draf
   return pr;
 }
 
-export async function beginRemediation({ api, store, request }) {
+export async function beginRemediation({ api, store, request, authorityDigest }) {
   if (Object.keys(request).some(key => !['operation', 'prNumber', 'reviewId', 'head'].includes(key))
     || !positive(request.prNumber) || !positive(request.reviewId) || !exactSha(request.head)) fail('PR_LIFECYCLE_REQUEST_INVALID');
   const read = async () => {
     const pr = await api.get(`/pulls/${request.prNumber}`); assertPr(pr, request.prNumber);
     const authority = await readAuthority(api, 'pull_request', pr.number, { step: currentStep(pr.labels) });
     const publisher = await api.userIdentity(REVIEWER);
+    // Typed records retain the verified native publisher as `author`; legacy
+    // GitHub review responses use `user`. Neither spelling grants authority.
+    const author = authority.request ? authority.review?.author : authority.review?.user;
     if (publisher.login !== REVIEWER || publisher.type !== 'Bot' || !positive(publisher.id)
-      || authority.review?.user?.id !== publisher.id || authority.review?.user?.type !== 'Bot'
+      || author?.id !== publisher.id || author?.type !== 'Bot'
       || authority.review.id !== request.reviewId || authority.startHead !== request.head
       || authority.pr.head.sha !== request.head) fail('CURRENT_CHANGE_REQUEST_MISSING');
+    if (authorityDigest && authority.authorityDigest !== authorityDigest) fail('AUTHORITY_CHANGED');
     return authority;
   };
   const authority = await read();

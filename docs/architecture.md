@@ -79,7 +79,12 @@ observation, verified publication and observed exact PR head permit one successf
 receipt proves execution handoff, Writer verifies native Ready for that exact
 PR/head. Draft/Ready follows execution ownership; integration observations
 never mutate it. Successful native Change Request publication supplies a bounded
-Writer action that verifies Draft before remediation continuation. Remaining uncommitted/non-ignored residue
+Writer action that verifies Draft before remediation continuation. Production
+routing consumes the same action from the verified current native CR during
+admission, before execution reservation or ready-command consumption. Manual
+handoff verifies it again before publication. A failed/uncertain transition
+retains exact-CR/head lifecycle recovery without starting Codex or republishing
+review authority. Remaining uncommitted/non-ignored residue
 alone yields a successful handoff with `UNCOMMITTED_WORK_REMAINS`, retained in
 the terminal receipt and Outcome and emitted as a workflow warning. Codex must
 first reconcile task-owned work where safe. The controller never assumes residue

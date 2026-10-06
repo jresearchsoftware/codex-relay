@@ -227,7 +227,12 @@ for (const boundary of ['collection', 'publication', 'outcome', 'journal', 'draf
     } };
     const put = journal.put;
     if (boundary === 'journal') journal.put = async (id, row) => { if (row.outcome) throw failure('JOURNAL_WRITE_FAILED'); return put(id, row); };
-    if (boundary === 'draft') f.api.draft = async () => { throw failure('DRAFT_MUTATION_FAILED'); };
+    if (boundary === 'draft') {
+      // Admission already verified Draft. Exercise a failed preflight repair
+      // when native state changes after that boundary.
+      f.pr.draft = false;
+      f.api.draft = async () => { throw failure('DRAFT_MUTATION_FAILED'); };
+    }
     assert.equal(await report(() => runAttempt({ ...f, broker, journal,
       collect: boundary === 'collection' ? () => { throw failure('OBJECT_IMPORT_FAILED'); } : f.collect,
       execute: async () => { await f.commit(); return result(f.envelope); } })), 1);

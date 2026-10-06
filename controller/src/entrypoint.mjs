@@ -12,17 +12,20 @@ import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 
-export async function main() {
-  const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
-  if (event.repository?.full_name !== REPOSITORY || !['workflow_dispatch', 'issues', 'pull_request_target'].includes(process.env.GITHUB_EVENT_NAME)
-    || event.sender?.login !== OWNER || process.env.GITHUB_REF !== `refs/heads/${CONSUMER.baseBranch}`) return { status: 'BLOCKED', code: 'OWNER_EVENT_REQUIRED' };
-  const launch = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? parseLaunchInputs(event.inputs)
-    : parseLabelLaunch(event, process.env.GITHUB_EVENT_NAME);
-  const local = createLocalWriterAdapter();
-  const broker = { invoke: request => local.invoke({ ...request, workflowReadToken: process.env.GITHUB_TOKEN }) };
+export async function main({ env = process.env, readEvent = path => readFile(path, 'utf8'),
+  createWriter = createLocalWriterAdapter, createDispatcher = createOnDemandDispatchAdapter,
+  createJournal = () => createAttemptStore(CONSUMER.paths.attemptRoot),
+  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout } = {}) {
+  const event = JSON.parse(await readEvent(env.GITHUB_EVENT_PATH));
+  if (event.repository?.full_name !== REPOSITORY || !['workflow_dispatch', 'issues', 'pull_request_target'].includes(env.GITHUB_EVENT_NAME)
+    || event.sender?.login !== OWNER || env.GITHUB_REF !== `refs/heads/${CONSUMER.baseBranch}`) return { status: 'BLOCKED', code: 'OWNER_EVENT_REQUIRED' };
+  const launch = env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? parseLaunchInputs(event.inputs)
+    : parseLabelLaunch(event, env.GITHUB_EVENT_NAME);
+  const local = createWriter();
+  const broker = { invoke: request => local.invoke({ ...request, workflowReadToken: env.GITHUB_TOKEN }) };
   let admitted;
   try {
-    admitted = await broker.invoke({ operation: 'admit', runId: Number(process.env.GITHUB_RUN_ID), workflowReadToken: process.env.GITHUB_TOKEN,
+    admitted = await broker.invoke({ operation: 'admit', runId: Number(env.GITHUB_RUN_ID), workflowReadToken: env.GITHUB_TOKEN,
       ...launch });
   } catch (error) {
     // These live admission decisions prove no new execution was authorized.
@@ -32,18 +35,18 @@ export async function main() {
   }
   emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
   if (admitted.status === 'BLOCKED') return admitted;
-  const dispatcher = createOnDemandDispatchAdapter();
+  const dispatcher = createDispatcher();
   let failure;
   try {
     return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
-      journal: createAttemptStore(CONSUMER.paths.attemptRoot), persistFailure: persistAttemptFailureDiagnostic,
-      prepare: prepareCheckout, execute: e => dispatcher.dispatch(e), collect: collectCheckout });
+      journal: createJournal(), persistFailure,
+      prepare, execute: e => dispatcher.dispatch(e), collect });
   } catch (error) {
     failure = error;
     // Includes a failed journal write before/inside the normal catch path.
     // Never rerun the operation just because its normal evidence store failed.
     if (!error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
-      const durable = await persistAttemptFailureDiagnostic({ executionId: admitted.envelope.attemptId,
+      const durable = await persistFailure({ executionId: admitted.envelope.attemptId,
         error, stage: 'finalization', lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? 'admission' });
       error.details = { ...error.details, ...durable };
     }
