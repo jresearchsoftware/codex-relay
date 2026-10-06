@@ -19,6 +19,10 @@ function publicationApi(f, history = []) {
   f.api.get = async path => {
     const old = history.find(pr => path === `/pulls/${pr.number}` || path === `/issues/${pr.number}`);
     if (old) return structuredClone(old);
+    if (/^\/pulls\/\d+$/.test(path) && path !== '/pulls/43') {
+      const current = surface.current(await get('/pulls/43'));
+      if (path === `/pulls/${current.number}`) return current;
+    }
     const value = await get(path);
     return path === '/pulls/43' ? surface.current(value) : value;
   };
