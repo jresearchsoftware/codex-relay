@@ -6,10 +6,13 @@ import { assertPr, linkedIssue } from './live-authority.mjs';
 // Count current candidates before checking compatibility; never select one by
 // silently discarding another open PR with conflicting authority.
 export async function findCurrentIssuePullRequest(api, envelope, expectedNumber = null) {
-  const matches = await api.list(`/pulls?state=open&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(envelope.branch)}&base=${encodeURIComponent(CONSUMER.baseBranch)}`);
+  // Continuation must also see wrong-base candidates rather than treating an
+  // existing PR as absent and manufacturing a replacement.
+  const base = envelope.continuation ? '' : `&base=${encodeURIComponent(CONSUMER.baseBranch)}`;
+  const matches = await api.list(`/pulls?state=open&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(envelope.branch)}${base}`);
   if (matches.length > 1) fail('PR_AMBIGUOUS');
   if (matches.length === 0) {
-    if (expectedNumber) fail('PR_PUBLICATION_UNCERTAIN');
+    if (expectedNumber) fail(envelope.continuation ? 'PR_AUTHORITY_CHANGED' : 'PR_PUBLICATION_UNCERTAIN');
     return null;
   }
   const pr = matches[0];

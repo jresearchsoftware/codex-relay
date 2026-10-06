@@ -53,6 +53,21 @@ test('ordinary uncertain publication and replay cannot authorize recovery or ano
   assert.equal(f.pushes(), 1);
 });
 
+test('Issue continuation recovery binds its admitted previous head and reuses the same PR', async t => {
+  const f = await uncertain(t, { remediation: false, continuation: true, step: 3 });
+  assert.deepEqual((await f.store.get(99)).publicationIntent, { previous: f.envelope.startHead, head: f.progress.head });
+  await assert.rejects(f.broker.invoke(f.ordinary), { code: 'PUBLICATION_UNCERTAIN' });
+  assert.equal(f.pushes(), 1);
+  const post = f.api.post.bind(f.api);
+  f.api.post = (path, body) => { assert.notEqual(path, '/pulls'); return post(path, body); };
+  const { request } = await f.authorize();
+  assert.equal((await f.broker.invoke(request)).publishedHead, f.progress.head);
+  assert.equal((await f.broker.invoke(request)).publishedHead, f.progress.head);
+  assert.equal(f.pushes(), 2);
+  assert.equal((await f.broker.invoke(f.ordinary)).prNumber, 43);
+  assert.equal(f.pushes(), 2);
+});
+
 for (const merged of [false, true]) {
   test(`Issue publication recovery ignores a historical ${merged ? 'merged' : 'closed'} PR on the reused branch`, async t => {
     const f = await uncertain(t, { remediation: false });

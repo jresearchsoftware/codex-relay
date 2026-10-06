@@ -2,12 +2,13 @@
 
 Load an explicit [consumer configuration](../consumer/README.md) before execution.
 
-The owner launches fresh Issue work or applicable PR remediation by applying
+The owner launches fresh Issue work, explicitly authorized Issue implementation
+continuation or applicable PR remediation by applying
 `codex-ready-auto`; `codex-ready-manual` produces the existing copyable manual
 handoff. These are first-class native commands. No Actions UI, dispatch inputs,
 comment command or additional launch form is required. Owner `workflow_dispatch`
 on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
-`pull_request`; those inputs must match current metadata and CR authority.
+`pull_request`; those inputs must match current metadata and applicable Issue/CR authority.
 
 The canonical Issue retains exactly one `step-N` label throughout its lifetime.
 Fresh work uses `step-1`; explicit owner new-phase preparation advances current
@@ -19,7 +20,7 @@ mismatched labels block new admission. The `step` label namespace is reserved.
 
 The trusted Writer verifies the owner actor and triggering actor, repository,
 workflow path, first native run execution, native title binding, current command
-event, canonical Issue and exact CR/head. Issue label events use `issues`;
+event, canonical Issue and applicable starting-head/CR authority. Issue label events use `issues`;
 PR label events use `pull_request_target` to run the default-branch workflow,
 with read-only workflow permissions and a trusted configured-base checkout. PR branch
 bytes are never executed by this routing job. Once the owner event, target and
@@ -76,8 +77,57 @@ explicit base blocks; the admitted exact base cannot move during execution.
 The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
 
-For Issue publication, Writer resolves only open PRs for the admitted repository,
-branch and configured base. Closed and merged PRs using that branch remain
+## Issue-authorized implementation continuation
+
+To continue implementation on an existing task branch, update the canonical
+Issue's current goal and starting-state authority with these fields:
+
+```text
+Implementation continuation head: 0123456789abcdef0123456789abcdef01234567
+Implementation branch: codex/task-42
+Implementation pull request: #43
+```
+
+The head field opts in and must contain exactly one full 40-character SHA. The
+existing branch must be explicit and valid; existing branch-field synonyms remain
+recognized. The PR field is required when a current open PR exists and must name
+that PR; omit it only when no open PR exists. Duplicate, malformed or conflicting
+continuation head/PR fields, a PR field without a continuation head, or a missing
+or invalid explicit branch block admission. Omitting continuation fields preserves
+legacy fresh Issue admission. Existing base metadata keeps its fresh meaning and
+is separate from the continuation task starting head.
+
+Admission requires the exact live task-branch ref to match the Issue's starting
+SHA. It counts open PRs for that branch across all bases before checking
+compatibility: a current PR must be unique and match the configured repository
+and base, canonical Issue linkage, exact starting head, Step label and bounded
+Task/Step title. Closed and merged PRs remain history. The admitted current PR
+number is pinned in the existing attempt record; closure, disappearance or
+replacement cannot authorize another target or a replacement PR.
+
+Apply `codex-ready-auto` to the canonical Issue using the existing owner launch
+path; `codex-ready-manual` remains available for a copyable manual handoff. This
+keeps Issue authority, the implementation operation and Writer commit identity.
+It requires no Reviewer Change Request and grants no CR integration-merge
+permission. An execution retry or continuation of the same unfinished phase
+keeps Step. An explicitly owner-authorized new implementation phase advances N
+to N+1 through the existing
+[owner metadata procedure](../contracts/README.md#owner-step-metadata-procedure),
+including the current PR when one exists. Step metadata alone grants no launch.
+
+Before the first continuation push, Writer requires the remote at the admitted
+starting head; after its own publication it requires `publishedHead`. It
+revalidates live authority and the pinned PR, then reobserves the exact previous
+Git ref before reserving the ordinary non-force push. Observed remote movement
+blocks publication. Exact post-push observation and the existing uncertainty and
+owner-authorized recovery rules remain in force. Ref observations and non-force
+push do not provide atomic compare-and-swap against external ref changes. No new
+service or state registry is introduced.
+
+## Issue publication and worker handoff
+
+Only an open PR for the admitted repository, branch and configured base may
+receive Issue publication. Closed and merged PRs using that branch remain
 history: they neither block a fresh PR nor receive labels, readiness changes or
 terminal Outcomes. A single current PR must retain the exact repository, branch
 and Issue linkage; multiple current candidates fail closed. Before mutating a

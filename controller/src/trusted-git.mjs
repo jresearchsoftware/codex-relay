@@ -108,7 +108,7 @@ export async function collectProgress(checkout, e, options = {}) {
   }
   if (!exactSha(head)) fail('WORKING_HEAD_INVALID');
   return temporaryRepo(async dir => {
-    if (e.target === 'pull_request') await git(dir, ['fetch', '--no-tags', options.remote ?? REMOTE, `refs/heads/${e.branch}:refs/remotes/task`], options);
+    if (e.target === 'pull_request' || e.continuation) await git(dir, ['fetch', '--no-tags', options.remote ?? REMOTE, `refs/heads/${e.branch}:refs/remotes/task`], options);
     const objects = join(metadata, 'objects'); await directory(objects);
     let bytes = 0; let files = 0;
     for (const folder of await readdir(objects)) {

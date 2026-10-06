@@ -18,7 +18,7 @@ export function memoryStore() {
   const rows = new Map();
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
-export async function fixture(t, { remediation = false, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
+export async function fixture(t, { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
   mainAdvance = false, unrelatedMain = false, nativeReview = false, beforeAdmission = () => {}, createAdmission,
   profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
@@ -47,12 +47,23 @@ export async function fixture(t, { remediation = false, instruction = '', instal
   if (issueBody !== undefined) issue.body = issueBody;
   let pr = null; let nextComment = 1; const comments = []; let taskBranch = `${CONSUMER.taskBranchPrefix}test-42`;
   let review;
-  if (remediation) {
-    await command(source, ['push', remote, `${CONSUMER.baseBranch}:refs/heads/${CONSUMER.taskBranchPrefix}test-42`]);
+  let continuationHead;
+  if (continuation) {
+    await command(source, ['switch', '-c', taskBranch]);
+    await writeFile(join(source, 'docs/prior.md'), 'previous implementation progress\n');
+    await command(source, ['add', 'docs/prior.md']);
+    await command(source, ['commit', '-m', 'prior implementation phase']);
+    await command(source, ['push', remote, taskBranch]);
+    continuationHead = await command(source, ['rev-parse', 'HEAD']);
+    await command(source, ['switch', CONSUMER.baseBranch]);
+    issue.body += `\nImplementation continuation head: ${continuationHead}${continuationPr ? '\nImplementation pull request: #43' : ''}`;
+  }
+  if (remediation || (continuation && continuationPr)) {
+    if (remediation) await command(source, ['push', remote, `${CONSUMER.baseBranch}:refs/heads/${CONSUMER.taskBranchPrefix}test-42`]);
     pr = { number: 43, title: `Task 42 · Step ${step} · core`, labels: [{ name: `step-${step}` }], node_id: 'PR_node', state: 'open', merged: false, draft: false, body: 'Closes #42',
       base: { ref: CONSUMER.baseBranch, sha: base, repo: { full_name: REPOSITORY } },
-      head: { ref: `${CONSUMER.taskBranchPrefix}test-42`, sha: base, repo: { full_name: REPOSITORY } }, mergeable: true };
-    review = { id: 17, user: { login: REVIEWER }, state: 'CHANGES_REQUESTED', commit_id: base, body: [
+      head: { ref: `${CONSUMER.taskBranchPrefix}test-42`, sha: continuationHead ?? base, repo: { full_name: REPOSITORY } }, mergeable: true };
+    if (remediation) review = { id: 17, user: { login: REVIEWER }, state: 'CHANGES_REQUESTED', commit_id: base, body: [
       'F1: correct the documentation.', '```yaml', 'schema_version: "1.0"', 'change_request_id: CR-42-001',
       `repository: ${REPOSITORY}`, 'pull_request: 43', `reviewed_head_sha: ${base}`, `required_starting_head: ${base}`,
       `remediation_thread_title: Task 42 - Step ${step} - CR-42-001 core`, `codex_model: ${profile.cliModelId}`, `codex_effort: ${profile.effort}`,
@@ -100,11 +111,11 @@ export async function fixture(t, { remediation = false, instruction = '', instal
   const launch = { target: remediation ? 'pull_request' : 'issue', number: remediation ? 43 : 42, issueNumber: 42, step, route, ...(labelLaunch ? { transport: 'label' } : {}) };
   const events = labelLaunch ? [{ id: 71, event: 'labeled', actor: { login: CONSUMER.owner, type: 'User' },
     label: { name: `codex-ready-${route}` }, created_at: '2026-09-04T12:00:00Z' }] : [];
-  if (labelLaunch) (pr ?? issue).labels.push({ name: `codex-ready-${route}` });
+  if (labelLaunch) (remediation ? pr : issue).labels.push({ name: `codex-ready-${route}` });
   const admissionRequest = { operation: 'admit', runId: fixtureRunId, ...launch };
   const run = { id: fixtureRunId, repository: { full_name: REPOSITORY }, actor: { login: CONSUMER.owner }, status: 'in_progress',
     event: labelLaunch ? remediation ? 'pull_request_target' : 'issues' : 'workflow_dispatch', head_branch: CONSUMER.baseBranch,
-    display_title: labelLaunch ? labelRunName(launch, pr ?? issue) : dispatchRunName(launch), path: CONSUMER.routingWorkflow, run_attempt: 1, created_at: '2026-09-04T12:00:01Z' };
+    display_title: labelLaunch ? labelRunName(launch, remediation ? pr : issue) : dispatchRunName(launch), path: CONSUMER.routingWorkflow, run_attempt: 1, created_at: '2026-09-04T12:00:01Z' };
   const remoteHead = async () => (await command(root, ['ls-remote', remote, `refs/heads/${taskBranch}`])).split(/\s+/)[0] || null;
   const api = {
     getRun: async () => copy(run),
@@ -115,7 +126,13 @@ export async function fixture(t, { remediation = false, instruction = '', instal
       }
       if (path === '/issues/42') return copy(issue);
       if (path === '/issues/43') return copy(pr);
-      if (path.startsWith('/git/matching-refs/')) return [];
+      if (path.startsWith('/git/matching-refs/heads/')) {
+        const prefix = path.slice('/git/matching-refs/heads/'.length);
+        const rows = await command(root, ['ls-remote', '--heads', remote, `refs/heads/${prefix}*`]);
+        return rows ? rows.split('\n').map(row => {
+          const [sha, ref] = row.split(/\s+/); return { ref, object: { sha } };
+        }) : [];
+      }
       if (path === `/git/ref/heads/${CONSUMER.baseBranch}`) return { object: { sha: await command(root, ['--git-dir='+remote, 'rev-parse', CONSUMER.baseBranch]) } };
       if (path === '/pulls/43' && pr) return { ...copy(pr), head: { ...pr.head, sha: await remoteHead() } };
       throw new Error(`Unexpected GET ${path}`);
@@ -179,7 +196,7 @@ export async function fixture(t, { remediation = false, instruction = '', instal
   const admissionControl = createAdmission ? await createAdmission({ root, store }) : undefined;
   const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
-  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl });
+  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead });
   const admission = await broker.invoke(admissionRequest);
   const { envelope } = admission;
   taskBranch = envelope.branch ?? taskBranch;
