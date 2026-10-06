@@ -30,6 +30,43 @@ async function completed(t, mergeable, options = {}) {
     observe: (value, newBase) => { observed = value; observedBase = newBase; } };
 }
 
+for (const continuation of [false, true]) {
+  test(`completed ${continuation ? 'Issue continuation' : 'fresh Issue'} uses detailed mergeability rather than the PR list summary`, async t => {
+    const f = await completed(t, true, { continuation });
+    const summaries = await f.api.list('/pulls?state=open');
+    assert.equal(summaries[0].mergeable, undefined);
+    assert.equal((await f.api.get('/pulls/43')).mergeable, true);
+    assert.equal(f.outcome.readiness.status, 'READY');
+    assert.equal(f.outcome.draft, false);
+    assert.equal((await f.api.get('/pulls/43')).draft, false);
+    assert.equal(f.outcome.head, await f.remoteHead());
+    assert.equal(f.outcome.prNumber, 43);
+    assert.equal(f.comments.length, 1);
+    assert.equal(f.executions(), 1);
+    assert.equal(f.pushes(), 1);
+  });
+}
+
+test('observing an already ready candidate does not draft it because the list omits mergeability', async t => {
+  const f = await completed(t, null, { continuation: true });
+  f.observe(true);
+  await f.api.ready('PR_node');
+  let transitions = 0;
+  for (const name of ['ready', 'draft']) {
+    const mutate = f.api[name].bind(f.api);
+    f.api[name] = async node => { transitions++; return mutate(node); };
+  }
+  const result = await f.broker.invoke({ operation: 'observe-readiness', runId: f.envelope.runId,
+    attemptId: f.envelope.attemptId, head: f.outcome.head });
+  assert.equal(result.readiness.status, 'READY');
+  assert.equal(result.draft, false);
+  assert.equal(transitions, 0);
+  assert.equal(result.outcomeId, f.outcome.outcomeId);
+  assert.equal(f.comments.length, 1);
+  assert.equal(f.executions(), 1);
+  assert.equal(f.pushes(), 1);
+});
+
 for (const mergeable of [null, false]) {
   test(`${mergeable === null ? 'unresolved mergeability' : 'proven conflict'} preserves published progress and successful orchestration`, async t => {
     const f = await completed(t, mergeable);
