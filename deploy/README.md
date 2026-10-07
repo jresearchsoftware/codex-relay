@@ -24,6 +24,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
 | `environment.tls.acme` | Optional contact and HTTP-01 webroot for the admitted shared Docker ingress |
 | `environment.reviewerCredential.sourceKeyFile` | Optional existing owner-provisioned Reviewer App private-key reference |
+| `environment.reviewerRepositories` | Optional nonempty Reviewer target list; omitted means only `consumer.repository`. Writer and runner bindings remain `consumer.repository` |
 | `environment.writerCredential.sourceKeyFile` | Optional existing owner-provisioned Writer App private-key reference |
 | `environment.codexCredential.sourceTokenFile` | Optional existing owner-provisioned Codex access-token reference |
 
@@ -49,7 +50,26 @@ runtime paths stay in that namespace. All consumer paths must be under its
 roots. Supply distinct Unix users, groups, runner identities and ingress for
 each consumer; do not reuse an existing consumer's namespace or credentials
 directory. Preflight rejects existing units bound to another installation or
-an installed Reviewer configuration bound to another repository.
+an installed Reviewer configuration with targets outside the requested Reviewer
+repository set. Preflight accepts either singleton `repository` or plural
+`repositories` configuration and ignores target order and duplicates. It permits
+adding targets to the same instance while retaining its installed targets; the
+existing service, Unix identity and namespace collision checks still apply.
+
+To serve two repositories with one Reviewer, add the following under
+`environment` in the owner-controlled deployment input:
+
+```json
+"reviewerRepositories": ["example-org/sample-project", "example-org/shared-governance"]
+```
+
+The compiler normalizes this list and renders `repository` for a singleton or
+`repositories` for multiple targets in `reviewer-mcp.json`. All Reviewer settings
+and the existing `consumer.reviewerApp` identity/installation remain shared.
+The installation must already have access to every target. The Reviewer App
+qualification helper runs its existing read-only installation and repository
+probe for each configured target using that same identity; any failed probe
+fails qualification. No additional Writer repository is configured.
 
 Omitting `instance` preserves legacy unit identities, port 8787 and publication
 configuration. Never opt an existing consumer into namespaced units as an

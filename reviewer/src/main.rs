@@ -2461,13 +2461,17 @@ mod tests {
     }
 
     fn rendered_runtime_config(repository: &str) -> String {
+        rendered_runtime_config_repositories(&[repository])
+    }
+
+    fn rendered_runtime_config_repositories(repositories: &[&str]) -> String {
         let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../deploy/ansible/roles/relay_runtime/templates/reviewer-mcp.json.j2");
         let template_source =
             fs::read_to_string(&template_path).expect("managed Reviewer template");
         let mut environment = Environment::new();
         environment.add_filter("bool", |value: bool| value.to_string());
-        environment.add_filter("to_json", |value: String| {
+        environment.add_filter("to_json", |value: minijinja::Value| {
             serde_json::to_string(&value).unwrap()
         });
         let template = environment
@@ -2475,7 +2479,7 @@ mod tests {
             .expect("managed Reviewer Jinja template");
         template
             .render(context! {
-                relay_github_repository => repository,
+                relay_reviewer_repositories => repositories,
                 relay_owner_actor => "example-owner",
                 relay_release_commit => HEAD,
                 relay_release_sha256 => "b".repeat(64),

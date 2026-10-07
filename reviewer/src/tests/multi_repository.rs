@@ -5,6 +5,29 @@ const REPOSITORIES: [&str; 2] = ["example/alpha", "example/beta"];
 const CHARTER: &str = "Task 24: synthetic qualification.\nAuthority model: github-native-v1\nIssue closure policy: keep-open";
 
 #[test]
+fn managed_multi_repository_template_is_accepted_by_runtime_contract() {
+    let rendered = rendered_runtime_config_repositories(&REPOSITORIES);
+    let config: Value = serde_json::from_str(&rendered).unwrap();
+    assert_eq!(config["repositories"], json!(REPOSITORIES));
+    assert!(config.get("repository").is_none());
+    let path = std::env::temp_dir().join(format!(
+        "reviewer-managed-multiple-repositories-{}.json",
+        std::process::id()
+    ));
+    fs::write(&path, rendered).unwrap();
+    let runtime = load_runtime_config(path.to_str().unwrap());
+    assert_eq!(runtime.repositories, repository_set());
+    assert_eq!(
+        runtime.policy,
+        ReviewPolicy {
+            github_native_authority_enabled: true,
+            ..test_policy()
+        }
+    );
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn config_normalizes_legacy_and_multiple_repositories_and_rejects_ambiguous_forms() {
     let mut config: Value =
         serde_json::from_str(&rendered_runtime_config(REPOSITORIES[0])).unwrap();

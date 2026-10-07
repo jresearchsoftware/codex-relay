@@ -128,6 +128,12 @@ validation vocabulary, publication mode, database and App/installation identity.
 One Reviewer installation can serve all configured repositories it already has
 access to. Writer configuration remains single-repository and separate.
 
+For the supported deployment interface, set the optional
+[`environment.reviewerRepositories`](../deploy/README.md#inputs-and-invocation)
+target list. Omission preserves the consumer's single repository. Deployment
+renders the compatible runtime form and qualifies the same Reviewer
+App/installation against every target.
+
 Every tool requires an explicit `repository` target. Its schema uses `const`
 for a singleton set and `enum` for multiple repositories. Calls must select an
 exact member of that set before contacting GitHub; typed authority records must
