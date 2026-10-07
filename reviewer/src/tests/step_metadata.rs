@@ -310,7 +310,7 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
         .unwrap();
     let app = App {
         policy: test_policy(),
-        repository: TEST_REPOSITORY.into(),
+        repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
         enabled: true,
         store: Arc::new(Mutex::new(store)),
         github: github::Github::mock_api(mock_api(state.clone()).await),
@@ -318,7 +318,7 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
         observed_arguments: Default::default(),
     };
     assert_eq!(
-        step_sync::synchronize(&app, &operation, 1, &args).await,
+        step_sync::synchronize(&app.target(&args).unwrap(), &operation, 1, &args).await,
         Err("LEGACY_STEP_BINDING_REQUIRED")
     );
     assert!(!state
@@ -339,7 +339,7 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
     pr["labels"] = json!([{"name":"step-2"}]);
     pr["title"] = json!(step_sync::projection_title(24, &args).unwrap());
     *state.pr.lock().unwrap() = Some(pr);
-    step_sync::synchronize(&app, &operation, 1, &args)
+    step_sync::synchronize(&app.target(&args).unwrap(), &operation, 1, &args)
         .await
         .unwrap();
     assert!(app
@@ -372,14 +372,16 @@ async fn historical_anchor_without_exact_title_only_upgrades_complete_unchanged_
         store.reserve(&operation, "digest").unwrap();
         let app = App {
             policy: test_policy(),
-            repository: TEST_REPOSITORY.into(),
+            repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
             enabled: true,
             store: Arc::new(Mutex::new(store)),
             github: github::Github::mock_api(mock_api(state.clone()).await),
             trusted_client_ca: Arc::new(Vec::new()),
             observed_arguments: Default::default(),
         };
-        step_sync::prepare(&app, &operation, &args).await.unwrap();
+        step_sync::prepare(&app.target(&args).unwrap(), &operation, &args)
+            .await
+            .unwrap();
         let anchor = app
             .store
             .lock()
@@ -406,7 +408,8 @@ async fn historical_anchor_without_exact_title_only_upgrades_complete_unchanged_
         if scenario == "changed-authority" {
             state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!("Changed goal");
         }
-        let result = step_sync::synchronize(&app, &operation, 1, &args).await;
+        let result =
+            step_sync::synchronize(&app.target(&args).unwrap(), &operation, 1, &args).await;
         assert_eq!(
             result,
             match scenario {

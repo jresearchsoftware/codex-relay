@@ -211,7 +211,8 @@ activation and external consumer qualification keep their separate authority.
 
 The [Reviewer](../reviewer/README.md) is a narrow MCP HTTP service behind a
 trusted mTLS terminator. It verifies forwarded client identity and binds every
-GitHub request, review and check to the configured repository/App and exact head.
+GitHub request, review and check to an explicitly selected configured repository,
+the shared App/installation and the exact head.
 Writer and Reviewer credentials are separate. Raw credentials and diagnostic
 streams never belong in an Outcome.
 

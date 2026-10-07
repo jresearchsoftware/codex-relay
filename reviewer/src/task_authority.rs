@@ -283,7 +283,7 @@ fn parse(body: &str) -> Result<Option<Value>, &'static str> {
     Ok(Some(record))
 }
 
-pub(crate) fn tool(repository: &str) -> Value {
+pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
     let variants: Vec<_> = [
         "decision",
         "task-request",
@@ -297,16 +297,23 @@ pub(crate) fn tool(repository: &str) -> Value {
     json!({"name":"publish_task_authority",
         "description":"Publish owner-authorized typed Decisions, Task Requests, PR-only Change Requests, Task review evidence or independent Task Approvals. Re-read all native references and current authority; never execute, publish Writer Outcomes or merge.",
         "inputSchema":{"type":"object","additionalProperties":false,"required":["repository","record"],"properties":{
-            "repository":{"type":"string","const":repository},"record":{"anyOf":variants}}},
+            "repository":repository_schema(repositories),"record":{"anyOf":variants}}},
         "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}})
 }
 
-pub(crate) fn valid_input(repository: &str, args: &Value) -> Result<(), &'static str> {
+pub(crate) fn valid_input(
+    repositories: &BTreeSet<String>,
+    args: &Value,
+) -> Result<(), &'static str> {
     let object = args.as_object().ok_or("INVALID_PAYLOAD")?;
     if object.len() != 2 || !object.contains_key("record") || !object.contains_key("repository") {
         return Err("INVALID_PAYLOAD");
     }
-    if args["repository"] != repository || args["record"]["repository"] != repository {
+    let repository = args["repository"]
+        .as_str()
+        .filter(|repository| repositories.contains(*repository))
+        .ok_or("REPOSITORY_NOT_ALLOWED")?;
+    if args["record"]["repository"] != repository {
         return Err("REPOSITORY_NOT_ALLOWED");
     }
     if args["record"]["kind"] == "outcome" {
@@ -395,7 +402,7 @@ struct NativeAuthority {
     comments: Vec<Value>,
 }
 
-async fn load(app: &App, record: &Value) -> Result<NativeAuthority, &'static str> {
+async fn load(app: &RepositoryTarget<'_>, record: &Value) -> Result<NativeAuthority, &'static str> {
     let task = record["task"].as_u64().unwrap();
     let issue = app
         .github
@@ -468,7 +475,7 @@ fn belongs(record: &Value, expected: &Value) -> bool {
 }
 
 async fn read_ref(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
     reference: &Value,
@@ -513,7 +520,7 @@ async fn read_ref(
 }
 
 async fn trusted_record(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
     reference: &Value,
@@ -538,7 +545,7 @@ async fn trusted_record(
 }
 
 fn list_records(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
     natives: &[Value],
@@ -568,7 +575,7 @@ fn list_records(
 }
 
 async fn execution_records(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
 ) -> Result<Vec<(Value, Value)>, &'static str> {
@@ -796,7 +803,7 @@ fn closure_policy(body: &str) -> (&str, Vec<&str>) {
 }
 
 async fn validate_live(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
     published: Option<&Value>,
@@ -1126,7 +1133,7 @@ fn projection_title(record: &Value) -> String {
 }
 
 async fn bind_projection(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     record: &Value,
     operation: &str,
     prepare: bool,
@@ -1164,7 +1171,7 @@ async fn bind_projection(
 }
 
 async fn project(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     record: &Value,
     reference: &Value,
     operation: &str,
@@ -1237,7 +1244,7 @@ fn error(code: &str) -> Value {
 }
 
 async fn published_native(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
     record: &Value,
     operation: &str,
@@ -1343,7 +1350,7 @@ async fn published_native(
     )
 }
 
-pub(crate) async fn publish(app: &App, args: &Value) -> Value {
+pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
     if !app.enabled {
         return error("RELAY_DISABLED");
     }
@@ -1525,7 +1532,7 @@ pub(crate) async fn publish(app: &App, args: &Value) -> Value {
 }
 
 pub(crate) async fn approved_continuation(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     issue: &Value,
     pr: &Value,
     approved_head: &Value,

@@ -2,7 +2,7 @@
 
 This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review`, `read_pr_review_evidence` and `publish_task_authority`.
 
-It reads the admitted bind, repository, base branch, check name and App settings
+It reads the admitted bind, repositories, base branch, check name and App settings
 from `reviewer-mcp.json`. It publishes verdicts/findings authored by an external
 ChatGPT review conversation; it does not perform the review itself. Current
 ingress supports the OpenAI connector mTLS identity only. See the complete
@@ -60,8 +60,8 @@ Reviewer and Writer logins through GitHub to native user IDs and types. Typed
 Decisions and Requests must carry the trusted Reviewer Bot identity; Outcomes
 must carry the separate trusted Writer Bot identity. The configured App ID and
 slug are also verified. Every selected SourceRef is fetched again by its native
-ID, checked against the configured repository and native parent URL, and
-compared with its exact body digest. Sources may be the canonical Issue body,
+ID, checked against the selected configured repository and native parent URL,
+and compared with its exact body digest. Sources may be the canonical Issue body,
 Issue comments, native PR reviews or review comments on a PR linked to that
 Issue. Caller text cannot establish native identity or source provenance.
 
@@ -114,17 +114,32 @@ channel, never the worker. `REQUEST_CHANGES` requires an owner-authorized
 publication after review preview; a preview alone grants no mutation authority.
 Task Approval is independent acceptance of the bound result, not PR approval.
 
-The configuration's top-level `repository` is the sole repository authority for
-the instance. All tool schemas constrain the caller's required repository to
-that value, and all tools compare it exactly before contacting GitHub. There
-is no repository default or separate CLI/environment override. Configuration
-admission requires ASCII `owner/repository`: owner length 1–39 with letters,
+Configure either the existing top-level `repository` string or a nonempty
+`repositories` array of strings, never both. Both forms normalize to a repository
+set; duplicate entries collapse. For example, replace the `repository` field in
+the [plain config](../examples/reviewer-mcp.json) with:
+
+```json
+"repositories": ["example-org/sample-project", "example-org/second-project"]
+```
+
+All other settings remain shared, including owner, base branch, check name,
+validation vocabulary, publication mode, database and App/installation identity.
+One Reviewer installation can serve all configured repositories it already has
+access to. Writer configuration remains single-repository and separate.
+
+Every tool requires an explicit `repository` target. Its schema uses `const`
+for a singleton set and `enum` for multiple repositories. Calls must select an
+exact member of that set before contacting GitHub; typed authority records must
+also name the same selected repository. There is no repository default or
+separate CLI/environment override. Configuration admission requires ASCII
+`owner/repository`: owner length 1–39 with letters,
 digits and single internal hyphens; repository length 1–100 with letters,
 digits and `._-`, excluding `.` and `..`. Values are not trimmed, decoded or
-case-normalized. Missing, wrongly typed, malformed or different caller values
+case-normalized. Missing, wrongly typed, malformed or unconfigured caller values
 fail closed.
 
-The admitted repository also reaches every installation-token request: its
+The selected repository also reaches every installation-token request: its
 repository name is the sole entry in GitHub's `repositories` restriction, and
 the same `owner/repository` supplies subsequent GitHub API paths.
 
@@ -219,6 +234,11 @@ Duplicate keys, unknown fields, malformed identifiers, duplicate finding IDs/val
 invalid tokens/Step, unsafe text and payload/rendering overflow fail closed.
 Operation identity binds the rendered body and all findings; repeated calls
 retain existing duplicate suppression and uncertain-publication recovery.
+Review operation IDs already include the selected repository, and typed
+authority operation IDs bind the record's repository through its canonical
+body. The shared SQLite journal and Step bindings therefore distinguish
+overlapping Issue/PR numbers across repositories without changing existing IDs
+or migrating retained publication state.
 
 The minimum Reviewer installation permission set remains `metadata:read`,
 `actions:read`, `issues:write`, `pull_requests:write` and `checks:write`:
@@ -233,8 +253,8 @@ The minimum Reviewer installation permission set remains `metadata:read`,
 
 Excluding UI-only warnings does not remove the supported Actions run-binding
 requirement. No Actions write or additional permission is needed. Repository
-tokens are restricted to the configured repository; the evidence reader requests
-a separate token with only read permissions for `metadata`, `pull_requests`,
+tokens are restricted to the selected configured repository; the evidence
+reader requests a separate token with only read permissions for `metadata`, `pull_requests`,
 `checks`, `actions` and `issues`. The host-local App qualification checks the exact
 installation permission set and uses a metadata-only probe token; it does not
 prove live evidence endpoint access. Live App permission reconciliation and

@@ -10,6 +10,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeSet,
     fs,
     net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex},
@@ -31,7 +32,7 @@ struct Args {
 #[derive(Debug, PartialEq)]
 struct RuntimeConfig {
     policy: ReviewPolicy,
-    repository: String,
+    repositories: BTreeSet<String>,
     host: String,
     port: u16,
     mount: String,
@@ -43,7 +44,7 @@ struct RuntimeConfig {
 #[derive(Clone)]
 struct App {
     policy: ReviewPolicy,
-    repository: String,
+    repositories: BTreeSet<String>,
     enabled: bool,
     store: Arc<Mutex<store::Store>>,
     github: github::Github,
@@ -51,10 +52,44 @@ struct App {
     #[cfg(test)]
     observed_arguments: tests::ObservedArguments,
 }
+
+// Each operation borrows shared settings/state and one explicitly selected target.
+// No mutable or implicit default repository is kept on the service.
+struct RepositoryTarget<'a> {
+    app: &'a App,
+    repository: &'a str,
+}
+impl std::ops::Deref for RepositoryTarget<'_> {
+    type Target = App;
+
+    fn deref(&self) -> &App {
+        self.app
+    }
+}
+impl App {
+    fn target<'a>(&'a self, arguments: &'a Value) -> Result<RepositoryTarget<'a>, &'static str> {
+        let repository = arguments["repository"]
+            .as_str()
+            .filter(|repository| self.repositories.contains(*repository))
+            .ok_or("REPOSITORY_NOT_ALLOWED")?;
+        Ok(RepositoryTarget {
+            app: self,
+            repository,
+        })
+    }
+}
+
+fn repository_schema(repositories: &BTreeSet<String>) -> Value {
+    if repositories.len() == 1 {
+        json!({"type": "string", "const": repositories.first().unwrap()})
+    } else {
+        json!({"type": "string", "enum": repositories})
+    }
+}
 fn err(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
-fn tools(validation_names: &[String], repository: &str) -> Value {
+fn tools(validation_names: &[String], repositories: &BTreeSet<String>) -> Value {
     let check = json!({
         "name": "check_pr_review_target",
         "description": "Check an allowlisted PR review target without mutation.",
@@ -63,7 +98,7 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
             "additionalProperties": false,
             "required": ["repository", "pr_number", "expected_head_sha"],
             "properties": {
-                "repository": {"type": "string", "const": repository},
+                "repository": repository_schema(repositories),
                 "pr_number": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
                 "expected_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
             }
@@ -90,7 +125,7 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
             "additionalProperties": false,
             "required": ["repository", "pr_number", "expected_head_sha", "action"],
             "properties": {
-                "repository": {"type": "string", "const": repository},
+                "repository": repository_schema(repositories),
                 "pr_number": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
                 "expected_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
                 "action": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES"]},
@@ -108,16 +143,16 @@ fn tools(validation_names: &[String], repository: &str) -> Value {
     evidence["name"] = json!("read_pr_review_evidence");
     evidence["description"] = json!("Read bounded exact-head execution warning evidence through supported GitHub/runtime APIs. Required source failures remain explicit gaps. UI-only service/pre-execution annotations are excluded from automated completeness; none_observed covers only inspected in-scope sources.");
     evidence["outputSchema"] = github::evidence::output_schema();
-    json!([check, submit, evidence, task_authority::tool(repository)])
+    json!([check, submit, evidence, task_authority::tool(repositories)])
 }
 fn valid_input(
     validation_names: &[String],
-    repository: &str,
+    repositories: &BTreeSet<String>,
     name: &str,
     arguments: &Value,
 ) -> Result<(), &'static str> {
     if name == "publish_task_authority" {
-        return task_authority::valid_input(repository, arguments);
+        return task_authority::valid_input(repositories, arguments);
     }
     let expected: &[&str] = if matches!(name, "check_pr_review_target" | "read_pr_review_evidence")
     {
@@ -141,8 +176,11 @@ fn valid_input(
     {
         return Err("INVALID_PAYLOAD");
     }
-    let repo = arguments.get("repository").and_then(Value::as_str);
-    if repo != Some(repository) {
+    if arguments
+        .get("repository")
+        .and_then(Value::as_str)
+        .is_none_or(|repository| !repositories.contains(repository))
+    {
         return Err("REPOSITORY_NOT_ALLOWED");
     }
     if arguments
@@ -533,7 +571,9 @@ async fn mcp(
         Some("initialize") => {
             json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"codex-relay-reviewer","version":"0.1.0"}})
         }
-        Some("tools/list") => json!({"tools":tools(&app.policy.validation_names, &app.repository)}),
+        Some("tools/list") => {
+            json!({"tools":tools(&app.policy.validation_names, &app.repositories)})
+        }
         Some("tools/call") => {
             let name = request
                 .pointer("/params/name")
@@ -546,14 +586,18 @@ async fn mcp(
                 .lock()
                 .expect("argument observations")
                 .push((name.to_string(), arguments.clone()));
-            if let Err(code) = valid_input(
+            let target = valid_input(
                 &app.policy.validation_names,
-                &app.repository,
+                &app.repositories,
                 name,
                 arguments,
-            ) {
-                json!({"content":[{"type":"text","text":code}],"isError":true})
-            } else if name == "publish_task_authority" {
+            )
+            .and_then(|()| app.target(arguments));
+            let app = match target {
+                Ok(target) => target,
+                Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response(),
+            };
+            if name == "publish_task_authority" {
                 task_authority::publish(&app, arguments).await
             } else if name == "read_pr_review_evidence" {
                 match app
@@ -841,7 +885,7 @@ async fn mcp(
         .into_response()
 }
 async fn complete_check(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     operation: &str,
     review_id: i64,
     url: &str,
@@ -941,7 +985,11 @@ pub(crate) fn remediation_lifecycle_action(arguments: &Value, review_id: Option<
         "reviewId":review_id,"head":arguments["expected_head_sha"]})
 }
 
-async fn approval_continuation_plan(app: &App, arguments: &Value, review_id: i64) -> Value {
+async fn approval_continuation_plan(
+    app: &RepositoryTarget<'_>,
+    arguments: &Value,
+    review_id: i64,
+) -> Value {
     let result: Result<Value, &'static str> = async {
         let pr = app.github.get_pr(&app.repository, arguments["pr_number"].as_i64().unwrap()).await?;
         if let Some(code) = target_binding_rejection(&app.policy, &pr, arguments)
@@ -984,7 +1032,7 @@ async fn approval_continuation_plan(app: &App, arguments: &Value, review_id: i64
 }
 
 async fn record_review(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     operation: &str,
     review: &Value,
     outcome: &str,
@@ -1055,16 +1103,35 @@ fn valid_repository(repository: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+fn configured_repositories(config: &Value) -> BTreeSet<String> {
+    let values = match (config.get("repository"), config.get("repositories")) {
+        (Some(repository), None) => vec![repository],
+        (None, Some(repositories)) => repositories
+            .as_array()
+            .filter(|values| !values.is_empty())
+            .expect("Reviewer config repositories must be a nonempty array")
+            .iter()
+            .collect(),
+        _ => panic!("Reviewer config requires exactly one of repository or repositories"),
+    };
+    values
+        .into_iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| valid_repository(value))
+                .expect("Reviewer config repository must be a bounded owner/repository identifier")
+                .to_string()
+        })
+        .collect()
+}
+
 fn load_runtime_config(path: &str) -> RuntimeConfig {
     let text = fs::read_to_string(path).expect("REVIEWER_MCP_CONFIG must be readable");
     let config = serde_json::from_str::<strict_json::StrictJson>(&text)
         .expect("REVIEWER_MCP_CONFIG must be unambiguous JSON")
         .0;
-    let repository = config["repository"]
-        .as_str()
-        .filter(|value| valid_repository(value))
-        .expect("Reviewer config repository must be a bounded owner/repository identifier")
-        .to_string();
+    let repositories = configured_repositories(&config);
     if config.get("mutation").is_some() {
         panic!("Remove obsolete mutation field; REVIEWER_RELAY_ENABLED alone controls publication");
     }
@@ -1109,7 +1176,7 @@ fn load_runtime_config(path: &str) -> RuntimeConfig {
     let policy = review_policy(&config);
     let runtime_config = RuntimeConfig {
         policy,
-        repository,
+        repositories,
         host,
         port,
         mount,
@@ -1186,7 +1253,7 @@ async fn main() {
     validate_effective_runtime_config(&effective_config);
     let RuntimeConfig {
         policy,
-        repository,
+        repositories,
         host: configured_host,
         port: configured_port,
         mount: configured_mount,
@@ -1213,7 +1280,7 @@ async fn main() {
     tracing::info!(event = "publication_mode", enabled);
     let app = router(App {
         policy,
-        repository,
+        repositories,
         #[cfg(test)]
         observed_arguments: Default::default(),
         enabled,
@@ -1260,6 +1327,7 @@ mod tests {
 
     use super::*;
     mod evidence;
+    mod multi_repository;
     mod portability;
     mod step_metadata;
     mod task_authority;
@@ -1586,7 +1654,12 @@ mod tests {
             }
             let expected = row["producer_error"].as_str().unwrap();
             assert_eq!(
-                valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+                valid_input(
+                    &[],
+                    &BTreeSet::from([TEST_REPOSITORY.into()]),
+                    "submit_pr_review",
+                    &args
+                ),
                 Err(expected),
                 "{}",
                 row["name"]
@@ -1629,7 +1702,12 @@ mod tests {
                     ["input_schema"]["properties"]["required_validation"]["items"]["enum"]
                     .clone();
                 assert_eq!(
-                    valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+                    valid_input(
+                        &[],
+                        &BTreeSet::from([TEST_REPOSITORY.into()]),
+                        "submit_pr_review",
+                        &args
+                    ),
                     Ok(())
                 );
                 assert_consumer_admits(
@@ -1642,7 +1720,12 @@ mod tests {
         args["change_request"]["step"] = json!(9_007_199_254_740_991u64);
         args["change_request"]["findings"][0]["problem"] = json!("Preserve \"quotes\", commas, colon: [lists], `code`, \\paths & <tags> — café 🦀. The ```reviewer-executable-cr fence is Reviewer-owned.");
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &args
+            ),
             Ok(())
         );
         assert_consumer_admits(
@@ -1657,13 +1740,23 @@ mod tests {
         let finding = args["change_request"]["findings"][0].clone();
         args["change_request"]["findings"] = json!(vec![finding; 31]);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &args
+            ),
             Err("INVALID_CHANGE_REQUEST")
         );
         args = cr_fixture();
         args["change_request"]["findings"][0]["problem"] = json!("x".repeat(50_000));
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &args
+            ),
             Err("PAYLOAD_TOO_LARGE")
         );
         args = cr_fixture();
@@ -1673,23 +1766,43 @@ mod tests {
             }
         }
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &args
+            ),
             Err("CR_RENDER_TOO_LARGE")
         );
         args = cr_fixture();
         args["review_body"] = json!("Manually serialized CR");
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &args),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &args
+            ),
             Err("STRUCTURED_CHANGE_REQUEST_REQUIRED")
         );
         let mut approve = base_args("APPROVE");
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &approve),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &approve
+            ),
             Ok(())
         );
         approve["change_request"] = args["change_request"].clone();
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &approve),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &approve
+            ),
             Err("APPROVAL_REMEDIATION_FIELDS")
         );
     }
@@ -1721,11 +1834,21 @@ mod tests {
         assert_eq!(original, operation_id(&[], &explicit));
         // Repeating a Step is legal and never requires a history lookup.
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &explicit),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &explicit
+            ),
             Ok(())
         );
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &explicit),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &explicit
+            ),
             Ok(())
         );
     }
@@ -1908,9 +2031,13 @@ mod tests {
     }
 
     fn native_review(payload: &Value) -> Value {
+        native_review_for_repository(payload, TEST_REPOSITORY)
+    }
+
+    fn native_review_for_repository(payload: &Value, repository: &str) -> Value {
         json!({"id":1,"html_url":"https://example/reviews/1","commit_id":payload["commit_id"],
             "body":payload["body"],"state":if payload["event"] == "APPROVE" { "APPROVED" } else { "CHANGES_REQUESTED" },
-            "pull_request_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/pulls/25"),
+            "pull_request_url":format!("https://api.github.com/repos/{repository}/pulls/25"),
             "user":{"login":"example-reviewer[bot]","id":2,"type":"Bot"}})
     }
 
@@ -2043,7 +2170,7 @@ mod tests {
             (Method::GET, value) if value.starts_with("pulls/25/reviews/") => {
                 let id = value.strip_prefix("pulls/25/reviews/").unwrap().parse::<usize>().unwrap_or(0);
                 match state.reviews.lock().unwrap().get(id.wrapping_sub(1)) {
-                    Some(payload) => { let mut review = native_review(payload); review["id"] = json!(id); review },
+                    Some(payload) => { let mut review = native_review_for_repository(payload, &state.repository); review["id"] = json!(id); review },
                     None => return StatusCode::NOT_FOUND.into_response(),
                 }
             },
@@ -2091,7 +2218,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .enumerate()
-                .map(|(index, payload)| { let mut review = native_review(payload); review["id"] = json!(index + 1); review["user"]["login"] = json!(state.policy.actor); review })
+                .map(|(index, payload)| { let mut review = native_review_for_repository(payload, &state.repository); review["id"] = json!(index + 1); review["user"]["login"] = json!(state.policy.actor); review })
                 .collect::<Vec<_>>())),
             (Method::POST, "pulls/25/reviews") => {
                 let payload: Value = serde_json::from_slice(&body).unwrap();
@@ -2100,7 +2227,7 @@ mod tests {
                     .lock()
                     .unwrap()
                     .clone()
-                    .unwrap_or_else(|| { let mut review = native_review(&payload); review["id"] = json!(state.reviews.lock().unwrap().len() + 1); review["user"]["login"] = json!(state.policy.actor); review });
+                    .unwrap_or_else(|| { let mut review = native_review_for_repository(&payload, &state.repository); review["id"] = json!(state.reviews.lock().unwrap().len() + 1); review["user"]["login"] = json!(state.policy.actor); review });
                 state.reviews.lock().unwrap().push(payload);
                 response
             }
@@ -2166,7 +2293,7 @@ mod tests {
             .with_test_installation(installation_id);
         let app = router(App {
             policy,
-            repository: repository.into(),
+            repositories: BTreeSet::from([repository.into()]),
             observed_arguments,
             enabled,
             store: Arc::new(Mutex::new(store::Store::open(":memory:").expect("store"))),
@@ -2206,7 +2333,7 @@ mod tests {
 
     #[test]
     fn exposes_four_bounded_tools_and_only_accepted_actions() {
-        let listed = tools(&[], TEST_REPOSITORY);
+        let listed = tools(&[], &BTreeSet::from([TEST_REPOSITORY.into()]));
         let names = listed
             .as_array()
             .unwrap()
@@ -2225,7 +2352,7 @@ mod tests {
         assert_eq!(
             valid_input(
                 &[],
-                TEST_REPOSITORY,
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
                 "submit_pr_review",
                 &base_args("APPROVE")
             ),
@@ -2234,7 +2361,7 @@ mod tests {
         assert_eq!(
             valid_input(
                 &[],
-                TEST_REPOSITORY,
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
                 "submit_pr_review",
                 &base_args("REQUEST_CHANGES")
             ),
@@ -2243,7 +2370,7 @@ mod tests {
         assert_eq!(
             valid_input(
                 &[],
-                TEST_REPOSITORY,
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
                 "submit_pr_review",
                 &base_args("COMMENT")
             ),
@@ -2255,13 +2382,23 @@ mod tests {
     fn connected_reviewer_shape_requires_no_unavailable_caller_metadata() {
         let missing = base_args("APPROVE");
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &missing),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &missing
+            ),
             Ok(())
         );
         let mut extra = base_args("REQUEST_CHANGES");
         extra["human_approval"] = json!(true);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &extra),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &extra
+            ),
             Err("INVALID_PAYLOAD")
         );
     }
@@ -2292,7 +2429,7 @@ mod tests {
             load_runtime_config(path.to_str().unwrap()),
             RuntimeConfig {
                 policy: test_policy(),
-                repository: TEST_REPOSITORY.into(),
+                repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
                 host: "172.18.0.1".into(),
                 port: 8787,
                 mount: "/mcp".into(),
@@ -2385,7 +2522,7 @@ mod tests {
                     github_native_authority_enabled: true,
                     ..test_policy()
                 },
-                repository: TEST_REPOSITORY.into(),
+                repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
                 host: "172.18.0.1".into(),
                 port: 18787,
                 mount: "/mcp".into(),
@@ -2472,7 +2609,12 @@ mod tests {
         let mut duplicate_heading = base_args("REQUEST_CHANGES");
         duplicate_heading["review_thread_name"] = json!(REMOVED_REVIEW_THREAD);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &duplicate_heading),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &duplicate_heading
+            ),
             Err("INVALID_PAYLOAD")
         );
     }
@@ -2485,24 +2627,44 @@ mod tests {
             .unwrap()
             .insert("extra".into(), json!(true));
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &extra),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &extra
+            ),
             Err("INVALID_PAYLOAD")
         );
         let mut finding = base_args("APPROVE");
         finding["structured_findings"] =
             json!([{"id":" ","severity":"major","title":"title","detail":"detail","evidence":[]}]);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &finding),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &finding
+            ),
             Err("INVALID_FINDINGS")
         );
         finding["structured_findings"] = json!([{"id":"F1","severity":"major","title":"e\u{301}","detail":"detail","evidence":[]}]);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &finding),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &finding
+            ),
             Err("INVALID_FINDINGS")
         );
         finding["structured_findings"] = json!([{"id":"F1","severity":"major","title":"title","detail":"detail","evidence":["bad\u{0000}"]}]);
         assert_eq!(
-            valid_input(&[], TEST_REPOSITORY, "submit_pr_review", &finding),
+            valid_input(
+                &[],
+                &BTreeSet::from([TEST_REPOSITORY.into()]),
+                "submit_pr_review",
+                &finding
+            ),
             Err("INVALID_FINDINGS")
         );
     }

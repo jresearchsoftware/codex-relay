@@ -333,7 +333,7 @@ async fn unchanged_repository_reaches_action_specific_validation_before_github()
     assert_no_publication(&state);
 }
 
-fn invalid_repositories() -> Vec<Value> {
+pub(super) fn invalid_repositories() -> Vec<Value> {
     vec![
         Value::Null,
         json!(false),
@@ -384,8 +384,8 @@ fn runtime_repository_admission_is_bounded_and_required() {
         config["repository"] = json!(repository);
         fs::write(&path, config.to_string()).unwrap();
         assert_eq!(
-            load_runtime_config(path.to_str().unwrap()).repository,
-            repository
+            load_runtime_config(path.to_str().unwrap()).repositories,
+            BTreeSet::from([repository])
         );
     }
     for repository in std::iter::once(None).chain(invalid_repositories().into_iter().map(Some)) {
@@ -504,9 +504,20 @@ async fn managed_config_instances_bind_tools_tokens_and_publications_to_their_ow
             repository: repository.to_string(),
             ..MockState::default()
         };
-        let (http, url) =
-            client_with_repository(true, None, state.clone(), &config.repository).await;
-        instances.push((config.repository, *token_repository, state, http, url));
+        let (http, url) = client_with_repository(
+            true,
+            None,
+            state.clone(),
+            config.repositories.first().unwrap(),
+        )
+        .await;
+        instances.push((
+            config.repositories.first().unwrap().clone(),
+            *token_repository,
+            state,
+            http,
+            url,
+        ));
     }
 
     // Both differently configured instances remain alive in the same test binary.
