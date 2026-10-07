@@ -139,6 +139,10 @@ published verdict grants merge, release or production authority.
 | `.github/ISSUE_TEMPLATE/` | Human bug/question paths and owner Codex task baseline |
 | `.codex/hooks/` | Optional PowerShell Core developer helpers; see the [contract and qualification](.codex/hooks/README.md) |
 
+The [VibeVM governance distribution design](docs/vibevm-governance-design.md)
+maps candidate shared context and specialist guidance while preserving Relay's
+product contracts. It is an analysis proposal; Relay has no VibeVM dependency.
+
 The Node directories form one qualified product tree, not independently
 published npm packages. `contracts/` owns the shared CR protocol; its JSON
 definition stays in `reviewer/src/` for Rust inclusion and Node reads the same
