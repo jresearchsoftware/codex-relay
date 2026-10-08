@@ -451,7 +451,7 @@ async fn typed_publisher_disabled_unknown_fields_and_writer_outcomes_fail_withou
     let mut invalid = request();
     invalid["command"] = json!("arbitrary mutation");
     assert!(crate::task_authority::valid_input(
-        TEST_REPOSITORY,
+        &BTreeSet::from([TEST_REPOSITORY.into()]),
         &json!({"repository":TEST_REPOSITORY,"record":invalid})
     )
     .is_err());
@@ -462,7 +462,7 @@ async fn typed_publisher_disabled_unknown_fields_and_writer_outcomes_fail_withou
     let _ = outcome;
     assert_eq!(
         crate::task_authority::valid_input(
-            TEST_REPOSITORY,
+            &BTreeSet::from([TEST_REPOSITORY.into()]),
             &json!({"repository":TEST_REPOSITORY,"record":record})
         ),
         Err("WRITER_OUTCOME_PUBLICATION_FORBIDDEN")

@@ -53,7 +53,7 @@ def qualify_binary(executable):
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
                    'X-OpenAI-MTLS-Verified': '1',
                    'X-OpenAI-MTLS-Client-Cert': urllib.parse.quote((root / 'leaf.pem').read_text(), safe='')}
-        for consumer in ['example', 'canary', 'inventory']:
+        for consumer, multiple in [('example', False), ('canary', False), ('inventory', False), ('example', True)]:
             c = json.loads((ROOT / f'consumer/fixtures/{consumer}.json').read_text())
             with socket.socket() as reserve:
                 reserve.bind(('127.0.0.1', 0))
@@ -63,10 +63,16 @@ def qualify_binary(executable):
                       'githubApp': c['reviewerApp'], 'validationNames': c.get('validationNames', []), 'artifact': {'commit': 'a' * 40, 'sha256': 'b' * 64},
                       'service': {'name': 'reviewer-mcp', 'bind_mode': 'a_only_loopback', 'bind_address': '127.0.0.1',
                                   'bind_network': '', 'gateway_validated': False, 'bind_port': port, 'mount_path': '/mcp'}}
-            path = root / f'{consumer}.json'
+            repositories = [c['repository']]
+            if multiple:
+                repositories.append('example-org/second-project')
+                del config['repository']
+                config['repositories'] = repositories
+            instance = f'{consumer}-multiple' if multiple else consumer
+            path = root / f'{instance}.json'
             path.write_text(json.dumps(config))
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'REVIEWER_RELAY_ENABLED': 'false',
-                   'REVIEWER_RELAY_DB': str(root / f'{consumer}.sqlite3'), 'REVIEWER_CLIENT_CA_FILE': str(root / 'ca.pem'),
+                   'REVIEWER_RELAY_DB': str(root / f'{instance}.sqlite3'), 'REVIEWER_CLIENT_CA_FILE': str(root / 'ca.pem'),
                    'GITHUB_APP_ID': c['reviewerApp']['appId'], 'GITHUB_APP_INSTALLATION_ID': c['reviewerApp']['installationId']}
             process = subprocess.Popen([str(executable), '--config', str(path)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             def rpc(method, params, supplied_headers=headers):
@@ -86,13 +92,18 @@ def qualify_binary(executable):
                 else:
                     raise RuntimeError('Reviewer fixture did not become ready')
                 for tool in listed['result']['tools']:
-                    assert tool['inputSchema']['properties']['repository']['const'] == c['repository']
+                    target_schema = tool['inputSchema']['properties']['repository']
+                    if multiple:
+                        assert target_schema == {'type': 'string', 'enum': sorted(repositories)}
+                    else:
+                        assert target_schema == {'type': 'string', 'const': c['repository']}
                 choices = listed['result']['tools'][1]['inputSchema']['properties']['change_request']['properties']['required_validation']['items']['enum']
                 assert all(name in choices for name in c.get('validationNames', []))
-                disabled = rpc('tools/call', {'name': 'submit_pr_review', 'arguments': {
-                    'repository': c['repository'], 'pr_number': 1, 'expected_head_sha': 'a' * 40,
-                    'action': 'APPROVE', 'review_body': 'Synthetic disabled-publication probe.'}})
-                assert disabled['result']['content'][0]['text'] == 'RELAY_DISABLED'
+                for repository in repositories:
+                    disabled = rpc('tools/call', {'name': 'submit_pr_review', 'arguments': {
+                        'repository': repository, 'pr_number': 1, 'expected_head_sha': 'a' * 40,
+                        'action': 'APPROVE', 'review_body': 'Synthetic disabled-publication probe.'}})
+                    assert disabled['result']['content'][0]['text'] == 'RELAY_DISABLED'
                 try:
                     rpc('tools/list', {}, {'Content-Type': 'application/json'})
                 except urllib.error.HTTPError as error:

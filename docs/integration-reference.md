@@ -195,9 +195,9 @@ that the tests themselves remained trustworthy.
 Writer installation tokens request `metadata:read`, `contents:write`,
 `issues:write`, `pull_requests:write`, `workflows:write`, restricted to the
 configured repository. Reviewer tokens request `metadata:read`, `actions:read`,
-`issues:write`, `pull_requests:write`, `checks:write`, also restricted to that
-repository. Actions read supplies supported workflow-run/check-suite/attempt
-binding, including private repositories; Checks write publishes the Reviewer
+`issues:write`, `pull_requests:write`, `checks:write`, restricted to the explicit
+configured Reviewer target for each operation. Actions read supplies supported
+workflow-run/check-suite/attempt binding, including private repositories; Checks write publishes the Reviewer
 check and supplies read access to check annotations. Issues write serves
 same-review post-CR Step-label synchronization; PR write serves native review
 publication and bounded PR-title synchronization. Metadata read qualifies
@@ -217,8 +217,10 @@ the exact permission qualification adds no Actions write authority and its
 metadata-only probe does not qualify live evidence endpoint access.
 Live App permission reconciliation and installation upgrade need separate owner
 authority; source changes and local qualification do not authorize either.
-Install separate Apps with the corresponding repository permissions; live App
-slug/ID, returned actor/check identity and configured installation IDs are bound.
+Install separate Writer and Reviewer Apps with the corresponding repository
+permissions; one Reviewer App/installation may serve multiple configured
+repositories it can access. Live App slug/ID, returned actor/check identity and
+configured installation IDs are bound.
 The Writer's workflow read token supplies its Actions reads separately; the
 Reviewer uses its own restricted installation token. Do not broaden worker
 permissions to satisfy trusted API reads.
@@ -259,10 +261,15 @@ registration and group policy while reconciling the runner's local installation.
 ## Reviewer runtime contract
 
 The [plain config](../examples/reviewer-mcp.json) is validated by the real loader.
-Required fields are `repository`, `baseBranch`, `reviewCheckName`, `writerActor`,
+Required fields are either `repository` (string) or `repositories` (nonempty
+array of strings), plus `owner`, `baseBranch`, `reviewCheckName`, `writerActor`,
 `githubApp.{slug,appId,installationId,expectedActor}`, `artifact.{commit,sha256}`,
 and `service.{name,bind_mode,bind_address,bind_network,gateway_validated,bind_port,mount_path}`.
 IDs are decimal strings. `service.name` is `reviewer-mcp`; `mount_path` is `/mcp`.
+The repository forms are mutually exclusive and normalize to a set. All other
+Reviewer settings remain shared. Each MCP tool selects an explicit member of
+the set; the [Reviewer contract](../reviewer/README.md) describes schemas and
+repository-aware operation identity.
 For `a_only_loopback`, use exactly `127.0.0.1`, empty network and `false` gateway
 validation. `private_gateway` (historical alias `nexus_gateway`) requires a
 non-loopback private IPv4 gateway, bounded network name and `gateway_validated=true`.

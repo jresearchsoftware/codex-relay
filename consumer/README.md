@@ -37,11 +37,15 @@ The privileged Writer receives its configuration path from the root-owned
 `env -i` wrapper. It verifies root ownership and non-writable ancestors before
 credential access. Request JSON cannot select configuration, executable paths,
 credentials or repository. Keep configuration outside the worker checkout and
-worker-writable directories. Never share credentials or state roots across
+worker-writable directories. Never share Writer credentials or state roots across
 consumers. Installed wrappers and sudoers must bind the same reviewed paths.
 
-Reviewer uses its deployment-owned `reviewer-mcp.json`: `repository`,
-`owner`, `baseBranch`, `reviewCheckName`, `writerActor`, and `githubApp` are required.
+Reviewer uses its deployment-owned `reviewer-mcp.json`: either `repository`
+or `repositories`, plus `owner`, `baseBranch`, `reviewCheckName`, `writerActor`,
+and `githubApp` are required. The two repository forms cannot be combined.
+All other Reviewer settings and its App/installation remain shared; each MCP
+operation selects an explicit configured repository. Consumer/Writer configuration
+remains single-repository.
 The deployment projects `owner` from the existing consumer owner; Reviewer
 requires that human owner's canonical linked Issue before Step mutation.
 Its App and installation IDs must match its credential environment; the live

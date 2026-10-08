@@ -4,7 +4,11 @@
 {% if relay_validation_names is defined %}
   "validationNames": {{ relay_validation_names | to_json }},
 {% endif %}
-  "repository": "{{ relay_github_repository }}",
+{% if relay_reviewer_repositories | length == 1 %}
+  "repository": {{ relay_reviewer_repositories[0] | to_json }},
+{% else %}
+  "repositories": {{ relay_reviewer_repositories | to_json }},
+{% endif %}
   "owner": {{ relay_owner_actor | to_json }},
   "baseBranch": {{ relay_github_base_branch | to_json }},
   "reviewCheckName": {{ relay_review_check_name | to_json }},

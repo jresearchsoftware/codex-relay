@@ -123,7 +123,7 @@ fn hash(value: &Value) -> String {
 }
 
 fn authority_binding(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     pr: &Value,
     issue: &Value,
     next: u64,
@@ -155,7 +155,7 @@ fn authority_binding(
 }
 
 fn binding(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     pr: &Value,
     issue: &Value,
     next: u64,
@@ -210,7 +210,11 @@ pub(crate) fn projection_title(issue: u64, arguments: &Value) -> Result<String, 
     ))
 }
 
-async fn state(app: &App, args: &Value, published: bool) -> Result<(Value, Value), &'static str> {
+async fn state(
+    app: &RepositoryTarget<'_>,
+    args: &Value,
+    published: bool,
+) -> Result<(Value, Value), &'static str> {
     let pr = app
         .github
         .get_pr(&app.repository, args["pr_number"].as_i64().unwrap())
@@ -262,7 +266,11 @@ fn validate_metadata(
     Ok(())
 }
 
-fn save_binding(app: &App, operation: &str, fresh: &Value) -> Result<(), &'static str> {
+fn save_binding(
+    app: &RepositoryTarget<'_>,
+    operation: &str,
+    fresh: &Value,
+) -> Result<(), &'static str> {
     let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
     let prior = store
         .step_binding(operation)
@@ -283,7 +291,11 @@ fn save_binding(app: &App, operation: &str, fresh: &Value) -> Result<(), &'stati
     Ok(())
 }
 
-pub(crate) async fn prepare(app: &App, operation: &str, args: &Value) -> Result<(), &'static str> {
+pub(crate) async fn prepare(
+    app: &RepositoryTarget<'_>,
+    operation: &str,
+    args: &Value,
+) -> Result<(), &'static str> {
     if args["action"] != "REQUEST_CHANGES" {
         return Ok(());
     }
@@ -301,7 +313,7 @@ pub(crate) async fn prepare(app: &App, operation: &str, args: &Value) -> Result<
 }
 
 async fn verified_state(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     operation: &str,
     review_id: i64,
     args: &Value,
@@ -379,7 +391,7 @@ async fn verified_state(
 }
 
 pub(crate) async fn synchronize(
-    app: &App,
+    app: &RepositoryTarget<'_>,
     operation: &str,
     review_id: i64,
     args: &Value,

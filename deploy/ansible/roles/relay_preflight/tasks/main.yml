@@ -7,7 +7,7 @@
       - "{{ lookup('file', playbook_dir + '/scripts/verify_instance_identity.py') }}"
       - '{{ relay_install_root }}'
       - '{{ relay_config_root }}'
-      - '{{ relay_github_repository }}'
+      - '{{ relay_reviewer_repositories | to_json }}'
       - '{{ relay_reviewer_user }}'
       - '{{ relay_reviewer_service_name }}'
       - '{{ relay_reviewer_recovery_service_name }}'

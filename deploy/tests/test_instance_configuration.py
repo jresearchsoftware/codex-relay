@@ -130,6 +130,7 @@ def test_actual_first_preflight_task_binds_the_installed_repository(tmp_path, in
     fixture = 'fixture-' + uuid.uuid4().hex[:12]
     values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()),
               **config.compile_inputs(inputs()), 'relay_github_repository': 'example/first',
+              'relay_reviewer_repositories': ['example/first'],
               'relay_config_root': str(config_root), 'relay_install_root': str(tmp_path / 'install'),
               'relay_reviewer_user': fixture}
     for key in list(values):

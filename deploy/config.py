@@ -81,7 +81,13 @@ def validate(c, product_root):
     e = c['environment']
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
-        ['reviewCheckName', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
+        ['reviewCheckName', 'reviewerRepositories', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
+    if 'reviewerRepositories' in e:
+        repositories = e['reviewerRepositories']
+        require(isinstance(repositories, list) and bool(repositories)
+                and all(text(v, r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}')
+                        and '--' not in v.split('/')[0] and v.split('/')[1] not in ['.', '..']
+                        for v in repositories), 'reviewerRepositories')
     for key in ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup']:
         require(text(e[key], r'[a-z][a-z0-9-]{0,30}') and e[key] != 'root', key)
     r, g = e['runner'], e['generalRunner']
@@ -237,6 +243,7 @@ def compile_inputs(c):
         'relay_tls_acme_admitted_ip': '',
         'relay_nginx_manage': False, 'relay_docker_nginx_manage': False, 'relay_docker_nginx_service_enabled': False,
         'relay_review_check_name': e.get('reviewCheckName', 'chatgpt-review'),
+        'relay_reviewer_repositories': sorted(set(e.get('reviewerRepositories', [consumer['repository']]))),
         'relay_compatibility_links': [{'alias': k, 'target': v} for k, v in e['compatibilityLinks'].items()],
     }
     tls = e.get('tls')
