@@ -50,13 +50,13 @@ rules live in the [authority](../contracts/README.md#github-native-task-authorit
    against charter, current Request and applicable Decisions/CR. Compare material
    findings with the starting/base state and retain provenance; passing checks
    alone do not establish acceptance. For a genuine PR, the independent caller
-   publishes native exact-head `APPROVE` or a typed PR Change Request. For an
+   publishes native exact-head `APPROVE` or a typed PR Change Request. For a
    Task-scoped implemented result, including no-PR work or a disposed artifact
    PR, publish Issue `task-approval` bound to the current Task Request, its Step,
    trusted Writer Outcome and identical immutable results. This does not replace
    a genuine PR's native acceptance. Issue `task-review` findings are evidence
-   for a next Task Request,
-   not an executable PR CR. Approval never advances Step or creates a PR.
+   for a next Task Request, not an executable PR CR. Approval never advances
+   Step or creates a PR.
 6. **Complete through the authorized owner channel.** After verified independent
    acceptance, owner orchestration calls the existing
    [post-review continuation helper](../contracts/README.md#authorized-continuation-after-independent-acceptance).
