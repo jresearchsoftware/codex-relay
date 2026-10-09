@@ -6,3 +6,6 @@ node_modules/
 .codex/local/
 # Per-execution worker home, caches, transport inputs and temporary test state.
 .codex-sandbox/
+# Optional VibeVM maintenance state; committed configuration stays readable offline.
+/.vibe/
+/vibevm/vibespecs/boot/.vibe-boot-artifacts.lock
