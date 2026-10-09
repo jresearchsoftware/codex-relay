@@ -8,7 +8,8 @@ optional developer hooks to propose a change.
 ## Context loading and governance layering
 
 Start owner-admitted work with only this file, the live canonical Issue or
-Change Request, the current PR when one exists, and the exact Git/check facts
+Change Request (including the current trusted Request and selected Decisions for
+a migrated Task), the current PR when one exists, and the exact Git/check facts
 needed for the current decision. The live authority identifies the active goal;
 do not preload broad repository history, status documents, component manuals or
 old task artifacts merely because they may become relevant.
@@ -83,8 +84,11 @@ explicit phase qualifier. Step is a positive, explicitly resolved value.
 For Relay admission the canonical Issue has exactly one `step-S` label;
 the existing PR must agree. Fresh work starts at `step-1`. An explicitly
 owner-authorized new implementation phase advances current S to S+1 through the
-[owner metadata procedure](contracts/README.md#owner-step-metadata-procedure).
-A new executable CR uses synchronized S+1, and the Reviewer publication operation
+[owner metadata procedure](contracts/README.md#owner-step-metadata-procedure)
+for legacy Tasks. For migrated Tasks, publish a complete trusted successor
+Request with that explicit Step; the typed publisher owns label/title projection.
+A new executable CR advances the current Request's Step by one (legacy CRs use
+the synchronized label Step), and the Reviewer publication operation
 synchronizes the Issue/PR labels and bounded PR title after native publication.
 Retrying execution or repairing publication of that same CR keeps its Step;
 approval does not increment it. Never infer Step from prose, old Outcomes,
@@ -114,13 +118,14 @@ commit and PR flow. ChatGPT/owner orchestration must not create implementation
 branches, commits or PRs unless the owner explicitly requests it. Automatic
 workers still delegate GitHub publication to trusted Writer.
 
-The canonical Issue may authorize implementation continuation on an existing
-task branch and its current PR when one exists through the explicit bindings in
+The canonical Task may authorize implementation continuation on an existing
+task branch and its current PR when one exists through a complete typed Request,
+or legacy Issue-body bindings, as described in
 the [controller contract](controller/README.md#issue-authorized-implementation-continuation).
 This preserves Issue authority and implementation identity without a Reviewer
 CR or its integration-merge permission. Retrying an unfinished phase keeps Step;
-a new owner-authorized implementation phase uses the existing N+1 metadata
-procedure. Manual handoff remains available.
+a new owner-authorized implementation phase uses the applicable successor
+Request or legacy N+1 metadata procedure. Manual handoff remains available.
 
 Before applying an existing PR's starting-head gate, read its live repository,
 branch, base and required SHA. Inspect the current checkout, worktrees, dirty
@@ -196,8 +201,11 @@ an automatic worker delegates publication to Writer.
 ## Material User/Operator Contract Change Gate
 
 Removing, replacing, renaming, disabling or materially changing an existing
-user/operator capability or workflow requires explicit authorization in the
-canonical Issue. Material surfaces include commands and entry points, required
+user/operator capability or workflow requires explicit owner authorization in
+canonical Task authority. Legacy Tasks record it in the live Issue body;
+migrated Tasks use the stable charter and applicable trusted Decision normalized
+into the next complete Request. Preserve the charter's protected boundaries and
+closure decision. Material surfaces include commands and entry points, required
 inputs, visible surfaces, actor responsibilities, automated/manual transitions,
 additional required actions, ChatGPT/GitHub paths, and material status, Outcome
 or recovery behavior. Internal refactoring with equivalent observable behavior
@@ -211,7 +219,7 @@ or test preference is not authorization for a material contract change.
 Before independent `APPROVE`, compare the material old and new behavior in every
 changed surface as well as the functional and security requirements. An
 unauthorized material delta is `OWNER_DECISION_REQUIRED` and blocks approval
-until the canonical Issue records explicit owner disposition. Never normalize
+until canonical Task authority records explicit owner disposition. Never normalize
 an implementation-originated behavior change into policy after the fact.
 
 ## Independent review and finding provenance
@@ -248,6 +256,10 @@ or schema.
 
 ## Minimum sufficient ceremony
 
+Follow the [same-Task documentation-maintenance rule](CONTRIBUTING.md#keep-workflow-documentation-current)
+when changing human-visible workflows or authority contracts. Use the existing
+Task/PR and review; do not introduce a separate documentation approval process.
+
 Before introducing or enforcing a new security, validation, privilege,
 filesystem/platform, or operator gate, read
 [proportional controls and operator usability](docs/execution-policy.md#proportional-controls-and-operator-usability).
@@ -279,7 +291,8 @@ and the progress-bounded stops above.
 An accepted reusable architecture, process, governance, security,
 qualification or operational decision from owner/ChatGPT discussion must not
 remain chat-only. Before the next related execution, carry a decision that
-changes executable authority into the live Issue/CR; promote an independently
+changes executable authority into the live legacy Issue/CR or a trusted Decision
+and complete successor Request for a migrated Task; promote an independently
 reusable rule through the next suitable authorized bounded Task/CR into its
 existing policy, architecture, runbook or component contract. If it is not
 durable policy, classify it explicitly as task-local, temporary, experimental

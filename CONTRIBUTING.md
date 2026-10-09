@@ -12,6 +12,19 @@ documentation corrections only need relevant consistency checks. The maintainer
 reviews scope and trust boundaries before merge. `AGENTS.md` and `.codex/hooks/`
 describe the owner's optional Codex workflow, not human contribution gates.
 
+## Keep workflow documentation current
+
+A Task that changes an operator/user-visible Relay workflow or its Task Request,
+Decision, CR, Step, Outcome, admission, review or continuation contract must
+update the relevant human documentation and examples in the same Task and PR,
+or explicitly explain in that Task/PR why no documentation change is needed.
+This includes remediation that changes those surfaces. Check instructions and
+examples against the implemented behavior and governing component contracts;
+keep consumer policy distinct from Relay protocol and qualify legacy behavior.
+Use the existing PR description and review process, without a separate
+documentation approval, CI gate or policy registry. Start the owner workflow at
+the [Task workflow guide](docs/task-workflow.md).
+
 ## Execution environment and shell routing
 
 Use syntax native to the environment where the command actually executes. Prefer
@@ -55,6 +68,7 @@ for the Linux filesystem/security tests; use a native Linux checkout.
 
 ```sh
 npm test
+python3 -m pytest -q deploy/tests deploy/ansible/tests
 cargo fmt --manifest-path reviewer/Cargo.toml --check
 cargo test --manifest-path reviewer/Cargo.toml --locked
 python3 scripts/qualify.py
@@ -68,8 +82,11 @@ credential markers; it does not certify absence of private knowledge or secrets.
 Qualification uses temporary fixtures/keys and loopback mock GitHub; Cargo can
 download locked build dependencies. No model calls or live GitHub writes occur.
 
-The [Public CI workflow](.github/workflows/relay-exact-head-validation.yml) runs these same candidate
-commands for pull requests targeting `main` and pushes to `main`. Its stable
+The [Public CI workflow](.github/workflows/relay-exact-head-validation.yml) runs the Node,
+Cargo, qualification, candidate-scan and whitespace commands above for pull
+requests targeting `main` and pushes to `main`. The complete deployment pytest
+suite remains separate. The candidate job also runs the root synthetic sandbox
+cleanup qualification on its disposable hosted runner. Its stable
 check name is `Candidate checks`. PR runs check out the exact PR head; push runs
 check out the pushed commit. The whitespace step also checks the committed diff
 against the PR base or the previous `main` head.
@@ -103,7 +120,7 @@ node --import ./consumer/test-support/consumer-env.mjs --test consumer/test/secu
 | --- | --- |
 | Routing, publication, recovery | `controller/README.md`, controller tests |
 | Launcher/results/isolation | `runtime/README.md`, runtime and security-contract tests |
-| CR wire or validation policy | `contracts/README.md`, Node CR tests, Reviewer tests and `scripts/qualify.py` |
+| Task/Decision/CR authority or validation policy | `contracts/README.md`, Node authority/CR tests, Reviewer tests and `scripts/qualify.py` |
 | Reviewer config/transport/publication | `reviewer/README.md`, Cargo fmt/tests and qualification |
 | Consumer config/examples/docs | `consumer/README.md`, portability tests, qualification, candidate scan |
 | Optional developer hooks | Only for hook changes: suites in the [hook qualification contract](.codex/hooks/README.md#qualification) |

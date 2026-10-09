@@ -3,7 +3,7 @@
 Codex Relay coordinates owner-authorized Codex work and independent review
 through GitHub Issues and pull requests. It turns an admitted task or native
 Change Request into an isolated implementation run, preserves useful commits,
-and returns an exact PR head for review and a human merge decision.
+and returns an exact result for independent review and authorized completion.
 
 It addresses the handoff between coding agents, reviewers and repository
 owners: what may run, which commit was reviewed, what work survived a failure,
@@ -11,8 +11,8 @@ and whether publication actually happened. GitHub is the durable authority;
 Relay supplies execution and publication mechanics.
 
 It is for a **single human owner of a GitHub repository** who wants explicitly
-launched Codex implementation, an external ChatGPT review conversation, and a
-human merge decision. The owner chooses scope and launches work; the Codex
+launched Codex implementation, an external ChatGPT review conversation, and an
+owner-governed merge decision. The owner chooses scope and launches work; the Codex
 worker implements it; the Writer GitHub App publishes validated commits.
 The external reviewer reads the diff and authors findings. The Rust **Reviewer
 publication service** validates and publishes the supplied verdict or Change
@@ -26,13 +26,13 @@ arbitrary MCP clients are not supported.
 
 ```mermaid
 flowchart LR
-    A[Owner admits Issue or Change Request] --> B[Trusted routing and Writer admission]
+    A[Owner charter and trusted Request or PR Change Request] --> B[Trusted routing and Writer admission]
     B --> C[Isolated Codex worker]
     C --> D[Writer validates and publishes commits]
     D --> R[External ChatGPT review and caller]
     R --> E[Rust Reviewer validates and publishes verdict]
     D --> V[Consumer exact-head validation]
-    E --> F[Human merge decision]
+    E --> F[Authorized owner continuation]
     V --> F
     E --> G[Change Request]
     G --> A
@@ -115,9 +115,11 @@ needed to contribute. [SECURITY](SECURITY.md) explains reporting boundaries.
    Supply consumer configuration, trusted workflows, target properties and separate
    Writer/Reviewer App references. Relay installs the isolated runtime, fixed
    wrappers and services. Qualify the installed system before enabling launch commands.
-4. Use the [routing and recovery contract](controller/README.md) for admission,
-   the [Change Request contract](contracts/README.md) for remediation, and the
-   [Reviewer service contract](reviewer/README.md) for exact-head verdicts.
+4. Follow the [Task workflow guide](docs/task-workflow.md) for the current
+   charter → trusted Request → Outcome → independent review → completion path,
+   including Decisions, PR remediation and supported legacy compatibility.
+   The [authority](contracts/README.md), [routing](controller/README.md) and
+   [Reviewer](reviewer/README.md) contracts retain the detailed rules.
 
 Local contract qualification exercises product code against controlled fixtures.
 Deployment validation must separately prove installed identity, isolation,
@@ -130,7 +132,7 @@ published verdict grants merge, release or production authority.
 | --- | --- |
 | `controller/` | Owner launch routing, attempt journal, trusted Git import, Writer admission/publication/recovery |
 | `runtime/` | Governed Codex execution, Issue parsing and semantic worker results |
-| `contracts/` | Native executable Change Requests, owner continuation Step preparation and secret scan |
+| `contracts/` | Typed Task/Decision/CR authority, legacy CR compatibility, governed post-review continuation and secret scan |
 | `consumer/` | Explicit validated consumer configuration and portability fixtures |
 | `reviewer/` | Rust MCP service, exact-head review/check publication and durable deduplication |
 | `scripts/` | Credential-free local qualification and candidate checks |
@@ -144,6 +146,8 @@ maps candidate shared context and specialist guidance while preserving Relay's
 product contracts. It is an analysis proposal; Relay has no VibeVM dependency.
 
 The Node directories form one qualified product tree, not independently
-published npm packages. `contracts/` owns the shared CR protocol; its JSON
-definition stays in `reviewer/src/` for Rust inclusion and Node reads the same
-file. Cross-directory imports are intentional; ship and qualify the whole tree.
+published npm packages. `contracts/` owns the shared authority protocols. The
+legacy CR2 JSON definition stays in `reviewer/src/` for Rust inclusion; the
+schema-v3 definition is in `contracts/src/`. Rust and Node use the same
+respective definitions. Cross-directory imports are intentional; ship and
+qualify the whole tree.

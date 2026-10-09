@@ -19,7 +19,8 @@ It generates temporary client certificates, config and SQLite state and exercise
 the real binary with publication disabled, plus enabled mock-GitHub handlers.
 An installed service is invoked as `reviewer-mcp-http --config /absolute/reviewer-mcp.json`
 only after the consumer has supplied and qualified all required environment and
-ingress. No public release artifact or supported installer exists yet.
+ingress. The source-controlled [deployment interface](../deploy/README.md)
+installs and qualifies the service; no public release artifact exists yet.
 
 Environment: `REVIEWER_MCP_CONFIG` (CLI alternative), `REVIEWER_CLIENT_CA_FILE`,
 `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY_FILE`,
@@ -35,13 +36,21 @@ owns TLS termination; the service also verifies the forwarded client certificate
 Do not bind this binary publicly.
 
 `publish_task_authority` implements the opted-in
-[`github-native-v1` authority contract](../contracts/README.md). Its input is
+[`github-native-v1` authority contract](../contracts/README.md#github-native-task-authority). Its input is
 `repository` and one structured `record`: Decision, Task Request, PR-only Change
 Request, Task review evidence, or Task Approval. The publisher uses the shared
 version `3.0` schema and canonical `relay-authority` envelope; callers cannot
 choose an API path, credential, native author, arbitrary GitHub body, labels or
 PR title. Writer Outcomes remain a separate trusted Writer responsibility and
 this tool rejects their publication.
+
+See the [Task workflow guide](../docs/task-workflow.md) and
+[complete synthetic authoring examples](../examples/task-authority.md). Publish
+typed PR remediation through `publish_task_authority` with a `change-request`
+record; legacy `submit_pr_review` uses its CR2 `change_request` input instead.
+Native exact-head PR `APPROVE` continues through `submit_pr_review` in either
+model. Task Approval and Task review findings use typed Issue records and do
+not substitute for a genuine PR verdict.
 
 Typed publication requires both the enabled publication mode and runtime
 `githubNativeAuthorityEnabled: true`; the latter defaults to false for existing

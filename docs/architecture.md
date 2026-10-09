@@ -16,8 +16,9 @@ native identity, publisher Bot identity, version, target binding, verified
 source references and explicit linear supersession. Selected ordinary comments
 are contextual evidence. The controller resolves records deterministically and
 never asks the worker to reconstruct authority from discussion history.
-Legacy Tasks retain the flow below until they finish or cross that explicit
+Unmarked Tasks retain legacy Issue/CR parsing until they cross that explicit
 migration boundary. The two authority parsers cannot govern the same launch.
+The [Task workflow guide](task-workflow.md) explains the current human path.
 
 | Component | Owns | Does not own |
 | --- | --- | --- |
@@ -26,19 +27,22 @@ migration boundary. The two authority parsers cannot govern the same launch.
 | Lifecycle admission | Durable automatic admission gate and full controller drain under the Writer lock | Task authority, new executions, deployment acceptance or implicit resume |
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
 | Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR execution Draft/Ready lifecycle and Outcome | Worker execution lifecycle or Reviewer verdicts |
-| External ChatGPT review/caller | Reads the diff, authors substantive verdict/findings and supplies structured CR | Writer implementation identity or automatic launch authority |
+| External ChatGPT review/caller | Reads the diff/result, authors substantive verdict/findings and supplies structured authority records | Writer implementation identity or automatic launch authority |
 | Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, native review/check publication, same-review Step-label/title synchronization and duplicate recovery | Substantive review authorship, implementation, launch commands, owner new-phase choice or merge |
 
 The owner applies `codex-ready-auto` or `codex-ready-manual` to a canonical
 Issue or remediation PR. The trusted workflow uses the configured base branch,
 not PR-controlled code. Writer checks native owner/event/run identity, Task/Step,
-current Issue or decisive native Change Request and exact starting head/base.
+current typed Request or legacy Issue/decisive native Change Request and exact
+starting head/base.
 It consumes the ready event after reservation. `step-N` is persistent display
 and authority-binding metadata, never permission to execute on its own.
 New executable CR publication synchronizes Issue/PR Step and bounded Task/Step/CR-ID PR title
 inside the Reviewer operation; retry/repair retains the same native review ID
-and authored Step. Explicit owner new-phase preparation advances current N to
-N+1 independently of CR publication. Same-phase execution retries preserve N.
+and authored Step. For migrated Tasks, an explicit successor Request advances
+a new phase from N to N+1 and the typed publisher projects it. Legacy owner
+new-phase preparation retains its separate N+1 procedure. Same-phase execution
+retries preserve N.
 The native review body remains sole CR authority, linked to the canonical Issue
 for Task identity; no Step history or competing normal post-CR owner writer is introduced.
 A legacy published record lacking its pre-publication Step anchor stops with
@@ -46,15 +50,17 @@ A legacy published record lacking its pre-publication Step anchor stops with
 Explicit bounded owner migration repair preserves that review ID and Step before
 replay of the original Reviewer payload; it does not launch execution.
 
-An Issue can explicitly authorize implementation continuation from an existing
-task branch at one exact starting head, binding its current PR when one exists
+A complete migrated Task Request, or legacy Issue-body fields, can explicitly
+authorize implementation continuation from an existing task branch at one exact
+starting head, binding its current PR when one exists
 under the [controller contract](../controller/README.md#issue-authorized-implementation-continuation).
 Admission checks the live branch ref and unique open PR, including repository,
 base, Task, Step and title bindings, and pins the admitted PR number. This remains
 Issue implementation with the Writer identity; it requires no Reviewer CR and
 grants no remediation integration merge. Same-phase retries keep Step; a new
-owner-authorized phase uses the existing N+1 procedure. Fresh Issue defaults and
-manual handoff remain available, using existing attempt records and services.
+owner-authorized phase uses a successor Request or legacy N+1 procedure.
+Legacy fresh Issue defaults and manual handoff remain available, using existing
+attempt records and services.
 Writer requires the admitted starting head, or its own later published head, as
 the exact previous remote ref and reobserves it before continuation's non-force
 push. Ref observations and the push do not provide atomic compare-and-swap against

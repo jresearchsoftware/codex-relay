@@ -6,6 +6,8 @@ workflow. Read the [architecture](architecture.md) and start with the plain
 [consumer](../consumer/fixtures/example.json), [Reviewer](../examples/reviewer-mcp.json)
 and [diagnostics](../examples/diagnostics.json) examples. All example identities,
 paths and artifact hashes are synthetic; replace and independently qualify them.
+For day-to-day typed Task/Decision/CR usage, start with the
+[Task workflow guide](task-workflow.md) and [authoring examples](../examples/task-authority.md).
 
 Use the [deployment interface](../deploy/README.md) to select, acquire,
 install and verify the complete product tree. Relay binds the entrypoints
@@ -22,7 +24,7 @@ state, Reviewer build outputs and activation in separate protected paths.
 | Consumer's `paths.launcher` | Dispatcher via `/usr/bin/sudo -n -u <runtimeUser>` | Fixed executable; translates the launcher ABI below to its governed Codex installation; worker has no Writer/Reviewer authority |
 | `controller/src/diagnostic-store.mjs` | Fixed `paths.diagnosticsStore` wrapper, protected diagnostics identity | Stdin bounded diagnostic JSON (16 MiB); stdout store receipt, stderr failure JSON; `--check-runtime` probes loading only |
 | `controller/src/recover-attempt-publication.mjs` | Separately owner-authorized recovery workflow/operator | No argv; stdin `{operation:"inspect",runId,attemptId}` or `{runId,attemptId,authorizationId}`; stdout result/stderr failure; never starts Codex |
-| `contracts/src/step-synchronization.mjs` | Ordinary authenticated owner client | Stdin `{operation:"prepare",pullRequest}`, `{operation:"advance-phase",issueNumber,currentStep,newPhaseAuthorized:true,pullRequest?,purpose?}`, `{operation:"keep-step",issueNumber,currentStep,pullRequest?}` or explicitly authorized legacy `{operation:"recover-legacy-review",pullRequest,reviewId,legacyPublicationRecoveryAuthorized:true}`; strict bounded fields, stdout JSON/stderr bounded failure; owner new-phase preparation or bounded legacy migration reconciliation only |
+| `contracts/src/step-synchronization.mjs` | Ordinary authenticated owner client, legacy Tasks only | Stdin `{operation:"prepare",pullRequest}`, `{operation:"advance-phase",issueNumber,currentStep,newPhaseAuthorized:true,pullRequest?,purpose?}`, `{operation:"keep-step",issueNumber,currentStep,pullRequest?}` or explicitly authorized legacy `{operation:"recover-legacy-review",pullRequest,reviewId,legacyPublicationRecoveryAuthorized:true}`; strict bounded fields, stdout JSON/stderr bounded failure; owner new-phase preparation or bounded legacy migration reconciliation only |
 | `reviewer-mcp-http` (`reviewer/src/main.rs`) | Dedicated Reviewer service identity behind trusted mTLS terminator | `--config /absolute/reviewer-mcp.json` (or `REVIEWER_MCP_CONFIG`); HTTP JSON-RPC on `/mcp`; startup logs expose effective publication mode |
 
 `runtime/src/controller.mjs` is an Issue execution library entry, not another
@@ -44,7 +46,7 @@ per process; its digest binds an attempt. Request JSON cannot select paths.
 | `attemptRoot` | Runner attempt journals, outside worker-writable state |
 | `dispatch` | Fixed wrapper for `controller/src/codex-dispatch.mjs`; recreates its trusted config/PATH |
 | `writerHelper` | Fixed root wrapper for `controller/src/privileged-writer-helper.mjs`; holds the per-consumer serialization lock |
-| `launcher` | Consumer-provided governed Codex launcher; no implementation is shipped here |
+| `launcher` | Governed Codex launcher; the [deployment interface](../deploy/README.md) supplies its implementation, while consumer configuration binds the reviewed path and owner-provided authentication |
 | `diagnosticsConfig` | Deployment-owned diagnostics JSON described below |
 | `diagnosticsStore` | Fixed wrapper for `controller/src/diagnostic-store.mjs`; recreates trusted config/PATH |
 | `diagnosticsRoot` | Protected diagnostic bundles; never worker/PR publication input |
@@ -183,6 +185,9 @@ applicable. Formats are implemented in
 or Step from an arbitrary title. Ready labels are owner launch commands;
 `step-N` alone grants no execution. Consumer workflow concurrency and the
 root Writer lock serialize overlapping attempts. A rerun is not fresh authority.
+For migrated Tasks, these labels/titles are projections of the current trusted
+Request. Dispatch inputs and ready labels must match that Request's explicit
+Step and route; legacy owner Step helpers cannot change typed projections.
 
 The validation workflow must check the **candidate head SHA**, not silently a
 synthetic merge or moving branch, and implement the applicable declared checks.
@@ -348,6 +353,11 @@ Operators must review publication content and configure consumer-specific contro
 where these marker classes are insufficient; scan failures never print key bytes.
 
 ## Annotated synthetic scenario
+
+This scenario exercises the supported **legacy** Issue/CR2 path. An unmarked
+Issue remains legacy; it is not the modern typed authoring example. See the
+[current workflow](task-workflow.md) and [schema-v3 examples](../examples/task-authority.md)
+for a stable charter, complete Request, Decision and typed PR CR.
 
 1. The example owner admits Issue 24 at exact base A, with `step-1`, a resolved
    profile and allowed scope. A trusted routing run named
