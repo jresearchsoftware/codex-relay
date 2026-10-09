@@ -1,11 +1,19 @@
-# Native Change Request authority
+# Task and Change Request authority
+
+Start with the [Task workflow guide](../docs/task-workflow.md) for the human
+path and [typed examples](../examples/task-authority.md) for schema-v3 authoring.
+[GitHub-native Task authority](#github-native-task-authority) governs explicitly
+migrated Tasks. The CR2 and owner metadata procedures below describe supported
+legacy compatibility; they do not provide another execution path for a migrated
+Task.
 
 Native Reviewer identity/head selection and common attempt orchestration live in
-`../controller/src`. This directory retains CR parsing and the repository secret
-scanner. Native review content is authority; incidental Markdown and thread-title
+`../controller/src`. This directory owns shared Task/Decision/CR validation,
+post-review continuation and the repository secret scanner. Native review content
+is authority; incidental Markdown and thread-title
 dash style do not define a security boundary. Execution state and Outcome publication belong to the controller. Run `npm test`.
 
-Executable `REQUEST_CHANGES` uses contract `2.0`. The Reviewer caller sends
+Legacy executable `REQUEST_CHANGES` uses contract `2.0`. The Reviewer caller sends
 `change_request` as structured tool input; repository, PR and reviewed/starting
 head come from the trusted top-level target fields. Reviewer validates the
 complete input before any GitHub request and renders both the readable native
@@ -28,8 +36,8 @@ downstream validation and worker launch preserve it, including explicit override
 Existing rendered reviews keep their explicit values; the historical fixture
 still tests its intentional overrides. Authoring defaults affect unresolved
 fields only. Use the paired Reviewer/Node revision for the new optional fields.
-Step is a positive safe integer matching the current remediation launch profile
-and persistent Issue/PR labels. A new CR uses current N+1; execution and CR
+For legacy CRs, Step is a positive safe integer matching the current remediation
+launch profile and persistent Issue/PR labels. A new CR uses current N+1; execution and CR
 transport retries keep that CR's Step. History never supplies Step.
 Model and effort remain bounded argument identifiers with backend capability
 truth. Subagents permission is separate. There is no task path allowlist or
@@ -70,7 +78,8 @@ pretend that local tests satisfy an installed-runtime proof.
 The consumer checks the canonical JSON encoding, including duplicate keys,
 version and target binding, and reads findings and validation directly from it.
 Existing `1.0` YAML/native reviews remain readable through the historical parser;
-the current Reviewer publishes only `2.0` executable CRs. Unknown versions,
+the current legacy Reviewer path publishes only `2.0` executable CRs. Migrated
+Tasks instead use schema-v3 typed native reviews. Unknown versions,
 multiple execution blocks and mixtures of old/new contracts fail closed.
 
 The [semantic input fixture](test/fixtures/executable-cr-v2-input.json) and
@@ -89,10 +98,17 @@ Steps decompose progress toward the Task's authorized goal and boundaries as
 work evolves; completing a Step does not complete the Task. One Codex thread
 may span successive Steps. Historical Task descriptions do not govern future
 Step decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename).
-The Issue body remains the current Task contract; the native review body is the
-sole executable CR authority, with the canonical Issue linked for Task identity.
+For legacy Tasks, the Issue body remains the current Task contract; the native
+review body is the sole executable CR authority, with the canonical Issue linked
+for Task identity.
 Implementation branch, commit and PR flow remains Codex-owned under
 [the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
+
+Owner `advance-phase` and `keep-step` procedures in this section are for legacy
+Tasks. A migrated Task resolves Step from its complete trusted Request and
+advances through an explicit successor Request. The typed publisher projects
+labels and the existing PR title; legacy owner helpers reject migrated Tasks.
+Both authority models retain same-CR publication recovery without an increment.
 
 Task producers and updates preserve exactly one explicit `Issue closure policy`
 field in the canonical Issue: `keep-open`, or `close-authorized` only with owner
@@ -325,7 +341,8 @@ Task continuation. A disposed or unrelated PR Decision remains evidence unless
 an explicit Task-scoped Decision accepts its Task amendment. Publisher and
 controller adapters verify the native PR belongs to the canonical Task.
 
-Closure stays in the charter. A Request must preserve its current effective
+Closure stays in the charter. A Decision's closure amendment cannot independently
+override that charter decision; the next Request must preserve its current effective
 `Issue closure policy`; it cannot independently expand closure authority.
 Missing, malformed or conflicting closure metadata remains `keep-open` with a
 visible warning. Task Approval, native PR acceptance, Step completion and an

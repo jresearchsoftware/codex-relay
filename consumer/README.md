@@ -29,6 +29,9 @@ With no explicit consumer effort override, the shared execution resolver uses
 the schema representation of [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal).
 Omitted Subagents uses that same resolver. Explicit Task/CR values take priority.
 The ordinary project profile is `gpt-6.1-sol` / `xhigh` / Subagents `On`.
+This is Relay repository development policy, not a mandatory profile for every
+consumer. Schema-v3 Requests contain the complete already-resolved profile;
+legacy authoring defaults do not fill missing typed Request fields.
 Consumer configuration still supplies the required model; the deployment
 example and backend default use this project model. Explicit consumer profiles
 and their digests are preserved, as are explicit live Task/CR overrides.
@@ -65,6 +68,12 @@ terminal status values are protocol vocabulary. The historical
 `jresearchsoftware-reviewer-relay:v1` comment marker is a retained wire namespace
 for duplicate recovery; it grants no organization or App authority. The local
 `refs/remotes/main` import ref is a private alias for the configured base SHA.
+
+On explicitly migrated Tasks, Step labels are projections of the current
+trusted Request, and the stable Issue charter replaces mutable body execution
+fields. Use the [Task workflow guide](../docs/task-workflow.md) and
+[authority/migration contract](../contracts/README.md#github-native-task-authority)
+before opting in; a config example or typed comment alone does not migrate a Task.
 
 Consumers own runner labels/groups, effective model policy and deployment
 decisions. Relay owns the canonical routing/recovery workflow templates and

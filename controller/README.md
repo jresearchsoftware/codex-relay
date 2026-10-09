@@ -2,19 +2,29 @@
 
 Load an explicit [consumer configuration](../consumer/README.md) before execution.
 
+For the ordinary human path, see the [Task workflow guide](../docs/task-workflow.md).
+A Task marked `Authority model: github-native-v1` executes the complete current
+trusted Task Request or native Change Request, with its explicit Step, route,
+profile, scope and starting facts. Issue bodies are stable charters; labels and
+titles are verified projections. Unmarked Tasks retain legacy Issue/CR parsing.
+Use the [authority contract](../contracts/README.md#github-native-task-authority)
+for migration, trust, supersession and selected context.
+
 The owner launches fresh Issue work, explicitly authorized Issue implementation
 continuation or applicable PR remediation by applying
 `codex-ready-auto`; `codex-ready-manual` produces the existing copyable manual
 handoff. These are first-class native commands. No Actions UI, dispatch inputs,
 comment command or additional launch form is required. Owner `workflow_dispatch`
 on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
-`pull_request`; those inputs must match current metadata and applicable Issue/CR authority.
+`pull_request`; those inputs must match current metadata and the selected typed
+Request or legacy Issue/CR authority. Labels do not select a different route
+from a migrated Request's `route`.
 
 The canonical Issue retains exactly one `step-N` label throughout its lifetime.
-Fresh work uses `step-1`; explicit owner new-phase preparation advances current
-N to N+1 for a reopened or split continuation. Same-phase retry explicitly keeps
-Step. Writer copies the Issue Step to
-its created PR, without incrementing or removing the Issue label. Step alone
+Fresh work uses `step-1`; a migrated successor Request explicitly advances N to
+N+1 for a new phase. Legacy Tasks use owner new-phase metadata preparation.
+Same-phase retry explicitly keeps Step. Writer copies the Issue Step to its
+created PR, without incrementing or removing the Issue label. Step alone
 never launches work and grants no authority. Missing, multiple, malformed or
 mismatched labels block new admission. The `step` label namespace is reserved.
 
@@ -39,14 +49,16 @@ transition, authored by the owner, no more than two minutes before native run
 creation, and after completion of any preceding admitted run for this task.
 Stale commands and prewritten retries fail closed; no retry queue is created.
 
-A new executable `REQUEST_CHANGES` carries N+1 from the current synchronized
-Issue/PR labels. After successful native publication, the same Reviewer operation
+A new typed executable `REQUEST_CHANGES` carries the current Request's Step + 1;
+a legacy CR uses N+1 from synchronized Issue/PR labels. After successful native
+publication, the same Reviewer operation
 synchronizes both labels and the existing bounded PR Task/Step/CR-ID title via the
 [metadata procedure](../contracts/README.md#owner-step-metadata-procedure).
 The Reviewer App owns verdict publication and that bounded post-CR projection.
 Repeating publication or metadata repair retains the same native review ID and
 authored Step; ordinary owner orchestration no longer writes post-CR metadata.
-Explicit owner preparation is limited to a newly authorized implementation phase.
+Legacy owner preparation is limited to a newly authorized implementation phase;
+the typed publisher owns migrated successor Request projections.
 Execution retries keep Step;
 `APPROVE` does not increment it. New remediation must match the current CR's
 required launch profile; Step display metadata never replaces that authority.
@@ -71,9 +83,11 @@ the pre-start name.
 This uses GitHub's native [run-name contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#run-name)
 and [label projection/join expressions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#join).
 
-Fresh Issues use the exact configured base at admission and `<taskBranchPrefix>task-<issue-number>`
+Legacy fresh Issues use the exact configured base at admission and `<taskBranchPrefix>task-<issue-number>`
 when base/branch fields are omitted, without warnings. A malformed or conflicting
 explicit base blocks; the admitted exact base cannot move during execution.
+Typed repository Requests include explicit `base_sha`, `starting_head` and
+`branch`; admission does not fill these fields from old Issue-body prose.
 The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
 

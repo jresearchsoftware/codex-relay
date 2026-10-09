@@ -1,5 +1,9 @@
 # Consumer configuration examples
 
+For human Task usage rather than configuration, see the
+[Task workflow guide](../docs/task-workflow.md) and
+[typed Request, Decision and PR remediation examples](task-authority.md).
+
 The [example](../consumer/fixtures/example.json) and
 [canary](../consumer/fixtures/canary.json) and
 [inventory API](../consumer/fixtures/inventory.json) consumers use synthetic repositories,
@@ -16,6 +20,9 @@ shape-valid metadata, not proof of a running binary; replace them with
 operator-recorded evidence. There is no `mutation` field: only exact
 `REVIEWER_RELAY_ENABLED=true` enables publication. See the
 [complete ABI and environment](../docs/integration-reference.md).
+Typed authority additionally requires `githubNativeAuthorityEnabled: true` in a
+qualified paired installation. Existing configs default it to false; the plain
+config is not permission to migrate an Issue or publish typed records.
 
 [consumer.json.j2](ansible/consumer.json.j2) and
 [reviewer-mcp.json.j2](ansible/reviewer-mcp.json.j2) show rendering boundaries for

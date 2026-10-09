@@ -5,6 +5,12 @@ orchestration. This component provides the governed Codex runtime, semantic
 result schema, Issue parser and a small adapter for isolated runtime probes.
 Run `npm test` here for the runtime contract tests.
 
+The body-field Issue parser is the legacy authority path. Migrated Tasks receive
+the complete trusted schema-v3 Request and explicitly selected evidence from
+the controller; the worker does not rebuild authority from Issue discussion.
+See the [Task workflow guide](../docs/task-workflow.md) and
+[authority contract](../contracts/README.md#github-native-task-authority).
+
 The [governed CLI integration](../docs/codex/cli-integration.md) records the exact
 0.160.0 baseline, native event/usage semantics, compatibility decisions and
 qualification limits.

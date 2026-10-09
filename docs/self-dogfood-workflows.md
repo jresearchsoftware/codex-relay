@@ -15,6 +15,12 @@ that product. The installed release must provide the matching workflow contract
 before dispatch. The owner lifecycle workflow supplies explicit apply, stop or
 resume authority; merely publishing its projection grants none of those actions.
 
+Projection schema 2 is separate from schema-v3 Task authority. Migrated Tasks
+require the paired `relay-workflows-v2` installation; labels and PR titles are
+projections of their trusted Request, not Issue-body execution instructions.
+See the [Task workflow guide](task-workflow.md) for usage and the
+[migration contract](../contracts/README.md#github-native-task-authority) for cutover.
+
 | Configured path | Execution boundary |
 | --- | --- |
 | [Routing](../.github/workflows/codex-relay-routing.yml) | Owner ready-label commands and optional owner dispatch on `main`; installed controller and fixed Writer/worker helpers |
