@@ -2,6 +2,11 @@
 
 Task 59, Step 1 analysis, 2026-10-07.
 
+The later [dependency-free project preparation](vibevm.md) under Task #97
+implements only Phase 1 initialization. This design remains historical analysis
+for the separately admitted package-adoption experiment; its illustrative
+coordinates and loading proposals are not current consumer dependencies.
+
 **Recommendation: CONTINUE_EXPERIMENT.** Test passive, independently versioned
 governance flows and Landscape's subagent guidance against Git vendoring plus
 native Codex skills. VibeVM has relevant distribution primitives, but neither

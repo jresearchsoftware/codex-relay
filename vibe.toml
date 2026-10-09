@@ -1,0 +1,5 @@
+# Optional maintenance-time consumer; no package requirements or runtime tooling.
+[project]
+name = "codex-relay"
+version = "0.0.0"
+spec_format = "mixed"
