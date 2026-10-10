@@ -2,8 +2,8 @@
 
 Task 59, Step 1 analysis, 2026-10-07.
 
-The later [dependency-free project preparation](vibevm.md) under Task #97
-implements only Phase 1 initialization. This design remains historical analysis
+The later [dependency-free project and bounded native routing](vibevm.md) under
+Tasks #97 and #99 adopt no shared package. This design remains historical analysis
 for the separately admitted package-adoption experiment; its illustrative
 coordinates and loading proposals are not current consumer dependencies.
 

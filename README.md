@@ -143,8 +143,9 @@ published verdict grants merge, release or production authority.
 
 The [VibeVM governance distribution design](docs/vibevm-governance-design.md)
 maps candidate shared context and specialist guidance while preserving Relay's
-product contracts. Relay's [optional initialized project](docs/vibevm.md) has
-no package dependencies and adds no VibeVM requirement to ordinary execution.
+product contracts. Relay's [bounded native routing](docs/vibevm.md) uses generated
+agent redirects and two short authored boot files, with no package dependencies
+or VibeVM executable requirement for ordinary execution.
 Package adoption remains a separately authorized experiment.
 
 The Node directories form one qualified product tree, not independently

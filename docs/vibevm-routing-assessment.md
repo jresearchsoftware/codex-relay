@@ -1,7 +1,10 @@
 # VibeVM 1.0.7 native routing assessment
 
 Task [#99](https://github.com/jresearchsoftware/codex-relay/issues/99), Step 1.
-Investigation and disposable qualification only; **no integration is activated**.
+Historical investigation and disposable qualification only; Step 1 activated no
+integration. The separately authorized Step 2 implements
+[bounded native route C](vibevm.md). Comparisons and recommendations below record
+the Step 1 baseline, not the later active source configuration.
 Relay comparison baseline: `af3915d68ff70c9df04db2e610983f79d9597c73`.
 The Issue remains open for owner architecture disposition, independent review,
 and any separately authorized successor Request.
@@ -67,8 +70,9 @@ python3 scripts/qualify-vibevm.py --vibe /absolute/disposable/path/vibe
 python3 scripts/qualify-vibevm-routing.py --vibe /absolute/disposable/path/vibe
 ```
 
-Both scripts recheck the digest. The [existing scaffold probe](../scripts/qualify-vibevm.py)
-qualifies route B on a tracked-file copy and preserves all human agent overlays.
+Both scripts recheck the digest. The [project probe](../scripts/qualify-vibevm.py)
+qualified route B at Step 1; Step 2 updates it to qualify the actual bounded
+route and human agent overlays.
 The [new routing probe](../scripts/qualify-vibevm-routing.py) exercises stock and
 bounded native routes, emits command results and factual inventories as JSON,
 and removes its temporary projects. It does not download anything or become a

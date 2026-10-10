@@ -10,3 +10,11 @@
 # system is <name> (windows / macos / linux), and skip it otherwise.
 
 schema = 1
+
+[[entry]]
+path = "vibevm/vibespecs/boot/00-core.md"
+kind = "static"
+
+[[entry]]
+path = "vibevm/vibespecs/boot/90-user.md"
+kind = "static"
