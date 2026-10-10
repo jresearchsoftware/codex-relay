@@ -1,6 +1,8 @@
 # VibeVM methodology compared with Relay
 
-Task [#102](https://github.com/jresearchsoftware/codex-relay/issues/102), Step 1.
+Task [#102](https://github.com/jresearchsoftware/codex-relay/issues/102), Step 2,
+CR-102-001; remediation of research gaps F-104-01 and F-104-02 in the reviewed
+Step 1 candidate `09f87c3ebf8462dd6a09a86ca5abe2b19d796439`.
 Research against Relay `4f0e0e38980854fcb09dc718841ade3102a8108f` and VibeVM
 1.0.7 `b6659978453f50e6d1d4d99626d70b980a2c5847`. This report proposes choices;
 it changes no execution policy, routing, recovery or acceptance contract.
@@ -34,25 +36,36 @@ limits. This report neither activates that route nor assesses an unmerged Task
 #99 successor. Methodology hybrid **C below is a different alternative from
 routing option C**; neither implies adoption of the other.
 
-Reject unconditional execution of a materially disputed specification and a
-hierarchy that lets casual chat or boot text override a trusted Request. Do not
-reject explicit specifications, useful recovery state or code-first discovery
-merely because their upstream packaging differs. The owner choices and a
-minimal proof path appear below.
+**Principle-level Spec-first is compatible conditionally:** define Spec as
+currently accepted formal requirements and Human as intent admitted through
+trusted canonical authority. A personal objection to a clear, safe admitted
+requirement does not itself require another approval. This interpretation does
+not make every instruction in the pinned packages compatible: package inclusion,
+boot delivery and linked protocol wording must also preserve Relay's stops,
+scope and same-Task documentation behavior. The package feasibility and formal
+Spec sections below distinguish these questions. No overlay is evidence that
+an unchanged contradictory instruction has disappeared.
 
 ## Evidence and attribution
 
 ### Revisions and accepted workflow evidence
 
-The live Issue body retrieved anonymously through the GitHub API matched the
+During Step 1, the live Issue body retrieved anonymously through the GitHub API matched the
 admitted charter SHA-256
 `9947ad075577a4d27fbee250e011a7ac29b53e1aaeb55aa11c9737dda458b850`.
 The complete [Request](https://github.com/jresearchsoftware/codex-relay/issues/102#issuecomment-6097671313)
 had body digest
 `aaa372b4d8ee93a026f5935803e42877c0608c27f17c906c31082efc7ae4e30a`,
 the admitted branch/base/starting head, Step 1, and no selected Decisions.
-Those digests bind the observed bytes; native comment URLs alone are mutable
+Those historical digests bind the observed bytes; native comment URLs alone are mutable
 evidence, not immutable content or permission to expand scope.
+
+Step 2 uses the supplied complete trusted CR-102-001 Request: Step 2, the same
+base and reviewed head above, branch `codex/task-102`, no selected Decisions or
+context, research-only scope and keep-open closure. The earlier Step 1 Request
+is superseded, not current authority. Neither cached GitHub snapshots nor this
+report can amend the current Request. The admitted base is already an ancestor
+of the starting head; no integration merge or Task #99 successor is needed.
 
 The previous [Writer Outcome](https://github.com/jresearchsoftware/codex-relay/pull/100#issuecomment-6097275516)
 identifies candidate `4fb06b5ad925996d38fdf330bb655c67dce0e067`.
@@ -243,6 +256,73 @@ requiring `spec://` tooling. Shared packages could improve navigation and reduce
 drift, but each repository still needs bounded authority and compatibility
 acceptance. A producer's new pin is not a consumer's migration decision.
 
+## Formal Spec interpretation v1 (research definition)
+
+For this comparison, **Spec** means applicable currently accepted requirements
+for one admitted execution, with their trust, scope and amendment provenance.
+**Human** means owner intent admitted through Relay's canonical authority;
+casual chat remains discussion unless the applicable authorized process admits
+it. This is a versioned analytical vocabulary, not a new schema, file, registry,
+operational gate or activated instruction. It preserves the existing
+[authority contract](../contracts/README.md#github-native-task-authority).
+
+| Source | Normative role | Provenance and precedence |
+| --- | --- | --- |
+| Stable charter | Task goal, scope, protected boundaries and closure decision | Canonical repository/Issue and observed body digest. Bounds the execution Request. |
+| Current complete trusted Task Request/CR | Executable Step/profile/route/scope/validation/start snapshot; CR binds reviewed head and findings | Trusted publisher, native parent/body identity and digest, uniquely resolved explicit supersession chain. Neither comment recency nor largest Step selects it. |
+| Applicable trusted Decisions | Durable semantic amendments normalized into the selected complete Request | Correct trust, binding, ancestry and selection; normalization must agree with Request. A Decision does not launch work or silently amend an existing Request. |
+| Accepted reusable governance | Cross-task authority, security, publication, review and protected obligations | Accepted revision and applicable clause. Proposed candidate policy edits are not silently accepted policy. |
+| Affected accepted component contracts | Applicable behavior and explicit extension points | Accepted revision/section and surface applicability. Specialization cannot weaken protected obligations. |
+| Tests, code, Git facts, Outcomes, selected discussion | Empirical conformance, history and finding evidence | Exact candidate/comparison SHAs or verified evidence identity. These do not independently authorize execution. |
+
+This is a conjunction of applicable requirements, **not a total document
+ranking**. Resolve trust, applicability and explicitly authorized supersession
+first. A complete authorized change can identify older component prose as stale;
+newer code alone cannot. If accepted obligations still conflict, preserve safe
+behavior and protected boundaries, identify contradictory clauses, and obtain
+canonical reconciliation before the affected mutation. A passing suite, package
+boot or newer human comment cannot choose the winner. Accepted discussion that
+changes executable authority must enter the canonical amendment and complete
+successor Request before related execution. Legacy Issue-body authority keeps
+its existing role; this definition does not implicitly migrate legacy Tasks.
+
+### Five formal-Spec edge cases
+
+These are source-grounded scenario analyses, not five observed agent sessions.
+The last column describes requirements for a possible adapter; the dependency
+probe below decides whether current packages can actually deliver them.
+
+| Case and authoritative trigger | Relay under formal Spec v1 | Literal pinned package instructions | Safe adaptation and remaining conflict |
+| --- | --- | --- | --- |
+| Accepted Spec A versus baseline stale test B | Diagnose the oracle against exact starting/base facts; repair within scope while preserving useful edge coverage. Record baseline versus introduced provenance. | Conflict protocol permits repairing yesterday's test, but also asserts one side must be wrong. Both may share a mistaken oracle or describe different underspecified cases [U12, U15]. | Intent-led diagnosis is compatible. Neither wholesale test weakening nor PASS alone proves correctness; retain independent exact-head review. |
+| Stale component Spec B versus a current Request explicitly authorizing code-first fix A | Keep authorized A; reconcile affected docs in the same Task/PR. Diff proves what changed; canonical intent establishes why permitted. | Sync usefully prevents reverting intended code to stale prose, but main boot/protocol require same-session draft, separate explicit approval and prescribed docs commit [U16, U11]. | Value/reason/revisit explanation fits existing doc work. Mandatory extra apply/approval/commit ceremony requires an owner decision or a new compatible publisher version. Code recency itself grants no authority. |
+| Implementer disputes a clear, safe accepted Spec A | Implement admitted A and record preference/disagreement in existing review context. Personal preference does not create a blocking ambiguity. | Implement-then-report overlaps here; REVIEW marker/lifecycle requirements also apply [U12, U15]. | Principle compatible in this bounded case. Marker use must not replace durable evidence or independent acceptance; new compulsory markers need owner disposition. |
+| Ambiguity or unauthorized operator change would remove a command/add a gate/change actor responsibility | Preserve safe behavior and stop the affected mutation; surface the precise canonical owner decision. A retrospective doc sync cannot authorize it. | Main conflict boot prescribes implementation of disputed Spec and conservative continuation when silent. Linked uncertainty protocol requires stops for security, irreversible/external effects and expensive reversal [U12, U17]. | Preserve these useful upstream qualifications, plus every Relay protected/material-change stop. Neither a later override nor the narrower linked stop list removes the main boot conflict. |
+| Two applicable accepted normative sources conflict, or Decision normalization disagrees with Request | Resolve explicit amendments/trust first. Invalid normalization/ambiguous ancestry fails admission; a remaining substantive conflict needs canonical reconciliation, not newest-text precedence. | Fixed hierarchy cannot resolve equal-layer Spec conflicts; linked failure-modes explicitly requires human reconciliation and correction of repeated clauses [U18]. | Compatible principle if ruling is formally admitted/normalized. A casual human ruling cannot execute on its own. Do not invent a worker-owned precedence rule. |
+
+The actual upstream instruction sets need separate assessment. Main conflict
+boot states the fixed hierarchy, disputed-Spec implementation and continuation
+on silence without an inline Relay scope/uncertainty condition [U12, lines
+12–40]. Its linked full protocol treats contrary human instruction as a pending
+Spec change [U15, lines 49–91]; linked uncertainty and failure-mode documents
+add important stops and equal-authority reconciliation [U17, lines 115–137;
+U18, lines 113–149]. Thus it is inaccurate both to claim upstream has no
+uncertainty handling and to claim formal Spec terminology makes all visible
+instructions unconditionally safe.
+
+Sync's main boot treats a direct code edit or imperative chat as evidence that
+Spec is stale, then requires an exactly-once final-session proposal, no apply
+before approval, and a prescribed commit [U16, lines 14–35]. Its full protocol
+excludes temporary, mechanical and missing-section cases, while preserving the
+explicit apply/approval requirement [U11, lines 50–69, 121–136]; its review
+workflow adds a distinct stopping point [U19, lines 86–102]. A formal Spec
+mapping can preserve authorized intent, but cannot silently remove these costs.
+
+The `20a`/`35a` conditional WAL fragments identify WAL state when WAL is
+installed. They do **not** guard the main Sync or conflict instructions [U20].
+No instruction compliance, real model safety or statistically better outcome
+has been demonstrated by this interpretation.
+
 ## Controlled observations and limits
 
 The opt-in [probe](../scripts/research/vibevm-methodology/probe.py) runs the
@@ -272,7 +352,7 @@ pwsh -NoProfile -NonInteractive -File .codex/hooks/test-long-session-checkpoint.
 | Undated disagreement marker versus old dated marker | Undated: zero findings. Dated `2000-01-01`: one aging warning, exit 0. | Marker presence alone does not establish follow-up enforcement. |
 | Existing routing probe | PASS, 16 offline commands, stock boot sources 1,813 bytes; bounded replacements preserved. | Reproduces file routing/ownership, not task understanding or precedence obedience. |
 | Existing Relay checkpoint suite | PASS on Linux x86_64, PowerShell 7.6.5: session isolation, atomic validation, corruption handling and bounded recovery. | Deterministic helper tests; no native Codex lifecycle or cross-session transfer proof. |
-| Existing Relay authority tests within complete Node suite | 623 tests passed with an isolated synthetic consumer config on Node 24.19.0. | Confirms existing native binding/supersession/evidence rejection cases. Not comparative model trials or Node 22 qualification. |
+| Step 1 Relay authority tests within complete Node suite | 623 tests passed with an isolated synthetic consumer config on Node 24.19.0. | Historical native binding/supersession/evidence rejection evidence. Step 2 separately reran the complete suite on Node 22.20.0 below. Neither is a comparative model trial. |
 
 The existing authority tests include edited selected evidence rejection,
 supersession forks, untrusted copied authority and approval of blocked/stale
@@ -282,18 +362,232 @@ contracts, rather than eight recorded Codex sessions.
 
 No token, latency, interruption-frequency, human-time or success-rate benchmark
 was conducted. Actual parent/helper model and reasoning-effort telemetry:
-**UNAVAILABLE**. Admitted parent profile was `gpt-6.1-sol`/xhigh; two read-only
-helpers were requested at `gpt-6.1-sol` xhigh and high. They supplied source and
-contract analysis, not independent governance acceptance. Real Codex adherence,
+**UNAVAILABLE**. Step 1 requested `gpt-6.1-sol`/xhigh. This remediation preserves
+the explicitly admitted parent `gpt-6.1-sol`/**ultra**, Subagents On. Three
+research helpers were requested at `gpt-6.1-sol` (two xhigh, one high), owning
+formal-Spec analysis, isolated tool qualification and source interpretation.
+Their work is research assistance, not independent governance acceptance. Real Codex adherence,
 crash/compaction behavior and statistical comparative performance:
-**UNVERIFIED**. No external model runs were launched.
+**UNVERIFIED**. No experimental provider/client/model runs were launched.
 
 The pinned optional WAL status skill still instructs reading `spec/WAL.md`,
 whereas its XML boot flow names `vibevm/vibespecs/WAL.xml` [U7, U10]. This is a
-source path discrepancy relevant to any future package trial; no installed
-projection or model execution was used to determine its operational impact.
+source path discrepancy relevant to package adoption. The new isolated probe
+materializes this skill unchanged, but neither invokes it nor tests a model
+following its path; its operational impact remains unqualified.
 Likewise redbook/member WAL and wal-specspaces were inspected as distinct
 optional conventions, not installed or concurrency-qualified [U13].
+
+## Exact upstream dependencies versus a compatible policy subset
+
+At VibeVM 1.0.7 `b6659978453f50e6d1d4d99626d70b980a2c5847`, a thin package adapter
+cannot retain the unmodified `org.vibevm.world/wal`, `sync-from-code` and
+`conflict-protocol` 1.0.0 dependencies while using the ordinary manifest/link
+controls to remove individual conflicting rules from their main boot documents. The
+package metadata supports selecting packages, linking whole boot contributions, and
+author-controlled conditional fragments. It does not provide a consumer-side
+sentence/fact exclusion selector or `link = "none"`. This is a bounded source
+conclusion about the inspected release and interfaces, not proof that a custom
+compiler extension could never implement filtering [D1–D5].
+
+All three exact manifests declare `format = "normal"`, one unconditional main boot
+source, and no `[features]` or `[requires]` entries. WAL additionally declares the
+`wal-status` skill. Sync and Conflict each declare one separate fragment guarded by
+`installed:org.vibevm.world/wal` [D6]. Consequently, the three packages do not
+themselves hard-pull one another. Installing only Sync and/or Conflict avoids WAL's
+main boot and, when WAL is absent from the complete resolution, their WAL fragments.
+It does **not** remove Sync's explicit-apply/commit ritual or Conflict's
+hierarchy/implement-anyway rule, which are part of their unconditional main sources
+[D7–D9].
+
+| Mechanism in the pinned release | What it controls | Limit for an adapter |
+| --- | --- | --- |
+| Exact dependency selection (`=1.0.0`, qualified identity, verified source/lock) | Which package versions enter the resolved graph | Selects whole packages; a version string alone does not establish immutable upstream file bytes. Keep source revision and content provenance with the trial. |
+| `link = "static"` | Compiles the package boot contribution into the generated priority lane | Includes the declared main contribution; does not delete selected facts. These leaf packages have no `#use`/`#source` directives that expose an existing policy substitution seam. |
+| `link = "dynamic"` (also the default) | Leaves a concrete boot path in INDEX | The generated redirect and INDEX instruct the agent to read every listed entry at boot. Dynamic is not a no-load/reference-only control [D3]. |
+| `static-transitive` | Forces the target and its complete dependency closure into static loading | Broadens imported policy; a root static-transitive edge can force transitive entries static despite an adapter's ordinary dynamic hints [D4]. |
+| `static-hard` | Keeps a static contribution local instead of soft-hoisting | Changes placement/deduplication, not policy text [D1]. |
+| `link = "none"` | No such enum variant | Cannot be used to keep installed upstream packages solely as non-boot reference dependencies [D1]. |
+| Features / no-default-features | Author-defined feature, optional-dependency and subskill activation | These three versions declare no features. The feature vocabulary contains no boot fact/sentence selector; disabling defaults does not remove unconditional main snippets [D5–D6]. |
+| Main/fragment `when` | Package author selects `os:*` or `installed:*` conditions on a whole source file | These versions do not condition their main sources. An adapter cannot add a gate to an unmodified dependency's source using the consumer dependency entry [D2]. |
+| `user-override` / later authored prose | Orders an additional policy contribution | Leaves the original conflicting rules and their full-document pointers reachable. It is semantic supersession by prose, not structural removal or evidence that a model obeys the chosen interpretation [D1, D7–D9]. |
+| `[[override]]` source replacement | Redirects resolution to another package source/ref | A patched source is a fork/substitution even if it repeats version 1.0.0; it is not the exact unchanged upstream dependency [D10]. |
+| Visibility `[override]`, `access`, `friend`, deep `exclude` | Package/edge visibility and resolution | Coordinate/edge controls, not paragraph selectors. Fresh resolution can prune a whole package; an existing lock behaved differently in the probe below. Boot generation has no paragraph-filter step for retained packages [D2, D4, D11]. |
+| Normal-package `#use` / `#source` composition | Selects addressed sections in a document's own compile closure; source merges can override contract facts | Does not remove a dependency's separate main boot entry. The inspected three packages do not declare source overlays. An adapter's selective import would coexist with those entries unless an additional, separately qualified filtering/substitution mechanism were built [D4, D12]. |
+
+### Measured disposable dependency composition
+
+The opt-in [dependency probe](../scripts/research/vibevm-methodology/dependency_probe.py)
+extracts only the three exact leaf package trees from the hash-verified upstream
+archive. It constructs one visibly synthetic adapter and a local `file://`
+registry inside a temporary directory. Package manifests have no dependencies,
+features or executable lifecycle contributions; the adapter has three exact
+requirements, empty author-defined feature lists and one short overlay. The
+environment inherits no ambient credentials/configuration, PATH contains no
+executables, every project invocation uses `--offline`, and no lifecycle or
+inference command is invoked. The upstream source package bytes remain unchanged.
+Everything is removed when the probe exits; nothing is installed in Relay.
+
+Reproduce with separately obtained, hash-matching inputs:
+
+```sh
+python3 scripts/research/vibevm-methodology/dependency_probe.py \
+  --vibe /absolute/disposable/path/vibe \
+  --source-archive /absolute/disposable/path/vibevm-source.tar.gz
+```
+
+**Observed: PASS, 35 offline CLI commands, 24 captured states, two expected
+schema rejections.** JSON preserves command argv, exit/stdout/stderr, full parsed
+lock, source-file hashes, manifests, INDEX, separate priority STATIC lane,
+ordered effective boot bodies, skills/full protocol bytes and deduplicated
+UTF-8 content blobs. It does not simulate an agent reading those instructions.
+The initial user-owned stock core/user seeds are also captured and remain
+present in these fixtures. Package-specific XML markers establish attribution;
+omitting WAL's package does not remove the stock seed's own WAL sentences.
+The accepted bounded routing probe separately qualifies authored seed replacement.
+
+| Configuration/lifecycle | Observed closure and client-visible instructions | Limit/consequence |
+| --- | --- | --- |
+| Independent direct WAL, Sync or conflict install | One corresponding 1.0.0 lock row each. Respective unconditional main snippet delivered via INDEX; no hard cross-package dependencies. | Whole independent packages are selectable; rules within their main snippets are not. |
+| Sync + conflict without WAL | Two rows; neither conditional WAL fragment in INDEX. Both main conflict/approval rules remain. | No WAL fragment is not package-wide WAL-free semantics; linked documents still matter. |
+| Add WAL, update exact composition, plain/forced reinstall | Three exact rows; both WAL bindings and all main rules remain visible. | Installed condition follows actual graph. Update tested a registry offering only the pinned version, not future fixes. |
+| Uninstall WAL, plain/forced reinstall, then re-add | Removing the row removes both bindings; re-add restores them. Main Sync/conflict rules persist throughout. | Genuine conditional-file composition, not within-snippet filtering. No WAL/CONTINUE project state created or removed. |
+| Thin adapter with `static-transitive` root, dynamic leaf edges | Four rows including adapter; compiled STATIC priority lane contains all upstream main rules, both bindings and overlay. INDEX also routes authored seeds. | Compiler executes no prose semantics. Adapter overlay coexists with original obligations. |
+| Change adapter edge to `dynamic` | Four rows; dependency boot paths remain readable through INDEX, with all main rules and both bindings. | Dynamic delays no instructed read: redirect says to read priority and every entry. It is not policy exclusion. |
+| Warm `--no-default-features`, `--all-features`; fresh `--no-default-features` | Warm lock retains adapter defaults; fresh no-default lock omits active feature metadata. In every case all unconditional upstream dependencies/boot rules survive. | Tests distinguish sticky metadata from real default disabling. These packages have no feature controlling policy facts. |
+| Fragment-shaped `exclude = ["org.vibevm.world/wal#HONOUR-EVERY-CONSTRAINT-VERBATIM"]` | WAL and its verbatim-constraint marker, plus both bindings, remain in the warm adapter world. | Identity-shaped text is not a sentence selector. Source schema/compiler establishes the broader absence of such a selector. |
+| Whole WAL exclude on an already installed adapter, then ordinary install, forced reinstall and `update --all` | Existing WAL lock row and both bindings survive all three operations. | An edited manifest is insufficient proof of effective absence. Cause beyond lock/resolution-path evidence is unqualified; no upstream repair is attempted. |
+| Same whole-package exclusion in a fresh project, or after uninstall/re-add of adapter closure | Only adapter + Sync + conflict lock; WAL and both bindings absent. Overlay plus conflicting Sync/conflict main rules remain. | Package-level pruning is viable on fresh resolution, with a warm-lock lifecycle caveat. It still cannot retain WAL as a dependency while removing its individual obligations. |
+| Proposed `rules = ["safe-only"]` dependency field; `link = "none"` | Both exit 1 with `RequiresPackageEntryWire` schema parse errors. | Generic diagnostics alone do not prove every imaginable selector impossible; inspected strict schema/link enum and full composition support this bounded negative conclusion. |
+
+Stable observed package content hashes in the tool's lock are WAL
+`58eccc204df7e63e78e8d15f9416b6fd528e786b74d9e0e5e2fcb859716ea0d0`, Sync
+`c068ab0517275cc6c7d11ce0e77e20c8dc9f038c6e6e4ae0832902b063ce0fc5`, and conflict
+`669fb4a23f0a822cff870f18e5e8f330f82e3c6315515b47c4a691700c7c21e3`.
+Their dynamic main boot SHA-256 values are respectively
+`c2507573c8122a8a2f5c09996f1efbe914f5c18be492f605e74cfa550395cc94`,
+`39f99e5a30b6a5c8cc8bfda48404dd7411f6047cf272d4e41fc7577c5fb16285`, and
+`c72fc8e006bc80b2284512a0925a0db7f954d172b4e8bea966ca2759449a9d82`.
+Archive/binary pins bind origin; lock/generated-file hashes and full snapshots
+bind the observations. Temporary registry URLs and generated timestamps are
+run-local and are not expected to reproduce byte-for-byte. The script and this
+report are the source-controlled evidence; raw JSON is reproducible temporary
+output, not a new authority ledger or required artifact.
+
+Only dynamic/static-transitive composition, the stated feature/exclude controls,
+and selected install/update/uninstall/plain/forced-reinstall operations were
+tool-tested. Ordinary static, static-hard, source overrides, friend/access
+schemes and normal-document source merges are source-inspected alternatives,
+not experimentally demonstrated adapters. A custom transform/fork and new
+upstream content units are unbuilt proposals. Source/tool results do not qualify
+Codex compliance, owner interruption rates, statistical benefit, registry
+publication or production package activation.
+
+### Conditional WAL does not mean package-wide decoupling
+
+`installed_identities` is derived from the **whole unified resolution**, using
+`(group, name)` identities; it is not a test for a WAL file, a direct requirement, a
+particular WAL version, or whether WAL's boot was read. `active_snippet` resolves
+main and fragments independently. An installed WAL introduced transitively or
+elsewhere in that unified workspace resolution activates both Sync's
+`20a-wal-binding.xml` and Conflict's `35a-wal-binding.xml` during generation. A
+false predicate physically omits that fragment; a true one becomes unconditional. OS
+conditions instead remain read-time INDEX conditions [D2, D4]. An
+install/update/uninstall/reinstall must therefore be evaluated against the complete
+resulting resolution, not just the adapter's manifest.
+
+There is a narrower but important remaining coupling. The main snippets'
+conditional-fragment repair does not rewrite every flow document in the package.
+Sync's full `SYNC-PROTOCOL.xml` still describes `head → WAL → spec → code` (lines
+12–14), requires recording skipped temporary work in WAL (53–54), and later
+attributes checkpoint updates to the WAL flow (145–147). `when-to-apply.xml`
+requires the WAL entry for temporary changes (41–46), while `review-workflow.xml`
+records rejected work lessons in WAL (111–114). Conflict's full protocol still
+displays the WAL ladder (43), treats human instructions as unwritten spec changes
+(51), defines code wrong until a human rules otherwise (55), and repeats
+implement-first/report-later (98–111). Its recovery document adds a human-only
+stale-state reconstruction ritual (95–111) [D13–D15]. Thus an experiment may
+truthfully establish **WAL fragment absent from generated boot**; it cannot infer
+**the entire retained package is WAL-free or Relay-compatible**. The main boot
+sources explicitly point to these full protocols and sibling documents [D8–D9].
+
+WAL's own full surface likewise exceeds a concise checkpoint idea. Its main boot
+calls for first-read, freshness confirmation, mandatory rewrites and an
+unconditional resume/report/wait boundary. The full flow repeats those duties,
+describes literal unattended WAL execution, separate checkpoint commits, a morning
+human ritual and a weekly full-spec reread. Its shipped skill still reads
+`spec/WAL.md`, while the boot/protocol use `vibevm/vibespecs/WAL.xml` [D7, D16–D18].
+WAL does acknowledge multi-developer many/no-WAL schemes by not installing or
+superseding the flow (main boot 65–70), and it says install/uninstall never
+creates/deletes/overwrites project WAL/CONTINUE state (61–63). Those are valuable
+explicit limits, but “superseding” does not add a structural consumer-side
+rule-filter interface.
+
+### Smallest maintainable architecture and next decision
+
+The following compatibility/feasibility matrix separates **package granularity**
+from **rule granularity**. "Unsafe" means unsuitable as unchanged active Relay
+policy under current authority; it is not a claim that merely inspecting the
+package executes its instructions or that the package is unsuitable everywhere.
+
+| Consumption architecture | Real upstream version dependency retained? | Select only compatible rules? | Formal-Spec compatibility and feasibility | Maintenance/owner implication |
+| --- | --- | --- | --- | --- |
+| Direct `wal@1.0.0` | Yes, exact leaf package with no hard dependency on Sync/conflict | No consumer selector within its main boot/full protocols | Unsafe unchanged: mandatory first read/rewrite, stale-confirmation and resume/wait costs, separate state and skill-path discrepancy remain | Installing it is methodology adoption, requiring separately admitted state ownership/concurrency/recovery decisions. |
+| Direct `sync-from-code@1.0.0` without WAL | Yes; no hard WAL dependency | No; absent WAL fragment does not remove main approval/commit rules or all linked WAL references | Useful code-first reconciliation, but unsafe unchanged as routine same-Task doc policy | New compatible publisher version or owner approval of extra interruptions/commit ritual; no retrospective authority creation. |
+| Direct `conflict-protocol@1.0.0` without WAL | Yes; no hard WAL dependency | No; hierarchy/implement-anyway remain in main boot | Principle-level formal Spec is conditionally useful; complete current instruction set is unsafe as an unconditional Relay rule | Owner must retain protected stops; new compatible publisher version must qualify boot and linked uncertainty/recovery documents together. |
+| Thin adapter requiring the three unchanged packages, plus Relay mapping/overlay | Yes, real transitive closure | No demonstrated structural removal; feature/link/visibility controls cannot select those facts | Technically composable, semantically conflicting. Calling it a safe dependency-backed hybrid is unsupported | Small manifest is maintainable but leaves contradictions; do not transfer interpretation burden to each agent/session. |
+| Relay adapter with immutable upstream references outside active dependency graph | References, **not executing package dependencies** | Adapter authors only bounded Relay instructions, with source attribution | Viable minimal present recommendation for a separately admitted trial; preserves current formal Spec and gates | Small mapping, no copied upstream tree; consciously review reference pin updates. It does not satisfy a requirement for unchanged executing upstream dependencies. |
+| Copy/fork selected policy, or source override to patched package | A fork can be versioned; neither is the unchanged upstream dependency | Yes by editing owned source, with attribution/license/provenance | Potentially compatible if all reachable text preserves admission/stops/docs; not qualified or activated here | Divergent maintenance and upstream-fix reconciliation belong to the fork owner. Fallback only if reference reuse is insufficient and publisher cooperation unavailable. |
+| New upstream boot-free reusable units or supported author-controlled selectable rules, with thin Relay adapter | Could retain real upstream versioned dependencies | Possible only after publisher/tool implements and qualifies the seam | Preferred future dependency architecture; **not available as demonstrated in these exact versions** | Requires new exact versions and complete lifecycle/text re-review, then a separate owner Decision/Request for adoption. |
+
+The viable choice **today** is a Relay-owned, policy-compatible adapter whose
+instructions point to the existing trusted charter/Request, affected component
+contracts and selected evidence. Keep these exact upstream packages as read-only,
+revision-pinned research/reference inputs **outside the active VibeVM dependency
+graph**; do not list them as executable `[requires.packages]` merely to make the
+dependency relationship look real. The adapter can link immutable upstream rationale
+and name the useful concepts without copying upstream package trees or claiming to
+execute their full protocols. This is reference reuse and an honest narrow Relay
+adaptation; it is not activation of a compatible subset of those three exact package
+dependencies. An offline research fixture may install them solely to inspect
+generated bytes, provided no agent consumes its policy and no lifecycle hook is
+executed; that fixture is separate from consumer activation.
+
+If the requirement is **real executing package dependencies with a structurally
+compatible subset**, the pinned versions fail that requirement through these
+standard interfaces. The least complex maintainable next architecture is
+upstream-authored reuse seams: separate reusable rationale/protocol content from
+policy boot packages; ship boot-free or explicitly selectable policy units; let a
+small Relay adapter depend on the exact compatible units and own only the mapping to
+Relay authority/evidence. That needs new package versions (and, if a consumer
+boot-disable/selection syntax is chosen, a tool version implementing and qualifying
+it). A new feature name alone is insufficient unless the tool and package actually
+use it to control the unwanted boot text. Every reachable full protocol, sibling and
+skill must share the same compatible semantics. Conditional WAL bindings remain
+useful, but they only solve co-installation coupling.
+
+A patched fork/source override or custom compiler transform is an alternative
+engineering project with continuing content and upgrade ownership. It must be
+identified as that, rather than an unchanged 1.0.0 dependency. A custom filter would
+need exact source/content matching, fail-closed handling of changed rules, complete
+boot/full-document reachability qualification and lifecycle proofs; it is more
+machinery than the proposed reference adapter and is not demonstrated here. Merely
+importing selected facts into an adapter while original dependency boot remains
+listed, appending “Relay wins,” changing generated STATIC/INDEX by hand, or changing
+`dynamic` to mean “do not read” cannot support the desired structural-absence claim.
+
+Upgrade handling follows the chosen architecture. Immutable reference-only pins
+preserve the reviewed meaning until deliberately updated; assess the new full
+referenced surfaces when changing them. For a real package trial, review the tool,
+manifests, complete resolved/transitive graph, both boot lanes and every reachable
+protocol/skill after install, update, uninstall and both reinstall modes. The source
+says update re-resolves/re-materialises and regenerates boot; uninstall preserves
+still-required packages and regenerates from the remaining world; plain reinstall
+regenerates from materialised slots without changing locked versions; forced
+reinstall re-fetches/re-materialises locked content and regenerates [D19].
+Hand-edited generated artifacts therefore cannot be the durable adaptation seam.
+Source inspection here did not run lifecycle operations or models and supplies no
+acceptance or model-compliance verdict.
 
 ## Representative scenarios and alternatives
 
@@ -514,57 +808,95 @@ independent review. Broader cold transfer, new stores, universal spec-first
 approval, package adoption and cross-repo rollout remain separate unresolved
 choices. No later Step is allocated by completing this research.
 
+The dependency qualification refines that sketch: **do not implement the hybrid
+by requiring unchanged 1.0.0 flow packages and appending a Relay override**.
+For a future bounded trial, the minimal present architecture is a small
+Relay-owned mapping with immutable upstream rationale references outside its
+active package graph. If real upstream dependencies are an owner requirement,
+first request publisher-maintained boot-free reusable content units or genuinely
+selectable policy units. A thin adapter would depend on their exact versions,
+own only formal-Spec/Outcome placement, and retain Relay admission/stops/review.
+Validate their reachable full protocols and skills, not just generated boot.
+None of those future package versions or adapter installations is produced here.
+
+| Unresolved owner choice | Exact prospective behavior change | Smallest migration/proof path |
+| --- | --- | --- |
+| Endorse formal Spec vocabulary without activating packages, or require a dependency-backed methodology | Clarifies admitted intent; dependency adoption additionally exposes upstream instructions and future upgrades | Accept/revise this research definition; if dependencies are required, obtain new compatible publisher seams/versions, then a complete separately admitted Request and opt-in negative authority proofs. |
+| Reference reuse, publisher-maintained reusable units, or explicit fork | Chooses who owns policy changes and upstream fixes | Prefer references today; new upstream units for real dependencies later. Qualify exact source identity/lock/full effective text at every upgrade. A fork requires explicit divergence/license/update ownership. |
+| Keep current doc synchronization or add Sync approval/commit ritual | Additional owner interruption and prescribed commit boundary for already authorized docs | Name triggers/exemptions, demonstrate simplest authorized code-first fix plus unauthorized counterexample, obtain owner Decision/Request before implementation. |
+| Keep protected stops or broaden implementation of disputed/underspecified Spec | Changes which uncertainties may continue without owner reconciliation | Preserve current stops by default. Any broader continuation rule needs a bounded class of disputes and proofs of no protected/operator-contract bypass. |
+| Optional selected frontier versus shared WAL/CONTINUE | New persistent state owner, session rituals, cold-transfer and concurrency burden | First test one need not met by Task/Outcome/Git/session note. Decide partitioning, provenance, stale behavior and consumption before adopting a store. Accepting no new store remains valid. |
+
+No migration is justified merely by a package being installable. The safest
+next outcome may remain **no methodology migration**, including after owner
+acceptance of this report. Native route C's conditional feasibility remains
+independent of every choice in this table.
+
 ## Validation, provenance and warning disposition
 
-Experiments ran as an unprivileged Linux x86_64 user with Python 3.11.2 and
-PowerShell 7.6.5. The new probe and reproduced routing probe passed. The existing
-checkpoint suite passed. The complete Node test invocation from `package.json`
-passed 623 tests using an existing Node 24.19.0 binary and a temporary copy of
-the synthetic consumer fixture with mode 0600. No host tools were installed or
-consumer settings changed.
+Step 2 research ran as an unprivileged Linux x86_64 worker (UID 983) on
+October 10, 2026. The freshly fetched source archive and existing disposable
+binary matched the accepted hashes above. Both the original WAL probe and new
+dependency probe passed; the latter's final local result is 35 commands,
+24 observed states and two expected schema rejections. The final script uses
+actual Sync do-not-apply/approval-commit markers and the conflict
+implement-anyway marker alongside the adapter overlay. No model was asked to
+execute any fixture policy. Historical Step 1 routing/checkpoint observations
+remain labeled evidence above; this remediation changes neither surface.
 
-The ordinary `npm test` command was unavailable on default PATH; the existing
-alternate npm launcher lacked its CLI module. Directly invoking the declared
-Node test command provided the full test coverage, with the version limitation
-above. An initial direct run rejected the tracked synthetic fixture's existing
-group-writable mode (`CONSUMER_CONFIG_INVALID`); the documented qualification
-pattern of a private temporary synthetic copy resolved it without changing
-repository permissions. This is environment/fixture evidence, not a regression
-from the report/probe. Candidate versus starting/base comparison for this
-finding is supported by the unchanged fixture and loader; this change touches
-neither. The final exact candidate identity belongs in the Writer's Outcome,
-not a self-referential SHA inside this report.
+The default PATH has Node 18.20.4, no npm or Cargo, and system Python lacks
+pytest. Existing disposable tools permitted the required unprivileged checks
+without installation: Node 22.20.0/npm, Cargo/rustc 1.90.0,
+rustfmt 1.8.0-stable, Python 3.11.2/pytest 9.1.1 and Ansible core 2.16.19.
+The full `npm test` command passed **623 tests** with a temporary mode-0600
+copy of the existing synthetic consumer fixture. Cargo fmt passed; locked
+Cargo tests passed **85 tests** using the existing local dependency cache and
+a task-owned temporary target directory. `scripts/qualify.py` reported
+**THREE_CONSUMER_PASS** (isolated real handlers, mock GitHub and synthetic
+credentials; no live publication). The final complete deployment suite passed
+**865 tests and 317 subtests**, with **299 skipped and 19 warnings**. Warnings
+were Ansible's Python `crypt` deprecation and Jinja's invalid-escape deprecation;
+skipped tests remain unqualified. Whitespace, Python syntax and the staged tracked-file candidate scanner
+are also recorded in the terminal handoff.
 
-`python3 -m pytest -q deploy/tests deploy/ansible/tests` could not start because
-pytest is missing. Cargo fmt/tests could not start because Cargo is missing;
-`scripts/qualify.py` consequently could not build its Reviewer fixture. These
-are local environment gaps, not PASS or new product defects. Native exact-head
-CI and any separately required installed-runtime proof remain pending Writer
-publication; prior PR #100 checks do not close these gaps. No privileged
-qualification, native lifecycle, consumer isolation/credentials, deployment,
-merge, closure or release proof is claimed.
+Initial environmental failures were diagnosed, not hidden or repaired in
+product source. The synthetic tracked config is mode 0660 and was rejected by
+the unchanged consumer permission check. A private temporary copy solved test
+startup without changing repository modes. The first deployment invocation
+used the inherited group-writable umask and unsuitable PATH/locale; protected
+synthetic paths failed validation and Ansible was initially skipped/unavailable.
+A private umask and existing tools corrected path prerequisites; the next run
+had 796 passes, 88 failures, 299 skips, with the failing Ansible invocations
+reporting non-UTF-8 locale. Setting process-local `LANG`/`LC_ALL=C.UTF-8`
+resolved the previously failed set (69 tests and 16 subtests passed); a final
+complete suite was run in that qualified environment. These changes affect
+only disposable validation processes, not consumer configuration or host setup.
 
-An anonymous current-attempt API read observed an in-progress Actions run and
-its in-progress routing job with zero check annotations at that instant. This
-is partial, changing evidence: the terminal Writer Outcome and complete
-controller/runtime warning evidence do not yet exist or are not exposed to
-this worker. Writer and independent review must acquire and disposition the
-supported terminal surfaces. Historical reads and the partial zero count do
-not establish that no execution warnings exist. Local limitations are:
+Provenance comparison for these environment findings is the reviewed starting
+head `09f87c3ebf8462dd6a09a86ca5abe2b19d796439` against admitted base
+`4f0e0e38980854fcb09dc718841ade3102a8108f`: test suites, synthetic fixture,
+consumer loader, deployment sources and local-tool prerequisites are unchanged.
+The candidate alters only this report and an opt-in research script. The
+permission/locale prerequisites and tool gaps are pre-existing environment
+conditions, not defects introduced by this remediation. The initial broad
+failures are not described as regressions or added to research scope. Upstream
+boot/filtering/lock/path limitations likewise pre-exist at the pinned upstream
+revision; this CR authorizes analysis, not upstream fixes.
 
-| Source/limitation | Impact, scope and next disposition |
+| Warning or limitation | Impact and required disposition |
 | --- | --- |
-| Missing local Cargo/pytest and npm launcher gap | Normal validation incomplete locally despite full direct Node coverage. Native candidate checks after Writer publication and the applicable deployment suite must establish their own results; no authority to repair host tooling here. |
-| Existing synthetic config mode | Initial Node startup rejected it. Resolved for tests with a private temporary synthetic copy; production permission checks and tracked modes unchanged. |
-| CLI/protocol semantic gaps | Pinned upstream behavior, pre-existing outside Relay; not current-task regressions. Scope covers reporting them. Resolve in any later package/guard proposal rather than expanding this research into upstream remediation. |
-| Unverified model/lifecycle/comparative performance | Recommendations remain source-grounded hypotheses. Owner may accept no migration or admit the bounded proof above. |
-| Current primary warning acquisition gap | Partial in-progress job annotation read only; independent exact-head review must inspect complete terminal attempt/Outcome/check/runtime surfaces. Historical acceptance is insufficient. |
+| Initial tool/PATH/config-mode/umask/locale failures | Resolved locally with existing disposable tools and process-only synthetic-fixture settings. No host installation, repository permission repair or production-policy bypass. Final results do not erase the recorded prerequisites. |
+| Deployment skips and dependency deprecations | Qualifies only tests actually executed under this ordinary UID. Ansible/Python/Jinja dependency warnings are pre-existing; root-only installed-runtime/containment/sudo/credential proofs remain native exact-head CI responsibilities after Writer publication. |
+| Package granularity, warm-lock exclusion/features, retained main/linked rules and WAL skill path mismatch | Material owner/review inputs even though the probe passes. Do not infer effective removal from manifest changes or overlays; new package/adaptation work must test full resulting closure and visible text across fresh and existing states. |
+| Version-upgrade/source-override/custom-filter/model gaps | No newer upstream release, executing fork, compiler filter, real Codex compliance, native compaction lifecycle or comparative success-rate trial was qualified. Actual parent/helper runtime model/effort telemetry is UNAVAILABLE. |
+| Current primary execution-warning surface unavailable | This worker has no terminal Writer Outcome/complete controller-runtime warning acquisition or authorization to invoke Reviewer/use GitHub credentials. Step 1's partial in-progress annotations are historical evidence, not current warning clearance. Writer/independent review must inspect and disposition supported terminal attempt/Outcome/native annotation/runtime surfaces. No claim of “no execution warnings” is made. |
 
-Whitespace, Python syntax and the tracked candidate scan are required for this
-new report/fixture and are reported with the final local commit in the worker
-handoff. Deterministic validation and read-only helper analysis do not constitute
-independent acceptance. Useful work is committed on the admitted task branch;
-the worker does not publish a PR/Outcome or issue a Reviewer verdict.
+The local commit preserves task progress for trusted Writer. The worker does not
+push, publish an Outcome/PR, invoke Reviewer, merge, close the Issue, activate
+packages or allocate another Step. The exact final candidate head and native
+check links belong in Writer's English top-level Outcome, with these material
+limitations retained for independent review. Deterministic checks and research
+helpers do not constitute independent acceptance. The Issue remains keep-open.
 
 ## Source references
 
@@ -585,8 +917,37 @@ range is mentioned in the report it refers to the raw source at that revision.
 - [U12: optional conflict protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/boot/35-flow-conflict-protocol.xml).
 - [U13: optional wal-specspaces protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal-specspaces/v1.0.0/vibevm/vibespecs/flows/wal-specspaces/SPECSPACES-PROTOCOL.xml); [optional redbook member convention](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/redbook/v1.0.0/vibevm/vibespecs/boot/03a-member-wal.xml).
 - [U14: dated REVIEW aging check](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-check/src/checks/review_aging.rs), lines 34–110.
+- [U15: full conflict protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/CONFLICT-PROTOCOL.xml).
+- [U16: Sync main boot](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/boot/20-flow-sync-from-code.xml).
+- [U17: linked uncertainty protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/uncertainty-protocol.xml).
+- [U18: linked conflict failure modes](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/failure-modes.xml).
+- [U19: Sync review workflow](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/flows/sync-from-code/review-workflow.xml).
+- [U20: conditional Sync WAL binding](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/boot/20a-wal-binding.xml); [conditional conflict WAL binding](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/boot/35a-wal-binding.xml).
 - [R1: Relay authority test evidence at the admitted base](https://github.com/jresearchsoftware/codex-relay/blob/4f0e0e38980854fcb09dc718841ade3102a8108f/contracts/test/github-authority.test.mjs), especially untrusted evidence, supersession, selected context and exact-result/warning acceptance cases.
 - [Accepted routing assessment at the admitted base](https://github.com/jresearchsoftware/codex-relay/blob/4f0e0e38980854fcb09dc718841ade3102a8108f/docs/vibevm-routing-assessment.md), plus the [local copy](vibevm-routing-assessment.md).
+
+
+All D references use the immutable VibeVM source revision `b6659978453f50e6d1d4d99626d70b980a2c5847`. Line ranges refer to that source, not later releases.
+
+- D1: [link modes and boot category](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package.rs), lines 368–454; [boot snippet schema](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package.rs), lines 506–546.
+- D2: [strict dependency entry schema](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/wire.rs), lines 336–365; [fragment schema](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/fragment.rs), lines 12–34; [condition resolution](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/install/bootgen/conditions.rs), lines 21–66; [when condition grammar](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/when.rs), lines 12–40.
+- D3: [generated redirect](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/boot_artifacts/redirect.rs), lines 48–70; [INDEX read contract](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/boot_artifacts.rs), lines 111–121.
+- D4: [complete dependency closure and contributions](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/install/bootgen.rs), lines 392–522; [static-transitive propagation](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/install/bootgen/transitive.rs), lines 12–37; [whole-contribution composition](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/boot.rs), lines 347–409.
+- D5: [feature vocabulary](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-resolver/src/features.rs), lines 20–35, 121–171; [feature definitions](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/features.rs), lines 10–47.
+- D6: [wal 1.0.0 manifest](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibe.toml), lines complete file; [sync-from-code 1.0.0 manifest](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibe.toml), lines complete file; [conflict-protocol 1.0.0 manifest](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibe.toml), lines complete file.
+- D7: [WAL boot](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/boot/10-flow-wal.xml), lines 13–70.
+- D8: [Sync boot](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/boot/20-flow-sync-from-code.xml), lines 7–50.
+- D9: [Conflict boot](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/boot/35-flow-conflict-protocol.xml), lines 11–56.
+- D10: [source override](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/project.rs), lines 425–450.
+- D11: [visibility overrides](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/visibility.rs), lines 90–176; [dependency visibility controls](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-core/src/manifest/package/capabilities.rs), lines 91–108.
+- D12: [normal source/fact merging](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-spec/src/merge.rs), lines 12–42; [normal boot seed construction](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-workspace/src/boot_artifacts/inputs.rs), lines 81–104.
+- D13: [full Sync protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/flows/sync-from-code/SYNC-PROTOCOL.xml), lines 12–14, 53–54, 74–139, 145–147; [when to apply](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/flows/sync-from-code/when-to-apply.xml), lines 41–46; [review workflow](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/sync-from-code/v1.0.0/vibevm/vibespecs/flows/sync-from-code/review-workflow.xml), lines 86–114.
+- D14: [full Conflict protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/CONFLICT-PROTOCOL.xml), lines 42–111; [uncertainty stop exceptions](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/uncertainty-protocol.xml), lines 115–138.
+- D15: [Conflict failure recovery](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/conflict-protocol/v1.0.0/vibevm/vibespecs/flows/conflict-protocol/failure-modes.xml), lines 57–72, 95–111, 130–149.
+- D16: [full WAL protocol](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/flows/wal/WAL-PROTOCOL.xml), lines 85–145; [session end](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/flows/wal/session-end-hook.xml), lines 13–30, 93–105.
+- D17: [morning routine](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/flows/wal/morning-routine.xml), lines 14–32, 63–98; [cold resume](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/flows/wal/cold-resume.xml), lines 95–145.
+- D18: [WAL status skill](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/vibevm/vibepacks/org.vibevm.world/wal/v1.0.0/vibevm/vibespecs/skills/wal-status/SKILL.md), lines 13–22, 45.
+- D19: [update modes](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-cli/src/commands/update.rs), lines 1–12; [uninstall regeneration](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-cli/src/commands/uninstall.rs), lines 1–5, 175–184; [reinstall modes](https://github.com/vibevm/vibevm/blob/b6659978453f50e6d1d4d99626d70b980a2c5847/crates/vibe-cli/src/commands/reinstall.rs), lines 1–25.
 
 The current Relay contracts linked throughout are repository-local navigation.
 For this comparison their evidence revision is always
