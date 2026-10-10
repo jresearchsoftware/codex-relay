@@ -1,98 +1,162 @@
-# Optional VibeVM project
+# Bounded native VibeVM routing
 
-Relay has a dependency-free VibeVM v1.0.7 project prepared under
-[Task #97](https://github.com/jresearchsoftware/codex-relay/issues/97), Phase 1.
-It adds maintenance-time configuration without changing Relay execution.
-Ordinary Codex sessions, tests and Relay workers need no VibeVM executable,
-registry, cache, network access or additional owner action for this project.
+Task [#99](https://github.com/jresearchsoftware/codex-relay/issues/99), Step 2,
+selects bounded native route C through the
+[owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/99#issuecomment-6097679412)
+and [manual Request](https://github.com/jresearchsoftware/codex-relay/issues/99#issuecomment-6097793473).
+The source configuration uses VibeVM 1.0.7's native generator with two short
+Relay-authored boot files. Independent exact-head acceptance and merge remain
+separate from this implementation. The
+[Step 1 assessment](vibevm-routing-assessment.md) records the historical stock,
+direct and bounded-route comparison.
 
-The [manifest](../vibe.toml) declares only a project, with no package,
-requirement, registry, hook, tool, MCP or Skill declaration. Its `0.0.0` version
-is a scaffold identity, not a Relay release or governance package version.
-The [lock](../vibe.lock) is the initializer's schema-7 empty lock; its timestamp
-records creation, not a moving resolution input. The committed bytes are reused
-unchanged. `spec_format = "mixed"` keeps future materialization byte-preserving
-rather than opting into format conversion.
+Ordinary Codex sessions, tests and Relay workers read committed files and need
+no VibeVM executable, registry, cache, network or additional owner action.
+Worker prompt construction, trusted execution authority and optional developer
+hooks are unchanged. This route does not adopt stock WAL, specification
+precedence or disputed-spec implementation policy. Their comparative study
+remains separate under Task #102.
 
-The only retained boot artifact is the generated
-[empty index](../vibevm/vibespecs/boot/INDEX.md). It preserves the boot directory
-required by the pinned tool in a clean clone, and names no content to load.
-Its final blank line is omitted to satisfy Relay's existing whitespace check;
-qualification compares regeneration after only that newline normalization.
-There is no `STATIC` lane, authored boot snippet, WAL/checkpoint, managed agent
-block, dependency slot or projected Skill. [AGENTS.md](../AGENTS.md), the live
-Issue/CR/Task Request, Relay contracts, local policies and agent entrypoints
-retain their existing authority and loading order. In particular,
+## Committed route and ownership
+
+```text
+AGENTS.md                   existing Relay policy + native managed block
+CLAUDE.md / GEMINI.md        native managed blocks
+             |
+             v
+vibevm/vibespecs/boot/INDEX.md   generated TOML, two static entries in order
+             |
+             +--> 00-core.md    authored authority/loading boundary
+             +--> 90-user.md    authored local routing conventions
+```
+
+VibeVM owns only the managed `<vibevm>` blocks and generated
+[INDEX](../vibevm/vibespecs/boot/INDEX.md). All pre-existing human-authored
+[AGENTS.md](../AGENTS.md) bytes remain intact before its appended block. The
+[core](../vibevm/vibespecs/boot/00-core.md) and
+[user](../vibevm/vibespecs/boot/90-user.md) files are supported user-owned inputs,
+not edits to generated content or a second routing engine. They identify the
+existing canonical policy and direct relevant work to its existing pointers.
+Component manuals stay outside mandatory boot. The combined authored boot
+content is 1,451 UTF-8 bytes; this is not a token, latency or cost measurement.
+
+Codex already reads root AGENTS instructions. For a client entering through
+CLAUDE or GEMINI, core identifies the human-authored AGENTS policy and asks it
+to apply that policy once without traversing the managed route again. Existing
+client/global/local instruction precedence remains intact; repository prose
+does not override it. These are instructions, not a runtime guard or proof of
+actual client traversal. No private/global instruction files were modified.
+The route introduces no per-task selection: both files are unconditional;
+component loading remains the agent's existing just-in-time judgment.
+
+There is no STATIC lane, WAL, dependency slot, projected Skill, hook, tool or
+MCP declaration. The [manifest](../vibe.toml) still declares only the original
+project, with `spec_format = "mixed"`. Its `0.0.0` identity is not a Relay
+release. The [lock](../vibe.lock) remains the exact original schema-7 empty
+lock, including its creation timestamp. No
+`org.jresearch.ai/development-governance` requirement was added, installed,
+resolved, locked or materialized. Local
 [proportional controls](execution-policy.md#proportional-controls-and-operator-usability)
-remain local and unchanged.
+retain their canonical ownership and semantics.
 
-## Maintenance qualification
+Generated INDEX is committed exactly as emitted, including the pinned
+serializer's blank EOF line. A file-specific
+[Git attribute](../.gitattributes) disables only `blank-at-eof` for this artifact;
+all other whitespace checks remain applicable. No generated block or INDEX is
+hand-edited or normalized. Local `.vibe/` lifecycle state and the persistent
+boot transaction lock remain ignored, outside the committed route.
 
-The [tool pin](../toolchain/vibevm.json) records upstream source commit
-`b6659978453f50e6d1d4d99626d70b980a2c5847` and the exact musl binary hash
-previously qualified by
-[shared-governance](https://github.com/jresearchsoftware/shared-governance/blob/60704ce3e0f0243d157646989429c6e621fc8f04/toolchain/vibevm.json).
-No binary is committed or installed by Relay. The GNU release's known
-`GLIBC_2.39` prerequisite is avoided by this same-release musl pin; it does not
-become a new Relay platform requirement. VibeVM remains alpha tooling with
-version-specific manifest, lock and generation behavior.
+## Optional maintenance qualification
 
-The optional [qualification script](../scripts/qualify-vibevm.py) uses only
-Python 3.11+'s standard library and Git. Stage intended new files first so its
-tracked-files fixture includes them. It performs structural checks without a
-VibeVM executable:
+The [tool pin](../toolchain/vibevm.json) selects upstream source revision
+`b6659978453f50e6d1d4d99626d70b980a2c5847` and the exact Linux x86_64 musl
+binary SHA-256
+`20d111df02eb28040ef4cb766bfcb0bde8ff4427b031f88f33eacb3711c3e240`.
+No binary is committed or installed by Relay. This avoids the same release's
+GNU binary `GLIBC_2.39` prerequisite without imposing a new normal-session
+platform requirement. Generation remains version-specific alpha-tool behavior.
+
+The existing [qualification script](../scripts/qualify-vibevm.py) uses Python
+3.11+'s standard library and Git. Its structural mode reads the committed
+route without invoking VibeVM:
 
 ```sh
 python3 scripts/qualify-vibevm.py
 ```
 
-For an actual tool probe, download the musl binary from the exact URL in the
-pin into a disposable directory, verify its SHA-256 and make that file
-executable. Pass its absolute path; the script verifies the digest again before
-running it:
+For actual tool qualification, obtain the exact binary from the pin in a
+disposable directory, verify its SHA-256 and make that file executable. Stage
+intended source additions so the tracked-file fixture includes them, then run:
 
 ```sh
-python3 scripts/qualify-vibevm.py --vibe /absolute/temporary/path/vibe
+python3 scripts/qualify-vibevm.py --vibe /absolute/disposable/path/vibe
+python3 scripts/qualify-vibevm-routing.py --vibe /absolute/disposable/path/vibe
 ```
 
-All tool operations run on disposable copies with isolated home/settings/cache
-and `--offline`. The probe inspects actual `init --no-registry` effects,
-checks preservation of human-owned agent text, validates the prepared project,
-requires zero `check` findings, and reproduces the empty index twice without
-changing the manifest or lock. It also checks the retained scaffold with stock
-agent redirects removed. No model call, package resolution or publication is
-part of this probe. Structural checks alone do not establish tool compatibility
-or actual client behavior; an unavailable tool is a qualification limitation.
+Both scripts recheck the binary digest. Tool operations use disposable projects,
+isolated HOME/settings/cache and `--offline`, with no inherited authentication.
+The first script now qualifies the actual bounded route. The second retains
+the Step 1 stock/synthetic comparison; it removes the active managed block only
+from its disposable comparison input. Neither script changes the checkout,
+invokes a model, installs host dependencies or becomes a new required startup
+command or acceptance gate.
 
-Do not run stock `vibe init`, `install` or `reinstall` on Relay as a session
-startup or routine repair step. Even dependency-free `init --no-registry`
-creates `00-core.md`, `90-user.md`, unused spec directories, local state and
-session redirects in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. The stock core
-requires WAL/checkpoint startup and `Human > Spec > Tests > Code` precedence.
-`reinstall` also generates session redirects. These effects were inspected in
-isolation and are deliberately excluded from the committed Relay scaffold;
-the pinned checks accept their absence. Local `.vibe/` state and the persistent
-boot transaction lock are ignored, not consumer policy or committed payload.
+The actual-route probe verifies:
 
-## Later dependency adoption
+- committed file reachability without local state or a VibeVM executable;
+- unchanged manifest, lock, authored files and generated bytes after validation,
+  two reinstalls and repeat init;
+- human text before and after all three managed blocks surviving regeneration;
+- duplicate and unclosed markers refused before changing route bytes;
+- missing INDEX detected by file reads, and regeneration repairing missing INDEX
+  and GEMINI without replacing authored policy.
 
-Phase 1 adopts no shared package and does not transfer semantic ownership.
-The intended future package is `org.jresearch.ai/development-governance`,
-with prospective distribution at
-`jrs-vibevm/org.jresearch.ai.development-governance`. Neither the coordinate nor
-candidate `=0.1.0` proves publication or immutable content. A separately
-authorized successor Request must verify remote publication, accepted producer
-SHA, distribution identity and complete hashes, and resolve a new exact Relay
-starting head before any adoption.
+The structural and pinned-tool probes passed on Linux. Upstream `vibe check`
+reported no findings even with INDEX removed: it is not a reachability,
+authority or acceptance check. Real Codex/Claude/Gemini traversal, semantic task
+selection and model compliance remain **UNVERIFIED**. Pure file reads are the
+simplest ordinary-session path tested; tool generation is separate evidence.
 
-That future reviewed change must commit the exact requirement, lock, passive
-materialized bytes, native Skill and bounded routing together with removal or
-reclassification of the reusable local duplicate, preserving Relay-specific
-bindings and overlays. Resolution/update stays opt-in at maintenance time;
-normal execution must read committed content offline. Compare the same bytes
-with the Git/native-Skill baseline rather than assuming a VibeVM advantage.
-Update this Phase 1 qualification for the admitted migration, verify rollback
-through an ordinary Git revert, and obtain independent exact-head acceptance.
-The [distribution design](vibevm-governance-design.md) supplies the earlier
-comparison and known alpha limitations. Merging Phase 1 does not start Phase 2,
-deploy anything or authorize Issue closure.
+For an intentional maintenance change, author core/user inputs and regenerate
+only in a disposable copy using the pinned tool:
+
+```sh
+/absolute/disposable/path/vibe --offline --json reinstall . --assume-yes
+```
+
+Review the resulting route and human overlays before copying the four generated
+files back as an ordinary source proposal. Keep the empty manifest/lock graph
+and bounded boot sources. Do not use stock init as session startup or a routine
+repair: when an authored core is absent, init restores stock policy. Reinstall
+preserves existing authored files but does not recreate a missing one.
+
+## Missing files, collisions and rollback
+
+If INDEX or an authored source is missing, file navigation is incomplete;
+report the missing reference and retain the available canonical Relay authority.
+Do not interpret a successful VibeVM check as recovery or invent boot policy.
+Restore reviewed committed files through ordinary Git recovery. No automatic
+CLI, network or hidden fallback is introduced. Auxiliary-client behavior when
+their only route is broken remains unverified.
+
+Malformed managed markers make the pinned generator fail with exit 3. Preserve
+human text and reconcile the source proposal explicitly; do not force a
+regeneration or overwrite overlays. The probe covers both duplicate pairs and
+an unclosed block, and confirms all route bytes remain unchanged on refusal.
+
+Rollback is an ordinary Git revert of the routing activation commit, restoring
+the pre-activation AGENTS file, absent auxiliary redirects/core/user files and
+empty INDEX. Revert does not need VibeVM or local lifecycle state. `vibe clean`
+is not rollback: it deletes INDEX while retaining redirects and authored files.
+The disposable Git revert is checked against the exact starting tree before
+handoff; no production service or installed consumer is changed.
+
+## Later package adoption
+
+Shared-package adoption and migration/removal of local proportional-controls
+remain separately admitted work under Task #97, after the owner-required
+shared-governance Task #15 semantic completeness assessment/corrections.
+A future complete Request must verify accepted producer/distribution identity,
+content hashes, exact Relay starting head, semantic ownership, qualification and
+rollback. This routing change grants no package adoption, deployment, release,
+merge, Task approval or Issue closure authority.

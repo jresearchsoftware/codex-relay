@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -138,7 +139,9 @@ def probe(vibe):
         # Human text and authored policy remain separate from generated redirects.
         bounded = root / "bounded"
         shutil.copytree(stock, bounded)
-        relay_agents = (ROOT / "AGENTS.md").read_bytes()
+        # This historical comparison fixture starts without the now-active native block.
+        relay_agents = re.sub(rb"^<vibevm>\n.*?^</vibevm>\n", b"",
+                             (ROOT / "AGENTS.md").read_bytes(), flags=re.M | re.S).rstrip(b"\n") + b"\n"
         (bounded / "AGENTS.md").write_bytes(relay_agents)
         core = b"# Fixture authority\nRead the existing Relay AGENTS.md and admitted Request.\n"
         user = b"# Fixture overrides\nLoad component contracts only when relevant to the task.\n"
