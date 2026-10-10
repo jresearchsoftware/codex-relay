@@ -156,6 +156,9 @@ handoff; no production service or installed consumer is changed.
 Shared-package adoption and migration/removal of local proportional-controls
 remain separately admitted work under Task #97, after the owner-required
 shared-governance Task #15 semantic completeness assessment/corrections.
+The [Step 2 coverage assessment](vibevm-semantic-coverage.md) records the two
+remaining shared-procedure gaps and the producer-owner handoff; it changes no
+operative policy or routing.
 A future complete Request must verify accepted producer/distribution identity,
 content hashes, exact Relay starting head, semantic ownership, qualification and
 rollback. This routing change grants no package adoption, deployment, release,
