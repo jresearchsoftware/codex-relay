@@ -62,63 +62,42 @@ shared [execution-policy module](../runtime/src/execution-policy.mjs). The
 
 ## Proportional controls and operator usability
 
-Mandatory controls must scale to a concrete accepted risk. A control is not
-justified solely because it can prevent a defect or because a stricter pattern
-exists. Prefer the cheapest mechanism that keeps the material risk acceptable.
+The complete reusable procedure now has one semantic owner: the committed
+[development-governance 1.1.0 proportional-controls protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md).
+Read it in full for relevant controls, including behaviorally free hardening,
+and use its existing-proof rule when considering another process step. For a
+relevant requirement-origin decision, read its
+[requirement-authority protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/requirement-authority.md).
+Root AGENTS adopts these topics; the bundled package-versioning procedure is
+not adopted as Relay policy. Normal execution reads these committed files
+without VibeVM, resolution, networking or another owner action.
 
-Behaviorally free hardening may be applied without a separate owner decision
-when it preserves existing supported workflows and adds no material operator
-work, platform restriction, prerequisite, gate, trust boundary, recovery burden
-or false-positive surface. Examples include setting safe attributes on an
-already-owned file, avoiding secret logging, or choosing an equivalently usable
-safer API.
+### Relay bindings
 
-A cost-bearing security or validation control requires explicit canonical owner
-authorization before it becomes mandatory. Treat a control as cost-bearing when
-it does any of the following materially:
+The owning project's current scope and canonical owner authorization mean the
+live Issue/CR and, for migrated Tasks, its trusted Decision and complete Task
+Request. Shared guidance grants no Step, execution, publication, acceptance,
+recovery, deployment, merge or closure permission. Keep worker, Writer and
+independent Reviewer responsibilities separate and retain all existing
+credential, trust, runtime and production boundaries.
 
-- blocks or narrows an existing or common supported workflow or environment;
-- adds an operator command, separate checkout, platform/filesystem requirement,
-  administrative prerequisite, credential step, or recovery step;
-- introduces or tightens a trust, privilege, sandbox, ACL or execution boundary;
-- adds a mandatory validation gate, broadens the required validation surface, or
-  makes unrelated baseline debt block the current task;
-- adds persistent state, synchronization, lifecycle or failure modes; or
-- materially increases execution time, maintenance, review friction, false
-  positives, or control-induced defects.
+The full [material user/operator contract-change gate](../AGENTS.md#material-useroperator-contract-change-gate)
+remains operative and Relay-owned, including implementation-time safe
+preservation/stop, comparison of changed surfaces before independent approval,
+and prohibition of retrospective authority normalization. An unauthorized
+material delta remains `OWNER_DECISION_REQUIRED` until canonical owner
+amendment. The shared control protocol does not replace that broader gate.
 
-Before proposing such a control, make the justification decision-grade: state
-the attacker or failure capability, the concrete path to harm, the resulting
-impact or privilege, why existing controls are insufficient, and the operator
-and maintenance cost of the proposed control. Treat accepting the risk or doing
-nothing as a valid option; a security or test preference is not authority.
+Use Relay's existing Task/PR, native checks, independent exact-head review and
+one Writer Outcome for evidence and disposition. Required full candidate
+checks, warning acquisition below, finding provenance and the simplest
+owner-facing path required by canonical authority remain binding. Existing
+proof about an earlier head does not qualify a changed candidate.
 
-Evaluate human behavior as part of control effectiveness. Consider how often an
-ordinary user will encounter the control, whether the compliant path is
-materially harder than an obvious workaround, and whether friction is likely to
-cause disabling, bypass, unsafe local storage, duplicated state or abandonment
-of the product. A control that predictably drives users toward a simpler unsafe
-workaround is not automatically a security improvement.
-
-For visible, local, reversible failures that are cheap to diagnose and rerun,
-prefer simple detection, warning and recovery over recurring preventive
-machinery unless a concrete accepted risk requires blocking. Retain stronger
-prevention for silent, propagating or irreversible failures and for material
-credential, privacy/compliance, production, publication, merge or other
-protected-boundary risks.
-
-Common supported environments should work by default. A filesystem, platform,
-permission shape, unrelated service or other unusual local condition is not by
-itself a reason for a hard failure merely because a stricter configuration is
-possible. Bind a hard block to a material accepted invariant and use a warning
-or bounded recovery when that preserves the invariant with lower operator cost.
-
-Independent review of a change that affects controls or operator workflow must
-also exercise the simplest owner-facing black-box path required by canonical
-authority. Review for unnecessary state, gates, authority coupling, prerequisites
-and operator-visible actions in addition to implementation correctness. An
-unauthorized material operator-contract delta remains
-`OWNER_DECISION_REQUIRED` under the repository's existing contract-change gate.
+[Consumer maintenance and rollback](vibevm.md) describe the reviewed source,
+lock and slot identity path. A missing or drifted shared file is an evidence
+and routing gap: preserve available Relay authority and restore reviewed Git
+content; do not invent a substitute procedure or resolve policy at session time.
 
 ## Execution warning disposition
 

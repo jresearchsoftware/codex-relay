@@ -262,18 +262,17 @@ Task/PR and review; do not introduce a separate documentation approval process.
 
 Before introducing or enforcing a new security, validation, privilege,
 filesystem/platform, or operator gate, read
-[proportional controls and operator usability](docs/execution-policy.md#proportional-controls-and-operator-usability).
-Behaviorally free hardening may remain an implementation detail; a cost-bearing
-control requires explicit canonical owner authority. For control or
-operator-workflow changes, independent review must also test the simplest
-owner-facing path defined by canonical authority.
+[the pinned proportional-controls protocol](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md)
+and its [Relay bindings](docs/execution-policy.md#proportional-controls-and-operator-usability).
 
-Use the least complex process that preserves source truth, reproducible checks,
-authority and independent acceptance. Prefer live Issue/CR, PR diff, exact Git
-facts, native checks and one Outcome over duplicate ledgers, receipts or packets.
-A self-contained packet needs a concrete independent purpose. Do not add a
-commit, review pass, gate or state transition when existing evidence proves the
-same invariant; stronger controls need a concrete risk or authority reason.
+Apply the shared protocol's [existing-proof rule](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md#existing-proof-before-another-step)
+when considering another process step. Relay's evidence stays in the live
+Issue/CR, PR diff, exact Git facts, native checks and one Writer Outcome.
+When deciding whether an earlier requirement binds newly authorized work, read
+[requirement-authority](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/requirement-authority.md)
+on demand within the current Task/CR authority. These are the adopted shared
+topics; the bundled package-versioning protocol is not Relay policy. The full
+material user/operator contract-change gate above remains Relay-owned.
 
 Wait for required native CI, but leave reconstructible CI/status results in
 their native records instead of posting another PASS comment or Outcome update.
