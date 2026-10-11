@@ -9,6 +9,18 @@ import { causalEvidence, digest, fail, positive, validateEnvelope } from './exec
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 
+export function parseRecoveryRequest(request) {
+  if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
+  const keys = Object.keys(request).sort().join(',');
+  if (request.operation === 'inspect' && keys === 'attemptId,operation,runId') return request;
+  if (keys === 'attemptId,authorizationId,runId' && positive(request.authorizationId)) return request;
+  if (request.operation === 'inspect-prepublication' && keys === 'attemptId,head,operation,runId'
+    && /^[a-f0-9]{40}$/.test(request.head ?? '')) return request;
+  if (request.operation === 'recover-prepublication' && keys === 'attemptId,authorizationId,head,operation,runId'
+    && positive(request.authorizationId) && /^[a-f0-9]{40}$/.test(request.head ?? '')) return request;
+  fail('RECOVERY_REQUEST_INVALID');
+}
+
 // An explicit operator entrypoint, never called by the router or ordinary replay.
 // It has no prepare/execute callback: the original child receipt is mandatory.
 export async function recoverAttemptPublication(options) {
@@ -75,9 +87,13 @@ export async function main() {
   }
   let request;
   try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('RECOVERY_REQUEST_INVALID'); }
-  if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
+  parseRecoveryRequest(request);
   const local = createLocalWriterAdapter();
   const broker = { invoke: value => local.invoke({ ...value, workflowReadToken: process.env.GITHUB_TOKEN }) };
+  if (request.operation === 'inspect-prepublication') {
+    return broker.invoke({ ...request, operation: 'prepublication-state' });
+  }
+  if (request.operation === 'recover-prepublication') return broker.invoke(request);
   if (request.operation === 'inspect' && Object.keys(request).sort().join(',') === 'attemptId,operation,runId') {
     const state = await broker.invoke({ operation: 'publication-state', runId: request.runId, attemptId: request.attemptId });
     return { repository: state.repository, runId: request.runId, attemptId: request.attemptId,

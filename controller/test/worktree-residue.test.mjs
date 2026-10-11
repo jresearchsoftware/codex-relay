@@ -43,13 +43,18 @@ async function denyAccess(t, path, operation) {
   } finally { await chmod(path, originalMode); }
 }
 
-test('a private generated regular file remains observable as residue without reading or removing its bytes', async t => {
+test('an unreadable generated regular file fails complete observation without changing its bytes', async t => {
   const f = await fixture(t); await f.prepare(f.envelope); const head = await f.commit();
   const residue = join(f.cwd, 'generated-output.tmp');
   await writeFile(residue, 'repeatable generated output\n');
   await denyAccess(t, residue, async () => {
-    const progress = await f.collect(f.envelope);
-    assert.equal(progress.head, head); assert.equal(progress.clean, false); assert.ok(progress.bundle);
+    await assert.rejects(f.collect(f.envelope), error => {
+      assert.equal(error.code, 'TRUSTED_GIT_FAILED');
+      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
+      assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
+      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
+      return true;
+    });
   });
   assert.equal(await readFile(residue, 'utf8'), 'repeatable generated output\n');
   assert.equal(f.pushes(), 0);
@@ -66,9 +71,9 @@ test('an unreadable ignored cache is irrelevant while an unreadable non-ignored 
   await denyAccess(t, unknown, async () => {
     await assert.rejects(f.collect(f.envelope), error => {
       assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-      assert.equal(error.details.failureDiagnostic.operation, 'ls-files');
+      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
       assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
-      assert.match(error.details.failureDiagnostic.preview, /Permission denied/);
+      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
       return true;
     });
   });
@@ -84,9 +89,9 @@ test('tracked permission failures are not accepted as ordinary diff exit one', a
   await denyAccess(t, tracked, async () => {
     await assert.rejects(f.collect(f.envelope), error => {
       assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-      assert.equal(error.details.failureDiagnostic.operation, 'diff');
+      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
       assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
-      assert.match(error.details.failureDiagnostic.preview, /Permission denied/);
+      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
       return true;
     });
   });

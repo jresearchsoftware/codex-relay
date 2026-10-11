@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { createPublicationBroker } from './publication-broker.mjs';
 import { createAttemptStore } from './attempt-store.mjs';
 import { createGithubApi } from './github-api.mjs';
-import { createGitPublisher } from './trusted-git.mjs';
+import { createGitPublisher, collectProgress } from './trusted-git.mjs';
+import { checkoutPath } from './attempt-runtime.mjs';
 import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
@@ -35,7 +36,11 @@ export async function main() {
     store: createAttemptStore(`${deployment.claimRoot}/publication-v2`),
     lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
     journal: createAttemptStore(CONSUMER.paths.attemptRoot),
-    publisher: createGitPublisher({ token: value, root: deployment.claimRoot }), admission }).dispatch(request);
+    publisher: createGitPublisher({ token: value, root: deployment.claimRoot }),
+    // Fixed root helper, exact admitted attempt, original contained journal.
+    // No caller path, permission repair or worker Git metadata is accepted.
+    collectRetained: e => collectProgress(checkoutPath(e), e, { token: value, root: deployment.claimRoot }),
+    admission }).dispatch(request);
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

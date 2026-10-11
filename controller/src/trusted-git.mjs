@@ -1,8 +1,10 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, lstat, copyFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdtemp, mkdir, readFile, writeFile, opendir, lstat, open, readlink, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { REPOSITORY, exactSha, fail, safePath, branchName } from './execution-contract.mjs';
 import { boundedDiagnosticText } from './diagnostics.mjs';
@@ -11,7 +13,7 @@ const exec = promisify(execFile);
 export const REMOTE = `https://github.com/${REPOSITORY}.git`;
 const SECRET = /github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 const GIT_DIAGNOSTIC_BYTES = 2048;
-const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-parse', 'merge-base', 'update-ref', 'read-tree', 'diff', 'ls-files', 'bundle', 'cat-file', 'rev-list', 'show', 'diff-tree']);
+const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-parse', 'merge-base', 'update-ref', 'read-tree', 'diff', 'ls-files', 'check-ignore', 'ls-tree', 'bundle', 'cat-file', 'rev-list', 'show', 'diff-tree']);
 export const secretFree = text => { if (SECRET.test(text)) fail('SECRET_PUBLICATION_SCAN_FAILED'); return text; };
 
 function gitOperation(args) {
@@ -55,13 +57,20 @@ export function gitEnvironment(token) {
 }
 // Call ONLY against a repository constructed by trusted code. Never point this
 // helper at the model checkout, even for a supposedly read-only Git command.
-export async function git(cwd, args, { token, allowFailure = false, allowedExitCodes = [], rejectStderr = false } = {}) {
+export async function git(cwd, args, { token, allowFailure = false, allowedExitCodes = [], rejectStderr = false, input } = {}) {
   try {
     // Fetch must be quiescent before checkout access is transferred or objects
     // are inspected. Detached maintenance can remove its lock during traversal.
-    const result = await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', '-c', 'fetch.fsckObjects=true',
+    const execution = exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', '-c', 'fetch.fsckObjects=true',
       '-c', 'protocol.file.allow=always', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args],
       { cwd, env: gitEnvironment(token), maxBuffer: 100 * 1024 * 1024, timeout: 120000, windowsHide: true });
+    let inputFailure;
+    if (input !== undefined) {
+      execution.child.stdin.on('error', error => { inputFailure = error; });
+      execution.child.stdin.end(input);
+    }
+    const result = await execution;
+    if (inputFailure) throw inputFailure;
     // ls-files can exit zero while warning that a directory was unreadable.
     // Such an observation cannot prove either a clean or a fully dirty tree.
     if (rejectStderr && result.stderr.trim()) throw Object.assign(new Error('GIT_OBSERVATION_INCOMPLETE'), { code: 0, stderr: result.stderr });
@@ -82,64 +91,272 @@ export async function temporaryRepo(fn, { root = tmpdir(), remote = REMOTE, toke
     return await fn(dir);
   } finally { await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 }
-async function regular(path, max = 100 * 1024 * 1024) {
-  const s = await lstat(path);
-  if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1 || s.size > max) fail('UNTRUSTED_GIT_FILE_INVALID');
-  return s;
+function sameObservedFile(a, b) {
+  return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.size === b.size
+    && a.nlink === b.nlink && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 }
-async function directory(path) {
-  const s = await lstat(path);
-  if (!s.isDirectory() || s.isSymbolicLink()) fail('UNTRUSTED_GIT_DIRECTORY_INVALID');
+function observationChanged() { throw new Error('WORKTREE_CHANGED_DURING_OBSERVATION'); }
+// Linux's descriptor paths pin the source parent while O_NOFOLLOW protects
+// the final component. Keep '/.' here: lstat of the descriptor link itself
+// would inspect procfs rather than the already-open directory.
+const pinnedPath = (handle, name = '.') => `/proc/self/fd/${handle.fd}/${name}`;
+async function pinDirectory(path, device, expected) {
+  const before = expected ?? await lstat(path);
+  if (!before.isDirectory() || before.isSymbolicLink()) fail('UNTRUSTED_GIT_DIRECTORY_INVALID');
+  if (device !== undefined && before.dev !== device) fail('UNTRUSTED_GIT_DEVICE_INVALID');
+  const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const after = await handle.stat();
+    // Absolute ancestors can legitimately gain unrelated sibling entries.
+    // Acquisition binds the inode and access mode; source traversal separately
+    // checks directory contents/timestamps around its bounded observation.
+    const sameIdentity = before.dev === after.dev && before.ino === after.ino
+      && before.mode === after.mode && before.uid === after.uid && before.gid === after.gid;
+    if (!sameIdentity || expected && !sameObservedFile(before, after)) observationChanged();
+    return handle;
+  } catch (error) { await handle.close(); throw error; }
+}
+async function pinCheckout(checkout) {
+  if (process.platform !== 'linux') fail('COLLECTION_PLATFORM_UNSUPPORTED');
+  const parts = checkout.split('/').slice(1);
+  if (!isAbsolute(checkout) || parts.some(part => !part || part === '.' || part === '..')) fail('UNTRUSTED_GIT_DIRECTORY_INVALID');
+  let handle = await pinDirectory('/');
+  try {
+    for (const part of parts) {
+      const next = await pinDirectory(pinnedPath(handle, part));
+      await handle.close(); handle = next;
+    }
+    return handle;
+  } catch (error) { await handle.close(); throw error; }
+}
+function checkRegular(stat, device, max = 100 * 1024 * 1024) {
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > max) fail('UNTRUSTED_GIT_FILE_INVALID');
+  if (stat.dev !== device) fail('UNTRUSTED_GIT_DEVICE_INVALID');
+}
+async function copyObservedFile(source, destination, expected, device, max = 100 * 1024 * 1024) {
+  checkRegular(expected, device, max);
+  // O_NONBLOCK also prevents an intervening FIFO from hanging collection.
+  const handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  let output;
+  try {
+    const before = await handle.stat();
+    checkRegular(before, device, max);
+    if (!sameObservedFile(before, expected)) observationChanged();
+    if (destination) output = await open(destination, 'wx', before.mode & 0o100 ? 0o700 : 0o600);
+    const buffer = Buffer.alloc(64 * 1024); let bytes = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (!bytesRead) break;
+      bytes += bytesRead;
+      if (bytes > before.size) observationChanged();
+      await output?.writeFile(buffer.subarray(0, bytesRead));
+    }
+    if (bytes !== before.size || !sameObservedFile(before, await handle.stat())
+      || !sameObservedFile(before, await lstat(source))) observationChanged();
+  } finally { await output?.close(); await handle.close(); }
+}
+async function boundedSourceText(parent, name, device) {
+  const path = pinnedPath(parent, name); const expected = await lstat(path);
+  checkRegular(expected, device, 1024);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat(); checkRegular(before, device, 1024);
+    if (!sameObservedFile(before, expected)) observationChanged();
+    const bytes = Buffer.alloc(1025); let size = 0;
+    while (size <= 1024) {
+      const next = await handle.read(bytes, size, bytes.length - size, null);
+      if (!next.bytesRead) break;
+      size += next.bytesRead;
+    }
+    if (size !== before.size || !sameObservedFile(before, await handle.stat())
+      || !sameObservedFile(before, await lstat(path))) observationChanged();
+    return bytes.subarray(0, size).toString('utf8').trim();
+  } finally { await handle.close(); }
+}
+function sourceFailure(error, operation) {
+  if (error.code === 'TRUSTED_GIT_FAILED' || error.code && !/^E[A-Z0-9]+$/.test(error.code)) throw error;
+  const failure = new Error('TRUSTED_GIT_FAILED'); failure.code = 'TRUSTED_GIT_FAILED';
+  const safeReasons = new Set(['WORKTREE_CHANGED_DURING_OBSERVATION', 'WORKTREE_OBSERVATION_TOO_LARGE',
+    'WORKTREE_OBSERVATION_TOO_DEEP', 'WORKTREE_PATH_ENCODING_INVALID']);
+  const reason = /^E[A-Z0-9]+$/.test(error.code ?? '') ? error.code
+    : safeReasons.has(error.message) ? error.message : 'SOURCE_OBSERVATION_FAILED';
+  const preview = boundedDiagnosticText(`${reason}: complete checkout observation unavailable`, GIT_DIAGNOSTIC_BYTES);
+  failure.details = { failureDiagnostic: { code: failure.code, classification: 'GIT_LOCAL_FAILURE',
+    primaryCause: 'GIT_LOCAL_FAILURE', operation, pathContext: 'checkout', preview: preview.text,
+    bytes: preview.bytes, truncated: preview.truncated } };
+  throw failure;
+}
+async function observeWorktree(dir, checkout, head, device) {
+  const snapshot = join(dir, 'observed-worktree'); await mkdir(snapshot);
+  const tracked = new Map(); const trackedDirectories = new Set();
+  for (const row of (await git(dir, ['ls-tree', '-r', '-z', head])).split('\0').filter(Boolean)) {
+    const tab = row.indexOf('\t'); const [mode, , object] = row.slice(0, tab).split(' ');
+    const path = row.slice(tab + 1); tracked.set(path, { mode, object });
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) trackedDirectories.add(parts.slice(0, i).join('/'));
+  }
+  const matchingSymlinks = new Set(); let specialResidue = false;
+  let bytes = 0; let entriesObserved = 0;
+  async function copySource(source, destination, stat) {
+    bytes += stat.size;
+    if (bytes > 100 * 1024 * 1024) throw new Error('WORKTREE_OBSERVATION_TOO_LARGE');
+    await copyObservedFile(source, destination, stat, device);
+  }
+  async function visit(handle, relative = '', destination = join(snapshot, relative), metadataOnly = false) {
+    if (relative.split('/').length > 128) throw new Error('WORKTREE_OBSERVATION_TOO_DEEP');
+    const source = pinnedPath(handle);
+    const before = await handle.stat();
+    const entries = [];
+    for await (const entry of await opendir(source, { encoding: 'buffer' })) {
+      const nameBytes = entry.name;
+      const name = nameBytes.toString('utf8');
+      if (!Buffer.from(name).equals(nameBytes)) throw new Error('WORKTREE_PATH_ENCODING_INVALID');
+      if (!relative && name === '.git') continue;
+      if (++entriesObserved > 50000) throw new Error('WORKTREE_OBSERVATION_TOO_LARGE');
+      const path = relative ? `${relative}/${name}` : name;
+      entries.push({ name, path, stat: await lstat(pinnedPath(handle, name)) });
+    }
+    // Git sees only copies of regular ignore files; it never opens a worker
+    // path or follows a worker-owned .gitignore symlink to decide exclusion.
+    const ignore = entries.find(entry => entry.name === '.gitignore' && entry.stat.isFile());
+    if (ignore) await copySource(pinnedPath(handle, ignore.name), join(destination, ignore.name), ignore.stat);
+    const candidates = entries.map(entry => entry.path + (entry.stat.isDirectory() ? '/' : ''));
+    const ignored = new Set(entries.length && !metadataOnly ? (await git(dir,
+      [`--work-tree=${snapshot}`, 'check-ignore', '--no-index', '--stdin', '-z'],
+      { input: `${candidates.join('\0')}\0`, allowedExitCodes: [1], rejectStderr: true }) ?? '').split('\0') : []);
+    for (const entry of entries) {
+      const candidate = entry.path + (entry.stat.isDirectory() ? '/' : '');
+      if (ignored.has(candidate) && !tracked.has(entry.path) && !trackedDirectories.has(entry.path)) continue;
+      const from = pinnedPath(handle, entry.name); const to = join(destination, entry.name);
+      if (entry.stat.isDirectory()) {
+        // Nested Git metadata is observed as raw bytes outside the observation
+        // worktree, so Git cannot discover or interpret it as another repo.
+        const child = await pinDirectory(from, device, entry.stat);
+        try {
+          if (entry.name === '.git' && !metadataOnly) {
+            specialResidue = true;
+            await visit(child, entry.path, await mkdtemp(join(dir, 'observed-metadata-')), true);
+          } else {
+            await mkdir(to);
+            await visit(child, entry.path, to, metadataOnly);
+          }
+          if (!sameObservedFile(entry.stat, await lstat(from))) observationChanged();
+        } finally { await child.close(); }
+      } else if (entry.stat.isFile()) {
+        if (entry.name === '.git' && !metadataOnly) {
+          specialResidue = true;
+          const retained = await mkdtemp(join(dir, 'observed-metadata-'));
+          await copySource(from, join(retained, 'gitfile'), entry.stat);
+        } else if (entry !== ignore) await copySource(from, to, entry.stat);
+      } else if (entry.stat.isSymbolicLink()) {
+        const target = await readlink(from, { encoding: 'buffer' });
+        if (!sameObservedFile(entry.stat, await lstat(from))) observationChanged();
+        const expected = tracked.get(entry.path);
+        const object = createHash('sha1').update(`blob ${target.length}\0`).update(target).digest('hex');
+        if (expected?.mode === '120000' && expected.object === object) matchingSymlinks.add(entry.path);
+        else specialResidue = true;
+      } else {
+        // Device/FIFO/socket presence is known residue; never open it or copy
+        // it into the trusted repository. Such modes cannot enter a commit.
+        if (!sameObservedFile(entry.stat, await lstat(from))) observationChanged();
+        specialResidue = true;
+      }
+    }
+    if (!sameObservedFile(before, await handle.stat())) observationChanged();
+  }
+  try {
+    await visit(checkout);
+  } catch (error) {
+    sourceFailure(error, 'worktree-observation');
+  }
+  // The snapshot is owned/readable by this collector. Attribute normalization
+  // is preserved, with no worker config, hook, filter command, or metadata.
+  const diff = await git(dir, [`--work-tree=${snapshot}`, 'diff', '--no-ext-diff', '--no-textconv', '--raw', '-z', head], { rejectStderr: true });
+  const rows = diff.split('\0'); let dirty = specialResidue;
+  for (let i = 0; i < rows.length - 1; i += 2) if (!matchingSymlinks.has(rows[i + 1])) dirty = true;
+  const untracked = await git(dir, [`--work-tree=${snapshot}`, 'ls-files', '--others', '--exclude-standard', '-z'], { rejectStderr: true });
+  return !dirty && !untracked.split('\0').some(Boolean);
 }
 export async function collectProgress(checkout, e, options = {}) {
   // Import only regular object bytes and a bounded ref. Model config, index,
   // hooks, alternates, replace refs, grafts, filters and remotes never cross.
-  const metadata = join(checkout, '.git');
-  await directory(checkout); await directory(metadata);
-  const headFile = join(metadata, 'HEAD'); await regular(headFile, 1024);
-  let head = (await readFile(headFile, 'utf8')).trim();
-  if (head.startsWith('ref: ')) {
-    if (head !== `ref: refs/heads/${e.branch}`) fail('WORKING_BRANCH_CHANGED');
-    const parts = ['refs', 'heads', ...branchName(e.branch).split('/')];
-    let at = metadata;
-    for (const part of parts.slice(0, -1)) { at = join(at, part); await directory(at); }
-    const ref = join(at, parts.at(-1)); await regular(ref, 1024);
-    head = (await readFile(ref, 'utf8')).trim();
-  }
-  if (!exactSha(head)) fail('WORKING_HEAD_INVALID');
-  return temporaryRepo(async dir => {
-    if (e.target === 'pull_request' || e.continuation) await git(dir, ['fetch', '--no-tags', options.remote ?? REMOTE, `refs/heads/${e.branch}:refs/remotes/task`], options);
-    const objects = join(metadata, 'objects'); await directory(objects);
-    let bytes = 0; let files = 0;
-    for (const folder of await readdir(objects)) {
-      if (!/^[a-f0-9]{2}$/.test(folder) && folder !== 'pack') continue;
-      await directory(join(objects, folder));
-      await mkdir(join(dir, 'objects', folder), { recursive: true });
-      for (const name of await readdir(join(objects, folder))) {
-        if (!(folder === 'pack' ? /^pack-[a-f0-9]{40}\.(pack|idx)$/.test(name) : /^[a-f0-9]{38}$/.test(name))) continue;
-        const source = join(objects, folder, name); bytes += (await regular(source)).size;
-        if (bytes > 100 * 1024 * 1024 || ++files > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
-        const destination = join(dir, 'objects', folder, name);
-        // Preserve verified remote objects; never overwrite a trusted object.
-        if (!(await lstat(destination).catch(() => null))) await copyFile(source, destination);
+  let source; let metadata;
+  try {
+    source = await pinCheckout(checkout);
+    const device = (await source.stat()).dev;
+    metadata = await pinDirectory(pinnedPath(source, '.git'), device);
+    const metadataStat = await metadata.stat();
+    async function observedHead() {
+      let head = await boundedSourceText(metadata, 'HEAD', device);
+      if (head.startsWith('ref: ')) {
+        if (head !== `ref: refs/heads/${e.branch}`) fail('WORKING_BRANCH_CHANGED');
+        const parts = ['refs', 'heads', ...branchName(e.branch).split('/')];
+        let at = metadata;
+        try {
+          for (const part of parts.slice(0, -1)) {
+            const next = await pinDirectory(pinnedPath(at, part), device);
+            if (at !== metadata) await at.close();
+            at = next;
+          }
+          head = await boundedSourceText(at, parts.at(-1), device);
+        } finally { if (at !== metadata) await at.close(); }
       }
+      if (!exactSha(head)) fail('WORKING_HEAD_INVALID');
+      return head;
     }
-    await git(dir, ['cat-file', '-e', `${head}^{commit}`]);
-    await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);
-    await git(dir, ['update-ref', 'refs/heads/progress', head]);
-    await git(dir, ['read-tree', head]);
-    // Observe under the collector's real identity and permissions. A difference
-    // is known residue; an inaccessible path or other failed observation is
-    // unknown evidence and must not be downgraded to an uncommitted-work warning.
-    const dirty = await git(dir, [`--work-tree=${checkout}`, 'diff', '--no-ext-diff', '--no-textconv', '--exit-code', head],
-      { allowedExitCodes: [1], rejectStderr: true });
-    const untracked = await git(dir, [`--work-tree=${checkout}`, 'ls-files', '--others', '--exclude-standard', '-z'], { rejectStderr: true });
-    const clean = dirty !== null && !untracked.split('\0').some(p => p && !p.startsWith('.git/'));
-    const bundle = join(dir, 'progress.bundle');
-    if (head === e.startHead) return { head, bundle: null, clean };
-    await git(dir, ['bundle', 'create', bundle, 'refs/heads/progress', `^${e.startHead}`]);
-    return { head, bundle: (await readFile(bundle)).toString('base64'), clean };
-  }, options);
+    const head = await observedHead();
+    return await temporaryRepo(async dir => {
+      if (e.target === 'pull_request' || e.continuation) await git(dir, ['fetch', '--no-tags', options.remote ?? REMOTE, `refs/heads/${e.branch}:refs/remotes/task`], options);
+      const objects = await pinDirectory(pinnedPath(metadata, 'objects'), device);
+      try {
+        const objectsStat = await objects.stat();
+        let bytes = 0; let files = 0; let entries = 0;
+        for await (const folderEntry of await opendir(pinnedPath(objects))) {
+          if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+          const folder = folderEntry.name;
+          if (!/^[a-f0-9]{2}$/.test(folder) && folder !== 'pack') continue;
+          const folderPath = pinnedPath(objects, folder);
+          const objectsFolder = await pinDirectory(folderPath, device);
+          try {
+            const folderStat = await objectsFolder.stat();
+            await mkdir(join(dir, 'objects', folder), { recursive: true });
+            for await (const entry of await opendir(pinnedPath(objectsFolder))) {
+              if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+              const name = entry.name;
+              if (!(folder === 'pack' ? /^pack-[a-f0-9]{40}\.(pack|idx)$/.test(name) : /^[a-f0-9]{38}$/.test(name))) continue;
+              const objectPath = pinnedPath(objectsFolder, name); const stat = await lstat(objectPath);
+              checkRegular(stat, device); bytes += stat.size;
+              if (bytes > 100 * 1024 * 1024 || ++files > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+              const destination = join(dir, 'objects', folder, name);
+              let exists = false;
+              try { await lstat(destination); exists = true; }
+              catch (error) { if (error.code !== 'ENOENT') throw error; }
+              // Read even duplicate source objects completely, but never
+              // overwrite a verified object fetched into the trusted repo.
+              await copyObservedFile(objectPath, exists ? null : destination, stat, device);
+            }
+            if (!sameObservedFile(folderStat, await objectsFolder.stat())
+              || !sameObservedFile(folderStat, await lstat(folderPath))) observationChanged();
+          } finally { await objectsFolder.close(); }
+        }
+        if (!sameObservedFile(objectsStat, await objects.stat())
+          || !sameObservedFile(objectsStat, await lstat(pinnedPath(metadata, 'objects')))) observationChanged();
+      } finally { await objects.close(); }
+      await git(dir, ['cat-file', '-e', `${head}^{commit}`]);
+      await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);
+      await git(dir, ['update-ref', 'refs/heads/progress', head]);
+      await git(dir, ['read-tree', head]);
+      const clean = await observeWorktree(dir, source, head, device);
+      if (await observedHead() !== head
+        || !sameObservedFile(metadataStat, await metadata.stat())
+        || !sameObservedFile(metadataStat, await lstat(pinnedPath(source, '.git')))) observationChanged();
+      const bundle = join(dir, 'progress.bundle');
+      if (head === e.startHead) return { head, bundle: null, clean };
+      await git(dir, ['bundle', 'create', bundle, 'refs/heads/progress', `^${e.startHead}`]);
+      return { head, bundle: (await readFile(bundle)).toString('base64'), clean };
+    }, options);
+  } catch (error) { sourceFailure(error, 'object-import'); }
+  finally { await metadata?.close(); await source?.close(); }
 }
 export async function validateCommits(dir, e, head) {
   await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);

@@ -494,6 +494,106 @@ The helper wire and terminal JSON preserve that safe primary preview in
 `diagnostic.publicationRecovery`. Raw stderr and protected diagnostics are never
 copied.
 
+## Terminal prepublication recovery
+
+The separate opt-in `inspect-prepublication` / `recover-prepublication` operations
+cover only a native Issue Task attempt with a terminal BLOCKED collector failure
+at `progress`, no collection/progress receipt, no publication intent or published
+head, and no original PR. Ordinary replay and the existing `inspect` / `recover`
+publication recovery behavior are unchanged. This is neither a generic terminal
+salvage operation nor permission to rerun a worker.
+
+Use the same accepted installed `relay-publication-recovery.mjs` entrypoint and
+consumer-owned recovery workflow. Supply the original `run_id`, `attempt_id` and
+exact `candidate_head`; select `inspect-prepublication`. The read-only inspection
+returns the exact authorization body after checking the protected original
+journal, live authority, completed original owner run and native Writer BLOCKED
+Outcome. Post that body as a new unedited owner comment on the original Issue.
+Then select `recover-prepublication` with the same candidate and the new
+`authorization_id`. The direct entrypoint's bounded stdin forms are:
+
+```json
+{"operation":"inspect-prepublication","runId":123,"attemptId":"run-123","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+```
+
+```json
+{"operation":"recover-prepublication","runId":123,"attemptId":"run-123","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","authorizationId":456}
+```
+
+These synthetic values do not authorize an incident recovery. Additional paths,
+bundles, executables or credential selections are rejected. The generated native
+comment binds the original Task/Step, Request reference and authority digest,
+run/attempt, branch and fixed remote, starting/previous/candidate heads,
+configuration digest, Writer Git identity and native Bot ID, full protected
+journal digest, original controller receipt digest and original BLOCKED Outcome
+ID/body digest/timestamps. It must postdate both the latest original run
+completion and that Outcome. The Writer verifies the owner's native User ID;
+labels, lookalike comments, prewritten approvals and copied SHAs grant no recovery.
+The native run must still be its originally admitted first attempt; a later
+Actions rerun is changed evidence and is refused.
+
+The fixed root helper verifies successful returned execution, `started` child
+and `reaped` containment before reading the configured exact attempt. It reads
+bounded retained regular Git object bytes and worktree state through the trusted
+collector, using its own credential only for remote observations. It imports
+objects into an isolated trusted repository and applies the ordinary first-parent,
+identity, safe path/mode and every introduced/transient blob secret gates. The
+candidate must exactly match authorization. Complete clean observation is
+required here: unreadable bytes, concurrent changes, missing objects and
+non-ignored residue all stop before publication. Nothing repairs permissions,
+commits residue, cleans evidence or runs Git against worker metadata.
+
+One new `prepublicationRecovery` intent is reserved in the original bounded
+Writer record under `publication-v2.lock` before any publication or PR/Outcome
+side effect. Authority, original journal/Outcome, authorization and the exact
+previous remote ref are checked again before reservation. Writer performs one
+ordinary non-force push and immediately observes the exact remote candidate.
+The reservation consumes authorization even if a process crashes or receipt
+storage is ambiguous. An unfinished/uncertain reservation never pushes again,
+even with another comment; inspect its preserved intent/remote and obtain a
+separately admitted disposition. There is no generic retry queue.
+
+A verified publication receipt can resume native PR/Outcome/Ready reconciliation
+without recollection or another push. The original Task Request and attempt bind
+the PR, and a distinct typed successor Outcome on that PR links the original
+BLOCKED Outcome. The historic Issue Outcome, runner journal, collection failure,
+publication fields and controller receipt remain unchanged. New independently
+verified handoff evidence permits Ready; the old completed BLOCKED receipt alone
+does not. Drain treats pending/uncertain recovery as unknown. Completed replay
+returns its durable receipt after original evidence/authority revalidation.
+Independent exact-head review and checks remain mandatory; no merge, deployment,
+release, Task retry or Issue closure follows automatically.
+
+### Collector identity and separate host qualification
+
+Ordinary collection retains the collector UID. The observer copies readable
+non-ignored regular bytes into a collector-owned temporary snapshot and only
+runs trusted Git there. Ignore syntax and attributes use that snapshot, never
+worker config, hooks, index or filters. Ignored artifacts remain excluded;
+unreadable tracked or non-ignored untracked files are incomplete observation.
+Linux acquisition pins directories and regular reads without following worker
+symlinks; source permissions and ownership are unchanged. Snapshot traversal
+and object import have explicit byte/entry/depth bounds. Paths in diagnostics
+remain bounded and sanitized, not raw protected evidence for publication.
+
+For worker UID 983 and collector UID 985 sharing GID 979, a worker-owned 0640 file
+is readable through group access; 0600 is not. Git mode 100644 says nothing about
+filesystem readability. This source adds no chmod/chown/ACL or world-readable
+shortcut. The opt-in operation uses the existing fixed root Writer as a bounded
+read-only observer of the authorized retained attempt, so it can read 0600 bytes
+without transferring permissions or trusting a worker observation claim.
+
+Local unprivileged checks do not qualify that protected access on an installed
+consumer. Before incident use, separately admit exact accepted source installation
+and disposable Linux qualification of the fixed wrapper/root lock, actual
+983/985/979 separation, descriptor confinement, unavailable reads, successful
+process containment, credential isolation and unchanged evidence permissions.
+Qualification must also establish preservation and integrity of the original
+retained attempt; historical inode continuity is not claimed by the source
+journal. If safe access requires a live-host permission/helper change, stop for
+that separate owner admission. This source Step does not inspect, alter or
+publish the Task 97 retained candidate or mutate its original authority.
+
 ## Runtime diagnostic retention
 
 Governed runtime attempts reserve an independent diagnostic capsule under
