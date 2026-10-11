@@ -5,7 +5,8 @@ qualification evidence; it is not independent acceptance, installation authority
 or a second Task ledger. Canonical authority remains Task 115 and its current
 trusted Request/selected Decision. Earlier observations below retain their
 then-current heads and boundaries; the owner clarification and final bounded
-handoff below update the current disposition. The implementation started at
+handoff below update the current disposition. See the [current source and live TEST disposition](#current-source-validation-and-handoff-disposition);
+earlier clean-install/public-recovery stops are historical. The implementation started at
 `b4cb4943d52dd375d8c6800959b3264fad082cb8` on `codex/task-115-step-1`.
 
 ## Source behavior and compatibility
@@ -404,3 +405,104 @@ Product merge, independent acceptance, Task completion/closure, TEST removal,
 clean install and live E2E remain unclaimed. The general recovery and
 authority-change completion mechanisms are deferred, not implemented as
 mandatory extensions of this Task.
+
+## Current source validation and handoff disposition
+
+The current same-Step trusted authority is
+[Decision 6114003261](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114003261)
+and [Request 6114012178](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114012178).
+Their exact native bytes, selected reference and Reviewer Bot identity were
+verified. They authorize permanent general TEST autonomy and direct cleanup
+of disposable blocking state. The clean starting gate `7862bb742...` matched
+local/remote/PR before ordinary task commits. This same Step and existing PR
+preserve the original admission's Request 6109630038 and execution markers.
+
+General TEST Environment Authority is now routed from AGENTS, deployment,
+architecture and the shared execution prompt. Public production-safe lifecycle
+interfaces are optional for sandbox cleanup/rebuilding; per-operation approval,
+forensic retention and per-file ownership gates do not apply to disposable TEST.
+Independent product source acceptance, original admission/publication identities
+and external/PROD boundaries remain separate. Product PR 118 stays unmerged.
+
+The complete required source check set was run at
+`74660d74b888d1669ea54779e74667315cce1305` in a separate clean native Debian
+checkout, leaving the installed-source deployment checkout at `5699432e`:
+
+| Required command | Result |
+| --- | --- |
+| `git diff --check` | PASS |
+| `npm test` | 760 PASS, 1 SKIP, zero failures |
+| `python3 -m pytest -q deploy/tests deploy/ansible/tests` | 892 PASS, 300 SKIP, 19 warnings |
+| `cargo fmt --manifest-path reviewer/Cargo.toml --check` | PASS |
+| `cargo test --manifest-path reviewer/Cargo.toml --locked` | 109 PASS |
+| `python3 scripts/qualify.py` | THREE_CONSUMER_PASS |
+| `python3 scripts/check-candidate.py` | PASS, 485 tracked files / 307 local links at this checked source head |
+
+The recorded environment was Node 22.20.0, npm 11.19.1, Python 3.11.2,
+pytest 7.2.1, Rust/Cargo 1.90.0 and Ansible Core 2.16.19. All seven commands
+returned 0, from 2026-10-11 21:59:25 to 22:04:06 UTC. Twelve nonsecret local
+log/metadata files were verified against their SHA-256 manifest; its digest is
+`c0549a25239db6535c63775a9683fe70612fb063f647be4b5ea244859b28d105`.
+Qualification digests: source
+`7d9a47699db128ad2b03dac5eb2d14d4aa8405f990999843454c962228f3ceb1`,
+Reviewer `82e7036dfc188f9add29f1ccebd25419b9bf1504875197c8bb285075e25f5eeb`,
+Reviewer test `746fe78a7e13f1e2a1c83b651263b9012a75e1901c12d98be1e78755db89567d`.
+Final evidence-only edits receive whitespace, staged scanner and exact-head
+native CI checks; they change no runtime code. Whitespace and the staged scanner
+passed with 486 tracked files / 314 local links for the final evidence additions.
+A bounded read-only peer audit found no material evidence inconsistency or
+credential marker in these additions; it did not repeat host checks or provide
+independent acceptance.
+
+The root-identity synthetic UID-separation npm case was skipped, not escalated.
+The `-q` Python summary does not enumerate the 300 skip reasons; these are
+not reported as PASS. One Python `crypt` and 18 installed-system Jinja2 escape
+deprecation warnings remain explicit. The validation shell wrapper returned 1
+only after all checks/logging completed because a PowerShell pipe appended CR
+to its final `exit 0`; direct subsequent log/manifest verification returned 0.
+That harness artifact is recorded separately from the seven successful checks.
+Baseline Rust `unused_mut` declarations and earlier unresolved execution warning
+evidence retain their existing disposition; green source/CI does not erase them.
+
+The [current TEST qualification report](task115-qualification.md#completed-clean-test-installation-and-live-manual-outcome-qualification)
+records direct sandbox cleanup, public clean bootstrap/activation/operational
+post-check PASS at installed `5699432e`, preserved external credentials/permissions,
+and [native Writer publication receipts](task115-live-manual-outcome.json).
+Two disposable protected admission-shaped fixtures exercised the installed
+MCP frontend, fixed client, Unix socket/root Writer, TEST App and actual GitHub
+Outcomes. Native Bot/body/result/count read-back and replay/conflict/binding/PR/TLS
+negative checks passed. No real admission, ready command, new Task/Step, worker
+or model execution occurred. The fixture used a separate synthetic private CA;
+official connected TEST read-only MCP identity/transport was verified separately.
+Its four-tool connector catalog still makes official `submit_manual_outcome`
+invocation unavailable. This is an explicit connected-client qualification gap,
+not a claim of full official transport/tool acceptance.
+
+The sole runtime delta after installed `5699432e` is the source-tested shared
+execution prompt sentence routing disposable TEST to the general authority.
+Manual Outcome, frontend, socket, Writer, admission and managed workflow bytes
+are unchanged; installed revision and final source head are not conflated.
+The new prompt was not traversed by another model execution. Temporary fixture
+services/keys/state/synthetic records were removed after collection, native
+history retained and official TEST services/socket verified active. TEST PR 5
+is merged; README-only TEST PR 8 was reviewed at `3793f79f5c5915469a7b909ce711b334b982daa1`
+after eight unit tests and its native candidate check, then ordinarily merged to
+TEST main `f6af49649a35ff0bdd6728e22e99c1c13258ae5d` under standing TEST authority.
+
+Current Request native publication is verified by complete body hash and Bot
+identity, but the publisher returned `AUTHORITY_PUBLICATION_UNCERTAIN`; its
+protected journal completion is unavailable. No retry or protected journal edit
+was used. The original PROD admission's schema-v3 binding would return
+`AUTHORITY_CHANGED` after successor authority. No Task 115 Writer Outcome was
+submitted, published or imitated. The owner-authorized PR 118/committed-evidence
+handoff exception remains the completion channel for this Step. General production
+upgrade recovery is deferred to Task 119; substantial authority-change completion
+development is not made a completion gate here.
+
+Independent exact-head product acceptance, official new-tool connected-client
+qualification/disposition, product merge, Task completion and closure remain
+unclaimed. Requested parent profile remains gpt-6.1-sol/ultra; actual model/effort
+and exact persisted full title proof remain UNAVAILABLE. Bounded subagents were
+used under the admitted On permission, without Relay fan-out or expanded authority.
+Task-owned source/evidence and TEST commits use ordinary non-force publication;
+unrelated worktrees and external protected logs remain outside cleanup.

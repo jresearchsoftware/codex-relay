@@ -20,8 +20,13 @@ upgrade recovery belongs to Task 119 and is not developed here.
 
 The current continuation starts from published PR 118 head `7862bb742...`,
 preserving original admission/Step 1 and the missing-Writer-Outcome handoff
-exception. Cleanup, corrected installation and live qualification receipts will
-be recorded below when performed; this authority change alone proves none of them.
+exception. The [completed clean installation and live fixture qualification](#completed-clean-test-installation-and-live-manual-outcome-qualification)
+below supersede the old installation/recovery stop. Installed TEST revision is
+`5699432e95440307fa799b0a3b8ac3150ffd574a`; the newer product source includes a
+separately tested TEST-policy prompt routing sentence. The connected TEST App
+still exposes its old four-tool catalog, so official connected-client invocation
+of the new tool remains unqualified. Actual live publication proof uses the
+installed binary with explicitly synthetic admission and private mTLS fixtures.
 
 The historical supported recovery to `44f97a8...` failed after partial apply, before the
 release pointer changed from `dbfea188...`. Its retained exact-head record and
@@ -793,3 +798,160 @@ was created. The already authorized committed-evidence handoff is used instead.
 The retained operation, external TEST credentials and App permissions, shared
 infrastructure and all PROD resources remain unchanged by this continuation.
 No new live socket, `submit_manual_outcome` or complete E2E proof is claimed.
+
+## Completed clean TEST installation and live manual Outcome qualification
+
+On 2026-10-11 the current trusted Decision/Request were verified again by full
+native body SHA-256 and the configured Reviewer Bot identity. Their digests are
+`f987f402e76dd643ddc72c86cf2a20d5b3e797d549e908a0571caa07f4e48dbf` and
+`6ea0db6f77c7ae97df3c8cde019f0bedcbd766ce36b94d4ae9b01c52d6dc9dc9`.
+The stable charter remains
+`c36bf4e867ba254818d1e0807329ab50387c8e53eccdc2e751b9cbb5b87f646f`.
+The continuation gate `7862bb742534be663c434f6ca2e27ffccccbab45` matched clean
+local, refreshed remote and live PR 118 heads before the authorized task commits.
+No original admission, Step, Request hash or PR execution marker was rebound.
+
+General [TEST Environment Authority](execution-policy.md#test-environment-authority)
+was promoted in AGENTS routing, the execution policy, deployment/architecture
+routing and the consumer runbook. The shared execution prompt now routes its
+generic preservation/cleanup stops to that policy for owned disposable TEST.
+Normal product source acceptance, publication and external boundaries remain.
+This is a permanent general rule awaiting ordinary independent source acceptance,
+not an accepted policy claimed solely from implementation. Current operations
+derive from the already verified owner-authorized Decision and Request.
+
+All targeted services, paths and effects were confined to `codex-relay-test`.
+Direct sandbox cleanup stopped/disabled TEST units, removed the broken TEST
+runtime and disposable state/operation journals, and retained registered runner
+directories, TEST credentials and TLS material. No product recovery mechanism
+was added. The final cleanup wrapper's `reset-failed` returned 1 because its
+already removed unit files no longer existed; read-back confirmed completed
+removal. It was not retried. Native historical evidence remains intact;
+retention of disposable installation state was not required. External TEST
+credentials, App installations/permissions, shared ingress and all PROD resources
+were outside the mutation scope.
+
+[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5)
+was reviewed at `5fee2194aaf0829bde368d890974e086442f0bb2` and merged under
+standing TEST authority to main `6355e1ef2afc1094ac580995c0e8db2465986ec4`.
+Its config selects exact corrected product source `5699432e95440307fa799b0a3b8ac3150ffd574a`.
+The existing v3 workflow projection was verified without generated changes.
+The four-repository Reviewer allowlist and external App grants were unchanged.
+Existing group 6/7 GitHub UI read-back confirmed TEST-only repository scheduling,
+public repositories disabled, routing/publication-recovery main refs for group 6
+and zero selected workflows for lifecycle group 7. No permissions were changed.
+
+The public entrypoint ran from the separate clean native source at `5699432e`
+with clean consumer `5fee2194` and its `deploy/relay.json`:
+
+| Operation | Actual result |
+| --- | --- |
+| `workflow-project` | PASS; no generated changes |
+| `inventory` after sandbox cleanup | PASS, blockers empty; runtime/config missing, retained credentials/TLS/runners reusable |
+| `bootstrap` | PASS; installed `5699432e`, previous `none`, clean post-check; 823 seconds |
+| `activate` | PASS; positive official TEST MCP transport/App/exact-PR identity was checked separately |
+| TEST service management | Three TEST services enabled with direct `systemctl` under sandbox authority; this is not proof of the public runner-enable phases |
+| `post-check` | PASS; installed `5699432e`, previous `none`; 325 seconds |
+
+Private deployment logs remain outside source publication. Their SHA-256 values
+are `843505b5f7d3f6ad077bc6ce5ecba0384f5f2f5062ddee8d2f31f4b40aa93218`
+(bootstrap, 449713 bytes),
+`7fb7c5f18c230c661655defc9afb42e0b0ca739dfb7018f4275d067c8d098fce`
+(activate, 19805 bytes), and
+`dc44b8376eb118a100bb86898fb5c0f1cc878a0ac7bc7a44ba04ad7ae6c65826`
+(operational post-check, 220526 bytes).
+
+### Installed manual Outcome chain and limits
+
+The connected TEST App passed `check_pr_review_target` for fixture PR 7/H1,
+with expected TEST Reviewer App/actor identity and official OpenAI mTLS.
+Its currently available catalog still contains only four old Reviewer tools.
+No available connector operation refreshes that catalog. The new tool was
+therefore exercised using a separate private loopback mTLS fixture, not an
+asserted official connected-client call. No shared ingress, official CA,
+Reviewer configuration or external credential was changed for that fixture.
+
+The fixture ran the exact installed Rust binary at
+`/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http`;
+its process executable and installed file both hash to
+`a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de`.
+The synthetic TLS client/CA are explicitly not an OpenAI identity claim.
+That frontend used the real installed fixed client, Unix socket, capability-specific
+root Writer service, TEST Writer App and native GitHub publication.
+Reviewer process UID 979 had `NoNewPrivs: 1`; the socket was
+`root:relay-test-reviewer 0660`, nonroot client `0750`, root Writer wrapper `0700`.
+The official Reviewer retained its supplementary socket group and
+`NoNewPrivileges=yes`. Writer credentials were consumed only by the existing
+protected Writer process and were not exposed to Codex or Reviewer.
+
+Two protected publication-contract records and their result bindings were seeded
+as disposable synthetic inputs: run IDs `9007115000101`/`9007115000102`, Issue 6
+and PR 7. This did not invoke real admission, a ready command, workflow dispatch,
+Relay worker/model execution, or a new project Task/Step. The native fixture
+charter and both Outcomes explicitly state that provenance. The fixture therefore
+qualifies publication of an already admitted-shaped record, not real admission.
+
+| Live check | Result |
+| --- | --- |
+| MCP catalog | HTTP 200, five tools including `submit_manual_outcome` |
+| No-PR submission | `PUBLISHED`, one Writer-Bot Outcome on Issue 6 |
+| Exact no-PR repeat | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| PR submission at H1 `913541440ba165be6cb7b5ebb60cedd061239259` | `PUBLISHED`, one Writer-Bot Outcome and Ready transition |
+| Exact PR repeat | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| Conflicting result | `MANUAL_OUTCOME_CHANGED` |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+| Unknown synthetic run | `MANUAL_OUTCOME_NOT_ADMITTED` |
+| Removed PR admission marker | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Restored marker, ordinary branch advance to H2 `c9d63e215e0543b39630dee2ee4663646354ffa1` | `PR_AUTHORITY_CHANGED`; prior Outcome unchanged, PR remained draft |
+| Missing TLS client certificate | TLS certificate-required alert |
+| Valid fixture certificate with wrong SAN / backend request without identity | HTTP 403 / HTTP 403 |
+
+Native full-body read-back verified TEST Writer Bot ID `338711029`, exact
+machine-result equality with each submitted claim, one comment per record,
+and these immutable Outcomes:
+
+- [No-PR Outcome 6114353386](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114353386),
+  body SHA-256 `8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf`.
+- [PR Outcome 6114357552](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114357552),
+  body SHA-256 `c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600`.
+
+[Sanitized receipts and native read-back](task115-live-manual-outcome.json) are
+committed with this report. Two fixture harness failures were corrected using
+new evidence: the proxy first truncated the large tool catalog, then an immediate
+call raced its restart. Neither call reached Writer publication. The bounded
+response reader and confirmed listener readiness resolved them; these are
+fixture harness observations, not product regressions.
+
+After collection, the two private transient fixture services, synthetic CA/keys,
+fixture SQLite/scripts and the two synthetic publication records were removed.
+Native Issue/PR/Outcome history was retained. Read-back confirmed the official
+Reviewer, both TEST runners and manual socket active. Disposable fixture cleanup
+does not replay or erase native history. Fixture PR 7 remains draft/unmerged;
+Issue 6 remains open with no ready labels.
+
+The updated consumer [runbook PR 8](https://github.com/jresearchsoftware/codex-relay-testbed/pull/8)
+was reviewed at exact head `3793f79f5c5915469a7b909ce711b334b982daa1`, with
+eight consumer unit checks and its native candidate check. It was ordinarily
+merged under standing TEST authority to main
+`f6af49649a35ff0bdd6728e22e99c1c13258ae5d`. This README-only change preserves
+the exact installed selection and distinguishes historical failures, direct
+sandbox service management, synthetic proof and the official catalog gap.
+
+Installed/live proof is exact to `5699432e`. Product source `74660d74b888d1669ea54779e74667315cce1305`
+adds only the generic TEST policy routing sentence to the execution prompt;
+manual MCP/socket/Writer/admission/workflow bytes are unchanged. Its complete
+source checks are separately recorded in the [validation report](task115-validation.md#current-source-validation-and-handoff-disposition).
+This does not claim a new model traversal of that sentence. Later evidence-only
+commits do not change the installed revision. Real admission and official
+connected-client invocation of the new tool remain outside the live proof.
+
+The Task 115 Writer Outcome is still not published because original PROD
+admission binds Request 6109630038 and currentness would return `AUTHORITY_CHANGED`.
+The current owner-authorized committed-evidence handoff exception remains in
+effect. Native current Request publication exists with exact bytes, but its
+publisher returned `AUTHORITY_PUBLICATION_UNCERTAIN`; protected journal completion
+is unavailable and no retry was made. These warnings and the connected-client
+gap remain decision inputs for independent review. General production recovery
+is deferred to Task 119; general authority-change completion remains bounded
+backlog work, not a mandatory expansion here. Product PR 118 remains unmerged,
+Task 115 open, and independent exact-head acceptance unclaimed.
