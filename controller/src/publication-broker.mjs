@@ -13,11 +13,12 @@ import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
 import { nonClosingTaskBody } from './task-relationship.mjs';
 import { transitionPr, beginRemediation } from './pr-lifecycle.mjs';
+import { prepublicationState, recoverPrepublication } from './prepublication-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, collectRetained }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   // The typed publisher projects the exact Request purpose, bounded by Unicode
   // characters. Do not normalize it through the legacy prose-title parser.
@@ -137,7 +138,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     }
     const pr = await findCurrentIssuePullRequest(api, e, r.prNumber ?? e.continuation?.pullRequest);
     if (!pr && r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
-    if (e.continuation && !e.continuation.pullRequest && !r.publishedHead && pr) fail('PR_AUTHORITY_CHANGED');
+    if (e.continuation && !e.continuation.pullRequest && !r.publishedHead
+      && !r.prepublicationRecovery?.publication?.publishedHead && pr) fail('PR_AUTHORITY_CHANGED');
     if (e.continuation && pr) {
       // Only our own newly created PR can finish a missing Step mirror.
       // Every observed conflicting Step/title must stop before another push.
@@ -296,7 +298,82 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         return receipt({ envelope });
       }
       const r = await bound(request, request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff'].includes(request.operation) ? { revalidate: false } : {}); const e = r.envelope;
+        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false } : {}); const e = r.envelope;
+      if (r.prepublicationRecovery && !['prepublication-state', 'recover-prepublication'].includes(request.operation)) fail('PREPUBLICATION_RECOVERY_RESERVED');
+      if (['prepublication-state', 'recover-prepublication'].includes(request.operation)
+        && Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'head', 'authorizationId', 'workflowReadToken'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
+      if (request.operation === 'prepublication-state') {
+        const { binding, authorizationBody, recovery } = await prepublicationState({ api, journal, record: r, head: request.head });
+        return receipt({ binding, authorizationBody, recovery });
+      }
+      if (request.operation === 'recover-prepublication') {
+        return receipt(await recoverPrepublication({ api, store, publisher, journal, record: r, request,
+          collect: async envelope => {
+            if (!collectRetained) fail('RETAINED_COLLECTOR_UNAVAILABLE');
+            return collectRetained(envelope);
+          },
+          checkPullRequest: async previous => {
+            const pr = await findCurrentIssuePullRequest(api, e, r.prNumber ?? e.continuation?.pullRequest);
+            // This route is restricted to prepublication, with no original PR.
+            if (pr || e.continuation?.pullRequest || previous !== (e.continuation ? e.startHead : null)) fail('PR_AUTHORITY_CHANGED');
+          },
+          finish: async recovery => {
+            const head = recovery.publication.publishedHead;
+            const readPr = async () => {
+              await revalidateAuthority(api, e);
+              const pr = await existingPullRequest(r);
+              if (!pr || pr.head.sha !== head || (recovery.outcome && pr.number !== recovery.outcome.prNumber)
+                || pr.user?.login !== WRITER || pr.user?.type !== 'Bot'
+                || pr.user?.id !== recovery.binding.writer.id
+                || !pr.body?.split(/\r?\n/).includes(`Attempt: ${e.attemptId}`)
+                || !pr.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
+              return pr;
+            };
+            if (!recovery.outcome) {
+              await pullRequest(r);
+              await readPr();
+              // This intent was created after the recovery reservation. Exact
+              // native attempt/Request/head observation resolves it.
+              if (r.prIntent) { r.prIntent = null; await store.put(e.runId, r); }
+              const drafted = await transitionPr({ api, store, key: e.runId, record: r, head, draft: true, readPr });
+              const readiness = prReadiness(drafted, head);
+              if (!recovery.outcomeIntent) {
+                const saved = await journal.get(e.runId);
+                const body = boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(saved.execution.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable candidate head: ${head}\n${readinessOutcomeLines(readiness)}\nCompletion: COMPLETED\nRecovery authorization: #${recovery.authorizationId}\nHistorical BLOCKED Outcome: https://github.com/${REPOSITORY}/issues/${e.issueNumber}#issuecomment-${r.outcome.outcomeId}\n\n${workerOutcomeClaims(saved.execution.result)}\n\nTrusted Writer recovered independently verified retained object bytes from the original contained successful execution. The original blocked Outcome, journal and collection failure remain unchanged. Recovery does not rerun Codex or establish native exact-head validation, independent acceptance, merge or deployment.`, { pr: drafted, head });
+                recovery.outcomeIntent = { body: secretFree(body), readiness };
+                await store.put(e.runId, r);
+              }
+              const key = `prepublication-${recovery.authorizationId}`;
+              const outcome = await commentOnce(r, key, drafted.number, recovery.outcomeIntent.body);
+              const observed = await api.get(`/issues/comments/${outcome.id}`);
+              if (observed.id !== outcome.id || observed.user?.login !== WRITER
+                || observed.user?.id !== recovery.binding.writer.id || observed.user?.type !== 'Bot'
+                || observed.issue_url !== `https://api.github.com/repos/${REPOSITORY}/issues/${drafted.number}`
+                || observed.body !== outcome.body) fail('COMMENT_CONTENT_CHANGED');
+              recovery.outcome = { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head, prNumber: drafted.number,
+                outcomeId: observed.id, bodySha256: sha256Body(observed.body), readiness: recovery.outcomeIntent.readiness,
+                draft: drafted.draft, recoveryAuthorizationId: recovery.authorizationId };
+              await store.put(e.runId, r);
+            }
+            // This is a new handoff proof, not admission.complete's old BLOCKED
+            // shortcut. Reread original evidence before granting native Ready.
+            await prepublicationState({ api, journal, record: r, head });
+            if (r.prIntent || r.commentIntent || recovery.collection.clean !== true
+              || recovery.collection.head !== head) fail('EXECUTION_HANDOFF_NOT_PROVEN');
+            const outcome = await api.get(`/issues/comments/${recovery.outcome.outcomeId}`);
+            if (outcome.id !== recovery.outcome.outcomeId || outcome.user?.login !== WRITER
+              || outcome.user?.id !== recovery.binding.writer.id || outcome.user?.type !== 'Bot'
+              || outcome.issue_url !== `https://api.github.com/repos/${REPOSITORY}/issues/${recovery.outcome.prNumber}`
+              || sha256Body(outcome.body) !== recovery.outcome.bodySha256
+              || !outcome.body?.endsWith(`<!-- relay:${e.attemptId}:prepublication-${recovery.authorizationId} -->`)) fail('COMMENT_CONTENT_CHANGED');
+            recovery.handoffProven = true;
+            await store.put(e.runId, r);
+            const pr = await transitionPr({ api, store, key: e.runId, record: r, head, draft: false, readPr });
+            recovery.outcome.draft = pr.draft; recovery.complete = true;
+            await store.put(e.runId, r);
+            return recovery.outcome;
+          } }));
+      }
       if (request.operation === 'publication-state') {
         return receipt({ envelope: e, publicationIntent: r.publicationIntent, publishedHead: r.publishedHead,
           recovery: r.publicationRecoveries?.find(value => value.authorizationId === request.authorizationId) ?? null,

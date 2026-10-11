@@ -292,10 +292,25 @@ for (const value of [condition, recovery.jobs.recover.if]) {
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             self.assertEqual(json.loads(recovered.stdout.splitlines()[-1])['fixtureRequest'],
                              {'runId': 99, 'attemptId': 'run-99', 'authorizationId': 123})
+            for operation in ['inspect-prepublication', 'recover-prepublication']:
+                inputs = {'RECOVERY_OPERATION': operation, 'RECOVERY_HEAD': HEAD}
+                if operation == 'recover-prepublication':
+                    inputs['RECOVERY_AUTHORIZATION_ID'] = '123'
+                retained = execute(self.recovery, inputs)
+                self.assertEqual(retained.returncode, 0, retained.stderr)
+                expected = {'operation': operation, 'runId': 99, 'attemptId': 'run-99', 'head': HEAD}
+                if operation == 'recover-prepublication':
+                    expected['authorizationId'] = 123
+                self.assertEqual(json.loads(retained.stdout.splitlines()[-1])['fixtureRequest'], expected)
             for invalid in ({'RECOVERY_RUN_ID': '1; touch bad'}, {'RECOVERY_RUN_ID': '0'},
                             {'RECOVERY_RUN_ID': '99999999999999999999'}, {'RECOVERY_ATTEMPT_ID': '../run-99'},
                             {'RECOVERY_OPERATION': 'launch'}, {'RECOVERY_OPERATION': 'recover'},
-                            {'RECOVERY_AUTHORIZATION_ID': '123'}):
+                            {'RECOVERY_AUTHORIZATION_ID': '123'}, {'RECOVERY_HEAD': HEAD},
+                            {'RECOVERY_OPERATION': 'inspect-prepublication'},
+                            {'RECOVERY_OPERATION': 'recover-prepublication', 'RECOVERY_HEAD': HEAD},
+                            {'RECOVERY_OPERATION': 'inspect-prepublication', 'RECOVERY_HEAD': '../candidate'},
+                            {'RECOVERY_OPERATION': 'inspect-prepublication', 'RECOVERY_HEAD': HEAD,
+                             'RECOVERY_AUTHORIZATION_ID': '123'}):
                 blocked = execute(self.recovery, invalid)
                 self.assertNotEqual(blocked.returncode, 0)
                 self.assertIn('RECOVERY_REQUEST_INVALID', blocked.stderr)

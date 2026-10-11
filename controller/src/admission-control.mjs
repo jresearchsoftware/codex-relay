@@ -116,6 +116,23 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     for (const record of await store.all()) {
       const e = validRecord(record);
       if (e.route !== 'auto' || record.admissionBlock) continue;
+      const recovery = record.prepublicationRecovery;
+      if (recovery) {
+        const saved = await journal.get(e.runId);
+        // The historic BLOCKED controller receipt cannot hide a pending or
+        // uncertain new publication. Completion has its own exact evidence.
+        if (recovery.complete !== true || recovery.handoffProven !== true
+          || recovery.binding?.terminal?.journalDigest !== digest(saved)
+          || recovery.binding.terminal.controllerDigest !== digest(record.controllerLifecycle ?? null)
+          || recovery.publication?.status !== 'PUBLISHED'
+          || recovery.publication.publishedHead !== recovery.binding.head
+          || recovery.collection?.head !== recovery.binding.head || recovery.collection.clean !== true
+          || recovery.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
+          || recovery.outcome.head !== recovery.binding.head || !positive(recovery.outcome.outcomeId)
+          || !positive(recovery.outcome.prNumber) || record.prNumber !== recovery.outcome.prNumber
+          || record.prIntent || record.commentIntent || record.lifecycleIntent) unknown.push(e.runId);
+        continue;
+      }
       const lifecycle = record.controllerLifecycle;
       if (lifecycle) {
         if (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status)) fail('ADMISSION_ATTEMPT_INVALID');

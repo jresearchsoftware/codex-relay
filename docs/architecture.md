@@ -167,6 +167,28 @@ authority digest, previous/candidate heads and a fresh native authorization
 comment. It never launches Codex. Unknown/uncontained execution cannot be
 converted into success by recovering publication.
 
+An additional, opt-in [terminal prepublication recovery](../controller/README.md#terminal-prepublication-recovery)
+handles a native Task attempt that ended BLOCKED during collection, before any
+collection receipt or publication intent. The fixed root Writer reads the
+original protected journal and observes retained bytes only after a fresh native
+owner authorization binds the exact attempt, Request, candidate, configuration,
+Writer identity and historical terminal evidence. Successful contained execution
+is mandatory. The ordinary collector continues using its separate identity;
+neither path changes worker permissions. Trusted Git observes a collector-owned
+snapshot of readable worktree bytes rather than opening worker paths through
+Git. Unreadable non-ignored bytes and incomplete observations fail closed.
+
+The new recovery reservation and receipt live in the original Writer attempt
+under its existing root lock. One non-force push requires the exact previous
+remote head and the ordinary isolated object importer and validation gates.
+The original journal, blocked Outcome and controller receipt remain unchanged;
+a separately bound successor Outcome and recovery handoff receipt record the
+result. Admission drain treats any unfinished recovery as unknown even if the
+historic BLOCKED controller receipt was complete. No terminal replay launches
+this operation. An ambiguous publication cannot authorize another push.
+Installed root helper access, actual UID separation and containment of preserved
+attempts require separately admitted host qualification and installation.
+
 One exact admitted-base integration merge is allowed for applicable remediation
 under the [Git reconciliation contract](../controller/README.md#reviewed-base-reconciliation).
 That constraint protects commit provenance; it does not limit the number of
