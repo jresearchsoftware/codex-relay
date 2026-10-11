@@ -5,19 +5,38 @@ an exact PR head. One configured consumer is served per process. The
 [consumer contract](../consumer/README.md) supplies repository identities,
 workflow names, runtime paths, model and explicit effort overrides. Omitted
 execution fields use the [shared contract resolver](../contracts/README.md),
-which encodes the policy in `AGENTS.md`; reusable code chooses no model.
+with applicable native CR overrides, trusted Decisions, project defaults and
+supported system defaults resolved once at admission. Consumer policy remains
+owner-controlled; publication does not infer actual runtime model/effort.
+
+This document describes the current source design. It does not establish that
+an existing paired runtime was upgraded or qualified. Already-admitted native
+schema-v3 attempts and unmarked legacy Tasks retain their compatible authority,
+publication and recovery paths.
+
+Task 115 Step 1 was initially admitted through exact schema-v3 Request
+6109630038 and its current installed manual handoff. Implementing the future
+contract did not replace that admission or authorize a paired live runtime
+upgrade. Source implementation, checks and permitted isolated-TEST qualification
+remain one admitted manual Step. Installation, credentials/ingress, release,
+production mutation, merge and closure remain separate protected permissions.
 
 ## Components and flow
 
 Tasks explicitly migrated to `Authority model: github-native-v1` use the stable
-Issue charter plus one complete trusted execution request. The shared
+original Issue charter plus the trusted, active, non-superseded Decision chain.
+The shared
 [authority contract](../contracts/README.md#github-native-task-authority) defines
 native identity, publisher Bot identity, version, target binding, verified
-source references and explicit linear supersession. Selected ordinary comments
-are contextual evidence. The controller resolves records deterministically and
-never asks the worker to reconstruct authority from discussion history.
+source references and explicit deterministic supersession. Decisions can amend
+durable semantics while the Task is in backlog without allocating a Step.
+Selected ordinary comments are contextual evidence. The trusted controller/Writer
+resolves effective authority at admission and stores one immutable execution
+snapshot in existing protected records. New public complete Task Requests are
+unnecessary; the worker never reconstructs authority from discussion history.
 Unmarked Tasks retain legacy Issue/CR parsing until they cross that explicit
-migration boundary. The two authority parsers cannot govern the same launch.
+migration boundary. Native schema-v3 records remain valid historical/in-flight
+inputs; compatibility does not permit conflicting authority paths for one launch.
 The [Task workflow guide](task-workflow.md) explains the current human path.
 
 | Component | Owns | Does not own |
@@ -26,39 +45,51 @@ The [Task workflow guide](task-workflow.md) explains the current human path.
 | Routing controller | Event binding, one execution reservation, attempt journal and terminal handoff | New task authority or retry permission |
 | Lifecycle admission | Durable automatic admission gate and full controller drain under the Writer lock | Task authority, new executions, deployment acceptance or implicit resume |
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
-| Trusted Writer | Live authority revalidation, imported Git objects, publication intents, PR execution Draft/Ready lifecycle and Outcome | Worker execution lifecycle or Reviewer verdicts |
+| Trusted Writer | Current authority resolution/revalidation, immutable admission snapshot/Step, imported Git objects, publication intents, PR execution Draft/Ready lifecycle and canonical Outcome | Worker execution lifecycle or Reviewer verdicts |
 | External ChatGPT review/caller | Reads the diff/result, authors substantive verdict/findings and supplies structured authority records | Writer implementation identity or automatic launch authority |
-| Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, native review/check publication, same-review Step-label/title synchronization and duplicate recovery | Substantive review authorship, implementation, launch commands, owner new-phase choice or merge |
+| Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, trusted Decision/native review/check publication and duplicate recovery; narrow enabled manual-result transport to Writer | Substantive review authorship, implementation, Step allocation, launch commands, Writer credentials, merge or closure |
 
 The owner applies `codex-ready-auto` or `codex-ready-manual` to a canonical
 Issue or remediation PR. The trusted workflow uses the configured base branch,
-not PR-controlled code. Writer checks native owner/event/run identity, Task/Step,
-current typed Request or legacy Issue/decisive native Change Request and exact
-starting head/base.
-It consumes the ready event after reservation. `step-N` is persistent display
-and authority-binding metadata, never permission to execute on its own.
-New executable CR publication synchronizes Issue/PR Step and bounded Task/Step/CR-ID PR title
-inside the Reviewer operation; retry/repair retains the same native review ID
-and authored Step. For migrated Tasks, an explicit successor Request advances
-a new phase from N to N+1 and the typed publisher projects it. Legacy owner
-new-phase preparation retains its separate N+1 procedure. Same-phase execution
-retries preserve N.
-The native review body remains sole CR authority, linked to the canonical Issue
-for Task identity; no Step history or competing normal post-CR owner writer is introduced.
+not PR-controlled code. Writer checks native owner/event/run identity, effective
+charter/Decision authority or the compatible legacy Request/Issue/CR path,
+selected route/profile and exact branch/PR/head/base. The native ready command
+does not require a public Request copy. Under the existing publication lock,
+Writer binds exact source digests, route/profile, scope/boundaries, run/attempt,
+lineage and admitted Step in its protected execution snapshot. It consumes the
+ready event after reservation. `step-N` is a display projection in the new path,
+never launch permission or an independent execution authority.
+
+Only admission of a genuinely new execution allocates the next Step. Issue
+creation, Decision/review publication, ready-label application and Actions
+routing allocate none. Iterative local corrections stay in the active attempt.
+A new execution after terminal BLOCKED has a new Step; same-attempt publication
+recovery/replay retains its Step and cannot execute again. Actions run names use
+available bounded Task/PR/route purpose without preallocating Step. New native
+CRs carry exact-head findings and bounded overrides; admission projects the
+resulting execution Step/title. The native review body remains CR authority,
+linked to the canonical Issue, without a competing full public Request.
+
+Retained schema-v3 Request/CRs keep their original Step projection and linear
+Request supersession semantics. Legacy owner new-phase preparation retains its
+separate N+1 procedure. Their review repair/recovery never retroactively acquires
+new admission semantics.
 A legacy published record lacking its pre-publication Step anchor stops with
 `LEGACY_STEP_BINDING_REQUIRED` unless its projection is already synchronized.
 Explicit bounded owner migration repair preserves that review ID and Step before
 replay of the original Reviewer payload; it does not launch execution.
 
-A complete migrated Task Request, or legacy Issue-body fields, can explicitly
-authorize implementation continuation from an existing task branch at one exact
+A trusted Task Decision/effective charter or compatible complete v3 Request,
+or legacy Issue-body fields, can explicitly authorize implementation continuation
+from an existing task branch at one exact
 starting head, binding its current PR when one exists
 under the [controller contract](../controller/README.md#issue-authorized-implementation-continuation).
 Admission checks the live branch ref and unique open PR, including repository,
 base, Task, Step and title bindings, and pins the admitted PR number. This remains
 Issue implementation with the Writer identity; it requires no Reviewer CR and
-grants no remediation integration merge. Same-phase retries keep Step; a new
-owner-authorized phase uses a successor Request or legacy N+1 procedure.
+grants no remediation integration merge. New source admissions allocate a fresh
+Step for each genuinely new execution; compatible v3/legacy attempts retain
+their admitted Step and applicable successor-Request/N+1 rules.
 Legacy fresh Issue defaults and manual handoff remain available, using existing
 attempt records and services.
 Writer requires the admitted starting head, or its own later published head, as
@@ -103,29 +134,52 @@ BLOCKED integration observation without a second push or infrastructure failure.
 The base SHA is an observation, never permission to rebase or test a synthetic
 merge. A later bounded readiness observation updates the same Outcome.
 
-Task Requests keep Issue authority independently of the result artifact. Writer
+Task authority remains independent of the result artifact. Writer
 publishes a typed Outcome on the unique durably bound PR, or the Issue when no
 PR exists. Known PR publication uncertainty prevents Issue fallback. Contained
 no-change completion needs neither an empty commit nor an artificial PR.
-Independent Task acceptance uses a trusted Issue Task Approval bound to the
-current Request, Outcome and applicable immutable results, including when a
-disposable PR was closed. Task findings are review evidence; further execution
-requires a complete next Task Request. Genuine PR review remains native.
+Genuine implementation PR acceptance is native and bound to the exact head;
+it does not require an extra Task Approval. Independent no-PR acceptance uses
+one trusted Issue Task Approval bound to current authority/admission, the exact
+Writer Outcome and identical immutable results, including when a disposable
+artifact PR was closed. Task findings are review evidence; further execution
+requires owner-authorized direction and a new admission, not a duplicate public
+Request. Compatible v3 acceptance still binds its unchanged Request/Outcome.
 
 Manual routing publishes a copyable handoff and ends automatic ownership. The
-owner-launched session follows its live authority and uses the owner-authorized
-publication path. Writer availability is not a manual execution prerequisite.
-Legacy manual publication retains its owner channel. Migrated manual results
-reach the bounded trusted Writer operation before typed independent acceptance;
-the Task Approval never treats an ordinary owner comment as a Writer Outcome.
+owner-launched session follows its live authority. Preserve the
+`MANUAL_CODEX_HANDOFF_READY` header, identifiers, thread/profile, authority
+reference and full prompt bytes. Fold only the existing copyable code fence when
+real GitHub expansion/copy is convenient; otherwise leave it open. Handoffs do
+not allocate a future Step. Writer availability is not a manual execution
+prerequisite; a qualified result publication still precedes typed acceptance.
+
+For the new manual-result path, an enabled narrow owner-connected MCP capability
+passes structured result JSON to protected Writer. It is not a generic Writer
+endpoint and does not accept caller assertions of privileged capability. Writer
+checks admitted manual route/Task/Step, current effective authority/admission,
+exact PR/head or immutable qualification identities, target, warnings/limitations
+and replay state, then publishes one canonical Writer-Bot Outcome. It does not
+require a preceding owner-authored `relay-manual-result` transport comment.
+Claims and verified bindings remain separate from independent proof of the
+claimed operations. The worker's ordinary broker cannot invoke this capability;
+Reviewer never obtains Writer private credentials. Legacy/v3 transport stays
+readable and recoverable without rewriting any old owner or Bot record.
+
+Necessary native records show human-visible English substance, findings,
+boundaries, warning disposition/evidence gaps, limitations and the next
+acceptance boundary before one collapsed canonical JSON fence. Safe deterministic
+presentation cannot inject HTML/Markdown/links or change canonical JSON bytes.
+Size/integrity/copyability constraints may require an explicitly visible JSON
+fallback. Renderer versions are publication intent, not new Task authority.
 
 ## Durable state
 
 | Owner | Record | Purpose |
 | --- | --- | --- |
-| GitHub/Git | Issue/CR, owner event/run, Step labels, commits/ref/PR, checks, reviews and Outcome | Authority, durable progress and acceptance truth |
+| GitHub/Git | Original Issue charter, trusted Decisions/CR, owner event/run, Step display labels, commits/ref/PR, checks, reviews and Outcome; retained v3 Requests | Authority, durable progress and acceptance truth |
 | Runner | Configured `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic |
-| Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable admission, full automatic controller reservation/completion, pending mutation intent, verified head and recovery receipts |
+| Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable effective-authority/execution snapshot and Step lineage, controller reservation/completion, manual submission binding, frozen publication body/version, verified head and recovery receipts |
 | Writer | Configured `paths.claimRoot/pr-lifecycle-v1/<review-id>.json` | Exact native CR/head Draft intent and reconciliation before an execution run exists; no Task or launch authority |
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
 | Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
@@ -161,6 +215,24 @@ intent. Otherwise it stops. An uncertain comment/PR creation must be matched
 to its exact native marker/binding before continuation. No force push or
 automatic blind retry is provided.
 
+Native publication recovery freezes intended body/renderer bytes separately
+from its stable operation identity. Historical reservations without new
+presentation metadata retain their original body; a newer renderer cannot
+republish a retained result or change its native body hash. Direct manual-result
+delivery shares these immutable target/replay barriers and cannot authorize Git,
+execution, review, merge or deployment operations.
+
+Effective Task closure starts with the original charter and applies any trusted,
+explicitly owner-authorized Task Decision changing `keep-open` or
+`close-authorized`. A native PR CR cannot change it. Trusted owner continuation
+re-reads current authority/acceptance, exact head/checks and completion evidence;
+only verified Task completion with no remaining work, applicable qualification
+and no hold/protected boundary permits conditional authorized closure. It must
+surface a complete Task still held open without a genuine remaining condition
+for owner disposition. An already-authorized acceptance-dependent closure does
+not require another Decision, and an accepted Step is not itself Task completion.
+Neither Reviewer nor worker merges or closes Issues.
+
 [Publication recovery](../controller/README.md#writer-publication-recovery)
 is a separate owner-authorized operation bound to the original attempt,
 authority digest, previous/candidate heads and a fresh native authorization
@@ -171,9 +243,13 @@ An additional, opt-in [terminal prepublication recovery](../controller/README.md
 handles a native Task attempt that ended BLOCKED during collection, before any
 collection receipt or publication intent. The fixed root Writer reads the
 original protected journal and observes retained bytes only after a fresh native
-owner authorization binds the exact attempt, Request, candidate, configuration,
+owner authorization binds the exact attempt, original schema-v4 authority and
+admission (or retained schema-v3 Request), candidate, configuration,
 Writer identity and historical terminal evidence. Successful contained execution
-is mandatory. The ordinary collector continues using its separate identity;
+is mandatory. The original native Writer identity, canonical Outcome binding,
+terminal marker and persisted body digest survive the rendering cutover;
+accepting a human-first header cannot relax that provenance. The ordinary
+collector continues using its separate identity;
 neither path changes worker permissions. Trusted Git observes a collector-owned
 snapshot of readable worktree bytes rather than opening worker paths through
 Git. Unreadable non-ignored bytes and incomplete observations fail closed.

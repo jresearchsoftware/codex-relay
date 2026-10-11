@@ -18,6 +18,7 @@ import { failureDiagnosticFromDetails, redactDiagnosticText } from '../src/diagn
 import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { serializeWriterFailure } from '../src/privileged-writer-helper.mjs';
 import { admissionWarningSummary, emitAdmissionWarnings, terminalOutcomeBody, workerOutcomeClaims } from '../src/outcome.mjs';
+import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
 
 import { fixture, memoryStore } from './fixture.mjs';
 const exec = promisify(execFile);
@@ -137,9 +138,9 @@ test('one terminal Outcome retains substantive worker evidence separately from t
   const outcome = await runAttempt(args);
   const body = f.comments[0].body;
   assert.ok(body.includes(baseline)); assert.ok(body.includes(startingMain));
-  assert.ok(body.includes(summary)); // Full bounded summary, including content beyond 512 bytes.
+  assert.ok(body.includes(safePublicationText(summary))); // Full safely rendered summary, including content beyond 512 bytes.
   assert.match(body, /Worker summary \(claim\):/);
-  assert.match(body, /Portable launcher-profile and local routing checks passed/);
+  assert.ok(body.includes(safePublicationText('Portable launcher-profile and local routing checks passed.')));
   assert.match(body, /Native candidate-head CI was not evaluated/);
   assert.match(body, /Actual model\/effort: UNAVAILABLE/);
   assert.ok(body.includes(`Latest durable candidate head: ${await f.remoteHead()}`));

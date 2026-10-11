@@ -69,7 +69,7 @@ test('canonical renderer round trips and supports bounded publisher prose outsid
 test('Node preserves the shared Rust publisher rendering fixture exactly', () => {
   const input = JSON.parse(readFileSync(new URL('./fixtures/github-task-request-v3-input.json', import.meta.url), 'utf8'));
   const rendered = readFileSync(new URL('./fixtures/github-task-request-v3.md', import.meta.url), 'utf8');
-  assert.equal(renderAuthorityRecord(input), rendered);
+  assert.equal(renderAuthorityRecord(input, { rendererVersion: 'legacy-v1' }), rendered);
   assert.deepEqual(extractAuthorityRecord(rendered), input);
 });
 

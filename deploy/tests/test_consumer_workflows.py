@@ -80,7 +80,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v2')
+                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v3')
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
                 self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
@@ -151,8 +151,8 @@ const evaluate = (source, github, inputs = {}) => {
   const expression = source.trim().replace(/^\$\{\{/, '').replace(/\}\}$/, '')
     .replace(/\.labels\.\*\.name/g, '.labels.map(label => label.name)');
   const format = (template, ...values) => template.replace(/\{([0-9]+)\}/g, (_, index) => values[Number(index)]);
-  return Function('github', 'inputs', 'format', 'join', `return (${expression});`)
-    (github, inputs, format, (values, separator) => values.join(separator));
+  return Function('github', 'inputs', 'format', 'join', 'contains', `return (${expression});`)
+    (github, inputs, format, (values, separator) => values.join(separator), (value, part) => String(value ?? '').includes(part));
 };
 const base = { repository: 'jresearchsoftware/codex-relay', actor: 'foal', triggering_actor: 'foal',
   ref: 'refs/heads/main', event_name: 'workflow_dispatch', event: {} };
@@ -170,6 +170,12 @@ for (const route of ['auto', 'manual']) {
       event: { action: 'labeled', label: { name: `codex-ready-${route}` },
         [target === 'issue' ? 'issue' : 'pull_request']: subject } };
     assert.equal(evaluate(routing['run-name'], github), labelRunName(launch, subject));
+    if (target === 'issue') {
+      const native = { ...subject, body: 'Authority model: github-native-v1', labels: [{ name: `codex-ready-${route}` }] };
+      assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: native } }), labelRunName(launch, native));
+      const newInputs = { ...inputs, step: '' };
+      assert.equal(evaluate(routing['run-name'], base, newInputs), dispatchRunName({ ...launch, step: null }));
+    }
     assert.equal(evaluate(condition, github), true);
     assert.equal(evaluate(condition, { ...github, event: { ...github.event, label: { name: 'step-3' } } }), false);
     assert.equal(evaluate(condition, { ...github, event: { ...github.event, action: 'unlabeled' } }), false);
@@ -316,7 +322,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 self.assertIn('RECOVERY_REQUEST_INVALID', blocked.stderr)
                 self.assertNotIn('fixtureRequest', blocked.stdout)
 
-            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v2'}))
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v3'}))
             for value in (self.routing, self.recovery):
                 blocked = execute(value)
                 self.assertNotEqual(blocked.returncode, 0)

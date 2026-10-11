@@ -8,8 +8,9 @@ optional developer hooks to propose a change.
 ## Context loading and governance layering
 
 Start owner-admitted work with only this file, the live canonical Issue or
-Change Request (including the current trusted Request and selected Decisions for
-a migrated Task), the current PR when one exists, and the exact Git/check facts
+Change Request (including trusted Decisions and the immutable admitted snapshot
+for a streamlined Task, or the selected Request for retained schema-v3 work),
+the current PR when one exists, and the exact Git/check facts
 needed for the current decision. The live authority identifies the active goal;
 do not preload broad repository history, status documents, component manuals or
 old task artifacts merely because they may become relevant.
@@ -59,22 +60,30 @@ closure metadata remains `keep-open` with a visible warning.
 Nearby prose should explain why the Issue stays open and what outcome would make closure
 appropriate. This is ordinary Task prose, not another required structured field
 or an automatic closure rule.
-Before every new Task Decision or complete Task Request, consciously reassess
+Before every new Task Decision (or compatibility Task Request), consciously reassess
 the known post-implementation work or evidence that justifies `keep-open`.
 Retain it with adjacent concrete remaining conditions and the owner disposition
 needed to change it, or seek or apply existing explicit owner authorization to
-reconcile the canonical charter to `close-authorized`. A Decision or Request
-cannot independently override the charter. Close only after Task completion,
-verified independent acceptance and no remaining work; approval, merge or Step
+record `close-authorized` in a trusted owner-authorized Task Decision. For new
+schema-v4 work, initial charter plus that Decision determines the effective
+policy; a CR cannot independently authorize closure. Retained schema-v3 work
+keeps its original charter/Request rules. Close only after trusted owner
+completion evidence, verified independent acceptance at the exact result/head,
+no remaining work or continuation hold, and satisfied protected boundaries.
+An Outcome's completion claim alone is insufficient. Approval, merge or Step
 completion alone grants no closure authority. Use the
 [closure authoring guidance](contracts/README.md#closure-policy-authoring)
 within the existing authoring action, without another field or workflow.
 After an explicit `Authority model: github-native-v1` migration, the Issue is
-the stable charter and the current trusted typed execution request is the sole
-Step/profile/route/scope snapshot. Decisions amend durable semantics; ordinary
-comments remain selected evidence. Use the
+the stable charter. In the current schema-v4 source contract, trusted Decisions
+amend durable semantics and Writer creates the sole immutable
+Step/profile/route/scope admission snapshot at execution. A new complete public
+Request is unnecessary; ordinary comments remain selected evidence. Retained
+schema-v3 admissions preserve their selected typed Request and original
+bindings, Steps, bodies and replay/recovery behavior. Use the
 [GitHub-native contract](contracts/README.md#github-native-task-authority) and
-paired deployed Reviewer/controller. Labels and bounded titles are projections,
+paired qualified Reviewer/controller. Source changes alone do not upgrade or
+qualify an installation. Labels and bounded titles are projections,
 not a second Step authority; legacy owner metadata helpers cannot write them.
 Steps are execution-time decomposition of progress toward that Task.
 A Task does not predefine, own, or constrain the number, numbering, or scope of
@@ -91,24 +100,31 @@ Use these complete titles, with a concise purpose:
 
 Preserve an exact title supplied by live task/CR authority, including an
 explicit phase qualifier. Step is a positive, explicitly resolved value.
-For Relay admission the canonical Issue has exactly one `step-S` label;
-the existing PR must agree. Fresh work starts at `step-1`. An explicitly
-owner-authorized new implementation phase advances current S to S+1 through the
+For a new schema-v4 execution, the owner applies the native
+`codex-ready-auto` or `codex-ready-manual` command on the canonical target;
+Writer verifies and consumes that event and allocates Step in protected
+admission state. Charter creation, Decisions, CR publication and labels do not
+allocate Step. Fresh execution starts at Step 1; each genuinely new admitted
+execution, including one after BLOCKED, receives the next Step. Inner
+corrections, replay and recovery of the same attempt retain its Step and cannot
+launch another execution. Titles and `step-S` labels project admitted state.
+For legacy admission the Issue has exactly one `step-S` label and the existing
+PR agrees. An explicitly owner-authorized new phase uses the
 [owner metadata procedure](contracts/README.md#owner-step-metadata-procedure)
-for legacy Tasks. For migrated Tasks, publish a complete trusted successor
-Request with that explicit Step; the typed publisher owns label/title projection.
-A new executable CR advances the current Request's Step by one (legacy CRs use
-the synchronized label Step), and the Reviewer publication operation
-synchronizes the Issue/PR labels and bounded PR title after native publication.
-Retrying execution or repairing publication of that same CR keeps its Step;
-approval does not increment it. Never infer Step from prose, old Outcomes,
-commits, runs or the largest historical Step. Missing or conflicting admission
-metadata needs reconciliation. Step labels alone do not launch work or grant
-authority. The [Issue template](.github/ISSUE_TEMPLATE/codex-task.md) supplies
+for legacy Tasks. Retained schema-v3 migrated Tasks keep the complete trusted
+successor Request and synchronized CR Step/projection rules. A compatibility
+retry or publication repair keeps that selected Step; approval does not
+increment it. Never infer Step from prose, commits, labels or the largest
+historical Step. Read the protected snapshot or retained selected Request.
+Missing or conflicting admission metadata needs reconciliation. Step labels
+alone do not launch work or grant authority. The
+[Issue template](.github/ISSUE_TEMPLATE/codex-task.md) supplies
 the authoring baseline; its creation is not admission or dispatch.
 
 For an owner-launched manual session, rename the current Codex task at startup
-to the exact title resolved from live task/Change Request authority above.
+to the exact title from the admitted snapshot/handoff, or selected legacy
+Task/Change Request authority above. A backlog Decision or ready label alone
+does not supply a future Step/title.
 Use the native task-title tool once with only `title` (omit `threadId`); search
 deferred tools if it is not initially visible. Recording the title only in a
 prompt, PR or Outcome is insufficient. When the current native tool surface can
@@ -129,13 +145,16 @@ branches, commits or PRs unless the owner explicitly requests it. Automatic
 workers still delegate GitHub publication to trusted Writer.
 
 The canonical Task may authorize implementation continuation on an existing
-task branch and its current PR when one exists through a complete typed Request,
-or legacy Issue-body bindings, as described in
+task branch and its current PR when one exists through trusted Task Decisions
+resolved into the admission snapshot, a retained complete typed Request, or
+legacy Issue-body bindings, as described in
 the [controller contract](controller/README.md#issue-authorized-implementation-continuation).
 This preserves Issue authority and implementation identity without a Reviewer
-CR or its integration-merge permission. Retrying an unfinished phase keeps Step;
-a new owner-authorized implementation phase uses the applicable successor
-Request or legacy N+1 metadata procedure. Manual handoff remains available.
+CR or its integration-merge permission. Replay/recovery of an admitted attempt
+keeps Step; a genuinely new schema-v4 execution receives a fresh admitted Step.
+Retained schema-v3 and legacy phases preserve their successor Request or N+1
+metadata procedure. Manual handoff retains its full copyable prompt and visible
+canonical identity/pointer; folding changes presentation only.
 
 Before applying an existing PR's starting-head gate, read its live repository,
 branch, base and required SHA. Inspect the current checkout, worktrees, dirty
@@ -217,8 +236,9 @@ an automatic worker delegates publication to Writer.
 Removing, replacing, renaming, disabling or materially changing an existing
 user/operator capability or workflow requires explicit owner authorization in
 canonical Task authority. Legacy Tasks record it in the live Issue body;
-migrated Tasks use the stable charter and applicable trusted Decision normalized
-into the next complete Request. Preserve the charter's protected boundaries and
+migrated schema-v4 Tasks use the stable charter and applicable trusted Decision
+resolved into the next admission snapshot. Retained schema-v3 Tasks keep their
+complete Request compatibility path. Preserve the charter's protected boundaries and
 closure decision. Material surfaces include commands and entry points, required
 inputs, visible surfaces, actor responsibilities, automated/manual transitions,
 additional required actions, ChatGPT/GitHub paths, and material status, Outcome
@@ -305,7 +325,8 @@ An accepted reusable architecture, process, governance, security,
 qualification or operational decision from owner/ChatGPT discussion must not
 remain chat-only. Before the next related execution, carry a decision that
 changes executable authority into the live legacy Issue/CR or a trusted Decision
-and complete successor Request for a migrated Task; promote an independently
+for a schema-v4 Task (plus the complete successor Request for retained schema-v3
+work); promote an independently
 reusable rule through the next suitable authorized bounded Task/CR into its
 existing policy, architecture, runbook or component contract. If it is not
 durable policy, classify it explicitly as task-local, temporary, experimental
@@ -365,6 +386,16 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   engine. Add machinery only for a demonstrated product requirement.
 
 ## Validate and hand off
+
+For newly admitted schema-v4 manual work, submit structured results through the
+bounded owner-connected `submit_manual_outcome` MCP capability to protected
+Writer. Writer publishes one canonical Outcome; a public owner result-copy
+comment is unnecessary. Retained schema-v3 attempts keep their supported
+publication/recovery path. No-PR qualification uses independent Task Approval;
+source PRs require independent native exact-head review. Keep material findings,
+warnings, evidence gaps and limitations visibly readable before one folded
+canonical machine block. Preserve full handoff prompt bytes and historical body
+hashes; rendering changes grant no execution or publication authority.
 
 Use Linux for the runtime and filesystem boundary tests. Run affected suites
 during corrections and the complete candidate checks before handoff:

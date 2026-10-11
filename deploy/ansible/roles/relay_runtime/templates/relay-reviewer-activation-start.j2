@@ -20,5 +20,28 @@ if [[ "$state_rc" -ne 10 || "$state_output" != *'phase=activate'* ]]; then
 fi
 
 /bin/systemctl daemon-reload
+# Existing owner-authorized activation also activates the newly installed
+# capability. Older installations without these units keep their former path.
+manual_socket='{{ relay_namespace }}-relay-manual-outcome.socket'
+manual_template='{{ relay_namespace }}-relay-manual-outcome@.service'
+manual_socket_path="/etc/systemd/system/$manual_socket"
+manual_template_path="/etc/systemd/system/$manual_template"
+if [[ -e "$manual_socket_path" || -L "$manual_socket_path" || -e "$manual_template_path" || -L "$manual_template_path" ]]; then
+  for manual_unit_path in "$manual_socket_path" "$manual_template_path"; do
+    [[ -f "$manual_unit_path" && ! -L "$manual_unit_path" ]]
+    [[ "$(/usr/bin/stat -c '%U %G %a' "$manual_unit_path")" == 'root root 644' ]]
+  done
+  /usr/bin/grep -Fx 'ListenStream=/run/{{ relay_namespace }}-manual-outcome.sock' "$manual_socket_path" >/dev/null
+  /usr/bin/grep -Fx 'Accept=yes' "$manual_socket_path" >/dev/null
+  /usr/bin/grep -Fx 'SocketUser=root' "$manual_socket_path" >/dev/null
+  /usr/bin/grep -Fx 'SocketGroup={{ relay_reviewer_group }}' "$manual_socket_path" >/dev/null
+  /usr/bin/grep -Fx 'SocketMode=0660' "$manual_socket_path" >/dev/null
+  /usr/bin/grep -Fx 'ExecStart={{ relay_install_root }}/relay-manual-outcome-writer' "$manual_template_path" >/dev/null
+  /usr/bin/grep -Fx 'User=root' "$manual_template_path" >/dev/null
+  /bin/systemctl enable "$manual_socket"
+  /bin/systemctl start "$manual_socket"
+  [[ "$(/bin/systemctl is-active "$manual_socket")" == active ]]
+  [[ "$(/bin/systemctl is-enabled "$manual_socket")" == enabled ]]
+fi
 /bin/systemctl enable "$reviewer_service"
 /bin/systemctl start "$reviewer_service"

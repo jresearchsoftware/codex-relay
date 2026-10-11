@@ -387,7 +387,7 @@ for (const remediation of [false, true]) for (const residue of [false, true]) {
     assert.equal(result.outcomeId, outcomeId);
     assert.equal(f.comments.filter(c => c.user.login.endsWith('[bot]')).length, 1);
     assert.match(f.comments.find(c => c.id === outcomeId).body, /Status: IMPLEMENTED_PENDING_FRESH_REVIEW/);
-    assert.match(f.comments.find(c => c.id === outcomeId).body, /Task-required repository change preserved/);
+    assert.ok(f.comments.find(c => c.id === outcomeId).body.includes('Task\\-required repository change preserved'));
     assert.match(f.comments.find(c => c.id === outcomeId).body, /focused local checks passed/);
     if (residue) {
       assert.deepEqual(result.executionWarnings, ['UNCOMMITTED_WORK_REMAINS']);

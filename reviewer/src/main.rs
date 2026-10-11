@@ -18,7 +18,9 @@ use std::{
 use unicode_normalization::UnicodeNormalization;
 mod executable_cr;
 mod github;
+mod manual_outcome;
 mod mtls_identity;
+mod publication_rendering;
 mod step_sync;
 mod store;
 mod strict_json;
@@ -151,6 +153,9 @@ fn valid_input(
     name: &str,
     arguments: &Value,
 ) -> Result<(), &'static str> {
+    if name == "submit_manual_outcome" {
+        return manual_outcome::valid_input(repositories, arguments);
+    }
     if name == "publish_task_authority" {
         return task_authority::valid_input(repositories, arguments);
     }
@@ -314,7 +319,11 @@ fn valid_finding(finding: &Value) -> bool {
         })
 }
 fn operation_id(validation_names: &[String], arguments: &Value) -> String {
-    let body = review_body(validation_names, arguments);
+    let body = if arguments["action"] == "REQUEST_CHANGES" {
+        executable_cr::render_legacy(validation_names, arguments).expect("validated CR")
+    } else {
+        review_body(validation_names, arguments)
+    };
     let body_hash = format!("{:x}", Sha256::digest(body.as_bytes()));
     let finding_digest = finding_digest(validation_names, arguments);
     let value = format!(
@@ -344,6 +353,22 @@ fn native_review_body(validation_names: &[String], arguments: &Value, operation:
         review_body(validation_names, arguments)
     )
 }
+fn retained_review_body(app: &RepositoryTarget<'_>, arguments: &Value, operation: &str) -> String {
+    let store = app.store.lock().expect("store lock");
+    if let Some(body) = store.publication_body(operation).expect("publication body") {
+        return body;
+    }
+    if store.known(operation).expect("operation").is_some()
+        && arguments["action"] == "REQUEST_CHANGES"
+    {
+        return format!(
+            "{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
+            executable_cr::render_legacy(&app.policy.validation_names, arguments)
+                .expect("validated CR")
+        );
+    }
+    native_review_body(&app.policy.validation_names, arguments, operation)
+}
 fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
     let findings = if arguments["action"] == "REQUEST_CHANGES" {
         executable_cr::normalized(validation_names, &arguments["change_request"])
@@ -364,6 +389,8 @@ fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
 struct ReviewPolicy {
     validation_names: Vec<String>,
     github_native_authority_enabled: bool,
+    manual_outcome_enabled: bool,
+    manual_outcome_client_path: String,
     owner: String,
     base_branch: String,
     check_name: String,
@@ -391,6 +418,23 @@ fn review_policy(config: &Value) -> ReviewPolicy {
                     .expect("githubNativeAuthorityEnabled must be a boolean")
             })
             .unwrap_or(false),
+        manual_outcome_enabled: config
+            .get("manualOutcomeEnabled")
+            .map(|value| {
+                value
+                    .as_bool()
+                    .expect("manualOutcomeEnabled must be a boolean")
+            })
+            .unwrap_or(false),
+        manual_outcome_client_path: config
+            .get("manualOutcomeClientPath")
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("manualOutcomeClientPath must be a string")
+                    .to_string()
+            })
+            .unwrap_or_else(|| "/opt/codex-relay/relay-manual-outcome".into()),
         owner: field(&config["owner"]),
         base_branch: field(&config["baseBranch"]),
         check_name: field(&config["reviewCheckName"]),
@@ -403,6 +447,19 @@ fn review_policy(config: &Value) -> ReviewPolicy {
     assert!(
         valid_repository(&format!("{}/task", policy.owner)),
         "Invalid owner identity"
+    );
+    let client = &policy.manual_outcome_client_path;
+    assert!(
+        client.starts_with('/')
+            && client.rsplit('/').next() == Some("relay-manual-outcome")
+            && client[1..]
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..")
+            && client.len() <= 256
+            && client
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/_-.".contains(&byte)),
+        "manualOutcomeClientPath must be a fixed absolute protected client path"
     );
     let branch = &policy.base_branch;
     assert!(
@@ -572,7 +629,14 @@ async fn mcp(
             json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"codex-relay-reviewer","version":"0.1.0"}})
         }
         Some("tools/list") => {
-            json!({"tools":tools(&app.policy.validation_names, &app.repositories)})
+            let mut listed = tools(&app.policy.validation_names, &app.repositories);
+            if app.policy.manual_outcome_enabled {
+                listed
+                    .as_array_mut()
+                    .unwrap()
+                    .push(manual_outcome::tool(&app.repositories));
+            }
+            json!({"tools":listed})
         }
         Some("tools/call") => {
             let name = request
@@ -597,7 +661,9 @@ async fn mcp(
                 Ok(target) => target,
                 Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response(),
             };
-            if name == "publish_task_authority" {
+            if name == "submit_manual_outcome" {
+                manual_outcome::submit(&app, arguments).await
+            } else if name == "publish_task_authority" {
                 task_authority::publish(&app, arguments).await
             } else if name == "read_pr_review_evidence" {
                 match app
@@ -693,10 +759,25 @@ async fn mcp(
                     let operation = operation_id(&app.policy.validation_names, arguments);
                     let marker =
                         format!("jresearchsoftware-reviewer-relay:v1 operation={operation}");
-                    let reserve = app.store.lock().expect("store lock").reserve(
+                    let current_body =
+                        native_review_body(&app.policy.validation_names, arguments, &operation);
+                    let legacy_body = if arguments["action"] == "REQUEST_CHANGES" {
+                        format!("{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
+                            executable_cr::render_legacy(&app.policy.validation_names, arguments).expect("validated CR"))
+                    } else {
+                        current_body.clone()
+                    };
+                    let reservation = app.store.lock().expect("store lock").reserve_publication(
                         &operation,
                         &finding_digest(&app.policy.validation_names, arguments),
+                        &current_body,
+                        &legacy_body,
                     );
+                    let body = reservation
+                        .as_ref()
+                        .map(|(_, body)| body.clone())
+                        .unwrap_or(current_body);
+                    let reserve = reservation.map(|(reserved, _)| reserved);
                     match reserve {
                         Ok(false) => {
                             let known = app
@@ -832,7 +913,7 @@ async fn mcp(
                                         .retryable_failure(&operation);
                                     return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
                                 }
-                                let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":native_review_body(&app.policy.validation_names, arguments, &operation)});
+                                let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":body});
                                 match app
                                     .github
                                     .create_review(
@@ -999,7 +1080,7 @@ async fn approval_continuation_plan(
             || native["commit_id"] != arguments["expected_head_sha"]
             || native["user"]["login"] != app.policy.actor || native["user"]["type"] != "Bot"
             || native["pull_request_url"] != format!("https://api.github.com/repos/{}/pulls/{}",app.repository,arguments["pr_number"])
-            || native["body"] != native_review_body(&app.policy.validation_names, arguments, &operation_id(&app.policy.validation_names, arguments)) {
+            || native["body"] != retained_review_body(app, arguments, &operation_id(&app.policy.validation_names, arguments)) {
             return Err("APPROVAL_NATIVE_BINDING_MISMATCH");
         }
         let issue_number = step_sync::linked_issue(&pr)?;
@@ -1011,21 +1092,30 @@ async fn approval_continuation_plan(
         }
         let body = issue["body"].as_str().ok_or("ISSUE_NOT_ADMITTED")?;
         let lines: Vec<_> = body.lines().filter(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("issue closure policy")).collect();
-        let close_authorized = lines.len() == 1 && lines[0] == "Issue closure policy: close-authorized";
+        let mut close_authorized = lines.len() == 1 && lines[0] == "Issue closure policy: close-authorized";
         let valid_closure = lines.len() == 1 && matches!(lines[0], "Issue closure policy: close-authorized" | "Issue closure policy: keep-open");
         let typed = body.lines().any(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("authority model"));
         let request = if typed { task_authority::approved_continuation(app, &issue, &pr, &arguments["expected_head_sha"]).await? } else { Value::Null };
+        if request["schema_version"]=="4.0" { close_authorized=request["issue_closure_policy"]=="close-authorized"; }
         let held = request["continuation"]["hold"] == true;
         let task_complete = !typed || request["continuation"]["task_complete"] == true;
         let remaining_task_work = request["continuation"]["next"]["task"].as_u64() == Some(issue_number);
-        Ok(json!({"policy":"native-approve-exact-head-squash-v1","repository":app.repository,
+        let mut plan=json!({"policy":"native-approve-exact-head-squash-v1","repository":app.repository,
             "task":issue_number,"pr_number":arguments["pr_number"],"review_id":review_id,
             "approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash",
             "automatic_continuation_authorized":!held,"required_native_checks":"must_pass_for_exact_head",
             "mergeability":"must_be_verified","unresolved_checks":"block_continuation",
             "issue_closure_policy":if close_authorized {"close-authorized"} else {"keep-open"},
             "close_issue_authorized":close_authorized && task_complete && !held && !remaining_task_work,"hold":held,"task_complete":task_complete,"remaining_task_work":remaining_task_work,"request_authority":request,"warnings":if valid_closure {json!([])} else {json!(["ISSUE_CLOSURE_POLICY_INVALID"])},
-            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
+            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false});
+        if request["schema_version"]=="4.0" {
+            let object=plan.as_object_mut().unwrap();
+            for key in ["task_complete","remaining_task_work","close_issue_authorized"] { object.remove(key); }
+            object.insert("completion_conditions".into(),json!("trusted-owner-canonical-state-required"));
+            object.insert("next".into(),request["continuation"]["next"].clone());
+            object.insert("warnings".into(),request["warnings"].clone());
+        }
+        Ok(plan)
     }.await;
     result.unwrap_or_else(|code| json!({"policy":"native-approve-exact-head-squash-v1","approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash","required_native_checks":"must_pass_for_exact_head","automatic_continuation_authorized":false,"close_issue_authorized":false,
         "error_code":code,"execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
@@ -1041,9 +1131,7 @@ async fn record_review(
     if arguments["action"] == "REQUEST_CHANGES"
         && (review["state"] != "CHANGES_REQUESTED"
             || review["body"].as_str()
-                != Some(
-                    native_review_body(&app.policy.validation_names, arguments, operation).as_str(),
-                ))
+                != Some(retained_review_body(app, arguments, operation).as_str()))
     {
         return json!({"content":[{"type":"text","text":"REVIEW_CONTRACT_VERIFICATION_FAILED"}],"isError":true});
     }
@@ -1314,6 +1402,8 @@ mod tests {
         ReviewPolicy {
             validation_names: Vec::new(),
             github_native_authority_enabled: false,
+            manual_outcome_enabled: false,
+            manual_outcome_client_path: "/opt/codex-relay/relay-manual-outcome".into(),
             owner: "example-owner".into(),
             base_branch: "main".into(),
             check_name: "chatgpt-review".into(),
@@ -1451,7 +1541,12 @@ mod tests {
         let (http, url) = client_with_state(true, None, state.clone()).await;
         let args = cr_fixture();
         let expected = fs::read_to_string(fixture_path("executable-cr-v2.md")).unwrap();
-        assert_eq!(review_body(&[], &args), expected.trim_end());
+        assert_eq!(
+            executable_cr::render_legacy(&[], &args).unwrap(),
+            expected.trim_end()
+        );
+        assert!(review_body(&[], &args)
+            .contains("<details><summary>Machine-readable authority (JSON)</summary>"));
         for expected_status in ["PUBLISHED", "DUPLICATE_SUPPRESSED"] {
             let result = rpc(
                 &http,
@@ -1471,7 +1566,7 @@ mod tests {
         assert!(reviews[0]["body"]
             .as_str()
             .unwrap()
-            .starts_with(expected.trim_end()));
+            .starts_with(&review_body(&[], &args)));
         assert_consumer_admits(&args, &reviews[0]);
     }
 
@@ -2493,6 +2588,7 @@ mod tests {
                 relay_github_base_branch => "main",
                 relay_review_check_name => "chatgpt-review",
                 relay_writer_expected_actor => "example-writer[bot]",
+                relay_install_root => "/opt/example-relay",
                 relay_reviewer_app_slug => "example-reviewer",
                 relay_reviewer_app_id => "102",
                 relay_reviewer_app_installation_id => "202",
@@ -2524,6 +2620,8 @@ mod tests {
             RuntimeConfig {
                 policy: ReviewPolicy {
                     github_native_authority_enabled: true,
+                    manual_outcome_enabled: true,
+                    manual_outcome_client_path: "/opt/example-relay/relay-manual-outcome".into(),
                     ..test_policy()
                 },
                 repositories: BTreeSet::from([TEST_REPOSITORY.into()]),

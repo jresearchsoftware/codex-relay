@@ -41,6 +41,13 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
         content = path.read_text()
         if name.endswith('.timer'):
             owned = 'Unit=' + name.removesuffix('.timer') + '.service' in content.splitlines()
+        elif name.endswith('-relay-manual-outcome.socket'):
+            namespace = Path(install_root).name
+            owned = ('ListenStream=/run/' + namespace + '-manual-outcome.sock' in content.splitlines()
+                     and 'Accept=yes' in content.splitlines())
+        elif name.endswith('-relay-manual-outcome@.service'):
+            owned = ('ExecStart=' + install_root + '/relay-manual-outcome-writer' in content.splitlines()
+                     and 'User=root' in content.splitlines())
         else:
             owned = any(line.startswith('ExecStart=' + install_root + '/')
                         for line in content.splitlines())
@@ -56,6 +63,11 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
         if (any(line.startswith('ExecStart=' + install_root + '/') for line in starts)
                 or reviewer_user and 'User=' + reviewer_user in lines):
             raise ValueError('RELAY_INSTANCE_REVIEWER_IDENTITY_COLLISION')
+    for path in systemd_root.glob('*.socket'):
+        if path.name in units or path.is_symlink() or not path.is_file():
+            continue
+        if 'ListenStream=/run/' + Path(install_root).name + '-manual-outcome.sock' in path.read_text().splitlines():
+            raise ValueError('RELAY_INSTANCE_UNIT_COLLISION')
 
 
 if __name__ == '__main__':

@@ -32,7 +32,8 @@ class BootstrapRecoveryTests(unittest.TestCase):
             directory.mkdir(mode=0o755)
         self.units = ['relay-bootstrap-test-' + name for name in (
             'reviewer.service', 'runner.service', 'recovery.service', 'recovery.timer',
-            'general.service', 'controller.service', 'proxy.service')]
+            'general.service', 'controller.service', 'proxy.service',
+            'relay-manual-outcome.socket', 'relay-manual-outcome@.service')]
         dropin_root = self.systemd_roots[0] / (self.units[1] + '.d')
         dropin_root.mkdir(mode=0o755)
         roots_patch = patch.object(recovery, 'SYSTEMD_ROOTS', tuple(map(str, self.systemd_roots)))
@@ -149,6 +150,8 @@ class BootstrapRecoveryTests(unittest.TestCase):
     def test_systemd_reported_dropins_fail_closed_even_without_local_files(self):
         self.authorize_hash()
         for unit in self.units:
+            if unit.endswith('@.service'):
+                continue
             for value in (None, '/usr/lib/systemd/system/' + unit + '.d/override.conf',
                           str(self.dropin) + ' /run/systemd/system/foreign.conf'):
                 with self.subTest(unit=unit, value=value):
@@ -160,6 +163,19 @@ class BootstrapRecoveryTests(unittest.TestCase):
                     self.commands.side_effect = query
                     self.assert_inspect_and_dispose_rejected()
         self.commands.side_effect = self.query
+
+    def test_socket_runtime_state_is_probed_but_absent_template_is_file_only(self):
+        self.inspect()
+        socket, template = self.units[-2:]
+        calls = [call.args[0] for call in self.commands.call_args_list]
+        self.assertTrue(any(argv[:3] == ['/bin/systemctl', 'show', socket] for argv in calls))
+        self.assertFalse(any(argv[:3] == ['/bin/systemctl', 'show', template] for argv in calls))
+        def query(argv):
+            if argv[:3] == ['/bin/systemctl', 'show', socket]:
+                return 'LoadState=loaded\nActiveState=active\nSubState=listening\n'
+            return self.query(argv)
+        self.commands.side_effect = query
+        self.assert_inspect_and_dispose_rejected()
 
     def test_exact_dropin_is_admitted_only_for_the_persistent_production_runner(self):
         self.authorize_hash()

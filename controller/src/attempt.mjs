@@ -102,7 +102,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       throw Object.assign(new Error(code), { code, details: { childState: record.execution.child,
         causal: record.execution.diagnostic, primaryCause: record.execution.diagnostic?.primaryCause ?? null } });
     }
-    if (!record.progress && e.request?.kind === 'task-request' && progress.clean && progress.head === e.startHead) {
+    if (!record.progress && ['task-request', 'admission'].includes(e.request?.kind) && e.target === 'issue' && progress.clean && progress.head === e.startHead) {
       record.outcome = await invoke('finish-no-change', { head: progress.head,
         taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
       record.diagnostic = null; await journal.put(e.runId, record);

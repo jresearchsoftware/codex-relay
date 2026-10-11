@@ -44,9 +44,14 @@ impl Store {
         let _ = db.execute("ALTER TABLE operations ADD COLUMN step_binding TEXT", []);
         let _ = db.execute("ALTER TABLE operations ADD COLUMN native_id INTEGER", []);
         let _ = db.execute("ALTER TABLE operations ADD COLUMN native_url TEXT", []);
+        let _ = db.execute(
+            "ALTER TABLE operations ADD COLUMN publication_body TEXT",
+            [],
+        );
         Ok(Self { db })
     }
 
+    #[cfg(test)]
     pub fn reserve(&self, id: &str, finding_digest: &str) -> rusqlite::Result<bool> {
         let inserted = self.db.execute(
             "INSERT OR IGNORE INTO operations(operation_id,status,finding_digest,created_at)
@@ -65,6 +70,44 @@ impl Store {
             self.event(id, "RETRYING")?;
         }
         Ok(retrying)
+    }
+
+    /// Select and persist the exact renderer bytes in the same transaction as
+    /// reservation. Pre-upgrade rows without a body retain the legacy renderer.
+    pub fn reserve_publication(
+        &self,
+        id: &str,
+        finding_digest: &str,
+        current_body: &str,
+        legacy_body: &str,
+    ) -> rusqlite::Result<(bool, String)> {
+        let transaction = self.db.unchecked_transaction()?;
+        let inserted = transaction.execute(
+            "INSERT OR IGNORE INTO operations(operation_id,status,finding_digest,publication_body,created_at)
+             VALUES(?1,'RESERVED',?2,?3,unixepoch())",
+            (id, finding_digest, current_body),
+        )? == 1;
+        transaction.execute(
+            "UPDATE operations SET publication_body=?2 WHERE operation_id=?1 AND publication_body IS NULL",
+            (id, legacy_body),
+        )?;
+        let retrying = !inserted && transaction.execute(
+            "UPDATE operations SET status='RESERVED' WHERE operation_id=?1 AND status='RETRYABLE_FAILURE'",
+            [id],
+        )? == 1;
+        if inserted || retrying {
+            transaction.execute(
+                "INSERT INTO events(operation_id,event_type,created_at) VALUES(?1,?2,unixepoch())",
+                (id, if inserted { "RESERVED" } else { "RETRYING" }),
+            )?;
+        }
+        let body = transaction.query_row(
+            "SELECT publication_body FROM operations WHERE operation_id=?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        transaction.commit()?;
+        Ok((inserted || retrying, body))
     }
 
     pub fn review_published(
@@ -127,6 +170,17 @@ impl Store {
     pub fn authority_complete(&self, id: &str) -> rusqlite::Result<()> {
         self.db.execute("UPDATE operations SET status='PUBLISHED' WHERE operation_id=?1 AND native_id IS NOT NULL", [id])?;
         self.event(id, "AUTHORITY_COMPLETE")
+    }
+
+    pub fn publication_body(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        self.db
+            .query_row(
+                "SELECT publication_body FROM operations WHERE operation_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map(Option::flatten)
     }
 
     pub fn step_binding(&self, id: &str) -> rusqlite::Result<Option<String>> {
@@ -192,5 +246,32 @@ mod tests {
         assert!(s.reserve("a", "digest").expect("reserve"));
         s.retryable_failure("a").expect("failure");
         assert!(s.reserve("a", "digest").expect("retry"));
+    }
+
+    #[test]
+    fn renderer_bytes_are_bound_atomically_and_survive_retry_and_upgrade() {
+        let s = Store::open(":memory:").unwrap();
+        assert_eq!(
+            s.reserve_publication("new", "digest", "human", "legacy")
+                .unwrap(),
+            (true, "human".into())
+        );
+        assert_eq!(
+            s.reserve_publication("new", "digest", "changed", "legacy")
+                .unwrap(),
+            (false, "human".into())
+        );
+        s.retryable_failure("new").unwrap();
+        assert_eq!(
+            s.reserve_publication("new", "digest", "changed", "legacy")
+                .unwrap(),
+            (true, "human".into())
+        );
+        s.reserve("old", "digest").unwrap();
+        assert_eq!(
+            s.reserve_publication("old", "digest", "human", "legacy")
+                .unwrap(),
+            (false, "legacy".into())
+        );
     }
 }

@@ -72,9 +72,11 @@ test('gate is durable, binds the owner operation and requires verified installed
   assert.equal(JSON.parse(await readFile(join(root, 'admission-v1.json'), 'utf8')).phase, 'open');
 });
 
-test('bound service activity snapshot survives failed activation and cannot be replaced by its resulting inactive state', async t => {
+for (const manualOutcome of [null, { active: true, enabled: 'enabled', load: 'loaded' },
+  { active: false, enabled: 'disabled', load: 'not-found' }]) test(`bound service activity snapshot preserves manual socket ${manualOutcome?.load ?? 'legacy absent'} across failed activation`, async t => {
   const { admission, root, store, journal } = await control(t);
   const services = serviceIntent();
+  if (manualOutcome) services.manualOutcome = manualOutcome;
   await admission.quiesce({ operationId, target });
   await assert.rejects(admission.snapshot({ operationId, services }), { code: 'ADMISSION_PHASE_INVALID' });
   await admission.drained({ operationId });

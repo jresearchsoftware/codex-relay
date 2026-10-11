@@ -21,6 +21,8 @@ state, Reviewer build outputs and activation in separate protected paths.
 | `controller/src/entrypoint.mjs` | Trusted consumer routing workflow, runner identity | Reads GitHub event file/environment; stdout terminal JSON, stderr bounded errors/Actions warnings; reserves and coordinates one attempt |
 | `controller/src/codex-dispatch.mjs` | Fixed `paths.dispatch` wrapper, isolated dispatcher identity | No normal argv; stdin version-2 execution envelope (512 KiB); stdout JSON execution receipt, stderr bounded JSON failure; `--check-runtime` probes loading only |
 | `controller/src/privileged-writer-helper.mjs` | Fixed `paths.writerHelper` via `/usr/bin/sudo -n`, uid 0 under consumer's Writer lock | No argv; stdin bounded broker JSON (145 MiB including imported bundle), stdout repository-bound receipt, stderr sanitized failure JSON; root-owned `env -i` wrapper supplies config |
+| `controller/src/manual-outcome-client.mjs` | Fixed root-owned `relay-manual-outcome` client invoked by the nonroot Reviewer service | No argv; cleared environment supplies only the fixed namespace Unix socket/runtime; stdin bounded manual-submission JSON (100 KiB transport cap), stdout bounded Writer receipt (32 KiB), 60-second uncertainty bound; no sudo or Writer credential |
+| `controller/src/manual-outcome-helper.mjs` | Namespace socket-activated root Writer service under the existing `publication-v2.lock` | No argv, caller command, path or operation selector; validates `{repository,task,run_id,result}` against one already admitted manual attempt, publishes or recovers one exact Writer Bot Outcome, stdout public receipt/error code; root-only wrapper supplies protected consumer config |
 | Consumer's `paths.launcher` | Dispatcher via `/usr/bin/sudo -n -u <runtimeUser>` | Fixed executable; translates the launcher ABI below to its governed Codex installation; worker has no Writer/Reviewer authority |
 | `controller/src/diagnostic-store.mjs` | Fixed `paths.diagnosticsStore` wrapper, protected diagnostics identity | Stdin bounded diagnostic JSON (16 MiB); stdout store receipt, stderr failure JSON; `--check-runtime` probes loading only |
 | `controller/src/recover-attempt-publication.mjs` | Separately owner-authorized recovery workflow/operator | No argv; stdin `{operation:"inspect",runId,attemptId}` or `{runId,attemptId,authorizationId}`; stdout result/stderr failure; never starts Codex |
@@ -31,6 +33,28 @@ state, Reviewer build outputs and activation in separate protected paths.
 deployment daemon. The Node directories are one qualified source tree, with
 intentional cross-directory imports. Keep the Rust/Node shared CR definition
 and all modules from the same revision.
+
+New admissions for a Task marked `Authority model: github-native-v1` use a
+schema `4.0`, `kind: "admission"` snapshot inside the existing version-2 execution
+envelope. Trusted Writer resolves the current charter, active trusted Decisions,
+applicable exact-head CR and optional compatibility Request, then allocates Step
+under its existing protected publication lock. Its canonical snapshot digest
+binds the public `admission: {attempt, step, sha256}` in the Outcome. This internal
+snapshot is not a new public Task Request or another caller-authored launch form.
+Schema `4.0` native CR publication carries no Step or replacement Request.
+Already admitted schema `3.0` envelopes retain their exact Request/CR and authored
+Step; unmarked legacy Issue/CR2 execution retains its existing ABI.
+
+The manual capability uses the same qualified OpenAI mTLS ingress and the
+separate trusted Writer credential boundary. The nonprivileged fixed client
+connects to a `root:<Reviewer group>` mode-`0660` Unix socket; its matching factory
+service runs a fixed root-only Writer wrapper. Reviewer retains
+`NoNewPrivileges=true`; it receives no Writer token or credential path and cannot
+invoke another privileged operation. Both wrappers recreate a cleared environment
+with fixed configuration/runtime/lock paths. The generic worker/controller Writer
+helper rejects `manual-outcome-direct`; only the capability-specific root service
+can construct that internal broker operation. No root service is installed,
+started or qualified by a source-only test.
 
 ## Consumer paths and environment
 
@@ -60,8 +84,10 @@ The token is a workflow read token (contents/Issues/PR/Actions reads as needed),
 passed only to trusted authority/Git reads; it is not a worker token. Recovery
 also uses `GITHUB_TOKEN` for workflow reads. Explicit owner new-phase preparation
 needs the configured human owner's ordinary token, including Issue/PR metadata
-writes; normal post-CR synchronization uses only the Reviewer App. A historical
-published record lacking a Step anchor can return `LEGACY_STEP_BINDING_REQUIRED`;
+writes for unmarked legacy Tasks. Retained schema `3.0` post-CR synchronization
+uses only the Reviewer App; new v4 Step projection belongs to Writer admission.
+A historical published record lacking a Step anchor can return
+`LEGACY_STEP_BINDING_REQUIRED`;
 only that migration case permits explicit owner `recover-legacy-review`, followed
 by replay of the exact original Reviewer payload and native review ID. See the
 [bounded migration procedure](../contracts/README.md#legacy-publication-migration-recovery).
@@ -176,8 +202,8 @@ status and first run attempt. It is not proof of the workflow code's safety.
 | Routing event | Required run-name display |
 | --- | --- |
 | `workflow_dispatch`, inputs `route`, `task`, `step`, optional `pull_request` | `Auto implementation · Task N · Step S`, `Auto remediation · Task N · Step S · PR #P`, or `Manual handoff · Task N · Step S` (append ` · PR #P` for a PR) |
-| `issues: labeled`, ready label | `<phase> · Task N · <all label names joined by ' · '>`; the Step/ready-label projection binds admission |
-| `pull_request_target: labeled`, ready label | `<phase> · PR #P · <current PR title>`; Issue/PR Step labels and PR title must agree |
+| `issues: labeled`, ready label | `<phase> · Task N · <all label names joined by ' · '>`; the owner ready event binds admission; Step labels remain display/projection metadata for new v4 admissions |
+| `pull_request_target: labeled`, ready label | `<phase> · PR #P · <current PR title>`; the exact PR/native CR binds remediation; compatibility Issue/PR Step/title checks remain unchanged |
 
 `<phase>` is `Auto implementation`, `Auto remediation` or `Manual handoff` as
 applicable. Formats are implemented in
@@ -185,9 +211,12 @@ applicable. Formats are implemented in
 or Step from an arbitrary title. Ready labels are owner launch commands;
 `step-N` alone grants no execution. Consumer workflow concurrency and the
 root Writer lock serialize overlapping attempts. A rerun is not fresh authority.
-For migrated Tasks, these labels/titles are projections of the current trusted
-Request. Dispatch inputs and ready labels must match that Request's explicit
-Step and route; legacy owner Step helpers cannot change typed projections.
+For new migrated schema `4.0` work, labels/titles project the protected Writer
+admission. The owner ready command selects the route; Writer allocates Step once.
+Existing-admission replay keeps that binding and cannot relaunch a worker. A new
+admission requires resolved prior execution/publication. Already admitted schema
+`3.0` attempts retain the complete current Request and its explicit Step/route
+checks; legacy owner Step helpers cannot change migrated projections.
 
 The validation workflow must check the **candidate head SHA**, not silently a
 synthetic merge or moving branch, and implement the applicable declared checks.
@@ -204,8 +233,10 @@ configured repository. Reviewer tokens request `metadata:read`, `actions:read`,
 configured Reviewer target for each operation. Actions read supplies supported
 workflow-run/check-suite/attempt binding, including private repositories; Checks write publishes the Reviewer
 check and supplies read access to check annotations. Issues write serves
-same-review post-CR Step-label synchronization; PR write serves native review
-publication and bounded PR-title synchronization. Metadata read qualifies
+typed Task authority comments and retained schema `3.0` same-review post-CR
+Step-label synchronization; PR write serves native review publication and
+retained bounded PR-title synchronization. New v4 Step allocation/projection is
+Writer responsibility. Metadata read qualifies
 repository/installation identity. These permissions grant no worker,
 Writer or owner launch role. The evidence tool requests only read permissions
 for metadata, Issues, PRs, checks and Actions; no repository mutation is reachable
@@ -286,6 +317,14 @@ binary does not verify itself against them. Example hashes prove no artifact.
 Ansible-only descriptive fields such as `execBoundary`, `evidenceRoot`,
 `credentials`, `rollback` and `schemaVersion` do not configure execution.
 
+`githubNativeAuthorityEnabled` enables the paired native authority publisher and
+defaults to false for retained configurations. `manualOutcomeEnabled` is a
+separate optional boolean, also false by default; only enabled instances
+advertise `submit_manual_outcome`. `manualOutcomeClientPath` is an installed fixed
+absolute POSIX path ending in `relay-manual-outcome`, defaulting to
+`/opt/codex-relay/relay-manual-outcome`; the public tool cannot select it. Namespace
+deployment supplies the protected wrapper path.
+
 | Reviewer environment | Meaning |
 | --- | --- |
 | `REVIEWER_MCP_CONFIG` | Config path alternative to `--config`; CLI takes precedence |
@@ -295,13 +334,32 @@ Ansible-only descriptive fields such as `execBoundary`, `evidenceRoot`,
 | `REVIEWER_RELAY_ENABLED` | Only exact `true` enables review/check publication; absent, `false` or any other value disables it |
 | `REVIEWER_RELAY_DB` | Protected persistent SQLite path; default is relative `reviewer-relay.sqlite3`, so installations should explicitly set an absolute path |
 
-There is one publication switch. The obsolete `mutation` field is rejected at
+There is one native Reviewer publication switch. The obsolete `mutation` field is rejected at
 startup, even when its value is `none`; remove it when upgrading this candidate.
 Startup emits `publication_mode` with `enabled=true/false`. Disabled instances
 still initialize durable state, list tools and can perform authenticated target
 reads; `submit_pr_review` returns `RELAY_DISABLED` without GitHub publication.
 It is not an offline/no-filesystem-write mode. Enabled instances validate the
 external caller's supplied verdict/CR, target and identity before publication.
+The separately enabled manual Writer capability remains available independently
+of this verdict switch. Its public MCP input is exactly
+`{repository, task, run_id, result}`: Task/run IDs are positive safe JSON integers
+and `result` is a complete canonical v3/v4 Outcome for an already admitted manual
+attempt. Reviewer bounds serialized arguments to 60,000 bytes within the existing
+62,000-byte JSON-RPC request limit; neither it nor Writer truncates evidence.
+Foreign Writer repositories, automatic/unadmitted attempts, changed authority or
+admission, incorrect result/parent and changed replay bytes fail closed.
+
+The existing copyable manual handoff supplies the exact canonical authority and
+`admission: {attempt, step, sha256}` binding/template for v4, or the retained native
+Request reference for v3. The owner supplies execution claims through this tool
+without another public manual-result comment, approval or second dispatch.
+The root capability reserves and verifies one Writer Bot Outcome and returns only
+`PUBLISHED`, `RECOVERED` or `DUPLICATE_SUPPRESSED` with exact native ID/parent/URL/body
+digest, or a bounded error code. Reviewer validates the returned actor and target
+and exposes no private root diagnostics. These are publication receipts, not proof
+that every claimed test ran, independent acceptance or authority to merge/close.
+The historical v3 owner-comment `manual-outcome` operation remains compatible.
 
 Ingress must strip spoofed identity headers, verify the client certificate chain
 and forward `X-OpenAI-MTLS-Verified: 1` plus URL-encoded PEM in
@@ -356,8 +414,9 @@ where these marker classes are insufficient; scan failures never print key bytes
 
 This scenario exercises the supported **legacy** Issue/CR2 path. An unmarked
 Issue remains legacy; it is not the modern typed authoring example. See the
-[current workflow](task-workflow.md) and [schema-v3 examples](../examples/task-authority.md)
-for a stable charter, complete Request, Decision and typed PR CR.
+[current workflow](task-workflow.md) and [current v4 and retained v3 examples](../examples/task-authority.md)
+for stable charter/Decision authority, independent native CRs and compatible
+historical Request chains.
 
 1. The example owner admits Issue 24 at exact base A, with `step-1`, a resolved
    profile and allowed scope. A trusted routing run named

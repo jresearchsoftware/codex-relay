@@ -1,6 +1,6 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, WRITER, VERSION, digest, positive, exactSha, fail } from './execution-contract.mjs';
-import { sha256Body, extractAuthorityRecord, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { sha256Body, extractAuthorityRecord, canonicalAuthorityJson, admissionBinding } from '../../contracts/src/github-authority.mjs';
 import { revalidateAuthority } from './live-authority.mjs';
 import { dispatchRunName } from './launch-metadata.mjs';
 import { REMOTE } from './trusted-git.mjs';
@@ -31,7 +31,8 @@ async function originalRun(api, e) {
 // caller-selected checkout. The old terminal evidence is not rewritten.
 export async function prepublicationState({ api, journal, record: r, head }) {
   const e = r.envelope;
-  if (e.route !== 'auto' || e.target !== 'issue' || e.request?.kind !== 'task-request'
+  const snapshot = e.request?.kind === 'admission';
+  if (e.route !== 'auto' || e.target !== 'issue' || !['task-request', 'admission'].includes(e.request?.kind)
     || !e.requestReference || !exactSha(head) || head === e.startHead
     || r.admissionBlock || r.publicationIntent || r.publishedHead || r.finalHead
     || r.successOutcomeIntent || r.publicationRecoveries?.length
@@ -61,16 +62,24 @@ export async function prepublicationState({ api, journal, record: r, head }) {
     || outcome.id !== r.outcome.outcomeId || outcome.user?.id !== writer.id
     || outcome.user?.login !== WRITER || outcome.user?.type !== 'Bot'
     || outcome.issue_url !== `https://api.github.com/repos/${REPOSITORY}/issues/${e.issueNumber}`
-    || !outcome.body?.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
+    || !(outcome.body?.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
+      || outcome.body?.startsWith('## Relay Codex Outcome\n'))
     || !outcome.body.endsWith(`<!-- relay:${e.attemptId}:outcome -->`)
+    || (r.outcome.bodySha256 && sha256Body(outcome.body) !== r.outcome.bodySha256)
+    || (snapshot && !/^[a-f0-9]{64}$/.test(r.outcome.bodySha256 ?? ''))
     || !Number.isFinite(Date.parse(outcome.created_at)) || !Number.isFinite(Date.parse(outcome.updated_at))) fail('RECOVERY_TERMINAL_OUTCOME_CHANGED');
   const typed = extractAuthorityRecord(outcome.body);
   if (typed?.kind !== 'outcome' || typed.status !== 'blocked' || typed.task !== e.issueNumber
-    || typed.attempt !== e.attemptId || canonicalAuthorityJson(typed.request) !== canonicalAuthorityJson(e.requestReference)
+    || typed.attempt !== e.attemptId
+    || (snapshot ? typed.schema_version !== '4.0' || typed.step !== e.step
+      || canonicalAuthorityJson(typed.authority) !== canonicalAuthorityJson(e.request.authority)
+      || canonicalAuthorityJson(typed.admission) !== canonicalAuthorityJson(admissionBinding(e.request))
+      : canonicalAuthorityJson(typed.request) !== canonicalAuthorityJson(e.requestReference))
     || typed.parent.kind !== 'issue' || typed.parent.number !== e.issueNumber) fail('RECOVERY_TERMINAL_OUTCOME_CHANGED');
   await revalidateAuthority(api, e);
   const binding = { operation: 'recover-prepublication', repository: REPOSITORY,
-    task: e.issueNumber, step: e.step, request: e.requestReference, runId: e.runId,
+    task: e.issueNumber, step: e.step,
+    ...(snapshot ? { authority: e.request.authority, admission: admissionBinding(e.request) } : { request: e.requestReference }), runId: e.runId,
     attemptId: e.attemptId, branch: e.branch, remote: REMOTE,
     previous: e.continuation ? e.startHead : null, head, startingHead: e.startHead,
     authorityDigest: e.authorityDigest, consumerDigest: e.consumerDigest,

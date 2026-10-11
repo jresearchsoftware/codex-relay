@@ -11,6 +11,19 @@ pub(crate) fn definition() -> &'static Value {
     })
 }
 
+fn v4_definition() -> &'static Value {
+    static SCHEMA: OnceLock<Value> = OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        serde_json::from_str(include_str!("../../contracts/src/github-authority-v4.json"))
+            .expect("source-controlled v4 authority schema")
+    })
+}
+
+fn authority_digest(authority: &Value) -> String {
+    hash(&serde_json::to_string_pretty(&json!({"charter":authority["charter"],"decisions":authority["decisions"],
+        "change_request":authority["change_request"],"compatibility_request":authority["compatibility_request"]})).unwrap())
+}
+
 pub(crate) fn hash(body: &str) -> String {
     format!("{:x}", Sha256::digest(body.as_bytes()))
 }
@@ -129,7 +142,12 @@ fn conforms(value: &Value, schema: &Value) -> bool {
 
 pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
     let kind = record["kind"].as_str().ok_or("AUTHORITY_RECORD_INVALID")?;
-    if !definition()["input_schemas"]
+    let schema = if record["schema_version"] == "4.0" {
+        v4_definition()
+    } else {
+        definition()
+    };
+    if !schema["input_schemas"]
         .get(kind)
         .is_some_and(|schema| conforms(record, schema))
         || serde_json::to_string_pretty(record).map_or(true, |text| {
@@ -142,7 +160,7 @@ pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
     if kind == "decision" && record["amendments"].as_object().unwrap().is_empty() {
         return Err("AUTHORITY_DECISION_EMPTY");
     }
-    if kind == "change-request" {
+    if kind == "change-request" && record["schema_version"] == "3.0" {
         if record["parent"]["kind"] != "pull_request"
             || record["existing_pr"] != record["parent"]["number"]
             || record["starting_head"] != record["reviewed_head_sha"]
@@ -150,7 +168,7 @@ pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
         {
             return Err("CHANGE_REQUEST_BINDING_INVALID");
         }
-    } else if !matches!(kind, "outcome" | "decision")
+    } else if !matches!(kind, "outcome" | "decision" | "change-request")
         && (record["parent"]["kind"] != "issue"
             || record["parent"]["number"].as_u64() != Some(task))
     {
@@ -162,7 +180,7 @@ pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
     {
         return Err("AUTHORITY_PARENT_INVALID");
     }
-    if matches!(kind, "task-request" | "change-request") {
+    if matches!(kind, "task-request" | "change-request") && record["schema_version"] == "3.0" {
         if (kind == "change-request" || record["route"] == "auto")
             && ["branch", "base_sha", "starting_head"]
                 .iter()
@@ -239,10 +257,42 @@ pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
             return Err("AUTHORITY_WARNING_DUPLICATE");
         }
     }
+    if record["schema_version"] == "4.0" {
+        if kind == "decision"
+            && record["parent"]["kind"] != "issue"
+            && record["amendments"].get("issue_closure_policy").is_some()
+        {
+            return Err("AUTHORITY_DECISION_SCOPE_MISMATCH");
+        }
+        if kind == "change-request"
+            && (record["parent"]["kind"] != "pull_request"
+                || !record["branch"].is_string()
+                || !record["base_sha"].is_string())
+        {
+            return Err("AUTHORITY_CR_BINDING_INVALID");
+        }
+        if let Some(authority) = record.get("authority") {
+            if authority["charter"]["kind"] != "issue-body"
+                || authority["charter"]["parent"]["kind"] != "issue"
+                || authority["charter"]["parent"]["number"] != record["task"]
+                || authority["charter"]["sha256"] != record["charter_sha256"]
+                || authority["sha256"] != authority_digest(authority)
+            {
+                return Err("AUTHORITY_SOURCE_MISMATCH");
+            }
+        }
+        if let Some(admission) = record.get("admission") {
+            if record["step"] != admission["step"]
+                || (kind == "outcome" && record["attempt"] != admission["attempt"])
+            {
+                return Err("AUTHORITY_ADMISSION_MISMATCH");
+            }
+        }
+    }
     Ok(())
 }
 
-pub(crate) fn render(record: &Value) -> String {
+pub(crate) fn render_legacy(record: &Value) -> String {
     // serde_json's default map uses sorted keys, matching the Node canonicalizer.
     format!(
         "## Relay {}\n\nAuthority model: github-native-v1\n\n```relay-authority\n{}\n```\n",
@@ -253,7 +303,16 @@ pub(crate) fn render(record: &Value) -> String {
     )
 }
 
-fn parse(body: &str) -> Result<Option<Value>, &'static str> {
+pub(crate) fn render(record: &Value) -> String {
+    publication_rendering::render(
+        record,
+        definition()["record_titles"][record["kind"].as_str().unwrap()]
+            .as_str()
+            .unwrap(),
+        &serde_json::to_string_pretty(record).unwrap(),
+    )
+}
+pub(crate) fn parse(body: &str) -> Result<Option<Value>, &'static str> {
     if body.len() > definition()["max_body_bytes"].as_u64().unwrap() as usize {
         return Err("AUTHORITY_BODY_TOO_LARGE");
     }
@@ -266,9 +325,11 @@ fn parse(body: &str) -> Result<Option<Value>, &'static str> {
         .filter(|line| line.starts_with("```relay-authority"))
         .count()
         != 1
-        || body.contains("```reviewer-executable-cr")
-        || body.contains("```yaml")
-        || body.contains("```yml")
+        || body.lines().any(|line| {
+            line.starts_with("```reviewer-executable-cr")
+                || line.starts_with("```yaml")
+                || line.starts_with("```yml")
+        })
     {
         return Err("AUTHORITY_RECORD_AMBIGUOUS");
     }
@@ -284,7 +345,7 @@ fn parse(body: &str) -> Result<Option<Value>, &'static str> {
 }
 
 pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
-    let variants: Vec<_> = [
+    let mut variants: Vec<_> = [
         "decision",
         "task-request",
         "change-request",
@@ -294,8 +355,13 @@ pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
     .iter()
     .filter_map(|kind| definition()["input_schemas"].get(kind).cloned())
     .collect();
+    variants.extend(
+        ["decision", "change-request", "task-approval", "task-review"]
+            .iter()
+            .filter_map(|kind| v4_definition()["input_schemas"].get(kind).cloned()),
+    );
     json!({"name":"publish_task_authority",
-        "description":"Publish owner-authorized typed Decisions, Task Requests, PR-only Change Requests, Task review evidence or independent Task Approvals. Re-read all native references and current authority; never execute, publish Writer Outcomes or merge.",
+        "description":"Publish trusted Task Decisions, independent exact-head PR Change Requests or no-PR Task acceptance/findings. New Decisions and CRs allocate no Step and need no full public Request. Historical Task Requests remain compatible. Re-read native authority; never execute, publish Writer Outcomes, merge or close.",
         "inputSchema":{"type":"object","additionalProperties":false,"required":["repository","record"],"properties":{
             "repository":repository_schema(repositories),"record":{"anyOf":variants}}},
         "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}})
@@ -325,7 +391,10 @@ pub(crate) fn valid_input(
         return Err("PAYLOAD_TOO_LARGE");
     }
     validate_record(&args["record"])?;
-    if render(&args["record"]).len() > definition()["max_body_bytes"].as_u64().unwrap() as usize {
+    let body = render(&args["record"]);
+    if body.len() > definition()["max_body_bytes"].as_u64().unwrap() as usize
+        || body.chars().count() > 65536
+    {
         return Err("AUTHORITY_BODY_TOO_LARGE");
     }
     Ok(())
@@ -692,7 +761,7 @@ async fn execution_records(
         matches!(
             payload["kind"].as_str(),
             Some("task-request" | "change-request")
-        )
+        ) && payload["schema_version"] == "3.0"
     });
     if records.len() > 500 {
         return Err("AUTHORITY_SOURCE_TRUNCATED");
@@ -783,7 +852,7 @@ fn same_cr(prior: &Value, next: &Value) -> bool {
         && prior["parent"] == next["parent"]
 }
 
-fn closure_policy(body: &str) -> (&str, Vec<&str>) {
+fn closure_policy(body: &str) -> (&'static str, Vec<&'static str>) {
     let lines: Vec<_> = body
         .lines()
         .filter(|line| {
@@ -800,6 +869,307 @@ fn closure_policy(body: &str) -> (&str, Vec<&str>) {
         }
     }
     ("keep-open", vec!["ISSUE_CLOSURE_POLICY_INVALID"])
+}
+
+// Resolve source identities only. Execution/Step allocation belongs to Writer.
+async fn effective_authority(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    record: &Value,
+    existing_pr: Option<u64>,
+    change_request: &Value,
+) -> Result<(Value, Value, String, Vec<&'static str>), &'static str> {
+    let parent = json!({"kind":"issue","number":record["task"]});
+    let mut decisions = list_records(
+        app,
+        state,
+        record,
+        &state.comments,
+        "issue-comment",
+        &parent,
+    )?;
+    if let Some(pr) = existing_pr {
+        let comments = app.github.authority_comments(&app.repository, pr).await?;
+        if comments.len() + state.comments.len() > 500 {
+            return Err("AUTHORITY_SOURCE_TRUNCATED");
+        }
+        decisions.extend(list_records(
+            app,
+            state,
+            record,
+            &comments,
+            "issue-comment",
+            &json!({"kind":"pull_request","number":pr}),
+        )?);
+    }
+    decisions.retain(|(_, decision)| decision["kind"] == "decision" && belongs(decision, record));
+    let mut superseded = HashSet::new();
+    for (reference, decision) in &decisions {
+        let predecessor = &decision["supersedes"];
+        if predecessor.is_null() {
+            continue;
+        }
+        let (prior, prior_record) = decisions
+            .iter()
+            .find(|(prior, _)| prior == predecessor)
+            .ok_or("AUTHORITY_DECISION_SUPERSESSION_INVALID")?;
+        if prior_record["parent"] != decision["parent"]
+            || prior["id"].as_u64().unwrap() >= reference["id"].as_u64().unwrap()
+            || !superseded.insert(prior.to_string())
+        {
+            return Err("AUTHORITY_DECISION_SUPERSESSION_INVALID");
+        }
+    }
+    decisions.retain(|(reference, _)| !superseded.contains(&reference.to_string()));
+    decisions.sort_by_key(|(reference, _)| reference["id"].as_u64().unwrap());
+    let mut amendments = serde_json::Map::new();
+    let (original_closure, warnings) = closure_policy(state.issue["body"].as_str().unwrap());
+    let mut closure = original_closure.to_string();
+    for (_, decision) in &decisions {
+        for (key, value) in decision["amendments"].as_object().unwrap() {
+            amendments.insert(key.clone(), value.clone());
+        }
+        if decision["parent"]["kind"] == "issue" {
+            if let Some(policy) = decision["amendments"]["issue_closure_policy"].as_str() {
+                closure = policy.to_string();
+            }
+        }
+    }
+    let mut hint = record.clone();
+    hint["existing_pr"] = json!(existing_pr);
+    let old = execution_records(app, state, &hint).await?;
+    let compatibility = current(&old)?
+        .map(|(reference, _)| reference.clone())
+        .unwrap_or(Value::Null);
+    if !change_request.is_null() {
+        let native = read_ref(app, state, record, change_request).await?;
+        let payload = trusted_record(app, state, record, change_request, false).await?;
+        if change_request["kind"] != "review"
+            || payload["kind"] != "change-request"
+            || native["commit_id"] != payload["reviewed_head_sha"]
+            || native["state"] != "CHANGES_REQUESTED"
+        {
+            return Err("AUTHORITY_REVIEW_INVALID");
+        }
+        let reviews = app
+            .github
+            .authority_reviews(
+                &app.repository,
+                change_request["parent"]["number"].as_u64().unwrap(),
+            )
+            .await?;
+        if reviews.iter().any(|review| {
+            trusted_user(&review["user"], &state.publisher)
+                && review["id"]
+                    .as_u64()
+                    .is_some_and(|id| id > change_request["id"].as_u64().unwrap())
+                && review["state"] == "CHANGES_REQUESTED"
+        }) {
+            return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+        }
+    }
+    let mut authority = json!({"charter":native_ref(&state.issue,"issue-body",&parent)?,"decisions":decisions.iter().map(|(reference,_)| reference.clone()).collect::<Vec<_>>(),
+        "change_request":change_request,"compatibility_request":compatibility});
+    authority["sha256"] = json!(authority_digest(&authority));
+    Ok((authority, Value::Object(amendments), closure, warnings))
+}
+
+fn validation_vocabulary(app: &RepositoryTarget<'_>, names: &Value) -> Result<(), &'static str> {
+    let allowed = executable_cr::input_schema(&app.policy.validation_names)["properties"]
+        ["required_validation"]["items"]["enum"]
+        .clone();
+    if names.as_array().is_some_and(|names| {
+        names
+            .iter()
+            .any(|name| !allowed.as_array().unwrap().contains(name))
+    }) {
+        return Err("AUTHORITY_VALIDATION_UNKNOWN");
+    }
+    Ok(())
+}
+
+async fn validate_v4_live(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    record: &Value,
+    published: Option<&Value>,
+) -> Result<Value, &'static str> {
+    match record["kind"].as_str().unwrap() {
+        "decision" => {
+            validation_vocabulary(app, &record["amendments"]["validation"])?;
+            if record["parent"]["kind"] == "pull_request" {
+                let pr = app
+                    .github
+                    .get_pr(
+                        &app.repository,
+                        record["parent"]["number"].as_i64().unwrap(),
+                    )
+                    .await?;
+                if step_sync::linked_issue(&pr)? != record["task"].as_u64().unwrap()
+                    || pr["base"]["repo"]["full_name"] != app.repository
+                    || pr["head"]["repo"]["full_name"] != app.repository
+                    || pr["base"]["ref"] != app.policy.base_branch
+                {
+                    return Err("AUTHORITY_PARENT_MISMATCH");
+                }
+            }
+            if !record["supersedes"].is_null() {
+                let prior =
+                    trusted_record(app, state, record, &record["supersedes"], false).await?;
+                if prior["kind"] != "decision" || prior["parent"] != record["parent"] {
+                    return Err("AUTHORITY_DECISION_SUPERSESSION_INVALID");
+                }
+                let natives = if record["parent"]["kind"] == "issue" {
+                    state.comments.clone()
+                } else {
+                    app.github
+                        .authority_comments(
+                            &app.repository,
+                            record["parent"]["number"].as_u64().unwrap(),
+                        )
+                        .await?
+                };
+                let decisions = list_records(
+                    app,
+                    state,
+                    record,
+                    &natives,
+                    "issue-comment",
+                    &record["parent"],
+                )?;
+                if decisions.iter().any(|(reference, decision)| {
+                    published != Some(reference)
+                        && decision["kind"] == "decision"
+                        && decision["supersedes"] == record["supersedes"]
+                }) {
+                    return Err("AUTHORITY_DECISION_SUPERSEDED");
+                }
+            }
+        }
+        "change-request" => {
+            validation_vocabulary(app, &record["overrides"]["validation"])?;
+            let pr = app
+                .github
+                .get_pr(
+                    &app.repository,
+                    record["parent"]["number"].as_i64().unwrap(),
+                )
+                .await?;
+            let args = json!({"repository":app.repository,"pr_number":record["parent"]["number"],"expected_head_sha":record["reviewed_head_sha"]});
+            if target_binding_rejection(&app.policy, &pr, &args).is_some()
+                || pr["head"]["ref"] != record["branch"]
+                || pr["head"]["sha"] != record["reviewed_head_sha"]
+                || (published.is_none() && pr["base"]["sha"] != record["base_sha"])
+                || step_sync::linked_issue(&pr)? != record["task"].as_u64().unwrap()
+            {
+                return Err("AUTHORITY_PR_BINDING_MISMATCH");
+            }
+            let mut publication_pr = pr.clone();
+            if published.is_some() {
+                publication_pr["draft"] = json!(false);
+            }
+            if let Some(code) = publication_rejection(&publication_pr, &record["reviewed_head_sha"])
+            {
+                return Err(code);
+            }
+        }
+        "task-approval" | "task-review" => {
+            let outcome = trusted_record(app, state, record, &record["outcome"], true).await?;
+            if record["outcome"]["kind"] != "issue-comment"
+                || outcome["kind"] != "outcome"
+                || outcome["schema_version"] != "4.0"
+                || (record["kind"] == "task-approval" && outcome["status"] != "implemented")
+                || outcome["result"] != record["result"]
+                || outcome["authority"] != record["authority"]
+                || outcome["admission"] != record["admission"]
+                || outcome["step"] != record["step"]
+            {
+                return Err("AUTHORITY_APPROVAL_RESULT_MISMATCH");
+            }
+            let existing_pr = if outcome["parent"]["kind"] == "pull_request" {
+                outcome["parent"]["number"].as_u64()
+            } else {
+                record["authority"]["change_request"]["parent"]["number"].as_u64()
+            };
+            if let Some(pr) = existing_pr {
+                let pr = app.github.get_pr(&app.repository, pr as i64).await?;
+                if record["kind"] == "task-approval"
+                    && outcome["result"]["kind"] == "git"
+                    && pr["state"] == "open"
+                {
+                    return Err("AUTHORITY_APPROVAL_PR_REVIEW_REQUIRED");
+                }
+            }
+            let (authority, _, _, _) = effective_authority(
+                app,
+                state,
+                record,
+                existing_pr,
+                &record["authority"]["change_request"],
+            )
+            .await?;
+            if authority != record["authority"] {
+                return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+            }
+            for warning in outcome["warnings"].as_array().unwrap() {
+                if !record["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|disposition| {
+                        disposition["source"] == warning["source"]
+                            && disposition["impact"] == warning["impact"]
+                    })
+                {
+                    return Err("AUTHORITY_APPROVAL_WARNING_MISSING");
+                }
+            }
+            if outcome["limitations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|limitation| {
+                    !record["limitations"]
+                        .as_array()
+                        .unwrap()
+                        .contains(limitation)
+                })
+            {
+                return Err("AUTHORITY_APPROVAL_LIMITATIONS_MISSING");
+            }
+            let mut outcomes = state.comments.clone();
+            if let Some(pr) = existing_pr {
+                outcomes.extend(app.github.authority_comments(&app.repository, pr).await?);
+            }
+            if outcomes.len() > 500 {
+                return Err("AUTHORITY_SOURCE_TRUNCATED");
+            }
+            for native in outcomes {
+                if trusted_user(&native["user"], &state.writer)
+                    && native["id"]
+                        .as_u64()
+                        .is_some_and(|id| id > record["outcome"]["id"].as_u64().unwrap())
+                {
+                    if let Some(later) =
+                        parse(native["body"].as_str().ok_or("AUTHORITY_SOURCE_INVALID")?)?
+                    {
+                        if later["kind"] == "outcome"
+                            && belongs(&later, record)
+                            && later["schema_version"] == "4.0"
+                            && later["step"].as_u64().unwrap() > record["step"].as_u64().unwrap()
+                        {
+                            return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+                        }
+                    }
+                }
+            }
+            if step_sync::current_step(&state.issue)? != record["step"].as_u64().unwrap() {
+                return Err("AUTHORITY_STEP_MISMATCH");
+            }
+        }
+        _ => return Err("AUTHORITY_RECORD_INVALID"),
+    }
+    Ok(json!({}))
 }
 
 async fn validate_live(
@@ -891,6 +1261,10 @@ async fn validate_live(
             }
             context.push(json!({"reference":reference,"author":normalized_author(&source["user"]),"body_sha256":reference["sha256"]}));
         }
+    }
+    if record["schema_version"] == "4.0" {
+        validate_v4_live(app, state, record, published).await?;
+        return Ok(json!({"context_provenance":context}));
     }
     if kind == "decision" {
         if record["parent"]["kind"] == "pull_request" {
@@ -1176,6 +1550,9 @@ async fn project(
     reference: &Value,
     operation: &str,
 ) -> Result<(), &'static str> {
+    if record["schema_version"] == "4.0" {
+        return Ok(());
+    }
     if !matches!(
         record["kind"].as_str(),
         Some("task-request" | "change-request")
@@ -1239,7 +1616,7 @@ async fn project(
     Ok(())
 }
 
-fn error(code: &str) -> Value {
+pub(crate) fn error(code: &str) -> Value {
     json!({"content":[{"type":"text","text":code}],"isError":true})
 }
 
@@ -1337,7 +1714,20 @@ async fn published_native(
         .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     let fresh = load(app, record).await?;
     let provenance = validate_live(app, &fresh, record, Some(&reference)).await?;
-    let (closure, warnings) = closure_policy(fresh.issue["body"].as_str().unwrap());
+    let (mut closure, warnings) = {
+        let (closure, warnings) = closure_policy(fresh.issue["body"].as_str().unwrap());
+        (closure.to_string(), warnings)
+    };
+    if record["schema_version"] == "4.0" {
+        let existing_pr = if record["parent"]["kind"] == "pull_request" {
+            record["parent"]["number"].as_u64()
+        } else {
+            None
+        };
+        closure = effective_authority(app, &fresh, record, existing_pr, &Value::Null)
+            .await?
+            .2;
+    }
     Ok(
         json!({"content":[{"type":"text","text":outcome}],"structuredContent":{
         "reference":reference,"native_url":url,"actor":normalized_author(&reread["user"]),"record":record,
@@ -1358,19 +1748,35 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         return error("GITHUB_NATIVE_AUTHORITY_NOT_ENABLED");
     }
     let record = &args["record"];
-    let operation = hash(&format!("task-authority-v1\n{}", render(record)));
-    let body = format!(
+    // Keep the original canonical operation identity through renderer upgrades.
+    let operation = hash(&format!("task-authority-v1\n{}", render_legacy(record)));
+    let current_body = format!(
         "{}\n<!-- jresearchsoftware-task-authority:v1 operation={operation} -->",
         render(record)
     );
+    let legacy_body = format!(
+        "{}\n<!-- jresearchsoftware-task-authority:v1 operation={operation} -->",
+        render_legacy(record)
+    );
     let future = async {
         let state = load(app, record).await?;
-        let known = app
-            .store
-            .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .known(&operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let (known, body) = {
+            let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            let known = store
+                .known(&operation)
+                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            let body = store
+                .publication_body(&operation)
+                .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                .unwrap_or_else(|| {
+                    if known.is_some() {
+                        legacy_body.clone()
+                    } else {
+                        current_body.clone()
+                    }
+                });
+            (known, body)
+        };
         if let Some(known) = &known {
             if known
                 .actor_login
@@ -1459,13 +1865,13 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
             }
         }
         validate_live(app, &state, record, None).await?;
-        if !app
+        let (reserved, body) = app
             .store
             .lock()
             .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .reserve(&operation, &hash(&body))
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        {
+            .reserve_publication(&operation, &hash(&body), &current_body, &legacy_body)
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if !reserved {
             return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
         }
         // Reservation precedes the final source re-read and every non-idempotent POST.
@@ -1488,10 +1894,12 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 .map_err(|_| "INTERNAL_RELAY_ERROR")?;
             return Err(code);
         }
-        if matches!(
-            record["kind"].as_str(),
-            Some("task-request" | "change-request")
-        ) {
+        if record["schema_version"] == "3.0"
+            && matches!(
+                record["kind"].as_str(),
+                Some("task-request" | "change-request")
+            )
+        {
             if let Err(code) = bind_projection(app, record, &operation, true).await {
                 app.store
                     .lock()
@@ -1542,6 +1950,71 @@ pub(crate) async fn approved_continuation(
     }
     let hint = json!({"repository":app.repository,"task":issue["number"],"charter_sha256":hash(issue["body"].as_str().ok_or("ISSUE_NOT_ADMITTED")?),"existing_pr":pr["number"]});
     let state = load(app, &hint).await?;
+    let mut native_outcomes = state.comments.clone();
+    native_outcomes.extend(
+        app.github
+            .authority_comments(&app.repository, pr["number"].as_u64().unwrap())
+            .await?,
+    );
+    if native_outcomes.len() > 500 {
+        return Err("AUTHORITY_SOURCE_TRUNCATED");
+    }
+    let mut v4_outcomes = Vec::new();
+    for native in &native_outcomes {
+        if !trusted_user(&native["user"], &state.writer) {
+            continue;
+        }
+        let Some(outcome) = parse(native["body"].as_str().ok_or("AUTHORITY_SOURCE_INVALID")?)?
+        else {
+            continue;
+        };
+        if outcome["kind"] == "outcome"
+            && outcome["schema_version"] == "4.0"
+            && belongs(&outcome, &hint)
+            && outcome["status"] == "implemented"
+            && outcome["result"]["kind"] == "git"
+            && outcome["result"]["revision"] == *approved_head
+            && outcome["step"].as_u64() == Some(step_sync::current_step(&state.issue)?)
+            && outcome["step"].as_u64() == Some(step_sync::current_step(pr)?)
+        {
+            let reference = native_ref(native, "issue-comment", &outcome["parent"])?;
+            source_binding(&app.repository, native, &reference)?;
+            trusted_record(app, &state, &hint, &reference, true).await?;
+            let (authority, amendments, closure, warnings) = effective_authority(
+                app,
+                &state,
+                &hint,
+                pr["number"].as_u64(),
+                &outcome["authority"]["change_request"],
+            )
+            .await?;
+            if authority != outcome["authority"] {
+                return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+            }
+            let compatibility = if authority["compatibility_request"].is_null() {
+                Value::Null
+            } else {
+                trusted_record(
+                    app,
+                    &state,
+                    &hint,
+                    &authority["compatibility_request"],
+                    false,
+                )
+                .await?
+            };
+            let old_continuation = &compatibility["continuation"];
+            let continuation=amendments.get("continuation").cloned().unwrap_or_else(|| json!({"hold":old_continuation["hold"]==true,"next": if old_continuation["next"]["direction"].is_object() {json!({"task":old_continuation["next"]["task"],"direction":old_continuation["next"]["direction"]})} else {Value::Null}}));
+            v4_outcomes.push(json!({"schema_version":"4.0","authority":authority,"admission":outcome["admission"],"outcome":reference,"continuation":continuation,
+                "issue_closure_policy":closure,"warnings":warnings,"completion_conditions":"trusted-owner-canonical-state-required"}));
+        }
+    }
+    if v4_outcomes.len() > 1 {
+        return Err("AUTHORITY_EXACT_OUTCOME_REQUIRED");
+    }
+    if let Some(outcome) = v4_outcomes.pop() {
+        return Ok(outcome);
+    }
     let records = execution_records(app, &state, &hint).await?;
     let (reference, request) = current(&records)?.ok_or("AUTHORITY_REQUEST_MISSING")?;
     if !belongs(request, &hint)

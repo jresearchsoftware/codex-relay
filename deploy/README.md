@@ -82,6 +82,59 @@ change after qualification. Service activation still requires the existing
 explicit activation gate. Ordinary apply does not register or activate runners.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
 
+### Manual Outcome capability and authority compatibility
+
+An accepted upgrade of these sources adds schema `4.0` admission for Tasks already
+marked `Authority model: github-native-v1`: current charter and trusted Decisions
+replace the mandatory full public Request, and trusted Writer allocates Step at
+admission. Native exact-head CR publication is independent of a replacement
+Request or authored Step. Protected schema `3.0` in-flight attempts retain their
+exact admitted Request/CR, Step and publication bindings. Installing source does
+not rewrite those attempts or migrate an unmarked Task. See the
+[controller contract](../controller/README.md#issue-publication-and-worker-handoff).
+
+The installed `reviewer-mcp.json` can enable `manualOutcomeEnabled` and the fixed
+`manualOutcomeClientPath` under the namespace's installation root. Omitted
+capability configuration defaults to disabled. The source deployment template
+registers it with the root-owned `relay-manual-outcome` wrapper; configuration
+alone does not prove a working installed transport. Preserve-upgrade retains
+the socket's prior activity/enablement, including an inactive newly added socket.
+The existing owner-authorized Reviewer activation enables and starts the safe
+installed socket/factory pair and verifies read-back; an older installation with
+both units absent retains its existing activation path. This capability is
+separate from native Reviewer verdict publication: `publicationEnabled: false`
+still blocks native verdicts; an enabled manual capability only submits a claim
+for an already admitted manual attempt to Writer. It never grants execution,
+independent acceptance, merge or closure authority.
+
+The transport is the existing qualified OpenAI mTLS ingress, followed by the
+unprivileged Reviewer service, the fixed no-argument client, a namespace-local
+Unix socket and a socket-activated root Writer service. Reviewer preserves
+`NoNewPrivileges=true` and invokes no sudo transport. Caller JSON cannot select a
+program, path, credential or Writer operation. Both installed wrappers clear the
+environment and use fixed executables and configuration; the root wrapper takes
+the existing `publication-v2.lock`. The client is root-owned and executable by
+the Reviewer group; the socket is `root:<Reviewer group>` with mode `0660`; the
+Writer wrapper is root-only. The generic worker/controller Writer entrypoint
+rejects this capability-specific operation.
+
+Reviewer retains its own App credential boundary. Only the root service reads
+the separate Writer credentials and protected attempt store. Multi-repository
+Reviewer configuration does not expand Writer beyond `consumer.repository`.
+The public MCP envelope is `{repository, task, run_id, result}` with positive
+integer Task/run IDs and a complete canonical Outcome. Reviewer bounds serialized
+arguments to 60,000 bytes within its existing 62,000-byte JSON-RPC request limit;
+the protected transport separately caps input at 100 KiB and receipts at 32 KiB.
+Neither layer truncates result evidence. Oversize input fails explicitly. Public
+receipts report only `PUBLISHED`, `RECOVERED` or `DUPLICATE_SUPPRESSED` with the
+exact native Outcome identity/body hash, or a bounded error code.
+
+Current installed consumers keep their existing behavior until a separately
+accepted supported upgrade and qualification. Source tests do not prove installed
+socket permissions, process isolation, credentials or live TEST/PROD mTLS access.
+Use the existing deployment/activation/ingress gates; no private installation or
+permission repair path is implied.
+
 ### Fresh-owner preparation
 
 Create and install distinct Writer and Reviewer Apps for the selected consumer

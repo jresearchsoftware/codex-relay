@@ -21,7 +21,7 @@ export function memoryStore() {
 }
 export async function fixture(t, { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
   mainAdvance = false, unrelatedMain = false, nativeReview = false, deferAdmission = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
-  profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
+  streamlinedAdmission = false, profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
   // The installed proof runs real code against the governed dispatch-work
   // root. Give each fixture its own admitted event namespace so a concurrent
   // test or a later proof subprocess cannot prepare, collect, or clean up
@@ -175,6 +175,10 @@ export async function fixture(t, { remediation = false, continuation = false, co
       subject.labels = subject.labels.filter(l => l.name !== path.split('/').at(-1));
     },
     async patch(path, body) {
+      if ((path === '/issues/42' || path === '/issues/43') && Object.keys(body).length === 1 && body.labels) {
+        const subject = path === '/issues/42' ? issue : pr;
+        subject.labels = body.labels.map(name => ({ name })); return copy(subject);
+      }
       if (path === '/pulls/43' && Object.keys(body).every(key => ['title', 'body'].includes(key))) {
         Object.assign(pr, body); return copy(pr);
       }
@@ -186,6 +190,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
     async ready() { pr.draft = false; },
     async draft() { pr.draft = true; }
   };
+  api.ensureStepLabel = async () => {};
   function assertLabelPath(path) {
     if (!labelLaunch || path !== `/issues/${launch.number}/labels/codex-ready-${route}`) throw new Error('Unexpected label mutation');
   }
@@ -207,7 +212,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
       return staleObservation ? null : observedHead ?? g.observe();
     } })) };
   const admissionControl = createAdmission ? await createAdmission({ root, store, journal }) : undefined;
-  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore });
+  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore, streamlinedAdmission });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
   await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead });
   const admission = deferAdmission ? { envelope: await admitEnvelope(api, admissionRequest) }

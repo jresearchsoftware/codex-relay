@@ -1,0 +1,8 @@
+#!/bin/sh
+# managed-by: codex-relay
+# Nonprivileged fixed client. Caller stdin contains only a manual result.
+set -eu
+test "$#" -eq 0 || exit 40
+exec /usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+  RELAY_MANUAL_OUTCOME_SOCKET='/run/{{ relay_namespace }}-manual-outcome.sock' \
+  /usr/bin/node '{{ relay_install_root }}/current/reviewed-source/controller/src/manual-outcome-client.mjs'

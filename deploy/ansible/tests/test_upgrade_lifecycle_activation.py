@@ -29,6 +29,10 @@ def service(pid=0, *, active=False, enabled='disabled', loaded=True):
     ))
 
 
+def socket_state(*, active=False, enabled='disabled', loaded=True):
+    return service(active=active, enabled=enabled, loaded=loaded).replace('SubState=running', 'SubState=listening')
+
+
 @unittest.skipUnless(ANSIBLE, 'Linux Ansible required')
 class UpgradeActivationTests(unittest.TestCase):
     def run_play(self, root, tasks, values, *, handlers=None):
@@ -43,6 +47,10 @@ class UpgradeActivationTests(unittest.TestCase):
                               env=env, text=True, capture_output=True, timeout=75)
 
     def fixture(self, root, initial, final):
+        initial = {**initial, 'codex-relay-relay-manual-outcome.socket': initial.get(
+            'codex-relay-relay-manual-outcome.socket', socket_state())}
+        final = {**final, 'codex-relay-relay-manual-outcome.socket': final.get(
+            'codex-relay-relay-manual-outcome.socket', socket_state())}
         state = root / 'state.json'
         state.write_text(json.dumps(initial))
         trace = root / 'calls'
@@ -102,6 +110,7 @@ class UpgradeActivationTests(unittest.TestCase):
         listener.listen(16)
         self.addCleanup(listener.close)
         values = {
+            'relay_namespace': 'codex-relay',
             'relay_reviewer_service_name': 'reviewer.service',
             'relay_production_runner_service_name': 'production.service',
             'relay_general_runner_service_name': 'general.service',
@@ -136,6 +145,33 @@ class UpgradeActivationTests(unittest.TestCase):
             result = self.run_play(root, tasks, values)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse(trace.exists())
+
+    def test_socket_activation_and_enabled_runtime_are_preserved(self):
+        for active, enabled in ((True, 'enabled-runtime'), (True, 'disabled'), (False, 'disabled'), (False, 'enabled')):
+            with self.subTest(active=active, enabled=enabled), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                states = {'reviewer.service': service(), 'production.service': service(), 'general.service': service(),
+                          'codex-relay-relay-manual-outcome.socket': socket_state(active=active, enabled=enabled)}
+                tasks, values, trace = self.fixture(root, states, states)
+                result = self.run_play(root, tasks, values)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']['manualOutcome']
+                self.assertEqual(saved, {'active': active, 'enabled': enabled, 'load': 'loaded'})
+                self.assertFalse(trace.exists())
+
+    def test_absent_old_socket_remains_disabled_and_inactive_after_upgrade(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                       'production.service': service(), 'general.service': service(),
+                       'codex-relay-relay-manual-outcome.socket': socket_state(loaded=False)}
+            final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                     'codex-relay-relay-manual-outcome.socket': socket_state()}
+            tasks, values, _trace = self.fixture(root, initial, final)
+            result = self.run_play(root, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']['manualOutcome']
+            self.assertEqual(saved, {'active': False, 'enabled': 'disabled', 'load': 'not-found'})
 
     def test_lost_health_enablement_or_transport_never_yields_activation_proof(self):
         initial = {'reviewer.service': service(41, active=True, enabled='enabled'),

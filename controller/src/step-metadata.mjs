@@ -34,7 +34,7 @@ export function assertPrStepTitle(pr, issueNumber, step) {
 }
 
 export function projectedRequestTitle(request) {
-  const cr = request.kind === 'change-request' ? ` · ${request.change_request_id}` : '';
+  const cr = request.change_request_id ? ` · ${request.change_request_id}` : '';
   const text = `Task ${request.task} · Step ${request.step}${cr} · ${request.purpose}`;
   const characters = Array.from(text);
   return characters.length <= RUN_NAME_IDENTITY_MAX_CHARS ? text

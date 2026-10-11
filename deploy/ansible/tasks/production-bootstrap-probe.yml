@@ -31,6 +31,8 @@
         - '{{ relay_general_runner_service_name }}'
         - '{{ relay_controller_service_name }}'
         - '{{ relay_superseded_proxy_service_name }}'
+        - '{{ relay_namespace }}-relay-manual-outcome.socket'
+        - '{{ relay_namespace }}-relay-manual-outcome@.service'
       authorized: '{{ relay_production_operation_stale_authorized | default(false) | bool }}'
       expectedStateHash: '{{ relay_production_operation_stale_expected_state_hash | default("") }}'
 

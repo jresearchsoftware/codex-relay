@@ -148,6 +148,40 @@
       changed_when: false
       when: relay_deployment_profile == 'production'
 
+    - name: Inspect optional installed manual Outcome capability boundaries
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - '/etc/systemd/system/{{ relay_namespace }}-relay-manual-outcome.socket'
+        - '/etc/systemd/system/{{ relay_namespace }}-relay-manual-outcome@.service'
+        - '{{ relay_install_root }}/relay-manual-outcome'
+        - '{{ relay_install_root }}/relay-manual-outcome-writer'
+      register: relay_manual_outcome_final_paths
+      changed_when: false
+      when: relay_deployment_profile == 'production'
+
+    - name: Require safe installed manual Outcome units and fixed entrypoints when present
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists | default(false)
+          - item.stat.isreg | default(false)
+          - not item.stat.islnk | default(false)
+          - item.stat.pw_name == 'root'
+          - item.stat.gr_name == (relay_reviewer_group if boundary_index == 2 else 'root')
+          - item.stat.mode == ['0644', '0644', '0750', '0700'][boundary_index]
+        fail_msg: RELAY_MANUAL_OUTCOME_INSTALLED_BOUNDARY_UNPROVEN
+      loop: '{{ relay_manual_outcome_final_paths.results }}'
+      loop_control:
+        index_var: boundary_index
+        label: '{{ item.item }}'
+      when:
+        - relay_deployment_profile == 'production'
+        - not ansible_check_mode | bool
+        - >-
+          relay_manual_outcome_final_paths.results[0].stat.exists | default(false) or
+          relay_manual_outcome_final_paths.results[1].stat.exists | default(false)
+
     - name: Read the final non-secret production release manifest
       ansible.builtin.slurp:
         src: '{{ relay_install_root }}/current/artifact-manifest.json'

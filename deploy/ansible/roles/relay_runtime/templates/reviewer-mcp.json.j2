@@ -1,6 +1,8 @@
 {
   "schemaVersion": "1.0",
   "githubNativeAuthorityEnabled": true,
+  "manualOutcomeEnabled": true,
+  "manualOutcomeClientPath": {{ (relay_install_root ~ '/relay-manual-outcome') | to_json }},
 {% if relay_validation_names is defined %}
   "validationNames": {{ relay_validation_names | to_json }},
 {% endif %}

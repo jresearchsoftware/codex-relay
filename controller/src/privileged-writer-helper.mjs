@@ -27,12 +27,17 @@ export async function main() {
   let size = 0; const chunks = [];
   for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
   let request; try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
+  if (request?.operation === 'manual-outcome-direct') fail('MANUAL_CAPABILITY_REQUIRED');
   const admission = installedAdmissionControl();
   if (request?.operation === 'complete-execution') {
     return { version: VERSION, repository: REPOSITORY, ...await admission.complete(request) };
   }
+  return (await protectedWriterBroker({ deployment, runToken: request.workflowReadToken, admission })).dispatch(request);
+}
+export async function protectedWriterBroker({ deployment = resolveWriterDeploymentContract(), runToken, admission = installedAdmissionControl(), allowManualOutcome = false } = {}) {
+  if (process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
   const value = await token();
-  return createPublicationBroker({ api: createGithubApi({ token: value, runToken: request.workflowReadToken }),
+  return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store: createAttemptStore(`${deployment.claimRoot}/publication-v2`),
     lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
     journal: createAttemptStore(CONSUMER.paths.attemptRoot),
@@ -40,7 +45,7 @@ export async function main() {
     // Fixed root helper, exact admitted attempt, original contained journal.
     // No caller path, permission repair or worker Git metadata is accepted.
     collectRetained: e => collectProgress(checkoutPath(e), e, { token: value, root: deployment.claimRoot }),
-    admission }).dispatch(request);
+    admission, allowManualOutcome });
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

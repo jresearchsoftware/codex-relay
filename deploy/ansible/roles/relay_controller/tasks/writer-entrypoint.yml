@@ -18,6 +18,72 @@
     group: root
     mode: '0750'
 
+- name: Install the fixed Reviewer-accessible manual Outcome client
+  ansible.builtin.template:
+    src: relay-manual-outcome.j2
+    dest: '{{ relay_install_root }}/relay-manual-outcome'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0750'
+
+- name: Install the root-only bounded manual Outcome Writer wrapper
+  ansible.builtin.template:
+    src: relay-manual-outcome-writer.j2
+    dest: '{{ relay_install_root }}/relay-manual-outcome-writer'
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the separated bounded manual Outcome socket units
+  ansible.builtin.template:
+    src: '{{ item }}.j2'
+    dest: '/etc/systemd/system/{{ relay_namespace }}-{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [relay-manual-outcome.socket, 'relay-manual-outcome@.service']
+
+- name: Preserve manual Outcome socket activity and enablement during managed upgrade
+  ansible.builtin.systemd:
+    name: '{{ relay_namespace }}-relay-manual-outcome.socket'
+    daemon_reload: true
+    state: '{{ "started" if relay_upgrade_lifecycle_previous_active.manualOutcome.active | default(false) | bool else "stopped" }}'
+  when:
+    - not ansible_check_mode | bool
+    - relay_upgrade_lifecycle_managed | default(false) | bool
+
+- name: Activate the bounded manual Outcome socket after supported installation
+  ansible.builtin.systemd:
+    name: '{{ relay_namespace }}-relay-manual-outcome.socket'
+    daemon_reload: true
+    enabled: true
+    state: started
+  when:
+    - not ansible_check_mode | bool
+    - not relay_upgrade_lifecycle_managed | default(false) | bool
+
+- name: Inspect the installed bounded manual Outcome socket state
+  ansible.builtin.command:
+    argv: ['/bin/systemctl', show, '{{ relay_namespace }}-relay-manual-outcome.socket', '--property=LoadState,ActiveState,SubState,UnitFileState']
+  register: relay_manual_outcome_socket_state
+  changed_when: false
+  when: not ansible_check_mode | bool
+
+- name: Require the installed manual Outcome socket to retain admitted activity
+  ansible.builtin.assert:
+    that:
+      - relay_manual_outcome_socket_state.stdout is search('(?m)^LoadState=loaded$')
+      - >-
+        (relay_upgrade_lifecycle_managed | default(false) | bool and
+         not (relay_upgrade_lifecycle_previous_active.manualOutcome.active | default(false) | bool)) or
+        (relay_manual_outcome_socket_state.stdout is search('(?m)^ActiveState=active$') and
+         relay_manual_outcome_socket_state.stdout is search('(?m)^SubState=listening$'))
+      - >-
+        relay_upgrade_lifecycle_managed | default(false) | bool or
+        relay_manual_outcome_socket_state.stdout is search('(?m)^UnitFileState=enabled$')
+    fail_msg: RELAY_MANUAL_OUTCOME_SOCKET_STATE_UNPROVEN
+  when: not ansible_check_mode | bool
+
 - name: Install the root-only credential-free lifecycle admission helper
   ansible.builtin.template:
     src: relay-admission.j2

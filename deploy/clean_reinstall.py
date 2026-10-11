@@ -88,12 +88,20 @@ def namespace_paths(config, root):
 def unit_names(config):
     namespace = config['environment']['namespace']
     if config['environment'].get('instance'):
-        return [namespace + suffix for suffix in [
+        names = [namespace + suffix for suffix in [
             '-reviewer-recovery.timer', '-reviewer-recovery.service', '-reviewer.service',
             '-runner.service', '-general-runner.service', '-controller.service', '-openai-mtls-proxy.service']]
-    return ['reviewer-mcp-recovery.timer', 'reviewer-mcp-recovery.service', 'reviewer-mcp.service',
-            'relay-runner.service', 'relay-general-runner.service', 'relay-controller.service',
-            'relay-openai-mtls-proxy.service']
+    else:
+        names = ['reviewer-mcp-recovery.timer', 'reviewer-mcp-recovery.service', 'reviewer-mcp.service',
+                 'relay-runner.service', 'relay-general-runner.service', 'relay-controller.service',
+                 'relay-openai-mtls-proxy.service']
+    return names + [namespace + '-relay-manual-outcome.socket', namespace + '-relay-manual-outcome@.service']
+
+
+def managed_unit(config, name):
+    return name in unit_names(config) or bool(re.fullmatch(
+        re.escape(config['environment']['namespace'] + '-relay-manual-outcome@')
+        + r'[A-Za-z0-9_.:\\-]{1,200}\.service', name))
 
 
 def checked_systemctl(runner, *args):
@@ -121,7 +129,7 @@ def unknown_unit_text(path, root, owner_uid, metadata=None):
                         ['usr/lib', '/usr/lib'], 'UNKNOWN_UNIT_UNCLASSIFIABLE')
                 path = root / 'usr/lib' / path.relative_to(root / 'lib')
             require(any(path.is_relative_to(base) for base in roots)
-                    and path.suffix == '.service', 'UNKNOWN_UNIT_UNCLASSIFIABLE')
+                    and path.suffix in ['.service', '.socket'], 'UNKNOWN_UNIT_UNCLASSIFIABLE')
             protected(path.parent, root, owner_uid, directory=True)
             info = path.lstat()
             if stat.S_ISLNK(info.st_mode):
@@ -186,13 +194,15 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
     prefix = '/opt/' + config['environment']['namespace'] + '/'
     systemd_root = root / 'etc/systemd/system'
     protected(systemd_root, root, owner_uid, directory=True)
-    for path in systemd_root.glob('*.service'):
+    template = names[-1]
+    for path in [*systemd_root.glob('*.service'), *systemd_root.glob('*.socket')]:
         if path.name in names:
             continue
         # A missing deployment snapshot cannot let a newly selected unit name
         # hide a differently named service still using this runtime namespace.
         metadata = {}
-        if any(prefix in line and not line.lstrip().startswith(('#', ';'))
+        if any((prefix in line or line == 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock')
+               and not line.lstrip().startswith(('#', ';'))
                for line in unknown_unit_text(path, root, owner_uid, metadata).splitlines()):
             raise ValueError('REINSTALL_UNSUPPORTED_RUNTIME_UNIT')
         warning = foreign_unit_warning(path, metadata, root, owner_uid)
@@ -203,7 +213,29 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
                 if warnings is not None:
                     warnings.add(identity)
     for name in names:
-        path = root / 'etc/systemd/system' / name
+        instance = name not in unit_names(config)
+        fragment = template if instance else name
+        path = systemd_root / fragment
+        if name == template:
+            # A bare template is a protected source file, not a running
+            # service. Inspect each actual socket-created Writer instance.
+            if not present(path):
+                continue
+            protected(path, root, owner_uid)
+            lines = path.read_text().splitlines()
+            require('ExecStart=' + prefix + 'relay-manual-outcome-writer' in lines
+                    and 'User=root' in lines, 'UNIT_IDENTITY_UNPROVEN')
+            for base in ['etc/systemd/system', 'run/systemd/system', 'usr/lib/systemd/system', 'lib/systemd/system']:
+                require(not present(root / base / (template + '.d')), 'UNIT_OVERRIDE_UNSUPPORTED')
+            result = runner(['/bin/systemctl', 'list-units', template.replace('@.', '@*.'),
+                             '--all', '--plain', '--no-legend', '--no-pager'], capture_output=True, text=True)
+            require(result.returncode == 0, 'UNIT_OBSERVATION_UNAVAILABLE')
+            for line in result.stdout.splitlines():
+                instance_name = line.split()[0]
+                require(managed_unit(config, instance_name) and instance_name not in unit_names(config), 'UNIT_IDENTITY_UNPROVEN')
+                if instance_name not in names:
+                    names.append(instance_name)
+            continue
         result = runner(['/bin/systemctl', 'show', name, '--no-pager',
                          '--property=LoadState,ActiveState,SubState,MainPID,ControlPID,FragmentPath,DropInPaths,ControlGroup'],
                         capture_output=True, text=True)
@@ -215,9 +247,15 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         require(fields.get('LoadState') == 'loaded' and present(path), 'UNIT_IDENTITY_UNPROVEN')
         protected(path, root, owner_uid)
         lines = path.read_text().splitlines()
+        socket = name.endswith('.socket')
         binding = ('Unit=' + name.removesuffix('.timer') + '.service' in lines if name.endswith('.timer')
+                   else 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock' in lines
+                   and 'Accept=yes' in lines and 'SocketUser=root' in lines
+                   and 'SocketGroup=' + config['environment']['reviewerUser'] in lines and 'SocketMode=0660' in lines if socket
                    else any(line.startswith('ExecStart=' + prefix) for line in lines))
-        require(binding and fields.get('FragmentPath') == '/etc/systemd/system/' + name,
+        if fragment == template:
+            binding = binding and 'ExecStart=' + prefix + 'relay-manual-outcome-writer' in lines and 'User=root' in lines
+        require(binding and fields.get('FragmentPath') == '/etc/systemd/system/' + fragment,
                 'UNIT_IDENTITY_UNPROVEN')
         identities = {names[2]: config['environment']['reviewerUser'],
                       names[3]: config['environment']['runner']['user'],
@@ -233,11 +271,12 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
             protected(root / drop.lstrip('/'), root, owner_uid)
         require(fields.get('ActiveState') in ['active', 'inactive', 'failed'], 'UNIT_TRANSITION_PENDING')
         timer = name.endswith('.timer')
-        if timer:
+        activation_unit = timer or socket
+        if activation_unit:
             # Timer units expose timing state, not service PID properties. The
             # associated managed recovery service is checked independently.
             require((fields['ActiveState'], fields.get('SubState')) in [
-                        ('active', 'waiting'), ('active', 'elapsed'),
+                        *([('active', 'listening')] if socket else [('active', 'waiting'), ('active', 'elapsed')]),
                         ('inactive', 'dead'), ('failed', 'failed')]
                     and fields.get('MainPID', '0') == '0' and fields.get('ControlPID', '0') == '0'
                     and not fields.get('ControlGroup'), 'UNIT_TRANSITION_PENDING')
@@ -246,7 +285,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
             require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
         if stopped:
             require(fields.get('ActiveState') in ['inactive', 'failed']
-                    and (timer or fields.get('MainPID') == '0'),
+                    and (activation_unit or fields.get('MainPID') == '0'),
                     'WORKERS_NOT_QUIESCENT')
         elif name in names[3:5] and fields['ActiveState'] == 'active':
             runner_root = '/opt/' + config['environment']['namespace'] + '/' + (
@@ -260,7 +299,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
                                    'user': identities[name], 'cgroup': fields['ControlGroup']}
         elif name in names[3:5]:
             require(fields['MainPID'] == '0', 'WORKERS_NOT_QUIESCENT')
-        elif name in [names[1], *names[5:]]:
+        elif not activation_unit and name in [names[1], *names[5:]]:
             require(fields['ActiveState'] in ['inactive', 'failed'] and fields['MainPID'] == '0',
                     'WORKERS_NOT_QUIESCENT')
         units[name] = fields['ActiveState']
@@ -697,7 +736,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
                 and isinstance(journal['activationMarkers'], list)
                 and len(journal['activationMarkers']) == len(set(journal['activationMarkers']))
                 and set(journal['activationMarkers']) <= {'reviewer-activation-authorized', 'reviewer-recovery-requires-activation'}
-                and isinstance(journal['units'], dict) and set(journal['units']) <= set(unit_names(config))
+                and isinstance(journal['units'], dict) and all(managed_unit(config, name) for name in journal['units'])
                 and all(value in ['active', 'inactive', 'failed'] for value in journal['units'].values()),
                 'RECOVERY_BINDING_CHANGED')
         archive = paths['install'].parent / ('.' + paths['install'].name + '-retired-' + journal['sourceRevision'] + '-' + revision)
@@ -765,13 +804,16 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
         warnings = set()
         units = inspect_units(config, paths, root, owner_uid, runner, warnings=warnings)
         require(set(units) == set(journal['units']) and all(value in ['inactive', 'failed']
-                for name, value in units.items() if not name.endswith('.timer')), 'RECOVERY_SERVICES_NOT_STOPPED')
+                for name, value in units.items() if not name.endswith(('.timer', '.socket'))), 'RECOVERY_SERVICES_NOT_STOPPED')
         workers_quiescent(config, root, user_ids, stopped_units=units)
         _recovery_processes(config, paths, root)
         admission_contained()
         timer = unit_names(config)[0]
         if units.get(timer) == 'active':
             checked_systemctl(runner, 'stop', timer)
+        socket = unit_names(config)[-2]
+        if units.get(socket) == 'active':
+            checked_systemctl(runner, 'stop', socket)
         stopped = inspect_units(config, paths, root, owner_uid, runner, stopped=True, warnings=warnings)
         require(set(stopped) == set(units), 'RECOVERY_UNIT_STATE_CHANGED')
         workers_quiescent(config, root, user_ids, stopped_units=stopped)
@@ -823,7 +865,7 @@ def validate_remote_result(result, config, revision, report, action):
                 and result['archive'] == '/opt/.' + namespace + '-retired-' + result['sourceRevision'] + '-' + revision
                 and all(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key])
                         for key in ['journalSha256', 'operationSha256'])
-                and isinstance(result['units'], dict) and set(result['units']) <= set(unit_names(config))
+                and isinstance(result['units'], dict) and all(managed_unit(config, name) for name in result['units'])
                 and all(value in ['active', 'inactive', 'failed'] for value in result['units'].values())
                 and isinstance(result['activationMarkers'], list)
                 and len(result['activationMarkers']) == len(set(result['activationMarkers']))
@@ -883,7 +925,7 @@ def parse_remote_warning(line):
                 return ((nested or len(parts) == 1)
                         and all(0 < len(part) <= 255 and part not in ['.', '..']
                                 and part.isprintable() for part in parts)
-                        and parts[-1].endswith('.service') and parts[-1] != '.service')
+                        and parts[-1].endswith(('.service', '.socket')) and parts[-1] not in ['.service', '.socket'])
         return False
 
     roots = ['/etc/systemd/system/', '/usr/lib/systemd/system/', '/lib/systemd/system/']

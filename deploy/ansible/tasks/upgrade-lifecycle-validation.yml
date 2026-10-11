@@ -6,7 +6,7 @@
       - show
       - '{{ item }}'
       - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
-  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}']
+  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}', '{{ relay_namespace }}-relay-manual-outcome.socket']
   register: relay_upgrade_lifecycle_final_services
   changed_when: false
   check_mode: false
@@ -20,9 +20,12 @@
         (
           (relay_upgrade_lifecycle_previous_active[component].active | bool) and
           item.stdout is search('(?m)^ActiveState=active$') and
-          item.stdout is search('(?m)^SubState=running$') and
-          item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
-          item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$')
+          (
+            (component == 'manualOutcome' and item.stdout is search('(?m)^SubState=listening$')) or
+            (component != 'manualOutcome' and item.stdout is search('(?m)^SubState=running$') and
+             item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
+             item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$'))
+          )
         ) or
         (
           not (relay_upgrade_lifecycle_previous_active[component].active | bool) and
@@ -43,7 +46,7 @@
     index_var: service_index
     label: '{{ item.item }}'
   vars:
-    component: "{{ ['reviewer', 'production', 'general'][service_index] }}"
+    component: "{{ ['reviewer', 'production', 'general', 'manualOutcome'][service_index] }}"
 
 - name: Prove active Reviewer and production processes adopted the installed transition
   ansible.builtin.assert:

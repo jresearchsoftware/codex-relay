@@ -39,10 +39,10 @@ class Systemd:
         _, operation, name, *_ = arguments
         self.calls.append((operation, name))
         if operation == 'show':
-            if name.endswith('.timer'):
+            if name.endswith(('.timer', '.socket')):
                 return SimpleNamespace(returncode=0, stdout='\n'.join([
                     'LoadState=loaded', 'ActiveState=' + self.units[name],
-                    'SubState=' + ('waiting' if self.units[name] == 'active' else 'dead'),
+                    'SubState=' + (('listening' if name.endswith('.socket') else 'waiting') if self.units[name] == 'active' else 'dead'),
                     'FragmentPath=/etc/systemd/system/' + name, 'DropInPaths=']))
             return SimpleNamespace(returncode=0, stdout='\n'.join([
                 'LoadState=loaded', 'ActiveState=' + self.units[name],
@@ -97,6 +97,11 @@ def installation(tmp_path, request):
     for name in reinstall.unit_names(config):
         content = ('Unit=' + name.removesuffix('.timer') + '.service' if name.endswith('.timer')
                    else 'ExecStart=/opt/codex-relay/current/bin/synthetic')
+        if name.endswith('.socket'):
+            content = ('ListenStream=/run/codex-relay-manual-outcome.sock\nAccept=yes\nSocketUser=root\n'
+                       'SocketGroup=' + config['environment']['reviewerUser'] + '\nSocketMode=0660')
+        elif name.endswith('-relay-manual-outcome@.service'):
+            content = 'ExecStart=/opt/codex-relay/relay-manual-outcome-writer\nUser=root'
         identities = dict(zip(reinstall.unit_names(config)[2:5], [config['environment']['reviewerUser'],
                              config['environment']['runner']['user'], config['environment']['generalRunner']['user']]))
         if name in identities:
@@ -142,6 +147,49 @@ def test_real_timer_properties_without_service_pids_complete_retirement(installa
     assert result['state'] == 'DECOMMISSIONED'
     assert ('stop', timer) in value.systemd.calls and ('disable', timer) in value.systemd.calls
     assert json.loads(value.paths['journal'].read_text())['units'][timer] == active
+
+
+def test_manual_outcome_socket_is_stopped_and_disabled_before_runtime_retirement(installation):
+    value = installation
+    socket = reinstall.unit_names(value.config)[-2]
+    value.systemd.units[socket] = 'active'
+    result = run(value)
+    assert result['state'] == 'DECOMMISSIONED'
+    assert ('stop', socket) in value.systemd.calls and ('disable', socket) in value.systemd.calls
+    assert json.loads(value.paths['journal'].read_text())['units'][socket] == 'active'
+    template = reinstall.unit_names(value.config)[-1]
+    assert not any(name == template for _, name in value.systemd.calls)
+    assert template not in json.loads(value.paths['journal'].read_text())['units']
+
+
+def test_manual_outcome_template_override_blocks_retirement_before_reservation(installation):
+    value = installation
+    template = reinstall.unit_names(value.config)[-1]
+    (value.root / 'etc/systemd/system' / (template + '.d')).mkdir()
+    with pytest.raises(ValueError, match='UNIT_OVERRIDE_UNSUPPORTED'):
+        run(value)
+    assert not value.paths['journal'].exists()
+    assert all(operation == 'show' for operation, _ in value.systemd.calls)
+
+
+def test_active_manual_outcome_writer_instance_blocks_retirement_before_reservation(installation):
+    value = installation
+    template = reinstall.unit_names(value.config)[-1]
+    instance = template.replace('@.', '@connection.')
+    original = value.systemd
+    def running_writer(arguments, **kwargs):
+        if arguments[1] == 'list-units':
+            return SimpleNamespace(returncode=0, stdout=instance + ' loaded active running Bounded Writer\n')
+        if arguments[1:3] == ['show', instance]:
+            return SimpleNamespace(returncode=0, stdout='\n'.join([
+                'LoadState=loaded', 'ActiveState=active', 'SubState=running', 'MainPID=123', 'ControlPID=0',
+                'FragmentPath=/etc/systemd/system/' + template, 'DropInPaths=']))
+        return original(arguments, **kwargs)
+    with pytest.raises(ValueError, match='REINSTALL_WORKERS_NOT_QUIESCENT'):
+        reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                              owner_uid=os.getuid(), user_ids=value.user_ids, runner=running_writer)
+    assert not value.paths['journal'].exists()
+    assert all(operation == 'show' for operation, _ in value.systemd.calls)
 
 
 @pytest.mark.parametrize('state', ['SubState=running', 'SubState=unknown', 'MainPID=123',
@@ -701,7 +749,7 @@ def test_foreign_reference_added_under_operation_lock_blocks_reservation(install
     with pytest.raises(ValueError, match='REINSTALL_UNSUPPORTED_RUNTIME_UNIT'):
         run(value)
     assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
-    assert all(action == 'show' for action, _ in value.systemd.calls)
+    assert all(action in ['show', 'list-units'] for action, _ in value.systemd.calls)
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason='synthetic device identity requires root')
