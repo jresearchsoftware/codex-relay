@@ -290,6 +290,23 @@ unsupported protected recovery contract, not a request to reauthorize ordinary
 TEST actions. The useful packaging fix and exact evidence are preserved for
 review; installed manual socket, MCP Outcome and complete E2E remain unqualified.
 
+The recovery capability gap is pre-existing and newly exposed by the introduced
+Task 115 packaging failure, not an introduced recovery regression. The scoped
+peer comparison used exact baseline
+`b4cb4943d52dd375d8c6800959b3264fad082cb8`, failed TEST selector
+`44f97a8000eac6f3c6284b32c62f574d7b8edd7b` and packaging correction
+`18041a9ef3047130bf562025b31c30d502fe7d13`. Across all three, the ordinary
+operation reservation, installed-revision apply preflight, exact-phase/head
+record, recovery classifier, completed-apply stale-disposition task/helper and
+bootstrap-disposition playbook are byte-identical. Representative Git blobs are
+`18920a48b4807543543c34f96152f866b9a1ab6c` (operation reservation),
+`672a2e5b49061134ad771c12d947ae2e95baa756` (apply preflight), and
+`e51498b1fb15ce72bb5f478e7d383571766da3ff` (completed-apply disposition).
+Task 115 changes to clean-reinstall/bootstrap concern manual socket/template
+inventory; their existing no-record, DECOMMISSIONED, exact-operation/target and
+established-runtime exclusion guards remain unchanged. This source comparison
+does not establish the full actual footprint of the twenty live changes.
+
 ## Final bounded source correction and handoff
 
 The adjacent reuse audit found that the new external v4 compile input was also
