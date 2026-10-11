@@ -83,8 +83,14 @@ The protected PROD admission still binds original Request `6109630038`.
 Read-only supported Writer `publication-state` confirmed that immutable binding;
 no publication or journal edit was performed. Current installed schema-v3
 manual publication revalidates current authority, so the successor creates a
-likely `AUTHORITY_CHANGED` publication boundary. This is an inference from
-verified installed source, not a claimed failed publication. No unsupported
+source-confirmed currentness boundary: `manual-outcome` revalidates the original
+authority digest before reading a result source or reserving a publication. The
+digest includes the complete native Request reference and payload; identical
+Step, branch and profile do not make the successor equal to the admitted Request.
+`AUTHORITY_CHANGED` is the predicted result, not a claimed installed failure.
+Changing the submitted result's Request would separately violate the immutable
+envelope binding. No supported existing-attempt rebinding route was found in the
+installed source. No unsupported
 rebinding, PROD upgrade, new execution or arbitrary retry is authorized.
 
 Independent exact-head source acceptance, Task completion, allowed merge,
@@ -105,3 +111,58 @@ existing lifecycle detector's cgroup path for children whose MainPID has exited;
 [systemd's service contract](https://raw.githubusercontent.com/systemd/systemd/main/man/systemd.service.xml)
 documents the otherwise implicit per-template slice. These are bounded source
 corrections, not independent review or proof of installed behavior.
+
+## Installed-helper compatibility correction
+
+One authorized isolated TEST upgrade of candidate `e3ade683...` stopped before
+installation with `ADMISSION_SNAPSHOT_INVALID`. The candidate supplied a new
+four-component snapshot to installed `dbfea188...`, whose pre-install helper
+accepts exactly the original three keys. This is an introduced compatibility
+defect, established by the exact installed source and the retained public log.
+
+Correction `d11f65218eaa57e8fd48f753231e21088c87e94b` sends the original wire shape
+only when native observation proves the new socket absent, inactive and disabled.
+A present socket retains the complete four-component snapshot; unknown state is
+rejected and recovery keeps the original saved activation intent. Targeted Linux
+qualification passed 16 tests, then all five affected cases passed after the
+final absence-state check. The three-consumer qualification passed again with
+the unchanged component source digest recorded above. No Node or Rust component
+changed relative to their complete passing runs.
+
+Both required native checks passed at that exact correction head:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38150552349/job/114502933369)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38150552349/job/114502933352).
+Their primary check annotation endpoints were inspected and were empty. This
+does not establish independent acceptance or complete installed TEST proof.
+
+The TEST operation remains preserved as `recovery-required`, with no active or
+unknown attempts. Recovery can select a corrected target through the existing
+same-operation public interface. Genuine new Actions admission additionally
+requires the compatible workflow projection in TEST `main`; current PR 3 has
+v3 while `main` remains v2. Recovery and installation are held pending the owner
+disposition of this consumer review/merge boundary. No new Task 115 phase or
+model execution was introduced.
+
+The complete Python rerun with the corrected source passed 889 tests, with
+300 prerequisite skips and the same 19 deprecation warnings, in 443.63 seconds.
+It used `/usr/bin/python3` and the isolated supported Ansible 2.16.19 command
+environment. The deployment-tools venv itself has no pytest module; the first
+test launch exposed that local interpreter-selection mistake before collection,
+and the explicit existing test interpreter corrected it without a host change.
+
+The connected protected Reviewer read exact-head evidence for PR 118 at
+`d11f652...`: target binding verified, required API surfaces complete, zero
+check annotation warnings, and no associated Writer Outcome. Its
+`none_observed` observation covers those inspected API surfaces. The actual
+GitHub run summary was also inspected in signed-in Chrome: success and an empty
+Annotations section. These observations do not erase the retained TEST failure,
+unavailable actual-profile/title proof or protected publication boundary.
+
+The native validation mirror initially contained mode-only copy artifacts from
+Windows drvfs. All 484 index and working-file blobs matched the published source;
+affected regular single-link files were owned by the session UID inside that
+exact mirror. Only those confirmed duplicate modes were normalized to canonical
+Git modes before a non-destructive fast-forward. This did not repair installed
+permissions, alter another owner's files or discard useful content. The mirror
+and product checkout were clean at the correction commit; later evidence edits
+are ordinary Task-owned documentation awaiting the final substantive handoff.
