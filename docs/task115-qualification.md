@@ -7,12 +7,18 @@ closure, production installation or deployment is claimed.
 
 ## Current qualification disposition
 
-Current trusted [Request 6112661946](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112661946)
-selects [Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517).
+Current trusted [Request 6113666253](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113666253)
+selects [Decision 6113642915](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113642915).
 Standing isolated TEST autonomy is resolved; ordinary TEST actions require no
 repeat owner confirmation. TEST PR 3 was merged at `4598e746...`; draft
 [TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5)
 preserves the runbook correction at `adc3937...`.
+
+The owner selected evidence-preserving TEST removal and clean installation of
+the corrected candidate; general partial-upgrade recovery is deferred to a
+separate backlog Task. The fresh public inventory described below proves
+equivalent configuration but blocks removal on the retained ordinary operation.
+No host mutation, removal, clean installation or live E2E followed this decision.
 
 The supported recovery to `44f97a8...` failed after partial apply, before the
 release pointer changed from `dbfea188...`. Its retained exact-head record and
@@ -713,3 +719,74 @@ including stable routing/recovery invocation paths and staged Writer,
 dispatch and diagnostics artifacts. The observed task footprint confirms
 managed helper/configuration changes before the failed build; it does not
 prove every resulting byte, process identity or completed installation.
+
+## Owner-selected clean installation: current protected boundary
+
+The owner-selected continuation was normalized into trusted Decision
+[6113642915](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113642915)
+and complete same-Step Request
+[6113666253](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113666253).
+Native read-back verified the existing Reviewer Bot identity and exact body
+SHA-256 values `24b6624b87d0c0df767fb6d6bf10d6df9c93b143d7b3e27a7ca60f0a56cddf98`
+and `60b9efba70eb4d8396bb687e4e9bb1abd5a18bf5c260c086a5e656e57ee2b22b`.
+They supersede the preceding selected Decision/Request without changing the
+original admission, journal, PR execution markers, Step or requested profile.
+The corrected starting gate is product PR 118 at
+`54ad87f3bfd6500b37a6257defb4ae0ef4bc84aa`, branch
+`codex/task-115-step-1`, base `b4cb4943d52dd375d8c6800959b3264fad082cb8`.
+Fresh fetch confirmed local, remote and live PR heads equal that gate, with
+no dirty or unpublished work. PR 118 was marked ready after exact-head native
+CI verification because the installed authority publisher rejects a draft
+existing PR. It remains open and unmerged; readiness is not acceptance.
+
+Request publication returned `AUTHORITY_PUBLICATION_UNCERTAIN`. Native GitHub
+nevertheless contains exactly one matching complete Request, with the correct
+Issue/PR Step, title and head projections. One evidence-based invocation of the
+existing same-record publication recovery returned the same uncertainty.
+No further retry or protected publication-journal inspection/edit occurred.
+The native authority bytes are verified; successful completion of the publisher's
+protected journal remains unproven. This warning remains an owner/review input.
+
+At 2026-10-11 21:04:46–21:04:48 UTC, the public read-only inventory ran from the
+clean native corrected source `54ad87f3...`, using both exact revision arguments
+and the clean separate consumer `adc3937fa2f64e4d722cc3ca528a3fcdc10d5f71`'s
+`deploy/relay.json`. Its durable selected source and projection were not changed.
+The receipt reports:
+
+| Observation | Result |
+| --- | --- |
+| Consumer / deployment configuration | `equivalent` / `equivalent` |
+| Installed release pointer | `dbfea1889da994791a5b6c05d97a71405d21eac5` |
+| Inventory status | `blocked` |
+| Sole blocker | `production-operation-recovery-present;inspect-before-retry` |
+| Mutation boundary | `readOnly: true`, `mutationAuthorized: false` |
+
+Exit 0 and `RELAY_DEPLOYMENT_RESULT=PASS;phase=inventory;authority=read-only`
+prove that observation completed, not permission to remove the installation.
+The private receipt log `task115-corrective-clean-install-inventory-54ad87f3.log`
+is 4002 bytes, SHA-256
+`1b0ae4060df1b4d41ed26ad17ff43fc08a26027b17d754266da2f2c7d2a6434d`,
+UID/GID 1000, mode `0600`, regular non-symlink, one link. It remains outside
+the repositories alongside the preserved failed-operation logs.
+
+The exact supported boundary precedes removal: `deploy/inventory.py` classifies
+the existing namespace ordinary `production-operation.json` as a blocker;
+`deploy/relay-deploy.py` requires a blocker-free inventory before reinstall
+projection or decommission; `deploy/clean_reinstall.py::decommission` independently
+requires that record and any clean-reinstall journal to be absent, checking
+again under lock. The public phase list has no standalone removal operation.
+This retained partial apply has no DECOMMISSIONED journal, no completed release
+at its failed head, and an existing runtime. Reinstall recovery, completed-apply
+disposition and bootstrap-only disposition therefore do not fit it.
+
+The selected clean-install path cannot advance through current public interfaces
+without bypassing those guards. No predictable failing reinstall, manual
+record deletion, fabricated retirement receipt, private backend or retry of the
+broken source was attempted. The next protected action would need a qualified
+public evidence-preserving retirement/disposition for this exact ordinary
+partial-operation state. General partial-upgrade recovery development remains
+outside this Task under the owner's explicit direction; no new Task or phase
+was created. The already authorized committed-evidence handoff is used instead.
+The retained operation, external TEST credentials and App permissions, shared
+infrastructure and all PROD resources remain unchanged by this continuation.
+No new live socket, `submit_manual_outcome` or complete E2E proof is claimed.

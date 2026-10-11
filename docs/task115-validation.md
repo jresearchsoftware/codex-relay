@@ -355,3 +355,52 @@ gap described above. No installed success, Writer Outcome, product acceptance,
 product merge, Task completion or closure is claimed. The separate general
 authority-change publication correction remains deferred under the current
 trusted Decision and is not a Task 115 completion gate.
+
+## Corrective continuation and evidence handoff
+
+The current same-Step authority is trusted
+[Decision 6113642915](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113642915)
+and complete [Request 6113666253](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113666253).
+Their native bytes and selected source references were verified. The current
+starting-head gate `54ad87f3bfd6500b37a6257defb4ae0ef4bc84aa` matched clean
+local/remote/live PR 118 heads after fetch. PR 118 is now ready, open and
+unmerged, with Step 1 preserved; no original admission or execution marker
+was rebound. Two fresh bounded read-only subagents audited the existing public
+clean-install path and authority normalization, and one maintained the TEST
+runbook. These did not launch Relay workers or expand authority.
+
+The owner chose preserved-evidence TEST removal and clean installation instead
+of developing general partial-upgrade recovery in Task 115. One fresh public
+read-only inventory at the corrected starting head found equivalent consumer
+and deployment configuration, the old installed pointer `dbfea188...`, and
+the sole blocker `production-operation-recovery-present;inspect-before-retry`.
+Its explicit `mutationAuthorized: false` and the independent public reinstall
+guards stop this path before removal. No matching completed-apply, bootstrap or
+DECOMMISSIONED reinstall-recovery shape exists. The
+[qualification report](task115-qualification.md#owner-selected-clean-installation-current-protected-boundary)
+preserves the exact receipt, hashes, publication uncertainty and required
+protected action. No general recovery mechanism or guard bypass was added.
+
+The current Request's native publication is verified, but its publisher and
+one evidence-based same-record recovery returned
+`AUTHORITY_PUBLICATION_UNCERTAIN`. The protected publisher journal's successful
+completion is unavailable; no further retry/edit is claimed. This joins the
+retained partial TEST operation, unqualified live manual socket/MCP/E2E,
+consumer aggregation gaps and earlier material warnings as an explicit next
+owner/review input. The original PROD admission remains bound to Request
+6109630038; no Writer Outcome was submitted, published or imitated. The
+task-local PR/committed-evidence exception remains operative.
+
+Only evidence and TEST README were changed in this continuation. Runtime,
+schemas and managed workflows retain the fully tested source bytes above;
+the complete local suites and three-consumer proof remain applicable. At report
+authoring, whitespace and staged candidate scanning passed for 485 tracked files
+and 303 local links. Native checks for the carrying evidence commit remain a
+pre-handoff requirement, with their results in the PR's exact-head GitHub records.
+Task-owned changes use the existing ordinary non-force commit/push flow.
+Private 0600 logs and protected recovery records are
+retained at their existing access boundary, not committed, removed or repaired.
+Product merge, independent acceptance, Task completion/closure, TEST removal,
+clean install and live E2E remain unclaimed. The general recovery and
+authority-change completion mechanisms are deferred, not implemented as
+mandatory extensions of this Task.
