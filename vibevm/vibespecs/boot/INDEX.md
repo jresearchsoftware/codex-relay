@@ -16,5 +16,9 @@ path = "vibevm/vibespecs/boot/00-core.md"
 kind = "static"
 
 [[entry]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/boot/development-governance.md"
+kind = "static"
+
+[[entry]]
 path = "vibevm/vibespecs/boot/90-user.md"
 kind = "static"

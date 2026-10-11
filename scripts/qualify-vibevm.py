@@ -1,20 +1,41 @@
 #!/usr/bin/env python3
-"""Opt-in, disposable qualification of Relay's dependency-free native VibeVM route."""
+"""Opt-in qualification of Relay's committed passive VibeVM flow; never downloads tools."""
 import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
-import shutil
+import stat
 import subprocess
 import tempfile
 import tomllib
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
+COORDINATE = "org.jresearch.ai/development-governance"
+VERSION = "1.1.0"
+SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
+PACKAGE_BOOT = "vibevm/vibespecs/boot/development-governance.md"
+PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
+                  ("package-versioning", "proportional-controls", "requirement-authority"))
+PAYLOAD = {"LICENSE", "README.md", "vibe.toml", PACKAGE_BOOT, *PROTOCOLS}
+RECEIPT = "DISTRIBUTION.json"
+MARKER = ".vibe-slot.toml"
+DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
+DISTRIBUTION_REVISION = "fa901b9e866ea0246b99bf9025ca00a0ca20267c"
+SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
+SOURCE_REVISION = "129d452ddfa6b9ac1030ccc7803994793467ab2d"
+PAYLOAD_HASH = "4393a4e44c20a33a4b8c26437de77467e162ebd2ae74922ea56c9c83dc29173d"
+RECEIPT_HASH = "d278c1264bcb9cfa62addfaed32d936b103db75714f305a3c58a49a7bfb83bd9"
+TREE_HASH = "sha256:1bac72e869c1766d794a108f9c876d680d83844a7a29ed40bab3be1ce3a869bd"
+# Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
+CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
+NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
 BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
 
 
@@ -32,41 +53,153 @@ def managed(data):
     return match.group(), data[:match.start()] + data[match.end():]
 
 
+def read_file(root, relative):
+    relative = Path(relative)
+    require(not relative.is_absolute() and ".." not in relative.parts, "Unsafe relative path")
+    require(root.is_dir() and not root.is_symlink(), "Expected ordinary project directory")
+    path = root
+    for part in relative.parts:
+        path /= part
+        require(not path.is_symlink(), "Symlink in route: " + relative.as_posix())
+    require(path.is_file(), "Missing or non-ordinary route file: " + relative.as_posix())
+    return path.read_bytes()
+
+
+def files_in(directory, ignore_git=False):
+    require(directory.is_dir() and not directory.is_symlink(), "Expected ordinary payload directory")
+    result = {}
+    for current, directories, files in os.walk(directory, followlinks=False):
+        current = Path(current)
+        if current == directory and ignore_git:
+            directories[:] = [name for name in directories if name != ".git"]
+            files = [name for name in files if name != ".git"]
+        for name in [*directories, *files]:
+            path = current / name
+            relative = path.relative_to(directory).as_posix()
+            require(not path.is_symlink(), "Symlink in passive payload: " + relative)
+            require(path.is_dir() or path.is_file(), "Non-ordinary payload entry: " + relative)
+            if path.is_file():
+                require(not path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH),
+                        "Executable file in passive payload: " + relative)
+                result[relative] = path.read_bytes()
+    return result
+
+
+def tree_hash(files):
+    """VibeVM 1.0.7's Linux legacy tree recipe, including the distribution receipt."""
+    digest = hashlib.sha256()
+    for name in sorted(files, key=lambda name: Path(name).parts):
+        digest.update(name.encode() + b"\0" + files[name] + b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def check_package(directory):
+    files = files_in(directory)
+    require(set(files) == PAYLOAD | {RECEIPT, MARKER}, "Unexpected or missing passive slot files")
+    hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(PAYLOAD)}
+    payload_hash = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    require(payload_hash == PAYLOAD_HASH, "Payload differs from the accepted whole-package identity")
+    receipt = json.loads(files[RECEIPT])
+    require(receipt == {"package": COORDINATE, "payload_sha256": PAYLOAD_HASH, "schema": 1,
+                        "sha256": hashes, "source_path": "packages/development-governance",
+                        "source_repository": SOURCE_REPOSITORY, "source_revision": SOURCE_REVISION,
+                        "version": VERSION}, "Receipt differs from accepted source/path/hash identity")
+    require(hashlib.sha256(files[RECEIPT]).hexdigest() == RECEIPT_HASH, "Receipt bytes differ")
+    materialized = {name: data for name, data in files.items() if name != MARKER}
+    require(tree_hash(materialized) == TREE_HASH, "Materialized tree differs from the locked identity")
+    marker = tomllib.loads(files[MARKER].decode())
+    require(type(marker.get("schema")) is int
+            and marker == {"schema": 1, "source_hash": TREE_HASH, "spec_format": "mixed",
+                           "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+                                    for name, data in sorted(materialized.items())]},
+            "Slot metadata differs from the complete materialized payload")
+    manifest = tomllib.loads(files["vibe.toml"].decode())
+    require(manifest == {"package": {"group": "org.jresearch.ai", "name": "development-governance",
+                                     "version": VERSION, "kind": "flow", "format": "simple", "epoch": 1,
+                                     "publish": False, "frozen": True,
+                                     "description": "Passive cross-project AI-development governance flow protocol.",
+                                     "license": "MIT"},
+                         "boot_snippet": {"source": PACKAGE_BOOT, "category": "flow", "link": "dynamic"}},
+            "Passive package manifest changed or gained capabilities/dependencies")
+    # Ordinary Markdown navigation stays inside the verified passive slot.
+    for name, data in materialized.items():
+        if not name.endswith(".md"):
+            continue
+        for target in re.findall(r"\[[^\]\n]*\]\(([^)\s]+)\)", data.decode()):
+            url = urlsplit(target.strip("<>"))
+            if url.scheme or url.netloc:
+                continue
+            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), unquote(url.path)))
+            require(resolved in materialized, "Missing or escaping passive reference: " + name)
+    pointer = files[PACKAGE_BOOT].decode()
+    require(all("../protocols/" + Path(name).name in pointer for name in PROTOCOLS)
+            and "Unrelated tasks" in pointer and "explicitly adopted" in pointer,
+            "Conditional full-procedure navigation is missing")
+    return files
+
+
 def check_project(root):
-    manifest = tomllib.loads((root / "vibe.toml").read_text())
-    require(manifest == {"project": {"name": "codex-relay", "version": "0.0.0",
-                                   "spec_format": "mixed"}},
-            "Route must remain a project without requirements, registries or capabilities")
-    lock = tomllib.loads((root / "vibe.lock").read_text())
-    require(set(lock) == {"meta"} and set(lock["meta"]) == {
-        "generated_by", "generated_at", "schema_version"}
+    manifest = tomllib.loads(read_file(root, "vibe.toml").decode())
+    require(manifest == {"project": {"name": "codex-relay", "version": "0.0.0", "spec_format": "mixed"},
+                         "requires": {"packages": {COORDINATE: {"version": "=" + VERSION,
+                                     "git": DISTRIBUTION_REPOSITORY, "rev": DISTRIBUTION_REVISION,
+                                     "auth": "none"}}}}, "Consumer must retain the exact anonymous Git requirement")
+    files = check_package(root / SLOT)
+    lock = tomllib.loads(read_file(root, "vibe.lock").decode())
+    require(set(lock) == {"meta", "package"} and set(lock["meta"]) == {
+        "generated_by", "generated_at", "schema_version", "root_dependencies"}
         and lock["meta"]["generated_by"] == "vibe 1.0.7"
-        and lock["meta"]["schema_version"] == 7, "Expected the empty v1.0.7 lock")
-    index = tomllib.loads((root / BOOT / "INDEX.md").read_text())
-    require(index == {"schema": 1, "entry": [
-        {"path": str(BOOT / name).replace("\\", "/"), "kind": "static"} for name in SOURCES]},
-        "Expected only the two bounded authored boot sources, in order")
+        and type(lock["meta"]["schema_version"]) is int and lock["meta"]["schema_version"] == 7
+        and isinstance(lock["meta"]["generated_at"], str)
+        and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["meta"]["generated_at"])
+        and lock["meta"]["root_dependencies"] == [COORDINATE]
+        and lock["package"] == [{"kind": "flow", "name": "development-governance", "group": "org.jresearch.ai",
+                                 "version": VERSION, "source_url": DISTRIBUTION_REPOSITORY,
+                                 "source_ref": DISTRIBUTION_REVISION, "content_hash": TREE_HASH,
+                                 "files_written": [], "admitted_by": "root-edge", "source_kind": "git"}],
+        "Schema-7 lock differs from the admitted graph/source/content identity")
+    index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
+    paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(), (BOOT / SOURCES[1]).as_posix()]
+    # Native v1.0.7 emits static here despite boot_snippet.link = "dynamic".
+    require(type(index.get("schema")) is int
+            and index == {"schema": 1, "entry": [{"path": name, "kind": "static"} for name in paths]},
+            "Generated INDEX differs from the actual native route")
     require({p.name for p in (root / BOOT).iterdir()} <= {
         "INDEX.md", *SOURCES, ".vibe-boot-artifacts.lock"}, "Unexpected boot content")
-    for name in SOURCES:
-        require((root / BOOT / name).is_file(), "Missing authored boot source: " + name)
-    blocks = [managed((root / name).read_bytes())[0] for name in AGENTS]
-    require(len(set(blocks)) == 1 and b"vibevm/vibespecs/boot/INDEX.md" in blocks[0],
-            "Native redirects differ or do not name INDEX")
-    require(not (root / "vibevm/vibedeps").exists(), "Route has no materialized packages")
-    require(not any((root / "vibevm/vibespecs" / name).exists() for name in ("WAL.md", "WAL.xml")),
-            "Route must not introduce a WAL")
-    return sum((root / BOOT / name).stat().st_size for name in SOURCES)
+    require(hashlib.sha256(read_file(root, BOOT / SOURCES[0])).hexdigest() == CORE_HASH,
+            "Authored core differs from the admitted routing boundary")
+    blocks = [managed(read_file(root, name))[0] for name in AGENTS]
+    require(len(set(blocks)) == 1 and hashlib.sha256(blocks[0]).hexdigest() == NATIVE_BLOCK_HASH,
+            "Native redirects differ from the accepted generated block")
+    require(set(files_in(root / "vibevm/vibedeps")) == {
+        (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files},
+            "Unexpected materialized dependency graph")
+    for relative in ("vibevm/vibespecs/WAL.md", "vibevm/vibespecs/WAL.xml",
+                     ".agents/skills/proportional-controls", ".agents/skills/.proportional-controls.vibe-skill-receipt.toml"):
+        require(not (root / relative).exists() and not (root / relative).is_symlink(),
+                "Unexpected WAL or projected governance Skill: " + relative)
+    return {"route": paths, "boot_bytes": sum(len(read_file(root, path)) for path in paths),
+            "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
+            "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION}
+
+
+def compare_inputs(root, source, distribution):
+    files = check_package(root / SLOT)
+    if source:
+        require(files_in(source, ignore_git=True) == {name: files[name] for name in PAYLOAD},
+                "Supplied accepted-source package differs from the committed whole payload")
+    if distribution:
+        require(files_in(distribution, ignore_git=True) == {name: data for name, data in files.items() if name != MARKER},
+                "Supplied public distribution differs from the committed whole payload/receipt")
 
 
 def copy_tracked(destination):
     names = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     for name in filter(None, names):
-        source = ROOT / name
-        require(source.is_file() and not source.is_symlink(), "Expected ordinary tracked files: " + name)
+        data = read_file(ROOT, name)
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        target.write_bytes(data)
 
 
 def probe(vibe, pin):
@@ -82,13 +215,14 @@ def probe(vibe, pin):
         env["VIBEVM_USER_CONFIG"] = str(root / "settings/config.toml")
         reports = {}
 
-        def run(project, label, *arguments, collision=False):
+        def run(project, label, *arguments, collision=False, incomplete=False):
             result = subprocess.run([str(vibe), "--offline", "--json", *arguments], cwd=project, env=env,
                                     text=True, capture_output=True, timeout=120)
-            if collision:
-                require(result.returncode != 0 and 'malformed <vibevm> block' in result.stderr,
-                        label + " did not refuse malformed markers")
-                reports[label] = {"exit": result.returncode, "malformed_block_refused": True}
+            if collision or incomplete:
+                evidence = "malformed <vibevm> block" if collision else "slot missing"
+                require(result.returncode != 0 and evidence in result.stdout + result.stderr,
+                        label + " did not refuse the expected malformed/incomplete state")
+                reports[label] = {"exit": result.returncode, "refused": evidence}
                 return
             require(result.returncode == 0, label + " failed:\n" + result.stdout + result.stderr)
             remaining, documents = result.stdout.strip(), []
@@ -108,69 +242,103 @@ def probe(vibe, pin):
         require(version == "vibe " + pin["version"], "Unexpected tool version")
         project = root / "project"
         copy_tracked(project)
-        boot_bytes = check_project(project)  # File reads need no executable, local state, HOME or cache.
-        prompt_paths = [*AGENTS, *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
-        original = {name: (project / name).read_bytes() for name in ["vibe.toml", "vibe.lock", *prompt_paths]}
+        facts = check_project(project)
+        route_paths = ["vibe.toml", "vibe.lock", *AGENTS, *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
+        route_paths += [(SLOT / name).as_posix() for name in PAYLOAD | {RECEIPT, MARKER}]
+        original = {name: read_file(project, name) for name in route_paths}
 
         def unchanged(expected):
             for name, data in expected.items():
-                require((project / name).read_bytes() == data, "Authored/generated bytes drifted: " + name)
+                require(read_file(project, name) == data, "Authored/generated bytes drifted: " + name)
+
+        def rejected(label):
+            try:
+                check_project(project)
+            except (RuntimeError, ValueError, OSError):
+                reports[label] = {"local_verifier": "rejected"}
+            else:
+                raise RuntimeError(label + " was accepted by the local verifier")
 
         run(project, "validate", "validate", "--path", ".", "--no-default-registry")
         run(project, "check", "check", "--path", ".")
         unchanged(original)
         for count in range(2):
             run(project, "reinstall-" + str(count + 1), "reinstall", ".", "--assume-yes")
-            unchanged(original)  # Includes the generator's exact INDEX EOF bytes.
+            unchanged(original)
+            check_project(project)
         run(project, "repeat-init", "init", ".", "--type", "project", "--name", "codex-relay",
             "--version", "0.0.0", "--no-registry", "--author", "Synthetic fixture")
         unchanged(original)
 
-        # Existing user text before AND after every native block survives regeneration.
         for name in AGENTS:
             (project / name).write_bytes(b"Synthetic human prefix\n" + original[name] + b"Human suffix\n")
-        overlays = {name: (project / name).read_bytes() for name in AGENTS}
+        overlays = {name: read_file(project, name) for name in AGENTS}
         run(project, "overlay-regeneration", "reinstall", ".", "--assume-yes")
-        unchanged(overlays)
+        unchanged({**original, **overlays})
         for name in AGENTS:
             (project / name).write_bytes(original[name])
 
-        # File traversal detects missing INDEX even though upstream check accepts it.
-        (project / BOOT / "INDEX.md").unlink()
-        try:
-            check_project(project)
-        except FileNotFoundError:
-            pass
-        else:
-            raise RuntimeError("Missing INDEX was not detected")
+        index = project / BOOT / "INDEX.md"
+        index.unlink()
+        rejected("missing-index")
         run(project, "missing-index-upstream-check", "check", "--path", ".")
         (project / "GEMINI.md").unlink()
         run(project, "repair-generated-files", "reinstall", ".", "--assume-yes")
         unchanged(original)
         check_project(project)
 
+        # Counterexamples bind local verification to admitted bytes, not upstream check.
+        for label, name, data in [
+                ("corrupt-payload", (SLOT / PROTOCOLS[1]).as_posix(), b"Altered passive protocol\n"),
+                ("missing-payload", (SLOT / PROTOCOLS[1]).as_posix(), None),
+                ("corrupt-receipt", (SLOT / RECEIPT).as_posix(), b"{}\n"),
+                ("missing-receipt", (SLOT / RECEIPT).as_posix(), None),
+                ("corrupt-slot-metadata", (SLOT / MARKER).as_posix(), b"schema = 1\n"),
+                ("corrupt-lock", "vibe.lock", original["vibe.lock"].replace(TREE_HASH.encode(), b"sha256:" + b"0" * 64)),
+                ("missing-lock", "vibe.lock", None)]:
+            path = project / name
+            path.unlink() if data is None else path.write_bytes(data)
+            rejected(label)
+            if label in {"missing-payload", "corrupt-lock"}:
+                run(project, label + "-upstream-check", "check", "--path", ".")
+            path.write_bytes(original[name])
+        displaced = root / "displaced-slot"
+        (project / SLOT).rename(displaced)
+        rejected("missing-slot")
+        run(project, "missing-slot-offline-reinstall", "reinstall", ".", "--assume-yes", incomplete=True)
+        displaced.rename(project / SLOT)
+
         for label, data in [("duplicate-block", original["AGENTS.md"] + managed(original["AGENTS.md"])[0]),
                             ("unclosed-block", b"Human-owned text\n<vibevm>\n")]:
             (project / "AGENTS.md").write_bytes(data)
-            before = {name: (project / name).read_bytes() for name in original}
+            rejected(label)
+            before = {name: read_file(project, name) for name in original}
             run(project, label, "reinstall", ".", "--assume-yes", collision=True)
             unchanged(before)
         (project / "AGENTS.md").write_bytes(original["AGENTS.md"])
         unchanged(original)
-        print(json.dumps({"tool_probe": "PASS", "version": version, "boot_bytes": boot_bytes,
+        check_project(project)
+        print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
                           "offline_file_reads": "PASS", "exact_regeneration": "PASS",
-                          "overlays_and_collisions": "PASS", "missing_index": "detected; upstream check misses it",
+                          "overlays_and_collisions": "PASS",
+                          "upstream_check_limitations": "accepts missing INDEX/payload and divergent lock hash",
+                          "upstream_acquisition_limitations": "offline reinstall needs an existing slot; upstream install/check is not accepted-source verification",
                           "model_behavior": "UNVERIFIED: no Codex/provider execution", "reports": reports}))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vibe", type=Path, help="hash-pinned Linux x86_64 musl v1.0.7 binary")
+    parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.7 binary")
+    parser.add_argument("--source-dir", type=Path, help="optional accepted source package directory for whole-payload byte comparison")
+    parser.add_argument("--distribution-dir", type=Path, help="optional acquired public distribution directory for whole-payload/receipt byte comparison")
     args = parser.parse_args()
-    size = check_project(ROOT)
-    print(json.dumps({"dependency_free_route": "PASS", "boot_bytes": size,
-                      "tool_probe": "pending" if args.vibe else "not requested",
-                      "model_behavior": "UNVERIFIED"}))
+    facts = check_project(ROOT)
+    if args.source_dir or args.distribution_dir:
+        compare_inputs(ROOT, args.source_dir, args.distribution_dir)
+    print(json.dumps({"passive_package_route": "PASS", **facts,
+                      "source_byte_comparison": "PASS" if args.source_dir else "not requested",
+                      "distribution_byte_comparison": "PASS" if args.distribution_dir else "not requested",
+                      "tool_probe": "pending" if args.vibe else "not requested", "model_behavior": "UNVERIFIED"}))
     if args.vibe:
         pin = json.loads((ROOT / "toolchain/vibevm.json").read_text())
         probe(args.vibe.resolve(), pin)
