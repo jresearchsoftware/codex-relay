@@ -453,3 +453,91 @@ established by that record. Current Task 115 Node/native-CI success neither
 changes the old native record nor resolves its cause. These selected historical
 inputs remain immutable review context and do not expand current execution or
 qualification scope.
+
+## Final corrected consumer projection and retained boundary
+
+Product correction `44f97a8000eac6f3c6284b32c62f574d7b8edd7b` replaces the
+substring run-title classifier with standalone LF/CRLF native marker checks.
+Both required exact-head native jobs passed:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38152427265/job/114508442037)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38152427265/job/114508442174).
+Source tests and the parent's read-only peer audit close the P2 in source;
+the latter reports 56 expression/parser cases: 22 native LF/CRLF/mixed,
+20 legacy and 14 malformed-parser rejections. This is peer source evidence,
+separate from installed behavior and independent exact-head acceptance.
+
+The TEST selector/README commit is `65d1e3e95c9ffba272ab14185d6f8feeef637b58`.
+Supported exact-source public `workflow-project` regenerated only routing and
+its manifest digest. Their inspected changes were committed and non-force
+published in the same draft PR 3 at final consumer head
+`944eda973981d94ec7cefd69a375ca71b116e1c6`. Routing SHA-256 now equals
+`84229930ce49e2135a9c7254fb1ec1b63fac64592c6dd2f049528d60f8c5b635`;
+recovery bytes remain at
+`323aeb4544b5834ae1dafaec09d2ce4b5551f59b7cfab771f5b6b72e0f6ed342`.
+Public exact-source `workflow-verify`, eight native Linux consumer tests,
+whitespace validation and the
+[native consumer check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38152709600/job/114509269890)
+passed. The refreshed PR description reports the exact selector, proofs and
+retained limits; PR 3 remains open/draft and unmerged.
+
+The clean native product checkout is
+`/home/hortonolite/work/task115-test-inventory-source-01a12b33` at `44f97a8...`;
+the clean native consumer is
+`/home/hortonolite/work/task115-test-consumer-01a12b33` at `944eda9...`.
+The native consumer config is a regular single-link nonsymlink file, owner
+UID/GID 1000, mode 0644, selecting exact `44f97a8...`. The Windows review
+checkout is synchronized to the same published consumer head.
+
+Fresh exact-source public inventory observes installed
+`dbfea1889da994791a5b6c05d97a71405d21eac5`, equivalent consumer/deployment
+configuration and no inventory blockers with `readOnly: true` and
+`mutationAuthorized: false`. Bound public admission status still retains
+operation `73034a9b-47a1-4ec3-993a-166560bfd39e`, target `e3ade683...`, phase
+`recovery-required`, null activation snapshot/verified revision and no
+active/unknown attempts. These observations do not clear the retained operation.
+Owner-admin App/runner/ingress proof gaps remain explicit. No target recovery,
+main merge, installation, new fixture, model call or production mutation
+accompanied final projection preparation. Consumer review/merge and the
+subsequently qualified same-operation recovery remain distinct pending gates.
+
+## Connected TEST Reviewer evidence gap
+
+The parent's fresh connected TEST `read_pr_review_evidence` call at exact
+consumer PR 3 head `944eda973981d94ec7cefd69a375ca71b116e1c6` verified target
+binding and reported zero check annotations. It nevertheless reported
+`required_surfaces_complete: false` and `warning_observation: unknown`, with
+`CANONICAL_ISSUE_AMBIGUOUS` and `GITHUB_EXECUTION_RUN_POINTER_UNAVAILABLE`.
+PR 3 is a consumer configuration/projection PR, not a new admitted TEST
+execution fixture. These are evidence gaps under the existing installed
+schema-v3 aggregation contract; no Task 115 introduced regression is established
+by this observation. No arbitrary Issue/Task linkage, remediation execution or
+new authority was added to manufacture complete surfaces.
+
+The separately scoped product PR 118 evidence at `44f97a8...` had complete
+required API surfaces, zero check annotations and an empty inspected native UI
+annotation surface. It does not resolve the consumer aggregation/run-pointer
+gaps. Consumer native CI success and verified exact target likewise do not
+establish global warning absence or independent Reviewer acceptance. The
+unresolved TEST evidence gaps remain material inputs to the next review/owner
+boundary alongside the preserved recovery-required operation.
+
+The exact source diagnosis is that `step_sync::linked_issue` recognizes one
+same-repository `Related to #N` / closing-keyword reference in the PR body.
+PR 3 instead points to its authorized cross-repository Task 115 URL, leaving
+zero recognized same-repository IDs. The outcome source consequently remains
+unavailable, which also prevents the execution source from establishing absence.
+Comparison of installed-source revision `dbfea188...` with `44f97a8...` shows
+that this linkage and incomplete-source behavior is unchanged. The synthetic
+owner-authored native COMMENT is excluded by Writer-actor filtering. The gap
+does not establish an introduced product defect and requires no fabricated
+TEST Task link. Signed-in Chrome also showed success and an empty Annotations
+section for native consumer run `38152709600`; that scoped UI observation
+does not close the outcome/execution aggregation gap.
+
+A final read-only peer comparison of consumer `944eda9...` against
+`52d66305557a74264cd0f5b82ec0b90804baa98c` verified the complete five-file
+diff, exact renderer/manifest bytes, canonical regular file modes, valid
+configuration and unchanged protected guards. Its 56 marker and eight guard
+cases passed, with no material findings in that bounded consumer audit. This
+qualifies the prepared projection, not execution of the installed workflow,
+independent product acceptance or permission to merge/recover the target.
