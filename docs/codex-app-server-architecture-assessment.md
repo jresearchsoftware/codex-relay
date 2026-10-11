@@ -2,6 +2,10 @@
 
 Task #42, Step 1 — source-only research, 2026-10-11.
 
+Step 1 is preserved below as historical evidence. The
+[Step 2 addendum](#step-2-addendum-persistent-execution-service) evaluates a warm
+service with fresh execution threads against a newer, explicitly pinned baseline.
+
 ## Recommendation and decision boundary
 
 **Retain governed one-shot `codex exec` for the accepted runtime. Do not migrate
@@ -496,3 +500,246 @@ closes Issues. Trusted Writer owns publication and the exact candidate SHA;
 independent acceptance remains outstanding. Only this report is added to the
 repository; no disposable probe, documentation snapshot or runtime fixture is
 made a product requirement.
+
+## Step 2 addendum: persistent execution service
+
+Task #42, Step 2 — source-only follow-up, 2026-10-11. **Retain one-shot execution;
+evaluate a warm service separately from persistent Task conversations.** The
+owner-proposed fourth option keeps the server alive but creates and retires an
+independent thread per execution. It could amortize startup and offer structured
+interaction without cross-execution history. Step 1's long-session objections
+do not reject this design; preserving isolation and containment while the
+process survives remains unresolved.
+
+Address scheduling and multi-repository needs on one-shot exec under their own
+admissions. If interaction or measured startup cost warrants further research,
+qualify a per-execution adapter before testing service reuse. No linked Task
+requires app-server. This recommendation selects no migration design, admits
+no implementation and adds no acceptance gate. Issue #42 stays `keep-open`.
+
+### Evidence and version boundary
+
+The Step 2 baseline is the Request's accepted commit
+[`9f825890a927a8e6678b2faf72abbb8f1df9539a`](https://github.com/jresearchsoftware/codex-relay/tree/9f825890a927a8e6678b2faf72abbb8f1df9539a),
+including the merged Step 1 report. The checkout was clean at that starting head
+on `codex/task-42-step-2`. The selected
+[Decision](https://github.com/jresearchsoftware/codex-relay/issues/42#issuecomment-6114465621)
+was read anonymously; its body digest matched the supplied Request reference.
+The complete Step 2 Request governs execution; other Issues/documentation are
+contextual evidence.
+
+The accepted [CLI integration](codex/cli-integration.md) still pins 0.160.0.
+The upstream annotated tag `rust-v0.160.0` resolved
+to commit `a956835d020762cb2b570053af06f643a11c0ecc`. The **N** evidence below is
+source inspection, not execution, generated schema qualification or Relay
+acceptance. S/D/A/U retain their Step 1 meanings; V covers local checks. All
+scenarios are A: no simulation, native probe or model call was performed.
+`codex` is absent from the worker's search path. Public source text was fetched
+to temporary storage; no executable was downloaded.
+
+| Evidence | Exact source and conclusion |
+| --- | --- |
+| S2-1 | [Architecture](architecture.md), [consumer contract](../consumer/README.md), [runtime](../runtime/README.md#durable-diagnostics-and-sandbox-finalization), [launcher](../deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2): one configured Writer/controller consumer per process, configured non-root `runtimeUser`, attempt-local HOME/CODEX_HOME/XDG/temp, recreated credential environment and outer process-group containment. Separate attempts do not imply a distinct UID for each attempt. |
+| S2-2 | [Routing](../deploy/workflows/routing.yml.in), [recovery](../deploy/workflows/recovery.yml.in), [admission/drain](../controller/README.md#lifecycle-admission-and-drain): routing and publication recovery share the configured control group with `cancel-in-progress: false`; templates do not set `queue`. Root Writer lock and durable controller reservations remain separate from Actions scheduling. |
+| S2-3 | [Reviewer contract](../reviewer/README.md), [configuration](../consumer/README.md): accepted Reviewer supports explicit configured repository selection; consumer/Writer configuration remains single-repository. Review publication remains independent and bound to the exact head. These facts are from the pinned tree, not inferred from Issue status. |
+| N1 | [Thread parameters](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-protocol/src/protocol/v2/thread.rs), [turn parameters](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-protocol/src/protocol/v2/turn.rs): thread `cwd`, config, sandbox/approval overrides and `ephemeral` exist. Turn input supports model/effort, policy, cwd and output schema. `turn/steer` requires `expectedTurnId`; interrupt targets thread/turn IDs. These parameters provide no Unix `runtimeUser` selector. Several other fields, including environment selection and runtime workspace roots, are experimental. |
+| N2 | [RPC dispatch](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server/src/message_processor.rs), [method definitions](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-protocol/src/protocol/common.rs), [thread manager](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core/src/thread_manager.rs): thread-indexed runtimes and per-thread request serialization allow distinct threads to be managed independently. Authentication, thread store and services including environment, skills, plugins and MCP are shared. This is source support for multiplexing, not measured parallel throughput or tenant separation. |
+| N3 | [Turn processor](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server/src/request_processors/turn_processor.rs), [thread processor](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server/src/request_processors/thread_processor.rs): `turn/start` calls `start_or_steer_turn`, so input to an active thread can steer rather than create another independent turn. Interrupt validates the target and responds on native abort. Connection closure removes subscriptions; it is not proof that all tools have stopped. |
+| N4 | [Native event definitions](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-protocol/src/protocol/common.rs), [usage types](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-protocol/src/protocol/v2/thread.rs): thread status, turn/item lifecycle, deltas and usage notifications exist; usage carries thread/turn IDs with total/last breakdowns. Terminal status distinguishes completed, interrupted and failed. No end-to-end Relay replay, accounting or containment proof follows. |
+| N5 | [Daemon lifecycle documentation](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-daemon/README.md), [control socket](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-transport/src/transport/unix_socket.rs): lifecycle is experimental; clients share the daemon's inherited environment. Managed latest-channel installations can update/restart automatically; explicit update selects latest stable. Stop/restart has a bounded grace period and can interrupt work. Unix socket code sets mode `0600` and validates parent ownership/modes. None was exercised here. |
+| N6 | [Recovery snapshot](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server-transport/src/daemon_recovery.rs), [restoration](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server/src/daemon_thread_recovery.rs), [continuation](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/app-server/src/request_processors/daemon_continuation.rs): managed recovery can start a new continuation turn for eligible interrupted persistent threads after checking recorded history, local environment and permission agreement. It does not revalidate Relay authority or prove prior tool effects. This is a material integration hazard, not observed exactly-once recovery. |
+
+Moving [official OpenAI documentation](https://learn.chatgpt.com/docs/app-server)
+was fetched on 2026-10-11 and marks app-server/WebSocket use experimental and
+unsupported for production workloads (D). Exact-version conclusions use N
+sources; neither moving documentation nor upstream source establishes Relay
+production acceptance.
+
+### Separate lifetimes and ownership
+
+| Object | Lifetime in the proposed service | Owner and invariant |
+| --- | --- | --- |
+| Server | Across many executions, bounded by restart/upgrade | Native process manages protocol/runtimes; a future Relay supervisor would own exact version, identity, credentials, capacity and health. Its uptime grants no Task admission. |
+| Thread | Fresh for one execution; optional native ephemeral history | Native conversation and child-thread ancestry. Relay binds it to the existing attempt, repository, Request/profile and checkout. Thread IDs are correlation, not Unix isolation or authority. |
+| Turn | One active interaction in a thread; inner follow-ups only within admitted scope | Native generation/tool events. Relay controls authorized submission, steer/interrupt and semantic-result validation. N3 rules out treating concurrent inputs to one thread as independent executions. |
+| Execution | Reservation through containment, collection, publication and durable receipts | Relay retains the existing attempt lifecycle. Several turns may fit one execution; terminal turn status does not terminate this lifecycle. |
+| Task/Step | Canonical Issue/Request semantics across executions | GitHub authority, owner decisions and independent exact-head acceptance. Task lifetime neither requires a native persistent thread nor determines server lifetime. |
+
+Proposed flow: trusted admission → adapter binding → fresh thread/turn → bounded
+capture → execution containment → trusted object import → Writer → independent
+review. The server may survive only if the execution loses all ability to
+mutate its captured workspace. This is U, unproved by `turn/completed`,
+unsubscribe, archive or RPC success. Extend existing attempt evidence rather
+than create another Task registry or use a native queue as authority.
+
+### Decision matrix
+
+All projected benefits and costs are A/U, not benchmarks. **F** denotes the new
+fresh-thread service; **P** retains Step 1's long-lived Task conversations.
+
+| Criterion | O: governed one-shot exec | H: app-server per execution | F: warm server, fresh threads | P: long-lived Task sessions |
+| --- | --- | --- | --- | --- |
+| Startup/resource cost | Startup per execution; no idle server | Same startup cadence plus adapter | Startup amortized; idle RSS/CPU, caches and service operations added | F costs plus retained history and recovery work |
+| Interaction/observability | JSONL identity/usage already accepted; enhancements possible | Native steer/interrupt and item streaming candidate | Same protocol benefits with service reuse | Also conversation continuity across executions |
+| Parallel independent work | Multiple isolated processes possible after #103 proof | Multiple contained children possible after #103 proof | Separate threads are supported in source; capacity/fairness unmeasured | Also contend on persistent Task state; no scheduling advantage over F |
+| Identity/environment | Per-attempt recreated environment under configured runtime user | Can preserve that launch boundary | One process shares UID, startup environment/auth/store; no per-thread Unix user | Same shared-process risks, extended history lifetime |
+| Containment/failure scope | Reap attempt-owned group before collection | Whole child can be reaped per execution | Killing server can stop all tenants; selective tool/descendant revocation unqualified | Same risk plus suspended/orphaned sessions |
+| Recovery/durability | Existing unknown-execution stop, Git progress and protected diagnostics | Retain existing stop; optional history within attempt | No Task-session recovery required; lost submission/events still require reconciliation | Compaction/versioned history and managed auto-continuation add hazards |
+| Upgrade/rollback/operator work | Existing #25 lifecycle and pinned binary | Adapter/version qualification; attempt ends with child | Inventory all active attempts, IPC/state retention, credential renewal, capacity and service restart | Also history compatibility, abandoned sessions and longer owner waits |
+| Decision now | Retain | Smallest optional protocol pilot | Credible subsequent comparison within a qualified identity boundary | Require an independently demonstrated continuity need |
+
+F still needs fresh context; shared caches prove no provider-token savings.
+Compare startup, first useful event, handoff time, RSS, retained bytes, usage
+attribution and incident/upgrade operator minutes against O/H with the same
+profile/workload. Warm state alone does not justify the service's added cost.
+
+### Isolation risks and viable service boundaries
+
+**One native process does not supply the different Unix Worker identities
+requested by #86.** N1 offers policy/cwd/config selection, not identity switching;
+N2/N5 show shared services/environment. Cwd/config overrides cannot partition
+process memory, credentials, open descriptors or state. A privileged server
+that switches users enlarges the trust boundary and conflicts with #67's
+rootless direction; it is not recommended.
+
+| Concrete exposure | Existing protection and smallest credible alternative | Cost / remaining proof |
+| --- | --- | --- |
+| B reaches A's checkout/history or shared auth/config | O/H retain attempt-local state and process lifetime. F could serve one effective UID/namespace through a bounded trusted adapter. | Same UID/cwd/sandbox writes do not prove read isolation, server-tool confinement or cleanup. Prove workspace access/revocation; otherwise retain O/H. |
+| Repositories select different `runtimeUser` values | Native services partitioned by effective UID **and** namespace/credential domain behind one logical Relay configuration; equivalent repositories may share. | Added resident processes/drain inventory. No new Apps, repository ACL policy or Relay installation per repository is required. Per-UID services still need per-execution proof. |
+| HOME/CODEX_HOME/XDG, logs, SQLite/WAL, telemetry/caches retain material | Keep bounded credentials/protected diagnostics; inventory process-state paths and disposal. N2's thread store is process-scoped. | New retention burden. `ephemeral` does not prove prompt/tool-output erasure from logs, caches or memory; config overrides cannot relocate protected state. |
+| Socket clients invoke account/config/plugin, shell or process-wide RPC | Fixed trusted client exposes only needed operations; workers receive no raw endpoint/control. N5's private socket is host access control, not tenant ACLs. | Adapter/method-version maintenance. Reuse credential separation, without a general policy engine. |
+| Children/tools outlive root turn; interrupt targets another Task | Bind parent/child/turn IDs to existing execution; preserve profile/Subagents admission and qualify descendants. | Accepted Off remains instructional, not OS isolation. Child threads grant no new Relay Task/capacity. Selective containment and complete child usage attribution are U. |
+
+A per-execution process remains the simple containment unit retained by H.
+Shared namespaces still share memory, credentials and failure fate. External
+isolated executors could partition tool effects, but N1's experimental
+environments do not prove that design. Qualification/complexity may exceed O/H;
+this proposes no container/platform prerequisite. Accepting O's existing costs
+is a valid cheaper response under proportional controls.
+
+Keep Relay checkouts, trusted object import and authority/exact-head
+revalidation. Native worktrees, Git metadata/diffs and conversation history
+cannot establish the candidate SHA or a frozen snapshot. Trusted Git must
+never use server/model-modified metadata. Independent Reviewer is not replaced
+by native `review/start` or a thread in the implementation service.
+
+### Cross-Task dependency and ownership matrix
+
+Public Issue bodies were read anonymously on 2026-10-11 as context only.
+Observed body update dates were #103: October 10, #85: October 7, #86: October 9,
+#67: October 5, #84: October 9. S2 establishes accepted behavior; no linked
+candidate implementation was adopted.
+
+| Task / owner | Dependency or relationship | Can proceed on O? |
+| --- | --- | --- |
+| [#103](https://github.com/jresearchsoftware/codex-relay/issues/103): scheduling and safe parallel execution | Independent of #42. Owns pending replacement/event freshness, runners, duplicate/same-Task admission, publication/recovery contention and full drain. | Yes; reliable serial scheduling and bounded parallel processes need no app-server. Same-Task/workspace and Writer critical sections still require exclusion. |
+| [#85](https://github.com/jresearchsoftware/codex-relay/issues/85): multi-repository Writer | Independent of #42; counterpart to #84. Explicit configured targets/repository-aware identities prevent overlapping Issue/PR/attempt IDs; preserve shared Writer identity and safe publication. | Yes; no conversation or native protocol dependency, and no new repository security policy. |
+| [#86](https://github.com/jresearchsoftware/codex-relay/issues/86): organization configuration/Worker user | Explicit semantic dependency: #84 **and** #85 → #86. Owns shared defaults, sparse overrides and effective Unix user, not a new privilege/profile framework. | Yes; select effective user at existing launch. F must respect selection through eligible identity-bound services; Tasks cannot choose users. |
+| [#84](https://github.com/jresearchsoftware/codex-relay/issues/84): accepted Reviewer | S2-3 is the independent exact-head review/publication boundary; native review cannot absorb it. | Already in accepted source; no #42 dependency. |
+| [#67](https://github.com/jresearchsoftware/codex-relay/issues/67): rootless steady-state/multi-instance isolation | Independent privilege redesign; informs F supervisor/client/state permissions. Preserve namespaces without requiring VM/container or generic root/user-switch authority. | Yes. Future F host integration needs the qualified applicable privilege contract, not speculative #67 completion. |
+| #19/#24, #20/#22, #21, #25, #17 | Step 1 maps observability/usage, pause/suspension, incremental publication, Relay lifecycle and compaction context. Fresh threads need no persistent Task-session recovery. Ending an owner-waiting execution and later admitting a fresh one is an option requiring owner workflow authority. | O can improve observability/usage and lifecycle. Server persistence grants no resume authority or concurrent publication proof. |
+
+#115 candidate differences are interoperability context only; use the pinned
+accepted tree without importing unaccepted behavior. Step 1's parallel-candidate
+discussion is historical. A material later base change needs evidence/authority
+reconciliation; no silent rebase, merge or forced integration.
+
+### Capacity layers and failure scenarios
+
+Scheduling, running jobs, native turns and publication are different capacity
+layers. Each requires its own proof; raising one capacity cannot bypass another.
+
+| Layer | Owner / bounded design question |
+| --- | --- |
+| Actions waiting runs | #103. S2-2 uses default pending replacement. Current [GitHub documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) offers `queue: max` for up to 100 pending runs, then cancellation; it conflicts with `cancel-in-progress: true` (D). Consider before a Relay queue, but qualify availability/freshness/recovery. No template change or app-server repair of dropped events follows. |
+| Runner jobs | #103 / infrastructure. Native multi-thread capacity cannot make one runner execute multiple jobs. Qualify actual runner capacity, identities/labels and credential access. |
+| Admission/controllers | Relay. Keep reservation, replay suppression, Task/PR exclusion and namespace/config binding; drain all controllers. Native goals/queues cannot admit executions. |
+| Codex execution | Adapter/supervisor. Bound tools/children and host/provider capacity; measure fairness/backpressure. N2 proves no throughput quota or starvation protection. |
+| Writer/recovery | Writer. Lock critical sections, not whole model execution; preserve repository-aware identities under #85. No casual lock sharding or lock held during model/owner waits. |
+| Review/upgrades | Independent Reviewer / Relay lifecycle. Keep exact-head review and full #25 quiesce/drain/verify/resume. Native idle/health cannot reconcile unknown execution/publication. |
+
+| Hypothetical scenario (A) | Required disposition / difference from O/H |
+| --- | --- |
+| A runs; C replaces pending B | #103 must resolve event loss; server persistence cannot recover an unadmitted event. Larger native queues still overflow. |
+| Independent A/B run; duplicate A arrives | Qualify A/B isolation/capacity. Reject duplicate admission before RPC; do not append it to A's active thread. |
+| Submission response is lost | Preserve original effects/attempt; no resend/fallback to O. RPC/thread/message IDs prove no transactional tool deduplication. Ephemeral history loss may worsen evidence. |
+| Disconnect/backpressure loses A's events | Completion/usage may be unavailable. Server health proves no success. Qualify reconnect/read gaps and bounded capture without B's data; lossless replay is unproved. |
+| Owner steers/interrupts A while B runs | Bind current authority/thread/turn and steer precondition. Abort proves no rollback/containment; test A's tools stop while B survives. Killing server affects both. |
+| A's tools/children hang after apparent completion | No live import/cleanup. O/H reap their group; F needs selective containment/revocation or stops affected publication with shared impact disclosed. |
+| Crash or managed restart | Reconcile all affected attempts. N6 can continue without Relay reauthorization. Prove a supervised service cannot reload/continue mutable work outside admission; ephemeral roots alone do not suffice. |
+| Writer push uncertain; daemon idle | Keep quiesced; reconcile original Writer intent without model execution. Native idle/rollback cannot resolve or justify repeating effects. |
+| Version/state incompatible; rollback | Keep exact O revision and diagnostics/Git progress. O fallback only before possible submission when routing permits; otherwise reconcile first. State downgrade is U; retain bytes inactive. |
+
+### Bounded proof plan and owner decisions
+
+Optional future work requires separate Requests, existing Task/PR/check/Outcome
+evidence and independent exact-head review. No recurring operator step or
+fixture is required here.
+
+1. **Resolve need and target.** Owner names benefit, exact Relay/Codex revisions,
+   profile, workload and cost tolerance. #103 is independent; #85 then #86 can
+   advance on O. Coordinate #67's applicable identity/namespace boundary for
+   host integration, without gating protocol research on unrelated backlog.
+2. **Prove an isolated-child adapter.** On an admitted capable executor, use an
+   available exact binary, private empty environment, synthetic checkout and
+   credential-free loopback provider. Generate schemas; exercise initialization,
+   fresh/ephemeral threads, exact profile/prompt/policy/output-schema mapping,
+   events/usage and wrong-thread/turn rejection. Compare two threads with two O
+   processes; test active-thread start/steer, interrupt and child agents. This
+   needs no owner session/global installation and proves no real model access.
+3. **Prove F before reuse.** Check actual UID/GID, environment/state locations,
+   cross-checkout read/write restrictions, shared auth/config, sockets,
+   descendants, retention and workspace revocation. Exercise slow clients,
+   uncertain submission, A/B crash/restart, prevention of managed continuation,
+   lost events and concurrent cleanup. Record surviving processes and actual
+   Git/filesystem effects. Failed selective containment favors O/H. Installed
+   UID/privilege proof requires its own admission.
+4. **Decide on measured gain before implementation.** Compare O/H/F costs under
+   equivalent isolation. If F wins, qualify one identity/namespace before
+   multiple users, with no managed auto-update or unauthorized continuation.
+   Preserve full Relay drain/publication and exact O fallback for new attempts.
+   Upgrade, credentials and host rollout need separate authority. P requires a
+   demonstrated continuity need; it is not F's prerequisite.
+
+Owner decisions remain experimental maturity tolerance, benefit/cost threshold,
+acceptable isolation/identity pooling, retention/credential lifetime and whether
+pause/resume needs conversational continuity. Record them canonically before
+material implementation. Step 2 performs no migration, linked-Task execution,
+deployment, release, merge or Issue closure.
+
+### Step 2 local validation and handoff limits
+
+V: Linux x86_64, unprivileged worker, Node 18.20.4 and Python 3.11.2. `codex`,
+npm, pytest and Cargo/Rust are unavailable; Node is below the repository's
+qualified minimum of 22. No dependency/tool installation or escalation was
+attempted. The accepted 0.160.0 exec qualifier was not rerun and does not qualify
+app-server. Actual model/effort are `UNAVAILABLE` from local authoritative
+evidence; admitted values remain `gpt-6.1-sol` / `xhigh`. Subagents were permitted
+and not used.
+
+The exact `package.json` Node script was run directly with its synthetic consumer
+JSON copied to a disposable `0600` file: the checkout fixture is `0660`
+(`nobody:nogroup`). Step 1's correction was reused without changing repository
+modes/configuration. **669 passed, zero failed, one skipped** (670 total).
+The root-only synthetic UID test was skipped. This proves local checks under
+Node 18, not qualified toolchain/installed isolation. These environment
+conditions pre-exist the report change.
+
+Report whitespace, tracked candidate JSON/local-link/credential-marker checking
+and the dedicated tracked secret scan passed.
+`npm test` itself, deployment pytest suites, Cargo formatting/tests and
+`scripts/qualify.py` cannot run with this toolchain. Native
+`github-test-validate` / exact-head CI remains unavailable in this
+credential-free worker and must be acquired after trusted Writer publication.
+Pending native proof is separate from completing the local report.
+
+Current-attempt Outcome/check/job/runtime warning surfaces are unavailable
+through the permitted local interface: an acquisition gap, not `none_observed`.
+Writer/review must inspect native warnings and disposition toolchain, root-only
+test and native-probe limitations at the next decision boundary.
+
+Only this report changes. Useful progress is preserved in a normal task-owned
+local commit for trusted Writer to publish at its collected exact candidate
+SHA. The worker makes no GitHub publication or self-review; independent
+acceptance remains outstanding. Disposable public source/test files are outside
+the repository and introduce no report fixture or product dependency.
