@@ -22,6 +22,12 @@
       - item.stdout is search('(?m)^LoadState=(loaded|not-found)$')
       - item.stdout is search('(?m)^ActiveState=(active|inactive|failed)$')
       - >-
+        not (item.item is search('[.]socket$') and item.stdout is search('(?m)^LoadState=not-found$')) or
+        (item.stdout is search('(?m)^ActiveState=inactive$') and
+         item.stdout is search('(?m)^SubState=dead$') and
+         (not (item.stdout is search('(?m)^UnitFileState=.+$')) or
+          item.stdout is search('(?m)^UnitFileState=(not-found|disabled)$')))
+      - >-
         item.stdout is search('(?m)^LoadState=not-found$') or
         item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$')
       - >-
@@ -59,10 +65,22 @@
     - {name: general, index: 2}
     - {name: manualOutcome, index: 3}
 
+- name: Use the compatible snapshot wire shape only for a proved absent manual socket
+  ansible.builtin.set_fact:
+    # The installed pre-capability helper accepts exactly the original three
+    # components. A proved absent socket has no activation intent to preserve;
+    # present sockets always require the complete four-component journal.
+    relay_upgrade_lifecycle_snapshot_activity: >-
+      {{ relay_upgrade_lifecycle_observed_activity |
+         dict2items | rejectattr('key', 'equalto', 'manualOutcome') | items2dict
+         if relay_upgrade_lifecycle_observed_activity.manualOutcome ==
+            {'active': false, 'enabled': 'disabled', 'load': 'not-found'}
+         else relay_upgrade_lifecycle_observed_activity }}
+
 - name: Retain the first activation snapshot in the exact protected admission operation
   ansible.builtin.command:
     argv: ['{{ relay_install_root }}/relay-admission', snapshot, --operation, '{{ relay_admission_operation_id }}']
-    stdin: '{{ relay_upgrade_lifecycle_observed_activity | to_json }}'
+    stdin: '{{ relay_upgrade_lifecycle_snapshot_activity | to_json }}'
     stdin_add_newline: false
   register: relay_upgrade_lifecycle_retained_snapshot
   changed_when: false

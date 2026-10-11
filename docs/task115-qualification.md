@@ -213,3 +213,160 @@ it. No target or system-tool installation occurred. Candidate source/CI,
 installed TEST upgrade,
 actual manual socket/mTLS/identity delivery and real GitHub expand/copy
 qualification remain unproven until their exact receipts exist.
+
+## Exact development candidate preparation
+
+The published product candidate is
+`e3ade68311d3c328b18ef840a4744d5bfd468bc5` on
+[source draft PR 118](https://github.com/jresearchsoftware/codex-relay/pull/118).
+Both required native jobs at that exact head succeeded:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38149407840/job/114499520587)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38149407840/job/114499520732).
+This is the Task-authorized TEST-local development selector, not independent
+acceptance or a production target.
+
+The TEST selector/runbook commit is
+`de1c5644e3700f85ee626dff65d8f631531b37e1`. An initial public projection with
+that dirty selector correctly stopped at `clean-source` before writing files.
+After committing it, projection on Windows drvfs stopped at
+`workflow-regular-file`: the regular manifest was exposed as executable mode
+0777. No permission bypass or product correction was applied. A separate clean
+native Debian consumer clone supplied regular Git modes and the existing
+manifest/digest baseline. Public `workflow-project` then succeeded, updating
+only the two managed routing/recovery workflows and their manifest to
+`relay-workflows-v3`.
+
+The generated projection was inspected, committed and non-force published on
+the existing TEST draft PR 3 at exact head
+`7b0464ec250fa66a53d846d1475c54b7524e60b7`. Eight native Linux consumer tests,
+whitespace validation and its
+[native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38149675231/job/114500317455)
+passed. Both consumer clones were clean. Exact-source public `workflow-verify`
+passed, and `inventory` reported `observed`, no blockers, equivalent deployment
+and consumer configuration, retaining installed `dbfea188...`. It still
+reported owner-admin App/runner/ingress observations as unavailable; no broader
+qualification is inferred.
+
+One public `upgrade --authorize-upgrade` was invoked using the exact candidate,
+clean native consumer and the qualified dependency environment. Its initial
+public progress reached QUIESCE, DRAIN and APPLY, then the entrypoint stopped
+with `INVALID_DEPLOYMENT_CONFIG:upgrade-apply-failed` and explicit
+`next=diagnose-operation-before-retry`. It did not install the candidate.
+
+The controller's retained public log is
+`/home/hortonolite/work/task115-test-upgrade-logs-01a12b33/relay-e3ade68311d3-upgrade-en95pynm.log`.
+Its relevant sanitized failure is:
+
+```text
+TASK [Retain the first activation snapshot in the exact protected admission operation]
+/opt/codex-relay-test/relay-admission snapshot --operation 73034a9b-47a1-4ec3-993a-166560bfd39e
+stderr: {"code":"ADMISSION_SNAPSHOT_INVALID"}
+rc: 1
+PLAY RECAP: ok=50 changed=0 unreachable=0 failed=1 skipped=11
+```
+
+Read-only supported `/opt/codex-relay-test/relay-admission status` then reported:
+
+```json
+{
+  "version": 1,
+  "phase": "recovery-required",
+  "operationId": "73034a9b-47a1-4ec3-993a-166560bfd39e",
+  "target": "e3ade68311d3c328b18ef840a4744d5bfd468bc5",
+  "previousActive": null,
+  "verifiedRevision": null,
+  "active": [],
+  "unknown": []
+}
+```
+
+Post-failure public inventory still observes installed
+`dbfea1889da994791a5b6c05d97a71405d21eac5`, equivalent configuration and no
+inventory blockers. That inventory result does not resolve the protected
+recovery-required admission operation. The failure is introduced by candidate
+`e3ade683...` relative to installed `dbfea188...`: the old installed admission
+helper accepts exactly `reviewer`, `production` and `general` service snapshot
+keys, while the candidate's pre-install snapshot supplies a fourth
+`manualOutcome` key to that old helper. The public log observes the three
+existing services loaded/active/enabled and the new socket absent/inactive;
+the failure occurs before its first activation snapshot is retained.
+
+The exact operation and original source remain preserved. No retry, target
+rebind, state reset, private backend, permission/service mutation or historical
+fixture cleanup was attempted. A compatible source correction and an explicitly
+qualified supported recovery path are needed before TEST qualification can
+continue. New installed socket/Writer transport, connected MCP discovery and
+a v4 manual-result fixture remain unqualified. Production was not upgraded and
+the original Task 115 Writer publication binding was not changed.
+
+The TEST README records this boundary in a subsequent documentation-only
+commit, `b63236c0f4965f0c2636c04ceb1c59ad2eb6da2d`, published on the same draft
+PR 3. The configuration and generated projection remain unchanged. The cited
+projection/native-CI receipt above belongs to `7b0464e...`; later checks must
+be read from their exact native candidate records.
+
+## Supported same-operation TEST recovery disposition
+
+The installed admission helper's `recovery-target` command deliberately permits
+changing an exact target while `recovery-required`, bound to the same operation
+and with no active/unknown attempts. It preserves `previousActive`; this is the
+existing recovery interface, not an operation reset. Public `relay-deploy.py`
+exposes it only inside `upgrade --authorize-upgrade
+--authorize-lifecycle-recovery --lifecycle-recovery-operation <UUID>` after
+checking bound status and obtaining the host apply mutex. It then returns the
+same operation to APPLY, performs final verification and resumes only after
+matching same-operation proof.
+
+The first failed invocation's public operation inspection found no ordinary
+production mutation record and failed before its begin task. The subsequent
+read-only public `check` again reports `PRODUCTION_RECONCILIATION_STATE=STABLE`
+and skips reading an absent ordinary record. The separately retained admission
+gate remains `recovery-required`; `STABLE` here describes the ordinary
+apply/activation journal and does not reopen admission or complete recovery.
+
+Current Task 115 owner authority and its trusted Decision/Request cover verified
+isolated TEST fixes and supported recovery. The scoped disposition is to select
+the corrected published CI-green Task 115 development candidate as the TEST
+recovery target in operation `73034a9b-47a1-4ec3-993a-166560bfd39e`, after its
+consumer selector/projection are committed and publicly verified, status again
+shows no active/unknown attempts, and the public guard confirms no intervening
+ordinary mutation record. This does not claim independent source acceptance,
+authorize production recovery or permit protected file edits. The selected
+corrected target must be supplied explicitly; no recovery invocation has yet
+been made. No install/rollback to the known broken `e3ade683...` is required by
+the existing helper ABI merely to change target through this supported path.
+
+The scoped recovery disposition is also published in the TEST README at
+`6c7101111c5144a0b07858b87ce6fb37dcbf92ec`; its
+[native consumer check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38150244453/job/114502015652)
+passed. This documentation commit did not change the target, projection or
+protected operation.
+
+## New native fixture admission boundary
+
+Read-only GitHub inspection confirms that TEST `main` still carries routing
+blob `4576c3ccea631ed96e6adb7ef4e1df2356eba1c8` and workflow-manifest blob
+`49ec662f3ff078741689379235f4ad346c289c28`, both from the old
+`relay-workflows-v2` projection. PR 3's new projection is
+`relay-workflows-v3`. The routing job requires owner `foal`, the corresponding
+triggering actor and `github.ref == refs/heads/main`. It checks that the
+installed release contract equals its explicit `EXPECTED_WORKFLOW_CONTRACT`
+before routing; mismatch throws `INSTALLED_RELAY_IDENTITY_MISMATCH`.
+
+Therefore, after a v3 workflow-contract installation, a ready-label or manual
+dispatch through current `main` cannot create a new v4 manual admission using
+the old workflow. Dispatching the unmerged PR branch fails the main-ref job
+condition and is outside the existing only-main workflow runner restriction.
+No alternate supported fixture admission route has been identified:
+`publish_task_authority` authors native authority, while
+`submit_manual_outcome` only submits results for an already admitted manual
+attempt. Neither supplies a replacement run/admission authority.
+
+Genuine new v4 manual-ready/Actions qualification consequently requires
+independent consumer review and ordinary owner merge of compatible generated
+workflows into TEST `main`. Current authority does not authorize that merge.
+Compatible installation, socket/service qualification and connected capability
+discovery remain separately admitted TEST activities, but cannot establish this
+live Actions/one-Outcome fixture proof before the projection boundary is
+resolved. No consumer merge, base-branch change, runner-policy change, fabricated
+run environment, direct root worker or nested model execution was used.
