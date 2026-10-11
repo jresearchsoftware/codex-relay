@@ -115,8 +115,9 @@ without VibeVM, resolution, networking or another owner action.
 ### Relay bindings
 
 The owning project's current scope and canonical owner authorization mean the
-live Issue/CR and, for migrated Tasks, its trusted Decision and complete Task
-Request. Shared guidance grants no Step, execution, publication, acceptance,
+live Issue/CR and, for migrated Tasks, its trusted Decisions and protected
+admission. Retained schema-v3 attempts keep their selected complete Request.
+Shared guidance grants no Step, execution, publication, acceptance,
 recovery, deployment, merge or closure permission. Keep worker, Writer and
 independent Reviewer responsibilities separate and retain all existing
 credential, trust, runtime and production boundaries.

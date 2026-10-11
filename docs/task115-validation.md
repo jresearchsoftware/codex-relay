@@ -4,8 +4,8 @@ This report belongs to the candidate commit carrying it. It records source and
 qualification evidence; it is not independent acceptance, installation authority
 or a second Task ledger. Canonical authority remains Task 115 and its current
 trusted Request/selected Decision. Earlier observations below retain their
-then-current heads and boundaries; the owner clarification at the end updates
-the current disposition. The implementation started at
+then-current heads and boundaries; the owner clarification and final bounded
+handoff below update the current disposition. The implementation started at
 `b4cb4943d52dd375d8c6800959b3264fad082cb8` on `codex/task-115-step-1`.
 
 ## Source behavior and compatibility
@@ -234,3 +234,107 @@ admission and no execution replay. The owner explicitly excludes substantial
 new development from Task #115 completion. The general requirement is durable
 in the Decision; this candidate documents the limitation and defers the new
 mechanism rather than weakening current authority checks.
+
+## Staged Reviewer packaging correction and TEST recovery boundary
+
+After the authorized TEST PR #3 merge, one supported same-operation recovery
+to `44f97a8000eac6f3c6284b32c62f574d7b8edd7b` exposed a second introduced
+deployment compatibility defect: staged Rust source requires
+`../../contracts/src/github-authority-v4.json`, but the artifact role copied
+only v1. Baseline `b4cb4943...` includes only v1; implementation `e3ade683...`
+added the v4 include without its relocated staging input. The role now copies
+both schemas with unchanged root/group ownership, mode 0640 and remote copy
+semantics.
+
+Meaningful native Linux fixture validation passed 14 tests with one existing
+root prerequisite skip. The new fixture executes the actual selected Ansible
+staging tasks under an unprivileged temporary identity, compiles the real Rust
+include paths, removes v4 to reproduce the compiler failure and restores it.
+The explicitly enabled full staged `cargo check --locked --offline` also
+passed. This validates the source packaging correction, not a release build or
+successful installed recovery. Two `unused_mut` warnings in `github.rs` during
+the failed live build are pre-existing: that file's Git blob is unchanged from
+the admitted baseline to `44f97a8...`; they are not Task #115 regressions.
+
+The live recovery failed after 20 changed tasks. Its ordinary apply record
+binds `44f97a8...`; admission operation
+`73034a9b-47a1-4ec3-993a-166560bfd39e` remains recovery-required, with the
+saved three-service activity intent and no active/unknown attempts. The current
+release pointer remains `dbfea188...`. A justified supported read-only check
+performed zero changes and reported `recovery-requires-disposition` with an
+exact-phase/head-only mutation boundary. No retry or new fixture followed.
+
+Source assessment finds no truthful existing public transition from this state:
+ordinary upgrade/rollback rejects the retained apply record; matching owner
+apply also rejects the old installed pointer; reinstall rejects the record;
+reinstall recovery requires an absent DECOMMISSIONED journal. Completed-apply
+stale disposition requires a pointer already at the failed target, and
+bootstrap-only disposition excludes this existing consumer. None is applicable.
+Runtime reconciliation precedes the failed artifact build, so an old pointer
+and active services do not prove byte-equivalence of every installed wrapper,
+configuration or unit. A sanitized TASK-name extraction of the retained public
+log confirms changes to the stale-disposition helper, Reviewer activation
+helper and Reviewer configuration contract, as well as operation reservation
+and artifact staging. Exact current root-owned bytes/process adoption remain
+an explicit evidence gap; 20 changed tasks are not a complete footprint proof.
+
+The missing public capability is an evidence-bound disposition of failed
+partial apply before pointer transition, preserving the original record and
+same lifecycle UUID without claiming completed apply. A safe extension must
+verify exact old/failed/successor sources, protected record ownership/bytes,
+old release/process binding, known partial footprint, preserved activation
+intent and no active/unknown execution under the existing host lock. That
+material product recovery extension is not silently introduced as a TEST
+exception. Standing TEST autonomy is already resolved; the boundary is the
+unsupported protected recovery contract, not a request to reauthorize ordinary
+TEST actions. The useful packaging fix and exact evidence are preserved for
+review; installed manual socket, MCP Outcome and complete E2E remain unqualified.
+
+## Final bounded source correction and handoff
+
+The adjacent reuse audit found that the new external v4 compile input was also
+absent from `reviewerSourceTreeSha256`. A schema-only change could therefore
+reuse a binary built with earlier authority semantics. The same introduced
+`e3ade683...` / retained `44f97a8...` provenance applies; baseline `b4cb4943...`
+has no external v4 compile dependency. Source identity now includes both v1
+and v4 schemas. The existing exact-equality reuse gate and identity fields are
+unchanged. Parameterized schema-only mutations prove invalidation for each
+schema without conflating source and deployment build-input digests.
+
+The first complete Python run after the staging correction exposed one
+introduced fixture mismatch: it still selected the old singular Ansible task
+name (`1 failed, 890 passed, 300 skipped`). The fixture now evaluates the
+plural task's actual loop with `StrictUndefined` and verifies both relocated
+schema bytes and Rust include paths. Thirteen affected staging/schema/reuse
+tests passed. A read-only peer closure audit found both packaging findings
+resolved in the four changed source/test files, with no additional material
+finding in that bounded diff; it did not issue independent product acceptance.
+
+The final native Linux candidate checks passed with Node 22.20.0, Cargo 1.90
+and the supported isolated Ansible 2.16.19 command environment:
+
+| Required check | Evidence |
+| --- | --- |
+| `git diff --check` | PASS for intended Task-owned source and evidence |
+| `npm test` | 760 passed, 1 prerequisite skip, 0 failed; 26.22 seconds |
+| `python3 -m pytest -q deploy/tests deploy/ansible/tests` | 892 passed, 300 prerequisite skips, 19 deprecation warnings; 231.28 seconds |
+| `cargo fmt --manifest-path reviewer/Cargo.toml --check` | PASS |
+| `cargo test --manifest-path reviewer/Cargo.toml --locked` | 109 passed, 0 failed; 6.09 seconds |
+| `python3 scripts/qualify.py` | THREE_CONSUMER_PASS with the unchanged component/artifact digests above |
+| `python3 scripts/check-candidate.py` | PASS for staged tracked source; declared JSON/link/credential-marker scope |
+
+The Python warnings are the existing crypt deprecation and Jinja regex escape
+deprecations. Prerequisite skips and local mock consumers do not qualify
+installed process isolation, protected credential access or live ingress.
+The later deployment identity/fixture correction changes no Node/Rust module;
+their complete passing checks and three-consumer proof remain applicable.
+Native CI and its primary annotations remain in the exact-head GitHub records.
+
+The candidate preserves source fixes and sanitized TEST evidence in ordinary
+Task commits. TEST PR 3 is merged; draft TEST PR 5 preserves the runbook work.
+The source handoff is ready for independent review, but TEST recovery and the
+live `submit_manual_outcome` E2E are blocked at the precise public capability
+gap described above. No installed success, Writer Outcome, product acceptance,
+product merge, Task completion or closure is claimed. The separate general
+authority-change publication correction remains deferred under the current
+trusted Decision and is not a Task 115 completion gate.

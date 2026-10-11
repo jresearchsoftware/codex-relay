@@ -5,7 +5,31 @@ same owner-launched manual Step 1. It is evidence for the current Task/PR, not
 another authority registry. No independent acceptance, product merge, Issue
 closure, production installation or deployment is claimed.
 
-## Current authority and immutable admission
+## Current qualification disposition
+
+Current trusted [Request 6112661946](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112661946)
+selects [Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517).
+Standing isolated TEST autonomy is resolved; ordinary TEST actions require no
+repeat owner confirmation. TEST PR 3 was merged at `4598e746...`; draft
+[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5)
+preserves the runbook correction at `adc3937...`.
+
+The supported recovery to `44f97a8...` failed after partial apply, before the
+release pointer changed from `dbfea188...`. Its retained exact-head record and
+lifecycle operation `73034a9b-47a1-4ec3-993a-166560bfd39e` remain intact and
+recovery-required. The following read-only check performed zero changes and
+reported `recovery-requires-disposition`. Existing public interfaces provide
+no applicable disposition for this partial state; further protected mutation
+is stopped. The packaging/reuse corrections are source-qualified, but live
+manual socket, MCP submission and complete E2E remain unqualified.
+
+The current owner-authorized handoff uses PR 118 plus committed evidence,
+explicitly without a normal Writer Outcome. The general authority-change
+publication requirement is deferred and is not a Task 115 completion gate.
+Earlier observations below retain their historical heads/authority; later
+sections record each superseding fact rather than changing old evidence.
+
+## Original admission and historical authority
 
 The original launch was installed schema-v3 Request
 [6109630038](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6109630038),
@@ -521,6 +545,43 @@ establish global warning absence or independent Reviewer acceptance. The
 unresolved TEST evidence gaps remain material inputs to the next review/owner
 boundary alongside the preserved recovery-required operation.
 
+## Canonical TEST autonomy and exact consumer merge
+
+The resumed same-Step owner clarification is recorded by trusted
+[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517)
+and [successor Request 6112661946](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112661946).
+Live read-back verified Bot identity 306850842 and respective body SHA-256
+`d08cd6a43de555e2d7bc6678ba6060efb075cb19349c484b75bf55cf83037a80` and
+`8a49967ddf924bec46220e05646936beee0d94cb7ad5d97bb3fb8c0ee593ba8b`.
+They explicitly authorize the verified isolated TEST full cycle, including
+reviewed TEST PR merge and supported same-operation recovery, while excluding
+product PR 118 merge, PROD, shared/foreign infrastructure and external App,
+permission or credential changes. No original Task 115 admission/journal was
+rewritten. The standing policy is the single
+[TEST Environment Authority](https://github.com/jresearchsoftware/codex-relay/blob/6ae8f984aed8596411a62b6490d096c7030b6f0c/docs/execution-policy.md#test-environment-authority);
+that policy commit changes documentation, not the selected TEST runtime source.
+
+Fresh PR 3 inspection verified unchanged head `944eda9...`, base `52d6630...`,
+five bounded configuration/runbook/projected files, native candidate CI success,
+MERGEABLE/CLEAN status and no new findings from the prior scoped peer audit.
+PR 3 was marked ready and squash-merged through the ordinary owner interface
+with exact `--match-head-commit 944eda973981d94ec7cefd69a375ca71b116e1c6`.
+No admin/force merge, branch deletion or self-authored Reviewer verdict was used.
+GitHub read-back confirms merged by `foal` at 2026-10-11 19:14:18 UTC, exact
+merge/main SHA `4598e74602b02247adebbaba71ecccf33958da9d`.
+The [native main candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38167160268/job/114551998276)
+passed at that exact SHA.
+
+Windows consumer `main` and the clean detached native consumer now match
+`4598e746...`; the earlier reviewed branch is preserved. Exact-source public
+`workflow-verify` passed for selected runtime `44f97a8...` and consumer
+`4598e746...`. Fresh pre-recovery inventory still observed `dbfea188...`,
+equivalent configuration and no blockers. Bound public status retained the
+same recovery-required operation, old target `e3ade683...`, null activation
+snapshot/verified revision and no active/unknown attempts. The consumer
+main-projection prerequisite is resolved; the separate installed recovery and
+MCP/one-Outcome proofs still require their actual receipts.
+
 The exact source diagnosis is that `step_sync::linked_issue` recognizes one
 same-repository `Related to #N` / closing-keyword reference in the PR body.
 PR 3 instead points to its authorized cross-repository Task 115 URL, leaving
@@ -541,3 +602,114 @@ configuration and unchanged protected guards. Its 56 marker and eight guard
 cases passed, with no material findings in that bounded consumer audit. This
 qualifies the prepared projection, not execution of the installed workflow,
 independent product acceptance or permission to merge/recover the target.
+
+## Supported recovery: staged Reviewer schema failure
+
+The canonically authorized public `upgrade --authorize-upgrade
+--authorize-lifecycle-recovery --lifecycle-recovery-operation
+73034a9b-47a1-4ec3-993a-166560bfd39e` resumed that same retained TEST operation
+with exact source `44f97a8000eac6f3c6284b32c62f574d7b8edd7b` and merged consumer
+`4598e74602b02247adebbaba71ecccf33958da9d`. It passed the older installed
+snapshot compatibility boundary and reached protected artifact staging. It
+failed at the locked Rust Reviewer release build: `task_authority.rs:17`
+includes `../../contracts/src/github-authority-v4.json`, but the artifact
+staging task copies only `github-authority-v1.json`. This is a concrete Task
+115 deployment packaging omission; local Rust builds have the full source
+tree and therefore did not qualify this staged layout.
+
+The backend recap was `ok=168 changed=20 unreachable=0 failed=1`; this is a
+partially applied upgrade, not the earlier pre-install failure. The public
+entrypoint returned `INVALID_DEPLOYMENT_CONFIG:upgrade-apply-failed` with
+`next=diagnose-operation-before-retry`. The raw private log
+`relay-44f97a8000ea-upgrade-m1o38pd6.log` is retained locally; no credential or
+private configuration contents are reproduced here. The compiler also emitted
+two `unused_mut` warnings at `github.rs:350` and `:399`; those same declarations
+exist on installed source `dbfea1889da994791a5b6c05d97a71405d21eac5`, so these
+warnings do not establish an introduced Task 115 regression.
+
+Fresh bound public admission status reports `recovery-required`, the same
+operation UUID and target `44f97a8...`, `verifiedRevision: null`, and empty
+active/unknown attempt arrays. Unlike the first failed upgrade, its retained
+`previousActive` snapshot now records Reviewer, production runner and general
+runner as active, enabled and loaded. The current installed pointer still
+names `dbfea1889da994791a5b6c05d97a71405d21eac5`. Those observations preserve
+activation intent; they do not prove that the staged target is complete or
+that the old installation was untouched. No retry, activation, release cleanup,
+operation reset, fixture admission or MCP Outcome submission followed the
+failure. Installed manual socket and new Reviewer capability remain unqualified.
+
+Source inspection also identifies a separate recovery constraint: an ordinary
+retained apply record binds its exact failed source head, while existing
+stale-apply disposition requires a completed release at that recorded head.
+The old current pointer cannot be asserted to be a completed `44f97a8...`
+apply. The next action is supported read-only classification of the retained
+ordinary operation, then an evidence-bound public recovery disposition; a
+new corrected source does not itself authorize bypassing those guards.
+
+The subsequent supported public `--phase check` confirmed an ordinary retained
+`apply` record at exact `44f97a8...`. Its classifier observed Reviewer and
+production runner active/enabled, listener present, activation authorized,
+registration evidence valid, no reactivation required and planned scope
+`preserve-reviewer-and-runner`. It explicitly reported
+`mutation_boundary=matching-phase-and-exact-head-only` and
+`apply_state_hash=not-applicable`. The read-only recap was `ok=45 changed=0
+failed=0 skipped=17`; the public entrypoint deliberately remained blocked as
+`recovery-requires-disposition`. The private log is
+`relay-44f97a8000ea-check-yujl26bq.log`. This narrows the next recovery decision
+without retiring the record or claiming that a different target is admitted.
+
+The scoped source audit found no truthful existing public continuation for this
+exact incomplete apply. Matching recovery would replay the broken `44f97a8...`
+source; a different target or rollback conflicts with the retained ordinary
+head binding. Reinstall decommission refuses that record, while reinstall
+recovery requires a DECOMMISSIONED journal that this operation did not create.
+Completed stale-apply disposition requires a current release at the recorded
+head; bootstrap-only disposition requires absent runtime state. Neither shape
+matches the observed old current pointer and existing installation.
+
+`site.yml` runs `relay_runtime` before `relay_artifacts`; therefore the twenty
+changed tasks can include managed wrappers, configuration or units before the
+artifact failure and pointer switch. Observed active old services and the old
+current pointer do not prove byte equivalence of the installation. No extra
+protected file inspection or invented runtime inventory is claimed. The
+retained raw logs, journal and activation intent remain preserved. Task 115
+will correct and validate the packaging omission in source, but this bounded
+Task does not invent a new partial-apply disposition protocol. Further host
+mutation needs a precise supported recovery disposition; no reset, bypass,
+retry, reinstall, activation or fixture admission is performed here.
+
+The useful consumer runbook correction is committed and pushed as final head
+`adc3937fa2f64e4d722cc3ca528a3fcdc10d5f71` on
+`codex/task-115-test-recovery`, in draft
+[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5).
+Its sole changed file is README: it references the single standing TEST policy,
+replaces the obsolete PR 3 merge hold, distinguishes the two upgrade failures,
+and records the actual partial-state/public-recovery boundary. The config,
+selected source and projected workflows retain merged main `4598e746...` bytes.
+Native Linux eight scenario/isolation tests and whitespace validation passed.
+The [native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38168457362/job/114555825705)
+completed successfully at exact `adc3937...`, with API check annotation count
+zero. Windows branch and detached native
+consumer match that published head and are clean; no unpublished consumer
+commits remain. PR 5 remains draft and unmerged. This repository handoff
+preserves progress without another host operation or a successful E2E claim.
+
+Read-only native metadata inspection verified both new raw logs as UID/GID
+1000, mode `0600`, regular non-symlink files with one link. They remain outside
+the repositories and are not copied into publication or committed:
+
+| Private log basename | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `relay-44f97a8000ea-upgrade-m1o38pd6.log` | 127588 | `20e94501e46936beafe9f1986d5b24cfaf90633eba49e989d32f4fe6b62d3744` |
+| `relay-44f97a8000ea-check-yujl26bq.log` | 10782 | `580163d7e1efd792561c10e40a64da31f33510355026b569e0a6fa23cfc4be50` |
+
+A sanitized extraction of task headings and changed markers, excluding all
+parameters, invocations and returned contents, identifies exactly twenty
+changed tasks (29 changed item lines). Four are the ordinary operation
+reservation and runtime installation of the stale-disposition helper,
+Reviewer activation helper and Reviewer configuration contract. The remaining
+sixteen are artifact namespace/object/source/build-input staging tasks,
+including stable routing/recovery invocation paths and staged Writer,
+dispatch and diagnostics artifacts. The observed task footprint confirms
+managed helper/configuration changes before the failed build; it does not
+prove every resulting byte, process identity or completed installation.

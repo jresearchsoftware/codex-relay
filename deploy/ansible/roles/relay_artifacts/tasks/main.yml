@@ -95,14 +95,17 @@
     - '{{ relay_release_path }}/contracts'
     - '{{ relay_release_path }}/contracts/src'
 
-- name: Stage the exact shared GitHub authority schema for the Reviewer build
+- name: Stage the exact shared GitHub authority schemas for the Reviewer build
   ansible.builtin.copy:
-    src: '{{ relay_release_path }}/reviewed-source/contracts/src/github-authority-v1.json'
-    dest: '{{ relay_release_path }}/contracts/src/github-authority-v1.json'
+    src: '{{ relay_release_path }}/reviewed-source/contracts/src/{{ item }}'
+    dest: '{{ relay_release_path }}/contracts/src/{{ item }}'
     remote_src: true
     owner: root
     group: '{{ relay_group }}'
     mode: '0640'
+  loop:
+    - github-authority-v1.json
+    - github-authority-v4.json
   when: not ansible_check_mode | bool
 
 - name: Reconcile the shared pinned Rust toolchain for builds and development
