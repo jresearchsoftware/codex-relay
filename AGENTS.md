@@ -207,7 +207,10 @@ covering implementation, tests, fixes and disposable or explicitly authorized
 qualification before one independent exact-head review. Preserve distinct owner,
 source-acceptance, installation, credential and original-attempt native
 authorization boundaries. Route selection never expands Task/CR authority or
-overrides the progress-bounded execution stops above.
+overrides the progress-bounded execution stops above. For an owner-designated
+isolated TEST environment, apply the standing
+[TEST Environment Authority](docs/execution-policy.md#test-environment-authority)
+through its supported procedures.
 
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents
@@ -373,6 +376,8 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
+  Existing standing TEST authority is defined in
+  [TEST Environment Authority](docs/execution-policy.md#test-environment-authority).
 - Follow the [first-install/bootstrap and deployment contracts](deploy/README.md)
   just in time for install, upgrade, reinstall or activation work. Reuse only
   validated supported protected state; product-owned bootstrap must remain

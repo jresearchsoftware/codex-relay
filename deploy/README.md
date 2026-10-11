@@ -6,6 +6,10 @@ and invoke `deploy/relay-deploy.py` from the selected Relay source. The
 `ansible/` directory is an internal backend, not a consumer API. Consumers do
 not copy or maintain its inventory, roles, tasks or handlers.
 
+For an owner-designated isolated TEST deployment, use the standing
+[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority)
+with these same public procedures and safety checks.
+
 ## Inputs and invocation
 
 Start with [example.json](example.json). Its identities and host are synthetic.

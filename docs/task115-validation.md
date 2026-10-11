@@ -3,7 +3,9 @@
 This report belongs to the candidate commit carrying it. It records source and
 qualification evidence; it is not independent acceptance, installation authority
 or a second Task ledger. Canonical authority remains Task 115 and its current
-trusted Request/selected Decision. The implementation started at
+trusted Request/selected Decision. Earlier observations below retain their
+then-current heads and boundaries; the owner clarification at the end updates
+the current disposition. The implementation started at
 `b4cb4943d52dd375d8c6800959b3264fad082cb8` on `codex/task-115-step-1`.
 
 ## Source behavior and compatibility
@@ -139,7 +141,8 @@ The TEST operation remains preserved as `recovery-required`, with no active or
 unknown attempts. Recovery can select a corrected target through the existing
 same-operation public interface. Genuine new Actions admission additionally
 requires the compatible workflow projection in TEST `main`; current PR 3 has
-v3 while `main` remains v2. Recovery and installation are held pending the owner
+v3 while `main` remains v2. At that observation, recovery and installation were
+held pending the owner
 disposition of this consumer review/merge boundary. No new Task 115 phase or
 model execution was introduced.
 
@@ -190,3 +193,44 @@ component and Reviewer artifact digests above. No runtime Node or Rust module
 changed in this correction; their existing complete qualification remains
 applicable. These are source checks, not proof of installed TEST workflow
 execution or independent acceptance.
+
+## Owner clarification and bounded general requirement
+
+Trusted replacement
+[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517)
+and same-Step complete
+[Request 6112661946](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112661946)
+record the standing autonomous TEST authorization, the present handoff exception
+and the bounded general publication requirement. Native readback verified Bot
+actor `306850842` and body SHA-256 values
+`d08cd6a43de555e2d7bc6678ba6060efb075cb19349c484b75bf55cf83037a80` and
+`8a49967ddf924bec46220e05646936beee0d94cb7ad5d97bb3fb8c0ee593ba8b`.
+Original admission, branch/base/starting head, Step and profile remain unchanged;
+no new ready event, execution or protected journal edit accompanied publication.
+
+The owner explicitly authorizes the complete supported TEST cycle, including
+TEST PR review/merge, upgrades, activation, state recovery and E2E/fixes under
+existing permissions. The single
+[TEST Environment Authority](execution-policy.md#test-environment-authority)
+section owns that model; other procedures route to it. Product PR #118 merge,
+PROD/shared infrastructure and external permission/credential changes remain
+outside this authorization. The earlier TEST merge hold is superseded, not a
+new gate or a reason to request permission for each ordinary TEST operation.
+
+The current Step may hand off PR #118 and committed evidence for independent
+review while explicitly reporting the missing normal Writer Outcome and its
+predicted `AUTHORITY_CHANGED` cause. No Writer Outcome is imitated and no failed
+installed publication is claimed. This is a task-local exception, not acceptance
+or permission to change PROD or the original admission.
+
+A bounded source assessment finds the general correction crosses authority,
+Outcome and independent-acceptance contracts. It needs separate immutable
+execution provenance and explicit current trusted completion disposition bound
+to the exact result, including material scope changes. Existing `supersedes`
+links alone cannot establish that compatibility. Required future qualification
+includes unchanged v3/v4, authorized and unauthorized successors, changed source
+bytes, exact-head races, uncertain POST/duplicate suppression, immutable
+admission and no execution replay. The owner explicitly excludes substantial
+new development from Task #115 completion. The general requirement is durable
+in the Decision; this candidate documents the limitation and defers the new
+mechanism rather than weakening current authority checks.

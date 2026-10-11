@@ -191,6 +191,18 @@ and a canonical `relay-manual-result` source comment remains available for
 compatible schema `3.0` callers. It is no longer a required precursor to the
 narrow MCP submission. Existing in-flight attempts are not rewritten.
 
+Current publication still requires the admitted authority to match live
+authority. A successor Request or changed effective Decision authority can
+therefore stop completion with `AUTHORITY_CHANGED`; ordinary publication
+recovery is not a rebinding mechanism. Preserve the original admission and
+result provenance. Task #115
+[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517)
+records the requirement for a future supported completion procedure that checks
+current trusted authority, compatibility and material scope changes without
+silent rebinding or bypass. That general mechanism is not implemented here or
+required for Task #115 completion. Its explicit Task-local PR/evidence handoff
+exception does not grant other attempts an exception or fabricate an Outcome.
+
 A PR result must be uniquely bound to the Task, including a disposable PR already
 closed without merge; Writer does not reopen it. Schema `4.0` PR bodies retain
 `Related to #N` and the exact standalone line `Execution admission digest:

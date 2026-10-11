@@ -60,6 +60,46 @@ shared [execution-policy module](../runtime/src/execution-policy.mjs). The
 [routing contract](../controller/README.md) defines continuation mechanics.
 
 
+## TEST Environment Authority
+
+An owner may designate an isolated TEST environment for autonomous Codex
+development and qualification. Record that designation and its concrete
+environment/repository/configuration boundary in canonical Task authority and
+the consumer's owner-controlled runbook. Within that boundary, standing owner
+authorization covers the full TEST cycle: create/delete TEST resources, change
+TEST repositories, configuration and workflows, create/review/merge TEST PRs,
+install/upgrade Relay, recover state, run end-to-end qualification and correct
+proven in-scope failures. Ordinary operations inside that authorized environment
+do not require repeated owner confirmation or another execution phase.
+
+The boundary is the environment, not the operation type. A prohibition on
+product-source merge does not prohibit TEST repository merges. Use supported
+public interfaces and existing qualified App permissions; verify exact targets,
+ownership, isolation and known contained state. Preserve replay suppression,
+safe non-force Git publication, recovery guards and truthful evidence. A TEST
+review or merge qualifies the TEST change; it is not independent acceptance of
+the product candidate. Automatic workers still delegate publication to Writer.
+Within designated TEST, an exact Task-authorized development candidate may be
+projected, installed or selected for supported recovery to qualify it before
+independent product acceptance; product and PROD acceptance remain separate.
+
+Standing TEST authority excludes PROD, product repositories outside the TEST
+circuit, shared infrastructure, foreign resources and changes to external
+permissions, App installations or credentials. Stop at those boundaries or an
+unresolved isolation/state/mutation uncertainty, with the precise action needed.
+An authorized TEST installation or activation uses the same public deployment
+safety checks; it does not bypass them or authorize private backend operations.
+Successful TEST proof does not establish PROD installation or acceptance.
+
+Task #115's trusted owner clarification designates
+`jresearchsoftware/codex-relay-testbed`, its `deploy/relay.json` and documented
+isolated TEST deployment as the standing autonomous environment. The direct
+owner authorization, recorded in
+[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517),
+authorizes both current TEST actions and adoption of this section. This policy
+cannot authorize its own adoption or designate an additional environment.
+Other procedures reference this section rather than defining TEST exceptions.
+
 ## Proportional controls and operator usability
 
 The complete reusable procedure now has one semantic owner: the committed

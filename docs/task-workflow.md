@@ -8,6 +8,9 @@ distribution remains separate Task #91. Detailed rules live in the
 [authority](../contracts/README.md#github-native-task-authority),
 [routing](../controller/README.md) and [Reviewer](../reviewer/README.md) contracts.
 
+Owner-designated isolated TEST development and qualification follow
+[TEST Environment Authority](execution-policy.md#test-environment-authority).
+
 ## From Task to completion
 
 1. **Write the stable Issue charter.** Task N is GitHub Issue #N. State the
