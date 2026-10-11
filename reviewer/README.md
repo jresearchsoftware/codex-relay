@@ -106,9 +106,39 @@ native identity and requires the reserved PR title or its canonical projection;
 changed authority stops recovery. After publication, Task Request/CR Step labels and the bounded
 existing PR title are deterministic projections, preserving unrelated labels.
 This is one trusted publisher, not a second ordinary owner metadata workflow.
-Each source response is limited to 256 KiB and five seconds; native collection
-reads stop at 500 records, selected context at 250 KiB, and the operation at
-60 seconds. Unavailable, oversized or truncated authority fails closed.
+Each source response is limited to 256 KiB and five seconds. Comments, reviews
+and branch/base-filtered PR artifacts share a complete collection reader. It
+starts with 100 records per page and reduces an oversized page to 50, 25, 5,
+then 1. Each smaller size divides the previous size, so the next fixed GitHub
+page starts at the same unread offset without restarting or changing native
+order. Already acquired records are retained; duplicate native IDs and invalid
+pages fail closed rather than being silently deduplicated. Server Link URLs are
+never followed; a short page advertising a next page is incomplete evidence.
+
+Each collection retains the intended 500-record capacity, with an empty
+completion read after a full final page, and an 8 MiB aggregate response-body
+transfer budget including oversized attempts. The reader performs at most 501
+successful page reads and four size reductions. Each collection also has a
+60-second deadline, including token acquisition, so callers outside the typed
+publisher cannot accumulate unbounded time across smaller pages. The enclosing
+typed operation still has its own 60-second deadline, and selected context
+remains limited to 250 KiB.
+The independent byte budget bounds repeated transfer and retained JSON without
+reserving the pathological 128 MiB implied by 500 maximum-sized sources. It
+allows the observed Task 84/109-sized histories and ordinary longer histories
+whose aggregate bytes exceed the single-response limit. It is an internal
+bounded acquisition policy, with no new owner input or prerequisite.
+
+An individual record that cannot fit a one-record response fails with
+`AUTHORITY_SOURCE_TOO_LARGE`; more than 500 records or a contradictory completion
+page fails with `AUTHORITY_SOURCE_TRUNCATED`. Aggregate transfer exhaustion is
+`AUTHORITY_COLLECTION_BUDGET_EXCEEDED`, malformed/duplicate data is
+`AUTHORITY_SOURCE_INVALID`, and API or response-stream failure remains
+`AUTHORITY_SOURCE_UNAVAILABLE`. Collection deadline exhaustion is
+`AUTHORITY_COLLECTION_TIMEOUT`. No partial collection is accepted. Histories
+exceeding the record, transfer or operation-time budgets, and individual native
+responses over 256 KiB, remain unsupported even if their records are otherwise
+legitimate; publication cannot infer authority from incomplete acquisition.
 
 A native exact-head PR `APPROVE` also returns the bounded
 `native-approve-exact-head-squash-v1` continuation policy. It authorizes automatic

@@ -20,7 +20,10 @@ rules live in the [authority](../contracts/README.md#github-native-task-authorit
    `record` of kind `task-request`, schema version `3.0`. Resolve Step, route,
    model/effort/Subagents, purpose, scope, validation, boundaries, closure policy,
    branch, exact base/head, applicable existing PR and selected references before
-   publication. The [normal Request example](../examples/task-authority.md#new-task-request)
+   publication. Before every complete Task Request, reassess known
+   post-implementation work or evidence justifying `keep-open`, following the
+   [closure authoring guidance](../contracts/README.md#closure-policy-authoring).
+   The [normal Request example](../examples/task-authority.md#new-task-request)
    shows a complete record. For repository execution, all starting facts are
    explicit; only manual non-repository work may set branch/base/head all null.
    The trusted publisher verifies the live charter digest, native identities
@@ -79,6 +82,16 @@ Request. Put its returned native reference in `decisions`; copy the amended
 semantic values into the Request itself. Publishing a Decision alone does not
 launch work or rewrite an already selected Request. Closure authority still
 comes from the charter.
+
+Before every new Task Decision or complete Task Request, consciously reassess
+the charter's `keep-open` rationale. Retain it with adjacent concrete remaining
+conditions and the owner disposition needed to change it, or seek or apply
+existing explicit owner authorization to reconcile the charter to
+`close-authorized`. A Decision or Request cannot independently override it.
+Closure still waits for Task completion, verified independent acceptance and
+no remaining work; approval, merge or Step completion alone grants no closure
+authority. This belongs to existing authoring, with no new field, parser or
+validator gate, workflow, automation or historical Issue rewrite.
 
 Each next Request explicitly `supersedes` the exact current Request/CR native
 reference. There is one linear chain, not selection by newest comment or largest
