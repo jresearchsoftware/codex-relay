@@ -556,7 +556,8 @@ separately admitted disposition. There is no generic retry queue.
 A verified publication receipt can resume native PR/Outcome/Ready reconciliation
 without recollection or another push. The original Task Request and attempt bind
 the PR, and a distinct typed successor Outcome on that PR links the original
-BLOCKED Outcome. The historic Issue Outcome, runner journal, collection failure,
+BLOCKED Outcome. Both native publications must have the bound Writer Bot ID.
+The historic Issue Outcome, runner journal, collection failure,
 publication fields and controller receipt remain unchanged. New independently
 verified handoff evidence permits Ready; the old completed BLOCKED receipt alone
 does not. Drain treats pending/uncertain recovery as unknown. Completed replay

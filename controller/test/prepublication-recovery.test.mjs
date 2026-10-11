@@ -32,6 +32,7 @@ const returned = e => ({ version: VERSION, attemptId: e.attemptId, child: 'start
 
 async function terminalFixture(t, options = {}) {
   let requestComment;
+  let createdPrUser;
   const nativeComments = new Map();
   const f = await fixture(t, {
     continuation: options.continuation === true, continuationPr: false,
@@ -62,6 +63,7 @@ async function terminalFixture(t, options = {}) {
       api.get = async path => {
         if (path === '/issues/comments/901') return structuredClone(requestComment);
         const id = Number(/^\/issues\/comments\/(\d+)$/.exec(path)?.[1]);
+        if (path === '/pulls/43' && createdPrUser) return { ...await get(path), user: structuredClone(createdPrUser) };
         return nativeComments.has(id) ? structuredClone(nativeComments.get(id)) : get(path);
       };
       api.list = async path => {
@@ -74,6 +76,7 @@ async function terminalFixture(t, options = {}) {
       };
       api.post = async (path, body) => {
         const result = await post(path, body);
+        if (path === '/pulls') { createdPrUser = structuredClone(writer); return { ...result, user: structuredClone(createdPrUser) }; }
         if (!path.endsWith('/comments')) return result;
         Object.assign(result, { user: structuredClone(writer), issue_url: `https://api.github.com/repos/${REPOSITORY}${path.slice(0, -'/comments'.length)}`,
           created_at: terminalAt, updated_at: terminalAt });
@@ -177,6 +180,35 @@ test('a later Actions rerun cannot stand in for the original sealed first attemp
   assert.equal((await f.store.get(99)).prepublicationRecovery, undefined);
   await assertHistorical(f);
 });
+
+for (const field of ['id', 'type', 'login']) {
+  test(`recovered PR rejects a changed native Writer ${field} before Outcome and Ready`, async t => {
+    const f = await terminalFixture(t); const { request } = await f.authorize();
+    const get = f.api.get; let phase = 'outcome';
+    f.api.get = async path => {
+      const result = await get(path);
+      const recovery = (await f.store.get(99)).prepublicationRecovery;
+      if (path === '/pulls/43' && (phase === 'outcome' || phase === 'ready' && recovery?.handoffProven)) {
+        result.user[field] = field === 'id' ? writer.id + 1 : field === 'type' ? 'User' : OWNER;
+      }
+      return result;
+    };
+    await assert.rejects(f.broker.invoke(request), { code: 'PR_AUTHORITY_CHANGED' });
+    let recovery = (await f.store.get(99)).prepublicationRecovery;
+    assert.equal(recovery.publication.status, 'PUBLISHED'); assert.equal(recovery.outcome, null);
+    assert.equal(f.pushes(), 1); assert.equal(f.collections(), 1);
+    await assertHistorical(f);
+    phase = 'ready';
+    await assert.rejects(f.broker.invoke(request), { code: 'PR_AUTHORITY_CHANGED' });
+    recovery = (await f.store.get(99)).prepublicationRecovery;
+    assert.ok(recovery.outcome); assert.notEqual(recovery.complete, true);
+    await assertHistorical(f);
+    phase = 'complete';
+    assert.equal((await f.broker.invoke(request)).status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(f.pushes(), 1); assert.equal(f.collections(), 1);
+    await assertHistorical(f);
+  });
+}
 
 test('prepublication recovery requires a fresh exact owner-native comment and the original Writer Bot identity', async t => {
   const f = await terminalFixture(t); const { request, comment, binding } = await f.authorize();

@@ -323,6 +323,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
               await revalidateAuthority(api, e);
               const pr = await existingPullRequest(r);
               if (!pr || pr.head.sha !== head || (recovery.outcome && pr.number !== recovery.outcome.prNumber)
+                || pr.user?.login !== WRITER || pr.user?.type !== 'Bot'
+                || pr.user?.id !== recovery.binding.writer.id
                 || !pr.body?.split(/\r?\n/).includes(`Attempt: ${e.attemptId}`)
                 || !pr.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
               return pr;
