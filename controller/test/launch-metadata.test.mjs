@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { dispatchRunName, launchStep, parseLaunchInputs } from '../src/launch-metadata.mjs';
 import { admitEnvelope } from '../src/live-authority.mjs';
@@ -7,6 +8,70 @@ import { runAttempt } from '../src/attempt.mjs';
 import { executeCodex } from '../src/attempt-runtime.mjs';
 import { validateEnvelope } from '../src/execution-contract.mjs';
 import { fixture, memoryStore } from './fixture.mjs';
+
+// Evaluate the actual product run-name with GitHub's literal string semantics;
+// its result enters the real broker rather than bypassing display validation.
+const routingSource = readFileSync(new URL('../../deploy/workflows/routing.yml.in', import.meta.url), 'utf8');
+const routingRunName = /^run-name: >-\r?\n([\s\S]*?)\r?\n\r?\non:/m.exec(routingSource)[1];
+function issueLabelRunName(issue, route) {
+  const expression = routingRunName.trim().replace(/^\$\{\{/, '').replace(/\}\}$/, '')
+    .replace(/'(?:[^']|'')*'/g, token => JSON.stringify(token.slice(1, -1).replace(/''/g, "'")))
+    .replace(/\.labels\.\*\.name/g, '.labels.map(label => label.name)');
+  return Function('github', 'inputs', 'format', 'join', 'contains', 'fromJSON', `return (${expression});`)(
+    { event_name: 'issues', event: { issue, label: { name: `codex-ready-${route}` } } }, {},
+    (template, ...values) => template.replace(/\{([0-9]+)\}/g, (_, index) => values[Number(index)]),
+    (values, separator) => values.join(separator),
+    (value, part) => String(value ?? '').toLowerCase().includes(String(part).toLowerCase()), JSON.parse);
+}
+
+test('workflow marker examples retain legacy Step display and pass the unchanged broker admission gate', async t => {
+  for (const route of ['auto', 'manual']) {
+    for (const instruction of ['Example migration marker: `Authority model: github-native-v1`',
+      'Literal example: \\nAuthority model: github-native-v1\\n']) {
+      const f = await fixture(t, { route, labelLaunch: true, streamlinedAdmission: true, instruction,
+        beforeAdmission: ({ issue, run }) => { run.display_title = issueLabelRunName(issue, route); } });
+      assert.notEqual(f.admission.status, 'BLOCKED');
+      assert.equal(f.envelope.step, 1);
+      assert.equal(f.envelope.request, undefined);
+      assert.match(f.run.display_title, / · step-1 · codex-ready-/);
+      assert.equal(f.comments.length, 0);
+    }
+  }
+});
+
+test('workflow exact LF and CRLF markers admit native work without using stale Step labels', async t => {
+  for (const route of ['auto', 'manual']) {
+    for (const newline of ['\n', '\r\n']) {
+      const issueBody = ['Authority model: github-native-v1', '', 'Issue closure policy: keep-open', '', 'Implement the admitted goal.'].join(newline);
+      const f = await fixture(t, { route, issueBody, labelLaunch: true, streamlinedAdmission: true,
+        beforeAdmission: ({ issue, run, admissionRequest }) => {
+          issue.labels = [{ name: 'step-900' }, { name: `codex-ready-${route}` }];
+          admissionRequest.step = null;
+          run.display_title = issueLabelRunName(issue, route);
+        } });
+      assert.equal(f.run.display_title, `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 42 · codex-ready-${route}`);
+      assert.equal(f.envelope.request.kind, 'admission');
+      assert.equal(f.envelope.step, 1);
+      assert.deepEqual(f.issue.labels.map(label => label.name), ['step-1']);
+      assert.equal(f.comments.length, 0);
+    }
+  }
+});
+
+test('legacy Step display mismatch remains blocked when only the ready label is supplied', async t => {
+  const f = await fixture(t, { labelLaunch: true, streamlinedAdmission: true,
+    beforeAdmission: ({ run }) => { run.display_title = 'Auto implementation · Task 42 · codex-ready-auto'; } });
+  assert.equal(f.admission.status, 'BLOCKED');
+  assert.equal(f.envelope.admissionBlock.code, 'STEP_DISPLAY_MISMATCH');
+  assert.equal(f.comments.length, 1);
+});
+
+test('workflow case-insensitive marker matching cannot admit malformed dedicated authority', async t => {
+  await assert.rejects(fixture(t, { labelLaunch: true, streamlinedAdmission: true,
+    instruction: 'authority model: github-native-v1',
+    beforeAdmission: ({ issue, run }) => { run.display_title = issueLabelRunName(issue, 'auto'); } }),
+  { code: 'AUTHORITY_MODEL_INVALID' });
+});
 
 test('native launch inputs preserve explicit Step and bind Task to an Issue number', () => {
   const inputs = { task: '12', step: '2', pull_request: '13', route: 'auto' };

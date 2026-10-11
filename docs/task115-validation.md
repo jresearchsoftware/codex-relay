@@ -166,3 +166,27 @@ Git modes before a non-destructive fast-forward. This did not repair installed
 permissions, alter another owner's files or discard useful content. The mirror
 and product checkout were clean at the correction commit; later evidence edits
 are ordinary Task-owned documentation awaiting the final substantive handoff.
+
+## Legacy marker classification correction
+
+The peer audit identified an introduced routing compatibility defect at
+`e3ade68311d3c328b18ef840a4744d5bfd468bc5`, retained at `681f091...`, relative
+to baseline `b4cb4943d52dd375d8c6800959b3264fad082cb8`. A quoted migration
+marker in otherwise valid legacy prose incorrectly removed its Step display;
+the unchanged trusted admission gate then rejected that run title. The template
+now matches an actual dedicated marker line using LF padding and LF/CRLF
+boundaries. Literal backslash-newline examples do not match. Malformed dedicated
+authority still fails closed in the canonical resolver. Owner, triggering actor,
+main ref, runner, workflow and fork guards are unchanged.
+
+GitHub's documented [expression semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions)
+support `format`, `fromJSON` and case-insensitive `contains`; tests evaluate the
+actual template with those string semantics and pass the resulting title into
+the real admission broker. Linux targeted workflow/projection checks passed
+23 tests, and the launch-metadata suite passed 12 tests. A complete Node rerun
+passed 760 tests, with one prerequisite skip and no failures. The three-consumer
+qualification and tracked-file candidate scan also passed, with the same
+component and Reviewer artifact digests above. No runtime Node or Rust module
+changed in this correction; their existing complete qualification remains
+applicable. These are source checks, not proof of installed TEST workflow
+execution or independent acceptance.

@@ -411,3 +411,45 @@ merge remain held for the owner's concrete consumer-PR disposition. The
 original retained operation still requires fresh bound public status and the
 same-operation guard before any subsequently authorized target action. No
 new fixture or model execution was launched.
+
+## Peer-audit finding before target recovery
+
+A subsequent peer audit found a P2 legacy admission regression introduced in
+the Task 115 routing template at `e3ade683...` relative to baseline
+`b4cb4943...`, and retained through `681f091...`. The generated Actions
+run-name expression used substring `contains` to detect
+`Authority model: github-native-v1`. A valid legacy Issue quoting that marker
+inside ordinary prose was consequently displayed as native authority, hiding
+its legacy Step label. Trusted Writer still classified the Issue as legacy and
+could reject the inconsistent native run title with `STEP_DISPLAY_MISMATCH`.
+The baseline routing expression always displayed the legacy labels and did
+not introduce that substring classification.
+
+This is an introduced source/template compatibility defect, not an installed
+TEST regression: the candidate has not been installed and TEST main still
+uses v2. Prior deterministic CI success did not cover this quoted-marker case.
+The product correction and meaningful projection/admission checks are being
+prepared in the same Task. TEST PR 3 remains at `3fe97cc...`, and recovery,
+installation and merge remain held. A corrected published CI-green target
+must replace its selector and regenerate the routing/manifest projection
+before a concrete final consumer review/merge or target recovery.
+
+## Selected historical review inputs
+
+The historical [Task 76 Writer Outcome](https://github.com/jresearchsoftware/codex-relay/issues/76#issuecomment-6022132933)
+records `REINSTALL_FOREIGN_UNIT_WARNING` for pre-existing
+`/etc/systemd/system/actions.runner.jresearchsoftware-ai-pr-flow-canary.debian-codexexp-01.service`,
+then observed root:root mode 0664 outside TEST ownership. This is a retained
+Task 76 warning, not a new Task 115 host observation, installation defect or
+remediation authority. Current qualification stopped before installation and
+does not dispose that historical warning. No foreign-unit read, permission
+repair or service mutation was performed for this Task.
+
+The old post-merge [native CI run 37536691150](https://github.com/jresearchsoftware/codex-relay/actions/runs/37536691150)
+records an `ENOENT` `collectProgress` object-directory race on the unchanged
+baseline/reviewed/accepted lineage `5a4b787...` / `2d0613c...` / `afb2cbdb...`.
+The deleting process/cause remains undetermined; no introduced regression is
+established by that record. Current Task 115 Node/native-CI success neither
+changes the old native record nor resolves its cause. These selected historical
+inputs remain immutable review context and do not expand current execution or
+qualification scope.
