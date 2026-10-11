@@ -10,7 +10,7 @@ on:
         description: Inspect the retained attempt or recover with a fresh owner comment
         required: true
         type: choice
-        options: [inspect, recover]
+        options: [inspect, recover, inspect-prepublication, recover-prepublication]
       run_id:
         description: Original routing run ID
         required: true
@@ -21,6 +21,11 @@ on:
         type: string
       authorization_id:
         description: Fresh owner authorization comment ID, required for recovery
+        required: false
+        default: ''
+        type: string
+      candidate_head:
+        description: Exact retained candidate SHA, required only for opt-in prepublication recovery
         required: false
         default: ''
         type: string
@@ -55,6 +60,7 @@ jobs:
           RECOVERY_RUN_ID: ${{ inputs.run_id }}
           RECOVERY_ATTEMPT_ID: ${{ inputs.attempt_id }}
           RECOVERY_AUTHORIZATION_ID: ${{ inputs.authorization_id }}
+          RECOVERY_HEAD: ${{ inputs.candidate_head }}
           NODE_OPTIONS: ''
           NODE_PATH: ''
         run: |
@@ -78,13 +84,18 @@ jobs:
           const runId = process.env.RECOVERY_RUN_ID;
           const attemptId = process.env.RECOVERY_ATTEMPT_ID;
           const authorizationId = process.env.RECOVERY_AUTHORIZATION_ID;
+          const candidateHead = process.env.RECOVERY_HEAD ?? '';
+          const prepublication = operation === 'inspect-prepublication' || operation === 'recover-prepublication';
+          const recovering = operation === 'recover' || operation === 'recover-prepublication';
           if (!positive(runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(attemptId ?? '') ||
-              !['inspect', 'recover'].includes(operation) ||
-              (operation === 'recover' ? !positive(authorizationId) : authorizationId !== '')) {
+              !['inspect', 'recover', 'inspect-prepublication', 'recover-prepublication'].includes(operation) ||
+              (recovering ? !positive(authorizationId) : authorizationId !== '') ||
+              (prepublication ? !/^[a-f0-9]{40}$/.test(candidateHead) : candidateHead !== '')) {
             throw new Error('RECOVERY_REQUEST_INVALID');
           }
           const request = { runId: Number(runId), attemptId,
-            ...(operation === 'inspect' ? { operation } : { authorizationId: Number(authorizationId) }) };
+            ...(prepublication ? { operation, head: candidateHead, ...(recovering ? { authorizationId: Number(authorizationId) } : {}) }
+              : operation === 'inspect' ? { operation } : { authorizationId: Number(authorizationId) }) };
           const child = spawn('/usr/bin/node', [`${release}/bin/relay-publication-recovery.mjs`],
             { stdio: ['pipe', 'inherit', 'inherit'] });
           child.stdin.on('error', () => { process.exitCode = 1; });
