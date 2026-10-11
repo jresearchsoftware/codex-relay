@@ -1,0 +1,411 @@
+{
+  "recorded_at": "2026-10-12T01:07:43.300768+02:00",
+  "scope": "Official connected TEST App manual publication under isolated Node22 service namespaces; synthetic admission-shaped records only.",
+  "official_connected_client_qualified": true,
+  "manual_service_runtime_qualified": true,
+  "real_admission_qualified": false,
+  "full_host_runtime_qualified": false,
+  "archive": {
+    "url": "https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz",
+    "checksum_manifest_url": "https://nodejs.org/dist/v22.20.0/SHASUMS256.txt",
+    "sha256": "00bbd05e306ea68b6e13e17360d0e2f680b493ef95f2fea1c4296ff7437530bc",
+    "binary_sha256": "b1cbec894e45a5814b6ab756e1e14f8a76516273197e67e0412b57c1e10d0d9f",
+    "verified_before_transfer_and_again_before_test_install": true
+  },
+  "host": {
+    "installed_revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+    "installed_binary_sha256": "a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de",
+    "reviewer_process_binary_sha256": "a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de",
+    "reviewer_process_identity": [
+      "Uid:\t979\t979\t979\t979",
+      "NoNewPrivs:\t1"
+    ],
+    "host_node_version": "v18.20.4",
+    "reviewer_namespace_node_version": "v22.20.0",
+    "node22_binary_sha256": "b1cbec894e45a5814b6ab756e1e14f8a76516273197e67e0412b57c1e10d0d9f",
+    "node22_modes": "755:root:root:/opt/codex-relay-test/node22\n755:root:root:/opt/codex-relay-test/node22/bin\n755:root:root:/opt/codex-relay-test/node22/bin/node",
+    "official_service_properties": "User=relay-test-reviewer\nGroup=www-data\nSupplementaryGroups=relay-test-reviewer\nNoNewPrivileges=yes\nBindReadOnlyPaths=/opt/codex-relay-test/node22/bin/node:/usr/bin/node:rbind\nActiveState=active\nSubState=running\nDropInPaths=/etc/systemd/system/codex-relay-test-reviewer.service.d/10-test-node22.conf\nUnitFileState=enabled",
+    "manual_template_definition": "# /etc/systemd/system/codex-relay-test-relay-manual-outcome@.service\n[Unit]\nDescription=Relay bounded Writer manual Outcome publication\n\n[Service]\nUser=root\nGroup=root\n# Preserve the existing quiescence proof's /system.slice/<unit> cgroup binding.\nSlice=system.slice\nExecStart=/opt/codex-relay-test/relay-manual-outcome-writer\nStandardInput=socket\nStandardOutput=socket\nStandardError=null\nTimeoutStartSec=60\nRuntimeMaxSec=60\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/lib/codex-relay-test/writer-claims\n\n# /etc/systemd/system/codex-relay-test-relay-manual-outcome@.service.d/10-test-node22.conf\n[Service]\nBindReadOnlyPaths=/opt/codex-relay-test/node22/bin/node:/usr/bin/node",
+    "socket_properties": "ActiveState=active\nSubState=listening\nUnitFileState=enabled",
+    "boundary_modes": "660:root:relay-test-reviewer:/run/codex-relay-test-manual-outcome.sock\n750:root:relay-test-reviewer:/opt/codex-relay-test/relay-manual-outcome\n700:root:root:/opt/codex-relay-test/relay-manual-outcome-writer",
+    "synthetic_claims": {
+      "9007115000301": {
+        "qualificationFixture": {
+          "synthetic": true,
+          "realExecution": false,
+          "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "ownerDecision": "6114003261",
+          "channel": "official-test-app-node22"
+        },
+        "manualSubmission": {
+          "sha256": "daf2faa72e6df9c3fab192303ac984f2550ec53c451da48b79f24dad0ea150f6",
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "rendererVersion": "human-v1"
+        },
+        "outcome": {
+          "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+          "head": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "prNumber": null,
+          "outcomeId": 6114881010,
+          "bodySha256": "e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea",
+          "manual": true
+        }
+      },
+      "9007115000302": {
+        "qualificationFixture": {
+          "synthetic": true,
+          "realExecution": false,
+          "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "ownerDecision": "6114003261",
+          "channel": "official-test-app-node22"
+        },
+        "manualSubmission": {
+          "sha256": "eaa195a76545044e98024b4510a72b29f3bc4132dbcc28aba327b707ecf36b6e",
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "rendererVersion": "human-v1"
+        },
+        "outcome": {
+          "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+          "head": "36d4e73b8a0b3450f78b5a00d672f0079d7f8b18",
+          "prNumber": 7,
+          "outcomeId": 6114885276,
+          "bodySha256": "0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25",
+          "manual": true
+        }
+      }
+    }
+  },
+  "live_root_writer_process": {
+    "recorded_at": "2026-10-12T01:02:21.588159+02:00",
+    "unit": "codex-relay-test-relay-manual-outcome@19-2148990-979.service",
+    "pid": 2149003,
+    "binary_sha256": "b1cbec894e45a5814b6ab756e1e14f8a76516273197e67e0412b57c1e10d0d9f",
+    "node_version": "v22.20.0",
+    "identity": [
+      "Uid:\t0\t0\t0\t0",
+      "NoNewPrivs:\t1"
+    ],
+    "fixed_manual_helper_observed": true
+  },
+  "receipts": {
+    "published_no_pr": {
+      "content": [
+        {
+          "type": "text",
+          "text": "PUBLISHED"
+        }
+      ],
+      "structuredContent": {
+        "independent_acceptance": false,
+        "issue_closure_performed": false,
+        "merge_performed": false,
+        "outcome": {
+          "id": 6114881010,
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "sha256": "e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea",
+          "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114881010"
+        },
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "run_id": 9007115000301,
+        "status": "PUBLISHED",
+        "task": 6,
+        "writer_actor": "jresearch-relay-test-writer[bot]"
+      },
+      "isError": false
+    },
+    "duplicate_no_pr": {
+      "content": [
+        {
+          "type": "text",
+          "text": "DUPLICATE_SUPPRESSED"
+        }
+      ],
+      "structuredContent": {
+        "independent_acceptance": false,
+        "issue_closure_performed": false,
+        "merge_performed": false,
+        "outcome": {
+          "id": 6114881010,
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "sha256": "e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea",
+          "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114881010"
+        },
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "run_id": 9007115000301,
+        "status": "DUPLICATE_SUPPRESSED",
+        "task": 6,
+        "writer_actor": "jresearch-relay-test-writer[bot]"
+      },
+      "isError": false
+    },
+    "published_pr": {
+      "content": [
+        {
+          "type": "text",
+          "text": "PUBLISHED"
+        }
+      ],
+      "structuredContent": {
+        "independent_acceptance": false,
+        "issue_closure_performed": false,
+        "merge_performed": false,
+        "outcome": {
+          "id": 6114885276,
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "sha256": "0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25",
+          "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114885276"
+        },
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "run_id": 9007115000302,
+        "status": "PUBLISHED",
+        "task": 6,
+        "writer_actor": "jresearch-relay-test-writer[bot]"
+      },
+      "isError": false
+    },
+    "duplicate_pr": {
+      "content": [
+        {
+          "type": "text",
+          "text": "DUPLICATE_SUPPRESSED"
+        }
+      ],
+      "structuredContent": {
+        "independent_acceptance": false,
+        "issue_closure_performed": false,
+        "merge_performed": false,
+        "outcome": {
+          "id": 6114885276,
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "sha256": "0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25",
+          "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114885276"
+        },
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "run_id": 9007115000302,
+        "status": "DUPLICATE_SUPPRESSED",
+        "task": 6,
+        "writer_actor": "jresearch-relay-test-writer[bot]"
+      },
+      "isError": false
+    },
+    "binding_invalid": {
+      "content": [
+        {
+          "type": "text",
+          "text": "MANUAL_OUTCOME_BINDING_INVALID"
+        }
+      ],
+      "structuredContent": {
+        "error_code": "INVALID_ARGUMENT"
+      },
+      "isError": true
+    },
+    "inputs": {
+      "no_pr": {
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "task": 6,
+        "run_id": 9007115000301,
+        "result": {
+          "schema_version": "4.0",
+          "kind": "outcome",
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "task": 6,
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "step": 1,
+          "authority": {
+            "charter": {
+              "kind": "issue-body",
+              "id": 5805525646,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "decisions": [],
+            "change_request": null,
+            "compatibility_request": null,
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "admission": {
+            "attempt": "run-9007115000301",
+            "step": 1,
+            "sha256": "cf50700e4e6d2a3e6943113ce84bda28189df4ce333e7cc27c8e32ce3922804f"
+          },
+          "attempt": "run-9007115000301",
+          "status": "implemented",
+          "result": {
+            "kind": "qualification",
+            "revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+            "identities": [
+              {
+                "kind": "qualification-fixture",
+                "id": "task115-official-test-app-node22-no-pr"
+              }
+            ]
+          },
+          "summary": "Official TEST App manual Outcome publication fixture. Protected admission-shaped state is synthetic; no real admission, Relay/model execution, new project Task or Step is asserted.",
+          "warnings": [
+            {
+              "source": "Shared host interpreter",
+              "impact": "Global host and lifecycle Node18 are below the declared minimum; full host qualification is not claimed.",
+              "resolution": "TEST manual service namespaces use verified Node22; global Node remains unchanged.",
+              "next_action": "Keep the broader pre-existing host limitation visible for independent review.",
+              "evidence_gaps": []
+            }
+          ],
+          "limitations": [
+            "The protected record is a disposable synthetic input; real Writer admission is not qualified.",
+            "This publication tests the official connected TEST App with its existing OpenAI mTLS and installed TEST Writer path; it does not establish PROD or independent source acceptance.",
+            "Product PR118 merge, Task115 Writer Outcome and Issue closure remain unclaimed."
+          ]
+        }
+      },
+      "pr": {
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "task": 6,
+        "run_id": 9007115000302,
+        "result": {
+          "schema_version": "4.0",
+          "kind": "outcome",
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "task": 6,
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "step": 1,
+          "authority": {
+            "charter": {
+              "kind": "issue-body",
+              "id": 5805525646,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "decisions": [],
+            "change_request": null,
+            "compatibility_request": null,
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "admission": {
+            "attempt": "run-9007115000302",
+            "step": 1,
+            "sha256": "db4a83f8411946105cadc5a40ab0777c587c8387312cdc2a24929f4cf19a696c"
+          },
+          "attempt": "run-9007115000302",
+          "status": "implemented",
+          "result": {
+            "kind": "git",
+            "revision": "36d4e73b8a0b3450f78b5a00d672f0079d7f8b18",
+            "identities": [
+              {
+                "kind": "qualification-fixture",
+                "id": "task115-official-test-app-node22-pr"
+              }
+            ]
+          },
+          "summary": "Official TEST App manual Outcome publication fixture. Protected admission-shaped state is synthetic; no real admission, Relay/model execution, new project Task or Step is asserted.",
+          "warnings": [
+            {
+              "source": "Shared host interpreter",
+              "impact": "Global host and lifecycle Node18 are below the declared minimum; full host qualification is not claimed.",
+              "resolution": "TEST manual service namespaces use verified Node22; global Node remains unchanged.",
+              "next_action": "Keep the broader pre-existing host limitation visible for independent review.",
+              "evidence_gaps": []
+            }
+          ],
+          "limitations": [
+            "The protected record is a disposable synthetic input; real Writer admission is not qualified.",
+            "This publication tests the official connected TEST App with its existing OpenAI mTLS and installed TEST Writer path; it does not establish PROD or independent source acceptance.",
+            "Product PR118 merge, Task115 Writer Outcome and Issue closure remain unclaimed."
+          ]
+        }
+      }
+    }
+  },
+  "native_readback": {
+    "outcomes": [
+      {
+        "id": 6114881010,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114881010",
+        "body_sha256": "e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea",
+        "actor": "jresearch-relay-test-writer[bot]",
+        "actor_id": 338711029,
+        "canonical_result_equals_submitted": true,
+        "one_comment_for_attempt": true
+      },
+      {
+        "id": 6114885276,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114885276",
+        "body_sha256": "0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25",
+        "actor": "jresearch-relay-test-writer[bot]",
+        "actor_id": 338711029,
+        "canonical_result_equals_submitted": true,
+        "one_comment_for_attempt": true
+      }
+    ],
+    "all_four_earlier_outcomes_unchanged": true,
+    "issue_comment_ids": [
+      "6114353386",
+      "6114753829",
+      "6114881010"
+    ],
+    "pr_comment_ids": [
+      "6114357552",
+      "6114756310",
+      "6114885276"
+    ],
+    "fixture_pr_final_draft": true,
+    "fixture_pr_head": "36d4e73b8a0b3450f78b5a00d672f0079d7f8b18",
+    "fixture_pr_unmerged": true
+  },
+  "cleanup": {
+    "synthetic_records_removed": [
+      9007115000301,
+      9007115000302
+    ],
+    "own_fixture_and_temporary_scripts_removed": true,
+    "durable_test_binary_and_two_dropins_retained": true,
+    "official_test_services_and_socket_active": true,
+    "native_history_preserved": true
+  },
+  "remaining_limitation": "Global shared-host and lifecycle Node18 remain unchanged; no whole-host or all-CLI supported runtime proof, real admission, model execution, PROD operation or product acceptance.",
+  "public_post_check": {
+    "status": "PASS",
+    "phase": "post-check",
+    "elapsed_seconds": 328,
+    "installed_revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+    "previous_revision": "none",
+    "log": "relay-5699432e9544-post-check-gq8ua4c3.log",
+    "log_bytes": 221529,
+    "log_sha256": "6593eb989bbf6903ab85ef65e8f396a475c5825fe605351cfa772eb985f73abb",
+    "log_mode": "0600",
+    "log_owner_uid": 1000
+  }
+}

@@ -23,10 +23,12 @@ preserving original admission/Step 1 and the missing-Writer-Outcome handoff
 exception. The [completed clean installation and live fixture qualification](#completed-clean-test-installation-and-live-manual-outcome-qualification)
 below supersede the old installation/recovery stop. Installed TEST revision is
 `5699432e95440307fa799b0a3b8ac3150ffd574a`; the newer product source includes a
-separately tested TEST-policy prompt routing sentence. The connected TEST App
-still exposes its old four-tool catalog, so official connected-client invocation
-of the new tool remains unqualified. Actual live publication proof uses the
-installed binary with explicitly synthetic admission and private mTLS fixtures.
+separately tested TEST-policy prompt routing sentence. The [later official TEST App qualification](#official-connected-test-app-e2e-completion)
+resolves the earlier four-tool catalog gap and verifies new-tool publication
+through the official connected OpenAI mTLS path. Admission-shaped records remain
+explicitly synthetic. The [TEST manual-service correction](#test-manual-service-node-22-correction)
+qualifies the manual client/Writer on isolated Node 22; global host/lifecycle
+Node 18.20.4 remains a broader unsupported-runtime limitation.
 
 The historical supported recovery to `44f97a8...` failed after partial apply, before the
 release pointer changed from `dbfea188...`. Its retained exact-head record and
@@ -863,9 +865,9 @@ are `843505b5f7d3f6ad077bc6ce5ecba0384f5f2f5062ddee8d2f31f4b40aa93218`
 
 ### Installed manual Outcome chain and limits
 
-The connected TEST App passed `check_pr_review_target` for fixture PR 7/H1,
+At the private-fixture observation, the connected TEST App passed `check_pr_review_target` for fixture PR 7/H1,
 with expected TEST Reviewer App/actor identity and official OpenAI mTLS.
-Its currently available catalog still contains only four old Reviewer tools.
+Its then-available catalog contained only four old Reviewer tools.
 No available connector operation refreshes that catalog. The new tool was
 therefore exercised using a separate private loopback mTLS fixture, not an
 asserted official connected-client call. No shared ingress, official CA,
@@ -942,16 +944,186 @@ adds only the generic TEST policy routing sentence to the execution prompt;
 manual MCP/socket/Writer/admission/workflow bytes are unchanged. Its complete
 source checks are separately recorded in the [validation report](task115-validation.md#current-source-validation-and-handoff-disposition).
 This does not claim a new model traversal of that sentence. Later evidence-only
-commits do not change the installed revision. Real admission and official
-connected-client invocation of the new tool remain outside the live proof.
+commits do not change the installed revision. Real admission remains outside
+the live proof; official new-tool invocation was then unqualified and is recorded
+in the later completion below.
 
 The Task 115 Writer Outcome is still not published because original PROD
 admission binds Request 6109630038 and currentness would return `AUTHORITY_CHANGED`.
 The current owner-authorized committed-evidence handoff exception remains in
 effect. Native current Request publication exists with exact bytes, but its
 publisher returned `AUTHORITY_PUBLICATION_UNCERTAIN`; protected journal completion
-is unavailable and no retry was made. These warnings and the connected-client
-gap remain decision inputs for independent review. General production recovery
+is unavailable and no retry was made. These warnings remain decision inputs for
+independent review; the connected-client gap is resolved below. General production recovery
 is deferred to Task 119; general authority-change completion remains bounded
 backlog work, not a mandatory expansion here. Product PR 118 remains unmerged,
 Task 115 open, and independent exact-head acceptance unclaimed.
+
+## Official connected TEST App E2E completion
+
+The owner requested completion of the remaining official TEST App checks within
+this same admitted Step 1. Current canonical authority and clean local/refreshed
+remote/live PR head `547cf3937f959f94879aec2ec050d23c1c21265d` were reverified.
+No successor authority, new Task/Step, ready command or real Relay/model attempt
+was needed. The original missing-Writer-Outcome exception remains operative.
+
+Fresh official tool metadata now exposes all five TEST App tools, including
+`submit_manual_outcome`, with the expected four-field input schema and this TEST
+repository in its allowlist. No App refresh, reconnection, installation,
+permission, credential, ingress or source-code mutation caused this observation.
+The exact cause of earlier cache/propagation delay is undetermined; a server
+schema defect was not reproduced. The installed and candidate manual Rust
+frontend files are identical. The earlier four-tool limitation is historical,
+not a current blocker.
+
+The real connected `Jresearch Codex Relay TEST Reviewer` tool was used directly.
+Its existing official OpenAI mTLS ingress reached the running installed Reviewer,
+fixed client, Unix socket/root Writer, existing TEST Writer App and native GitHub.
+The official process and installed Rust binary both hash to
+`a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de` at installed
+`5699432e95440307fa799b0a3b8ac3150ffd574a`. No synthetic CA or substitute
+frontend was used in this completion.
+
+Two separate disposable protected publication records, IDs `9007115000201` and
+`9007115000202`, were explicitly synthetic admission-shaped inputs on existing
+fixture Issue 6/PR 7. They exercised publication without real Writer admission,
+ready/dispatch, worker/model execution or a new project Task/Step. Their native
+Outcomes disclose that provenance. Original PROD admission/journal and previous
+native fixture Outcome bytes were unchanged.
+
+| Official connected-client check | Result |
+| --- | --- |
+| No-PR submission | `PUBLISHED`, Outcome 6114753829 |
+| Exact no-PR repeat | `DUPLICATE_SUPPRESSED`, same ID/body hash |
+| PR submission at H2 `c9d63e215e0543b39630dee2ee4663646354ffa1` | `PUBLISHED`, Outcome 6114756310; PR became Ready |
+| Exact PR repeat | `DUPLICATE_SUPPRESSED`, same ID/body hash |
+| Conflicting summary | `MANUAL_OUTCOME_CHANGED` |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+| Unknown fixture run | `MANUAL_OUTCOME_NOT_ADMITTED` |
+| Removed PR admission marker | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Restored marker, ordinary fixture head advance to H3 `36d4e73b8a0b3450f78b5a00d672f0079d7f8b18` | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Official read-only target check at H3 | Expected `jresearch-relay-test-reviewer` App/actor, exact head, open/draft/unmerged |
+| Unauthenticated official endpoint | HTTP 400, `No required SSL certificate was sent` |
+
+Full native read-back verified Writer Bot `jresearch-relay-test-writer[bot]`, ID
+`338711029`, exact machine-result equality and one new comment per synthetic
+attempt. There are now two historical fixture Outcomes per parent, one from
+each separate qualification record; duplicates created no extra comments.
+
+- [Official no-PR Outcome 6114753829](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114753829):
+  SHA-256 `fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1`.
+- [Official PR Outcome 6114756310](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114756310):
+  SHA-256 `7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360`.
+
+[Official receipts, process identity and native read-back](task115-official-test-app.json)
+are committed. The fixture directory/scripts and only the two new synthetic
+local publication records were removed under the publication lock after collection.
+No temporary CA/service was created in this phase. Official Reviewer, both TEST
+runners and manual socket were active afterward; native history and ordinary
+published H1/H2/H3 commits remain intact. PR 7 remains draft/unmerged at H3.
+
+### Host runtime warning and proof boundary
+
+At the first official phase the installed Writer ran `/usr/bin/node` version `18.20.4`, below the package
+minimum Node 22. This is a material unsupported-runtime warning. A bounded
+comparison with baseline `b4cb4943d52dd375d8c6800959b3264fad082cb8` verifies that
+`package.json` already required Node >=22, the ordinary Writer wrapper already
+used `/usr/bin/node`, and deployment installed unversioned `nodejs`. The new
+manual wrappers use that same path. No Node-22-only failure was reproduced in
+the manual path; all official calls above returned their expected receipts.
+The mismatch is pre-existing deployment behavior included in this qualification
+boundary, not an evidenced newly introduced regression. The existing installed
+runtime proof requires >=22; it is not claimed to pass on this host. Source/local
+tests on Node 22 remain a separate proof.
+
+Changing the shared host's global Node would affect resources outside this TEST
+sandbox and was not authorized or performed. Successful bounded official
+publication does not resolve that warning or establish full supported-host
+qualification. Independent review/owner disposition must retain it. No general
+production upgrade recovery or unrelated runtime mechanism was developed here.
+
+One fixture-construction error used `CONSUMER.github.repository` instead of
+the actual `CONSUMER.repository`; it failed before journal creation/publication.
+The bounded harness correction succeeded. This is not a product source failure.
+Source behavior is unchanged in this completion; only repository-accessible
+evidence and the TEST runbook are updated. A changed carrying PR head requires
+fresh independent exact-head review; no product merge is authorized or performed.
+Original Task 115 Writer Outcome remains absent under the canonical exception,
+and current Request publisher-journal uncertainty remains unresolved.
+
+## TEST manual-service Node 22 correction
+
+The manual-path interpreter warning was corrected entirely inside TEST. The
+official Node `22.20.0` Linux x64 archive was downloaded over verified HTTPS and
+matched its official [SHA-256 manifest](https://nodejs.org/dist/v22.20.0/SHASUMS256.txt):
+`00bbd05e306ea68b6e13e17360d0e2f680b493ef95f2fea1c4296ff7437530bc`.
+The extracted binary SHA-256 is
+`b1cbec894e45a5814b6ab756e1e14f8a76516273197e67e0412b57c1e10d0d9f`,
+verified again before installation at `/opt/codex-relay-test/node22/bin/node`.
+That binary and its TEST parents are `root:root 0755`.
+
+Two TEST-only unit drop-ins use a read-only private mount:
+
+```ini
+[Service]
+BindReadOnlyPaths=/opt/codex-relay-test/node22/bin/node:/usr/bin/node
+```
+
+They are `/etc/systemd/system/codex-relay-test-reviewer.service.d/10-test-node22.conf`
+and `/etc/systemd/system/codex-relay-test-relay-manual-outcome@.service.d/10-test-node22.conf`.
+The [systemd v252 contract](https://raw.githubusercontent.com/systemd/systemd/v252/man/systemd.exec.xml)
+confines these mounts to their services and children. The actual Reviewer mount
+is read-only/nosuid. Fixed ExecStart, actor/group, socket/credential boundaries,
+`NoNewPrivileges` and existing service hardening were retained. Only the TEST
+Reviewer was restarted; no runner overlay, source/template/API change, global
+Node upgrade, App/credential mutation, shared ingress change or PROD operation
+was performed. The host still directly reports Node `18.20.4`.
+
+Fresh process-root and mount-namespace probes verified Reviewer Node `22.20.0`.
+During an actual official submission, root Writer helper PID `2149003` in
+`codex-relay-test-relay-manual-outcome@19-2148990-979.service` was observed running
+the exact binary hash above, version `22.20.0`, UID 0 and `NoNewPrivs: 1`.
+Reviewer retained its dedicated UID and `NoNewPrivs: 1`; the Rust binary/source
+identity and fixed socket/wrapper modes are unchanged.
+
+Separate synthetic input records `9007115000301`/`9007115000302` then qualified
+the official no-PR/PR path again on those Node 22 service namespaces:
+
+| Official supported-manual-runtime check | Result |
+| --- | --- |
+| No-PR submission | `PUBLISHED`, [Outcome 6114881010](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114881010), body SHA-256 `e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea` |
+| PR submission at H3 `36d4e73b8a0b3450f78b5a00d672f0079d7f8b18` | `PUBLISHED`, [Outcome 6114885276](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114885276), body SHA-256 `0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25`; Ready transition |
+| Both exact repeats | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+
+Native full-body/result/Writer Bot identity read-back verified both new records
+and all four earlier Outcome hashes unchanged. There are three separate
+qualification comments per parent, exactly one per distinct synthetic attempt.
+The new native claims explicitly carry the broader global/lifecycle Node 18
+warning. The two temporary input records, fixture scripts and temporary
+installation/probe scripts were removed; the useful TEST binary and two drop-ins
+remain. Official TEST services/socket stayed active; native history and H1/H2/H3
+branch commits remain. PR 7 was returned to draft after its Ready proof.
+[Node 22 process/publication receipts](task115-test-node22.json) are committed.
+
+The initial immediate namespace assertion did not observe Node 22; subsequent
+independent process-root/mount probes did, without reapplying installation.
+Probe/startup timing is an inference, not a reproduced product defect. A later
+fixture warning was first encoded as an invalid string rather than the schema's
+structured warning object. Validation rejected it before publication; its known
+incomplete disposable fixture record was removed and corrected inputs passed.
+These harness observations are retained instead of being called source regressions.
+
+This closes the unsupported interpreter warning for the qualified manual client/
+Writer path. The global host and lifecycle wrappers still see Node 18, including
+paths which deliberately enter PID 1's mount namespace. Whole-host/all-CLI Node
+support, real admission/model execution, PROD qualification and independent
+product acceptance remain unclaimed. That broader pre-existing limitation remains
+an explicit review input; fixing it is not generalized production upgrade recovery
+and was not added to this Task. The public operational post-check after this
+TEST environment correction returned `RELAY_INSTALL_RESULT=PASS` and
+`RELAY_DEPLOYMENT_RESULT=PASS;phase=post-check;elapsed_seconds=328`, installed
+`5699432e95440307fa799b0a3b8ac3150ffd574a`, previous `none`, from the same clean
+source/consumer and supported entrypoint. Its private log is
+`relay-5699432e9544-post-check-gq8ua4c3.log`; this successful composition check
+does not turn the broader global/lifecycle Node limitation into full-host proof.

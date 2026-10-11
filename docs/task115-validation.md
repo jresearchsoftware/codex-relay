@@ -475,8 +475,9 @@ negative checks passed. No real admission, ready command, new Task/Step, worker
 or model execution occurred. The fixture used a separate synthetic private CA;
 official connected TEST read-only MCP identity/transport was verified separately.
 Its four-tool connector catalog still makes official `submit_manual_outcome`
-invocation unavailable. This is an explicit connected-client qualification gap,
-not a claim of full official transport/tool acceptance.
+invocation unavailable at that earlier observation. The [later official qualification](task115-qualification.md#official-connected-test-app-e2e-completion)
+below resolves this historical connected-client gap, while keeping real admission
+and supported-host proof separate.
 
 The sole runtime delta after installed `5699432e` is the source-tested shared
 execution prompt sentence routing disposable TEST to the general authority.
@@ -499,10 +500,59 @@ handoff exception remains the completion channel for this Step. General producti
 upgrade recovery is deferred to Task 119; substantial authority-change completion
 development is not made a completion gate here.
 
-Independent exact-head product acceptance, official new-tool connected-client
-qualification/disposition, product merge, Task completion and closure remain
-unclaimed. Requested parent profile remains gpt-6.1-sol/ultra; actual model/effort
+Independent exact-head product acceptance, product merge, Task completion and
+closure remain unclaimed. Official new-tool connected-client publication is now
+qualified below with explicit synthetic-admission and host-runtime limits.
+Requested parent profile remains gpt-6.1-sol/ultra; actual model/effort
 and exact persisted full title proof remain UNAVAILABLE. Bounded subagents were
 used under the admitted On permission, without Relay fan-out or expanded authority.
 Task-owned source/evidence and TEST commits use ordinary non-force publication;
 unrelated worktrees and external protected logs remain outside cleanup.
+
+## Official TEST App completion evidence
+
+Fresh official App metadata exposes the fifth tool without App/permission or
+credential changes. Direct connected-client calls qualified new native no-PR/PR
+Writer Outcomes, identical replay, conflict/admission/PR guards and official
+App/exact-head identity through existing OpenAI mTLS. An unauthenticated request
+received the expected missing-client-certificate HTTP 400. See the committed
+[official receipts](task115-official-test-app.json) and [live completion](task115-qualification.md#official-connected-test-app-e2e-completion).
+The earlier private CA was not reused. Real admission/ready/Relay/model execution
+remains untested and unclaimed; only protected synthetic publication inputs were
+used. Their local fixture state was removed, official services retained active,
+and earlier native Outcome bodies remained unchanged.
+
+No functional source defect was reproduced. This continuation changes only
+evidence/runbook files; all required full checks at runtime source `74660d74`
+remain applicable, with staged whitespace/scanner and native CI checked for the
+new carrying evidence head. Independent acceptance must target that new head.
+
+Material new observation: installed Writer `/usr/bin/node` is 18.20.4, below
+declared >=22. Baseline `b4cb4943` already declared that minimum, used the same
+interpreter path and installed unversioned Node. Official path checks passed
+within this unsupported runtime, not full supported-host qualification. Shared
+global Node was outside TEST authority and was not upgraded. The warning remains
+for independent review/owner disposition, alongside prior publisher uncertainty,
+missing Task115 Writer Outcome and other historical material warning evidence.
+The fixture-construction property error failed before publication/state mutation
+and was corrected in the harness; it is not called a product regression.
+
+The later [TEST-only Node 22 correction](task115-qualification.md#test-manual-service-node-22-correction)
+uses the official checksum-verified binary in two private read-only TEST service
+mounts. Effective Reviewer and actual root Writer processes were verified on
+22.20.0 with unchanged hardening, followed by new official no-PR/PR publication,
+exact duplicate suppression and binding rejection. [Process/native receipts](task115-test-node22.json)
+preserve the proof and all earlier Outcome hashes. This resolves the manual-path
+interpreter warning while retaining the broader global/lifecycle Node 18 limit.
+No source API/template or shared/global interpreter was changed. All additions
+in this product continuation remain evidence-only, with fresh exact-head native
+CI and independent review required for the carrying head.
+
+After the TEST environment correction, the public operational post-check passed
+at installed `5699432e` in 328 seconds. Its private 221529-byte log SHA-256 is
+`6593eb989bbf6903ab85ef65e8f396a475c5825fe605351cfa772eb985f73abb`.
+The final evidence additions passed whitespace and the staged candidate scanner
+for 488 tracked files / 323 local links. A bounded read-only audit found no
+material local evidence inconsistency or secret marker; it was not independent
+acceptance or a second host qualification. Runtime/component source bytes remain
+unchanged from the complete passing Node/Python/Rust/three-consumer set above.
