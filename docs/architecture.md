@@ -19,8 +19,9 @@ Task 115 Step 1 was initially admitted through exact schema-v3 Request
 contract did not replace that admission or authorize a paired live runtime
 upgrade. Source implementation, checks and permitted isolated-TEST qualification
 remain one admitted manual Step. Installation, credentials/ingress, release,
-production mutation, product merge and closure remain separate protected
-permissions. Owner-designated isolated TEST operations follow
+production mutation, product merge and closure outside disposable TEST remain
+separate protected permissions. Operational control inside an explicitly
+isolated disposable TEST sandbox follows
 [TEST Environment Authority](execution-policy.md#test-environment-authority).
 
 ## Components and flow

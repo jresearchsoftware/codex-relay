@@ -15,6 +15,12 @@ Stop and preserve useful work when:
   external mutation has an ambiguous result;
 - repository, credential, security or production authority is uncertain.
 
+For state wholly inside an explicitly isolated disposable TEST sandbox, apply
+[TEST Environment Authority](#test-environment-authority): uncertain or failed
+TEST state may be deleted and rebuilt without forensic preservation or a
+protected recovery procedure. Stop if the sandbox boundary or an effect outside
+it is uncertain; disposable TEST authority does not resolve that uncertainty.
+
 Subagent use is discretionary and evidence-driven within the resolved Subagents
 permission. It does not authorize nested Relay workers or execution fan-out.
 Keep the admitted parent model/effort fixed. Select each subagent's model and
@@ -41,6 +47,12 @@ uncommitted/non-ignored work, its known cause and any reconciliation/access
 boundary in the terminal summary. Automatic workers hand commits to trusted
 Writer and retain no publication authority.
 
+These worktree reconciliation and ownership requirements protect useful source,
+ordinary worker collection/publication and state outside disposable TEST.
+Disposable TEST state follows [TEST Environment Authority](#test-environment-authority)
+and needs no individual-file ownership proof before cleanup inside its known
+sandbox boundary.
+
 A successful, contained, durable Task PR/Outcome handoff can carry a visible
 `UNCOMMITTED_WORK_REMAINS` warning when residue remains. That warning does not
 prove the residue is disposable or accepted: material execution warnings remain
@@ -62,43 +74,54 @@ shared [execution-policy module](../runtime/src/execution-policy.mjs). The
 
 ## TEST Environment Authority
 
-An owner may designate an isolated TEST environment for autonomous Codex
-development and qualification. Record that designation and its concrete
-environment/repository/configuration boundary in canonical Task authority and
-the consumer's owner-controlled runbook. Within that boundary, standing owner
-authorization covers the full TEST cycle: create/delete TEST resources, change
-TEST repositories, configuration and workflows, create/review/merge TEST PRs,
-install/upgrade Relay, recover state, run end-to-end qualification and correct
-proven in-scope failures. Ordinary operations inside that authorized environment
-do not require repeated owner confirmation or another execution phase.
+Any manual or automatic Codex execution that owns an explicitly isolated
+disposable TEST environment has full operational control inside that sandbox.
+Its established owner authority identifies the concrete environment,
+repositories, configuration and resources that form the boundary. This is a
+general standing policy, not an exception for an individual Task. No new
+per-operation approval, Task, Step or Relay attempt is required for operations
+inside that boundary.
 
-The boundary is the environment, not the operation type. A prohibition on
-product-source merge does not prohibit TEST repository merges. Use supported
-public interfaces and existing qualified App permissions; verify exact targets,
-ownership, isolation and known contained state. Preserve replay suppression,
-safe non-force Git publication, recovery guards and truthful evidence. A TEST
-review or merge qualifies the TEST change; it is not independent acceptance of
-the product candidate. Automatic workers still delegate publication to Writer.
-Within designated TEST, an exact Task-authorized development candidate may be
-projected, installed or selected for supported recovery to qualify it before
-independent product acceptance; product and PROD acceptance remain separate.
+Within the sandbox, Codex may choose suitable tools and shells, manage services,
+edit or remove filesystem state, delete and recreate resources, rebuild,
+install, reinstall, upgrade, reset failed TEST state and run qualification.
+The authority includes TEST repositories, configuration, workflows and TEST
+PR creation, review and merge using already available permissions. A prohibition
+on product-source merge does not prohibit TEST repository merges.
 
-Standing TEST authority excludes PROD, product repositories outside the TEST
-circuit, shared infrastructure, foreign resources and changes to external
-permissions, App installations or credentials. Stop at those boundaries or an
-unresolved isolation/state/mutation uncertainty, with the precise action needed.
-An authorized TEST installation or activation uses the same public deployment
-safety checks; it does not bypass them or authorize private backend operations.
-Successful TEST proof does not establish PROD installation or acceptance.
+Production-safe public lifecycle interfaces are optional for disposable TEST
+cleanup and rebuilding. Codex may clean or reconstruct sandbox state directly;
+it need not preserve that state for forensics, prove ownership of individual
+files or use production recovery procedures. Existing global worktree,
+deployment and recovery preservation rules do not impose those requirements
+on disposable TEST state. Evidence needed to support a qualification claim must
+remain truthful and sufficient for that claim; rebuilding alone does not prove
+the discarded state or the supported product lifecycle.
 
-Task #115's trusted owner clarification designates
-`jresearchsoftware/codex-relay-testbed`, its `deploy/relay.json` and documented
-isolated TEST deployment as the standing autonomous environment. The direct
-owner authorization, recorded in
-[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517),
-authorizes both current TEST actions and adoption of this section. This policy
-cannot authorize its own adoption or designate an additional environment.
-Other procedures reference this section rather than defining TEST exceptions.
+The hard boundary is the sandbox. This authority excludes PROD, shared
+infrastructure, foreign resources, product repositories outside the sandbox,
+and external App permissions, installations or credentials outside established
+authority. It does not grant new credentials, privileges or tools that an
+execution does not physically possess. If a target or effect cannot be confined
+to the established sandbox, stop at that boundary. Do not turn an unavailable
+capability into an invented approval requirement for otherwise authorized TEST
+operations.
+
+An exact Task-authorized development candidate may be installed or exercised
+inside the sandbox before independent product acceptance. TEST operations do
+not grant product-source merge, PROD deployment, release, Issue closure or
+independent acceptance. Normal source checks and independent exact-head review
+remain binding. Writer retains responsibility for actual product and ordinary
+Relay publication; original admission, replay suppression, trusted Git import
+and protected credential boundaries remain intact. Resetting disposable TEST
+state does not authorize re-executing an admitted Relay attempt or rewriting its
+native GitHub authority/publication history. Disposable local TEST journals and
+state may still be removed. TEST proof establishes only the behavior actually tested;
+it does not establish PROD installation or acceptance.
+
+Consumer runbooks may identify concrete sandboxes and operational facts;
+other procedures reference this section rather than adding TEST-only approval,
+preservation or recovery requirements.
 
 ## Proportional controls and operator usability
 

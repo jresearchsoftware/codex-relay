@@ -172,6 +172,11 @@ and preserve useful progress in substantive commits. Publish safe, authorized
 unpushed task commits to the existing task branch; automatic workers hand them
 to Writer. Leave unrelated changes untouched. Remove only confirmed disposable
 residue; use ignores for repeatable generated artifacts without hiding work.
+State wholly inside an explicitly isolated disposable TEST sandbox follows
+[TEST Environment Authority](docs/execution-policy.md#test-environment-authority);
+cleanup there does not require individual-file ownership proof or preservation
+of disposable state. Preserve useful product-source work and ordinary
+worker/Writer collection and publication evidence.
 If a safe commit/push or clean handoff is impossible, report exactly what stays
 local and the authority, branch, permission or security boundary. Never create
 empty or metadata-only commits merely to record status. Explain material
@@ -183,9 +188,11 @@ Identify the actual execution environment and use the shortest qualified
 transport that preserves the admitted implementation and authority boundary.
 Read the detailed [execution environment and shell routing](CONTRIBUTING.md#execution-environment-and-shell-routing)
 rules just in time when command routing, WSL/native-filesystem behavior or
-PowerShell/native failure propagation matters. A transport choice never replaces
-a source-controlled protected entrypoint or grants different credential,
-production or mutation authority.
+PowerShell/native failure propagation matters. A transport choice grants no
+additional credential or production authority. Protected operations outside
+disposable TEST retain their source-controlled entrypoints; shell and tool
+choice inside its sandbox follows
+[TEST Environment Authority](docs/execution-policy.md#test-environment-authority).
 
 ## Work within the admitted goal
 
@@ -198,19 +205,23 @@ or external mutation is unknown or uncontained.
 
 Default ordinary repository-only implementation or remediation to automatic
 Relay when its required unprivileged checks are available to the governed
-worker. Use owner-launched manual/standalone Codex for capabilities outside the
-worker/Writer boundary: root qualification, live host or environment mutation,
-owner-authenticated protected operations, or genuine human judgment or choice.
+worker. Use owner-launched manual/standalone Codex for required capabilities
+unavailable to that worker, protected operations outside disposable TEST
+authority, or genuine human judgment or choice. This includes protected root
+qualification and live host/environment mutation outside that sandbox.
 When implementation and protected/manual qualification are both required to
 accept one Task objective, default to one owner-launched manual Codex Step
 covering implementation, tests, fixes and disposable or explicitly authorized
 qualification before one independent exact-head review. Preserve distinct owner,
 source-acceptance, installation, credential and original-attempt native
 authorization boundaries. Route selection never expands Task/CR authority or
-overrides the progress-bounded execution stops above. For an owner-designated
-isolated TEST environment, apply the standing
+overrides the progress-bounded execution stops above. Any manual or automatic
+execution owning an explicitly isolated disposable TEST environment has full
+operational control inside its sandbox under the standing
 [TEST Environment Authority](docs/execution-policy.md#test-environment-authority)
-through its supported procedures.
+without per-operation approvals or production recovery procedures. PROD,
+shared/foreign resources and external permissions or credentials outside
+established authority remain excluded.
 
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents
@@ -376,9 +387,11 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
-  Existing standing TEST authority is defined in
+  Operational control inside an explicitly isolated disposable TEST sandbox is
+  separately granted by the standing
   [TEST Environment Authority](docs/execution-policy.md#test-environment-authority).
-- Follow the [first-install/bootstrap and deployment contracts](deploy/README.md)
+- For product and ordinary consumer lifecycle operations, follow the
+  [first-install/bootstrap and deployment contracts](deploy/README.md)
   just in time for install, upgrade, reinstall or activation work. Reuse only
   validated supported protected state; product-owned bootstrap must remain
   reachable through the public interface, and true external prerequisites stay
@@ -386,7 +399,9 @@ After recovery revalidate mutable authority and exact Git/runtime facts.
   defect, not authority to bypass the public path. Keep clean-environment
   qualification separately admitted when it needs distinct infrastructure;
   successful work on an already prepared host does not prove standalone
-  bootstrap or retroactively gate an unrelated task.
+  bootstrap or retroactively gate an unrelated task. Disposable TEST cleanup
+  and rebuilding follow TEST Environment Authority; public lifecycle interfaces
+  and production recovery procedures are optional inside that sandbox.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 

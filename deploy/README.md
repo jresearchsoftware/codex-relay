@@ -7,8 +7,11 @@ and invoke `deploy/relay-deploy.py` from the selected Relay source. The
 not copy or maintain its inventory, roles, tasks or handlers.
 
 For an owner-designated isolated TEST deployment, use the standing
-[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority)
-with these same public procedures and safety checks.
+[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
+Disposable TEST cleanup and rebuilding may use suitable shells and tools;
+these production-safe lifecycle procedures are optional inside that sandbox.
+When qualifying a product lifecycle interface, exercise and report its actual
+behavior rather than treating manual sandbox cleanup as proof of that interface.
 
 ## Inputs and invocation
 

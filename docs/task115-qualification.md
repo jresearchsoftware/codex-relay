@@ -7,27 +7,30 @@ closure, production installation or deployment is claimed.
 
 ## Current qualification disposition
 
-Current trusted [Request 6113666253](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113666253)
-selects [Decision 6113642915](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113642915).
-Standing isolated TEST autonomy is resolved; ordinary TEST actions require no
-repeat owner confirmation. TEST PR 3 was merged at `4598e746...`; draft
-[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5)
-preserves the runbook correction at `adc3937...`.
+Current trusted [Request 6114012178](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114012178)
+selects [Decision 6114003261](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114003261).
+The owner explicitly adopts general full operational control of an owned,
+isolated disposable TEST sandbox for manual and automatic Codex. Suitable
+shell/tool cleanup, service management and removal of disposable blocking
+journals/state are authorized; production-safe lifecycle procedures are optional
+for that cleanup. This supersedes the earlier mandatory-public-removal boundary
+recorded below. PROD, shared/foreign resources and external permissions or
+credentials outside established authority remain excluded. General production
+upgrade recovery belongs to Task 119 and is not developed here.
 
-The owner selected evidence-preserving TEST removal and clean installation of
-the corrected candidate; general partial-upgrade recovery is deferred to a
-separate backlog Task. The fresh public inventory described below proves
-equivalent configuration but blocks removal on the retained ordinary operation.
-No host mutation, removal, clean installation or live E2E followed this decision.
+The current continuation starts from published PR 118 head `7862bb742...`,
+preserving original admission/Step 1 and the missing-Writer-Outcome handoff
+exception. Cleanup, corrected installation and live qualification receipts will
+be recorded below when performed; this authority change alone proves none of them.
 
-The supported recovery to `44f97a8...` failed after partial apply, before the
+The historical supported recovery to `44f97a8...` failed after partial apply, before the
 release pointer changed from `dbfea188...`. Its retained exact-head record and
 lifecycle operation `73034a9b-47a1-4ec3-993a-166560bfd39e` remain intact and
-recovery-required. The following read-only check performed zero changes and
-reported `recovery-requires-disposition`. Existing public interfaces provide
-no applicable disposition for this partial state; further protected mutation
-is stopped. The packaging/reuse corrections are source-qualified, but live
-manual socket, MCP submission and complete E2E remain unqualified.
+recovery-required at the earlier observation. The subsequent read-only check
+performed zero changes and reported `recovery-requires-disposition`. The source
+packaging/reuse correction is qualified. Earlier removal and live E2E blockers
+below retain their then-current authority; they are not current prohibitions
+on authorized disposable TEST cleanup.
 
 The current owner-authorized handoff uses PR 118 plus committed evidence,
 explicitly without a normal Writer Outcome. The general authority-change
