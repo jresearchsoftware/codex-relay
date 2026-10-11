@@ -1,0 +1,292 @@
+TAP version 13
+# Subtest: terminal prepublication recovery publishes one successor for the original native Request and preserves the blocked history
+ok 1 - terminal prepublication recovery publishes one successor for the original native Request and preserves the blocked history
+  ---
+  duration_ms: 306.565598
+  type: 'test'
+  ...
+# Subtest: terminal prepublication continuation binds and fast-forwards its exact original previous branch head
+ok 2 - terminal prepublication continuation binds and fast-forwards its exact original previous branch head
+  ---
+  duration_ms: 304.113506
+  type: 'test'
+  ...
+# Subtest: a later Actions rerun cannot stand in for the original sealed first attempt
+ok 3 - a later Actions rerun cannot stand in for the original sealed first attempt
+  ---
+  duration_ms: 76.691792
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer id before Outcome and Ready
+ok 4 - recovered PR rejects a changed native Writer id before Outcome and Ready
+  ---
+  duration_ms: 301.025694
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer type before Outcome and Ready
+ok 5 - recovered PR rejects a changed native Writer type before Outcome and Ready
+  ---
+  duration_ms: 303.688343
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer login before Outcome and Ready
+ok 6 - recovered PR rejects a changed native Writer login before Outcome and Ready
+  ---
+  duration_ms: 294.799297
+  type: 'test'
+  ...
+# Subtest: prepublication recovery requires a fresh exact owner-native comment and the original Writer Bot identity
+ok 7 - prepublication recovery requires a fresh exact owner-native comment and the original Writer Bot identity
+  ---
+  duration_ms: 95.25689
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects failed-result before importing retained bytes
+ok 8 - prepublication recovery rejects failed-result before importing retained bytes
+  ---
+  duration_ms: 74.502616
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects unknown-containment before importing retained bytes
+ok 9 - prepublication recovery rejects unknown-containment before importing retained bytes
+  ---
+  duration_ms: 75.191555
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects missing-journal before importing retained bytes
+ok 10 - prepublication recovery rejects missing-journal before importing retained bytes
+  ---
+  duration_ms: 77.39512
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects collection before importing retained bytes
+ok 11 - prepublication recovery rejects collection before importing retained bytes
+  ---
+  duration_ms: 72.554086
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects progress before importing retained bytes
+ok 12 - prepublication recovery rejects progress before importing retained bytes
+  ---
+  duration_ms: 69.285008
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects intent before importing retained bytes
+ok 13 - prepublication recovery rejects intent before importing retained bytes
+  ---
+  duration_ms: 68.948766
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects controller before importing retained bytes
+ok 14 - prepublication recovery rejects controller before importing retained bytes
+  ---
+  duration_ms: 72.988854
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed authority without a Writer push
+ok 15 - prepublication recovery rejects changed authority without a Writer push
+  ---
+  duration_ms: 71.508968
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed request without a Writer push
+ok 16 - prepublication recovery rejects changed request without a Writer push
+  ---
+  duration_ms: 73.191041
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed remote without a Writer push
+ok 17 - prepublication recovery rejects changed remote without a Writer push
+  ---
+  duration_ms: 155.435476
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed candidate without a Writer push
+ok 18 - prepublication recovery rejects changed candidate without a Writer push
+  ---
+  duration_ms: 124.525448
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed dirty without a Writer push
+ok 19 - prepublication recovery rejects changed dirty without a Writer push
+  ---
+  duration_ms: 109.980161
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed incomplete without a Writer push
+ok 20 - prepublication recovery rejects changed incomplete without a Writer push
+  ---
+  duration_ms: 70.279424
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to identity
+ok 21 - prepublication recovery applies the ordinary isolated importer to identity
+  ---
+  duration_ms: 142.352225
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to mode
+ok 22 - prepublication recovery applies the ordinary isolated importer to mode
+  ---
+  duration_ms: 155.694764
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to transient-secret
+ok 23 - prepublication recovery applies the ordinary isolated importer to transient-secret
+  ---
+  duration_ms: 177.409551
+  type: 'test'
+  ...
+# Subtest: a failed prepublication push consumes its one durable authorization and remains visible to admission drain
+ok 24 - a failed prepublication push consumes its one durable authorization and remains visible to admission drain
+  ---
+  duration_ms: 170.834464
+  type: 'test'
+  ...
+# Subtest: publication reservation failure performs zero pushes and preserves the original terminal state
+ok 25 - publication reservation failure performs zero pushes and preserves the original terminal state
+  ---
+  duration_ms: 159.70814
+  type: 'test'
+  ...
+# Subtest: a crash after reservation consumes the authorization without publishing or recollecting on replay
+ok 26 - a crash after reservation consumes the authorization without publishing or recollecting on replay
+  ---
+  duration_ms: 158.513417
+  type: 'test'
+  ...
+# Subtest: changed journal after object validation still blocks publication reservation
+ok 27 - changed journal after object validation still blocks publication reservation
+  ---
+  duration_ms: 151.003266
+  type: 'test'
+  ...
+# Subtest: changed authorization after object validation still blocks publication reservation
+ok 28 - changed authorization after object validation still blocks publication reservation
+  ---
+  duration_ms: 145.817297
+  type: 'test'
+  ...
+# Subtest: changed last-ref after object validation still blocks publication reservation
+ok 29 - changed last-ref after object validation still blocks publication reservation
+  ---
+  duration_ms: 156.442666
+  type: 'test'
+  ...
+# Subtest: a lost successor Outcome response resumes native observation without another publication push
+ok 30 - a lost successor Outcome response resumes native observation without another publication push
+  ---
+  duration_ms: 298.881977
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-id at receipt and Ready, then resumes its original publication
+ok 31 - successor Outcome rejects wrong-id at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 291.983693
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-type at receipt and Ready, then resumes its original publication
+ok 32 - successor Outcome rejects wrong-type at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 283.78515
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-parent at receipt and Ready, then resumes its original publication
+ok 33 - successor Outcome rejects wrong-parent at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 295.761389
+  type: 'test'
+  ...
+# Subtest: failed recovered Ready retains the successor Outcome and resumes handoff without a push or recollection
+ok 34 - failed recovered Ready retains the successor Outcome and resumes handoff without a push or recollection
+  ---
+  duration_ms: 283.561604
+  type: 'test'
+  ...
+# Subtest: lost recovered Ready response is reconciled by exact native state without repeating the transition
+ok 35 - lost recovered Ready response is reconciled by exact native state without repeating the transition
+  ---
+  duration_ms: 232.056644
+  type: 'test'
+  ...
+# Subtest: owner recovery input keeps existing requests and makes prepublication an explicit bounded opt-in
+ok 36 - owner recovery input keeps existing requests and makes prepublication an explicit bounded opt-in
+  ---
+  duration_ms: 0.597677
+  type: 'test'
+  ...
+# Subtest: owner recovery CLI rejects an implicit prepublication input before invoking the protected helper
+ok 37 - owner recovery CLI rejects an implicit prepublication input before invoking the protected helper
+  ---
+  duration_ms: 38.886252
+  type: 'test'
+  ...
+# Subtest: same-UID mode-0600 tracked and untracked artifacts are fully observed without permission repair
+ok 38 - same-UID mode-0600 tracked and untracked artifacts are fully observed without permission repair
+  ---
+  duration_ms: 189.903679
+  type: 'test'
+  ...
+# Subtest: collection never invokes worker filters, fsmonitor, hooks, or copied nested metadata
+ok 39 - collection never invokes worker filters, fsmonitor, hooks, or copied nested metadata
+  ---
+  duration_ms: 176.913447
+  type: 'test'
+  ...
+# Subtest: trusted ignore copies retain nested patterns, negation, and raw pathname handling
+ok 40 - trusted ignore copies retain nested patterns, negation, and raw pathname handling
+  ---
+  duration_ms: 330.995951
+  type: 'test'
+  ...
+# Subtest: copied attributes preserve safe line-ending normalization while raw source bytes stay intact
+ok 41 - copied attributes preserve safe line-ending normalization while raw source bytes stay intact
+  ---
+  duration_ms: 116.049288
+  type: 'test'
+  ...
+# Subtest: ignored and non-ignored empty directories retain the existing clean-tree meaning
+ok 42 - ignored and non-ignored empty directories retain the existing clean-tree meaning
+  ---
+  duration_ms: 114.348113
+  type: 'test'
+  ...
+# Subtest: checkout acquisition rejects symlinks in any absolute ancestor
+ok 43 - checkout acquisition rejects symlinks in any absolute ancestor
+  ---
+  duration_ms: 60.707883
+  type: 'test'
+  ...
+# Subtest: object import rejects metadata/ref directory symlinks and hardlinked object bytes
+ok 44 - object import rejects metadata/ref directory symlinks and hardlinked object bytes
+  ---
+  duration_ms: 253.981233
+  type: 'test'
+  ...
+# Subtest: worktree observation rejects hardlinks and sanitizes inaccessible-path failures
+ok 45 - worktree observation rejects hardlinks and sanitizes inaccessible-path failures
+  ---
+  duration_ms: 178.610034
+  type: 'test'
+  ...
+# Subtest: symlink residue is observed without opening its external target
+ok 46 - symlink residue is observed without opening its external target
+  ---
+  duration_ms: 110.106836
+  type: 'test'
+  ...
+# Subtest: distinct Linux worker/collector UIDs share 0640 access; 0600 fails while scoped root observation preserves it
+ok 47 - distinct Linux worker/collector UIDs share 0640 access; 0600 fails while scoped root observation preserves it
+  ---
+  duration_ms: 345.163997
+  type: 'test'
+  ...
+1..47
+# tests 47
+# suites 0
+# pass 47
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6001.400611

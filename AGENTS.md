@@ -172,9 +172,13 @@ Relay when its required unprivileged checks are available to the governed
 worker. Use owner-launched manual/standalone Codex for capabilities outside the
 worker/Writer boundary: root qualification, live host or environment mutation,
 owner-authenticated protected operations, or genuine human judgment or choice.
-For mixed work, normally keep source changes automatic and only the privileged
-or live portion manual when that split is useful. Route selection never expands
-Task/CR authority or overrides the progress-bounded execution stops above.
+When implementation and protected/manual qualification are both required to
+accept one Task objective, default to one owner-launched manual Codex Step
+covering implementation, tests, fixes and disposable or explicitly authorized
+qualification before one independent exact-head review. Preserve distinct owner,
+source-acceptance, installation, credential and original-attempt native
+authorization boundaries. Route selection never expands Task/CR authority or
+overrides the progress-bounded execution stops above.
 
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents
