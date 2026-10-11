@@ -59,6 +59,16 @@ closure metadata remains `keep-open` with a visible warning.
 Nearby prose should explain why the Issue stays open and what outcome would make closure
 appropriate. This is ordinary Task prose, not another required structured field
 or an automatic closure rule.
+Before every new Task Decision or complete Task Request, consciously reassess
+the known post-implementation work or evidence that justifies `keep-open`.
+Retain it with adjacent concrete remaining conditions and the owner disposition
+needed to change it, or seek or apply existing explicit owner authorization to
+reconcile the canonical charter to `close-authorized`. A Decision or Request
+cannot independently override the charter. Close only after Task completion,
+verified independent acceptance and no remaining work; approval, merge or Step
+completion alone grants no closure authority. Use the
+[closure authoring guidance](contracts/README.md#closure-policy-authoring)
+within the existing authoring action, without another field or workflow.
 After an explicit `Authority model: github-native-v1` migration, the Issue is
 the stable charter and the current trusted typed execution request is the sole
 Step/profile/route/scope snapshot. Decisions amend durable semantics; ordinary

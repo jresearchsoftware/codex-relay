@@ -2025,7 +2025,7 @@ mod tests {
     }
 
     fn live_pr_for_repository(repository: &str) -> Value {
-        json!({"number":25,"state":"open","draft":false,"merged":false,"labels":[{"name":"step-1"}],"body":"Related to #24","title":"Task 24 · Step 1 · Implementation",
+        json!({"id":250,"number":25,"state":"open","draft":false,"merged":false,"labels":[{"name":"step-1"}],"body":"Related to #24","title":"Task 24 · Step 1 · Implementation",
             "base":{"ref":"main","repo":{"full_name":repository}},
             "head":{"sha":HEAD,"ref":"codex/task-24","repo":{"full_name":repository}},"user":{"login":"author"}})
     }

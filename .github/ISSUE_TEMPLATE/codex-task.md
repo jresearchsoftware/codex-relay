@@ -74,8 +74,16 @@ native exact-head PR approval supplies only the separately governed squash
 continuation policy, while Task Approval grants no PR merge authority.
 keep-open means known work or evidence is still expected after implementation.
 Explain in nearby prose why the Issue stays open and what outcome would make closure
-appropriate. This is ordinary prose, not another required field or automatic
-closure rule. -->
+appropriate, including the concrete remaining condition and required owner
+disposition. Before every new Task Decision or complete Task Request, consciously
+reassess that rationale. Retain keep-open while work/evidence remains; otherwise
+seek or apply existing explicit owner authorization to reconcile this charter to
+close-authorized. A Decision or Request cannot independently override the charter.
+Close only after Task completion, verified independent acceptance and no remaining
+work; approval, merge or Step completion alone grants no closure authority.
+This is ordinary prose within existing authoring, not another required field,
+parser/validator gate, separate workflow, automation or historical Issue rewrite.
+See contracts/README.md#closure-policy-authoring. -->
 
 ## Execution profile
 

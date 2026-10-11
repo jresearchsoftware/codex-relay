@@ -641,3 +641,492 @@ async fn writer_created_artifact_cr_blocks_stale_approval_and_can_be_superseded_
     let continued = publish(&http, &url, &next).await;
     assert_ne!(continued["isError"], true, "{continued}");
 }
+
+// These mocks implement native page/offset semantics. The older transport fixture
+// intentionally returns one array and cannot exercise byte-driven page reduction.
+mod pagination {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct PageRead {
+        path: String,
+        size: usize,
+        page: usize,
+    }
+
+    #[derive(Clone)]
+    struct PageReply {
+        status: StatusCode,
+        body: String,
+        link: Option<String>,
+    }
+
+    #[derive(Clone)]
+    struct Pages {
+        native: MockState,
+        sources: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+        overrides: Arc<Mutex<BTreeMap<(String, usize, usize), PageReply>>>,
+        reads: Arc<Mutex<Vec<PageRead>>>,
+    }
+
+    impl Pages {
+        fn new(native: MockState) -> Self {
+            Self {
+                native,
+                sources: Default::default(),
+                overrides: Default::default(),
+                reads: Default::default(),
+            }
+        }
+
+        fn source(&self, path: &str, records: Vec<Value>) {
+            self.sources.lock().unwrap().insert(path.into(), records);
+        }
+
+        fn reply(&self, path: &str, size: usize, page: usize, reply: PageReply) {
+            self.overrides
+                .lock()
+                .unwrap()
+                .insert((path.into(), size, page), reply);
+        }
+    }
+
+    fn list_path(source: &str, parent: u64) -> String {
+        match source {
+            "comments" => format!("issues/{parent}/comments"),
+            "reviews" => format!("pulls/{parent}/reviews"),
+            "artifacts" => "pulls".into(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn records(count: usize, body_bytes: usize) -> Vec<Value> {
+        (0..count)
+            .map(|index| {
+                json!({"id":10000 + index,"body":format!("Evidence {index}: {}", "x".repeat(body_bytes)),
+                    "user":{"login":"example-owner","id":1,"type":"User"}})
+            })
+            .collect()
+    }
+
+    async fn paged_github(
+        State(state): State<Pages>,
+        headers: HeaderMap,
+        method: Method,
+        uri: Uri,
+        body: axum::body::Bytes,
+    ) -> axum::response::Response {
+        let prefix = format!("/repos/{TEST_REPOSITORY}/");
+        let path = uri.path().strip_prefix(&prefix).unwrap_or(uri.path());
+        let collection = method == Method::GET
+            && (path == "pulls"
+                || path.ends_with("/comments") && path.starts_with("issues/")
+                || path.ends_with("/reviews") && path.starts_with("pulls/"));
+        if !collection {
+            return mock_github(State(state.native), headers, method, uri, body).await;
+        }
+        if headers
+            .get("user-agent")
+            .and_then(|value| value.to_str().ok())
+            != Some(github::USER_AGENT)
+            || headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                != Some("Bearer mock-installation-token")
+        {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        let query: BTreeMap<_, _> = uri
+            .query()
+            .unwrap_or("")
+            .split('&')
+            .filter_map(|field| field.split_once('='))
+            .collect();
+        let size = query.get("per_page").unwrap().parse::<usize>().unwrap();
+        let page = query.get("page").unwrap().parse::<usize>().unwrap();
+        assert!(matches!(size, 1 | 5 | 25 | 50 | 100));
+        assert!(page > 0);
+        state.reads.lock().unwrap().push(PageRead {
+            path: path.into(),
+            size,
+            page,
+        });
+        state
+            .native
+            .requests
+            .lock()
+            .unwrap()
+            .push(format!("GET {}", uri.path()));
+        if path == "pulls" {
+            assert_eq!(query.get("state"), Some(&"all"));
+            assert_eq!(query.get("base"), Some(&"main"));
+            assert!(query.get("head").unwrap().starts_with("example-org"));
+        }
+        let override_reply = state
+            .overrides
+            .lock()
+            .unwrap()
+            .get(&(path.into(), size, page))
+            .cloned();
+        let reply = override_reply.unwrap_or_else(|| {
+            let sources = state.sources.lock().unwrap();
+            let values = sources.get(path).cloned().unwrap_or_else(|| match path {
+                "issues/24/comments" => state.native.authority_comments.lock().unwrap().clone(),
+                "issues/25/comments" => state.native.authority_pr_comments.lock().unwrap().clone(),
+                _ => Vec::new(),
+            });
+            let start = (page - 1) * size;
+            let items: Vec<_> = values.iter().skip(start).take(size).cloned().collect();
+            PageReply {
+                status: StatusCode::OK,
+                body: serde_json::to_string(&items).unwrap(),
+                link: (start + items.len() < values.len()).then(|| {
+                    // A cursor supplied by GitHub is evidence of another page,
+                    // never an endpoint the reader is allowed to follow.
+                    "<http://127.0.0.1:1/untrusted-cursor>; rel=\"next\"".into()
+                }),
+            }
+        });
+        let mut response = (reply.status, reply.body).into_response();
+        response.headers_mut().insert(
+            "content-type",
+            axum::http::HeaderValue::from_static("application/json"),
+        );
+        if let Some(link) = reply.link {
+            response
+                .headers_mut()
+                .insert("link", axum::http::HeaderValue::from_str(&link).unwrap());
+        }
+        response
+    }
+
+    async fn paged_api(state: Pages) -> github::Github {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().fallback(any(paged_github)).with_state(state),
+            )
+            .await
+            .unwrap();
+        });
+        github::Github::mock_api(format!("http://{address}"))
+    }
+
+    async fn paged_client(state: Pages) -> (reqwest::Client, String) {
+        let github = paged_api(state.clone()).await;
+        let app = router(App {
+            policy: state.native.policy.clone(),
+            repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
+            observed_arguments: state.native.observed_arguments.clone(),
+            enabled: true,
+            store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+            github,
+            trusted_client_ca: Arc::new(Vec::new()),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (reqwest::Client::new(), format!("http://{address}/mcp"))
+    }
+
+    async fn collect(
+        github: &github::Github,
+        source: &str,
+        parent: u64,
+    ) -> Result<Vec<Value>, &'static str> {
+        match source {
+            "comments" => github.authority_comments(TEST_REPOSITORY, parent).await,
+            "reviews" => github.authority_reviews(TEST_REPOSITORY, parent).await,
+            "artifacts" => {
+                github
+                    .authority_artifacts(TEST_REPOSITORY, "main", "codex/task-24")
+                    .await
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[tokio::test]
+    async fn task84_and_task109_synthetic_histories_exceed_one_response_without_losing_records() {
+        for (task, count, bytes) in [(84, 37, 12000), (109, 23, 16000)] {
+            let state = Pages::new(admitted());
+            let expected = records(count, bytes);
+            assert!(serde_json::to_vec(&expected).unwrap().len() > 262144);
+            state.source(&list_path("comments", task), expected.clone());
+            let github = paged_api(state.clone()).await;
+            assert_eq!(collect(&github, "comments", task).await.unwrap(), expected);
+            let reads = state.reads.lock().unwrap();
+            assert!(reads.iter().any(|read| read.size == 5));
+            assert!(reads
+                .iter()
+                .all(|read| read.path == list_path("comments", task)));
+        }
+    }
+
+    #[tokio::test]
+    async fn every_native_collection_preserves_order_and_exact_record_capacity() {
+        for source in ["comments", "reviews", "artifacts"] {
+            for count in [0, 1, 99, 100, 101, 499, 500, 501] {
+                let state = Pages::new(admitted());
+                let mut expected = records(count, 16);
+                if source == "artifacts" {
+                    // Pull-list order is native API order, not ascending ID order.
+                    expected.reverse();
+                }
+                state.source(&list_path(source, 24), expected.clone());
+                let github = paged_api(state.clone()).await;
+                let collected = collect(&github, source, 24).await;
+                if count > 500 {
+                    assert_eq!(collected, Err("AUTHORITY_SOURCE_TRUNCATED"), "{source}");
+                } else {
+                    assert_eq!(collected.unwrap(), expected, "{source}/{count}");
+                }
+                if count == 500 {
+                    assert!(
+                        state
+                            .reads
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .any(|read| { (read.page - 1) * read.size == 500 }),
+                        "{source}: completion needs a sentinel read"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reduction_after_a_complete_page_retries_only_the_unread_offset() {
+        let state = Pages::new(admitted());
+        let mut expected = records(100, 16);
+        expected.extend(records(37, 12000).into_iter().map(|mut value| {
+            value["id"] = json!(value["id"].as_u64().unwrap() + 100);
+            value
+        }));
+        state.source("issues/24/comments", expected.clone());
+        let github = paged_api(state.clone()).await;
+        assert_eq!(collect(&github, "comments", 24).await.unwrap(), expected);
+        let reads = state.reads.lock().unwrap();
+        assert_eq!((reads[0].size, reads[0].page), (100, 1));
+        assert_eq!((reads[1].size, reads[1].page), (100, 2));
+        assert!(reads.iter().any(|read| read.size < 100));
+        assert!(reads
+            .iter()
+            .skip(1)
+            .all(|read| (read.page - 1) * read.size >= 100));
+    }
+
+    #[tokio::test]
+    async fn reduced_page_size_still_accepts_exactly_500_records_with_completion_proof() {
+        let state = Pages::new(admitted());
+        let expected = records(500, 11000);
+        state.source("issues/24/comments", expected.clone());
+        let github = paged_api(state.clone()).await;
+        assert_eq!(collect(&github, "comments", 24).await.unwrap(), expected);
+        let reads = state.reads.lock().unwrap();
+        assert_eq!(
+            (reads.last().unwrap().size, reads.last().unwrap().page),
+            (5, 101)
+        );
+        assert!(reads.len() <= 505);
+    }
+
+    #[tokio::test]
+    async fn oversized_record_and_aggregate_budget_have_distinct_errors() {
+        for (count, bytes, error) in [
+            (1, 262144, "AUTHORITY_SOURCE_TOO_LARGE"),
+            (500, 15700, "AUTHORITY_COLLECTION_BUDGET_EXCEEDED"),
+        ] {
+            let state = Pages::new(admitted());
+            let source = records(count, bytes);
+            if count == 500 {
+                // The source itself fits the aggregate bound. Failed oversized
+                // attempts also consume transferred bytes and exhaust it.
+                assert!(serde_json::to_vec(&source).unwrap().len() < 8 * 1024 * 1024);
+            }
+            state.source("issues/24/comments", source);
+            let github = paged_api(state.clone()).await;
+            assert_eq!(collect(&github, "comments", 24).await, Err(error));
+            assert!(state.reads.lock().unwrap().len() <= 505);
+            if count == 1 {
+                assert_eq!(state.reads.lock().unwrap().last().unwrap().size, 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn incomplete_invalid_duplicate_and_failed_pages_never_return_a_prefix() {
+        for (failure, error) in [
+            ("api", "AUTHORITY_SOURCE_UNAVAILABLE"),
+            ("json", "AUTHORITY_SOURCE_INVALID"),
+            ("shape", "AUTHORITY_SOURCE_INVALID"),
+            ("many", "AUTHORITY_SOURCE_INVALID"),
+            ("duplicate", "AUTHORITY_SOURCE_INVALID"),
+            ("missing-id", "AUTHORITY_SOURCE_INVALID"),
+            ("incomplete", "AUTHORITY_SOURCE_TRUNCATED"),
+        ] {
+            let state = Pages::new(admitted());
+            let expected = records(101, 16);
+            state.source("issues/24/comments", expected.clone());
+            let mut reply = PageReply {
+                status: StatusCode::OK,
+                body: "[]".into(),
+                link: None,
+            };
+            match failure {
+                "api" => reply.status = StatusCode::SERVICE_UNAVAILABLE,
+                "json" => reply.body = "[{".into(),
+                "shape" => reply.body = "{}".into(),
+                "many" => reply.body = serde_json::to_string(&records(101, 0)).unwrap(),
+                "duplicate" => {
+                    reply.body = serde_json::to_string(&vec![expected[0].clone()]).unwrap()
+                }
+                "missing-id" => reply.body = "[{\"body\":\"Unverifiable native record\"}]".into(),
+                "incomplete" => {
+                    reply.link = Some("<http://127.0.0.1:1/do-not-follow>; rel=\"next\"".into())
+                }
+                _ => unreachable!(),
+            }
+            state.reply("issues/24/comments", 100, 2, reply);
+            let github = paged_api(state.clone()).await;
+            assert_eq!(
+                collect(&github, "comments", 24).await,
+                Err(error),
+                "{failure}"
+            );
+            assert_eq!(state.reads.lock().unwrap().len(), 2, "{failure}");
+        }
+    }
+
+    fn native_request(id: u64, record: &Value) -> Value {
+        json!({"id":id,"body":crate::task_authority::render(record),
+            "html_url":format!("https://github.com/{TEST_REPOSITORY}/issues/24#issuecomment-{id}"),
+            "issue_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/issues/24"),
+            "user":{"login":"example-reviewer[bot]","id":2,"type":"Bot"}})
+    }
+
+    #[tokio::test]
+    async fn task_approval_verifies_late_request_outcome_and_large_history_before_publication() {
+        for (count, bytes) in [(37, 12000), (23, 16000), (105, 16)] {
+            let state = Pages::new(admitted());
+            let mut comments = records(count, bytes);
+            let native = native_request(1000, &request());
+            let reference = source_ref(&native);
+            comments.push(native);
+            *state.native.authority_comments.lock().unwrap() = comments;
+            let (outcome, result) = writer_outcome(&state.native, reference.clone());
+            let candidate = approval(reference, outcome, result["result"].clone());
+            let (http, url) = paged_client(state.clone()).await;
+            let accepted = publish(&http, &url, &candidate).await;
+            assert_ne!(accepted["isError"], true, "{count}: {accepted}");
+            assert_eq!(accepted["structuredContent"]["record"], candidate);
+            assert_eq!(
+                state.native.authority_comments.lock().unwrap().len(),
+                count + 3
+            );
+            let requests = state.native.requests.lock().unwrap();
+            for id in [1000, 2000] {
+                assert!(
+                    requests.iter().any(|path| path
+                        == &format!("GET /repos/{TEST_REPOSITORY}/issues/comments/{id}")),
+                    "native source {id} must be re-read"
+                );
+            }
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/comments"))
+                    .count(),
+                1
+            );
+            assert!(state.native.reviews.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn paged_approval_rejects_stale_chain_wrong_actor_and_changed_digest_without_writes() {
+        for failure in ["stale", "actor", "digest", "incomplete"] {
+            let state = Pages::new(admitted());
+            let native = native_request(1000, &request());
+            let reference = source_ref(&native);
+            let mut comments = vec![native];
+            comments.extend(records(100, 16));
+            *state.native.authority_comments.lock().unwrap() = comments;
+            let (outcome, result) = writer_outcome(&state.native, reference.clone());
+            let candidate = approval(reference.clone(), outcome, result["result"].clone());
+            let error = match failure {
+                "stale" => {
+                    let mut successor = request();
+                    successor["supersedes"] = reference;
+                    successor["purpose"] = json!("Verify the remaining admitted evidence");
+                    state
+                        .native
+                        .authority_comments
+                        .lock()
+                        .unwrap()
+                        .push(native_request(3000, &successor));
+                    "AUTHORITY_APPROVAL_STALE_REQUEST"
+                }
+                "actor" => {
+                    state
+                        .native
+                        .authority_comments
+                        .lock()
+                        .unwrap()
+                        .last_mut()
+                        .unwrap()["user"]["id"] = json!(99);
+                    "AUTHORITY_SOURCE_UNTRUSTED"
+                }
+                "digest" => {
+                    state
+                        .native
+                        .authority_comments
+                        .lock()
+                        .unwrap()
+                        .last_mut()
+                        .unwrap()["body"] = json!("Changed native source");
+                    "AUTHORITY_REFERENCE_CHANGED"
+                }
+                "incomplete" => {
+                    state.reply(
+                        "issues/24/comments",
+                        100,
+                        2,
+                        PageReply {
+                            status: StatusCode::OK,
+                            body: "[]".into(),
+                            link: Some("<http://127.0.0.1:1/untrusted>; rel=\"next\"".into()),
+                        },
+                    );
+                    "AUTHORITY_SOURCE_TRUNCATED"
+                }
+                _ => unreachable!(),
+            };
+            let before = state.native.authority_comments.lock().unwrap().len();
+            let (http, url) = paged_client(state.clone()).await;
+            let rejected = publish(&http, &url, &candidate).await;
+            assert_eq!(rejected["isError"], true, "{failure}: {rejected}");
+            assert_eq!(
+                rejected["content"][0]["text"], error,
+                "{failure}: {rejected}"
+            );
+            assert_eq!(
+                state.native.authority_comments.lock().unwrap().len(),
+                before
+            );
+            assert!(!state
+                .native
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.ends_with("/comments")));
+        }
+    }
+}

@@ -118,6 +118,9 @@ a visible warning; record owner reconciliation in the Issue body.
 `keep-open` means known work or evidence remains after implementation. Nearby
 prose should explain why the Issue stays open and what outcome would make closure appropriate.
 This adds no required structured field, parser gate or automatic closure rule.
+For new Task Decisions and complete Task Requests, also apply the
+[closure authoring guidance](#closure-policy-authoring); the canonical Issue
+remains the closure authority.
 
 ### Executable CR publication and synchronization
 
@@ -376,6 +379,30 @@ returns `null` only for a legacy charter. It throws a bounded authority error
 for ambiguous or incomplete opted-in authority. Publisher idempotence and
 reservation-before-mutation use the existing native operation journal; this
 contract creates no authority registry or parallel Task ledger.
+
+### Closure policy authoring
+
+Before every new Task Decision or complete Task Request, consciously reassess
+the known work or evidence expected after implementation that justifies
+`keep-open`; do not carry it forward by habit. Use the live charter and relevant
+current evidence within the existing authoring action.
+
+- When work or evidence remains, retain `keep-open` and explain adjacent to the
+  charter's closure field the concrete remaining condition and the explicit
+  owner disposition needed before closure policy may change.
+- When that rationale no longer applies, seek explicit owner authorization, or
+  apply existing explicit owner authorization, to reconcile the canonical
+  charter to `close-authorized`. Until that reconciliation, preserve the
+  charter's effective policy. A Decision or Request cannot independently
+  override it. Bind subsequent records to the reconciled live charter using
+  the existing digest and complete successor Request rules.
+
+`close-authorized` permits closure only after Task completion, verified
+independent acceptance and no remaining work through the existing authorized
+continuation. Approval, merge and Step completion alone grant no closure
+authority. This is prose authoring guidance: no additional structured field,
+parser or validator gate, separate workflow or automation, and no blanket
+rewriting of historical Issues.
 
 ### Continuation after changes requested
 
