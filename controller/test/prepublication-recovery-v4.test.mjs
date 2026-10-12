@@ -102,12 +102,13 @@ test('even a body with matching protected digest must bind the admitted v4 Step,
 test('changed original run, source authority or retained journal stops v4 inspection before recovery mutation', async () => {
   for (const [mutate, code] of [
     [f => { f.run.run_attempt = 2; }, 'RECOVERY_ORIGINAL_RUN_NOT_COMPLETED'],
-    [f => { f.issue.body += '\nChanged live authority.'; }, 'AUTHORITY_CHANGED'],
+    [f => { f.issue.body += '\nChanged live authority.'; }, 'AUTHORITY_SOURCE_MISMATCH'],
     [f => { f.saved.execution.containment = 'unknown'; }, 'RECOVERY_EXECUTION_NOT_PROVEN'],
     [f => { f.saved.collection = { head }; }, 'RECOVERY_TERMINAL_STATE_NOT_PROVEN']
   ]) {
     const f = await fixture(); mutate(f);
     await assert.rejects(f.state(), { code });
+    assert.equal(f.r.prepublicationRecovery, undefined);
   }
 });
 
