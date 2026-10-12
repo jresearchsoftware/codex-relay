@@ -27,6 +27,9 @@ function acceptedState(receipt, state, transition = null) {
   if (authorityMode(binding.charterBody) === 'github-native-v1') {
     if (receipt.authority) {
       current = resolveOutcomeAuthority(receipt.authority, state.nativeRecords, binding);
+      // Receipt authority is the independently accepted current Task, rather
+      // than the immutable authority of the execution's historical Outcome.
+      if (!same(current.authority, receipt.authority)) stop('AUTHORITY_APPROVAL_STALE_REQUEST');
       if (!receipt.admission || receipt.admission.step < 1 || !Number.isSafeInteger(receipt.admission.step)
         || !/^[a-f0-9]{64}$/.test(receipt.admission.sha256)) stop('CONTINUATION_AUTHORITY_CHANGED');
       if (typeof state.task.complete !== 'boolean') stop('CONTINUATION_COMPLETION_UNVERIFIED');
@@ -44,6 +47,28 @@ function acceptedState(receipt, state, transition = null) {
     || !Object.hasOwn(continuation, 'next')) stop('CONTINUATION_AUTHORITY_CHANGED');
   if (continuation.hold || state.task.hold || state.task.protectedBoundary) stop('CONTINUATION_PROTECTED_BOUNDARY');
   if (native.kind === 'review') {
+    if (receipt.authority) {
+      const markers = native.body.split(/\r?\n/).filter(line => line.startsWith('<!-- jresearchsoftware-reviewer-acceptance:v1 '));
+      if (markers.length > 1 || markers.length === 1
+        && markers[0] !== `<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=${receipt.authority.sha256} -->`) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      // Historical v4 approvals carried no authority marker. They can retain
+      // unchanged original-Outcome acceptance, never acquire new Task semantics
+      // from a caller-carried receipt after the native approval.
+      const outcomes = state.nativeRecords.filter(record => record.kind === 'issue-comment' && trusted(record, binding.trustedWriter))
+        .map(native => ({ native, outcome: extractAuthorityRecord(native.body, binding) }))
+        .filter(({ outcome }) => outcome?.kind === 'outcome' && outcome.schema_version === '4.0'
+          && same(outcome.admission, receipt.admission));
+      if (outcomes.some(({ native, outcome }) => !same(native.parent, outcome.parent)
+        || outcome.parent.kind === 'pull_request' && outcome.parent.number !== state.pr?.number
+        || outcome.parent.kind === 'issue' && outcome.parent.number !== receipt.task
+        || outcome.status !== 'implemented' || !['git', 'no-change'].includes(outcome.result.kind)
+        || outcome.result.revision !== receipt.reviewed_head_sha)) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      const deliveredOutcome = outcomes[0]?.outcome;
+      if (outcomes.length !== 1 || !markers.length && !same(deliveredOutcome.authority, receipt.authority)) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      const delivered = resolveOutcomeAuthority(deliveredOutcome.authority, state.nativeRecords,
+        { ...binding, ...(deliveredOutcome.authority_resolution ? { authorityResolution: deliveredOutcome.authority_resolution } : {}) });
+      if (!same(delivered.authority, receipt.authority)) stop('AUTHORITY_APPROVAL_STALE_REQUEST');
+    }
     if (native.state !== 'APPROVED' || !sha(receipt.reviewed_head_sha) || native.commit_id !== receipt.reviewed_head_sha
       || !state.pr || native.parent.kind !== 'pull_request' || native.parent.number !== state.pr.number
       || state.pr.taskNumber !== receipt.task

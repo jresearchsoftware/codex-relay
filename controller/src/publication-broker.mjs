@@ -82,7 +82,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     });
     const error = new Error(code); error.code = code; error.details = { failureDiagnostic }; throw error;
   }
-  async function bound(request, { revalidate = true, allowAdmissionBlock = false } = {}) {
+  async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false } = {}) {
     if (!positive(request.runId)) fail('RUN_ID_INVALID');
     const record = await store.get(request.runId);
     if (!record || request.attemptId !== record.envelope.attemptId) fail('ATTEMPT_NOT_ADMITTED');
@@ -92,7 +92,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       return record;
     }
     validateEnvelope(record.envelope);
-    if (revalidate) await revalidateAuthority(api, record.envelope);
+    if (revalidate) record.authorityDrift = (await revalidateAuthority(api, record.envelope, { reporting })).authorityDrift;
     return record;
   }
   async function commentOnce(r, key, number, body, { legacyBody } = {}) {
@@ -249,6 +249,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     if (r.outcome) return r.outcome;
     if (r.successOutcomeIntent) fail('SUCCESS_OUTCOME_PUBLICATION_UNCERTAIN');
     const e = r.envelope;
+    const authorityDrift = !r.admissionBlock && e.request?.kind === 'admission'
+      ? (await revalidateAuthority(api, e, { reporting: true })).authorityDrift : undefined;
     let pr = null;
     if (!r.admissionBlock) {
       // Do not hide an unknown PR/readiness state behind an Issue fallback.
@@ -258,7 +260,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     }
     const number = e.target === 'pull_request' ? e.number : pr?.number ?? e.issueNumber;
     const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic }),
-      { pr, status: 'blocked', head: publishedHead ?? r.publishedHead });
+      { pr, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
     const outcome = await commentOnce(r, 'outcome', number, body);
     r.outcome = { status: 'BLOCKED', head: exactSha(publishedHead ?? r.publishedHead) ? (publishedHead ?? r.publishedHead) : null,
       prNumber: pr?.number ?? null, outcomeId: outcome.id };
@@ -357,7 +359,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         return receipt({ envelope });
       }
       const r = await bound(request, request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false } : {}); const e = r.envelope;
+        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false }
+          : { reporting: ['finish', 'finish-no-change', 'manual-outcome-direct'].includes(request.operation) }); const e = r.envelope;
       if (r.prepublicationRecovery && !['prepublication-state', 'recover-prepublication'].includes(request.operation)) fail('PREPUBLICATION_RECOVERY_RESERVED');
       if (['prepublication-state', 'recover-prepublication'].includes(request.operation)
         && Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'head', 'authorizationId', 'workflowReadToken'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
@@ -561,7 +564,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'manual-outcome-direct') {
         return receipt(await publishManualOutcome({ api, store, record: r, submission: request.submission,
-          commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope),
+          commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope, { reporting: true }),
           transitionManual: async (record, pr, result, draft) => {
             if (!pr || pr.state !== 'open' || pr.merged) return;
             if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
@@ -648,7 +651,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const pr = await existingPullRequest(r);
         if (pr && pr.head.sha !== e.startHead) fail('PR_HEAD_OBSERVATION_STALE');
         const number = pr?.number ?? e.issueNumber;
-        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent Task review remains required.`, { pr, head: e.startHead }), e.startHead, pr?.number ?? null);
+        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent Task review remains required.`, { pr, head: e.startHead, authorityDrift: r.authorityDrift }), e.startHead, pr?.number ?? null);
         let outcome = await commentOnce(r, 'outcome', number, body);
         const expectedBody = outcome.body;
         outcome = await api.get(`/issues/comments/${outcome.id}`);
@@ -725,7 +728,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const { pr, readiness } = await observeReadiness(r, drafted);
         const warningSummary = [admissionWarningSummary(e.admission?.warnings ?? e.warnings),
           executionWarningSummary(executionWarnings)].filter(Boolean).join('; ');
-        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(request.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable candidate head: ${r.publishedHead}\n${readinessOutcomeLines(readiness)}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native candidate-head CI was not evaluated by automatic completion. Mergeability is a snapshot of the observed base; it does not establish independent acceptance or authorize base reconciliation.\nNative Ready means successful execution handoff only. Independent exact-head validation and review plus safe integration remain required before the authorized squash continuation.`, { pr, head: r.publishedHead, executionWarnings }), r.publishedHead, pr.number, { readiness });
+        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\nRequested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nActual model/effort: UNAVAILABLE\n${usageOutcomeSummary(request.codexUsage)}\nHistorical reviewed/starting head: ${e.startHead}\nLatest durable candidate head: ${r.publishedHead}\n${readinessOutcomeLines(readiness)}\nCompletion: ${warningSummary ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED'}${warningSummary ? `\nWarning summary: ${warningSummary}` : ''}\n\n${workerOutcomeClaims(request.taskResult)}\n\nValidation: automatic worker reported bounded implementation and local validation success; Writer published and controller observed the exact PR head. Native candidate-head CI was not evaluated by automatic completion. Mergeability is a snapshot of the observed base; it does not establish independent acceptance or authorize base reconciliation.\nNative Ready means successful execution handoff only. Independent exact-head validation and review plus safe integration remain required before the authorized squash continuation.`, { pr, head: r.publishedHead, executionWarnings, authorityDrift: r.authorityDrift }), r.publishedHead, pr.number, { readiness });
         const outcomeReadiness = r.successOutcomeIntent.readiness;
         let outcome;
         if (r.outcome?.status === 'BLOCKED') {

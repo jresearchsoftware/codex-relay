@@ -312,8 +312,33 @@ Schema-v4 Outcomes and Task acceptance records bind both `authority` and
 `admission`, plus exact immutable results and native Outcome identity. They do
 not require a public Request. `resolveOutcomeAuthority` retains the originating
 exact CR as acceptance provenance after `APPROVE` or disposal of an artifact,
-while requiring current charter/Decision authority and rejecting a newer
-applicable CR. Its acceptance-only result cannot create a new admission.
+verifies the original charter/Decision source integrity, resolves current
+trusted Task Decisions separately and rejects a newer applicable CR or changed
+charter/compatibility source. Its result cannot create a new admission.
+An Outcome keeps its admitted `authority` and `admission`. If valid later
+Decisions change the source binding, Writer adds `authority_drift` with
+`current_authority`, sorted `changed_fields` and `review_required`. The latter
+signals a semantic difference or an explicitly reported comparison gap; a
+provenance-only replacement can leave no changed fields. Optional bounded
+`authority_resolution` is captured inside new immutable admission snapshots
+and preserves nonsecret original resolution inputs, including consumer
+profile/validation defaults and starting state. Writer exports that captured
+value without changing the admission or retrofitting older snapshots. A
+reviewer can therefore distinguish a real amendment from an explicit restatement
+of nonstandard admitted defaults. Historical Outcomes without this evidence
+expose sorted `comparison_gaps` for changed fields whose original defaults are
+unknown, rather than inventing them. Visible Markdown exposes both digests,
+known changed fields, comparison gaps and the review signal.
+This report is not a claim that amended work was performed or permission to
+exercise newly granted protected operations.
+
+Task acceptance binds the current authority while preserving the exact
+Outcome/admission and immutable result. The reviewer explicitly evaluates
+admitted versus current requirements: missing work needs remediation, unused
+expanded permission alone does not invalidate the work. An original admission
+cannot supply revoked action permission. A material later authority change
+invalidates acceptance for merge/closure continuation; original native source
+tampering and changed result/identity bindings still fail closed.
 No-PR Task Approval preserves every material Outcome warning and limitation;
 implementation PR acceptance remains the native exact-head PR review.
 

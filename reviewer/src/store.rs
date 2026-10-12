@@ -48,6 +48,11 @@ impl Store {
             "ALTER TABLE operations ADD COLUMN publication_body TEXT",
             [],
         );
+        let _ = db.execute(
+            "ALTER TABLE operations ADD COLUMN authority_binding TEXT",
+            [],
+        );
+        let _ = db.execute("ALTER TABLE operations ADD COLUMN check_intent INTEGER", []);
         Ok(Self { db })
     }
 
@@ -83,8 +88,8 @@ impl Store {
     ) -> rusqlite::Result<(bool, String)> {
         let transaction = self.db.unchecked_transaction()?;
         let inserted = transaction.execute(
-            "INSERT OR IGNORE INTO operations(operation_id,status,finding_digest,publication_body,created_at)
-             VALUES(?1,'RESERVED',?2,?3,unixepoch())",
+            "INSERT OR IGNORE INTO operations(operation_id,status,finding_digest,publication_body,check_intent,created_at)
+             VALUES(?1,'RESERVED',?2,?3,0,unixepoch())",
             (id, finding_digest, current_body),
         )? == 1;
         transaction.execute(
@@ -170,6 +175,41 @@ impl Store {
     pub fn authority_complete(&self, id: &str) -> rusqlite::Result<()> {
         self.db.execute("UPDATE operations SET status='PUBLISHED' WHERE operation_id=?1 AND native_id IS NOT NULL", [id])?;
         self.event(id, "AUTHORITY_COMPLETE")
+    }
+
+    pub fn authority_binding(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        self.db
+            .query_row(
+                "SELECT authority_binding FROM operations WHERE operation_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(Option::flatten)
+    }
+
+    pub fn bind_authority(&self, id: &str, binding: &str) -> rusqlite::Result<()> {
+        self.db.execute("UPDATE operations SET authority_binding=?2 WHERE operation_id=?1 AND authority_binding IS NULL", (id, binding))?;
+        Ok(())
+    }
+
+    /// A lost Check Run response must be reconciled by observation, never by
+    /// repeating its non-idempotent POST.
+    pub fn reserve_authority_check(&self, id: &str) -> rusqlite::Result<bool> {
+        Ok(self.db.execute("UPDATE operations SET check_intent=1 WHERE operation_id=?1 AND check_intent=0 AND check_id IS NULL", [id])? == 1)
+    }
+
+    pub fn authority_check_published(
+        &self,
+        id: &str,
+        check_id: i64,
+        url: &str,
+    ) -> rusqlite::Result<()> {
+        self.db.execute(
+            "UPDATE operations SET check_id=?2,check_url=?3 WHERE operation_id=?1",
+            (id, check_id, url),
+        )?;
+        self.event(id, "AUTHORITY_CHECK_PUBLISHED")
     }
 
     pub fn publication_body(&self, id: &str) -> rusqlite::Result<Option<String>> {

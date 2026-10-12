@@ -288,6 +288,30 @@ pub(crate) fn validate_record(record: &Value) -> Result<(), &'static str> {
                 return Err("AUTHORITY_ADMISSION_MISMATCH");
             }
         }
+        if let Some(drift) = record.get("authority_drift") {
+            let current = &drift["current_authority"];
+            let fields = drift["changed_fields"]
+                .as_array()
+                .ok_or("AUTHORITY_SOURCE_MISMATCH")?;
+            let gaps = drift["comparison_gaps"].as_array();
+            if current["sha256"] != authority_digest(current)
+                || ["charter", "change_request", "compatibility_request"]
+                    .iter()
+                    .any(|key| current[*key] != record["authority"][*key])
+                || fields
+                    .windows(2)
+                    .any(|pair| pair[0].as_str() >= pair[1].as_str())
+                || gaps.is_some_and(|gaps| {
+                    gaps.windows(2)
+                        .any(|pair| pair[0].as_str() >= pair[1].as_str())
+                        || gaps.iter().any(|field| fields.contains(field))
+                })
+                || drift["review_required"]
+                    != (!fields.is_empty() || gaps.is_some_and(|gaps| !gaps.is_empty()))
+            {
+                return Err("AUTHORITY_SOURCE_MISMATCH");
+            }
+        }
     }
     Ok(())
 }
@@ -947,7 +971,10 @@ async fn effective_authority(
         if change_request["kind"] != "review"
             || payload["kind"] != "change-request"
             || native["commit_id"] != payload["reviewed_head_sha"]
-            || native["state"] != "CHANGES_REQUESTED"
+            || !matches!(
+                native["state"].as_str(),
+                Some("CHANGES_REQUESTED" | "DISMISSED" | "APPROVED")
+            )
         {
             return Err("AUTHORITY_REVIEW_INVALID");
         }
@@ -986,6 +1013,175 @@ fn validation_vocabulary(app: &RepositoryTarget<'_>, names: &Value) -> Result<()
         return Err("AUTHORITY_VALIDATION_UNKNOWN");
     }
     Ok(())
+}
+
+// Original execution authority remains immutable provenance. Acceptance resolves
+// the delivered result against current Task semantics, without rewriting that
+// admission or treating a superseded Decision as an execution request.
+async fn outcome_authority(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    record: &Value,
+    original: &Value,
+    existing_pr: Option<u64>,
+    resolution: &Value,
+) -> Result<(Value, Value, String, Vec<&'static str>, Value), &'static str> {
+    read_ref(app, state, record, &original["charter"]).await?;
+    let mut original_amendments = serde_json::Map::new();
+    let mut original_closure = closure_policy(state.issue["body"].as_str().unwrap())
+        .0
+        .to_string();
+    for reference in original["decisions"]
+        .as_array()
+        .ok_or("AUTHORITY_SOURCE_MISMATCH")?
+    {
+        let decision = trusted_record(app, state, record, reference, false).await?;
+        if decision["kind"] != "decision"
+            || (decision["parent"]["kind"] == "pull_request"
+                && decision["parent"]["number"].as_u64() != existing_pr)
+        {
+            return Err("AUTHORITY_DECISION_SCOPE_MISMATCH");
+        }
+        for (key, value) in decision["amendments"].as_object().unwrap() {
+            original_amendments.insert(key.clone(), value.clone());
+        }
+        if decision["parent"]["kind"] == "issue" {
+            if let Some(policy) = decision["amendments"]["issue_closure_policy"].as_str() {
+                original_closure = policy.to_string();
+            }
+        }
+    }
+    let compatibility = if original["compatibility_request"].is_null() {
+        Value::Null
+    } else {
+        trusted_record(
+            app,
+            state,
+            record,
+            &original["compatibility_request"],
+            false,
+        )
+        .await?
+    };
+    let change = if original["change_request"].is_null() {
+        Value::Null
+    } else {
+        trusted_record(app, state, record, &original["change_request"], false).await?
+    };
+    let (current, amendments, closure, warnings) =
+        effective_authority(app, state, record, existing_pr, &original["change_request"]).await?;
+    if current["compatibility_request"] != original["compatibility_request"] {
+        return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+    }
+    let semantics = |values: &Value, closure: &str| {
+        let mut result = json!({"purpose":null,"scope":[],"boundaries":[],
+            "validation":null,"model":null,"effort":null,"subagents":null,
+            "branch":null,"base_sha":null,"starting_head":null,"existing_pr":null,
+            "issue_closure_policy":closure,"continuation":{"hold":false,"next":null}});
+        let mut unknown = BTreeSet::from(
+            [
+                "purpose",
+                "validation",
+                "model",
+                "effort",
+                "subagents",
+                "branch",
+                "base_sha",
+                "starting_head",
+                "existing_pr",
+            ]
+            .map(str::to_string),
+        );
+        if resolution.is_object() {
+            result["purpose"] = resolution["purpose"].clone();
+            unknown.remove("purpose");
+        }
+        for source in [
+            &resolution["project_defaults"],
+            &resolution["starting_state"],
+            &compatibility,
+            values,
+        ] {
+            for key in [
+                "purpose",
+                "scope",
+                "boundaries",
+                "validation",
+                "model",
+                "effort",
+                "subagents",
+                "branch",
+                "base_sha",
+                "starting_head",
+                "existing_pr",
+            ] {
+                if let Some(value) = source.get(key) {
+                    result[key] = value.clone();
+                    unknown.remove(key);
+                }
+            }
+        }
+        let old = &compatibility["continuation"];
+        result["continuation"] = values.get("continuation").cloned().unwrap_or_else(|| json!({"hold":old["hold"]==true,
+            "next":if old["next"]["direction"].is_object() {json!({"task":old["next"]["task"],"direction":old["next"]["direction"]})} else {Value::Null}}));
+        if !change.is_null() {
+            result["purpose"] = change["purpose"].clone();
+            result["branch"] = change["branch"].clone();
+            result["base_sha"] = change["base_sha"].clone();
+            result["starting_head"] = change["reviewed_head_sha"].clone();
+            result["existing_pr"] = original["change_request"]["parent"]["number"].clone();
+            for key in [
+                "purpose",
+                "branch",
+                "base_sha",
+                "starting_head",
+                "existing_pr",
+            ] {
+                unknown.remove(key);
+            }
+            let overrides = if change["schema_version"] == "4.0" {
+                &change["overrides"]
+            } else {
+                &change
+            };
+            for key in ["validation", "model", "effort", "subagents"] {
+                if let Some(value) = overrides.get(key) {
+                    result[key] = value.clone();
+                    unknown.remove(key);
+                }
+            }
+            if let Some(extra) = overrides["boundaries"].as_array() {
+                let mut boundaries = result["boundaries"].as_array().unwrap().clone();
+                for boundary in extra {
+                    if !boundaries.contains(boundary) {
+                        boundaries.push(boundary.clone());
+                    }
+                }
+                result["boundaries"] = json!(boundaries);
+            }
+        }
+        (result, unknown)
+    };
+    let (before, before_unknown) =
+        semantics(&Value::Object(original_amendments), &original_closure);
+    let (after, after_unknown) = semantics(&amendments, &closure);
+    let mut changed_fields = Vec::new();
+    let mut comparison_gaps = Vec::new();
+    for key in before.as_object().unwrap().keys() {
+        if before[key] != after[key] || before_unknown.contains(key) != after_unknown.contains(key)
+        {
+            if before_unknown.contains(key) || after_unknown.contains(key) {
+                comparison_gaps.push(key.clone());
+            } else {
+                changed_fields.push(key.clone());
+            }
+        }
+    }
+    let mut drift = json!({"current_authority":current,"review_required":!changed_fields.is_empty() || !comparison_gaps.is_empty(),"changed_fields":changed_fields});
+    if !comparison_gaps.is_empty() {
+        drift["comparison_gaps"] = json!(comparison_gaps);
+    }
+    Ok((current, amendments, closure, warnings, drift))
 }
 
 async fn validate_v4_live(
@@ -1080,7 +1276,6 @@ async fn validate_v4_live(
                 || outcome["schema_version"] != "4.0"
                 || (record["kind"] == "task-approval" && outcome["status"] != "implemented")
                 || outcome["result"] != record["result"]
-                || outcome["authority"] != record["authority"]
                 || outcome["admission"] != record["admission"]
                 || outcome["step"] != record["step"]
             {
@@ -1100,15 +1295,31 @@ async fn validate_v4_live(
                     return Err("AUTHORITY_APPROVAL_PR_REVIEW_REQUIRED");
                 }
             }
-            let (authority, _, _, _) = effective_authority(
+            outcome_authority(
                 app,
                 state,
                 record,
+                &outcome["authority"],
                 existing_pr,
-                &record["authority"]["change_request"],
+                &outcome["authority_resolution"],
             )
             .await?;
-            if authority != record["authority"] {
+            if record["authority"]["change_request"] != outcome["authority"]["change_request"]
+                || record["authority"]["compatibility_request"]
+                    != outcome["authority"]["compatibility_request"]
+            {
+                return Err("AUTHORITY_APPROVAL_RESULT_MISMATCH");
+            }
+            let (_, _, _, _, accepted_drift) = outcome_authority(
+                app,
+                state,
+                record,
+                &record["authority"],
+                existing_pr,
+                &outcome["authority_resolution"],
+            )
+            .await?;
+            if accepted_drift["current_authority"] != record["authority"] {
                 return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
             }
             for warning in outcome["warnings"].as_array().unwrap() {
@@ -1416,7 +1627,7 @@ async fn validate_live(
             return Err("AUTHORITY_VALIDATION_UNKNOWN");
         }
         if let Some(pr) = record["existing_pr"].as_u64() {
-            let live = app.github.get_pr(&app.repository, pr as i64).await?;
+            let mut live = app.github.get_pr(&app.repository, pr as i64).await?;
             let args = json!({"repository":app.repository,"pr_number":pr,"expected_head_sha":record["starting_head"]});
             if target_binding_rejection(&app.policy, &live, &args).is_some()
                 || live["head"]["ref"] != record["branch"]
@@ -1424,6 +1635,9 @@ async fn validate_live(
                 || step_sync::linked_issue(&live)? != record["task"].as_u64().unwrap()
             {
                 return Err("AUTHORITY_PR_BINDING_MISMATCH");
+            }
+            if published.is_some() && kind == "change-request" {
+                live["draft"] = json!(false);
             }
             if let Some(code) = publication_rejection(&live, &record["starting_head"]) {
                 return Err(code);
@@ -1620,6 +1834,44 @@ pub(crate) fn error(code: &str) -> Value {
     json!({"content":[{"type":"text","text":code}],"isError":true})
 }
 
+async fn verify_publication_authority(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    record: &Value,
+    operation: &str,
+    prepare: bool,
+) -> Result<(), &'static str> {
+    if record["schema_version"] != "4.0" || record["kind"] != "change-request" {
+        return Ok(());
+    }
+    let authority = effective_authority(
+        app,
+        state,
+        record,
+        record["parent"]["number"].as_u64(),
+        &Value::Null,
+    )
+    .await?
+    .0;
+    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    if let Some(binding) = store
+        .authority_binding(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+    {
+        let original: Value = serde_json::from_str(&binding).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if original != authority {
+            return Err("AUTHORITY_CHANGED");
+        }
+    } else if prepare {
+        store
+            .bind_authority(operation, &authority.to_string())
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    }
+    // Pre-upgrade reservations retain their original source/body checks. Never
+    // fabricate an earlier effective-authority observation for a historical row.
+    Ok(())
+}
+
 async fn published_native(
     app: &RepositoryTarget<'_>,
     state: &NativeAuthority,
@@ -1655,8 +1907,51 @@ async fn published_native(
         )
         .await?;
     source_binding(&app.repository, &reread, &reference)?;
-    if !trusted_user(&reread["user"], &state.publisher) || reread["body"] != body {
+    if !trusted_user(&reread["user"], &state.publisher)
+        || reread["body"] != body
+        || (kind == "review"
+            && (reread["state"] != "CHANGES_REQUESTED"
+                || reread["commit_id"] != record["reviewed_head_sha"]))
+    {
         return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
+    }
+    // Resume only the original native operation after rechecking authority;
+    // neither a retained native ID nor metadata already projected is authority.
+    let fresh = load(app, record).await?;
+    validate_live(app, &fresh, record, Some(&reference)).await?;
+    verify_publication_authority(app, &fresh, record, operation, false).await?;
+    if kind == "review" {
+        let reviews = app
+            .github
+            .authority_reviews(
+                &app.repository,
+                record["parent"]["number"].as_u64().unwrap(),
+            )
+            .await?;
+        let marker = format!("jresearchsoftware-task-authority:v1 operation={operation}");
+        let matches: Vec<_> = reviews
+            .iter()
+            .filter(|review| {
+                review["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains(&marker))
+            })
+            .collect();
+        if matches.len() != 1 || matches[0]["id"] != reference["id"] {
+            return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
+        }
+        if reviews.iter().any(|review| {
+            trusted_user(&review["user"], &fresh.publisher)
+                && review["id"]
+                    .as_u64()
+                    .is_some_and(|id| id > reference["id"].as_u64().unwrap())
+                && matches!(
+                    review["state"].as_str(),
+                    Some("APPROVED" | "CHANGES_REQUESTED")
+                )
+        }) {
+            return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+        }
     }
     let url = reread["html_url"]
         .as_str()
@@ -1680,26 +1975,81 @@ async fn published_native(
     let mut check_reference = Value::Null;
     if record["kind"] == "change-request" {
         let sha = record["reviewed_head_sha"].as_str().unwrap();
-        let check = match app.github.find_check(&app.repository, sha, operation).await? {
+        let check = match app
+            .github
+            .find_check(&app.repository, sha, operation)
+            .await?
+        {
             Some(check) => check,
-            None => app.github.create_check(&app.repository, &json!({
-                "name":app.policy.check_name,"head_sha":sha,"external_id":operation,
-                "status":"completed","conclusion":"failure",
-                "output":{"title":"Changes requested","summary":"Typed GitHub-native PR Change Request published for this exact head."}
-            })).await?,
+            None => {
+                let reserved = app
+                    .store
+                    .lock()
+                    .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                    .reserve_authority_check(operation)
+                    .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                if !reserved {
+                    return Err("CHECK_PUBLICATION_UNCERTAIN");
+                }
+                app.github.create_check(&app.repository, &json!({
+                    "name":app.policy.check_name,"head_sha":sha,"external_id":operation,
+                    "status":"completed","conclusion":"failure",
+                    "output":{"title":"Changes requested","summary":"Typed GitHub-native PR Change Request published for this exact head."}
+                })).await?
+            }
         };
         if check["name"] != app.policy.check_name
             || check["head_sha"] != sha
             || check["app"]["slug"] != app.policy.slug
+            || check["app"]["id"]
+                .as_u64()
+                .map(|id| id.to_string())
+                .as_deref()
+                != Some(app.policy.app_id.as_str())
+            || check["external_id"] != operation
+            || check["status"] != "completed"
+            || check["conclusion"] != "failure"
             || check["id"].as_i64().is_none_or(|id| id <= 0)
             || !check["html_url"].is_string()
+        {
+            return Err("CHECK_VERIFICATION_FAILED");
+        }
+        let retained = app
+            .store
+            .lock()
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .known(operation)
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if retained
+            .and_then(|row| row.check_id)
+            .is_some_and(|id| check["id"].as_i64() != Some(id))
+        {
+            return Err("CHECK_VERIFICATION_FAILED");
+        }
+        let observed = app
+            .github
+            .find_check(&app.repository, sha, operation)
+            .await?
+            .ok_or("CHECK_PUBLICATION_UNCERTAIN")?;
+        if [
+            "id",
+            "html_url",
+            "name",
+            "head_sha",
+            "external_id",
+            "status",
+            "conclusion",
+            "app",
+        ]
+        .iter()
+        .any(|key| observed[*key] != check[*key])
         {
             return Err("CHECK_VERIFICATION_FAILED");
         }
         app.store
             .lock()
             .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .published(
+            .authority_check_published(
                 operation,
                 check["id"].as_i64().unwrap(),
                 check["html_url"].as_str().unwrap(),
@@ -1707,17 +2057,37 @@ async fn published_native(
             .map_err(|_| "INTERNAL_RELAY_ERROR")?;
         check_reference = json!({"id":check["id"],"url":check["html_url"],"head_sha":sha});
     }
-    app.store
-        .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        .authority_complete(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     let fresh = load(app, record).await?;
     let provenance = validate_live(app, &fresh, record, Some(&reference)).await?;
+    verify_publication_authority(app, &fresh, record, operation, false).await?;
     let (mut closure, warnings) = {
         let (closure, warnings) = closure_policy(fresh.issue["body"].as_str().unwrap());
         (closure.to_string(), warnings)
     };
+    let mut acceptance = Value::Null;
+    if record["schema_version"] == "4.0"
+        && matches!(
+            record["kind"].as_str(),
+            Some("task-approval" | "task-review")
+        )
+    {
+        let delivered = trusted_record(app, &fresh, record, &record["outcome"], true).await?;
+        let existing_pr = if delivered["parent"]["kind"] == "pull_request" {
+            delivered["parent"]["number"].as_u64()
+        } else {
+            delivered["authority"]["change_request"]["parent"]["number"].as_u64()
+        };
+        let (_, _, _, _, drift) = outcome_authority(
+            app,
+            &fresh,
+            record,
+            &delivered["authority"],
+            existing_pr,
+            &delivered["authority_resolution"],
+        )
+        .await?;
+        acceptance = json!({"original_authority":delivered["authority"],"authority":record["authority"],"authority_drift":drift,"admission":delivered["admission"],"outcome":record["outcome"]});
+    }
     if record["schema_version"] == "4.0" {
         let existing_pr = if record["parent"]["kind"] == "pull_request" {
             record["parent"]["number"].as_u64()
@@ -1728,10 +2098,16 @@ async fn published_native(
             .await?
             .2;
     }
+    app.store
+        .lock()
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .authority_complete(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     Ok(
         json!({"content":[{"type":"text","text":outcome}],"structuredContent":{
         "reference":reference,"native_url":url,"actor":normalized_author(&reread["user"]),"record":record,
         "context_provenance":provenance["context_provenance"],"issue_closure_policy":closure,
+        "task_acceptance":acceptance,
         "warnings":warnings,"check":check_reference,"issue_closure_performed":false,"merge_performed":false,
         "pr_lifecycle": if record["kind"] == "change-request" {
             crate::remediation_lifecycle_action(&json!({"action":"REQUEST_CHANGES","pr_number":record["parent"]["number"],
@@ -1800,20 +2176,6 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                         id as u64,
                     )
                     .await?;
-                if known.status == "PUBLISHED" {
-                    let reference = native_ref(&native, kind, &record["parent"])?;
-                    source_binding(&app.repository, &native, &reference)?;
-                    if native["body"] != body || !trusted_user(&native["user"], &state.publisher) {
-                        return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
-                    }
-                    return Ok(
-                        json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"reference":reference,"native_url":known.native_url,"actor":normalized_author(&native["user"]),"merge_performed":false,"issue_closure_performed":false,
-                        "pr_lifecycle":if record["kind"] == "change-request" {
-                            crate::remediation_lifecycle_action(&json!({"action":"REQUEST_CHANGES","pr_number":record["parent"]["number"],
-                                "expected_head_sha":record["reviewed_head_sha"]}), Some(id))
-                        } else {Value::Null}}}),
-                    );
-                }
                 return published_native(
                     app,
                     &state,
@@ -1821,7 +2183,11 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                     &operation,
                     &body,
                     native,
-                    "AUTHORITY_RECOVERED",
+                    if known.status == "PUBLISHED" {
+                        "DUPLICATE_SUPPRESSED"
+                    } else {
+                        "AUTHORITY_RECOVERED"
+                    },
                 )
                 .await;
             }
@@ -1843,10 +2209,13 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 } else {
                     state.comments.clone()
                 };
+                let marker = format!("jresearchsoftware-task-authority:v1 operation={operation}");
                 let matches: Vec<_> = natives
                     .iter()
                     .filter(|native| {
-                        native["body"] == body && trusted_user(&native["user"], &state.publisher)
+                        native["body"]
+                            .as_str()
+                            .is_some_and(|body| body.contains(&marker))
                     })
                     .collect();
                 if matches.len() != 1 {
@@ -1874,6 +2243,7 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         if !reserved {
             return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
         }
+        verify_publication_authority(app, &state, record, &operation, true).await?;
         // Reservation precedes the final source re-read and every non-idempotent POST.
         let final_state = match load(app, record).await {
             Ok(state) => state,
@@ -1944,6 +2314,7 @@ pub(crate) async fn approved_continuation(
     issue: &Value,
     pr: &Value,
     approved_head: &Value,
+    v4_only: bool,
 ) -> Result<Value, &'static str> {
     if !app.policy.github_native_authority_enabled {
         return Err("GITHUB_NATIVE_AUTHORITY_NOT_ENABLED");
@@ -1960,6 +2331,7 @@ pub(crate) async fn approved_continuation(
         return Err("AUTHORITY_SOURCE_TRUNCATED");
     }
     let mut v4_outcomes = Vec::new();
+    let mut has_v4_outcome = false;
     for native in &native_outcomes {
         if !trusted_user(&native["user"], &state.writer) {
             continue;
@@ -1968,6 +2340,12 @@ pub(crate) async fn approved_continuation(
         else {
             continue;
         };
+        if outcome["kind"] == "outcome"
+            && outcome["schema_version"] == "4.0"
+            && belongs(&outcome, &hint)
+        {
+            has_v4_outcome = true;
+        }
         if outcome["kind"] == "outcome"
             && outcome["schema_version"] == "4.0"
             && belongs(&outcome, &hint)
@@ -1980,17 +2358,15 @@ pub(crate) async fn approved_continuation(
             let reference = native_ref(native, "issue-comment", &outcome["parent"])?;
             source_binding(&app.repository, native, &reference)?;
             trusted_record(app, &state, &hint, &reference, true).await?;
-            let (authority, amendments, closure, warnings) = effective_authority(
+            let (authority, amendments, closure, warnings, drift) = outcome_authority(
                 app,
                 &state,
                 &hint,
+                &outcome["authority"],
                 pr["number"].as_u64(),
-                &outcome["authority"]["change_request"],
+                &outcome["authority_resolution"],
             )
             .await?;
-            if authority != outcome["authority"] {
-                return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
-            }
             let compatibility = if authority["compatibility_request"].is_null() {
                 Value::Null
             } else {
@@ -2005,7 +2381,7 @@ pub(crate) async fn approved_continuation(
             };
             let old_continuation = &compatibility["continuation"];
             let continuation=amendments.get("continuation").cloned().unwrap_or_else(|| json!({"hold":old_continuation["hold"]==true,"next": if old_continuation["next"]["direction"].is_object() {json!({"task":old_continuation["next"]["task"],"direction":old_continuation["next"]["direction"]})} else {Value::Null}}));
-            v4_outcomes.push(json!({"schema_version":"4.0","authority":authority,"admission":outcome["admission"],"outcome":reference,"continuation":continuation,
+            v4_outcomes.push(json!({"schema_version":"4.0","authority":authority,"original_authority":outcome["authority"],"authority_drift":drift,"admission":outcome["admission"],"outcome":reference,"continuation":continuation,
                 "issue_closure_policy":closure,"warnings":warnings,"completion_conditions":"trusted-owner-canonical-state-required"}));
         }
     }
@@ -2016,6 +2392,12 @@ pub(crate) async fn approved_continuation(
         return Ok(outcome);
     }
     let records = execution_records(app, &state, &hint).await?;
+    if v4_only {
+        if has_v4_outcome || records.is_empty() {
+            return Err("AUTHORITY_EXACT_OUTCOME_REQUIRED");
+        }
+        return Ok(Value::Null);
+    }
     let (reference, request) = current(&records)?.ok_or("AUTHORITY_REQUEST_MISSING")?;
     if !belongs(request, &hint)
         || request["branch"] != pr["head"]["ref"]

@@ -372,6 +372,12 @@ async fn typed_charter_rejects_legacy_cr_writer_but_preserves_native_approve() {
     .await;
     assert_eq!(rejected["result"]["isError"], true, "{rejected}");
     assert!(state.reviews.lock().unwrap().is_empty());
+    outcome_v4(
+        &state,
+        authority_v4(vec![], Value::Null, Value::Null),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"git","revision":HEAD,"identities":[]}),
+    );
     let approved = rpc(
         &http,
         &url,
@@ -385,7 +391,7 @@ async fn typed_charter_rejects_legacy_cr_writer_but_preserves_native_approve() {
     assert_eq!(plan["approved_head_sha"], HEAD);
     assert_eq!(plan["merge_method"], "squash");
     assert_eq!(plan["required_native_checks"], "must_pass_for_exact_head");
-    assert_eq!(plan["close_issue_authorized"], false);
+    assert!(plan.get("close_issue_authorized").is_none());
     assert_eq!(plan["execution_supported"], false);
     assert!(!state
         .requests
@@ -1175,6 +1181,8 @@ fn approval_v4(reference: Value, outcome: &Value) -> Value {
     let object = record.as_object_mut().unwrap();
     object.remove("attempt");
     object.remove("status");
+    object.remove("authority_drift");
+    object.remove("authority_resolution");
     object.insert("kind".into(), json!("task-approval"));
     object.insert("parent".into(), json!({"kind":"issue","number":24}));
     object.insert("outcome".into(), reference);
@@ -1540,4 +1548,894 @@ async fn v4_exact_native_approve_returns_conditional_closure_authority_without_i
         continuation["request_authority"]["admission"]["attempt"],
         "run-10"
     );
+}
+
+fn v4_cr() -> Value {
+    json!({"schema_version":"4.0","kind":"change-request","repository":TEST_REPOSITORY,"task":24,"parent":{"kind":"pull_request","number":25},
+        "charter_sha256":crate::task_authority::hash(CHARTER),"purpose":"Repair the exact reviewed defect","branch":"codex/task-24","base_sha":"b".repeat(40),"reviewed_head_sha":HEAD,
+        "change_request_id":"CR-24-001","findings":[{"id":"F1","severity":"major","problem":"The input bound is missing.","impact":"Unbounded input violates the admitted contract.","remediation":"Enforce the bound.","acceptance_criteria":["The oversized input is rejected."]}],"context":[]})
+}
+
+async fn native_app(state: &MockState) -> App {
+    App {
+        policy: state.policy.clone(),
+        repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
+        enabled: true,
+        store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+        github: github::Github::mock_api(mock_api(state.clone()).await),
+        trusted_client_ca: Arc::new(Vec::new()),
+        observed_arguments: Default::default(),
+    }
+}
+
+async fn native_publish(app: &App, record: &Value) -> Value {
+    crate::task_authority::validate_record(record).unwrap();
+    let args = json!({"repository":TEST_REPOSITORY,"record":record});
+    crate::task_authority::publish(&app.target(&args).unwrap(), &args).await
+}
+
+async fn publication_cr(app: &App, version: &str) -> Value {
+    if version == "4.0" {
+        return v4_cr();
+    }
+    let mut initial = request();
+    initial["route"] = json!("auto");
+    initial["branch"] = json!("codex/task-24");
+    initial["base_sha"] = json!("b".repeat(40));
+    initial["starting_head"] = json!(HEAD);
+    initial["existing_pr"] = json!(25);
+    let published = native_publish(app, &initial).await;
+    assert_ne!(published["isError"], true, "{published}");
+    let mut cr = initial;
+    cr["kind"] = json!("change-request");
+    cr["parent"] = json!({"kind":"pull_request","number":25});
+    cr["step"] = json!(2);
+    cr["supersedes"] = published["structuredContent"]["reference"].clone();
+    for field in [
+        "purpose",
+        "change_request_id",
+        "reviewed_head_sha",
+        "findings",
+    ] {
+        cr[field] = v4_cr()[field].clone();
+    }
+    cr
+}
+
+fn authority_operation(record: &Value) -> String {
+    crate::task_authority::hash(&format!(
+        "task-authority-v1\n{}",
+        crate::task_authority::render_legacy(record)
+    ))
+}
+
+#[tokio::test]
+async fn original_outcome_accepts_current_amended_task_without_rewriting_execution_binding() {
+    for scenario in ["new", "superseded", "equivalent"] {
+        let state = admitted();
+        let app = native_app(&state).await;
+        let mut first = decision_v4();
+        first["amendments"] = json!({"scope":["Original bounded scope"]});
+        let prior = if scenario == "new" {
+            Value::Null
+        } else {
+            native_publish(&app, &first).await["structuredContent"]["reference"].clone()
+        };
+        let original = authority_v4(
+            if prior.is_null() {
+                vec![]
+            } else {
+                vec![prior.clone()]
+            },
+            Value::Null,
+            Value::Null,
+        );
+        let (reference, outcome) = outcome_v4(
+            &state,
+            original.clone(),
+            json!({"kind":"issue","number":24}),
+            json!({"kind":"qualification","revision":null,"identities":[{"kind":"qualification-run","id":"immutable-run"}]}),
+        );
+        let before = state
+            .authority_comments
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|native| native["id"] == 2000)
+            .unwrap()["body"]
+            .clone();
+        let mut next = first;
+        next["purpose"] = json!("Review the result against the current Task");
+        next["supersedes"] = prior;
+        if scenario != "equivalent" {
+            next["amendments"] = json!({"scope":["Current bounded scope"]});
+        }
+        let current = native_publish(&app, &next).await;
+        assert_ne!(current["isError"], true, "{current}");
+        let mut accepted = approval_v4(reference, &outcome);
+        let stale = native_publish(&app, &accepted).await;
+        assert_eq!(
+            stale["content"][0]["text"], "AUTHORITY_APPROVAL_STALE_REQUEST",
+            "{scenario}: {stale}"
+        );
+        accepted["authority"] = authority_v4(
+            vec![current["structuredContent"]["reference"].clone()],
+            Value::Null,
+            Value::Null,
+        );
+        let published = native_publish(&app, &accepted).await;
+        assert_ne!(published["isError"], true, "{scenario}: {published}");
+        assert_eq!(
+            published["structuredContent"]["record"]["admission"],
+            outcome["admission"]
+        );
+        assert_eq!(outcome["authority"], original);
+        assert_eq!(
+            state
+                .authority_comments
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|native| native["id"] == 2000)
+                .unwrap()["body"],
+            before
+        );
+        let mut later = decision_v4();
+        later["amendments"] = json!({"validation":["diff-check"]});
+        native_publish(&app, &later).await;
+        let replay = native_publish(&app, &accepted).await;
+        assert_eq!(
+            replay["content"][0]["text"], "AUTHORITY_APPROVAL_STALE_REQUEST",
+            "{replay}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn native_approve_requires_reviewed_current_task_on_material_drift_and_pins_that_acceptance()
+{
+    let state = admitted();
+    let (reference, outcome) = outcome_v4(
+        &state,
+        authority_v4(vec![], Value::Null, Value::Null),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"git","revision":HEAD,"identities":[]}),
+    );
+    let original_body = state.authority_comments.lock().unwrap()[0]["body"].clone();
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let mut decision = decision_v4();
+    decision["amendments"] = json!({"scope":["Current additional requirement"]});
+    let current = publish(&http, &url, &decision).await;
+    let preview = rpc(&http,&url,2,"tools/call",json!({"name":"check_pr_review_target","arguments":{"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}})).await;
+    let accepted = &preview["result"]["structuredContent"]["task_acceptance"];
+    assert_eq!(
+        accepted["original_authority"], outcome["authority"],
+        "{preview}"
+    );
+    assert_eq!(
+        accepted["authority_drift"]["changed_fields"],
+        json!(["scope"])
+    );
+    assert_eq!(accepted["outcome"], reference);
+    assert_eq!(
+        accepted["authority"]["decisions"],
+        json!([current["structuredContent"]["reference"]])
+    );
+    let mut args = base_args("APPROVE");
+    let missing = rpc(
+        &http,
+        &url,
+        3,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":args}),
+    )
+    .await;
+    assert_eq!(
+        missing["result"]["content"][0]["text"], "AUTHORITY_APPROVAL_CURRENT_TASK_REQUIRED",
+        "{missing}"
+    );
+    args["expected_task_authority_sha256"] = json!("f".repeat(64));
+    let stale = rpc(
+        &http,
+        &url,
+        4,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":args}),
+    )
+    .await;
+    assert_eq!(
+        stale["result"]["content"][0]["text"],
+        "AUTHORITY_APPROVAL_STALE_REQUEST"
+    );
+    assert!(state.reviews.lock().unwrap().is_empty());
+    assert!(state.check_runs.lock().unwrap().is_empty());
+    args["expected_task_authority_sha256"] = accepted["authority"]["sha256"].clone();
+    let approved = rpc(
+        &http,
+        &url,
+        5,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":args}),
+    )
+    .await;
+    assert_ne!(approved["result"]["isError"], true, "{approved}");
+    assert_eq!(
+        approved["result"]["structuredContent"]["post_review_continuation"]["request_authority"]
+            ["authority"],
+        accepted["authority"]
+    );
+    assert!(state.reviews.lock().unwrap()[0]["body"]
+        .as_str()
+        .unwrap()
+        .contains(&format!(
+            "jresearchsoftware-reviewer-acceptance:v1 authority_sha256={}",
+            accepted["authority"]["sha256"].as_str().unwrap()
+        )));
+    assert_eq!(
+        state.authority_comments.lock().unwrap()[0]["body"],
+        original_body
+    );
+    decision["purpose"] = json!("Change the next current requirement");
+    decision["amendments"] = json!({"boundaries":["New acceptance boundary"]});
+    publish(&http, &url, &decision).await;
+    let before = state.requests.lock().unwrap().len();
+    let replay = rpc(
+        &http,
+        &url,
+        6,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":args}),
+    )
+    .await;
+    assert_eq!(
+        replay["result"]["content"][0]["text"], "AUTHORITY_APPROVAL_STALE_REQUEST",
+        "{replay}"
+    );
+    assert!(!state.requests.lock().unwrap()[before..]
+        .iter()
+        .any(
+            |path| (path.starts_with("POST ") && path.contains("/repos/"))
+                || path.starts_with("PUT ")
+                || path.starts_with("PATCH ")
+        ));
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn typed_cr_recovers_each_partial_publication_phase_without_duplicate_native_posts() {
+    for version in ["3.0", "4.0"] {
+        for phase in [
+            "review-response",
+            "issue-label",
+            "pr-label",
+            "title",
+            "check-response",
+            "check-reread",
+            "completion",
+        ] {
+            if version == "4.0" && matches!(phase, "issue-label" | "pr-label" | "title") {
+                continue;
+            }
+            let state = admitted();
+            let mut pr = live_pr();
+            pr["base"]["sha"] = json!("b".repeat(40));
+            *state.pr.lock().unwrap() = Some(pr);
+            let app = native_app(&state).await;
+            let cr = publication_cr(&app, version).await;
+            match phase {
+                "review-response" => {
+                    *state.authority_review_mode.lock().unwrap() = Some("lost".into())
+                }
+                "issue-label" => {
+                    *state.metadata_failure.lock().unwrap() = Some("issues/24/labels".into())
+                }
+                "pr-label" => {
+                    *state.metadata_failure.lock().unwrap() = Some("issues/25/labels".into())
+                }
+                "title" => *state.metadata_failure.lock().unwrap() = Some("pulls/25".into()),
+                "check-response" => {
+                    *state.authority_check_mode.lock().unwrap() = Some("lost".into())
+                }
+                "check-reread" => {
+                    *state.authority_check_mode.lock().unwrap() = Some("reread".into())
+                }
+                _ => {}
+            }
+            let partial = native_publish(&app, &cr).await;
+            if phase == "completion" {
+                assert_ne!(partial["isError"], true, "{partial}");
+                let native = partial["structuredContent"]["reference"]["id"]
+                    .as_i64()
+                    .unwrap();
+                app.store
+                    .lock()
+                    .unwrap()
+                    .authority_published(
+                        &authority_operation(&cr),
+                        native,
+                        partial["structuredContent"]["native_url"].as_str().unwrap(),
+                        &state.policy.actor,
+                    )
+                    .unwrap();
+            } else {
+                assert_eq!(partial["isError"], true, "{version}/{phase}: {partial}");
+            }
+            // Restart service ownership while retaining its protected journal.
+            let restarted = App {
+                store: app.store.clone(),
+                github: github::Github::mock_api(mock_api(state.clone()).await),
+                ..app
+            };
+            state.pr.lock().unwrap().as_mut().unwrap()["draft"] = json!(true);
+            let recovered = native_publish(&restarted, &cr).await;
+            assert_eq!(
+                recovered["content"][0]["text"], "AUTHORITY_RECOVERED",
+                "{version}/{phase}: {recovered}"
+            );
+            assert_eq!(state.reviews.lock().unwrap().len(), 1);
+            assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+            assert_eq!(
+                state
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/reviews"))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                state
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+                    .count(),
+                1
+            );
+            let row = restarted
+                .store
+                .lock()
+                .unwrap()
+                .known(&authority_operation(&cr))
+                .unwrap()
+                .unwrap();
+            assert_eq!(row.status, "PUBLISHED");
+            assert_eq!(row.native_id, Some(1));
+            assert!(row.check_id.is_some());
+            assert_eq!(
+                crate::step_sync::current_step(state.issue.lock().unwrap().as_ref().unwrap())
+                    .unwrap(),
+                if version == "3.0" { 2 } else { 1 }
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn uncertain_absent_review_or_check_never_repeats_its_post() {
+    for stage in ["review", "check"] {
+        let state = admitted();
+        let mut pr = live_pr();
+        pr["base"]["sha"] = json!("b".repeat(40));
+        *state.pr.lock().unwrap() = Some(pr);
+        let app = native_app(&state).await;
+        let cr = v4_cr();
+        if stage == "review" {
+            *state.authority_review_mode.lock().unwrap() = Some("missing".into());
+        } else {
+            *state.authority_check_mode.lock().unwrap() = Some("missing".into());
+        }
+        assert_eq!(native_publish(&app, &cr).await["isError"], true);
+        let before = state.requests.lock().unwrap().len();
+        let retry = native_publish(&app, &cr).await;
+        assert_eq!(
+            retry["content"][0]["text"],
+            if stage == "review" {
+                "AUTHORITY_PUBLICATION_UNCERTAIN"
+            } else {
+                "CHECK_PUBLICATION_UNCERTAIN"
+            },
+            "{retry}"
+        );
+        assert!(!state.requests.lock().unwrap()[before..]
+            .iter()
+            .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+    }
+}
+
+#[tokio::test]
+async fn typed_cr_recovery_rejects_native_tampering_authority_drift_and_ambiguous_checks() {
+    for defect in [
+        "body",
+        "actor",
+        "parent",
+        "review-head",
+        "review-state",
+        "native-reread-head",
+        "pr-head",
+        "pr-parent",
+        "charter",
+        "decision",
+        "duplicate-review",
+        "conflicting-review",
+        "duplicate-check",
+        "wrong-app",
+        "wrong-app-id",
+        "wrong-check-head",
+        "wrong-check-state",
+        "wrong-conclusion",
+        "check-operation",
+        "check-id",
+    ] {
+        let state = admitted();
+        let mut pr = live_pr();
+        pr["base"]["sha"] = json!("b".repeat(40));
+        *state.pr.lock().unwrap() = Some(pr);
+        let app = native_app(&state).await;
+        let cr = v4_cr();
+        let completed = native_publish(&app, &cr).await;
+        assert_ne!(completed["isError"], true, "{completed}");
+        let operation = authority_operation(&cr);
+        app.store
+            .lock()
+            .unwrap()
+            .authority_published(
+                &operation,
+                1,
+                completed["structuredContent"]["native_url"]
+                    .as_str()
+                    .unwrap(),
+                &state.policy.actor,
+            )
+            .unwrap();
+        let mut native = native_review(&state.reviews.lock().unwrap()[0]);
+        match defect {
+            "body" => native["body"] = json!("Tampered authority"),
+            "actor" => native["user"]["id"] = json!(999),
+            "parent" => {
+                native["pull_request_url"] =
+                    json!("https://api.github.com/repos/other/repository/pulls/25")
+            }
+            "review-head" | "native-reread-head" => native["commit_id"] = json!("c".repeat(40)),
+            "review-state" => native["state"] = json!("APPROVED"),
+            "pr-head" => {
+                state.pr.lock().unwrap().as_mut().unwrap()["head"]["sha"] = json!("c".repeat(40))
+            }
+            "pr-parent" => {
+                state.pr.lock().unwrap().as_mut().unwrap()["body"] = json!("Related to #26")
+            }
+            "charter" => {
+                state.issue.lock().unwrap().as_mut().unwrap()["body"] =
+                    json!(format!("{CHARTER}\nChanged charter"))
+            }
+            "decision" => {
+                let mut changed = decision_v4();
+                changed["amendments"] = json!({"scope":["Changed authority"]});
+                native_publish(&app, &changed).await;
+            }
+            "duplicate-review" | "conflicting-review" => {
+                let mut conflict = native.clone();
+                conflict["id"] = json!(2);
+                if defect == "conflicting-review" {
+                    conflict["body"]=json!(format!("Tampered record\n<!-- jresearchsoftware-task-authority:v1 operation={operation} -->"));
+                    conflict["user"]["id"] = json!(999);
+                }
+                *state.decisive_override.lock().unwrap() = Some(json!([native.clone(), conflict]));
+            }
+            "duplicate-check" => {
+                let check = state.check_runs.lock().unwrap()[0].clone();
+                state.check_runs.lock().unwrap().push(check);
+            }
+            "wrong-app" => state.check_runs.lock().unwrap()[0]["app"]["slug"] = json!("other-app"),
+            "wrong-app-id" => state.check_runs.lock().unwrap()[0]["app"]["id"] = json!(999),
+            "wrong-check-head" => {
+                state.check_runs.lock().unwrap()[0]["head_sha"] = json!("c".repeat(40))
+            }
+            "wrong-check-state" => {
+                state.check_runs.lock().unwrap()[0]["status"] = json!("in_progress")
+            }
+            "wrong-conclusion" => {
+                state.check_runs.lock().unwrap()[0]["conclusion"] = json!("success")
+            }
+            "check-operation" => {
+                state.check_runs.lock().unwrap()[0]["external_id"] = json!("another-operation")
+            }
+            "check-id" => state.check_runs.lock().unwrap()[0]["id"] = json!(999),
+            _ => unreachable!(),
+        }
+        if matches!(
+            defect,
+            "body" | "actor" | "parent" | "review-head" | "review-state" | "native-reread-head"
+        ) {
+            state
+                .authority_sources
+                .lock()
+                .unwrap()
+                .insert("pulls/25/reviews/1".into(), native);
+        }
+        let before = state.requests.lock().unwrap().len();
+        let retry = native_publish(&app, &cr).await;
+        assert_eq!(retry["isError"], true, "{defect}: {retry}");
+        assert!(
+            !state.requests.lock().unwrap()[before..]
+                .iter()
+                .any(
+                    |path| (path.starts_with("POST ") && path.contains("/repos/"))
+                        || path.starts_with("PUT ")
+                        || path.starts_with("PATCH ")
+                ),
+            "{defect}: {retry}"
+        );
+        assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn ordinary_unlinked_pr_keeps_preview_and_native_approve_without_task_admission() {
+    let state = MockState::default();
+    let mut pr = live_pr();
+    pr["body"] = json!("Ordinary contributor change.");
+    pr["title"] = json!("Improve a bounded implementation");
+    pr["labels"] = json!([]);
+    *state.pr.lock().unwrap() = Some(pr);
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let preview=rpc(&http,&url,1,"tools/call",json!({"name":"check_pr_review_target","arguments":{"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}})).await;
+    assert_eq!(preview["result"]["content"][0]["text"], "OK");
+    assert!(preview["result"]["structuredContent"]["task_acceptance"].is_null());
+    let approved = rpc(
+        &http,
+        &url,
+        2,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":base_args("APPROVE")}),
+    )
+    .await;
+    assert_eq!(
+        approved["result"]["content"][0]["text"], "PUBLISHED",
+        "{approved}"
+    );
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn incomplete_task_link_inspection_refuses_governed_approval_and_preserves_generic_multi_links(
+) {
+    for scenario in [
+        "projected-admission",
+        "admission-only",
+        "request-only",
+        "unavailable-multi",
+        "generic",
+    ] {
+        let state = admitted();
+        let mut pr = live_pr();
+        if scenario != "projected-admission" && scenario != "unavailable-multi" {
+            pr["title"] = json!("Ordinary contributor improvement");
+            pr["labels"] = json!([]);
+        }
+        let ids: Vec<u64> = if scenario == "unavailable-multi" {
+            vec![1, 24]
+        } else {
+            (1..=20).chain(std::iter::once(24)).collect()
+        };
+        let mut body = ids
+            .iter()
+            .map(|id| format!("Related to #{id}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if matches!(scenario, "projected-admission" | "admission-only") {
+            body.push_str(&format!("\nExecution admission digest: {}", "a".repeat(64)));
+        } else if scenario == "request-only" {
+            body.push_str(&format!("\nExecution request digest: {}", "a".repeat(64)));
+        }
+        pr["body"] = json!(body);
+        *state.pr.lock().unwrap() = Some(pr);
+        for id in 1..=20 {
+            if scenario == "unavailable-multi" && id == 1 {
+                continue;
+            }
+            state.authority_sources.lock().unwrap().insert(format!("issues/{id}"), json!({"id":id,"number":id,"state":"open","body":"Ordinary unmarked Issue.","user":{"login":"example-owner","id":1,"type":"User"}}));
+        }
+        if scenario == "generic" {
+            state.issue.lock().unwrap().as_mut().unwrap()["body"] =
+                json!("Ordinary unmarked Issue.");
+        }
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview=rpc(&http,&url,1,"tools/call",json!({"name":"check_pr_review_target","arguments":{"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}})).await;
+        let before = state.requests.lock().unwrap().len();
+        let approved = rpc(
+            &http,
+            &url,
+            2,
+            "tools/call",
+            json!({"name":"submit_pr_review","arguments":base_args("APPROVE")}),
+        )
+        .await;
+        if scenario == "generic" {
+            assert!(preview["result"]["structuredContent"]["task_acceptance"].is_null());
+            assert_eq!(
+                approved["result"]["content"][0]["text"], "PUBLISHED",
+                "{approved}"
+            );
+            assert_eq!(
+                approved["result"]["structuredContent"]["post_review_continuation"]
+                    ["automatic_continuation_authorized"],
+                false
+            );
+            assert_eq!(state.reviews.lock().unwrap().len(), 1);
+        } else {
+            assert!(
+                preview["result"]["structuredContent"]["task_acceptance"]["error_code"].is_string(),
+                "{scenario}: {preview}"
+            );
+            assert_eq!(
+                approved["result"]["isError"], true,
+                "{scenario}: {approved}"
+            );
+            assert!(
+                !state.requests.lock().unwrap()[before..]
+                    .iter()
+                    .any(|path| path.starts_with("POST ") && path.contains("/repos/")),
+                "{scenario}: {approved}"
+            );
+            assert!(state.reviews.lock().unwrap().is_empty());
+            assert!(state.check_runs.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn historical_cr_journal_observes_existing_check_but_cannot_invent_absent_post_intent() {
+    static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    for version in ["3.0", "4.0"] {
+        for observed_check in [false, true] {
+            let state = admitted();
+            let mut pr = live_pr();
+            pr["base"]["sha"] = json!("b".repeat(40));
+            *state.pr.lock().unwrap() = Some(pr);
+            let app = native_app(&state).await;
+            let cr = publication_cr(&app, version).await;
+            let completed = native_publish(&app, &cr).await;
+            assert_ne!(completed["isError"], true, "{completed}");
+            let operation = authority_operation(&cr);
+            let (body, step_binding) = {
+                let store = app.store.lock().unwrap();
+                (
+                    store.publication_body(&operation).unwrap().unwrap(),
+                    store.step_binding(&operation).unwrap(),
+                )
+            };
+            let path = std::env::temp_dir().join(format!(
+                "relay-historical-check-{}-{}.db",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            let db = rusqlite::Connection::open(&path).unwrap();
+            db.execute_batch("CREATE TABLE operations(operation_id TEXT PRIMARY KEY,status TEXT NOT NULL,review_id INTEGER,review_url TEXT,actor_login TEXT,check_id INTEGER,check_url TEXT,finding_digest TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,native_id INTEGER,native_url TEXT,publication_body TEXT,step_binding TEXT);").unwrap();
+            db.execute("INSERT INTO operations(operation_id,status,actor_login,created_at,native_id,native_url,publication_body,step_binding) VALUES(?1,'AUTHORITY_PUBLISHED',?2,0,1,?3,?4,?5)",rusqlite::params![operation,state.policy.actor,completed["structuredContent"]["native_url"].as_str().unwrap(),body,step_binding]).unwrap();
+            drop(db);
+            let historical = App {
+                store: Arc::new(Mutex::new(
+                    store::Store::open(path.to_str().unwrap()).unwrap(),
+                )),
+                ..app
+            };
+            if !observed_check {
+                state.check_runs.lock().unwrap().clear();
+            }
+            let before = state.requests.lock().unwrap().len();
+            let recovered = native_publish(&historical, &cr).await;
+            assert_eq!(
+                recovered["content"][0]["text"],
+                if observed_check {
+                    "AUTHORITY_RECOVERED"
+                } else {
+                    "CHECK_PUBLICATION_UNCERTAIN"
+                },
+                "{version}/{observed_check}: {recovered}"
+            );
+            assert!(!state.requests.lock().unwrap()[before..]
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+            assert_eq!(state.reviews.lock().unwrap().len(), 1);
+            drop(historical);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn ambiguous_marked_task_linkage_and_postpreview_drift_block_native_approval_before_mutation()
+{
+    for defect in [
+        "ambiguous",
+        "postpreview",
+        "original-body",
+        "original-actor",
+        "original-parent",
+    ] {
+        let state = admitted();
+        let (reference, outcome) = outcome_v4(
+            &state,
+            authority_v4(vec![], Value::Null, Value::Null),
+            json!({"kind":"issue","number":24}),
+            json!({"kind":"git","revision":HEAD,"identities":[]}),
+        );
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let mut direction = decision_v4();
+        direction["amendments"] = json!({"scope":["Current requirement"]});
+        publish(&http, &url, &direction).await;
+        let preview=rpc(&http,&url,1,"tools/call",json!({"name":"check_pr_review_target","arguments":{"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}})).await;
+        let mut args = base_args("APPROVE");
+        args["expected_task_authority_sha256"] = preview["result"]["structuredContent"]
+            ["task_acceptance"]["authority"]["sha256"]
+            .clone();
+        match defect {
+            "ambiguous" => {
+                let mut pr = live_pr();
+                pr["body"] = json!("Related to #24\nRelated to #26");
+                *state.pr.lock().unwrap() = Some(pr);
+            }
+            "postpreview" => {
+                direction["amendments"] = json!({"boundaries":["A new current boundary"]});
+                publish(&http, &url, &direction).await;
+            }
+            _ => {
+                let mut native = state.authority_comments.lock().unwrap()[0].clone();
+                match defect {
+                    "original-body" => native["body"] = json!("Changed Outcome"),
+                    "original-actor" => native["user"]["id"] = json!(999),
+                    _ => {
+                        native["issue_url"] =
+                            json!("https://api.github.com/repos/another/repository/issues/24")
+                    }
+                };
+                state
+                    .authority_sources
+                    .lock()
+                    .unwrap()
+                    .insert(format!("issues/comments/{}", reference["id"]), native);
+            }
+        }
+        let before = state.requests.lock().unwrap().len();
+        let rejected = rpc(
+            &http,
+            &url,
+            2,
+            "tools/call",
+            json!({"name":"submit_pr_review","arguments":args}),
+        )
+        .await;
+        assert_eq!(rejected["result"]["isError"], true, "{defect}: {rejected}");
+        assert!(
+            !state.requests.lock().unwrap()[before..]
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.contains("/repos/")),
+            "{defect}: {rejected}"
+        );
+        assert_eq!(outcome["admission"]["attempt"], "run-10");
+        assert!(state.reviews.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn verified_nonstandard_resolution_proves_equivalent_defaults_and_old_outcomes_show_only_real_gaps(
+) {
+    for resolved in [false, true] {
+        let state = admitted();
+        let (_, mut outcome) = outcome_v4(
+            &state,
+            authority_v4(vec![], Value::Null, Value::Null),
+            json!({"kind":"issue","number":24}),
+            json!({"kind":"git","revision":HEAD,"identities":[]}),
+        );
+        if resolved {
+            outcome["authority_resolution"] = json!({"project_defaults":{"model":"project-model","effort":"high","subagents":false,"validation":["diff-check"]},
+                "purpose":"Original configured purpose","starting_state":{"branch":"codex/task-24","base_sha":"b".repeat(40),"starting_head":HEAD,"existing_pr":25}});
+            crate::task_authority::validate_record(&outcome).unwrap();
+            state.authority_comments.lock().unwrap()[0]["body"] =
+                json!(crate::task_authority::render(&outcome));
+        }
+        let original_body = state.authority_comments.lock().unwrap()[0]["body"].clone();
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let mut decision = decision_v4();
+        decision["amendments"] = json!({"model":"project-model","effort":"high","subagents":false,"validation":["diff-check"],"purpose":"Original configured purpose","branch":"codex/task-24","base_sha":"b".repeat(40),"starting_head":HEAD,"existing_pr":25});
+        publish(&http, &url, &decision).await;
+        let preview=rpc(&http,&url,1,"tools/call",json!({"name":"check_pr_review_target","arguments":{"repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}})).await;
+        let acceptance = &preview["result"]["structuredContent"]["task_acceptance"];
+        assert_eq!(
+            acceptance["authority_drift"]["changed_fields"],
+            json!([]),
+            "{preview}"
+        );
+        assert_eq!(
+            acceptance["authority_drift"]["review_required"], !resolved,
+            "{preview}"
+        );
+        if resolved {
+            assert!(acceptance["authority_drift"]
+                .get("comparison_gaps")
+                .is_none());
+        } else {
+            assert_eq!(
+                acceptance["authority_drift"]["comparison_gaps"],
+                json!([
+                    "base_sha",
+                    "branch",
+                    "effort",
+                    "existing_pr",
+                    "model",
+                    "purpose",
+                    "starting_head",
+                    "subagents",
+                    "validation"
+                ])
+            );
+        }
+        let rejected = rpc(
+            &http,
+            &url,
+            2,
+            "tools/call",
+            json!({"name":"submit_pr_review","arguments":base_args("APPROVE")}),
+        )
+        .await;
+        if resolved {
+            assert_eq!(
+                rejected["result"]["content"][0]["text"], "PUBLISHED",
+                "{rejected}"
+            );
+        } else {
+            assert_eq!(
+                rejected["result"]["content"][0]["text"],
+                "AUTHORITY_APPROVAL_CURRENT_TASK_REQUIRED"
+            );
+            assert!(state.reviews.lock().unwrap().is_empty());
+            assert!(state.check_runs.lock().unwrap().is_empty());
+        }
+        assert_eq!(
+            state.authority_comments.lock().unwrap()[0]["body"],
+            original_body
+        );
+    }
+}
+
+#[test]
+fn drift_shape_rejects_invalid_digest_flags_unsorted_or_overlapping_gaps() {
+    let state = admitted();
+    let (_, outcome) = outcome_v4(
+        &state,
+        authority_v4(vec![], Value::Null, Value::Null),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"qualification","revision":null,"identities":[{"kind":"qualification-run","id":"shape-run"}]}),
+    );
+    for defect in ["digest", "flag", "sort", "overlap", "gap-sort", "gap-flag"] {
+        let mut candidate = outcome.clone();
+        candidate["authority_drift"] = json!({"current_authority":outcome["authority"],"changed_fields":["boundaries","scope"],"review_required":true});
+        match defect {
+            "digest" => {
+                candidate["authority_drift"]["current_authority"]["sha256"] = json!("f".repeat(64))
+            }
+            "flag" => candidate["authority_drift"]["review_required"] = json!(false),
+            "sort" => {
+                candidate["authority_drift"]["changed_fields"] = json!(["scope", "boundaries"])
+            }
+            "overlap" => candidate["authority_drift"]["comparison_gaps"] = json!(["scope"]),
+            "gap-sort" => {
+                candidate["authority_drift"]["comparison_gaps"] = json!(["model", "effort"])
+            }
+            _ => {
+                candidate["authority_drift"]["changed_fields"] = json!([]);
+                candidate["authority_drift"]["comparison_gaps"] = json!(["model"]);
+                candidate["authority_drift"]["review_required"] = json!(false);
+            }
+        }
+        assert!(
+            crate::task_authority::validate_record(&candidate).is_err(),
+            "{defect}: {candidate}"
+        );
+    }
 }

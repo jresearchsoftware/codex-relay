@@ -1,13 +1,13 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { parseIssueAuthority } from '../../runtime/src/issue-authority.mjs';
 import { extractRemediationContract, validateRemediationContract } from '../../contracts/src/contracts.mjs';
-import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS } from './execution-contract.mjs';
+import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, labelRunMatches, launchStep, remediationThreadTitle } from './launch-metadata.mjs';
 import { assertStep, currentStep, changeRequestStep, assertPrStepTitle, projectedRequestTitle, labelNames, READY_LABELS } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { readTaskAuthority } from './task-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
-import { authorityMode, createAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -64,7 +64,7 @@ export function assertPr(pr, number) {
     || !exactSha(pr.head?.sha) || !exactSha(pr.base?.sha)) fail('PR_NOT_ADMITTED');
   branchName(pr.head.ref);
 }
-export async function readAuthority(api, target, number, { targetBase, step, streamlined = false, route, runId, lineage, snapshot, previousRecord } = {}) {
+export async function readAuthority(api, target, number, { targetBase, step, streamlined = false, route, runId, lineage, snapshot, previousRecord, resolution } = {}) {
   const pr = target === 'pull_request' ? await api.get(`/pulls/${number}`) : null;
   if (pr) assertPr(pr, number);
   const issueNumber = pr ? linkedIssue(pr.body) : number;
@@ -74,14 +74,19 @@ export async function readAuthority(api, target, number, { targetBase, step, str
   step = launchStep(step);
   if (!nativeAdmission) { assertStep(issue.labels, step); if (pr) assertStep(pr.labels, step); }
   const typed = await readTaskAuthority(api, issue, pr, step, nativeAdmission ? {
-    streamlined: true, route, purpose: issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
+    streamlined: true, route, purpose: resolution?.purpose ?? snapshot?.purpose ?? issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
     projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
       subagents: true, validation: [...NATIVE_VALIDATIONS] },
     startingState: { branch: `${CONSUMER.taskBranchPrefix}task-${issueNumber}`, base_sha: targetBase,
       starting_head: targetBase, existing_pr: null }, pullRequest: pr?.number,
+    ...(snapshot ? { admittedAuthority: snapshot.authority } : {}),
+    ...(resolution ? { projectDefaults: resolution.project_defaults, startingState: resolution.starting_state } : {}),
   } : {});
   if (typed) {
     const semantic = typed.request;
+    if (snapshot && ['purpose', 'scope', 'model', 'effort', 'subagents', 'validation', 'boundaries',
+      'issue_closure_policy', 'continuation'].some(field => canonicalAuthorityJson(snapshot[field])
+        !== canonicalAuthorityJson(typed.originalAuthority.request[field]))) fail('AUTHORITY_CHANGED');
     if (nativeAdmission && !pr && semantic.kind === 'change-request') fail('AUTHORITY_SOURCE_TARGET_MISMATCH');
     let continuationState;
     const priorAuthority = previousRecord?.envelope?.request?.authority;
@@ -104,9 +109,9 @@ export async function readAuthority(api, target, number, { targetBase, step, str
           starting_head: retainedHead, existing_pr: existing?.number ?? null };
       }
     }
-    const q = nativeAdmission ? createAdmissionSnapshot(typed, { step, route, runId, attempt: `run-${runId}`, lineage,
-      ...continuationState,
-      ...(snapshot ? Object.fromEntries(['branch', 'base_sha', 'starting_head', 'existing_pr'].map(field => [field, snapshot[field]])) : {}) }) : semantic;
+    const q = snapshot ? validateAdmissionSnapshot(snapshot, { step, route, attempt: `run-${runId}` })
+      : nativeAdmission ? createAdmissionSnapshot(typed, { step, route, runId, attempt: `run-${runId}`, lineage,
+        ...continuationState }) : semantic;
     const noSource = q.route === 'manual' && q.branch === null && q.base_sha === null && q.starting_head === null;
     if (!noSource && (!q.branch || !exactSha(q.base_sha) || !exactSha(q.starting_head))) fail('AUTHORITY_STARTING_STATE_INVALID');
     if (q.branch) branchName(q.branch);
@@ -123,6 +128,8 @@ export async function readAuthority(api, target, number, { targetBase, step, str
       closure: `Related to #${issueNumber}`,
       input: typed.input, validation: q.validation, request: q, requestReference: typed.reference,
       authorityDigest: typed.authorityDigest,
+      ...(snapshot ? { currentRequest: semantic, authorityDrift: typed.authorityDrift,
+        originalRequest: typed.originalAuthority.request } : {}),
       admission: { kind: nativeAdmission ? 'github-native-admission' : 'github-native-request', warnings: typed.warnings.map(code => ({ code, field: 'closure', resolved: 'keep-open' })) },
       ...(continuation ? { continuation } : {}) };
     if (continuation?.pullRequest) {
@@ -279,15 +286,29 @@ export async function revalidateReadyEvent(api, e) {
     run: await api.getRun(e.runId), subject });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
 }
-export async function revalidateAuthority(api, e) {
+export async function revalidateAuthority(api, e, { reporting = false } = {}) {
+  if (e.request?.kind === 'admission') validateEnvelope(e);
   // A missing authoring base was resolved once, before worker mutation. Main
   // advancement cannot silently rebind that immutable admission resolution.
   const a = await readAuthority(api, e.target, e.number, { targetBase: e.targetBase, step: e.step,
     streamlined: e.request?.kind === 'admission', route: e.route, runId: e.runId,
-    lineage: e.request?.lineage, snapshot: e.request?.kind === 'admission' ? e.request : undefined });
-  if (a.authorityDigest !== e.authorityDigest || a.branch !== e.branch || a.startHead !== e.startHead
+    lineage: e.request?.lineage, snapshot: e.request?.kind === 'admission' ? e.request : undefined,
+    resolution: e.request?.authority_resolution });
+  if ((e.request?.kind !== 'admission' && a.authorityDigest !== e.authorityDigest) || a.branch !== e.branch || a.startHead !== e.startHead
     || a.issueNumber !== e.issueNumber || (a.review?.id ?? null) !== e.reviewId) fail('AUTHORITY_CHANGED');
   if (a.request && a.request.route !== e.route) fail('AUTHORITY_CHANGED');
+  if (e.request?.kind === 'admission') {
+    // Source publication and lifecycle effects stay inside the admitted/live
+    // intersection. Do not interpret permission prose or execute new scope.
+    // Reporting remains possible after a revoked or ambiguous permission.
+    const old = a.originalRequest; const current = a.currentRequest;
+    if (['branch', 'base_sha', 'starting_head', 'existing_pr'].some(field =>
+      canonicalAuthorityJson(old[field]) !== canonicalAuthorityJson(current[field]))) fail('AUTHORITY_CHANGED');
+    if (!reporting && (old.scope.some(value => !current.scope.includes(value))
+      || current.boundaries.some(value => !old.boundaries.includes(value))
+      || current.validation.some(value => !old.validation.includes(value))
+      || current.continuation.hold && !old.continuation.hold)) fail('AUTHORITY_CHANGED');
+  }
   return a;
 }
 

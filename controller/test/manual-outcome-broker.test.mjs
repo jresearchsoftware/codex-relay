@@ -61,7 +61,7 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   const receipt = await f.invoke();
   assert.equal(receipt.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
-  assert.deepEqual(extractAuthorityRecord(f.comments[0].body), f.result);
+  assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
 });
 
@@ -70,7 +70,7 @@ for (const race of ['after-outcome', 'after-reservation']) {
     const f = await manualBroker(t, race);
     await assert.rejects(f.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
     assert.equal(f.posts(), 1); assert.equal(f.ready(), 0); assert.equal(f.pr.draft, true);
-    assert.deepEqual(extractAuthorityRecord(f.comments[0].body), f.result);
+    assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
     const durable = await f.store.get(f.envelope.runId);
     assert.equal(durable.outcome.outcomeId, f.comments[0].id);
     if (race === 'after-reservation') {

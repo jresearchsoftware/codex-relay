@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canonicalAuthorityJson, admissionBinding, createAdmissionSnapshot, nativeReference,
-  resolveTaskAuthority, sha256Body } from '../src/github-authority.mjs';
+  resolveTaskAuthority, resolveOutcomeAuthority, extractAuthorityRecord, sha256Body } from '../src/github-authority.mjs';
 import { continueAfterApproval } from '../src/post-review-continuation.mjs';
 
 const repository = 'example-org/sample-project';
@@ -116,6 +116,56 @@ test('changed trusted Decision, unknown completion, protected hold and delayed m
   const changed = fixture();
   const reserve = changed.ports.reserveAction;
   changed.ports.reserveAction = async action => { changed.closure.body += '<!-- edited -->'; return reserve(action); };
-  assert.equal((await continueAfterApproval(changed.receipt, changed.ports)).reason, 'AUTHORITY_APPROVAL_STALE_REQUEST');
+  assert.equal((await continueAfterApproval(changed.receipt, changed.ports)).reason, 'AUTHORITY_SOURCE_MISMATCH');
   assert.deepEqual(changed.mutations, []);
+});
+
+for (const pr of [false, true]) {
+  test(`${pr ? 'native exact-head PR' : 'no-PR Task'} acceptance binds current amended Task while preserving the original Outcome admission`, async () => {
+    const f = fixture({ pr });
+    const source = extractAuthorityRecord(f.closure.body);
+    const amendment = { ...f.closure, id: 202, body: render({ ...source,
+      amendments: { scope: ['Added current requirement independently verified in the delivered result'] } }) };
+    f.records.push(amendment);
+    const current = resolveOutcomeAuthority(f.receipt.authority, f.records, f.state.binding);
+    const native = f.records.find(record => record.id === 501);
+    f.receipt.authority = current.authority;
+    native.body = pr ? `${native.body}\n<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=${current.authority.sha256} -->`
+      : render({ ...extractAuthorityRecord(native.body), authority: current.authority });
+    f.receipt.approval = nativeReference(native);
+    f.state.currentApproval = f.receipt.approval;
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).status, 'complete');
+    assert.deepEqual(f.mutations, pr ? ['merge', 'close'] : ['close']);
+    const original = extractAuthorityRecord(f.records.find(record => record.id === 500).body);
+    assert.notDeepEqual(original.authority, current.authority);
+    assert.deepEqual(original.admission, f.receipt.admission);
+  });
+
+  test(`${pr ? 'PR' : 'Task'} material Decision drift after approval requires fresh independent acceptance before any effect`, async () => {
+    const f = fixture({ pr });
+    const source = extractAuthorityRecord(f.closure.body);
+    f.records.push({ ...f.closure, id: 502, body: render({ ...source, amendments: { scope: ['Requirement added after approval'] } }) });
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).reason, 'AUTHORITY_APPROVAL_STALE_REQUEST');
+    assert.deepEqual(f.mutations, []);
+    // A reconstructed caller receipt cannot pretend the old native approval
+    // accepted the newly added scope.
+    f.receipt.authority = resolveOutcomeAuthority(f.receipt.authority, f.records, f.state.binding).authority;
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).reason, 'CONTINUATION_APPROVAL_UNVERIFIED');
+    assert.deepEqual(f.mutations, []);
+  });
+}
+
+test('a native PR authority marker binds exact current sources and rejects copied or duplicated acceptance bindings', async () => {
+  for (const marker of [
+    '<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=' + 'f'.repeat(64) + ' -->',
+    '<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=duplicate -->\n<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=duplicate -->'
+  ]) {
+    const f = fixture({ pr: true });
+    const native = f.records.find(record => record.id === 501);
+    native.body += '\n' + marker;
+    f.receipt.approval = nativeReference(native);
+    f.state.currentApproval = f.receipt.approval;
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).reason, 'CONTINUATION_APPROVAL_UNVERIFIED');
+    assert.deepEqual(f.mutations, []);
+  }
 });

@@ -117,10 +117,26 @@ export function validateAuthorityRecord(record, binding = {}) {
       || record.authority.charter.sha256 !== record.charter_sha256
       || record.authority.sha256 !== authoritySourceDigest(record.authority))) fail('AUTHORITY_SOURCE_MISMATCH');
     if (record.authority) validateAuthoritySources(record.authority, record.task);
+    if (record.authority_drift) {
+      const drift = record.authority_drift; const current = drift.current_authority;
+      validateAuthoritySources(current, record.task);
+      if (current.sha256 !== authoritySourceDigest(current) || !equal(current.charter, record.authority.charter)
+        || !equal(current.change_request, record.authority.change_request)
+        || !equal(current.compatibility_request, record.authority.compatibility_request)
+        || drift.review_required !== (drift.changed_fields.length > 0 || (drift.comparison_gaps?.length ?? 0) > 0)
+        || !equal(drift.changed_fields, [...drift.changed_fields].sort())
+        || drift.comparison_gaps && (!equal(drift.comparison_gaps, [...drift.comparison_gaps].sort())
+          || drift.comparison_gaps.some(field => drift.changed_fields.includes(field)))) fail('AUTHORITY_SOURCE_MISMATCH');
+    }
     if (record.admission && (record.step !== record.admission.step
       || record.kind === 'outcome' && record.attempt !== record.admission.attempt)) fail('AUTHORITY_ADMISSION_MISMATCH');
   }
   return structuredClone(record);
+}
+
+export function validateAuthorityResolution(resolution) {
+  if (!conforms(resolution, AUTHORITY_V4_DEFINITION.input_schemas.outcome.properties.authority_resolution)) fail('AUTHORITY_RESOLUTION_INVALID');
+  return structuredClone(resolution);
 }
 
 export function renderAuthorityRecord(record, binding = {}) {
@@ -429,15 +445,59 @@ export function resolveTaskAuthority(nativeRecords, binding) {
     ...(binding.acceptedAuthority ? { acceptanceOnly: true } : {}),
     ...(compatibility ? { compatibilityRequest: compatibility } : {}),
     authority, authorityDigest: authority.sha256, selectedContext,
+    ...(typeof binding.purpose === 'string' && binding.startingState
+      && ['model', 'effort', 'subagents', 'validation'].every(field => Object.hasOwn(project, field))
+      && ['branch', 'base_sha', 'starting_head', 'existing_pr'].every(field => Object.hasOwn(binding.startingState, field))
+      ? { resolution: validateAuthorityResolution({ project_defaults: project, purpose: binding.purpose,
+        starting_state: binding.startingState }) } : {}),
     decisions: active.map(item => ({ reference: nativeReference(item.native), decision: item.payload })), warnings: policy.warnings };
 }
 
 // Acceptance keeps the originating exact CR as provenance after APPROVE or a
 // disposed artifact. It cannot turn an already accepted CR into a new execution.
+// Native source integrity remains immutable. A trusted successor Decision may
+// amend the Task without rewriting an admitted execution or suppressing its
+// truthful Outcome. Resolve the old and current semantics independently.
 export function resolveOutcomeAuthority(authority, nativeRecords, binding) {
-  const current = resolveTaskAuthority(nativeRecords, { ...binding, acceptedAuthority: authority });
-  if (!current || !equal(current.authority, authority)) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
-  return current;
+  if (binding.authorityResolution) {
+    const resolution = validateAuthorityResolution(binding.authorityResolution);
+    binding = { ...binding, projectDefaults: resolution.project_defaults,
+      purpose: resolution.purpose, startingState: resolution.starting_state };
+  }
+  validateAuthoritySources(authority, binding.task);
+  if (authority.sha256 !== authoritySourceDigest(authority)) fail('AUTHORITY_SOURCE_MISMATCH');
+  const records = recordsById(nativeRecords, binding);
+  const originalDecisions = new Set();
+  const pending = [...authority.decisions];
+  for (const reference of [authority.charter, authority.change_request, authority.compatibility_request].filter(Boolean)) {
+    const native = resolveReference(reference, records, binding);
+    if (!equal(nativeReference(native), reference) || reference.kind !== 'issue-body' && !isTrusted(native, binding.trustedAuthor)) fail('AUTHORITY_SOURCE_MISMATCH');
+  }
+  while (pending.length) {
+    const reference = pending.pop();
+    const key = referenceKey(reference);
+    if (originalDecisions.has(key)) continue;
+    const native = resolveReference(reference, records, binding);
+    const payload = typedNative(native, binding);
+    if (!equal(nativeReference(native), reference) || !isTrusted(native, binding.trustedAuthor)
+      || payload?.kind !== 'decision') fail('AUTHORITY_SOURCE_MISMATCH');
+    originalDecisions.add(key);
+    if (payload.supersedes) pending.push(payload.supersedes);
+  }
+  const options = { ...binding, acceptedAuthority: authority };
+  const current = resolveTaskAuthority(nativeRecords, options);
+  if (!current || !equal(current.authority.charter, authority.charter)
+    || !equal(current.authority.change_request, authority.change_request)
+    || !equal(current.authority.compatibility_request, authority.compatibility_request)) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
+  const originalRecords = nativeRecords.filter(native => !isTrusted(native, binding.trustedAuthor)
+    || typedNative(native, binding)?.kind !== 'decision' || originalDecisions.has(referenceKey(native)));
+  const original = resolveTaskAuthority(originalRecords, options);
+  if (!original || !equal(original.authority, authority)) fail('AUTHORITY_SOURCE_MISMATCH');
+  const changed_fields = ['purpose', 'scope', 'boundaries', 'validation', 'model', 'effort', 'subagents',
+    'branch', 'base_sha', 'starting_head', 'existing_pr', 'issue_closure_policy', 'continuation']
+    .filter(field => !equal(original.request[field], current.request[field])).sort();
+  return { ...current, originalAuthority: original,
+    authorityDrift: { current_authority: current.authority, changed_fields, review_required: changed_fields.length > 0 } };
 }
 
 export function validateAdmissionSnapshot(snapshot, binding = {}) {
@@ -473,6 +533,7 @@ export function createAdmissionSnapshot(resolved, admission) {
     run_id: Number.isSafeInteger(admission.runId) && admission.runId > 0 ? String(admission.runId)
       : admission.runId ?? admission.run_id ?? admission.attempt,
     lineage: admission.lineage ?? null,
+    ...(resolved.resolution ? { authority_resolution: validateAuthorityResolution(resolved.resolution) } : {}),
     ...Object.fromEntries(['change_request_id', 'reviewed_head_sha'].filter(field => q[field] !== undefined).map(field => [field, q[field]])),
     ...Object.fromEntries(['branch', 'base_sha', 'starting_head', 'existing_pr'].filter(field => admission[field] !== undefined)
       .map(field => [field, admission[field]])) };
@@ -485,20 +546,25 @@ export function admissionBinding(snapshot) {
 }
 
 function validateAdmissionApproval(approval, nativeRecords, binding) {
-  const current = resolveOutcomeAuthority(approval.authority, nativeRecords, binding);
   const records = recordsById(nativeRecords, binding);
   const native = resolveReference(approval.outcome, records, binding);
   if (native.kind !== 'issue-comment' || !isTrusted(native, binding.trustedWriter)) fail('AUTHORITY_OUTCOME_UNTRUSTED');
   const outcome = typedNative(native, binding);
-  if (outcome?.kind !== 'outcome' || outcome.schema_version !== '4.0' || !equal(outcome.authority, approval.authority)
+  if (outcome?.kind !== 'outcome' || outcome.schema_version !== '4.0'
     || !equal(outcome.admission, approval.admission) || outcome.status !== 'implemented' || !equal(outcome.result, approval.result)
     || outcome.warnings.some(warning => !approval.warnings.some(disposition => disposition.source === warning.source
       && disposition.impact === warning.impact))) fail('AUTHORITY_APPROVAL_RESULT_MISMATCH');
   if (outcome.limitations.some(limitation => !approval.limitations.includes(limitation))) fail('AUTHORITY_APPROVAL_LIMITATIONS_MISSING');
+  const acceptanceBinding = outcome.authority_resolution ? { ...binding, authorityResolution: outcome.authority_resolution } : binding;
+  const current = resolveOutcomeAuthority(approval.authority, nativeRecords, acceptanceBinding);
+  if (!equal(current.authority, approval.authority)) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
+  const delivered = resolveOutcomeAuthority(outcome.authority, nativeRecords, acceptanceBinding);
+  if (!equal(delivered.authority, current.authority)) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
   if (binding.openImplementationPr === true) fail('AUTHORITY_APPROVAL_PR_REVIEW_REQUIRED');
   const later = [...records.values()].some(record => record.kind === 'issue-comment' && isTrusted(record, binding.trustedWriter)
     && record.id > native.id && (() => { const value = typedNative(record, binding); return value?.kind === 'outcome'
-      && value.schema_version === '4.0' && equal(value.authority, outcome.authority) && value.step > outcome.step; })());
+      && value.schema_version === '4.0' && value.step > outcome.step; })());
   if (later) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
-  return { approval: structuredClone(approval), current, outcome, outcomeRecord: structuredClone(native) };
+  return { approval: structuredClone(approval), current, outcome, outcomeRecord: structuredClone(native),
+    authorityDrift: delivered.authorityDrift };
 }

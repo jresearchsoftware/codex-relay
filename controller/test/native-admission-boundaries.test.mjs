@@ -187,7 +187,7 @@ test('trusted Decision profile and exact CR override resolve without preallocati
   assert.equal(f.envelope.request.authority.change_request.id, f.review.id);
   assert.equal(Object.hasOwn(extractAuthorityRecord(f.review.body), 'step'), false);
   amend.body += '<!-- edited authority bytes -->';
-  await assert.rejects(revalidateAuthority(f.api, f.envelope), { code: 'AUTHORITY_CHANGED' });
+  await assert.rejects(revalidateAuthority(f.api, f.envelope), { code: 'AUTHORITY_SOURCE_MISMATCH' });
 });
 
 test('standalone v4 CR Draft transition reserves exact authority without allocating an admission or Step', async t => {

@@ -10,7 +10,7 @@ const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
 const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
-export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [] } = {}) {
+export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift } = {}) {
   if (!e.request || !e.requestReference) return body;
   const snapshot = e.request.kind === 'admission';
   const warningSources = [...(e.admission?.warnings ?? []).map(warning => warning.code), ...executionWarnings];
@@ -20,7 +20,10 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
   const record = { schema_version: snapshot ? '4.0' : '3.0', kind: 'outcome', repository: e.repository, task: e.issueNumber,
     parent: { kind: pr ? 'pull_request' : 'issue', number: pr?.number ?? e.issueNumber },
     charter_sha256: e.request.charter_sha256,
-    ...(snapshot ? { authority: e.request.authority, admission: admissionBinding(e.request), step: e.step }
+    ...(snapshot ? { authority: e.request.authority, admission: admissionBinding(e.request), step: e.step,
+      ...(e.request.authority_resolution ? { authority_resolution: e.request.authority_resolution } : {}),
+      ...(authorityDrift && authorityDrift.current_authority.sha256 !== e.request.authority.sha256
+        ? { authority_drift: authorityDrift } : {}) }
       : { request: e.requestReference }), attempt: e.attemptId, status,
     result: { kind: exactSha(head) && head !== e.startHead ? 'git' : 'no-change',
       revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) }] },

@@ -191,17 +191,26 @@ and a canonical `relay-manual-result` source comment remains available for
 compatible schema `3.0` callers. It is no longer a required precursor to the
 narrow MCP submission. Existing in-flight attempts are not rewritten.
 
-Current publication still requires the admitted authority to match live
-authority. A successor Request or changed effective Decision authority can
-therefore stop completion with `AUTHORITY_CHANGED`; ordinary publication
-recovery is not a rebinding mechanism. Preserve the original admission and
-result provenance. Task #115
-[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517)
-records the requirement for a future supported completion procedure that checks
-current trusted authority, compatibility and material scope changes without
-silent rebinding or bypass. That general mechanism is not implemented here or
-required for Task #115 completion. Its explicit Task-local PR/evidence handoff
-exception does not grant other attempts an exception or fabricate an Outcome.
+For schema-v4 completion, valid intervening trusted Task Decisions do not
+invalidate the original execution's truthful result. Writer verifies the
+original source bytes, native identities and immutable admission, resolves
+current trusted Task authority separately, and records the difference in the
+same Outcome for independent review. It never rewrites the admission or claims
+that the executor satisfied requirements added later. This applies to manual
+and automatic completion, including a blocked result when a later action is
+no longer authorized.
+
+Reporting a result grants no new operation permission. Source publication and
+other execution actions remain bounded by both admitted and current protected
+authority; uncertain or revoked permission stops the action while preserving
+useful progress and allowing truthful result reporting. Independent exact-head
+PR review or no-PR Task Approval evaluates the delivered result against current
+requirements. Missing amended work needs normal remediation, and material Task changes
+authority after approval requires fresh acceptance before merge or closure.
+Native source tampering, changed charter/CR/compatibility identity, attempt or
+PR/head mismatches and duplicate delivery still fail closed. Retained schema-v3
+Requests and attempts keep their strict historical currentness and bindings;
+neither ordinary recovery nor new source code rebinds them.
 
 A PR result must be uniquely bound to the Task, including a disposable PR already
 closed without merge; Writer does not reopen it. Schema `4.0` PR bodies retain

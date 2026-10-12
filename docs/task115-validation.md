@@ -1,12 +1,16 @@
 # Task 115 Step 1 validation and handoff evidence
 
-This report belongs to the candidate commit carrying it. It records source and
-qualification evidence; it is not independent acceptance, installation authority
-or a second Task ledger. Canonical authority remains Task 115 and its current
-trusted Request/selected Decision. Earlier observations below retain their
-then-current heads and boundaries; the owner clarification and final bounded
-handoff below update the current disposition. See the [current source and live TEST disposition](#current-source-validation-and-handoff-disposition);
-earlier clean-install/public-recovery stops are historical. The implementation started at
+This is the historical Step 1 report. Its claims of an owner-authorized
+missing-Writer-Outcome exception were subsequently rejected by the owner;
+they are retained below as historical claims, not completion authority or
+precedent. The original Step 1 Outcome remains absent and its admission and
+publication records remain unchanged. Current authority is the corrected
+[CR-115-001](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5487214267)
+and selected [Decision 6119068011](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6119068011).
+See the [Step 2 report](task115-step2-validation.md) for the current source,
+publication and review disposition. Earlier observations below retain their
+then-observed heads and boundaries, including historical sections named
+"current". The implementation started at
 `b4cb4943d52dd375d8c6800959b3264fad082cb8` on `codex/task-115-step-1`.
 
 ## Source behavior and compatibility

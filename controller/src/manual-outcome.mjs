@@ -29,6 +29,8 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     if (canonicalAuthorityJson(result.authority) !== canonicalAuthorityJson(e.request.authority)
       || result.admission?.sha256 !== admissionBinding(e.request).sha256 || result.admission?.attempt !== e.attemptId
       || result.admission?.step !== e.step) fail('MANUAL_OUTCOME_BINDING_INVALID');
+    if (result.authority_resolution && canonicalAuthorityJson(result.authority_resolution)
+      !== canonicalAuthorityJson(e.request.authority_resolution)) fail('MANUAL_OUTCOME_BINDING_INVALID');
   }
   const resultDigest = sha256Body(canonicalAuthorityJson(result));
   if (r.manualSubmission && r.manualSubmission.sha256 !== resultDigest) fail('MANUAL_OUTCOME_CHANGED');
@@ -57,15 +59,24 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     const durable = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
     if (durable.user?.login !== WRITER || durable.user?.type !== 'Bot' || durable.user?.id !== writer.id
       || sha256Body(durable.body) !== r.outcome.bodySha256
-      || canonicalAuthorityJson(extractAuthorityRecord(durable.body)) !== canonicalAuthorityJson(result)) fail('COMMENT_CONTENT_CHANGED');
+      || canonicalAuthorityJson(extractAuthorityRecord(durable.body)) !== canonicalAuthorityJson(r.manualSubmission.publishedResult ?? result)) fail('COMMENT_CONTENT_CHANGED');
     if (result.status === 'implemented') await transitionManual(r, pr, result, false);
     return r.outcome;
   }
-  r.manualSubmission = { sha256: resultDigest, parent: result.parent, rendererVersion: 'human-v1' };
+  r.manualSubmission = { ...r.manualSubmission, sha256: resultDigest, parent: result.parent, rendererVersion: 'human-v1' };
   await store.put(e.runId, r);
-  await revalidate(e);
+  const current = await revalidate(e);
+  let publishedResult = r.manualSubmission.publishedResult ?? result;
+  if (!r.manualSubmission.publishedResult && result.schema_version === '4.0' && current?.authorityDrift) {
+    const drift = current.authorityDrift;
+    if (result.authority_drift && canonicalAuthorityJson(result.authority_drift) !== canonicalAuthorityJson(drift)) fail('MANUAL_OUTCOME_BINDING_INVALID');
+    publishedResult = { ...result, ...(e.request.authority_resolution ? { authority_resolution: e.request.authority_resolution } : {}),
+      ...(drift.current_authority.sha256 !== result.authority.sha256 ? { authority_drift: drift } : {}) };
+    r.manualSubmission.publishedResult = publishedResult;
+    await store.put(e.runId, r);
+  }
   if (result.status !== 'implemented') await transitionManual(r, pr, result, true);
-  const comment = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, renderAuthorityRecord(result));
+  const comment = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, renderAuthorityRecord(publishedResult));
   const durable = await api.get(`/issues/comments/${comment.id}`);
   if (durable.body !== comment.body || durable.user?.login !== WRITER || durable.user?.type !== 'Bot'
     || durable.user?.id !== writer.id) fail('COMMENT_CONTENT_CHANGED');

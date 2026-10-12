@@ -96,7 +96,16 @@ protected Writer admission digest and Step, one trusted native Writer Outcome,
 and identical immutable result identities. A carried v3 Request and originating
 CR remain exact source references when applicable. A later independent native
 APPROVE does not erase the originating CR from the accepted Outcome's lineage;
-a different newer active CR or changed current Task authority stops acceptance.
+a different newer active CR still stops acceptance. Valid trusted Task
+Decisions added during execution do not suppress the original Outcome. Review
+compares its immutable admitted authority with the effective current Task;
+acceptance binds that current authority and requires disposition of amended
+requirements. Missing work needs actionable remediation, while an unused
+permission expansion alone does not invalidate the result. Material Task
+changes after acceptance require fresh acceptance before protected
+continuation. Native PR approval retains its acceptance-time authority binding
+in the review; a receipt cannot silently attach an old approval to newer Task
+semantics. Retained v3 currentness and exact source bindings remain unchanged.
 Git results bind an exact SHA; deployment, qualification, evidence and no-change
 results bind an immutable revision or native run/result identities. Approval
 preserves every Outcome warning's source and impact, records disposition and
@@ -123,7 +132,21 @@ re-read by its native ID before being reported durable. An uncertain POST can
 recover only one exact native body and trusted author; an absent or ambiguous
 match stops without another POST. Partial Step projection resumes the same
 native identity and requires the reserved PR title or its canonical projection;
-changed authority stops recovery. For retained schema-v3 publication, Task
+changed authority stops recovery. The same reserved typed operation resumes
+`AUTHORITY_PUBLISHED` through metadata reconciliation, check publication and
+journal completion. Recovery verifies one original trusted native body,
+parent, review state and reviewed SHA before further mutations. It reconciles
+the exact-operation check by external ID, SHA and configured App identity;
+duplicate, conflicting or uncertain check state fails closed. Check creation
+intent is reserved before POST, so a lost response can recover by read-back
+without creating a second check. A durable receipt requires the completed
+journal, original review and verified check. Recovery allocates no Step and
+does not launch execution. Historical journal rows without a recorded check
+intent may recover an already observed exact check. If no check can be observed,
+the old row cannot prove that a prior POST was never attempted; it remains
+`CHECK_PUBLICATION_UNCERTAIN` without another POST. The migration does not invent
+an earlier authority or check-intent observation. Newly reserved v3 and v4
+operations retain that intent before creation. For retained schema-v3 publication, Task
 Request/CR Step labels and the bounded
 existing PR title are deterministic projections, preserving unrelated labels.
 This is one trusted publisher, not a second ordinary owner metadata workflow.
@@ -297,6 +320,20 @@ completeness does not itself establish independent acceptance or warning disposi
 `submit_pr_review` has two action-specific inputs. `APPROVE` needs only the
 target (`repository`, `pr_number`, `expected_head_sha`), action and a bounded
 `review_body`; legacy non-executable `structured_findings` remain optional.
+For schema-v4 work with a verified material difference between the delivered
+Outcome's admitted Task and the current Task, or an unresolved comparison gap,
+`APPROVE` additionally requires
+`expected_task_authority_sha256` equal to the current authority digest exposed
+by the review target. This binds the reviewer's current-requirement comparison
+in the same review call; a stale or missing expectation stops before native
+approval publication. Without it, the service could silently attach old review
+prose to amended requirements the reviewer had not assessed. The conditional
+digest adds no separate event or review phase; unchanged v4 and historical
+v3 calls retain their existing inputs. New Writer Outcomes export bounded
+`authority_resolution` captured under the original admission digest for their
+actual resolver defaults; old admissions are never rewritten to add it.
+For older Outcomes lacking it, unknown defaults are reported as comparison
+gaps rather than a proven material change or an assumed profile.
 `REQUEST_CHANGES` requires a structured `change_request` instead of either
 `review_body` or `structured_findings`. The tool exposes ordinary top-level
 properties with required `repository`, `pr_number`, `expected_head_sha` and

@@ -169,12 +169,26 @@ claimed operations. The worker's ordinary broker cannot invoke this capability;
 Reviewer never obtains Writer private credentials. Legacy/v3 transport stays
 readable and recoverable without rewriting any old owner or Bot record.
 
+Schema-v4 result reporting verifies the original immutable admission and its
+native source integrity independently of current Task semantics. Valid later
+trusted Decisions are recorded as authority drift in the same Writer Outcome;
+they do not rewrite the execution or imply newly required work was performed.
+Execution actions retain admitted/current permission boundaries. Independent
+PR or no-PR acceptance compares the delivered result with current authority,
+and later Task changes invalidate stale continuation acceptance. Historical
+schema-v3 currentness remains strict.
+
 Necessary native records show human-visible English substance, findings,
 boundaries, warning disposition/evidence gaps, limitations and the next
 acceptance boundary before one collapsed canonical JSON fence. Safe deterministic
 presentation cannot inject HTML/Markdown/links or change canonical JSON bytes.
 Size/integrity/copyability constraints may require an explicitly visible JSON
 fallback. Renderer versions are publication intent, not new Task authority.
+Typed Reviewer publication can resume a partially published authority operation
+through its original review, metadata, exact-operation SHA-bound check and
+journal completion. It revalidates native identity/body/head and current Task
+before resumed mutations. Lost responses or ambiguous foreign records cannot
+authorize another review POST or a new Step.
 
 ## Durable state
 

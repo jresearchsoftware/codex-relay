@@ -60,6 +60,10 @@ Owner-designated isolated TEST development and qualification follow
    target and replay state before publishing one canonical Writer-Bot Outcome.
    It records claims and verified bindings, not independent proof of every
    claimed test or operation.
+   For schema-v4 work, valid trusted Decisions added during execution are
+   reported alongside the original immutable admission. They do not suppress
+   a truthful Outcome or prove that newly added work was performed. Permission
+   for each action still has to remain within admitted and current boundaries.
 6. **Review independently at the exact result.** Review the complete candidate
    against effective charter/Decisions and applicable native CR. Compare
    findings against the starting/base state and retain provenance. Implementation
@@ -70,6 +74,15 @@ Owner-designated isolated TEST development and qualification follow
    and immutable result. Issue `task-review` findings are evidence for later
    owner-authorized direction, not an executable PR CR. Deterministic checks do
    not establish independent acceptance. Review and approval allocate no Step.
+   Compare admitted and current Task authority explicitly. An unused permission
+   expansion does not invalidate the delivered work; missing amended
+   requirements require actionable remediation. For material schema-v4 drift
+   or an explicitly unresolved comparison gap,
+   include the target's current `expected_task_authority_sha256` in the native
+   `APPROVE` call so the verdict binds the authority actually reviewed.
+   Acceptance binds the current trusted Task, and subsequent material changes
+   require fresh acceptance before
+   protected continuation.
 7. **Complete through trusted owner orchestration.** The
    [post-review continuation helper](../contracts/README.md#authorized-continuation-after-independent-acceptance)
    re-reads effective authority, acceptance, head, required checks, readiness,
@@ -154,6 +167,14 @@ operations; it never blindly repeats POST/push or launches Codex again.
 Already-admitted v3 records keep their exact historical body/digest/Step.
 Useful commits and unresolved warnings remain preserved. A genuinely new launch
 after a terminal BLOCKED result is a new admitted Step.
+
+Typed native CR publication also resumes the same reserved operation after
+partial review, Step/title projection or check publication. It verifies one
+original trusted review, current authority and the exact-operation SHA-bound
+check before completing the journal and returning a durable receipt. A lost
+response is reconciled by native read-back; absent or conflicting records do
+not justify another non-idempotent review POST. No recovery allocates a Step
+or launches execution.
 
 ## Installed and in-flight compatibility
 

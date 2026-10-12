@@ -32,7 +32,7 @@ pub(crate) fn current_step(subject: &Value) -> Result<u64, &'static str> {
     Ok(step)
 }
 
-pub(crate) fn linked_issue(pr: &Value) -> Result<u64, &'static str> {
+pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static str> {
     // Same recognized link vocabulary as controller/src/live-authority.mjs.
     let body = pr["body"].as_str().ok_or("CANONICAL_ISSUE_AMBIGUOUS")?;
     let lower = body.to_ascii_lowercase();
@@ -109,6 +109,11 @@ pub(crate) fn linked_issue(pr: &Value) -> Result<u64, &'static str> {
     }
     ids.sort_unstable();
     ids.dedup();
+    Ok(ids)
+}
+
+pub(crate) fn linked_issue(pr: &Value) -> Result<u64, &'static str> {
+    let ids = linked_issue_candidates(pr)?;
     if ids.len() != 1 {
         return Err("CANONICAL_ISSUE_AMBIGUOUS");
     }

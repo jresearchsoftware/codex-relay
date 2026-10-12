@@ -41,6 +41,14 @@ function visible(record, title, authorityModel) {
     section(lines, 'Immutable result identities', record.result.identities.map(value => `${value.kind}: ${value.id}`));
   }
   if (record.outcome) lines.push('', `Accepted Outcome native ID: ${record.outcome.id}; digest: ${record.outcome.sha256}.`);
+  if (record.authority_drift) {
+    const drift = record.authority_drift;
+    lines.push('', `Admitted authority digest: ${record.authority.sha256}.`,
+      `Current trusted authority digest: ${drift.current_authority.sha256}.`,
+      `Changed Task fields: ${drift.changed_fields.map(text).join(', ') || 'none (source provenance changed)'}.`,
+      `Current-requirement review required: ${drift.review_required ? 'yes' : 'no additional semantic delta'}. The admission remains unchanged; permission changes grant no new execution authority.`);
+    section(lines, 'Authority comparison gaps', drift.comparison_gaps);
+  }
   section(lines, 'Scope', record.scope);
   section(lines, 'Boundaries', record.boundaries);
   section(lines, 'Required validation', record.validation);
