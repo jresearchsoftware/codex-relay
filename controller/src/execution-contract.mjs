@@ -88,6 +88,14 @@ export function safeDomainTerminal(error, record, stage) {
     && (collected.head === record.envelope.startHead || record.progress?.head === collected.head);
 }
 export const fail = code => { throw Object.assign(new Error(code), { code }); };
+// A protocol mismatch has no admitted execution or Outcome authority. Keep it
+// outside domain blockers so an old-format rejection cannot create a new chain.
+export function requireCurrentProtocol() {
+  throw Object.assign(new Error('CURRENT_PROTOCOL_REQUIRED: New execution requires schema 4.0 native authority on a coordinated, qualified installation. '
+    + 'Reconcile the canonical Task marker; for an older Task, authorize current work through an active trusted Task-scoped schema 4.0 Decision amending purpose or scope after its latest schema 3.0 Request. '
+    + 'PR remediation requires a current schema 4.0 Change Request. Preserve already-admitted attempts and exact bindings; do not fall back to legacy or schema 3.0 execution.'),
+  { code: 'CURRENT_PROTOCOL_REQUIRED' });
+}
 export const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const exactSha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
 export const positive = value => Number.isSafeInteger(value) && value > 0;

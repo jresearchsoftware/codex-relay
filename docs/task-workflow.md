@@ -2,8 +2,8 @@
 
 This guide describes the streamlined GitHub-native **source contract** for a
 paired, qualified Reviewer/controller installation. It does not claim an
-existing installation has been upgraded or qualified. Installed and in-flight
-schema-v3 Tasks retain the compatibility path below. Consumer Skill/adapter
+existing installation has been upgraded or qualified. Older installations and
+already-admitted attempts retain the bounded compatibility path below. Consumer Skill/adapter
 distribution remains separate Task #91. Detailed rules live in the
 [authority](../contracts/README.md#github-native-task-authority),
 [routing](../controller/README.md) and [Reviewer](../reviewer/README.md) contracts.
@@ -12,6 +12,15 @@ Owner-designated isolated TEST development and qualification follow
 [TEST Environment Authority](execution-policy.md#test-environment-authority).
 
 ## From Task to completion
+
+The connected App must expose the current typed authority inputs and the tools
+required for the selected operation, including `submit_manual_outcome` for new
+manual v4 results. If a required tool is absent or its schema is outdated, stop
+and identify the capability/installation mismatch and the owner action needed
+to qualify the connection. Do not publish a new v3 Decision/Request/CR, use legacy CR2 or
+switch to the old owner-result comment transport as a workaround. The service
+cannot inspect tools hidden from the caller or a stale client-side tool cache.
+See [current protocol capabilities](../reviewer/README.md#current-protocol-capabilities).
 
 1. **Write the stable Issue charter.** Task N is GitHub Issue #N. State the
    problem, goal, scope, protected boundaries and exactly one initial closure
@@ -178,11 +187,23 @@ or launches execution.
 
 ## Installed and in-flight compatibility
 
-Unmarked Issues retain their qualified legacy mutable-body, explicit Step-label
-and CR1/CR2 paths. The `github-native-v1` marker is explicit opt-in, not proof
-that a server supports schema v4. Existing schema-v3 native installations and
-admitted attempts retain complete Request chains, selected references,
-Request/CR Step projections and the old owner-result transport where required.
+The `github-native-v1` marker is explicit opt-in, not proof that an installation
+supports schema v4. Older qualified installations retain their legacy/v3
+contract. A qualified v4 installation does not initiate fresh unmarked/legacy
+Task work or new schema-v3 Task Request/CR chains: use current v4 authority or
+stop for an explicitly owner-authorized migration/installation correction.
+For an exact already-admitted old attempt, preserve historical reads,
+completion, Outcome publication and safe recovery with its complete Request
+chain, selected references, Step projections and original result transport.
+Those compatibility operations never authorize a fresh old-style execution.
+New durable Decision publication uses v4 as well; exact reserved v3 Decision
+recovery and old admitted-result acceptance retain their original contract.
+For a marked Task with v3 Request history, establish current v4 direction through
+an active trusted Task-scoped v4 Decision newer than the latest v3 Request and
+explicitly amending purpose or scope. A closure/profile-only amendment does not
+suffice. Replace a latest applicable v3 CR with a current v4 CR before fresh
+remediation. Fresh admission does not inherit the old Request's execution fields;
+retained snapshots keep their original exact references.
 Do not rewrite history, fabricate new admission snapshots for old attempts or
 use new source semantics to bypass an installed contract.
 

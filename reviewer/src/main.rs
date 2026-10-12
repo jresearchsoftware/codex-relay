@@ -121,7 +121,7 @@ fn tools(validation_names: &[String], repositories: &BTreeSet<String>) -> Value 
     });
     let mut submit = json!({
         "name": "submit_pr_review",
-        "description": "Publish an exact-head GitHub review and SHA-bound check. REQUEST_CHANGES requires structured change_request. APPROVE uses review_body; material delivered/current Task drift also requires expected_task_authority_sha256 from the target preview.",
+        "description": "Publish an exact-head GitHub review and SHA-bound check. NEW remediation requires publish_task_authority with schema_version 4.0 and the qualified enabled typed capability. REQUEST_CHANGES change_request is retained only for exact previously reserved legacy operation recovery when current authority is enabled; never downgrade new work. APPROVE uses review_body; material delivered/current Task drift also requires expected_task_authority_sha256 from the target preview.",
         "inputSchema": {
             "type": "object",
             "additionalProperties": false,
@@ -755,6 +755,23 @@ async fn mcp(
                 tracing::info!(event = "review_attempt", outcome = "RELAY_DISABLED", repository = %arguments["repository"], pr_number = ?arguments["pr_number"]);
                 json!({"content":[{"type":"text","text":"RELAY_DISABLED"}],"isError":true})
             } else if name == "submit_pr_review" {
+                if app.policy.github_native_authority_enabled
+                    && arguments["action"] == "REQUEST_CHANGES"
+                {
+                    let known = app
+                        .store
+                        .lock()
+                        .expect("store lock")
+                        .known(&operation_id(&app.policy.validation_names, arguments));
+                    let rejection = match known {
+                        Ok(None) => Some("CURRENT_PROTOCOL_REQUIRED"),
+                        Err(_) => Some("INTERNAL_RELAY_ERROR"),
+                        Ok(Some(_)) => None,
+                    };
+                    if let Some(code) = rejection {
+                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                    }
+                }
                 let pr = match app.github.get_pr(arguments["repository"].as_str().unwrap_or(""),arguments["pr_number"].as_i64().unwrap_or(0)).await { Ok(value)=>value, Err(code)=>return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response() };
                 // Writer may already have drafted this exact published CR.
                 // Permit its own publication recovery, never a new review of
@@ -2378,6 +2395,7 @@ mod tests {
     struct MockState {
         repository: String,
         policy: ReviewPolicy,
+        store: Arc<Mutex<store::Store>>,
         installation_id: String,
         observed_arguments: ObservedArguments,
         requests: Arc<Mutex<Vec<String>>>,
@@ -2404,6 +2422,7 @@ mod tests {
             Self {
                 repository: TEST_REPOSITORY.into(),
                 policy: test_policy(),
+                store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
                 installation_id: "1".into(),
                 observed_arguments: Default::default(),
                 requests: Default::default(),
@@ -2710,6 +2729,7 @@ mod tests {
     ) -> (reqwest::Client, String) {
         let observed_arguments = state.observed_arguments.clone();
         let policy = state.policy.clone();
+        let store = state.store.clone();
         let installation_id = state.installation_id.clone();
         let github = github::Github::mock_api_with_check_mode(mock_api(state).await, check_mode)
             .with_test_installation(installation_id);
@@ -2718,7 +2738,7 @@ mod tests {
             repositories: BTreeSet::from([repository.into()]),
             observed_arguments,
             enabled,
-            store: Arc::new(Mutex::new(store::Store::open(":memory:").expect("store"))),
+            store,
             github,
             trusted_client_ca: Arc::new(Vec::new()),
         });

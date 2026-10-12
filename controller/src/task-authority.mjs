@@ -1,7 +1,7 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { authorityMode, extractAuthorityRecord, selectCurrentRequest, referenceKey,
   renderAuthorityRecord, resolveTaskAuthority, resolveOutcomeAuthority, validateAuthorityResolution } from '../../contracts/src/github-authority.mjs';
-import { REPOSITORY, REVIEWER, NATIVE_VALIDATIONS, branchName, digest, fail } from './execution-contract.mjs';
+import { REPOSITORY, REVIEWER, NATIVE_VALIDATIONS, branchName, digest, fail, requireCurrentProtocol } from './execution-contract.mjs';
 import { taskReferences } from './task-relationship.mjs';
 
 const native = (value, kind, parent) => ({ kind, id: value.id, repository: REPOSITORY,
@@ -132,7 +132,10 @@ export async function readTaskAuthority(api, issue, pr, step, options = {}) {
 // Admission-only native-v4 resolution. Retained attempts use readTaskAuthority's
 // original schema-v3 selector and exact references during replay/recovery.
 export async function readStreamlinedTaskAuthority(api, issue, pr, options = {}) {
-  if (authorityMode(issue.body) === 'legacy') return null;
+  if (authorityMode(issue.body) === 'legacy') {
+    if (options.currentProtocol) requireCurrentProtocol();
+    return null;
+  }
   const author = await api.userIdentity(REVIEWER);
   if (author.login !== REVIEWER || author.type !== 'Bot' || !Number.isSafeInteger(author.id) || author.id < 1) fail('AUTHORITY_TRUST_BINDING_INVALID');
   const records = new Map();
@@ -188,10 +191,33 @@ export async function readStreamlinedTaskAuthority(api, issue, pr, options = {})
     trustedAuthor: author, validationNames: [...NATIVE_VALIDATIONS], activePullRequests,
     projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
       subagents: true, validation: ['diff-check', 'secret-scan'] }, ...options,
+    ...(options.currentProtocol ? { compatibility: false } : {}),
     ...(pr ? { pullRequest: pr.number } : {}) };
+  let latestV3Request = 0;
+  if (options.currentProtocol) {
+    const reviews = new Map();
+    for (const record of records.values()) {
+      if (record.author?.login !== author.login || record.author?.id !== author.id || record.author?.type !== 'Bot') continue;
+      const payload = extractAuthorityRecord(record.body, { repository: REPOSITORY, task: issue.number });
+      if (record.kind === 'issue-comment' && payload?.schema_version === '3.0' && payload.kind === 'task-request') {
+        latestV3Request = Math.max(latestV3Request, record.id);
+      }
+      if (record.kind !== 'review' || !['CHANGES_REQUESTED', 'APPROVED', 'DISMISSED'].includes(record.state)
+        || !activePullRequests.includes(record.parent.number)) continue;
+      const previous = reviews.get(record.parent.number);
+      if (!previous || record.id > previous.record.id) reviews.set(record.parent.number, { record, payload });
+    }
+    // Historical reviews stay readable. Only the latest applicable CR is
+    // executable; old or untyped authority cannot drive a fresh current run.
+    if ([...reviews.values()].some(({ record, payload }) => record.state === 'CHANGES_REQUESTED'
+      && (payload?.schema_version !== '4.0' || payload.kind !== 'change-request'))) requireCurrentProtocol();
+  }
   const selected = options.admittedAuthority
     ? resolveOutcomeAuthority(options.admittedAuthority, [...records.values()], binding)
     : resolveTaskAuthority([...records.values()], binding);
+  if (options.currentProtocol && latestV3Request && !selected.decisions.some(({ decision, reference }) =>
+    decision.schema_version === '4.0' && decision.parent.kind === 'issue' && reference.id > latestV3Request
+    && (Object.hasOwn(decision.amendments, 'purpose') || Object.hasOwn(decision.amendments, 'scope')))) requireCurrentProtocol();
   const resolution = typeof binding.purpose === 'string' && binding.startingState
     ? validateAuthorityResolution({ project_defaults: binding.projectDefaults,
       purpose: binding.purpose, starting_state: binding.startingState }) : undefined;

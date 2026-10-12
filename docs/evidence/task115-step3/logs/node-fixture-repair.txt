@@ -1,0 +1,538 @@
+TAP version 13
+# Subtest: current auto Issue admission refuses missing native marker without publication
+ok 1 - current auto Issue admission refuses missing native marker without publication
+  ---
+  duration_ms: 47.024808
+  type: 'test'
+  ...
+# Subtest: current auto Issue admission refuses a fresh v3 execution chain
+ok 2 - current auto Issue admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 42.878955
+  type: 'test'
+  ...
+# Subtest: current auto PR admission refuses missing native marker without publication
+ok 3 - current auto PR admission refuses missing native marker without publication
+  ---
+  duration_ms: 49.681452
+  type: 'test'
+  ...
+# Subtest: current auto PR admission refuses a fresh v3 execution chain
+ok 4 - current auto PR admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 65.188572
+  type: 'test'
+  ...
+# Subtest: direct current auto admission cannot downgrade an unmarked Task
+ok 5 - direct current auto admission cannot downgrade an unmarked Task
+  ---
+  duration_ms: 38.865563
+  type: 'test'
+  ...
+# Subtest: current auto remediation refuses a v3 CR even after explicit Task migration direction
+ok 6 - current auto remediation refuses a v3 CR even after explicit Task migration direction
+  ---
+  duration_ms: 63.141532
+  type: 'test'
+  ...
+# Subtest: current manual Issue admission refuses missing native marker without publication
+ok 7 - current manual Issue admission refuses missing native marker without publication
+  ---
+  duration_ms: 32.261235
+  type: 'test'
+  ...
+# Subtest: current manual Issue admission refuses a fresh v3 execution chain
+ok 8 - current manual Issue admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 35.49633
+  type: 'test'
+  ...
+# Subtest: current manual PR admission refuses missing native marker without publication
+ok 9 - current manual PR admission refuses missing native marker without publication
+  ---
+  duration_ms: 48.804954
+  type: 'test'
+  ...
+# Subtest: current manual PR admission refuses a fresh v3 execution chain
+ok 10 - current manual PR admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 53.489088
+  type: 'test'
+  ...
+# Subtest: direct current manual admission cannot downgrade an unmarked Task
+ok 11 - direct current manual admission cannot downgrade an unmarked Task
+  ---
+  duration_ms: 29.964866
+  type: 'test'
+  ...
+# Subtest: current manual remediation refuses a v3 CR even after explicit Task migration direction
+ok 12 - current manual remediation refuses a v3 CR even after explicit Task migration direction
+  ---
+  duration_ms: 54.34589
+  type: 'test'
+  ...
+# Subtest: current v4 CR supersedes historical v3 CR for explicitly migrated Task without changing old native bytes
+ok 13 - current v4 CR supersedes historical v3 CR for explicitly migrated Task without changing old native bytes
+  ---
+  duration_ms: 128.272246
+  type: 'test'
+  ...
+# Subtest: an explicit current Task Decision admits older work without inheriting any v3 execution fields
+ok 14 - an explicit current Task Decision admits older work without inheriting any v3 execution fields
+  ---
+  duration_ms: 127.759771
+  type: 'test'
+  ...
+# Subtest: migrated manual admission completes and recovers its exact Outcome without reselecting old v3 authority
+ok 15 - migrated manual admission completes and recovers its exact Outcome without reselecting old v3 authority
+  ---
+  duration_ms: 48.534164
+  type: 'test'
+  ...
+# Subtest: closure-only v4 Decision cannot ambiguously migrate an older v3 Task
+ok 16 - closure-only v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 32.016703
+  type: 'test'
+  ...
+# Subtest: profile-only v4 Decision cannot ambiguously migrate an older v3 Task
+ok 17 - profile-only v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 32.492757
+  type: 'test'
+  ...
+# Subtest: older v4 Decision cannot ambiguously migrate an older v3 Task
+ok 18 - older v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 31.536172
+  type: 'test'
+  ...
+# Subtest: untrusted v4 Decision cannot ambiguously migrate an older v3 Task
+ok 19 - untrusted v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 30.475933
+  type: 'test'
+  ...
+# Subtest: PR-scoped v4 Decision cannot ambiguously migrate an older v3 Task
+ok 20 - PR-scoped v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 30.804829
+  type: 'test'
+  ...
+# Subtest: superseded v4 Decision cannot ambiguously migrate an older v3 Task
+ok 21 - superseded v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 31.347107
+  type: 'test'
+  ...
+# Subtest: duplicate and malformed dedicated native markers cannot fall back or reserve a fresh attempt
+ok 22 - duplicate and malformed dedicated native markers cannot fall back or reserve a fresh attempt
+  ---
+  duration_ms: 54.286867
+  type: 'test'
+  ...
+# Subtest: forked current migration Decisions preserve the specific authority blocker without fabricating old execution
+ok 23 - forked current migration Decisions preserve the specific authority blocker without fabricating old execution
+  ---
+  duration_ms: 34.314508
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy auto Issue while refusing a new attempt
+ok 24 - upgraded Writer preserves exact admitted legacy auto Issue while refusing a new attempt
+  ---
+  duration_ms: 40.51828
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy auto PR while refusing a new attempt
+ok 25 - upgraded Writer preserves exact admitted legacy auto PR while refusing a new attempt
+  ---
+  duration_ms: 92.284947
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy manual Issue while refusing a new attempt
+ok 26 - upgraded Writer preserves exact admitted legacy manual Issue while refusing a new attempt
+  ---
+  duration_ms: 33.917779
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy manual PR while refusing a new attempt
+ok 27 - upgraded Writer preserves exact admitted legacy manual PR while refusing a new attempt
+  ---
+  duration_ms: 85.956169
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 auto Issue while refusing a new attempt
+ok 28 - upgraded Writer preserves exact admitted v3 auto Issue while refusing a new attempt
+  ---
+  duration_ms: 38.869545
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 auto PR while refusing a new attempt
+ok 29 - upgraded Writer preserves exact admitted v3 auto PR while refusing a new attempt
+  ---
+  duration_ms: 130.301887
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 manual Issue while refusing a new attempt
+ok 30 - upgraded Writer preserves exact admitted v3 manual Issue while refusing a new attempt
+  ---
+  duration_ms: 43.543802
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 manual PR while refusing a new attempt
+ok 31 - upgraded Writer preserves exact admitted v3 manual PR while refusing a new attempt
+  ---
+  duration_ms: 120.797568
+  type: 'test'
+  ...
+# Subtest: current metadata accepts fresh and arbitrary continued Steps without history or a counter
+ok 32 - current metadata accepts fresh and arbitrary continued Steps without history or a counter
+  ---
+  duration_ms: 1.55882
+  type: 'test'
+  ...
+# Subtest: native Issue/PR auto/manual label payloads expose Task and Step before execution; Step alone cannot launch
+ok 33 - native Issue/PR auto/manual label payloads expose Task and Step before execution; Step alone cannot launch
+  ---
+  duration_ms: 0.682792
+  type: 'test'
+  ...
+# Subtest: one fresh auto ready event runs bounded Issue implementation once
+ok 34 - one fresh auto ready event runs bounded Issue implementation once
+  ---
+  duration_ms: 309.402286
+  type: 'test'
+  ...
+# Subtest: one fresh auto ready event runs bounded remediation once
+ok 35 - one fresh auto ready event runs bounded remediation once
+  ---
+  duration_ms: 311.604515
+  type: 'test'
+  ...
+# Subtest: manual ready label makes a copyable Issue handoff without a worker
+ok 36 - manual ready label makes a copyable Issue handoff without a worker
+  ---
+  duration_ms: 36.805009
+  type: 'test'
+  ...
+# Subtest: manual ready label makes a copyable CR handoff without a worker
+ok 37 - manual ready label makes a copyable CR handoff without a worker
+  ---
+  duration_ms: 119.887024
+  type: 'test'
+  ...
+# Subtest: new remediation admission rejects invalid Step and native CR authority even with a ready command
+ok 38 - new remediation admission rejects invalid Step and native CR authority even with a ready command
+  ---
+  duration_ms: 100.743731
+  type: 'test'
+  ...
+# Subtest: stale, removed, conflicting, unauthorized and rerun ready events fail closed
+ok 39 - stale, removed, conflicting, unauthorized and rerun ready events fail closed
+  ---
+  duration_ms: 35.413005
+  type: 'test'
+  ...
+# Subtest: a new run cannot reuse a consumed native event or queue a prewritten retry
+ok 40 - a new run cannot reuse a consumed native event or queue a prewritten retry
+  ---
+  duration_ms: 47.039356
+  type: 'test'
+  ...
+# Subtest: partial ready-label consumption reserves the event and never reexecutes on replay
+ok 41 - partial ready-label consumption reserves the event and never reexecutes on replay
+  ---
+  duration_ms: 35.521165
+  type: 'test'
+  ...
+# Subtest: a label run cannot target an unrelated invalid Issue even for a blocked Outcome
+ok 42 - a label run cannot target an unrelated invalid Issue even for a blocked Outcome
+  ---
+  duration_ms: 33.954844
+  type: 'test'
+  ...
+# Subtest: native label ordering does not change launch authority
+ok 43 - native label ordering does not change launch authority
+  ---
+  duration_ms: 38.441598
+  type: 'test'
+  ...
+# Subtest: auto Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 44 - auto Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 91.124702
+  type: 'test'
+  ...
+# Subtest: manual Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 45 - manual Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 87.831664
+  type: 'test'
+  ...
+# Subtest: auto PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 46 - auto PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 131.639897
+  type: 'test'
+  ...
+# Subtest: manual PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 47 - manual PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 143.948506
+  type: 'test'
+  ...
+# Subtest: safe CR/Step/head/Issue authority rejection consumes the exact command and publishes only on its bound target
+ok 48 - safe CR/Step/head/Issue authority rejection consumes the exact command and publishes only on its bound target
+  ---
+  duration_ms: 428.751723
+  type: 'test'
+  ...
+# Subtest: repairing invalid Issue event metadata before admission cannot authorize that event
+ok 49 - repairing invalid Issue event metadata before admission cannot authorize that event
+  ---
+  duration_ms: 31.586656
+  type: 'test'
+  ...
+# Subtest: repairing invalid PR event metadata before admission cannot authorize that event
+ok 50 - repairing invalid PR event metadata before admission cannot authorize that event
+  ---
+  duration_ms: 45.104008
+  type: 'test'
+  ...
+# Subtest: repair and reapply creates a fresh same-Step attempt; a rejected event cannot be reused or queued
+ok 51 - repair and reapply creates a fresh same-Step attempt; a rejected event cannot be reused or queued
+  ---
+  duration_ms: 45.447418
+  type: 'test'
+  ...
+# Subtest: unrelated Issue label additions/removals/reordering preserve admission and display
+ok 52 - unrelated Issue label additions/removals/reordering preserve admission and display
+  ---
+  duration_ms: 94.213279
+  type: 'test'
+  ...
+# Subtest: unrelated PR label additions/removals/reordering preserve admission and display
+ok 53 - unrelated PR label additions/removals/reordering preserve admission and display
+  ---
+  duration_ms: 222.020279
+  type: 'test'
+  ...
+# Subtest: changing/removing/malforming Step after the event still blocks and consumes the bound command
+ok 54 - changing/removing/malforming Step after the event still blocks and consumes the bound command
+  ---
+  duration_ms: 120.683957
+  type: 'test'
+  ...
+# Subtest: unsafe event binding has no label mutation, attempt reservation or unrelated publication even with invalid Step
+ok 55 - unsafe event binding has no label mutation, attempt reservation or unrelated publication even with invalid Step
+  ---
+  duration_ms: 1164.342012
+  type: 'test'
+  ...
+# Subtest: replacement ready events discovered after authority reads are never consumed
+ok 56 - replacement ready events discovered after authority reads are never consumed
+  ---
+  duration_ms: 34.017057
+  type: 'test'
+  ...
+# Subtest: ambiguous blocked-command consumption reserves the event without retrying deletion or publication
+ok 57 - ambiguous blocked-command consumption reserves the event without retrying deletion or publication
+  ---
+  duration_ms: 34.314855
+  type: 'test'
+  ...
+# Subtest: an existing task branch rejects and consumes an Issue command once without launching work
+ok 58 - an existing task branch rejects and consumes an Issue command once without launching work
+  ---
+  duration_ms: 29.846161
+  type: 'test'
+  ...
+# Subtest: a contained BLOCKED attempt admits a fresh Step while its exact replay retains the original snapshot
+ok 59 - a contained BLOCKED attempt admits a fresh Step while its exact replay retains the original snapshot
+  ---
+  duration_ms: 183.433288
+  type: 'test'
+  ...
+# Subtest: a public BLOCKED Outcome cannot authorize a new execution when prior containment remains unknown
+ok 60 - a public BLOCKED Outcome cannot authorize a new execution when prior containment remains unknown
+  ---
+  duration_ms: 104.872563
+  type: 'test'
+  ...
+# Subtest: a fresh native Step continues exact Writer-published progress from a contained BLOCKED attempt
+ok 61 - a fresh native Step continues exact Writer-published progress from a contained BLOCKED attempt
+  ---
+  duration_ms: 288.565278
+  type: 'test'
+  ...
+# Subtest: new trusted Decision starting-head authority takes precedence over implicit retained branch progress
+ok 62 - new trusted Decision starting-head authority takes precedence over implicit retained branch progress
+  ---
+  duration_ms: 240.061169
+  type: 'test'
+  ...
+# Subtest: a new profile Decision preserves exact contained Writer branch continuation
+ok 63 - a new profile Decision preserves exact contained Writer branch continuation
+  ---
+  duration_ms: 269.775828
+  type: 'test'
+  ...
+# Subtest: rejected native admission has no Step in its protected record, labels or public Outcome
+ok 64 - rejected native admission has no Step in its protected record, labels or public Outcome
+  ---
+  duration_ms: 32.104241
+  type: 'test'
+  ...
+# Subtest: native execution snapshot and envelope reject disagreement on exact source, run or attempt identity
+ok 65 - native execution snapshot and envelope reject disagreement on exact source, run or attempt identity
+  ---
+  duration_ms: 35.193624
+  type: 'test'
+  ...
+# Subtest: trusted Decision profile and exact CR override resolve without preallocating a review Step
+ok 66 - trusted Decision profile and exact CR override resolve without preallocating a review Step
+  ---
+  duration_ms: 111.745419
+  type: 'test'
+  ...
+# Subtest: standalone v4 CR Draft transition reserves exact authority without allocating an admission or Step
+ok 67 - standalone v4 CR Draft transition reserves exact authority without allocating an admission or Step
+  ---
+  duration_ms: 161.773053
+  type: 'test'
+  ...
+# Subtest: retained v3 admission replays under upgraded broker without adopting new Decisions or a new Step
+ok 68 - retained v3 admission replays under upgraded broker without adopting new Decisions or a new Step
+  ---
+  duration_ms: 124.243016
+  type: 'test'
+  ...
+# Subtest: concurrent native admissions serialize through the existing OS flock and admit one execution
+ok 69 - concurrent native admissions serialize through the existing OS flock and admit one execution
+  ---
+  duration_ms: 129.947896
+  type: 'test'
+  ...
+# Subtest: ready label admits charter-only work once, allocates Step under Writer reservation and publishes one bound Outcome
+ok 70 - ready label admits charter-only work once, allocates Step under Writer reservation and publishes one bound Outcome
+  ---
+  duration_ms: 168.591754
+  type: 'test'
+  ...
+# Subtest: a new native manual admission derives its next Step from prior Writer admission rather than a stale label
+ok 71 - a new native manual admission derives its next Step from prior Writer admission rather than a stale label
+  ---
+  duration_ms: 43.822016
+  type: 'test'
+  ...
+# Subtest: manual handoff exposes exact public Outcome bindings without a private journal read
+ok 72 - manual handoff exposes exact public Outcome bindings without a private journal read
+  ---
+  duration_ms: 50.647516
+  type: 'test'
+  ...
+# Subtest: Outcome readback and protected terminal journal precede Ready even with conflict and failed checks
+ok 73 - Outcome readback and protected terminal journal precede Ready even with conflict and failed checks
+  ---
+  duration_ms: 393.224848
+  type: 'test'
+  ...
+# Subtest: Ready failure resumes from the successful Outcome without reexecution, push or repost
+ok 74 - Ready failure resumes from the successful Outcome without reexecution, push or repost
+  ---
+  duration_ms: 260.52541
+  type: 'test'
+  ...
+# Subtest: lost Ready response is reconciled by exact native readback without repeating the mutation
+ok 75 - lost Ready response is reconciled by exact native readback without repeating the mutation
+  ---
+  duration_ms: 233.12359
+  type: 'test'
+  ...
+# Subtest: lost successful Outcome response recovers its exact body despite later integration changes
+ok 76 - lost successful Outcome response recovers its exact body despite later integration changes
+  ---
+  duration_ms: 370.795179
+  type: 'test'
+  ...
+# Subtest: unproven journal blocks Ready success and preserves publication
+ok 77 - unproven journal blocks Ready success and preserves publication
+  ---
+  duration_ms: 215.01758
+  type: 'test'
+  ...
+# Subtest: unproven outcome blocks Ready success and preserves publication
+ok 78 - unproven outcome blocks Ready success and preserves publication
+  ---
+  duration_ms: 228.933487
+  type: 'test'
+  ...
+# Subtest: unproven head blocks Ready success and preserves publication
+ok 79 - unproven head blocks Ready success and preserves publication
+  ---
+  duration_ms: 211.324832
+  type: 'test'
+  ...
+# Subtest: unproven authority blocks Ready success and preserves publication
+ok 80 - unproven authority blocks Ready success and preserves publication
+  ---
+  duration_ms: 204.95687
+  type: 'test'
+  ...
+# Subtest: unproven ready-readback blocks Ready success and preserves publication
+ok 81 - unproven ready-readback blocks Ready success and preserves publication
+  ---
+  duration_ms: 228.609306
+  type: 'test'
+  ...
+# Subtest: successful CR continuation drafts its exact target before remediation and completion returns Ready
+ok 82 - successful CR continuation drafts its exact target before remediation and completion returns Ready
+  ---
+  duration_ms: 397.306651
+  type: 'test'
+  ...
+# Subtest: CR Draft failure stops continuation and exact native replay repairs it
+ok 83 - CR Draft failure stops continuation and exact native replay repairs it
+  ---
+  duration_ms: 100.237091
+  type: 'test'
+  ...
+# Subtest: lost CR Draft response reconciles the same exact native target
+ok 84 - lost CR Draft response reconciles the same exact native target
+  ---
+  duration_ms: 99.201733
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects review without mutation
+ok 85 - CR lifecycle rejects review without mutation
+  ---
+  duration_ms: 56.146945
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects head without mutation
+ok 86 - CR lifecycle rejects head without mutation
+  ---
+  duration_ms: 55.182827
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects identity without mutation
+ok 87 - CR lifecycle rejects identity without mutation
+  ---
+  duration_ms: 57.935588
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects failed-publication without mutation
+ok 88 - CR lifecycle rejects failed-publication without mutation
+  ---
+  duration_ms: 47.762866
+  type: 'test'
+  ...
+1..88
+# tests 88
+# suites 0
+# pass 88
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3850.354504

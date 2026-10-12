@@ -50,7 +50,8 @@ their publication.
 See the [Task workflow guide](../docs/task-workflow.md) and
 [complete synthetic authoring examples](../examples/task-authority.md). Publish
 typed PR remediation through `publish_task_authority` with a `change-request`
-record; legacy `submit_pr_review` uses its CR2 `change_request` input instead.
+record; the retained legacy installation path uses the CR2 `change_request`
+input to `submit_pr_review`. It is not a fallback for new v4 work.
 Native exact-head PR `APPROVE` continues through `submit_pr_review` in either
 model. Task Approval and Task review findings use typed Issue records and do
 not substitute for a genuine PR verdict.
@@ -62,9 +63,39 @@ deployment enables it only with the paired controller/workflow contract. Install
 and qualify that same release and reviewed workflow projection before adding
 the exact `Authority model: github-native-v1` line to an owner-authored Issue.
 An old binary cannot recognize a new charter marker; manual mixing of old and
-new components is unsupported. An unmarked Issue retains legacy CR behavior.
-The new binary rejects legacy CR2 publication on a marked Issue; native PR
-`APPROVE` remains available for a genuine exact-head PR.
+new components is unsupported. With the qualified native capability enabled,
+fresh legacy CR2 or v3 Decision/Task Request/CR publication fails with
+`CURRENT_PROTOCOL_REQUIRED`; use the current v4 path or explicit owner-authorized
+migration. Historical reads, already-reserved exact publication recovery and
+safe completion/Outcome publication of old admitted attempts retain their
+original contract. Native PR `APPROVE` remains available for a genuine exact-head PR.
+Reserved v3 Decisions retain exact-operation recovery; schema-v3 result
+acceptance for an old admitted attempt remains supported.
+
+## Current protocol capabilities
+
+`tools/list` advertises the current schema-v4 authority input and the separately
+enabled `submit_manual_outcome` tool. A caller needing current Task Decisions,
+CR publication, independent review or a manual Writer Outcome must use the
+required current connected App/Reviewer/Writer capability. If the tool is absent
+or its exposed schema is outdated, stop before mutation, identify the missing
+tool/schema and the qualified installation/connection needed, and ask the owner
+to correct that mismatch within existing installation authority. Never substitute
+a v3 Decision/Task Request/CR, legacy CR2, old owner-result comment transport or alternate
+legacy routing. Historical exact-attempt completion/recovery uses its preserved
+contract; it does not initiate fresh work.
+
+The installed service enforces its own native publication and manual-transport
+configuration. Missing current native publication capability returns
+`CURRENT_PROTOCOL_CAPABILITY_REQUIRED` before publication; manual Writer
+transport retains its bounded disabled/unavailable errors with actionable
+installed-capability guidance.
+These checks cannot observe inaccessible client tools or a stale connected App
+cache. Client-visible tools/schema verification belongs to the caller; source
+version, a charter marker and configuration alone do not prove that connection
+was upgraded or qualified. No new client handshake or mandatory probe is added.
+
+## Native authority and publication
 
 The service re-reads the owner-authored Issue and hashes its entire UTF-8 body,
 including the marker, as the stable charter. It resolves configured owner,
@@ -94,7 +125,10 @@ supported for schema-v3 histories and already admitted executions.
 A v4 Task Approval or Task review binds current charter/Decision sources, the
 protected Writer admission digest and Step, one trusted native Writer Outcome,
 and identical immutable result identities. A carried v3 Request and originating
-CR remain exact source references when applicable. A later independent native
+CR remain exact source references when applicable. Completion/acceptance and
+continuation follow the immutable compatibility selection: `null` remains `null`
+despite historical v3 Requests, and a retained reference keeps its exact source
+and currentness checks. A later independent native
 APPROVE does not erase the originating CR from the accepted Outcome's lineage;
 a different newer active CR still stops acceptance. Valid trusted Task
 Decisions added during execution do not suppress the original Outcome. Review
@@ -404,7 +438,9 @@ deployment require separate owner authorization; source implementation does not
 grant those actions.
 The native review body remains sole executable PR CR authority, linked to the
 canonical Issue for Task identity. Legacy native `1.0` read and `2.0` publication
-remain compatible for unmarked Issues. Marked Issues use the shared `4.0` typed
+remain compatible under the retained older installation/exact-operation
+contract; fresh CR2 publication is refused by a qualified v4 installation.
+Marked Issues use the shared `4.0` typed
 envelope for new Decisions, CRs and acceptance, with retained `3.0` histories and
 in-flight Request chains.
 

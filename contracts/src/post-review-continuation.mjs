@@ -224,7 +224,7 @@ export async function continueAfterApproval(receipt, ports) {
         const readNext = async () => {
           const state = await ports.readNextAuthority({ repository: receipt.repository, task: next.task, direction: next.direction });
           if (state?.binding?.repository !== receipt.repository || state.binding.task !== next.task) stop('CONTINUATION_NEXT_AUTHORITY_INVALID');
-          const resolved = resolveTaskAuthority(state.nativeRecords, state.binding);
+          const resolved = resolveTaskAuthority(state.nativeRecords, { ...state.binding, compatibility: false });
           if (!resolved || !resolved.decisions.some(item => same(item.reference, next.direction))) stop('CONTINUATION_NEXT_REQUEST_CHANGED');
           if (resolved.request.continuation.hold || state.protectedBoundary !== false) stop('CONTINUATION_PROTECTED_BOUNDARY');
           if (!['auto', 'manual'].includes(resolved.request.route)) stop('CONTINUATION_NEXT_AUTHORITY_INVALID');

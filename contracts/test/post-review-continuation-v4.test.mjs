@@ -10,7 +10,7 @@ const writer = { login: 'writer-app[bot]', id: 8, type: 'Bot' };
 const head = 'a'.repeat(40);
 const base = 'b'.repeat(40);
 const render = value => '```relay-authority\n' + canonicalAuthorityJson(value) + '\n```\n';
-function fixture({ policy = 'close-authorized', complete = true, remainingWork = false, next = false, pr = false } = {}) {
+function fixture({ policy = 'close-authorized', complete = true, remainingWork = false, next = false, pr = false, migratedHistory = false } = {}) {
   const task = 23;
   const parent = { kind: 'issue', number: task };
   const charter = 'Authority model: github-native-v1\n\nGoal: Complete the authorized task.\nIssue closure policy: keep-open\n';
@@ -25,7 +25,11 @@ function fixture({ policy = 'close-authorized', complete = true, remainingWork =
       next: { task, direction: nativeReference(direction) } } } : {}) }, supersedes: null, context: [] }, 201);
   const binding = { repository, task, charterBody: charter, trustedAuthor: reviewer, trustedWriter: writer, route: 'auto',
     startingState: { branch: 'codex/task-23', base_sha: base, starting_head: head, existing_pr: null } };
-  const records = [charterNative, ...(next ? [direction] : []), closure];
+  const records = [charterNative, ...(next || migratedHistory ? [direction] : []), closure];
+  if (migratedHistory) records.push(native({ ...common('task-request'), schema_version: '3.0', step: 3, route: 'auto',
+    purpose: 'Historical complete Request', scope: ['Historical scope'], model: 'old-model', effort: 'high', subagents: false,
+    validation: ['diff-check'], boundaries: ['No historical deployment'], decisions: [], context: [], supersedes: null,
+    branch: 'codex/old-task-23', base_sha: base, starting_head: head, existing_pr: null, issue_closure_policy: 'keep-open' }, 100));
   let origin;
   if (pr) {
     origin = native({ ...common('change-request'), parent: { kind: 'pull_request', number: 42 },
@@ -35,7 +39,7 @@ function fixture({ policy = 'close-authorized', complete = true, remainingWork =
     { kind: 'review', state: 'CHANGES_REQUESTED', commit_id: head });
     records.push(origin);
   }
-  const resolved = resolveTaskAuthority(records, binding);
+  const resolved = resolveTaskAuthority(records, { ...binding, ...(migratedHistory ? { compatibility: false } : {}) });
   const admission = admissionBinding(createAdmissionSnapshot(resolved, { step: 1, attempt: '123', runId: '123' }));
   const result = { kind: 'no-change', revision: head, identities: [{ kind: 'qualification', id: 'run-123' }] };
   const outcome = native({ ...common('outcome'), authority: resolved.authority, admission, step: 1, attempt: '123', status: 'implemented',
@@ -95,6 +99,21 @@ test('native exact-head APPROVE preserves originating CR provenance and uses squ
   assert.deepEqual(f.mutations, ['merge', 'close']);
 });
 
+for (const pr of [false, true]) {
+  test(`migrated older Task ${pr ? 'exact-head PR' : 'no-PR'} acceptance continues without rebinding retained v3 history`, async () => {
+    const f = fixture({ pr, migratedHistory: true });
+    const original = structuredClone(f.receipt);
+    const historical = f.records.find(record => record.id === 100).body;
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).status, 'complete');
+    assert.deepEqual(f.mutations, pr ? ['merge', 'close'] : ['close']);
+    assert.equal(f.receipt.authority.compatibility_request, null);
+    assert.deepEqual(f.receipt, original);
+    assert.equal(f.records.find(record => record.id === 100).body, historical);
+    assert.equal((await continueAfterApproval(f.receipt, f.ports)).status, 'complete');
+    assert.deepEqual(f.mutations, pr ? ['merge', 'close'] : ['close']);
+  });
+}
+
 test('v4 authorized continuation launches native authority without preparing a Request or Step', async () => {
   const f = fixture({ policy: 'keep-open', complete: false, remainingWork: true, next: true });
   const result = await continueAfterApproval(f.receipt, f.ports);
@@ -102,6 +121,22 @@ test('v4 authorized continuation launches native authority without preparing a R
   assert.deepEqual(f.mutations, ['launch']);
   assert.equal(result.actions[0].kind, 'launch-authority');
   assert.equal((await continueAfterApproval(f.receipt, f.ports)).status, 'complete');
+  assert.deepEqual(f.mutations, ['launch']);
+});
+
+test('current v4 continuation selects fresh native direction without inheriting an older v3 Request', async () => {
+  const f = fixture({ policy: 'keep-open', complete: false, remainingWork: true, next: true, migratedHistory: true });
+  let launched;
+  const launch = f.ports.launchAuthority;
+  f.ports.launchAuthority = async action => { launched = action; return launch(action); };
+  const selected = resolveTaskAuthority(f.records, { ...f.state.binding, compatibility: false });
+  assert.equal((await continueAfterApproval(f.receipt, f.ports)).status, 'complete');
+  assert.equal(launched.nextAuthority.compatibility_request, null);
+  assert.deepEqual(launched.nextAuthority, selected.authority);
+  assert.notEqual(selected.request.model, 'old-model');
+  assert.equal(selected.request.branch, 'codex/task-23');
+  assert.deepEqual(selected.request.scope, ['Next accepted scope']);
+  assert.deepEqual(selected.request.boundaries, []);
   assert.deepEqual(f.mutations, ['launch']);
 });
 

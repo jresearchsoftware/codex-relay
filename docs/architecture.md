@@ -11,8 +11,12 @@ owner-controlled; publication does not infer actual runtime model/effort.
 
 This document describes the current source design. It does not establish that
 an existing paired runtime was upgraded or qualified. Already-admitted native
-schema-v3 attempts and unmarked legacy Tasks retain their compatible authority,
-publication and recovery paths.
+schema-v3 or legacy attempts retain their exact compatible completion,
+publication and recovery paths. A paired, qualified v4 installation gates fresh
+execution and new durable Decision/Request/CR publication to the current v4 path;
+unmarked Tasks and fresh v3/legacy chains require explicit migration or stop.
+Reserved old Decision publication and exact old admitted-result acceptance keep
+their historical contract.
 
 Task 115 Step 1 was initially admitted through exact schema-v3 Request
 6109630038 and its current installed manual handoff. Implementing the future
@@ -37,9 +41,11 @@ Selected ordinary comments are contextual evidence. The trusted controller/Write
 resolves effective authority at admission and stores one immutable execution
 snapshot in existing protected records. New public complete Task Requests are
 unnecessary; the worker never reconstructs authority from discussion history.
-Unmarked Tasks retain legacy Issue/CR parsing until they cross that explicit
-migration boundary. Native schema-v3 records remain valid historical/in-flight
-inputs; compatibility does not permit conflicting authority paths for one launch.
+Unmarked Tasks retain legacy parsing for historical verification and exact
+already-admitted attempts. Fresh work on them cannot enter the qualified v4
+installation until the owner explicitly migrates authority. Native schema-v3
+records remain valid historical/in-flight inputs; compatibility does not permit
+fresh v3 execution chains or conflicting authority paths for one launch.
 The [Task workflow guide](task-workflow.md) explains the current human path.
 
 | Component | Owns | Does not own |
@@ -54,8 +60,8 @@ The [Task workflow guide](task-workflow.md) explains the current human path.
 
 The owner applies `codex-ready-auto` or `codex-ready-manual` to a canonical
 Issue or remediation PR. The trusted workflow uses the configured base branch,
-not PR-controlled code. Writer checks native owner/event/run identity, effective
-charter/Decision authority or the compatible legacy Request/Issue/CR path,
+not PR-controlled code. For fresh execution, Writer checks native owner/event/run
+identity, current v4 charter/Decision authority with any applicable v4 CR,
 selected route/profile and exact branch/PR/head/base. The native ready command
 does not require a public Request copy. Under the existing publication lock,
 Writer binds exact source digests, route/profile, scope/boundaries, run/attempt,
@@ -336,6 +342,14 @@ GitHub request, review and check to an explicitly selected configured repository
 the shared App/installation and the exact head.
 Writer and Reviewer credentials are separate. Raw credentials and diagnostic
 streams never belong in an Outcome.
+
+Current MCP tool schemas advertise v4 authority inputs and the separately enabled
+manual Writer transport. The caller must stop if its connected App lacks a
+required current tool/schema; server-side installed capability gates reject
+unsupported publication. Neither side substitutes a legacy/v3 launch or
+publication path. Server checks cannot establish what an inaccessible App or
+stale client-side tool cache exposes. See the
+[capability contract](../reviewer/README.md#current-protocol-capabilities).
 
 The evidence reader uses a read-only installation token and binds applicable
 execution checks through exact-head Writer Outcomes on the reviewed PR and

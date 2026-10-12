@@ -10,7 +10,19 @@ trusted Writer at admission; no complete public Task Request or authored Step is
 required. Writer resolves route, profile, scope and starting facts and allocates
 Step once in the protected attempt record. Labels and titles are projections.
 Already admitted schema `3.0` attempts retain their exact public Request/CR chain
-and authored Step; unmarked Tasks retain legacy Issue/CR parsing.
+and authored Step; unmarked Tasks retain legacy parsing for historical reads and
+exact already-admitted attempts. On a qualified v4 installation, fresh unmarked
+or legacy Task work and fresh v3 Task/CR chains fail with
+`CURRENT_PROTOCOL_REQUIRED` before worker execution. Use current v4 authority
+or explicitly owner-authorized migration; labels and metadata cannot supply it.
+Safe completion, Outcome publication and recovery of an old admitted attempt
+keep its original bindings and cannot launch a new attempt.
+For a marked Task with v3 Request history, current v4 direction requires an
+active trusted Task-scoped v4 Decision newer than the latest v3 Request that
+explicitly amends purpose or scope. A closure/profile-only Decision is
+insufficient. The latest applicable v3 CR must be replaced by a current v4 CR;
+superseded historical v3 reviews remain readable. Fresh resolution does not
+inherit a v3 Request's execution fields.
 Use the [authority contract](../contracts/README.md#github-native-task-authority)
 for migration, trust, supersession and selected context.
 
@@ -22,8 +34,9 @@ comment command or additional launch form is required. Owner `workflow_dispatch`
 on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
 `pull_request`; compatibility inputs cannot replace current authority. For new
 schema `4.0` admissions the ready command selects the route and Writer allocates
-Step. Schema `3.0` and unmarked legacy inputs retain their existing checks and
-cannot select a different route from their trusted execution authority.
+Step. Already-admitted schema `3.0` and legacy inputs retain their existing checks
+and cannot select a different route from their trusted execution authority.
+The dispatch fallback does not bypass the fresh-v4 protocol gate.
 
 For schema `4.0`, the first successful Writer admission allocates Step 1; a new
 admission allocates the next Step from successful protected admissions for that
@@ -31,8 +44,9 @@ Task. Rejected routing does not allocate Step. Replay of an existing admission
 retains its Step; unresolved prior execution or publication blocks another
 admission. Writer projects exactly one `step-N` label onto the Issue and current
 PR and the bounded title. Labels are not allocation inputs or execution authority.
-Schema `3.0` successor Requests and unmarked legacy owner metadata retain their
-historical Step procedures and projection checks. The `step` namespace remains
+Retained schema `3.0` and legacy attempts preserve their historical Step
+procedures and projection checks; these are not fresh-admission authority on a
+qualified v4 installation. The `step` namespace remains
 reserved; Step alone never launches work.
 
 The trusted Writer verifies the owner actor and triggering actor, repository,
@@ -45,6 +59,10 @@ ready command are safely bound, the Writer reserves that event in the existing
 bounded attempt record and consumes the command exactly once, including when
 Step or Issue/CR/head admission is rejected. Safe rejection publishes one
 `BLOCKED_BEFORE_WORKER` Outcome on the bound target; no Codex worker starts.
+`CURRENT_PROTOCOL_REQUIRED` is outside that domain-blocker path: it stops before
+new admission reservation, ready-command consumption, Step projection, worker
+launch or Writer Outcome. A protocol mismatch cannot fabricate an old-schema
+BLOCKED chain; the visible diagnostic identifies the current-v4 correction.
 Correct the metadata/authority and apply the ready label again for a fresh
 event. A rejected compatibility Step cannot become valid through a later label
 repair. New schema `4.0` admission binds the resolved protected snapshot instead.
@@ -62,7 +80,7 @@ base and reviewed head, findings and bounded execution overrides. It does not
 contain Step, require a replacement Request or independently authorize Task
 closure. Reviewer publishes the independent review; Writer allocates Step and
 projects metadata only when remediation is admitted. Repeating publication
-retains the same native review ID. Schema `3.0` and legacy CR publications retain
+retains the same native review ID. Retained schema `3.0` and legacy CR publications retain
 their authored Step and Reviewer projection procedure through the
 [metadata procedure](../contracts/README.md#owner-step-metadata-procedure).
 `APPROVE` does not allocate Step. Remediation must match the applicable CR's
@@ -89,7 +107,8 @@ the pre-start name.
 This uses GitHub's native [run-name contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#run-name)
 and [label projection/join expressions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#join).
 
-Legacy fresh Issues use the exact configured base at admission and `<taskBranchPrefix>task-<issue-number>`
+Under the retained older installation contract, legacy fresh Issues use the exact
+configured base at admission and `<taskBranchPrefix>task-<issue-number>`
 when base/branch fields are omitted, without warnings. A malformed or conflicting
 explicit base blocks; the admitted exact base cannot move during execution.
 New schema `4.0` admission resolves repository starting facts from current
@@ -101,11 +120,13 @@ closure selects `keep-open` with an operator-visible warning.
 
 ## Issue-authorized implementation continuation
 
-The fields in this section describe unmarked legacy Tasks. For new
+The fields in this section describe the retained unmarked legacy contract;
+changing them does not satisfy the qualified v4 fresh-admission gate. For new
 `github-native-v1` schema `4.0` admissions, current charter/Decisions and trusted
 starting facts supply continuation authority; Writer creates the protected
-snapshot and Step. A compatibility Request may remain an explicitly bound
-source, but publishing another complete Request is not a prerequisite. Already
+snapshot and Step, without selecting a v3 compatibility Request. Retained
+snapshots preserve any original exact compatibility reference. Publishing
+another complete Request is not a prerequisite. Already
 admitted schema `3.0` attempts retain their Request, starting state, Step and
 projection checks. Ordinary owner Step helpers cannot become a competing writer
 for migrated Tasks. See the
@@ -159,10 +180,11 @@ service or state registry is introduced.
 ## Issue publication and worker handoff
 
 For a migrated Task, authority parent and result surface are separate. New
-schema `4.0` attempts bind the exact charter, active Decisions, applicable CR and
-optional compatibility Request by native body hashes, together with the protected
+schema `4.0` attempts bind the exact charter, active Decisions and applicable CR
+by native body hashes, together with the protected
 admission digest, attempt and Step. Already admitted schema `3.0` attempts retain
-the exact native Request reference. Writer posts
+the exact native Request reference; previously admitted snapshots preserve any
+original compatibility Request binding. Writer posts
 the terminal typed Outcome on the unique durably known PR, or the Issue before
 PR creation and for legitimate no-PR/no-change work. A pending PR creation
 intent or ambiguous artifact blocks surface selection; it cannot fall back to

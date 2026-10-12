@@ -85,6 +85,16 @@ bindings, Steps, bodies and replay/recovery behavior. Use the
 paired qualified Reviewer/controller. Source changes alone do not upgrade or
 qualify an installation. Labels and bounded titles are projections,
 not a second Step authority; legacy owner metadata helpers cannot write them.
+On a paired, qualified schema-v4 installation, fresh Task work or remediation
+must use the current v4 authority path. An unmarked/legacy Task or a new v3
+Request/CR chain stops with an actionable protocol mismatch; use current v4
+authority or an explicitly owner-authorized migration before a new admission.
+Historical reads and safe completion, Outcome publication and recovery of an
+exact already-admitted old attempt retain their original bindings. This is a
+fresh-execution boundary, not a blanket support cutoff for older installations.
+Fresh durable Decision/Request/CR publication also uses current v4 authority;
+exact reserved old publication recovery and old admitted-result acceptance remain
+supported without creating a new old-schema governance chain.
 Steps are execution-time decomposition of progress toward that Task.
 A Task does not predefine, own, or constrain the number, numbering, or scope of
 its Steps. Steps may be introduced as work evolves; a Task may require one Step
@@ -416,6 +426,13 @@ source PRs require independent native exact-head review. Keep material findings,
 warnings, evidence gaps and limitations visibly readable before one folded
 canonical machine block. Preserve full handoff prompt bytes and historical body
 hashes; rendering changes grant no execution or publication authority.
+
+If the required connected App/Reviewer/Writer tool is missing or exposes an
+outdated input schema, stop with the missing capability and qualified installation
+needed to proceed. Never substitute legacy/v3 publication or routing for new v4
+work. The caller checks its available tools; the server cannot observe a stale
+client cache or an inaccessible connected App. See the
+[capability contract](reviewer/README.md#current-protocol-capabilities).
 
 Use Linux for the runtime and filesystem boundary tests. Run affected suites
 during corrections and the complete candidate checks before handoff:

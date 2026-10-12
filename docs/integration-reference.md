@@ -36,14 +36,19 @@ and all modules from the same revision.
 
 New admissions for a Task marked `Authority model: github-native-v1` use a
 schema `4.0`, `kind: "admission"` snapshot inside the existing version-2 execution
-envelope. Trusted Writer resolves the current charter, active trusted Decisions,
-applicable exact-head CR and optional compatibility Request, then allocates Step
+envelope. Trusted Writer resolves the current charter, active trusted Decisions
+and applicable current v4 exact-head CR without inheriting v3 Request execution
+fields, then allocates Step
 under its existing protected publication lock. Its canonical snapshot digest
 binds the public `admission: {attempt, step, sha256}` in the Outcome. This internal
 snapshot is not a new public Task Request or another caller-authored launch form.
 Schema `4.0` native CR publication carries no Step or replacement Request.
 Already admitted schema `3.0` envelopes retain their exact Request/CR and authored
-Step; unmarked legacy Issue/CR2 execution retains its existing ABI.
+Step; already-admitted legacy Issue/CR2 execution retains its existing ABI.
+Retained snapshots preserve any original exact compatibility Request binding.
+Qualified v4 installations reject fresh unmarked/legacy and v3 execution chains
+with `CURRENT_PROTOCOL_REQUIRED`; compatibility preserves historical reads and
+exact admitted-attempt completion/recovery, not another fresh launch path.
 
 The manual capability uses the same qualified OpenAI mTLS ingress and the
 separate trusted Writer credential boundary. The nonprivileged fixed client
@@ -325,6 +330,15 @@ absolute POSIX path ending in `relay-manual-outcome`, defaulting to
 `/opt/codex-relay/relay-manual-outcome`; the public tool cannot select it. Namespace
 deployment supplies the protected wrapper path.
 
+Connected callers must use the current tool schemas and required enabled
+Reviewer/Writer transport. Missing/outdated connected tools stop with an
+actionable capability mismatch; missing current native publication capability
+uses `CURRENT_PROTOCOL_CAPABILITY_REQUIRED`, while manual Writer transport
+retains bounded disabled/unavailable errors and installation guidance.
+Do not fall back to legacy/v3 publication
+or routing. The service cannot observe a stale client tool cache or inaccessible
+App; see [current protocol capabilities](../reviewer/README.md#current-protocol-capabilities).
+
 | Reviewer environment | Meaning |
 | --- | --- |
 | `REVIEWER_MCP_CONFIG` | Config path alternative to `--config`; CLI takes precedence |
@@ -359,7 +373,8 @@ The root capability reserves and verifies one Writer Bot Outcome and returns onl
 digest, or a bounded error code. Reviewer validates the returned actor and target
 and exposes no private root diagnostics. These are publication receipts, not proof
 that every claimed test ran, independent acceptance or authority to merge/close.
-The historical v3 owner-comment `manual-outcome` operation remains compatible.
+The historical v3 owner-comment `manual-outcome` operation remains compatible
+for exact already-admitted attempts; it is not a missing-tool fallback for v4.
 
 Ingress must strip spoofed identity headers, verify the client certificate chain
 and forward `X-OpenAI-MTLS-Verified: 1` plus URL-encoded PEM in
@@ -412,8 +427,10 @@ where these marker classes are insufficient; scan failures never print key bytes
 
 ## Annotated synthetic scenario
 
-This scenario exercises the supported **legacy** Issue/CR2 path. An unmarked
-Issue remains legacy; it is not the modern typed authoring example. See the
+This historical synthetic scenario exercises the retained **legacy** Issue/CR2
+contract for older installations and already-admitted attempts. It does not
+authorize a fresh legacy launch on a qualified v4 installation. An unmarked
+Issue remains legacy until explicit owner migration. See the
 [current workflow](task-workflow.md) and [current v4 and retained v3 examples](../examples/task-authority.md)
 for stable charter/Decision authority, independent native CRs and compatible
 historical Request chains.

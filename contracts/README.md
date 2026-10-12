@@ -1,11 +1,13 @@
 # Task and Change Request authority
 
 Start with the [Task workflow guide](../docs/task-workflow.md) for the human
-path and [typed examples](../examples/task-authority.md) for schema-v3 authoring.
+path and [typed examples](../examples/task-authority.md) for current v4 and
+retained v3 records.
 [GitHub-native Task authority](#github-native-task-authority) governs explicitly
 migrated Tasks. The CR2 and owner metadata procedures below describe supported
-legacy compatibility; they do not provide another execution path for a migrated
-Task.
+legacy compatibility for older qualified installations and historical/already
+admitted attempts; they do not provide a fresh execution path on a qualified
+v4 installation or a second execution path for a migrated Task.
 
 Native Reviewer identity/head selection and common attempt orchestration live in
 `../controller/src`. This directory owns shared Task/Decision/CR validation,
@@ -78,8 +80,9 @@ pretend that local tests satisfy an installed-runtime proof.
 The consumer checks the canonical JSON encoding, including duplicate keys,
 version and target binding, and reads findings and validation directly from it.
 Existing `1.0` YAML/native reviews remain readable through the historical parser;
-the current legacy Reviewer path publishes only `2.0` executable CRs. Migrated
-Tasks instead use schema-v3 typed native reviews. Unknown versions,
+the retained legacy Reviewer path publishes only `2.0` executable CRs. Current
+qualified v4 publication uses typed schema-v4 native reviews; old schema-v3
+reviews remain historical/in-flight inputs. Unknown versions,
 multiple execution blocks and mixtures of old/new contracts fail closed.
 
 The [semantic input fixture](test/fixtures/executable-cr-v2-input.json) and
@@ -104,10 +107,12 @@ for Task identity.
 Implementation branch, commit and PR flow remains Codex-owned under
 [the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
 
-Owner `advance-phase` and `keep-step` procedures in this section are for legacy
-Tasks. A migrated Task resolves Step from its complete trusted Request and
-advances through an explicit successor Request. The typed publisher projects
-labels and the existing PR title; legacy owner helpers reject migrated Tasks.
+Owner `advance-phase` and `keep-step` procedures in this section describe the
+retained legacy contract. They cannot admit fresh legacy work on a qualified v4
+installation. Historical schema-v3 migrated Tasks resolve Step from their complete
+trusted Request and advance through an explicit successor Request; their typed
+publisher projects labels and the existing PR title. Current v4 admission instead
+allocates Step in Writer. Legacy owner helpers reject migrated Tasks.
 Both authority models retain same-CR publication recovery without an increment.
 
 Task producers and updates preserve exactly one explicit `Issue closure policy`
@@ -238,9 +243,10 @@ they do not limit local correction iterations or authorize automatic retries.
 
 A Task explicitly opts into `github-native-v1` with exactly one canonical
 `Authority model: github-native-v1` line in its Issue body. Missing that line
-preserves the legacy Issue/CR authority model, including native CR `1.0` and
-`2.0`; typed comments alone never migrate a Task. An unknown, malformed or
-multiple marker fails closed. Migration is an owner decision, not a publisher
+preserves the legacy Issue/CR authority model for historical reads and retained
+attempts, including native CR `1.0` and `2.0`; it cannot initiate fresh work on a
+qualified v4 installation. Typed comments alone never migrate a Task. An unknown,
+malformed or multiple marker fails closed. Migration is an owner decision, not a publisher
 or controller heuristic. The two models are never combined for execution.
 
 ### Streamlined schema 4.0 admissions
@@ -255,16 +261,37 @@ Step only when it durably admits a new execution under the existing lock.
 Replay/recovery of that attempt retains its snapshot and Step; a genuinely new
 execution after `BLOCKED` receives the next Step.
 
+The qualified v4 pair rejects fresh unmarked/legacy Task admission and new v3
+Task Request/CR execution chains with `CURRENT_PROTOCOL_REQUIRED`. New work on
+an older Task must resolve current v4 authority or stop for explicitly
+owner-authorized migration; the gate cannot infer migration from typed comments,
+Step metadata or a ready label. Fresh durable Decision/Request/CR publication
+follows the same boundary, including new schema-v3 Decisions. Historical
+parsing/verification and reserved exact-operation recovery remain available,
+as do safe completion and Outcome publication for an
+exact already-admitted old attempt. These operations preserve original bytes,
+source bindings and Step and cannot create another execution. Result acceptance
+remains available for exact old admitted attempts, including schema-v3 acceptance
+records. Older qualified installations keep their reviewed contract;
+this is not a general upgrade bridge
+or a blanket historical support cutoff.
+
 The shared [schema-v4 definition](src/github-authority-v4.json) has public
 `decision`, `change-request`, `outcome`, `task-approval` and `task-review` records,
 plus the internal `admission_schema`. Schema-v3 Task Requests and results remain
 readable, and already-admitted schema-v3 attempts retain their original selector,
-exact body digests and replay/publication rules. A current trusted schema-v3
-Request may supply explicit compatibility semantics for a new admission; its
-exact native source is pinned, and its Step is never used to preallocate the new
-attempt's Step. A public Request is optional compatibility input, not a new-work
-prerequisite. The qualified paired upgrade is still required before the new
-contract is used; standalone or partially upgraded components provide no
+exact body digests and replay/publication rules. Fresh v4 admission does not
+select a v3 Request as compatibility input or inherit its execution fields.
+When a marked Task has v3 Request history, an active trusted Task-scoped v4
+Decision newer than the latest v3 Request must explicitly amend purpose or scope
+to establish current v4 direction. A closure/profile-only amendment is
+insufficient. The latest applicable v3 CR also stops fresh admission; a current
+v4 CR can become current while preserving historical records. This is current v4
+authority selection, not automatic conversion or rewriting of old records.
+Retained snapshots keep their original exact compatibility references and Step.
+A public Request is not a new-work prerequisite. The qualified paired upgrade
+is still required before the new contract is used; standalone or partially
+upgraded components provide no
 admission authority.
 
 Trusted non-superseded Decisions are applied in ascending native comment-ID
@@ -291,6 +318,13 @@ verified publisher Bot identity. The binding is
 `{charter, decisions, change_request, compatibility_request, sha256}`; absent CR
 or compatibility Request references are `null`. Its `sha256` is SHA-256 of UTF-8
 `canonicalAuthorityJson({charter, decisions, change_request, compatibility_request})`.
+Fresh v4 admission resolves without a compatibility Request; that field remains
+in the shared binding for historical snapshots and exact-attempt verification.
+Completion, result acceptance and owner continuation preserve that immutable
+selection: a `null` compatibility binding remains `null` despite historical v3
+Requests, while a retained reference keeps its exact original source/currentness
+checks. Later verification must not silently reselect an old Request for a new
+v4 result or discard a reference from an older admitted snapshot.
 Each native reference hashes the complete original source body. Project-default
 and exact starting-state resolution is captured in the protected snapshot, while
 this source digest binds public authority independently of the result.
@@ -355,7 +389,10 @@ does not itself merge or close the Task.
 
 The following Request-specific rules describe historical schema-v3 publication
 and already-admitted attempts. They remain operative for that compatibility
-path, rather than becoming prerequisites for new schema-v4 work.
+path, rather than becoming prerequisites or an alternative fresh execution path
+for a qualified schema-v4 installation. The migration and new-Request authoring
+steps below describe the retained v3 installation contract, not the current v4
+launch path.
 
 Migration uses the paired deployed Reviewer/controller with workflow contract
 `relay-workflows-v2`. Existing Reviewer configurations default the new

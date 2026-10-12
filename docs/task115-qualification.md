@@ -7,7 +7,8 @@ precedent. The original Step 1 Outcome remains absent; its admission, Request
 and protected records are unchanged. The corrected
 [CR-115-001](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5487214267)
 and selected [Decision 6119068011](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6119068011)
-govern Step 2. See the [Step 2 report](task115-step2-validation.md) for the current
+governed Step 2. See the [Step 3 report](task115-step3-validation.md) and current
+[CR-115-002](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5490953732) for the current
 disposition. Historical sections named "current" below describe their original
 observations. This evidence grants no independent acceptance, product merge,
 Issue closure, production installation or deployment authority.

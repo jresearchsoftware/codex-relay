@@ -319,7 +319,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, { automaticCompletionVerified: true }) : {};
         const previousRecord = allocation.lineage ? priorRecords.find(record => record.envelope?.attemptId === allocation.lineage.attempt) : undefined;
-        const admitted = await admitEnvelope(api, request, { streamlined: nativeAdmission, nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
+        const admitted = await admitEnvelope(api, request, { streamlined: streamlinedAdmission, nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
         const envelope = admitted.blocked ? blockedAdmissionEnvelope(admitted) : validateEnvelope(admitted);
         // Reserve the native event in the existing attempt record, under the
         // Writer lock. This is replay protection, never a Step ledger.

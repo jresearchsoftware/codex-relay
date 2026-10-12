@@ -484,7 +484,10 @@ export function resolveOutcomeAuthority(authority, nativeRecords, binding) {
     originalDecisions.add(key);
     if (payload.supersedes) pending.push(payload.supersedes);
   }
-  const options = { ...binding, acceptedAuthority: authority };
+  // Completion and acceptance retain the admission's exact compatibility
+  // choice. Historical v3 bytes cannot become a new source for a v4 attempt
+  // that was admitted without them; retained references keep their selector.
+  const options = { ...binding, compatibility: authority.compatibility_request !== null, acceptedAuthority: authority };
   const current = resolveTaskAuthority(nativeRecords, options);
   if (!current || !equal(current.authority.charter, authority.charter)
     || !equal(current.authority.change_request, authority.change_request)

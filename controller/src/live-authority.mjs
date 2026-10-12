@@ -1,7 +1,7 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { parseIssueAuthority } from '../../runtime/src/issue-authority.mjs';
 import { extractRemediationContract, validateRemediationContract } from '../../contracts/src/contracts.mjs';
-import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
+import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, requireCurrentProtocol, digest, branchName, exactSha, positive, isAdmissionDomainBlock, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, labelRunMatches, launchStep, remediationThreadTitle } from './launch-metadata.mjs';
 import { assertStep, currentStep, changeRequestStep, assertPrStepTitle, projectedRequestTitle, labelNames, READY_LABELS } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
@@ -74,7 +74,7 @@ export async function readAuthority(api, target, number, { targetBase, step, str
   step = launchStep(step);
   if (!nativeAdmission) { assertStep(issue.labels, step); if (pr) assertStep(pr.labels, step); }
   const typed = await readTaskAuthority(api, issue, pr, step, nativeAdmission ? {
-    streamlined: true, route, purpose: resolution?.purpose ?? snapshot?.purpose ?? issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
+    streamlined: true, currentProtocol: !snapshot, route, purpose: resolution?.purpose ?? snapshot?.purpose ?? issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
     projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
       subagents: true, validation: [...NATIVE_VALIDATIONS] },
     startingState: { branch: `${CONSUMER.taskBranchPrefix}task-${issueNumber}`, base_sha: targetBase,
@@ -205,10 +205,14 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   let targetBase, nativeAdmission = false;
   try {
     const admissionIssue = await api.get(`/issues/${target === 'issue' ? number : linkedIssue(subject?.body ?? (await api.get(`/pulls/${number}`)).body)}`);
+    if (command) issueNumber = target === 'issue' ? number : linkedIssue(subject.body);
     nativeAdmission = streamlined && authorityMode(admissionIssue.body) === 'github-native-v1';
+    // The installed protocol capability selects new execution semantics. A
+    // missing charter marker cannot downgrade a current Writer to legacy.
+    // Retained attempt replay returns its stored envelope before this path.
+    if (streamlined && !nativeAdmission) requireCurrentProtocol();
     if (nativeAdmission) step = launchStep(nextStep);
     if (command) {
-      issueNumber = target === 'issue' ? number : linkedIssue(subject.body);
       if (!nativeAdmission) {
         const liveStep = currentStep(subject.labels); step = launchStep(step);
         if (liveStep !== step) fail('STEP_LABEL_MISMATCH');

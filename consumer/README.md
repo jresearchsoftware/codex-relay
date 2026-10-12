@@ -69,11 +69,21 @@ terminal status values are protocol vocabulary. The historical
 for duplicate recovery; it grants no organization or App authority. The local
 `refs/remotes/main` import ref is a private alias for the configured base SHA.
 
-On explicitly migrated Tasks, Step labels are projections of the current
-trusted Request, and the stable Issue charter replaces mutable body execution
-fields. Use the [Task workflow guide](../docs/task-workflow.md) and
+On current v4 Tasks, Step labels project the protected Writer admission; retained
+v3 attempts keep their exact trusted Request/CR Step. The stable Issue charter
+replaces mutable body execution fields. A qualified v4 installation does not
+start fresh legacy/unmarked or v3 Task/CR chains. Use current v4 authority or an
+explicitly owner-authorized migration; retain old admitted attempts for safe
+completion, Outcome publication and exact recovery. Use the [Task workflow guide](../docs/task-workflow.md) and
 [authority/migration contract](../contracts/README.md#github-native-task-authority)
 before opting in; a config example or typed comment alone does not migrate a Task.
+
+The connected App must expose the tools/current input schemas needed for its
+operation. Missing v4 authority or manual Writer submission capability is an
+actionable installation/connection mismatch, not authority to select legacy/v3
+publication or routing. Follow the
+[current protocol capability contract](../reviewer/README.md#current-protocol-capabilities).
+Source checks do not upgrade the connected App or prove its client-visible tools.
 
 Consumers own runner labels/groups, effective model policy and deployment
 decisions. Relay owns the canonical routing/recovery workflow templates and

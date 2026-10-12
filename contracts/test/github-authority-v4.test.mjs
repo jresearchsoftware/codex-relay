@@ -146,6 +146,37 @@ test('optional v3 Request remains an exact compatibility source without changing
   assert.equal(resolved.request.route, 'auto');
   assert.equal(Object.hasOwn(resolved.request, 'step'), false);
   assert.equal(admits(resolved, { step: 4 }).step, 4);
+  const retained = resolveOutcomeAuthority(resolved.authority, [charterNative, source, decision({ effort: 'ultra' }, 200)],
+    { ...binding, compatibility: false });
+  assert.deepEqual(retained.authority.compatibility_request, nativeReference(source));
+  reject(() => resolveOutcomeAuthority(resolved.authority, [charterNative, { ...source, body: source.body + '<!-- edited -->' },
+    decision({ effort: 'ultra' }, 200)], binding), 'AUTHORITY_SOURCE_MISMATCH');
+});
+
+test('migrated v4 no-PR Task Approval preserves absent compatibility despite old v3 Request history', () => {
+  const old = native({ ...common('task-request'), schema_version: '3.0', step: 3, route: 'auto', purpose: 'Old Request direction',
+    scope: ['Old scope'], model: 'old-model', effort: 'max', subagents: true, validation: ['diff-check'],
+    boundaries: ['Old boundary'], decisions: [], context: [], supersedes: null, branch: 'codex/old-branch', base_sha: base,
+    starting_head: head, existing_pr: null, issue_closure_policy: 'keep-open' }, 100);
+  const direction = decision({ purpose: 'Current explicit direction', scope: ['Current accepted scope'] }, 200);
+  const resolved = resolve([old, direction], { compatibility: false });
+  const admission = admissionBinding(admits(resolved));
+  const result = { kind: 'no-change', revision: head, identities: [] };
+  const outcome = { ...common('outcome'), authority: resolved.authority, admission, step: 1, attempt: '123',
+    status: 'implemented', result, warnings: [], limitations: [], summary: 'Current work completed.' };
+  const published = native(outcome, 500, { author: writer });
+  const approval = { ...common('task-approval'), authority: resolved.authority, admission, outcome: nativeReference(published),
+    step: 1, result, warnings: [], limitations: [], summary: 'Current result independently accepted.', verdict: 'APPROVE' };
+  const records = [charterNative, old, direction, published];
+  const current = resolveOutcomeAuthority(outcome.authority, records, binding);
+  assert.equal(current.authority.compatibility_request, null);
+  assert.deepEqual(current.originalAuthority.authority, outcome.authority);
+  assert.deepEqual(current.authorityDrift.changed_fields, []);
+  assert.equal(current.request.model, 'project-model');
+  assert.deepEqual(current.request.scope, ['Current accepted scope']);
+  assert.equal(validateTaskApproval(approval, records, binding).outcome.admission.sha256, admission.sha256);
+  reject(() => validateTaskApproval(approval, [charterNative, old, { ...direction, body: direction.body + '<!-- edited -->' }, published],
+    binding), 'AUTHORITY_SOURCE_MISMATCH');
 });
 
 test('new execution snapshot binds exact authority, run, attempt, Step and lineage; replay preserves digest', () => {

@@ -385,7 +385,7 @@ pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
             .filter_map(|kind| v4_definition()["input_schemas"].get(kind).cloned()),
     );
     json!({"name":"publish_task_authority",
-        "description":"Publish trusted Task Decisions, independent exact-head PR Change Requests or no-PR Task acceptance/findings. New Decisions and CRs allocate no Step and need no full public Request. Historical Task Requests remain compatible. Re-read native authority; never execute, publish Writer Outcomes, merge or close.",
+        "description":"Publish trusted Task Decisions, independent exact-head PR Change Requests or no-PR Task acceptance/findings. NEW work requires schema_version 4.0 and the qualified enabled typed capability; never downgrade to a fresh schema-v3 Decision/Request/CR or legacy CR. New Decisions and CRs allocate no Step and need no full public Request. Older schemas remain readable for preserved admitted histories, result acceptance and exact reserved-operation recovery. Re-read native authority; never execute, publish Writer Outcomes, merge or close.",
         "inputSchema":{"type":"object","additionalProperties":false,"required":["repository","record"],"properties":{
             "repository":repository_schema(repositories),"record":{"anyOf":variants}}},
         "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}})
@@ -902,6 +902,7 @@ async fn effective_authority(
     record: &Value,
     existing_pr: Option<u64>,
     change_request: &Value,
+    select_compatibility_request: bool,
 ) -> Result<(Value, Value, String, Vec<&'static str>), &'static str> {
     let parent = json!({"kind":"issue","number":record["task"]});
     let mut decisions = list_records(
@@ -959,12 +960,16 @@ async fn effective_authority(
             }
         }
     }
-    let mut hint = record.clone();
-    hint["existing_pr"] = json!(existing_pr);
-    let old = execution_records(app, state, &hint).await?;
-    let compatibility = current(&old)?
-        .map(|(reference, _)| reference.clone())
-        .unwrap_or(Value::Null);
+    let compatibility = if select_compatibility_request {
+        let mut hint = record.clone();
+        hint["existing_pr"] = json!(existing_pr);
+        let old = execution_records(app, state, &hint).await?;
+        current(&old)?
+            .map(|(reference, _)| reference.clone())
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
     if !change_request.is_null() {
         let native = read_ref(app, state, record, change_request).await?;
         let payload = trusted_record(app, state, record, change_request, false).await?;
@@ -1068,8 +1073,15 @@ async fn outcome_authority(
     } else {
         trusted_record(app, state, record, &original["change_request"], false).await?
     };
-    let (current, amendments, closure, warnings) =
-        effective_authority(app, state, record, existing_pr, &original["change_request"]).await?;
+    let (current, amendments, closure, warnings) = effective_authority(
+        app,
+        state,
+        record,
+        existing_pr,
+        &original["change_request"],
+        !original["compatibility_request"].is_null(),
+    )
+    .await?;
     if current["compatibility_request"] != original["compatibility_request"] {
         return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
     }
@@ -1831,7 +1843,17 @@ async fn project(
 }
 
 pub(crate) fn error(code: &str) -> Value {
-    json!({"content":[{"type":"text","text":code}],"isError":true})
+    let mut result = json!({"content":[{"type":"text","text":code}],"isError":true});
+    let guidance = match code {
+        "CURRENT_PROTOCOL_REQUIRED" => Some("Use publish_task_authority with a schema_version 4.0 Decision or Change Request for new work. Do not create a schema-v3 Decision/Request/CR or legacy CR as a fallback. Preserve the original payload for an already reserved operation."),
+        "CURRENT_PROTOCOL_CAPABILITY_REQUIRED" => Some("Stop new authority publication until the paired Reviewer/controller installation is qualified and githubNativeAuthorityEnabled is enabled. Refresh the supported typed capability; do not fall back to schema-v3 or legacy publication."),
+        "MANUAL_OUTCOME_CAPABILITY_DISABLED" | "WRITER_CAPABILITY_UNAVAILABLE" => Some("For a new schema-v4 result, stop publication until the qualified owner-connected submit_manual_outcome Writer capability is available. Preserve the admitted result and original operation; do not replace it with an owner-authored result comment or a legacy transport fallback. Already-admitted older attempts retain their exact original qualified transport and bindings."),
+        _ => None,
+    };
+    if let Some(guidance) = guidance {
+        result["structuredContent"] = json!({"error_code":code,"guidance":guidance});
+    }
+    result
 }
 
 async fn verify_publication_authority(
@@ -1844,12 +1866,24 @@ async fn verify_publication_authority(
     if record["schema_version"] != "4.0" || record["kind"] != "change-request" {
         return Ok(());
     }
+    // New v4 publication never infers an old execution chain. A recorded
+    // publication binding retains its original compatibility policy on recovery.
+    let select_compatibility_request = app
+        .store
+        .lock()
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .authority_binding(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map(|binding| serde_json::from_str::<Value>(&binding).map_err(|_| "INTERNAL_RELAY_ERROR"))
+        .transpose()?
+        .is_some_and(|binding| !binding["compatibility_request"].is_null());
     let authority = effective_authority(
         app,
         state,
         record,
         record["parent"]["number"].as_u64(),
         &Value::Null,
+        select_compatibility_request,
     )
     .await?
     .0;
@@ -2094,7 +2128,7 @@ async fn published_native(
         } else {
             None
         };
-        closure = effective_authority(app, &fresh, record, existing_pr, &Value::Null)
+        closure = effective_authority(app, &fresh, record, existing_pr, &Value::Null, false)
             .await?
             .2;
     }
@@ -2121,7 +2155,7 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         return error("RELAY_DISABLED");
     }
     if !app.policy.github_native_authority_enabled {
-        return error("GITHUB_NATIVE_AUTHORITY_NOT_ENABLED");
+        return error("CURRENT_PROTOCOL_CAPABILITY_REQUIRED");
     }
     let record = &args["record"];
     // Keep the original canonical operation identity through renderer upgrades.
@@ -2135,7 +2169,6 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         render_legacy(record)
     );
     let future = async {
-        let state = load(app, record).await?;
         let (known, body) = {
             let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
             let known = store
@@ -2153,6 +2186,16 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 });
             (known, body)
         };
+        if known.is_none()
+            && record["schema_version"] == "3.0"
+            && matches!(
+                record["kind"].as_str(),
+                Some("decision" | "task-request" | "change-request")
+            )
+        {
+            return Err("CURRENT_PROTOCOL_REQUIRED");
+        }
+        let state = load(app, record).await?;
         if let Some(known) = &known {
             if known
                 .actor_login

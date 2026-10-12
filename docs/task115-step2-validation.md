@@ -1,5 +1,9 @@
 # Task 115 Step 2 remediation evidence
 
+This is the historical Step 2 report. Current F3/F4 authority and candidate
+evidence are in the [Step 3 report](task115-step3-validation.md); observations
+below retain their original heads, admission and publication boundaries.
+
 Canonical execution authority is the corrected native
 [CR-115-001](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5487214267),
 complete native-body SHA-256

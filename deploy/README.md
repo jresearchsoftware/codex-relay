@@ -99,6 +99,12 @@ Request or authored Step. Protected schema `3.0` in-flight attempts retain their
 exact admitted Request/CR, Step and publication bindings. Installing source does
 not rewrite those attempts or migrate an unmarked Task. See the
 [controller contract](../controller/README.md#issue-publication-and-worker-handoff).
+Fresh work on a qualified v4 installation requires current v4 authority;
+unmarked/legacy Tasks and new v3 Task/CR chains stop rather than falling back to
+older routing. Already-admitted old attempts retain exact completion/Outcome
+and safe recovery. Missing or outdated required connected tools is an actionable
+capability mismatch, not authority for legacy publication; see the
+[current protocol capability contract](../reviewer/README.md#current-protocol-capabilities).
 
 The installed `reviewer-mcp.json` can enable `manualOutcomeEnabled` and the fixed
 `manualOutcomeClientPath` under the namespace's installation root. Omitted

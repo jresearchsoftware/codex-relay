@@ -24,17 +24,17 @@ function issueLabelRunName(issue, route) {
     (value, part) => String(value ?? '').toLowerCase().includes(String(part).toLowerCase()), JSON.parse);
 }
 
-test('workflow marker examples retain legacy Step display and pass the unchanged broker admission gate', async t => {
+test('workflow marker examples retain display but cannot downgrade the current broker to legacy admission', async t => {
   for (const route of ['auto', 'manual']) {
     for (const instruction of ['Example migration marker: `Authority model: github-native-v1`',
       'Literal example: \\nAuthority model: github-native-v1\\n']) {
-      const f = await fixture(t, { route, labelLaunch: true, streamlinedAdmission: true, instruction,
-        beforeAdmission: ({ issue, run }) => { run.display_title = issueLabelRunName(issue, route); } });
-      assert.notEqual(f.admission.status, 'BLOCKED');
-      assert.equal(f.envelope.step, 1);
-      assert.equal(f.envelope.request, undefined);
-      assert.match(f.run.display_title, / · step-1 · codex-ready-/);
-      assert.equal(f.comments.length, 0);
+      let context;
+      await assert.rejects(fixture(t, { route, labelLaunch: true, streamlinedAdmission: true, instruction,
+        beforeAdmission: value => { context = value; value.run.display_title = issueLabelRunName(value.issue, route); } }),
+      { code: 'CURRENT_PROTOCOL_REQUIRED' });
+      assert.match(context.run.display_title, / · step-1 · codex-ready-/);
+      assert.equal(await context.store.get(99), null);
+      assert.ok(context.issue.labels.some(label => label.name === `codex-ready-${route}`));
     }
   }
 });
@@ -58,12 +58,10 @@ test('workflow exact LF and CRLF markers admit native work without using stale S
   }
 });
 
-test('legacy Step display mismatch remains blocked when only the ready label is supplied', async t => {
-  const f = await fixture(t, { labelLaunch: true, streamlinedAdmission: true,
-    beforeAdmission: ({ run }) => { run.display_title = 'Auto implementation · Task 42 · codex-ready-auto'; } });
-  assert.equal(f.admission.status, 'BLOCKED');
-  assert.equal(f.envelope.admissionBlock.code, 'STEP_DISPLAY_MISMATCH');
-  assert.equal(f.comments.length, 1);
+test('a current broker refuses legacy authority before checking obsolete Step display', async t => {
+  await assert.rejects(fixture(t, { labelLaunch: true, streamlinedAdmission: true,
+    beforeAdmission: ({ run }) => { run.display_title = 'Auto implementation · Task 42 · codex-ready-auto'; } }),
+  { code: 'CURRENT_PROTOCOL_REQUIRED' });
 });
 
 test('workflow case-insensitive marker matching cannot admit malformed dedicated authority', async t => {

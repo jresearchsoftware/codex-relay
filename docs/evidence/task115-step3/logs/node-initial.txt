@@ -1,0 +1,4969 @@
+
+> test
+> node --import ./consumer/test-support/consumer-env.mjs --test controller/test/*.test.mjs runtime/test/*.test.mjs contracts/test/*.test.mjs consumer/test/*.test.mjs
+
+TAP version 13
+# Subtest: same modules: example-org/sample-project Issue and remediation publication and replay
+ok 1 - same modules: example-org/sample-project Issue and remediation publication and replay
+  ---
+  duration_ms: 1780.38387
+  type: 'test'
+  ...
+# Subtest: consumer profile is resolved once; repository API and credentials use only the configured identity
+ok 2 - consumer profile is resolved once; repository API and credentials use only the configured identity
+  ---
+  duration_ms: 138.790208
+  type: 'test'
+  ...
+# Subtest: missing, malformed, unsafe and overlapping consumer configuration fails closed
+ok 3 - missing, malformed, unsafe and overlapping consumer configuration fails closed
+  ---
+  duration_ms: 52.5372
+  type: 'test'
+  ...
+# Subtest: consumer validation declarations are optional, bounded names rather than commands
+ok 4 - consumer validation declarations are optional, bounded names rather than commands
+  ---
+  duration_ms: 1.267976
+  type: 'test'
+  ...
+# Subtest: plain synthetic consumer and diagnostics examples pass the actual validators
+ok 5 - plain synthetic consumer and diagnostics examples pass the actual validators
+  ---
+  duration_ms: 9.077078
+  type: 'test'
+  ...
+# Subtest: dogfood trust: Writer can publish workflow bytes; ready does not certify candidate CI
+ok 6 - dogfood trust: Writer can publish workflow bytes; ready does not certify candidate CI
+  ---
+  duration_ms: 854.111564
+  type: 'test'
+  ...
+# Subtest: publication scans transient introduced secrets even when absent from the candidate tip
+ok 7 - publication scans transient introduced secrets even when absent from the candidate tip
+  ---
+  duration_ms: 584.351911
+  type: 'test'
+  ...
+# Subtest: publication and candidate marker policies intentionally have different bounded coverage
+ok 8 - publication and candidate marker policies intentionally have different bounded coverage
+  ---
+  duration_ms: 78.115424
+  type: 'test'
+  ...
+# Subtest: launcher isolation can be recreated after an env-reset boundary, without inherited credentials
+ok 9 - launcher isolation can be recreated after an env-reset boundary, without inherited credentials
+  ---
+  duration_ms: 84.085126
+  type: 'test'
+  ...
+# Subtest: remediation passes unknown safe profiles and effort independently of subagents
+ok 10 - remediation passes unknown safe profiles and effort independently of subagents
+  ---
+  duration_ms: 4.276148
+  type: 'test'
+  ...
+# Subtest: native and YAML remediation default absent profile fields without path or review metadata
+ok 11 - native and YAML remediation default absent profile fields without path or review metadata
+  ---
+  duration_ms: 1.542067
+  type: 'test'
+  ...
+# Subtest: native CR authority accepts reordered sections, bullets and dash variants without optional prose labels
+ok 12 - native CR authority accepts reordered sections, bullets and dash variants without optional prose labels
+  ---
+  duration_ms: 1.44323
+  type: 'test'
+  ...
+# Subtest: legacy review provenance is readable as history without becoming active execution metadata
+ok 13 - legacy review provenance is readable as history without becoming active execution metadata
+  ---
+  duration_ms: 0.445085
+  type: 'test'
+  ...
+# Subtest: conflicting head metadata and substantive empty findings fail closed
+ok 14 - conflicting head metadata and substantive empty findings fail closed
+  ---
+  duration_ms: 0.514098
+  type: 'test'
+  ...
+# Subtest: native integration CR headings retain task-qualified findings, validation and its exact Outcome token
+ok 15 - native integration CR headings retain task-qualified findings, validation and its exact Outcome token
+  ---
+  duration_ms: 2.726931
+  type: 'test'
+  ...
+# Subtest: Rust canonical fixture admits through current native controller with repeated matching Steps
+ok 16 - Rust canonical fixture admits through current native controller with repeated matching Steps
+  ---
+  duration_ms: 28.184046
+  type: 'test'
+  ...
+# Subtest: validation comes from the structured contract, independent of human heading spelling
+ok 17 - validation comes from the structured contract, independent of human heading spelling
+  ---
+  duration_ms: 11.948493
+  type: 'test'
+  ...
+# Subtest: omitted structured effort and permission resolve once and survive admission and worker launch
+ok 18 - omitted structured effort and permission resolve once and survive admission and worker launch
+  ---
+  duration_ms: 23.880379
+  type: 'test'
+  ...
+# Subtest: repeated compatibility prose cannot create duplicate executable values
+ok 19 - repeated compatibility prose cannot create duplicate executable values
+  ---
+  duration_ms: 24.097673
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing validation
+ok 20 - shared producer/consumer rejection: missing validation
+  ---
+  duration_ms: 0.491683
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: empty validation
+ok 21 - shared producer/consumer rejection: empty validation
+  ---
+  duration_ms: 11.331256
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: unknown executable validation
+ok 22 - shared producer/consumer rejection: unknown executable validation
+  ---
+  duration_ms: 0.387323
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: explicit duplicate validation
+ok 23 - shared producer/consumer rejection: explicit duplicate validation
+  ---
+  duration_ms: 1.081393
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing change_request_id
+ok 24 - shared producer/consumer rejection: missing change_request_id
+  ---
+  duration_ms: 0.660436
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing remediation_thread_title
+ok 25 - shared producer/consumer rejection: missing remediation_thread_title
+  ---
+  duration_ms: 0.864894
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing step
+ok 26 - shared producer/consumer rejection: missing step
+  ---
+  duration_ms: 0.358494
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing codex_model
+ok 27 - shared producer/consumer rejection: missing codex_model
+  ---
+  duration_ms: 0.178646
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: null codex_effort
+ok 28 - shared producer/consumer rejection: null codex_effort
+  ---
+  duration_ms: 0.182518
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing findings
+ok 29 - shared producer/consumer rejection: missing findings
+  ---
+  duration_ms: 0.147679
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing starting_state_requirements
+ok 30 - shared producer/consumer rejection: missing starting_state_requirements
+  ---
+  duration_ms: 0.217531
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing completion_requirements
+ok 31 - shared producer/consumer rejection: missing completion_requirements
+  ---
+  duration_ms: 0.143067
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing protected_boundaries
+ok 32 - shared producer/consumer rejection: missing protected_boundaries
+  ---
+  duration_ms: 0.128921
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing success_token
+ok 33 - shared producer/consumer rejection: missing success_token
+  ---
+  duration_ms: 0.169165
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing success_outcome
+ok 34 - shared producer/consumer rejection: missing success_outcome
+  ---
+  duration_ms: 0.126984
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing blocked_token
+ok 35 - shared producer/consumer rejection: missing blocked_token
+  ---
+  duration_ms: 0.112938
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: missing blocked_outcome
+ok 36 - shared producer/consumer rejection: missing blocked_outcome
+  ---
+  duration_ms: 0.129522
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 0
+ok 37 - shared producer/consumer rejection: malformed Step 0
+  ---
+  duration_ms: 0.235589
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step -1
+ok 38 - shared producer/consumer rejection: malformed Step -1
+  ---
+  duration_ms: 0.192534
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 1.5
+ok 39 - shared producer/consumer rejection: malformed Step 1.5
+  ---
+  duration_ms: 0.122899
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 1
+ok 40 - shared producer/consumer rejection: malformed Step 1
+  ---
+  duration_ms: 0.124892
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 01
+ok 41 - shared producer/consumer rejection: malformed Step 01
+  ---
+  duration_ms: 0.122847
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 1;echo
+ok 42 - shared producer/consumer rejection: malformed Step 1;echo
+  ---
+  duration_ms: 0.120164
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step 9007199254740992
+ok 43 - shared producer/consumer rejection: malformed Step 9007199254740992
+  ---
+  duration_ms: 0.117573
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step True
+ok 44 - shared producer/consumer rejection: malformed Step True
+  ---
+  duration_ms: 0.166522
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed Step None
+ok 45 - shared producer/consumer rejection: malformed Step None
+  ---
+  duration_ms: 0.46797
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding id 'bad id'
+ok 46 - shared producer/consumer rejection: malformed finding id 'bad id'
+  ---
+  duration_ms: 0.238822
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding id '1F'
+ok 47 - shared producer/consumer rejection: malformed finding id '1F'
+  ---
+  duration_ms: 0.138444
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding id ''
+ok 48 - shared producer/consumer rejection: malformed finding id ''
+  ---
+  duration_ms: 0.13376
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding id 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+ok 49 - shared producer/consumer rejection: malformed finding id 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+  ---
+  duration_ms: 0.134516
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding severity 'fatal'
+ok 50 - shared producer/consumer rejection: malformed finding severity 'fatal'
+  ---
+  duration_ms: 0.14175
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding problem ''
+ok 51 - shared producer/consumer rejection: malformed finding problem ''
+  ---
+  duration_ms: 0.147427
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding impact 'TODO'
+ok 52 - shared producer/consumer rejection: malformed finding impact 'TODO'
+  ---
+  duration_ms: 0.777155
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding remediation 'bad\\ntext'
+ok 53 - shared producer/consumer rejection: malformed finding remediation 'bad\\ntext'
+  ---
+  duration_ms: 0.209148
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding acceptance_criteria []
+ok 54 - shared producer/consumer rejection: malformed finding acceptance_criteria []
+  ---
+  duration_ms: 0.150991
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: malformed finding evidence ['bad\\x00text']
+ok 55 - shared producer/consumer rejection: malformed finding evidence ['bad\\x00text']
+  ---
+  duration_ms: 0.133702
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: duplicate stable IDs
+ok 56 - shared producer/consumer rejection: duplicate stable IDs
+  ---
+  duration_ms: 10.359616
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid codex_model
+ok 57 - shared producer/consumer rejection: invalid codex_model
+  ---
+  duration_ms: 0.449601
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid codex_effort
+ok 58 - shared producer/consumer rejection: invalid codex_effort
+  ---
+  duration_ms: 0.172013
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid subagents_allowed
+ok 59 - shared producer/consumer rejection: invalid subagents_allowed
+  ---
+  duration_ms: 0.127074
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid success_token
+ok 60 - shared producer/consumer rejection: invalid success_token
+  ---
+  duration_ms: 0.361565
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid blocked_token
+ok 61 - shared producer/consumer rejection: invalid blocked_token
+  ---
+  duration_ms: 3.779393
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid success_outcome
+ok 62 - shared producer/consumer rejection: invalid success_outcome
+  ---
+  duration_ms: 0.304703
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid protected_boundaries
+ok 63 - shared producer/consumer rejection: invalid protected_boundaries
+  ---
+  duration_ms: 0.154019
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid completion_requirements
+ok 64 - shared producer/consumer rejection: invalid completion_requirements
+  ---
+  duration_ms: 0.165716
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid owner_policy_reconciliation
+ok 65 - shared producer/consumer rejection: invalid owner_policy_reconciliation
+  ---
+  duration_ms: 2.177346
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid allowed_paths
+ok 66 - shared producer/consumer rejection: invalid allowed_paths
+  ---
+  duration_ms: 0.405668
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid unexpected_authorization
+ok 67 - shared producer/consumer rejection: invalid unexpected_authorization
+  ---
+  duration_ms: 3.625344
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid review_model
+ok 68 - shared producer/consumer rejection: invalid review_model
+  ---
+  duration_ms: 0.610511
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: invalid required_starting_head
+ok 69 - shared producer/consumer rejection: invalid required_starting_head
+  ---
+  duration_ms: 0.289994
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: identical completion tokens
+ok 70 - shared producer/consumer rejection: identical completion tokens
+  ---
+  duration_ms: 0.235442
+  type: 'test'
+  ...
+# Subtest: shared producer/consumer rejection: identical completion outcomes
+ok 71 - shared producer/consumer rejection: identical completion outcomes
+  ---
+  duration_ms: 0.244927
+  type: 'test'
+  ...
+# Subtest: all declared native validation names and safe explicit profiles remain executable
+ok 72 - all declared native validation names and safe explicit profiles remain executable
+  ---
+  duration_ms: 108.585956
+  type: 'test'
+  ...
+# Subtest: wrong binding, malformed JSON, duplicate keys/contracts and unsupported versions fail closed
+ok 73 - wrong binding, malformed JSON, duplicate keys/contracts and unsupported versions fail closed
+  ---
+  duration_ms: 2.872473
+  type: 'test'
+  ...
+# Subtest: safe quoted Unicode prose round-trips without YAML or Markdown interpretation
+ok 74 - safe quoted Unicode prose round-trips without YAML or Markdown interpretation
+  ---
+  duration_ms: 0.458212
+  type: 'test'
+  ...
+# Subtest: the shared definition uses only the bounded keywords and formats supported in both languages
+ok 75 - the shared definition uses only the bounded keywords and formats supported in both languages
+  ---
+  duration_ms: 0.382288
+  type: 'test'
+  ...
+# Subtest: ordinary project defaults match schema, deployment inputs and canonical policy
+ok 76 - ordinary project defaults match schema, deployment inputs and canonical policy
+  ---
+  duration_ms: 2.040535
+  type: 'test'
+  ...
+# Subtest: consumer model stays required and omitted effort resolves without altering explicit config digests
+ok 77 - consumer model stays required and omitted effort resolves without altering explicit config digests
+  ---
+  duration_ms: 2.47682
+  type: 'test'
+  ...
+# Subtest: delegation guidance selects assignment profiles and bounds context and authority
+ok 78 - delegation guidance selects assignment profiles and bounds context and authority
+  ---
+  duration_ms: 0.399204
+  type: 'test'
+  ...
+# Subtest: Issue authority preserves explicit permissions and blocks ambiguous permissions
+ok 79 - Issue authority preserves explicit permissions and blocks ambiguous permissions
+  ---
+  duration_ms: 5.719984
+  type: 'test'
+  ...
+# Subtest: Issue defaults and explicit overrides reach the worker unchanged
+ok 80 - Issue defaults and explicit overrides reach the worker unchanged
+  ---
+  duration_ms: 515.082055
+  type: 'test'
+  ...
+# Subtest: charter-only new authority needs no public Request or preallocated Step
+ok 81 - charter-only new authority needs no public Request or preallocated Step
+  ---
+  duration_ms: 6.328907
+  type: 'test'
+  ...
+# Subtest: profile precedence is CR then trusted Decision then project then supported system defaults
+ok 82 - profile precedence is CR then trusted Decision then project then supported system defaults
+  ---
+  duration_ms: 2.526283
+  type: 'test'
+  ...
+# Subtest: backlog Decisions accumulate deterministically with explicit supersession and no Step
+ok 83 - backlog Decisions accumulate deterministically with explicit supersession and no Step
+  ---
+  duration_ms: 3.582378
+  type: 'test'
+  ...
+# Subtest: ordinary comments and lookalike Bot identities cannot amend or create execution authority
+ok 84 - ordinary comments and lookalike Bot identities cannot amend or create execution authority
+  ---
+  duration_ms: 0.639225
+  type: 'test'
+  ...
+# Subtest: trusted Task Decisions override effective closure in both directions, while CR cannot
+ok 85 - trusted Task Decisions override effective closure in both directions, while CR cannot
+  ---
+  duration_ms: 2.248844
+  type: 'test'
+  ...
+# Subtest: native v4 CR is independent of public Requests and does not allocate a Step
+ok 86 - native v4 CR is independent of public Requests and does not allocate a Step
+  ---
+  duration_ms: 2.869461
+  type: 'test'
+  ...
+# Subtest: accepted Outcome retains its originating CR after APPROVE without granting another admission
+ok 87 - accepted Outcome retains its originating CR after APPROVE without granting another admission
+  ---
+  duration_ms: 5.128324
+  type: 'test'
+  ...
+# Subtest: selected context preserves native body hashes and cannot smuggle conflicting reference bytes
+ok 88 - selected context preserves native body hashes and cannot smuggle conflicting reference bytes
+  ---
+  duration_ms: 1.944763
+  type: 'test'
+  ...
+# Subtest: optional v3 Request remains an exact compatibility source without changing retained admission semantics
+ok 89 - optional v3 Request remains an exact compatibility source without changing retained admission semantics
+  ---
+  duration_ms: 5.526375
+  type: 'test'
+  ...
+# Subtest: migrated v4 no-PR Task Approval preserves absent compatibility despite old v3 Request history
+ok 90 - migrated v4 no-PR Task Approval preserves absent compatibility despite old v3 Request history
+  ---
+  duration_ms: 7.206292
+  type: 'test'
+  ...
+# Subtest: new execution snapshot binds exact authority, run, attempt, Step and lineage; replay preserves digest
+ok 91 - new execution snapshot binds exact authority, run, attempt, Step and lineage; replay preserves digest
+  ---
+  duration_ms: 7.004056
+  type: 'test'
+  ...
+# Subtest: v4 no-PR Task Approval binds one trusted Writer Outcome/admission and retains warnings and limitations
+ok 92 - v4 no-PR Task Approval binds one trusted Writer Outcome/admission and retains warnings and limitations
+  ---
+  duration_ms: 12.434929
+  type: 'test'
+  ...
+# Subtest: new Decisions and a later admitted Outcome make an old acceptance stale
+ok 93 - new Decisions and a later admitted Outcome make an old acceptance stale
+  ---
+  duration_ms: 21.992307
+  type: 'test'
+  ...
+# Subtest: current Task acceptance may bind original execution after trusted amended scope, while original sources remain immutable
+ok 94 - current Task acceptance may bind original execution after trusted amended scope, while original sources remain immutable
+  ---
+  duration_ms: 4.166903
+  type: 'test'
+  ...
+# Subtest: a provenance-only trusted Decision change reports no fictional executor delta but invalidates an unbound acceptance
+ok 95 - a provenance-only trusted Decision change reports no fictional executor delta but invalidates an unbound acceptance
+  ---
+  duration_ms: 3.834112
+  type: 'test'
+  ...
+# Subtest: authority drift schema binds current source identity, ordered fields and truthful review-needed signal
+ok 96 - authority drift schema binds current source identity, ordered fields and truthful review-needed signal
+  ---
+  duration_ms: 8.949795
+  type: 'test'
+  ...
+# Subtest: new admissions capture exact nonstandard resolver inputs under the existing snapshot digest; explicit retention is no semantic delta
+ok 97 - new admissions capture exact nonstandard resolver inputs under the existing snapshot digest; explicit retention is no semantic delta
+  ---
+  duration_ms: 4.739263
+  type: 'test'
+  ...
+# Subtest: typed malicious fence strings round trip while real conflicting authority blocks fail closed
+ok 98 - typed malicious fence strings round trip while real conflicting authority blocks fail closed
+  ---
+  duration_ms: 0.464534
+  type: 'test'
+  ...
+# Subtest: explicit migration chooses one authority model, with malformed markers rejected
+ok 99 - explicit migration chooses one authority model, with malformed markers rejected
+  ---
+  duration_ms: 4.132228
+  type: 'test'
+  ...
+# Subtest: shared definition contains every published record and explicit bounded schemas
+ok 100 - shared definition contains every published record and explicit bounded schemas
+  ---
+  duration_ms: 0.965178
+  type: 'test'
+  ...
+# Subtest: canonical renderer round trips and supports bounded publisher prose outside the block
+ok 101 - canonical renderer round trips and supports bounded publisher prose outside the block
+  ---
+  duration_ms: 1.426116
+  type: 'test'
+  ...
+# Subtest: Node preserves the shared Rust publisher rendering fixture exactly
+ok 102 - Node preserves the shared Rust publisher rendering fixture exactly
+  ---
+  duration_ms: 0.904154
+  type: 'test'
+  ...
+# Subtest: continuation is bounded explicit canonical authority and a Decision can normalize its amendment
+ok 103 - continuation is bounded explicit canonical authority and a Decision can normalize its amendment
+  ---
+  duration_ms: 6.81024
+  type: 'test'
+  ...
+# Subtest: duplicate JSON keys, duplicate/malformed blocks, mixed versions and unknown payload data fail closed
+ok 104 - duplicate JSON keys, duplicate/malformed blocks, mixed versions and unknown payload data fail closed
+  ---
+  duration_ms: 1.481344
+  type: 'test'
+  ...
+# Subtest: native login, immutable Bot identity, repository and target establish request trust
+ok 105 - native login, immutable Bot identity, repository and target establish request trust
+  ---
+  duration_ms: 8.152264
+  type: 'test'
+  ...
+# Subtest: untrusted fake authority blocks remain ordinary evidence
+ok 106 - untrusted fake authority blocks remain ordinary evidence
+  ---
+  duration_ms: 1.98827
+  type: 'test'
+  ...
+# Subtest: supersession is explicit and linear and accepts same-Step continuation independently of native ordering
+ok 107 - supersession is explicit and linear and accepts same-Step continuation independently of native ordering
+  ---
+  duration_ms: 8.163288
+  type: 'test'
+  ...
+# Subtest: a new current snapshot can explicitly supersede a request bound to the older charter
+ok 108 - a new current snapshot can explicitly supersede a request bound to the older charter
+  ---
+  duration_ms: 3.1255
+  type: 'test'
+  ...
+# Subtest: manual qualification Requests need no PR or Git result surface
+ok 109 - manual qualification Requests need no PR or Git result surface
+  ---
+  duration_ms: 1.582308
+  type: 'test'
+  ...
+# Subtest: selected context is verified by native source identity and exact body digest, with no crawl
+ok 110 - selected context is verified by native source identity and exact body digest, with no crawl
+  ---
+  duration_ms: 1.597497
+  type: 'test'
+  ...
+# Subtest: trusted Decision amendments must be normalized in the selected complete snapshot
+ok 111 - trusted Decision amendments must be normalized in the selected complete snapshot
+  ---
+  duration_ms: 4.714397
+  type: 'test'
+  ...
+# Subtest: selected superseded Decisions are rejected, while the superseding amendment can be selected explicitly
+ok 112 - selected superseded Decisions are rejected, while the superseding amendment can be selected explicitly
+  ---
+  duration_ms: 42.370218
+  type: 'test'
+  ...
+# Subtest: CR v3 binds the current Request, native reviewed head, PR and exact stable findings
+ok 113 - CR v3 binds the current Request, native reviewed head, PR and exact stable findings
+  ---
+  duration_ms: 24.133549
+  type: 'test'
+  ...
+# Subtest: PR-scoped Decisions bind the exact existing PR for remediation or admitted Task continuation
+ok 114 - PR-scoped Decisions bind the exact existing PR for remediation or admitted Task continuation
+  ---
+  duration_ms: 15.465328
+  type: 'test'
+  ...
+# Subtest: Task Approval binds a trusted Writer Outcome and exact result without requiring a PR
+ok 115 - Task Approval binds a trusted Writer Outcome and exact result without requiring a PR
+  ---
+  duration_ms: 14.726131
+  type: 'test'
+  ...
+# Subtest: Approval rejects stale Request, fake Writer, altered result, blocked Outcome and omitted warnings
+ok 116 - Approval rejects stale Request, fake Writer, altered result, blocked Outcome and omitted warnings
+  ---
+  duration_ms: 10.941566
+  type: 'test'
+  ...
+# Subtest: Approval records explicit warning dispositions and additional review warnings while preserving material sources
+ok 117 - Approval records explicit warning dispositions and additional review warnings while preserving material sources
+  ---
+  duration_ms: 1.786421
+  type: 'test'
+  ...
+# Subtest: Approval retains every material Writer Outcome limitation
+ok 118 - Approval retains every material Writer Outcome limitation
+  ---
+  duration_ms: 3.734223
+  type: 'test'
+  ...
+# Subtest: result identity and task review findings are bounded durable evidence rather than execution authority
+ok 119 - result identity and task review findings are bounded durable evidence rather than execution authority
+  ---
+  duration_ms: 3.055807
+  type: 'test'
+  ...
+# Subtest: trusted Decision closure uses verified complete Task state, without a public task_complete flag
+ok 120 - trusted Decision closure uses verified complete Task state, without a public task_complete flag
+  ---
+  duration_ms: 112.639656
+  type: 'test'
+  ...
+# Subtest: completed keep-open Task with no actual remaining work surfaces owner disposition
+ok 121 - completed keep-open Task with no actual remaining work surfaces owner disposition
+  ---
+  duration_ms: 27.378007
+  type: 'test'
+  ...
+# Subtest: native exact-head APPROVE preserves originating CR provenance and uses squash-only owner continuation
+ok 122 - native exact-head APPROVE preserves originating CR provenance and uses squash-only owner continuation
+  ---
+  duration_ms: 33.043862
+  type: 'test'
+  ...
+# Subtest: migrated older Task no-PR acceptance continues without rebinding retained v3 history
+ok 123 - migrated older Task no-PR acceptance continues without rebinding retained v3 history
+  ---
+  duration_ms: 42.479911
+  type: 'test'
+  ...
+# Subtest: migrated older Task exact-head PR acceptance continues without rebinding retained v3 history
+ok 124 - migrated older Task exact-head PR acceptance continues without rebinding retained v3 history
+  ---
+  duration_ms: 45.803903
+  type: 'test'
+  ...
+# Subtest: v4 authorized continuation launches native authority without preparing a Request or Step
+ok 125 - v4 authorized continuation launches native authority without preparing a Request or Step
+  ---
+  duration_ms: 47.268287
+  type: 'test'
+  ...
+# Subtest: current v4 continuation selects fresh native direction without inheriting an older v3 Request
+ok 126 - current v4 continuation selects fresh native direction without inheriting an older v3 Request
+  ---
+  duration_ms: 48.097322
+  type: 'test'
+  ...
+# Subtest: changed trusted Decision, unknown completion, protected hold and delayed mutation remain bounded
+ok 127 - changed trusted Decision, unknown completion, protected hold and delayed mutation remain bounded
+  ---
+  duration_ms: 13.71326
+  type: 'test'
+  ...
+# Subtest: no-PR Task acceptance binds current amended Task while preserving the original Outcome admission
+ok 128 - no-PR Task acceptance binds current amended Task while preserving the original Outcome admission
+  ---
+  duration_ms: 22.181303
+  type: 'test'
+  ...
+# Subtest: Task material Decision drift after approval requires fresh independent acceptance before any effect
+ok 129 - Task material Decision drift after approval requires fresh independent acceptance before any effect
+  ---
+  duration_ms: 5.722159
+  type: 'test'
+  ...
+# Subtest: native exact-head PR acceptance binds current amended Task while preserving the original Outcome admission
+ok 130 - native exact-head PR acceptance binds current amended Task while preserving the original Outcome admission
+  ---
+  duration_ms: 22.657398
+  type: 'test'
+  ...
+# Subtest: PR material Decision drift after approval requires fresh independent acceptance before any effect
+ok 131 - PR material Decision drift after approval requires fresh independent acceptance before any effect
+  ---
+  duration_ms: 7.907231
+  type: 'test'
+  ...
+# Subtest: a native PR authority marker binds exact current sources and rejects copied or duplicated acceptance bindings
+ok 132 - a native PR authority marker binds exact current sources and rejects copied or duplicated acceptance bindings
+  ---
+  duration_ms: 5.075696
+  type: 'test'
+  ...
+# Subtest: verified independent native approval immediately executes squash, authorized closure and exact next automatic Request
+ok 133 - verified independent native approval immediately executes squash, authorized closure and exact next automatic Request
+  ---
+  duration_ms: 24.378851
+  type: 'test'
+  ...
+# Subtest: manual next Request creates the bounded handoff through the owner adapter
+ok 134 - manual next Request creates the bounded handoff through the owner adapter
+  ---
+  duration_ms: 20.395017
+  type: 'test'
+  ...
+# Subtest: keep-open preserves the Issue while accepting and continuing already authorized work
+ok 135 - keep-open preserves the Issue while accepting and continuing already authorized work
+  ---
+  duration_ms: 18.14823
+  type: 'test'
+  ...
+# Subtest: close-authorized does not close an incomplete Task or one with remaining work
+ok 136 - close-authorized does not close an incomplete Task or one with remaining work
+  ---
+  duration_ms: 20.989594
+  type: 'test'
+  ...
+# Subtest: changed head, native actor, charter or current Request stops before mutation
+ok 137 - changed head, native actor, charter or current Request stops before mutation
+  ---
+  duration_ms: 16.426878
+  type: 'test'
+  ...
+# Subtest: unresolved, stale, missing or failed required checks and unknown base readiness stop
+ok 138 - unresolved, stale, missing or failed required checks and unknown base readiness stop
+  ---
+  duration_ms: 8.211086
+  type: 'test'
+  ...
+# Subtest: checks are re-read after reservation before any merge is sent
+ok 139 - checks are re-read after reservation before any merge is sent
+  ---
+  duration_ms: 1.737434
+  type: 'test'
+  ...
+# Subtest: ordinary moving base is allowed with fresh exact-head checks; an explicit exact-base boundary remains enforced
+ok 140 - ordinary moving base is allowed with fresh exact-head checks; an explicit exact-base boundary remains enforced
+  ---
+  duration_ms: 4.6562
+  type: 'test'
+  ...
+# Subtest: explicit hold and a protected boundary prevent every continuation action
+ok 141 - explicit hold and a protected boundary prevent every continuation action
+  ---
+  duration_ms: 7.98664
+  type: 'test'
+  ...
+# Subtest: migrated PR implicit Task closure is blocked and squash messages do not inherit closing keywords
+ok 142 - migrated PR implicit Task closure is blocked and squash messages do not inherit closing keywords
+  ---
+  duration_ms: 22.291377
+  type: 'test'
+  ...
+# Subtest: failed or uncertain native publication never falls back to manual approval or mutation
+ok 143 - failed or uncertain native publication never falls back to manual approval or mutation
+  ---
+  duration_ms: 0.910724
+  type: 'test'
+  ...
+# Subtest: uncertain merge or existing mutation intent stops without closure, relaunch or blind retry
+ok 144 - uncertain merge or existing mutation intent stops without closure, relaunch or blind retry
+  ---
+  duration_ms: 6.305729
+  type: 'test'
+  ...
+# Subtest: a successful merge response requires native readback before closure
+ok 145 - a successful merge response requires native readback before closure
+  ---
+  duration_ms: 2.630622
+  type: 'test'
+  ...
+# Subtest: next Request is revalidated after reservation and superseded next authority is never launched
+ok 146 - next Request is revalidated after reservation and superseded next authority is never launched
+  ---
+  duration_ms: 8.27762
+  type: 'test'
+  ...
+# Subtest: Task Approval accepts no-PR immutable qualification result and can close only under charter authority
+ok 147 - Task Approval accepts no-PR immutable qualification result and can close only under charter authority
+  ---
+  duration_ms: 30.545309
+  type: 'test'
+  ...
+# Subtest: legacy native PR acceptance retains its canonical authority digest and no implicit typed migration
+ok 148 - legacy native PR acceptance retains its canonical authority digest and no implicit typed migration
+  ---
+  duration_ms: 0.992332
+  type: 'test'
+  ...
+# Subtest: same-Task phase preparation follows native acceptance and verified merge while old authority stays current until preparation
+ok 149 - same-Task phase preparation follows native acceptance and verified merge while old authority stays current until preparation
+  ---
+  duration_ms: 25.234206
+  type: 'test'
+  ...
+# Subtest: a prepared same-Task Request cannot invent a different execution profile
+ok 150 - a prepared same-Task Request cannot invent a different execution profile
+  ---
+  duration_ms: 18.146858
+  type: 'test'
+  ...
+# Subtest: a superseding same-Task Request published before merge invalidates the accepted source and prevents every action
+ok 151 - a superseding same-Task Request published before merge invalidates the accepted source and prevents every action
+  ---
+  duration_ms: 1.880263
+  type: 'test'
+  ...
+# Subtest: same-Task preparation after no-PR Task Approval preserves the immutable accepted Outcome
+ok 152 - same-Task preparation after no-PR Task Approval preserves the immutable accepted Outcome
+  ---
+  duration_ms: 23.943491
+  type: 'test'
+  ...
+# Subtest: same-Task preparation stops before publication when a selected Decision still owns conflicting continuation
+ok 153 - same-Task preparation stops before publication when a selected Decision still owns conflicting continuation
+  ---
+  duration_ms: 9.696331
+  type: 'test'
+  ...
+# Subtest: normal native rendering is deterministic, human-first and byte-exact canonical JSON
+ok 154 - normal native rendering is deterministic, human-first and byte-exact canonical JSON
+  ---
+  duration_ms: 5.257768
+  type: 'test'
+  ...
+# Subtest: all warning dispositions, evidence gaps and limitations are initially visible
+ok 155 - all warning dispositions, evidence gaps and limitations are initially visible
+  ---
+  duration_ms: 1.349518
+  type: 'test'
+  ...
+# Subtest: CR problem, impact, correction, criteria and evidence remain outside the fold
+ok 156 - CR problem, impact, correction, criteria and evidence remain outside the fold
+  ---
+  duration_ms: 1.826678
+  type: 'test'
+  ...
+# Subtest: Decision amendments are visible without allocating a Step
+ok 157 - Decision amendments are visible without allocating a Step
+  ---
+  duration_ms: 0.762829
+  type: 'test'
+  ...
+# Subtest: untrusted HTML, Markdown, links, mentions and authority fences are inert visible text
+ok 158 - untrusted HTML, Markdown, links, mentions and authority fences are inert visible text
+  ---
+  duration_ms: 0.830102
+  type: 'test'
+  ...
+# Subtest: historical fixture, native body hashes and historical references stay unchanged
+ok 159 - historical fixture, native body hashes and historical references stay unchanged
+  ---
+  duration_ms: 2.045916
+  type: 'test'
+  ...
+# Subtest: empty optional evidence does not invent successful tests; malformed records fail validation
+ok 160 - empty optional evidence does not invent successful tests; malformed records fail validation
+  ---
+  duration_ms: 0.665656
+  type: 'test'
+  ...
+# Subtest: size fallback opens all complete canonical facts without truncation or external authority
+ok 161 - size fallback opens all complete canonical facts without truncation or external authority
+  ---
+  duration_ms: 7.447933
+  type: 'test'
+  ...
+# Subtest: UTF-8 substance survives unchanged canonical bytes and safe visible rendering
+ok 162 - UTF-8 substance survives unchanged canonical bytes and safe visible rendering
+  ---
+  duration_ms: 1.861024
+  type: 'test'
+  ...
+# Subtest: handoff folding preserves every original copyable byte, header and lifecycle marker
+ok 163 - handoff folding preserves every original copyable byte, header and lifecycle marker
+  ---
+  duration_ms: 1.13938
+  type: 'test'
+  ...
+# Subtest: unsupported or ambiguous handoff wrappers keep the prompt open without rewriting it
+ok 164 - unsupported or ambiguous handoff wrappers keep the prompt open without rewriting it
+  ---
+  duration_ms: 0.344769
+  type: 'test'
+  ...
+# Subtest: longer handoff delimiter preserves literal fences and malicious HTML inside the copyable prompt
+ok 165 - longer handoff delimiter preserves literal fences and malicious HTML inside the copyable prompt
+  ---
+  duration_ms: 0.232983
+  type: 'test'
+  ...
+# Subtest: shared Node/Rust fixture matches current presentation and canonical round trips
+ok 166 - shared Node/Rust fixture matches current presentation and canonical round trips
+  ---
+  duration_ms: 9.594433
+  type: 'test'
+  ...
+# Subtest: new CR authoring reads synchronized native labels without changing metadata
+ok 167 - new CR authoring reads synchronized native labels without changing metadata
+  ---
+  duration_ms: 3.396581
+  type: 'test'
+  ...
+# Subtest: owner-authorized new phase advances only N to N+1, preserves unrelated labels and verifies bounded title
+ok 168 - owner-authorized new phase advances only N to N+1, preserves unrelated labels and verifies bounded title
+  ---
+  duration_ms: 5.200043
+  type: 'test'
+  ...
+# Subtest: new phase with no PR is valid and cannot create a PR or edit Issue authority
+ok 169 - new phase with no PR is valid and cannot create a PR or edit Issue authority
+  ---
+  duration_ms: 2.19064
+  type: 'test'
+  ...
+# Subtest: partial phase metadata failure is visible and same N-bound operation finishes only N+1
+ok 170 - partial phase metadata failure is visible and same N-bound operation finishes only N+1
+  ---
+  duration_ms: 1.777932
+  type: 'test'
+  ...
+# Subtest: same-phase retry explicitly keeps Step and bypasses label creation and all writes
+ok 171 - same-phase retry explicitly keeps Step and bypasses label creation and all writes
+  ---
+  duration_ms: 8.873862
+  type: 'test'
+  ...
+# Subtest: Reviewer/Writer Apps, non-owner users and a bot impersonating owner cannot prepare phase metadata
+ok 172 - Reviewer/Writer Apps, non-owner users and a bot impersonating owner cannot prepare phase metadata
+  ---
+  duration_ms: 1.458535
+  type: 'test'
+  ...
+# Subtest: payload is bounded to explicit phase intent and cannot become a normal owner post-CR writer
+ok 173 - payload is bounded to explicit phase intent and cannot become a normal owner post-CR writer
+  ---
+  duration_ms: 1.137589
+  type: 'test'
+  ...
+# Subtest: wrong Issue/PR binding, closed targets, malformed labels and other Steps fail before mutation
+ok 174 - wrong Issue/PR binding, closed targets, malformed labels and other Steps fail before mutation
+  ---
+  duration_ms: 5.022277
+  type: 'test'
+  ...
+# Subtest: changed head, title or canonical Issue authority during preparation prevents remaining writes
+ok 175 - changed head, title or canonical Issue authority during preparation prevents remaining writes
+  ---
+  duration_ms: 5.15393
+  type: 'test'
+  ...
+# Subtest: unobserved label/title mutations fail final verification
+ok 176 - unobserved label/title mutations fail final verification
+  ---
+  duration_ms: 5.802734
+  type: 'test'
+  ...
+# Subtest: new CR authoring rejects missing, multiple, mismatched labels and overflow
+ok 177 - new CR authoring rejects missing, multiple, mismatched labels and overflow
+  ---
+  duration_ms: 4.755832
+  type: 'test'
+  ...
+# Subtest: explicit legacy publication recovery synchronizes only that same decisive native CR and adds its ID once
+ok 178 - explicit legacy publication recovery synchronizes only that same decisive native CR and adds its ID once
+  ---
+  duration_ms: 11.701314
+  type: 'test'
+  ...
+# Subtest: legacy partial transport resumes N/N+1 without another review or Step increment
+ok 179 - legacy partial transport resumes N/N+1 without another review or Step increment
+  ---
+  duration_ms: 2.363053
+  type: 'test'
+  ...
+# Subtest: legacy recovery rejects stale, superseded, foreign, dismissed and malformed CRs before writes
+ok 180 - legacy recovery rejects stale, superseded, foreign, dismissed and malformed CRs before writes
+  ---
+  duration_ms: 10.427762
+  type: 'test'
+  ...
+# Subtest: legacy recovery rejects changed authority and verifies final label/title observation
+ok 181 - legacy recovery rejects changed authority and verifies final label/title observation
+  ---
+  duration_ms: 4.195419
+  type: 'test'
+  ...
+# Subtest: ordinary API adapter creates only a missing native Step label, not on read failure
+ok 182 - ordinary API adapter creates only a missing native Step label, not on read failure
+  ---
+  duration_ms: 0.848824
+  type: 'test'
+  ...
+# Subtest: a non-regular gate fails closed without waiting for a FIFO writer
+ok 183 - a non-regular gate fails closed without waiting for a FIFO writer
+  ---
+  duration_ms: 37.295416
+  type: 'test'
+  ...
+# Subtest: gate is durable, binds the owner operation and requires verified installed revision before reopening
+ok 184 - gate is durable, binds the owner operation and requires verified installed revision before reopening
+  ---
+  duration_ms: 212.31936
+  type: 'test'
+  ...
+# Subtest: bound service activity snapshot preserves manual socket legacy absent across failed activation
+ok 185 - bound service activity snapshot preserves manual socket legacy absent across failed activation
+  ---
+  duration_ms: 249.404068
+  type: 'test'
+  ...
+# Subtest: bound service activity snapshot preserves manual socket loaded across failed activation
+ok 186 - bound service activity snapshot preserves manual socket loaded across failed activation
+  ---
+  duration_ms: 179.07162
+  type: 'test'
+  ...
+# Subtest: bound service activity snapshot preserves manual socket not-found across failed activation
+ok 187 - bound service activity snapshot preserves manual socket not-found across failed activation
+  ---
+  duration_ms: 181.536637
+  type: 'test'
+  ...
+# Subtest: service snapshot rejects incomplete, unknown or inconsistent states and bounded CLI input rejects duplicate fields
+ok 188 - service snapshot rejects incomplete, unknown or inconsistent states and bounded CLI input rejects duplicate fields
+  ---
+  duration_ms: 76.683453
+  type: 'test'
+  ...
+# Subtest: explicit recovery target requires the bound recovery phase and drained records while retaining original service intent
+ok 189 - explicit recovery target requires the bound recovery phase and drained records while retaining original service intent
+  ---
+  duration_ms: 173.175845
+  type: 'test'
+  ...
+# Subtest: quiesce denies new automatic admission before label consumption, journal reservation or GitHub mutation
+ok 190 - quiesce denies new automatic admission before label consumption, journal reservation or GitHub mutation
+  ---
+  duration_ms: 124.636637
+  type: 'test'
+  ...
+# Subtest: quiesce allows the existing admitted automatic controller to finish through Writer publication and containment
+ok 191 - quiesce allows the existing admitted automatic controller to finish through Writer publication and containment
+  ---
+  duration_ms: 899.44918
+  type: 'test'
+  ...
+# Subtest: failed Ready handoff remains an unresolved drain boundary until exact transition recovery
+ok 192 - failed Ready handoff remains an unresolved drain boundary until exact transition recovery
+  ---
+  duration_ms: 955.943225
+  type: 'test'
+  ...
+# Subtest: manual handoff remains available while automatic admission is quiesced
+ok 193 - manual handoff remains available while automatic admission is quiesced
+  ---
+  duration_ms: 136.315109
+  type: 'test'
+  ...
+# Subtest: unknown execution, missing legacy containment, and unresolved publication intents fail drain closed
+ok 194 - unknown execution, missing legacy containment, and unresolved publication intents fail drain closed
+  ---
+  duration_ms: 204.742456
+  type: 'test'
+  ...
+# Subtest: contained pre-child terminal decisions release only after a matching terminal journal exists
+ok 195 - contained pre-child terminal decisions release only after a matching terminal journal exists
+  ---
+  duration_ms: 139.640983
+  type: 'test'
+  ...
+# Subtest: legacy PR creation is resolved by matching terminal journal and exact published head without rewriting receipts
+ok 196 - legacy PR creation is resolved by matching terminal journal and exact published head without rewriting receipts
+  ---
+  duration_ms: 144.024893
+  type: 'test'
+  ...
+# Subtest: legacy PR receipt compatibility does not resolve ambiguous publication, identity or containment
+    # Subtest: missing terminal journal
+    ok 1 - missing terminal journal
+      ---
+      duration_ms: 46.328571
+      type: 'test'
+      ...
+    # Subtest: different journal envelope
+    ok 2 - different journal envelope
+      ---
+      duration_ms: 45.112421
+      type: 'test'
+      ...
+    # Subtest: different terminal PR
+    ok 3 - different terminal PR
+      ---
+      duration_ms: 43.351174
+      type: 'test'
+      ...
+    # Subtest: different terminal head
+    ok 4 - different terminal head
+      ---
+      duration_ms: 39.691094
+      type: 'test'
+      ...
+    # Subtest: different terminal Outcome
+    ok 5 - different terminal Outcome
+      ---
+      duration_ms: 38.994312
+      type: 'test'
+      ...
+    # Subtest: missing PR receipt
+    ok 6 - missing PR receipt
+      ---
+      duration_ms: 50.448603
+      type: 'test'
+      ...
+    # Subtest: invalid Outcome receipt
+    ok 7 - invalid Outcome receipt
+      ---
+      duration_ms: 42.754602
+      type: 'test'
+      ...
+    # Subtest: missing published head
+    ok 8 - missing published head
+      ---
+      duration_ms: 45.686207
+      type: 'test'
+      ...
+    # Subtest: different published head
+    ok 9 - different published head
+      ---
+      duration_ms: 44.763095
+      type: 'test'
+      ...
+    # Subtest: invalid published head
+    ok 10 - invalid published head
+      ---
+      duration_ms: 40.161799
+      type: 'test'
+      ...
+    # Subtest: conflicting resolved PR
+    ok 11 - conflicting resolved PR
+      ---
+      duration_ms: 42.592755
+      type: 'test'
+      ...
+    # Subtest: invalid resolved PR
+    ok 12 - invalid resolved PR
+      ---
+      duration_ms: 35.277561
+      type: 'test'
+      ...
+    # Subtest: explicit unresolved PR
+    ok 13 - explicit unresolved PR
+      ---
+      duration_ms: 41.655062
+      type: 'test'
+      ...
+    # Subtest: invalid PR intent
+    ok 14 - invalid PR intent
+      ---
+      duration_ms: 43.357342
+      type: 'test'
+      ...
+    # Subtest: new controller reservation
+    ok 15 - new controller reservation
+      ---
+      duration_ms: 55.981427
+      type: 'test'
+      ...
+    # Subtest: pending push
+    ok 16 - pending push
+      ---
+      duration_ms: 37.610965
+      type: 'test'
+      ...
+    # Subtest: pending comment
+    ok 17 - pending comment
+      ---
+      duration_ms: 35.611429
+      type: 'test'
+      ...
+    # Subtest: inconsistent final head
+    ok 18 - inconsistent final head
+      ---
+      duration_ms: 44.184514
+      type: 'test'
+      ...
+    # Subtest: missing successful final head
+    ok 19 - missing successful final head
+      ---
+      duration_ms: 30.706157
+      type: 'test'
+      ...
+    # Subtest: unknown child
+    ok 20 - unknown child
+      ---
+      duration_ms: 33.99219
+      type: 'test'
+      ...
+    # Subtest: unknown containment
+    ok 21 - unknown containment
+      ---
+      duration_ms: 39.688062
+      type: 'test'
+      ...
+    # Subtest: unreturned execution
+    ok 22 - unreturned execution
+      ---
+      duration_ms: 38.546137
+      type: 'test'
+      ...
+    1..22
+ok 197 - legacy PR receipt compatibility does not resolve ambiguous publication, identity or containment
+  ---
+  duration_ms: 922.303901
+  type: 'test'
+  ...
+# Subtest: unsafe, malformed, missing or differently bound gate state never implies admission is open
+ok 198 - unsafe, malformed, missing or differently bound gate state never implies admission is open
+  ---
+  duration_ms: 37.84754
+  type: 'test'
+  ...
+# Subtest: bounded drain releases its snapshot lock while waiting and cannot imply success on timeout
+ok 199 - bounded drain releases its snapshot lock while waiting and cannot imply success on timeout
+  ---
+  duration_ms: 1.04539
+  type: 'test'
+  ...
+# Subtest: long drain emits bounded counts every thirty seconds without exposing attempt identities or changing its result
+ok 200 - long drain emits bounded counts every thirty seconds without exposing attempt identities or changing its result
+  ---
+  duration_ms: 1.444126
+  type: 'test'
+  ...
+# Subtest: root lifecycle CLI accepts only bounded fixed command arguments
+ok 201 - root lifecycle CLI accepts only bounded fixed command arguments
+  ---
+  duration_ms: 1.060534
+  type: 'test'
+  ...
+# Subtest: quiesced routing warning reports known absence of a worker without inventing a terminal Outcome
+ok 202 - quiesced routing warning reports known absence of a worker without inventing a terminal Outcome
+  ---
+  duration_ms: 0.432084
+  type: 'test'
+  ...
+# Subtest: real shared flock serializes quiesce against automatic reservation before record mutation
+ok 203 - real shared flock serializes quiesce against automatic reservation before record mutation
+  ---
+  duration_ms: 308.392613
+  type: 'test'
+  ...
+# Subtest: a charter, Decision and ready label do not allocate a Step before durable admission
+ok 204 - a charter, Decision and ready label do not allocate a Step before durable admission
+  ---
+  duration_ms: 1.603192
+  type: 'test'
+  ...
+# Subtest: a new execution after BLOCKED receives a fresh Step bound to the prior admitted attempt
+ok 205 - a new execution after BLOCKED receives a fresh Step bound to the prior admitted attempt
+  ---
+  duration_ms: 0.506912
+  type: 'test'
+  ...
+# Subtest: accepted execution completion advances allocation, while rejected admission does not consume a Step
+ok 206 - accepted execution completion advances allocation, while rejected admission does not consume a Step
+  ---
+  duration_ms: 0.420831
+  type: 'test'
+  ...
+# Subtest: active/uncertain publication and execution boundaries prevent concurrent fresh admission
+ok 207 - active/uncertain publication and execution boundaries prevent concurrent fresh admission
+  ---
+  duration_ms: 0.769904
+  type: 'test'
+  ...
+# Subtest: allocation only counts successfully admitted executions of the same Task
+ok 208 - allocation only counts successfully admitted executions of the same Task
+  ---
+  duration_ms: 0.313705
+  type: 'test'
+  ...
+# Subtest: allocation resolves retained execution order by Step without changing history or creating another ledger
+ok 209 - allocation resolves retained execution order by Step without changing history or creating another ledger
+  ---
+  duration_ms: 0.382044
+  type: 'test'
+  ...
+# Subtest: unknown old Step/run and overflow fail closed instead of guessing execution lineage
+ok 210 - unknown old Step/run and overflow fail closed instead of guessing execution lineage
+  ---
+  duration_ms: 0.741464
+  type: 'test'
+  ...
+# Subtest: checkout failure and unavailable primary diagnostics retain a private capsule and sanitized Outcome reference
+ok 211 - checkout failure and unavailable primary diagnostics retain a private capsule and sanitized Outcome reference
+  ---
+  duration_ms: 302.570452
+  type: 'test'
+  ...
+# Subtest: a journal write failure after a returned child retains known child state and independent failure evidence
+ok 212 - a journal write failure after a returned child retains known child state and independent failure evidence
+  ---
+  duration_ms: 336.66913
+  type: 'test'
+  ...
+# Subtest: normal pre-execution domain decisions still terminalize without creating physical failure capsules
+ok 213 - normal pre-execution domain decisions still terminalize without creating physical failure capsules
+  ---
+  duration_ms: 106.013665
+  type: 'test'
+  ...
+# Subtest: fallback reservation failure stays known-not-executed rather than becoming a containment failure
+ok 214 - fallback reservation failure stays known-not-executed rather than becoming a containment failure
+  ---
+  duration_ms: 445.837083
+  type: 'test'
+  ...
+# Subtest: automatic source completion after scope expansion reports original admission (amended work remains)
+ok 215 - automatic source completion after scope expansion reports original admission (amended work remains)
+  ---
+  duration_ms: 969.459939
+  type: 'test'
+  ...
+# Subtest: automatic source completion after scope expansion reports original admission (amended work also implemented)
+ok 216 - automatic source completion after scope expansion reports original admission (amended work also implemented)
+  ---
+  duration_ms: 761.665857
+  type: 'test'
+  ...
+# Subtest: unused expanded permissions preserve original restrictions and allow source publication
+ok 217 - unused expanded permissions preserve original restrictions and allow source publication
+  ---
+  duration_ms: 898.175584
+  type: 'test'
+  ...
+# Subtest: changed action-time constraint boundaries blocks source publication while one truthful Outcome remains available
+ok 218 - changed action-time constraint boundaries blocks source publication while one truthful Outcome remains available
+  ---
+  duration_ms: 571.553709
+  type: 'test'
+  ...
+# Subtest: changed action-time constraint scope blocks source publication while one truthful Outcome remains available
+ok 219 - changed action-time constraint scope blocks source publication while one truthful Outcome remains available
+  ---
+  duration_ms: 500.137059
+  type: 'test'
+  ...
+# Subtest: changed action-time constraint validation blocks source publication while one truthful Outcome remains available
+ok 220 - changed action-time constraint validation blocks source publication while one truthful Outcome remains available
+  ---
+  duration_ms: 439.592986
+  type: 'test'
+  ...
+# Subtest: manual no-PR reporting accepts trusted Decision drift and preserves claims through later drift and replay
+ok 221 - manual no-PR reporting accepts trusted Decision drift and preserves claims through later drift and replay
+  ---
+  duration_ms: 113.616973
+  type: 'test'
+  ...
+# Subtest: reporting still rejects altered original source bytes, wrong trusted actor, execution identity and changed starting pins
+ok 222 - reporting still rejects altered original source bytes, wrong trusted actor, execution identity and changed starting pins
+  ---
+  duration_ms: 488.537843
+  type: 'test'
+  ...
+# Subtest: fetch/switch existing canonical remote precedes the exact-head gate despite a different initial branch/head
+ok 223 - fetch/switch existing canonical remote precedes the exact-head gate despite a different initial branch/head
+  ---
+  duration_ms: 438.655074
+  type: 'test'
+  ...
+# Subtest: refreshed canonical mismatch blocks on the canonical branch without resetting it
+ok 224 - refreshed canonical mismatch blocks on the canonical branch without resetting it
+  ---
+  duration_ms: 358.08558
+  type: 'test'
+  ...
+# Subtest: dirty initial state is preserved without switching
+ok 225 - dirty initial state is preserved without switching
+  ---
+  duration_ms: 265.578636
+  type: 'test'
+  ...
+# Subtest: unpublished unrelated commits remain intact without switching
+ok 226 - unpublished unrelated commits remain intact without switching
+  ---
+  duration_ms: 283.115379
+  type: 'test'
+  ...
+# Subtest: unpublished canonical work is preserved instead of replaced by its remote
+ok 227 - unpublished canonical work is preserved instead of replaced by its remote
+  ---
+  duration_ms: 364.540583
+  type: 'test'
+  ...
+# Subtest: missing canonical remote blocks without a replacement branch
+ok 228 - missing canonical remote blocks without a replacement branch
+  ---
+  duration_ms: 156.896713
+  type: 'test'
+  ...
+# Subtest: a published local canonical branch behind the admitted remote advances only by fast-forward
+ok 229 - a published local canonical branch behind the admitted remote advances only by fast-forward
+  ---
+  duration_ms: 368.195962
+  type: 'test'
+  ...
+# Subtest: automatic prepare refuses to reuse a worker checkout and preserves its bytes
+ok 230 - automatic prepare refuses to reuse a worker checkout and preserves its bytes
+  ---
+  duration_ms: 236.583564
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves classified exit across runtime, dispatcher, Writer and replay
+ok 231 - automatic Outcome preserves classified exit across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 909.443287
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves inner signal across runtime, dispatcher, Writer and replay
+ok 232 - automatic Outcome preserves inner signal across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 827.087518
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves unavailable inner observation across runtime, dispatcher, Writer and replay
+ok 233 - automatic Outcome preserves unavailable inner observation across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 888.902087
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves invalid inner observation across runtime, dispatcher, Writer and replay
+ok 234 - automatic Outcome preserves invalid inner observation across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 895.969981
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves launcher failure before child across runtime, dispatcher, Writer and replay
+ok 235 - automatic Outcome preserves launcher failure before child across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 737.033023
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves missing launcher diagnostic across runtime, dispatcher, Writer and replay
+ok 236 - automatic Outcome preserves missing launcher diagnostic across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 549.908026
+  type: 'test'
+  ...
+# Subtest: automatic Outcome preserves primary store unavailable across runtime, dispatcher, Writer and replay
+ok 237 - automatic Outcome preserves primary store unavailable across runtime, dispatcher, Writer and replay
+  ---
+  duration_ms: 405.534154
+  type: 'test'
+  ...
+# Subtest: public child evidence rejects free text, invalid numbers and raw diagnostic previews
+ok 238 - public child evidence rejects free text, invalid numbers and raw diagnostic previews
+  ---
+  duration_ms: 1.161636
+  type: 'test'
+  ...
+# Subtest: normal and debug truncation retain total observed bytes without raising capture limits
+ok 239 - normal and debug truncation retain total observed bytes without raising capture limits
+  ---
+  duration_ms: 0.865073
+  type: 'test'
+  ...
+# Subtest: Git publication bytes cannot become launcher evidence or replace inherited launcher counts
+ok 240 - Git publication bytes cannot become launcher evidence or replace inherited launcher counts
+  ---
+  duration_ms: 1.106039
+  type: 'test'
+  ...
+# Subtest: native usage survives success execution, journal, Outcome and same-attempt replay
+ok 241 - native usage survives success execution, journal, Outcome and same-attempt replay
+  ---
+  duration_ms: 790.357816
+  type: 'test'
+  ...
+# Subtest: native usage survives blocked execution, journal, Outcome and same-attempt replay
+ok 242 - native usage survives blocked execution, journal, Outcome and same-attempt replay
+  ---
+  duration_ms: 668.734986
+  type: 'test'
+  ...
+# Subtest: native usage survives failed execution, journal, Outcome and same-attempt replay
+ok 243 - native usage survives failed execution, journal, Outcome and same-attempt replay
+  ---
+  duration_ms: 714.105843
+  type: 'test'
+  ...
+# Subtest: worker result usage claims do not become runtime evidence in an Outcome
+ok 244 - worker result usage claims do not become runtime evidence in an Outcome
+  ---
+  duration_ms: 772.234895
+  type: 'test'
+  ...
+# Subtest: publication recovery reuses the original runtime usage without executing a worker
+ok 245 - publication recovery reuses the original runtime usage without executing a worker
+  ---
+  duration_ms: 118.146884
+  type: 'test'
+  ...
+# Subtest: usage crosses the bounded dispatcher wire and survives a later cleanup failure
+ok 246 - usage crosses the bounded dispatcher wire and survives a later cleanup failure
+  ---
+  duration_ms: 207.260396
+  type: 'test'
+  ...
+# Subtest: new Issue admission safely defaults recoverable metadata and publishes warning-ready authority
+ok 247 - new Issue admission safely defaults recoverable metadata and publishes warning-ready authority
+  ---
+  duration_ms: 195.571679
+  type: 'test'
+  ...
+# Subtest: safe admission blockers publish exactly one truthful terminal Outcome without worker authority
+ok 248 - safe admission blockers publish exactly one truthful terminal Outcome without worker authority
+  ---
+  duration_ms: 107.07217
+  type: 'test'
+  ...
+# Subtest: a live malformed starting head terminalizes as a normal blocked Outcome
+ok 249 - a live malformed starting head terminalizes as a normal blocked Outcome
+  ---
+  duration_ms: 126.622514
+  type: 'test'
+  ...
+# Subtest: ambiguous remediation authority publishes one blocked Outcome on the fixed PR without guessing its head
+ok 250 - ambiguous remediation authority publishes one blocked Outcome on the fixed PR without guessing its head
+  ---
+  duration_ms: 158.313688
+  type: 'test'
+  ...
+# Subtest: composed owner path finishes once with exact-head CI pending and mergeability unknown
+ok 251 - composed owner path finishes once with exact-head CI pending and mergeability unknown
+  ---
+  duration_ms: 787.453055
+  type: 'test'
+  ...
+# Subtest: one terminal Outcome retains substantive worker evidence separately from trusted head and CI observations
+ok 252 - one terminal Outcome retains substantive worker evidence separately from trusted head and CI observations
+  ---
+  duration_ms: 940.814411
+  type: 'test'
+  ...
+# Subtest: untrusted Outcome claims remain redacted and bounded after presentation escaping
+ok 253 - untrusted Outcome claims remain redacted and bounded after presentation escaping
+  ---
+  duration_ms: 13.796703
+  type: 'test'
+  ...
+# Subtest: automatic finish still refuses a stale PR-head observation before readiness
+ok 254 - automatic finish still refuses a stale PR-head observation before readiness
+  ---
+  duration_ms: 752.498808
+  type: 'test'
+  ...
+# Subtest: manual routing remains a handoff and does not enter automatic completion
+ok 255 - manual routing remains a handoff and does not enter automatic completion
+  ---
+  duration_ms: 120.716869
+  type: 'test'
+  ...
+# Subtest: one implementation worker preserves multiple corrections without relaunch
+ok 256 - one implementation worker preserves multiple corrections without relaunch
+  ---
+  duration_ms: 821.405495
+  type: 'test'
+  ...
+# Subtest: one remediation worker preserves multiple corrections without relaunch
+ok 257 - one remediation worker preserves multiple corrections without relaunch
+  ---
+  duration_ms: 917.960816
+  type: 'test'
+  ...
+# Subtest: blocked model commits are durable and never asserted ready
+ok 258 - blocked model commits are durable and never asserted ready
+  ---
+  duration_ms: 458.924365
+  type: 'test'
+  ...
+# Subtest: a failed ready transition retains the durable successful Outcome and Draft
+ok 259 - a failed ready transition retains the durable successful Outcome and Draft
+  ---
+  duration_ms: 446.395422
+  type: 'test'
+  ...
+# Subtest: automatic failure before durable publication publishes one blocked Issue Outcome
+ok 260 - automatic failure before durable publication publishes one blocked Issue Outcome
+  ---
+  duration_ms: 157.009446
+  type: 'test'
+  ...
+# Subtest: blocked remediation publishes its terminal Outcome on the existing PR
+ok 261 - blocked remediation publishes its terminal Outcome on the existing PR
+  ---
+  duration_ms: 326.367477
+  type: 'test'
+  ...
+# Subtest: blocked Outcome uses structured route state instead of Issue/CR token prose
+ok 262 - blocked Outcome uses structured route state instead of Issue/CR token prose
+  ---
+  duration_ms: 0.719284
+  type: 'test'
+  ...
+# Subtest: Outcome publication failure is explicit in terminal execution evidence
+ok 263 - Outcome publication failure is explicit in terminal execution evidence
+  ---
+  duration_ms: 152.435641
+  type: 'test'
+  ...
+# Subtest: successful push plus stale observation reconciles without repeating the push
+ok 264 - successful push plus stale observation reconciles without repeating the push
+  ---
+  duration_ms: 463.678446
+  type: 'test'
+  ...
+# Subtest: uncertain failed push is not automatically repeated
+ok 265 - uncertain failed push is not automatically repeated
+  ---
+  duration_ms: 396.857508
+  type: 'test'
+  ...
+# Subtest: failed push retains an observed authorization cause and blocks future mutation
+ok 266 - failed push retains an observed authorization cause and blocks future mutation
+  ---
+  duration_ms: 394.803071
+  type: 'test'
+  ...
+# Subtest: failed push plus exact remote observation succeeds without a second push
+ok 267 - failed push plus exact remote observation succeeds without a second push
+  ---
+  duration_ms: 382.770728
+  type: 'test'
+  ...
+# Subtest: remote head conflict remains distinct from transport uncertainty
+ok 268 - remote head conflict remains distinct from transport uncertainty
+  ---
+  duration_ms: 315.189782
+  type: 'test'
+  ...
+# Subtest: trusted Git failure classifies and bounds safe causal evidence
+ok 269 - trusted Git failure classifies and bounds safe causal evidence
+  ---
+  duration_ms: 5.408472
+  type: 'test'
+  ...
+# Subtest: local process permission failures take precedence over authorization text
+ok 270 - local process permission failures take precedence over authorization text
+  ---
+  duration_ms: 0.285948
+  type: 'test'
+  ...
+# Subtest: Basic Authorization values are redacted case-insensitively before persistence
+ok 271 - Basic Authorization values are redacted case-insensitively before persistence
+  ---
+  duration_ms: 0.405682
+  type: 'test'
+  ...
+# Subtest: publication process exit stays separate from Codex child exit in causal evidence
+ok 272 - publication process exit stays separate from Codex child exit in causal evidence
+  ---
+  duration_ms: 0.868424
+  type: 'test'
+  ...
+# Subtest: publication cause survives broker, privileged helper, local adapter, and terminal diagnostics
+ok 273 - publication cause survives broker, privileged helper, local adapter, and terminal diagnostics
+  ---
+  duration_ms: 307.10705
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_TIMEOUT after successful push stays attributable without retry
+ok 274 - terminal observation cause GIT_TIMEOUT after successful push stays attributable without retry
+  ---
+  duration_ms: 465.125447
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_TIMEOUT after failed push stays attributable without retry
+ok 275 - terminal observation cause GIT_TIMEOUT after failed push stays attributable without retry
+  ---
+  duration_ms: 436.83662
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_AUTHORIZATION_REJECTED after successful push stays attributable without retry
+ok 276 - terminal observation cause GIT_AUTHORIZATION_REJECTED after successful push stays attributable without retry
+  ---
+  duration_ms: 482.105206
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_AUTHORIZATION_REJECTED after failed push stays attributable without retry
+ok 277 - terminal observation cause GIT_AUTHORIZATION_REJECTED after failed push stays attributable without retry
+  ---
+  duration_ms: 436.914763
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_TRANSPORT_FAILED after successful push stays attributable without retry
+ok 278 - terminal observation cause GIT_TRANSPORT_FAILED after successful push stays attributable without retry
+  ---
+  duration_ms: 407.621458
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_TRANSPORT_FAILED after failed push stays attributable without retry
+ok 279 - terminal observation cause GIT_TRANSPORT_FAILED after failed push stays attributable without retry
+  ---
+  duration_ms: 324.53452
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_LOCAL_FAILURE after successful push stays attributable without retry
+ok 280 - terminal observation cause GIT_LOCAL_FAILURE after successful push stays attributable without retry
+  ---
+  duration_ms: 358.535078
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_LOCAL_FAILURE after failed push stays attributable without retry
+ok 281 - terminal observation cause GIT_LOCAL_FAILURE after failed push stays attributable without retry
+  ---
+  duration_ms: 321.212924
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_UNKNOWN_FAILURE after successful push stays attributable without retry
+ok 282 - terminal observation cause GIT_UNKNOWN_FAILURE after successful push stays attributable without retry
+  ---
+  duration_ms: 332.040131
+  type: 'test'
+  ...
+# Subtest: terminal observation cause GIT_UNKNOWN_FAILURE after failed push stays attributable without retry
+ok 283 - terminal observation cause GIT_UNKNOWN_FAILURE after failed push stays attributable without retry
+  ---
+  duration_ms: 373.5627
+  type: 'test'
+  ...
+# Subtest: terminal observation cause unavailable after successful push stays attributable without retry
+ok 284 - terminal observation cause unavailable after successful push stays attributable without retry
+  ---
+  duration_ms: 322.969938
+  type: 'test'
+  ...
+# Subtest: terminal observation cause unavailable after failed push stays attributable without retry
+ok 285 - terminal observation cause unavailable after failed push stays attributable without retry
+  ---
+  duration_ms: 310.717727
+  type: 'test'
+  ...
+# Subtest: failed push with confirmed unchanged existing head retains push cause in terminal diagnostics
+ok 286 - failed push with confirmed unchanged existing head retains push cause in terminal diagnostics
+  ---
+  duration_ms: 404.28646
+  type: 'test'
+  ...
+# Subtest: unknown execution reservation cannot be relaunched
+ok 287 - unknown execution reservation cannot be relaunched
+  ---
+  duration_ms: 37.249651
+  type: 'test'
+  ...
+# Subtest: missing journal after admission remains unknown and cannot launch a child
+ok 288 - missing journal after admission remains unknown and cannot launch a child
+  ---
+  duration_ms: 37.726922
+  type: 'test'
+  ...
+# Subtest: a journal without execution evidence cannot be treated as a new attempt
+ok 289 - a journal without execution evidence cannot be treated as a new attempt
+  ---
+  duration_ms: 40.948111
+  type: 'test'
+  ...
+# Subtest: trusted publication accepts task-required repository files, remediation=false
+ok 290 - trusted publication accepts task-required repository files, remediation=false
+  ---
+  duration_ms: 325.010328
+  type: 'test'
+  ...
+# Subtest: trusted publication accepts task-required repository files, remediation=true
+ok 291 - trusted publication accepts task-required repository files, remediation=true
+  ---
+  duration_ms: 379.001393
+  type: 'test'
+  ...
+# Subtest: unrelated main advancement does not gate safe progress publication
+ok 292 - unrelated main advancement does not gate safe progress publication
+  ---
+  duration_ms: 219.229705
+  type: 'test'
+  ...
+# Subtest: one native dispatch cannot be presented as another run
+ok 293 - one native dispatch cannot be presented as another run
+  ---
+  duration_ms: 38.227047
+  type: 'test'
+  ...
+# Subtest: authority mutation blocks publication before mutation
+ok 294 - authority mutation blocks publication before mutation
+  ---
+  duration_ms: 132.845877
+  type: 'test'
+  ...
+# Subtest: live goal edit rejects stale admitted progress before any publication mutation
+ok 295 - live goal edit rejects stale admitted progress before any publication mutation
+  ---
+  duration_ms: 134.251629
+  type: 'test'
+  ...
+# Subtest: a live PR closure edit rejects stale remediation progress before publication
+ok 296 - a live PR closure edit rejects stale remediation progress before publication
+  ---
+  duration_ms: 192.986438
+  type: 'test'
+  ...
+# Subtest: ordinary Issue glob edit blocks all publication mutation
+ok 297 - ordinary Issue glob edit blocks all publication mutation
+  ---
+  duration_ms: 124.568673
+  type: 'test'
+  ...
+# Subtest: ordinary native CR glob edit blocks all publication mutation
+ok 298 - ordinary native CR glob edit blocks all publication mutation
+  ---
+  duration_ms: 179.25813
+  type: 'test'
+  ...
+# Subtest: cosmetic Issue formatting still permits durable publication
+ok 299 - cosmetic Issue formatting still permits durable publication
+  ---
+  duration_ms: 188.662009
+  type: 'test'
+  ...
+# Subtest: a secret introduced and then removed still blocks all publication
+ok 300 - a secret introduced and then removed still blocks all publication
+  ---
+  duration_ms: 184.152124
+  type: 'test'
+  ...
+# Subtest: current native review selection is deterministic and a later approval supersedes CR
+ok 301 - current native review selection is deterministic and a later approval supersedes CR
+  ---
+  duration_ms: 0.481623
+  type: 'test'
+  ...
+# Subtest: missing runtime evidence preserves unknown primary cause and execution
+ok 302 - missing runtime evidence preserves unknown primary cause and execution
+  ---
+  duration_ms: 0.174115
+  type: 'test'
+  ...
+# Subtest: composed remediation preserves historical reviewed head and publishes a new ready head
+ok 303 - composed remediation preserves historical reviewed head and publishes a new ready head
+  ---
+  duration_ms: 281.760831
+  type: 'test'
+  ...
+# Subtest: current auto Issue admission refuses missing native marker without publication
+ok 304 - current auto Issue admission refuses missing native marker without publication
+  ---
+  duration_ms: 141.16115
+  type: 'test'
+  ...
+# Subtest: current auto Issue admission refuses a fresh v3 execution chain
+ok 305 - current auto Issue admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 120.552485
+  type: 'test'
+  ...
+# Subtest: current auto PR admission refuses missing native marker without publication
+ok 306 - current auto PR admission refuses missing native marker without publication
+  ---
+  duration_ms: 139.818717
+  type: 'test'
+  ...
+# Subtest: current auto PR admission refuses a fresh v3 execution chain
+ok 307 - current auto PR admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 140.219391
+  type: 'test'
+  ...
+# Subtest: direct current auto admission cannot downgrade an unmarked Task
+ok 308 - direct current auto admission cannot downgrade an unmarked Task
+  ---
+  duration_ms: 94.370568
+  type: 'test'
+  ...
+# Subtest: current auto remediation refuses a v3 CR even after explicit Task migration direction
+ok 309 - current auto remediation refuses a v3 CR even after explicit Task migration direction
+  ---
+  duration_ms: 157.802746
+  type: 'test'
+  ...
+# Subtest: current manual Issue admission refuses missing native marker without publication
+ok 310 - current manual Issue admission refuses missing native marker without publication
+  ---
+  duration_ms: 74.848987
+  type: 'test'
+  ...
+# Subtest: current manual Issue admission refuses a fresh v3 execution chain
+ok 311 - current manual Issue admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 95.540552
+  type: 'test'
+  ...
+# Subtest: current manual PR admission refuses missing native marker without publication
+ok 312 - current manual PR admission refuses missing native marker without publication
+  ---
+  duration_ms: 113.282518
+  type: 'test'
+  ...
+# Subtest: current manual PR admission refuses a fresh v3 execution chain
+ok 313 - current manual PR admission refuses a fresh v3 execution chain
+  ---
+  duration_ms: 156.4646
+  type: 'test'
+  ...
+# Subtest: direct current manual admission cannot downgrade an unmarked Task
+ok 314 - direct current manual admission cannot downgrade an unmarked Task
+  ---
+  duration_ms: 101.121919
+  type: 'test'
+  ...
+# Subtest: current manual remediation refuses a v3 CR even after explicit Task migration direction
+ok 315 - current manual remediation refuses a v3 CR even after explicit Task migration direction
+  ---
+  duration_ms: 175.042674
+  type: 'test'
+  ...
+# Subtest: current v4 CR supersedes historical v3 CR for explicitly migrated Task without changing old native bytes
+ok 316 - current v4 CR supersedes historical v3 CR for explicitly migrated Task without changing old native bytes
+  ---
+  duration_ms: 347.236748
+  type: 'test'
+  ...
+# Subtest: an explicit current Task Decision admits older work without inheriting any v3 execution fields
+ok 317 - an explicit current Task Decision admits older work without inheriting any v3 execution fields
+  ---
+  duration_ms: 488.618056
+  type: 'test'
+  ...
+# Subtest: migrated manual admission completes and recovers its exact Outcome without reselecting old v3 authority
+ok 318 - migrated manual admission completes and recovers its exact Outcome without reselecting old v3 authority
+  ---
+  duration_ms: 159.100883
+  type: 'test'
+  ...
+# Subtest: closure-only v4 Decision cannot ambiguously migrate an older v3 Task
+ok 319 - closure-only v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 155.412654
+  type: 'test'
+  ...
+# Subtest: profile-only v4 Decision cannot ambiguously migrate an older v3 Task
+ok 320 - profile-only v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 118.999296
+  type: 'test'
+  ...
+# Subtest: older v4 Decision cannot ambiguously migrate an older v3 Task
+ok 321 - older v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 97.994974
+  type: 'test'
+  ...
+# Subtest: untrusted v4 Decision cannot ambiguously migrate an older v3 Task
+ok 322 - untrusted v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 88.842019
+  type: 'test'
+  ...
+# Subtest: PR-scoped v4 Decision cannot ambiguously migrate an older v3 Task
+ok 323 - PR-scoped v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 89.146943
+  type: 'test'
+  ...
+# Subtest: superseded v4 Decision cannot ambiguously migrate an older v3 Task
+ok 324 - superseded v4 Decision cannot ambiguously migrate an older v3 Task
+  ---
+  duration_ms: 111.727266
+  type: 'test'
+  ...
+# Subtest: duplicate and malformed dedicated native markers cannot fall back or reserve a fresh attempt
+ok 325 - duplicate and malformed dedicated native markers cannot fall back or reserve a fresh attempt
+  ---
+  duration_ms: 198.964255
+  type: 'test'
+  ...
+# Subtest: forked current migration Decisions preserve the specific authority blocker without fabricating old execution
+ok 326 - forked current migration Decisions preserve the specific authority blocker without fabricating old execution
+  ---
+  duration_ms: 106.350707
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy auto Issue while refusing a new attempt
+ok 327 - upgraded Writer preserves exact admitted legacy auto Issue while refusing a new attempt
+  ---
+  duration_ms: 125.918491
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy auto PR while refusing a new attempt
+ok 328 - upgraded Writer preserves exact admitted legacy auto PR while refusing a new attempt
+  ---
+  duration_ms: 233.332387
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy manual Issue while refusing a new attempt
+ok 329 - upgraded Writer preserves exact admitted legacy manual Issue while refusing a new attempt
+  ---
+  duration_ms: 102.9543
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted legacy manual PR while refusing a new attempt
+ok 330 - upgraded Writer preserves exact admitted legacy manual PR while refusing a new attempt
+  ---
+  duration_ms: 211.865733
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 auto Issue while refusing a new attempt
+ok 331 - upgraded Writer preserves exact admitted v3 auto Issue while refusing a new attempt
+  ---
+  duration_ms: 95.429818
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 auto PR while refusing a new attempt
+ok 332 - upgraded Writer preserves exact admitted v3 auto PR while refusing a new attempt
+  ---
+  duration_ms: 279.995769
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 manual Issue while refusing a new attempt
+ok 333 - upgraded Writer preserves exact admitted v3 manual Issue while refusing a new attempt
+  ---
+  duration_ms: 99.637826
+  type: 'test'
+  ...
+# Subtest: upgraded Writer preserves exact admitted v3 manual PR while refusing a new attempt
+ok 334 - upgraded Writer preserves exact admitted v3 manual PR while refusing a new attempt
+  ---
+  duration_ms: 240.841773
+  type: 'test'
+  ...
+# Subtest: independent capsule survives reopening and primary store failure without raw paths or secrets
+ok 335 - independent capsule survives reopening and primary store failure without raw paths or secrets
+  ---
+  duration_ms: 150.275489
+  type: 'test'
+  ...
+# Subtest: occupied unknown and retained slots impose a concurrent hard bound instead of evicting evidence
+ok 336 - occupied unknown and retained slots impose a concurrent hard bound instead of evicting evidence
+  ---
+  duration_ms: 282.872182
+  type: 'test'
+  ...
+# Subtest: successful cleanup releases a durable bounded tombstone; residue remains inspectable
+ok 337 - successful cleanup releases a durable bounded tombstone; residue remains inspectable
+  ---
+  duration_ms: 168.694663
+  type: 'test'
+  ...
+# Subtest: released slots are reclaimed at most once under concurrent reservation and interrupted claims stay bounded
+ok 338 - released slots are reclaimed at most once under concurrent reservation and interrupted claims stay bounded
+  ---
+  duration_ms: 1057.094388
+  type: 'test'
+  ...
+# Subtest: fallback rejects foreign execution IDs, symlinks, hardlinks and unsafe modes
+ok 339 - fallback rejects foreign execution IDs, symlinks, hardlinks and unsafe modes
+  ---
+  duration_ms: 89.468272
+  type: 'test'
+  ...
+# Subtest: cleanup evidence and safe references survive repeated causal boundaries and sanitized Outcome publication
+ok 340 - cleanup evidence and safe references survive repeated causal boundaries and sanitized Outcome publication
+  ---
+  duration_ms: 4.220842
+  type: 'test'
+  ...
+# Subtest: richer protected runtime failure paths stay bounded and redact known credentials
+ok 341 - richer protected runtime failure paths stay bounded and redact known credentials
+  ---
+  duration_ms: 0.939734
+  type: 'test'
+  ...
+# Subtest: known worker domain results cannot hide physical cleanup or diagnostic failure
+ok 342 - known worker domain results cannot hide physical cleanup or diagnostic failure
+  ---
+  duration_ms: 0.472722
+  type: 'test'
+  ...
+# Subtest: the normal Issue label path continues the exact implementation head and reuses its PR without a CR
+ok 343 - the normal Issue label path continues the exact implementation head and reuses its PR without a CR
+  ---
+  duration_ms: 1175.308392
+  type: 'test'
+  ...
+# Subtest: continuation launches implementation with the Writer identity and no remediation integration exception
+ok 344 - continuation launches implementation with the Writer identity and no remediation integration exception
+  ---
+  duration_ms: 185.149465
+  type: 'test'
+  ...
+# Subtest: an explicitly admitted existing branch without a PR can publish its first implementation PR
+ok 345 - an explicitly admitted existing branch without a PR can publish its first implementation PR
+  ---
+  duration_ms: 838.239358
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks different admitted SHA before worker access
+ok 346 - continuation admission blocks different admitted SHA before worker access
+  ---
+  duration_ms: 175.713859
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks missing branch before worker access
+ok 347 - continuation admission blocks missing branch before worker access
+  ---
+  duration_ms: 195.4423
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks missing declared PR before worker access
+ok 348 - continuation admission blocks missing declared PR before worker access
+  ---
+  duration_ms: 197.81139
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong PR number before worker access
+ok 349 - continuation admission blocks wrong PR number before worker access
+  ---
+  duration_ms: 164.16887
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks unadmitted existing PR before worker access
+ok 350 - continuation admission blocks unadmitted existing PR before worker access
+  ---
+  duration_ms: 185.639901
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong Task linkage before worker access
+ok 351 - continuation admission blocks wrong Task linkage before worker access
+  ---
+  duration_ms: 185.418245
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks ambiguous Task linkage before worker access
+ok 352 - continuation admission blocks ambiguous Task linkage before worker access
+  ---
+  duration_ms: 180.612646
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong branch before worker access
+ok 353 - continuation admission blocks wrong branch before worker access
+  ---
+  duration_ms: 151.980825
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong base before worker access
+ok 354 - continuation admission blocks wrong base before worker access
+  ---
+  duration_ms: 165.406591
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong head repository before worker access
+ok 355 - continuation admission blocks wrong head repository before worker access
+  ---
+  duration_ms: 166.519771
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks wrong base repository before worker access
+ok 356 - continuation admission blocks wrong base repository before worker access
+  ---
+  duration_ms: 157.315697
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks missing Step before worker access
+ok 357 - continuation admission blocks missing Step before worker access
+  ---
+  duration_ms: 155.626698
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks multiple Steps before worker access
+ok 358 - continuation admission blocks multiple Steps before worker access
+  ---
+  duration_ms: 158.024964
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks different Step before worker access
+ok 359 - continuation admission blocks different Step before worker access
+  ---
+  duration_ms: 145.400965
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks stale PR Step title before worker access
+ok 360 - continuation admission blocks stale PR Step title before worker access
+  ---
+  duration_ms: 142.194844
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks closed PR before worker access
+ok 361 - continuation admission blocks closed PR before worker access
+  ---
+  duration_ms: 136.102187
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks merged PR before worker access
+ok 362 - continuation admission blocks merged PR before worker access
+  ---
+  duration_ms: 139.181034
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks multiple PR candidates including wrong base before worker access
+ok 363 - continuation admission blocks multiple PR candidates including wrong base before worker access
+  ---
+  duration_ms: 128.80655
+  type: 'test'
+  ...
+# Subtest: continuation admission blocks stale PR head before worker access
+ok 364 - continuation admission blocks stale PR head before worker access
+  ---
+  duration_ms: 140.351638
+  type: 'test'
+  ...
+# Subtest: an existing branch without continuation authority still follows the fresh-task rejection
+ok 365 - an existing branch without continuation authority still follows the fresh-task rejection
+  ---
+  duration_ms: 119.641114
+  type: 'test'
+  ...
+# Subtest: continuation remains available through the manual Issue handoff route
+ok 366 - continuation remains available through the manual Issue handoff route
+  ---
+  duration_ms: 133.340593
+  type: 'test'
+  ...
+# Subtest: branch movement after admission blocks preflight and trusted checkout before worker access
+ok 367 - branch movement after admission blocks preflight and trusted checkout before worker access
+  ---
+  duration_ms: 207.852657
+  type: 'test'
+  ...
+# Subtest: an advanced base does not grant continuation the remediation integration gate
+ok 368 - an advanced base does not grant continuation the remediation integration gate
+  ---
+  duration_ms: 616.231057
+  type: 'test'
+  ...
+# Subtest: continuation cannot publish after its admitted PR/authority is closed
+ok 369 - continuation cannot publish after its admitted PR/authority is closed
+  ---
+  duration_ms: 333.077705
+  type: 'test'
+  ...
+# Subtest: continuation cannot publish after its admitted PR/authority is replaced
+ok 370 - continuation cannot publish after its admitted PR/authority is replaced
+  ---
+  duration_ms: 331.14202
+  type: 'test'
+  ...
+# Subtest: continuation cannot publish after its admitted PR/authority is step
+ok 371 - continuation cannot publish after its admitted PR/authority is step
+  ---
+  duration_ms: 313.928757
+  type: 'test'
+  ...
+# Subtest: continuation cannot publish after its admitted PR/authority is authority
+ok 372 - continuation cannot publish after its admitted PR/authority is authority
+  ---
+  duration_ms: 311.501817
+  type: 'test'
+  ...
+# Subtest: a Step mismatch observed in the last continuation PR lookup blocks before push
+ok 373 - a Step mismatch observed in the last continuation PR lookup blocks before push
+  ---
+  duration_ms: 383.695384
+  type: 'test'
+  ...
+# Subtest: a title mismatch observed in the last continuation PR lookup blocks before push
+ok 374 - a title mismatch observed in the last continuation PR lookup blocks before push
+  ---
+  duration_ms: 407.347445
+  type: 'test'
+  ...
+# Subtest: a PR first created by branch-only continuation must retain its Step before subsequent progress
+ok 375 - a PR first created by branch-only continuation must retain its Step before subsequent progress
+  ---
+  duration_ms: 638.554412
+  type: 'test'
+  ...
+# Subtest: remote movement to a candidate ancestor during authority revalidation blocks rather than being overwritten
+ok 376 - remote movement to a candidate ancestor during authority revalidation blocks rather than being overwritten
+  ---
+  duration_ms: 404.317447
+  type: 'test'
+  ...
+# Subtest: ordinary non-force continuation push preserves a divergent external head that moves after the final observation
+ok 377 - ordinary non-force continuation push preserves a divergent external head that moves after the final observation
+  ---
+  duration_ms: 569.495658
+  type: 'test'
+  ...
+# Subtest: continuation rejects transient introduced secrets before pushing
+ok 378 - continuation rejects transient introduced secrets before pushing
+  ---
+  duration_ms: 365.624899
+  type: 'test'
+  ...
+# Subtest: implementation continuation cannot use the remediation-only merge permission
+ok 379 - implementation continuation cannot use the remediation-only merge permission
+  ---
+  duration_ms: 328.470451
+  type: 'test'
+  ...
+# Subtest: owner dispatch reaches one bounded Codex child from a truly dirty reviewed PR and publishes both behaviors
+ok 380 - owner dispatch reaches one bounded Codex child from a truly dirty reviewed PR and publishes both behaviors
+  ---
+  duration_ms: 1338.378896
+  type: 'test'
+  ...
+# Subtest: dirty PR admission still binds owner transport and exact reviewed head
+ok 381 - dirty PR admission still binds owner transport and exact reviewed head
+  ---
+  duration_ms: 380.995036
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks goal before any child or push
+ok 382 - dirty remediation blocks goal before any child or push
+  ---
+  duration_ms: 406.463816
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks branch before any child or push
+ok 383 - dirty remediation blocks branch before any child or push
+  ---
+  duration_ms: 337.574181
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks repository before any child or push
+ok 384 - dirty remediation blocks repository before any child or push
+  ---
+  duration_ms: 358.437983
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks base-branch before any child or push
+ok 385 - dirty remediation blocks base-branch before any child or push
+  ---
+  duration_ms: 331.329574
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks linked-issue before any child or push
+ok 386 - dirty remediation blocks linked-issue before any child or push
+  ---
+  duration_ms: 343.818333
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks head before any child or push
+ok 387 - dirty remediation blocks head before any child or push
+  ---
+  duration_ms: 315.974428
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks review before any child or push
+ok 388 - dirty remediation blocks review before any child or push
+  ---
+  duration_ms: 309.876604
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks main before any child or push
+ok 389 - dirty remediation blocks main before any child or push
+  ---
+  duration_ms: 348.080852
+  type: 'test'
+  ...
+# Subtest: dirty remediation blocks unrelated-main before any child or push
+ok 390 - dirty remediation blocks unrelated-main before any child or push
+  ---
+  duration_ms: 413.808734
+  type: 'test'
+  ...
+# Subtest: fresh implementation still rejects a stale explicitly admitted base
+ok 391 - fresh implementation still rejects a stale explicitly admitted base
+  ---
+  duration_ms: 120.95317
+  type: 'test'
+  ...
+# Subtest: main movement between preflight and checkout cannot enter the child
+ok 392 - main movement between preflight and checkout cannot enter the child
+  ---
+  duration_ms: 365.267879
+  type: 'test'
+  ...
+# Subtest: main movement after reconciliation blocks publication of the stale integration
+ok 393 - main movement after reconciliation blocks publication of the stale integration
+  ---
+  duration_ms: 615.146941
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects wrong-parent without weakening Writer validation
+ok 394 - reconciliation publication rejects wrong-parent without weakening Writer validation
+  ---
+  duration_ms: 527.27785
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects reversed-parents without weakening Writer validation
+ok 395 - reconciliation publication rejects reversed-parents without weakening Writer validation
+  ---
+  duration_ms: 508.293102
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects octopus without weakening Writer validation
+ok 396 - reconciliation publication rejects octopus without weakening Writer validation
+  ---
+  duration_ms: 508.561948
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects second-merge without weakening Writer validation
+ok 397 - reconciliation publication rejects second-merge without weakening Writer validation
+  ---
+  duration_ms: 526.598242
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects identity without weakening Writer validation
+ok 398 - reconciliation publication rejects identity without weakening Writer validation
+  ---
+  duration_ms: 460.311409
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects path without weakening Writer validation
+ok 399 - reconciliation publication rejects path without weakening Writer validation
+  ---
+  duration_ms: 456.726633
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects mode without weakening Writer validation
+ok 400 - reconciliation publication rejects mode without weakening Writer validation
+  ---
+  duration_ms: 467.957768
+  type: 'test'
+  ...
+# Subtest: reconciliation publication rejects secret without weakening Writer validation
+ok 401 - reconciliation publication rejects secret without weakening Writer validation
+  ---
+  duration_ms: 535.900574
+  type: 'test'
+  ...
+# Subtest: a reconciled candidate retains one-shot owner-authorized Writer publication recovery
+ok 402 - a reconciled candidate retains one-shot owner-authorized Writer publication recovery
+  ---
+  duration_ms: 767.114909
+  type: 'test'
+  ...
+# Subtest: current metadata accepts fresh and arbitrary continued Steps without history or a counter
+ok 403 - current metadata accepts fresh and arbitrary continued Steps without history or a counter
+  ---
+  duration_ms: 4.806886
+  type: 'test'
+  ...
+# Subtest: native Issue/PR auto/manual label payloads expose Task and Step before execution; Step alone cannot launch
+ok 404 - native Issue/PR auto/manual label payloads expose Task and Step before execution; Step alone cannot launch
+  ---
+  duration_ms: 1.062028
+  type: 'test'
+  ...
+# Subtest: one fresh auto ready event runs bounded Issue implementation once
+ok 405 - one fresh auto ready event runs bounded Issue implementation once
+  ---
+  duration_ms: 780.759611
+  type: 'test'
+  ...
+# Subtest: one fresh auto ready event runs bounded remediation once
+ok 406 - one fresh auto ready event runs bounded remediation once
+  ---
+  duration_ms: 878.730951
+  type: 'test'
+  ...
+# Subtest: manual ready label makes a copyable Issue handoff without a worker
+ok 407 - manual ready label makes a copyable Issue handoff without a worker
+  ---
+  duration_ms: 105.747611
+  type: 'test'
+  ...
+# Subtest: manual ready label makes a copyable CR handoff without a worker
+ok 408 - manual ready label makes a copyable CR handoff without a worker
+  ---
+  duration_ms: 316.728045
+  type: 'test'
+  ...
+# Subtest: new remediation admission rejects invalid Step and native CR authority even with a ready command
+ok 409 - new remediation admission rejects invalid Step and native CR authority even with a ready command
+  ---
+  duration_ms: 298.621307
+  type: 'test'
+  ...
+# Subtest: stale, removed, conflicting, unauthorized and rerun ready events fail closed
+ok 410 - stale, removed, conflicting, unauthorized and rerun ready events fail closed
+  ---
+  duration_ms: 113.933316
+  type: 'test'
+  ...
+# Subtest: a new run cannot reuse a consumed native event or queue a prewritten retry
+not ok 411 - a new run cannot reuse a consumed native event or queue a prewritten retry
+  ---
+  duration_ms: 159.099031
+  type: 'test'
+  location: '/tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:125:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+
+      Comparison {
+    +   code: 'CURRENT_PROTOCOL_REQUIRED'
+    -   code: 'READY_EVENT_ALREADY_CONSUMED'
+      }
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'READY_EVENT_ALREADY_CONSUMED'
+  actual:
+  error: 'CURRENT_PROTOCOL_REQUIRED: New execution requires schema 4.0 native authority on a coordinated, qualified installation. Reconcile the canonical Task marker; for an older Task, authorize current work through an active trusted Task-scoped schema 4.0 Decision amending purpose or scope after its latest schema 3.0 Request. PR remediation requires a current schema 4.0 Change Request. Preserve already-admitted attempts and exact bindings; do not fall back to legacy or schema 3.0 execution.'
+  stack: |-
+    requireCurrentProtocol (file:///tmp/task115-step3-validation-01a13034/controller/src/execution-contract.mjs:94:23)
+    admitEnvelope (file:///tmp/task115-step3-validation-01a13034/controller/src/live-authority.mjs:213:42)
+    async Object.dispatch (file:///tmp/task115-step3-validation-01a13034/controller/src/publication-broker.mjs:322:26)
+    async waitForActual (node:assert:644:5)
+    async Function.rejects (node:assert:767:25)
+    async TestContext.<anonymous> (file:///tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:133:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:133:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: partial ready-label consumption reserves the event and never reexecutes on replay
+ok 412 - partial ready-label consumption reserves the event and never reexecutes on replay
+  ---
+  duration_ms: 114.147768
+  type: 'test'
+  ...
+# Subtest: a label run cannot target an unrelated invalid Issue even for a blocked Outcome
+ok 413 - a label run cannot target an unrelated invalid Issue even for a blocked Outcome
+  ---
+  duration_ms: 104.364452
+  type: 'test'
+  ...
+# Subtest: native label ordering does not change launch authority
+ok 414 - native label ordering does not change launch authority
+  ---
+  duration_ms: 116.633157
+  type: 'test'
+  ...
+# Subtest: auto Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 415 - auto Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 294.348461
+  type: 'test'
+  ...
+# Subtest: manual Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 416 - manual Issue invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 270.400447
+  type: 'test'
+  ...
+# Subtest: auto PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 417 - auto PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 367.770702
+  type: 'test'
+  ...
+# Subtest: manual PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+ok 418 - manual PR invalid Step commands are consumed once with a bounded BLOCKED Outcome
+  ---
+  duration_ms: 335.66739
+  type: 'test'
+  ...
+# Subtest: safe CR/Step/head/Issue authority rejection consumes the exact command and publishes only on its bound target
+ok 419 - safe CR/Step/head/Issue authority rejection consumes the exact command and publishes only on its bound target
+  ---
+  duration_ms: 952.349204
+  type: 'test'
+  ...
+# Subtest: repairing invalid Issue event metadata before admission cannot authorize that event
+ok 420 - repairing invalid Issue event metadata before admission cannot authorize that event
+  ---
+  duration_ms: 60.872484
+  type: 'test'
+  ...
+# Subtest: repairing invalid PR event metadata before admission cannot authorize that event
+ok 421 - repairing invalid PR event metadata before admission cannot authorize that event
+  ---
+  duration_ms: 92.148896
+  type: 'test'
+  ...
+# Subtest: repair and reapply creates a fresh same-Step attempt; a rejected event cannot be reused or queued
+ok 422 - repair and reapply creates a fresh same-Step attempt; a rejected event cannot be reused or queued
+  ---
+  duration_ms: 96.040856
+  type: 'test'
+  ...
+# Subtest: unrelated Issue label additions/removals/reordering preserve admission and display
+ok 423 - unrelated Issue label additions/removals/reordering preserve admission and display
+  ---
+  duration_ms: 199.381976
+  type: 'test'
+  ...
+# Subtest: unrelated PR label additions/removals/reordering preserve admission and display
+ok 424 - unrelated PR label additions/removals/reordering preserve admission and display
+  ---
+  duration_ms: 403.253755
+  type: 'test'
+  ...
+# Subtest: changing/removing/malforming Step after the event still blocks and consumes the bound command
+ok 425 - changing/removing/malforming Step after the event still blocks and consumes the bound command
+  ---
+  duration_ms: 239.445018
+  type: 'test'
+  ...
+# Subtest: unsafe event binding has no label mutation, attempt reservation or unrelated publication even with invalid Step
+ok 426 - unsafe event binding has no label mutation, attempt reservation or unrelated publication even with invalid Step
+  ---
+  duration_ms: 1993.979807
+  type: 'test'
+  ...
+# Subtest: replacement ready events discovered after authority reads are never consumed
+ok 427 - replacement ready events discovered after authority reads are never consumed
+  ---
+  duration_ms: 54.690943
+  type: 'test'
+  ...
+# Subtest: ambiguous blocked-command consumption reserves the event without retrying deletion or publication
+not ok 428 - ambiguous blocked-command consumption reserves the event without retrying deletion or publication
+  ---
+  duration_ms: 50.138127
+  type: 'test'
+  location: '/tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:343:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+
+      Comparison {
+    +   code: 'CURRENT_PROTOCOL_REQUIRED'
+    -   code: 'EIO'
+      }
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'EIO'
+  actual:
+  error: 'CURRENT_PROTOCOL_REQUIRED: New execution requires schema 4.0 native authority on a coordinated, qualified installation. Reconcile the canonical Task marker; for an older Task, authorize current work through an active trusted Task-scoped schema 4.0 Decision amending purpose or scope after its latest schema 3.0 Request. PR remediation requires a current schema 4.0 Change Request. Preserve already-admitted attempts and exact bindings; do not fall back to legacy or schema 3.0 execution.'
+  stack: |-
+    requireCurrentProtocol (file:///tmp/task115-step3-validation-01a13034/controller/src/execution-contract.mjs:94:23)
+    admitEnvelope (file:///tmp/task115-step3-validation-01a13034/controller/src/live-authority.mjs:213:42)
+    async Object.dispatch (file:///tmp/task115-step3-validation-01a13034/controller/src/publication-broker.mjs:322:26)
+    async waitForActual (node:assert:644:5)
+    async Function.rejects (node:assert:767:25)
+    async TestContext.<anonymous> (file:///tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:349:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///tmp/task115-step3-validation-01a13034/controller/test/label-launch.test.mjs:349:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an existing task branch rejects and consumes an Issue command once without launching work
+ok 429 - an existing task branch rejects and consumes an Issue command once without launching work
+  ---
+  duration_ms: 55.012993
+  type: 'test'
+  ...
+# Subtest: workflow marker examples retain display but cannot downgrade the current broker to legacy admission
+ok 430 - workflow marker examples retain display but cannot downgrade the current broker to legacy admission
+  ---
+  duration_ms: 451.395228
+  type: 'test'
+  ...
+# Subtest: workflow exact LF and CRLF markers admit native work without using stale Step labels
+ok 431 - workflow exact LF and CRLF markers admit native work without using stale Step labels
+  ---
+  duration_ms: 457.504613
+  type: 'test'
+  ...
+# Subtest: a current broker refuses legacy authority before checking obsolete Step display
+ok 432 - a current broker refuses legacy authority before checking obsolete Step display
+  ---
+  duration_ms: 95.676034
+  type: 'test'
+  ...
+# Subtest: workflow case-insensitive marker matching cannot admit malformed dedicated authority
+ok 433 - workflow case-insensitive marker matching cannot admit malformed dedicated authority
+  ---
+  duration_ms: 107.562472
+  type: 'test'
+  ...
+# Subtest: native launch inputs preserve explicit Step and bind Task to an Issue number
+ok 434 - native launch inputs preserve explicit Step and bind Task to an Issue number
+  ---
+  duration_ms: 0.676756
+  type: 'test'
+  ...
+# Subtest: missing and unsafe launch metadata cannot be replaced by a Step default
+ok 435 - missing and unsafe launch metadata cannot be replaced by a Step default
+  ---
+  duration_ms: 3.127106
+  type: 'test'
+  ...
+# Subtest: legacy terminal/non-routing envelopes remain readable while new dispatches require supplied Step
+ok 436 - legacy terminal/non-routing envelopes remain readable while new dispatches require supplied Step
+  ---
+  duration_ms: 119.020373
+  type: 'test'
+  ...
+# Subtest: a new Issue with no paths, base, branch or profile publishes task-required repository files on its default branch
+ok 437 - a new Issue with no paths, base, branch or profile publishes task-required repository files on its default branch
+  ---
+  duration_ms: 739.204361
+  type: 'test'
+  ...
+# Subtest: native dispatch binds owner, workflow, main, target, phase, Task and Step before admission
+ok 438 - native dispatch binds owner, workflow, main, target, phase, Task and Step before admission
+  ---
+  duration_ms: 133.993846
+  type: 'test'
+  ...
+# Subtest: fresh owner dispatch retries keep Step; explicit continuation changes current metadata and CR without history lookup
+ok 439 - fresh owner dispatch retries keep Step; explicit continuation changes current metadata and CR without history lookup
+  ---
+  duration_ms: 524.198941
+  type: 'test'
+  ...
+# Subtest: both worker operations receive supplied launch metadata despite historical Markdown titles
+ok 440 - both worker operations receive supplied launch metadata despite historical Markdown titles
+  ---
+  duration_ms: 292.875997
+  type: 'test'
+  ...
+# Subtest: remediation run uses linked Issue identity and supplied Step in PR metadata before publication
+ok 441 - remediation run uses linked Issue identity and supplied Step in PR metadata before publication
+  ---
+  duration_ms: 845.756629
+  type: 'test'
+  ...
+# Subtest: Issue parsed profile, closure and starting bindings cannot remain stale
+ok 442 - Issue parsed profile, closure and starting bindings cannot remain stale
+  ---
+  duration_ms: 18.147012
+  type: 'test'
+  ...
+# Subtest: parsed execution is fingerprinted even when cosmetic prose would collide
+ok 443 - parsed execution is fingerprinted even when cosmetic prose would collide
+  ---
+  duration_ms: 1.712337
+  type: 'test'
+  ...
+# Subtest: literal instructions preserve stars, backticks, Unicode and whitespace inside code
+ok 444 - literal instructions preserve stars, backticks, Unicode and whitespace inside code
+  ---
+  duration_ms: 15.850584
+  type: 'test'
+  ...
+# Subtest: literal stars in ordinary Issue and native CR prose invalidate admitted authority
+ok 445 - literal stars in ordinary Issue and native CR prose invalidate admitted authority
+  ---
+  duration_ms: 72.489978
+  type: 'test'
+  ...
+# Subtest: simple paired emphasis in Issue and native CR prose remains cosmetic
+ok 446 - simple paired emphasis in Issue and native CR prose remains cosmetic
+  ---
+  duration_ms: 16.485531
+  type: 'test'
+  ...
+# Subtest: native CR profile, findings, validation and outcome contract edits invalidate admission
+ok 447 - native CR profile, findings, validation and outcome contract edits invalidate admission
+  ---
+  duration_ms: 9.972049
+  type: 'test'
+  ...
+# Subtest: YAML CR binds the complete parsed execution contract, including previously excluded outcome tokens
+ok 448 - YAML CR binds the complete parsed execution contract, including previously excluded outcome tokens
+  ---
+  duration_ms: 4.625468
+  type: 'test'
+  ...
+# Subtest: target, native head and Reviewer identity checks remain fail-closed
+ok 449 - target, native head and Reviewer identity checks remain fail-closed
+  ---
+  duration_ms: 5.352706
+  type: 'test'
+  ...
+# Subtest: permitted emphasis, heading and prose dash changes preserve Issue and native CR authority
+ok 450 - permitted emphasis, heading and prose dash changes preserve Issue and native CR authority
+  ---
+  duration_ms: 3.488489
+  type: 'test'
+  ...
+# Subtest: YAML key/set ordering, quoting and display-title dash changes preserve executable authority
+ok 451 - YAML key/set ordering, quoting and display-title dash changes preserve executable authority
+  ---
+  duration_ms: 1.528159
+  type: 'test'
+  ...
+# Subtest: real broker publishes bound manual Git Outcome before a verified native Ready transition
+ok 452 - real broker publishes bound manual Git Outcome before a verified native Ready transition
+  ---
+  duration_ms: 174.857842
+  type: 'test'
+  ...
+# Subtest: real broker rejects an admission marker removed after-outcome without native Ready mutation
+ok 453 - real broker rejects an admission marker removed after-outcome without native Ready mutation
+  ---
+  duration_ms: 126.714102
+  type: 'test'
+  ...
+# Subtest: real broker rejects an admission marker removed after-reservation without native Ready mutation
+ok 454 - real broker rejects an admission marker removed after-reservation without native Ready mutation
+  ---
+  duration_ms: 119.414487
+  type: 'test'
+  ...
+# Subtest: direct manual 3.0 no-PR Issue publishes one Bot Outcome without an owner source comment
+ok 455 - direct manual 3.0 no-PR Issue publishes one Bot Outcome without an owner source comment
+  ---
+  duration_ms: 9.724959
+  type: 'test'
+  ...
+# Subtest: direct manual 3.0 closed disposable PR publishes one Bot Outcome without an owner source comment
+ok 456 - direct manual 3.0 closed disposable PR publishes one Bot Outcome without an owner source comment
+  ---
+  duration_ms: 4.949266
+  type: 'test'
+  ...
+# Subtest: direct manual 4.0 no-PR Issue publishes one Bot Outcome without an owner source comment
+ok 457 - direct manual 4.0 no-PR Issue publishes one Bot Outcome without an owner source comment
+  ---
+  duration_ms: 3.733028
+  type: 'test'
+  ...
+# Subtest: direct manual 4.0 closed disposable PR publishes one Bot Outcome without an owner source comment
+ok 458 - direct manual 4.0 closed disposable PR publishes one Bot Outcome without an owner source comment
+  ---
+  duration_ms: 6.251386
+  type: 'test'
+  ...
+# Subtest: manual exact Git head is independently bound to the admitted PR before Outcome publication
+ok 459 - manual exact Git head is independently bound to the admitted PR before Outcome publication
+  ---
+  duration_ms: 3.854432
+  type: 'test'
+  ...
+# Subtest: blocked manual Git outcome drafts before publishing and never marks Ready
+ok 460 - blocked manual Git outcome drafts before publishing and never marks Ready
+  ---
+  duration_ms: 2.967048
+  type: 'test'
+  ...
+# Subtest: an implemented non-Git result on an open PR is rejected before irreversible publication
+ok 461 - an implemented non-Git result on an open PR is rejected before irreversible publication
+  ---
+  duration_ms: 6.304265
+  type: 'test'
+  ...
+# Subtest: submitting changed claims after durable or uncertain delivery cannot replace the result
+ok 462 - submitting changed claims after durable or uncertain delivery cannot replace the result
+  ---
+  duration_ms: 6.50388
+  type: 'test'
+  ...
+# Subtest: lost POST response reconciles the exact native Outcome without a second POST
+ok 463 - lost POST response reconciles the exact native Outcome without a second POST
+  ---
+  duration_ms: 5.425127
+  type: 'test'
+  ...
+# Subtest: uncertain POST with no discoverable native record stops instead of repeating it
+ok 464 - uncertain POST with no discoverable native record stops instead of repeating it
+  ---
+  duration_ms: 2.905382
+  type: 'test'
+  ...
+# Subtest: live authority failure before publication retains submission identity and publishes nothing
+ok 465 - live authority failure before publication retains submission identity and publishes nothing
+  ---
+  duration_ms: 2.183313
+  type: 'test'
+  ...
+# Subtest: canonical result target, charter, attempt and admission bindings reject tampering before POST
+ok 466 - canonical result target, charter, attempt and admission bindings reject tampering before POST
+  ---
+  duration_ms: 5.925926
+  type: 'test'
+  ...
+# Subtest: durable native Outcome readback validates the Writer identity and complete body bytes
+ok 467 - durable native Outcome readback validates the Writer identity and complete body bytes
+  ---
+  duration_ms: 5.382576
+  type: 'test'
+  ...
+# Subtest: worker broker rejects a caller-supplied manual capability before any protected read
+ok 468 - worker broker rejects a caller-supplied manual capability before any protected read
+  ---
+  duration_ms: 2.465653
+  type: 'test'
+  ...
+# Subtest: submission envelope is narrow and bounded rather than a generic Writer command
+ok 469 - submission envelope is narrow and bounded rather than a generic Writer command
+  ---
+  duration_ms: 2.084165
+  type: 'test'
+  ...
+# Subtest: native socket sends exact complete JSON then reads a bounded split receipt
+ok 470 - native socket sends exact complete JSON then reads a bounded split receipt
+  ---
+  duration_ms: 28.941065
+  type: 'test'
+  ...
+# Subtest: native socket bounds input before connection and accepts the full limit
+ok 471 - native socket bounds input before connection and accepts the full limit
+  ---
+  duration_ms: 20.125429
+  type: 'test'
+  ...
+# Subtest: native socket accepts 32 KiB receipt and rejects excess without returning a prefix
+ok 472 - native socket accepts 32 KiB receipt and rejects excess without returning a prefix
+  ---
+  duration_ms: 16.31062
+  type: 'test'
+  ...
+# Subtest: native socket timeout reports uncertainty and terminates the connection
+ok 473 - native socket timeout reports uncertainty and terminates the connection
+  ---
+  duration_ms: 38.58481
+  type: 'test'
+  ...
+# Subtest: client rejects unsafe internal socket paths and preserves unavailable transport
+ok 474 - client rejects unsafe internal socket paths and preserves unavailable transport
+  ---
+  duration_ms: 4.932774
+  type: 'test'
+  ...
+# Subtest: fixed client CLI rejects extra arguments and oversized streamed input with only a public error
+ok 475 - fixed client CLI rejects extra arguments and oversized streamed input with only a public error
+  ---
+  duration_ms: 99.12186
+  type: 'test'
+  ...
+# Subtest: manual root helper refuses a nonroot caller before Writer access
+ok 476 - manual root helper refuses a nonroot caller before Writer access
+  ---
+  duration_ms: 184.589998
+  type: 'test'
+  ...
+# Subtest: a contained BLOCKED attempt admits a fresh Step while its exact replay retains the original snapshot
+ok 477 - a contained BLOCKED attempt admits a fresh Step while its exact replay retains the original snapshot
+  ---
+  duration_ms: 459.412507
+  type: 'test'
+  ...
+# Subtest: a public BLOCKED Outcome cannot authorize a new execution when prior containment remains unknown
+ok 478 - a public BLOCKED Outcome cannot authorize a new execution when prior containment remains unknown
+  ---
+  duration_ms: 267.10279
+  type: 'test'
+  ...
+# Subtest: a fresh native Step continues exact Writer-published progress from a contained BLOCKED attempt
+ok 479 - a fresh native Step continues exact Writer-published progress from a contained BLOCKED attempt
+  ---
+  duration_ms: 922.692097
+  type: 'test'
+  ...
+# Subtest: new trusted Decision starting-head authority takes precedence over implicit retained branch progress
+ok 480 - new trusted Decision starting-head authority takes precedence over implicit retained branch progress
+  ---
+  duration_ms: 856.569604
+  type: 'test'
+  ...
+# Subtest: a new profile Decision preserves exact contained Writer branch continuation
+ok 481 - a new profile Decision preserves exact contained Writer branch continuation
+  ---
+  duration_ms: 860.272758
+  type: 'test'
+  ...
+# Subtest: rejected native admission has no Step in its protected record, labels or public Outcome
+ok 482 - rejected native admission has no Step in its protected record, labels or public Outcome
+  ---
+  duration_ms: 91.65333
+  type: 'test'
+  ...
+# Subtest: native execution snapshot and envelope reject disagreement on exact source, run or attempt identity
+ok 483 - native execution snapshot and envelope reject disagreement on exact source, run or attempt identity
+  ---
+  duration_ms: 101.723118
+  type: 'test'
+  ...
+# Subtest: trusted Decision profile and exact CR override resolve without preallocating a review Step
+ok 484 - trusted Decision profile and exact CR override resolve without preallocating a review Step
+  ---
+  duration_ms: 261.800193
+  type: 'test'
+  ...
+# Subtest: standalone v4 CR Draft transition reserves exact authority without allocating an admission or Step
+ok 485 - standalone v4 CR Draft transition reserves exact authority without allocating an admission or Step
+  ---
+  duration_ms: 348.449397
+  type: 'test'
+  ...
+# Subtest: retained v3 admission replays under upgraded broker without adopting new Decisions or a new Step
+ok 486 - retained v3 admission replays under upgraded broker without adopting new Decisions or a new Step
+  ---
+  duration_ms: 311.62753
+  type: 'test'
+  ...
+# Subtest: concurrent native admissions serialize through the existing OS flock and admit one execution
+ok 487 - concurrent native admissions serialize through the existing OS flock and admit one execution
+  ---
+  duration_ms: 248.312585
+  type: 'test'
+  ...
+# Subtest: ready label admits charter-only work once, allocates Step under Writer reservation and publishes one bound Outcome
+ok 488 - ready label admits charter-only work once, allocates Step under Writer reservation and publishes one bound Outcome
+  ---
+  duration_ms: 424.477184
+  type: 'test'
+  ...
+# Subtest: a new native manual admission derives its next Step from prior Writer admission rather than a stale label
+ok 489 - a new native manual admission derives its next Step from prior Writer admission rather than a stale label
+  ---
+  duration_ms: 103.77838
+  type: 'test'
+  ...
+# Subtest: manual handoff exposes exact public Outcome bindings without a private journal read
+ok 490 - manual handoff exposes exact public Outcome bindings without a private journal read
+  ---
+  duration_ms: 118.394585
+  type: 'test'
+  ...
+# Subtest: Outcome readback and protected terminal journal precede Ready even with conflict and failed checks
+ok 491 - Outcome readback and protected terminal journal precede Ready even with conflict and failed checks
+  ---
+  duration_ms: 891.240862
+  type: 'test'
+  ...
+# Subtest: Ready failure resumes from the successful Outcome without reexecution, push or repost
+ok 492 - Ready failure resumes from the successful Outcome without reexecution, push or repost
+  ---
+  duration_ms: 827.722561
+  type: 'test'
+  ...
+# Subtest: lost Ready response is reconciled by exact native readback without repeating the mutation
+ok 493 - lost Ready response is reconciled by exact native readback without repeating the mutation
+  ---
+  duration_ms: 795.177368
+  type: 'test'
+  ...
+# Subtest: lost successful Outcome response recovers its exact body despite later integration changes
+ok 494 - lost successful Outcome response recovers its exact body despite later integration changes
+  ---
+  duration_ms: 1097.871264
+  type: 'test'
+  ...
+# Subtest: unproven journal blocks Ready success and preserves publication
+ok 495 - unproven journal blocks Ready success and preserves publication
+  ---
+  duration_ms: 611.343761
+  type: 'test'
+  ...
+# Subtest: unproven outcome blocks Ready success and preserves publication
+ok 496 - unproven outcome blocks Ready success and preserves publication
+  ---
+  duration_ms: 539.529581
+  type: 'test'
+  ...
+# Subtest: unproven head blocks Ready success and preserves publication
+ok 497 - unproven head blocks Ready success and preserves publication
+  ---
+  duration_ms: 461.480646
+  type: 'test'
+  ...
+# Subtest: unproven authority blocks Ready success and preserves publication
+ok 498 - unproven authority blocks Ready success and preserves publication
+  ---
+  duration_ms: 405.568411
+  type: 'test'
+  ...
+# Subtest: unproven ready-readback blocks Ready success and preserves publication
+ok 499 - unproven ready-readback blocks Ready success and preserves publication
+  ---
+  duration_ms: 436.835641
+  type: 'test'
+  ...
+# Subtest: successful CR continuation drafts its exact target before remediation and completion returns Ready
+not ok 500 - successful CR continuation drafts its exact target before remediation and completion returns Ready
+  ---
+  duration_ms: 166.700562
+  type: 'test'
+  location: '/tmp/task115-step3-validation-01a13034/controller/test/pr-lifecycle.test.mjs:131:1'
+  failureType: 'testCodeFailure'
+  error: 'CURRENT_PROTOCOL_REQUIRED: New execution requires schema 4.0 native authority on a coordinated, qualified installation. Reconcile the canonical Task marker; for an older Task, authorize current work through an active trusted Task-scoped schema 4.0 Decision amending purpose or scope after its latest schema 3.0 Request. PR remediation requires a current schema 4.0 Change Request. Preserve already-admitted attempts and exact bindings; do not fall back to legacy or schema 3.0 execution.'
+  code: 'CURRENT_PROTOCOL_REQUIRED'
+  stack: |-
+    requireCurrentProtocol (file:///tmp/task115-step3-validation-01a13034/controller/src/execution-contract.mjs:94:23)
+    admitEnvelope (file:///tmp/task115-step3-validation-01a13034/controller/src/live-authority.mjs:213:42)
+    async Object.dispatch (file:///tmp/task115-step3-validation-01a13034/controller/src/publication-broker.mjs:322:26)
+    async TestContext.<anonymous> (file:///tmp/task115-step3-validation-01a13034/controller/test/pr-lifecycle.test.mjs:141:17)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: CR Draft failure stops continuation and exact native replay repairs it
+ok 501 - CR Draft failure stops continuation and exact native replay repairs it
+  ---
+  duration_ms: 176.666542
+  type: 'test'
+  ...
+# Subtest: lost CR Draft response reconciles the same exact native target
+ok 502 - lost CR Draft response reconciles the same exact native target
+  ---
+  duration_ms: 172.095919
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects review without mutation
+ok 503 - CR lifecycle rejects review without mutation
+  ---
+  duration_ms: 95.409144
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects head without mutation
+ok 504 - CR lifecycle rejects head without mutation
+  ---
+  duration_ms: 93.727364
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects identity without mutation
+ok 505 - CR lifecycle rejects identity without mutation
+  ---
+  duration_ms: 96.474658
+  type: 'test'
+  ...
+# Subtest: CR lifecycle rejects failed-publication without mutation
+ok 506 - CR lifecycle rejects failed-publication without mutation
+  ---
+  duration_ms: 80.08263
+  type: 'test'
+  ...
+# Subtest: mergeable=null is PENDING for the candidate head
+ok 507 - mergeable=null is PENDING for the candidate head
+  ---
+  duration_ms: 1.424098
+  type: 'test'
+  ...
+# Subtest: mergeable=undefined is PENDING for the candidate head
+ok 508 - mergeable=undefined is PENDING for the candidate head
+  ---
+  duration_ms: 0.273141
+  type: 'test'
+  ...
+# Subtest: mergeable=false is BLOCKED for the candidate head
+ok 509 - mergeable=false is BLOCKED for the candidate head
+  ---
+  duration_ms: 0.128239
+  type: 'test'
+  ...
+# Subtest: mergeable=true is READY for the candidate head
+ok 510 - mergeable=true is READY for the candidate head
+  ---
+  duration_ms: 0.11244
+  type: 'test'
+  ...
+# Subtest: completed fresh Issue uses detailed mergeability rather than the PR list summary
+ok 511 - completed fresh Issue uses detailed mergeability rather than the PR list summary
+  ---
+  duration_ms: 792.906841
+  type: 'test'
+  ...
+# Subtest: completed Issue continuation uses detailed mergeability rather than the PR list summary
+ok 512 - completed Issue continuation uses detailed mergeability rather than the PR list summary
+  ---
+  duration_ms: 1211.30256
+  type: 'test'
+  ...
+# Subtest: observing an already ready candidate does not draft it because the list omits mergeability
+ok 513 - observing an already ready candidate does not draft it because the list omits mergeability
+  ---
+  duration_ms: 1177.73389
+  type: 'test'
+  ...
+# Subtest: unresolved mergeability preserves published progress and successful orchestration
+ok 514 - unresolved mergeability preserves published progress and successful orchestration
+  ---
+  duration_ms: 648.958784
+  type: 'test'
+  ...
+# Subtest: proven conflict preserves published progress and successful orchestration
+ok 515 - proven conflict preserves published progress and successful orchestration
+  ---
+  duration_ms: 590.356351
+  type: 'test'
+  ...
+# Subtest: one bounded observation resolves transient mergeability on the same Outcome without worker or push
+ok 516 - one bounded observation resolves transient mergeability on the same Outcome without worker or push
+  ---
+  duration_ms: 551.728968
+  type: 'test'
+  ...
+# Subtest: later base movement refreshes a readiness snapshot while keeping the exact review candidate
+ok 517 - later base movement refreshes a readiness snapshot while keeping the exact review candidate
+  ---
+  duration_ms: 712.050291
+  type: 'test'
+  ...
+# Subtest: observation cannot replace the exact published candidate or reconcile changed authority
+ok 518 - observation cannot replace the exact published candidate or reconcile changed authority
+  ---
+  duration_ms: 445.941687
+  type: 'test'
+  ...
+# Subtest: an accepted readiness Outcome PATCH with a lost response reconciles its existing comment
+ok 519 - an accepted readiness Outcome PATCH with a lost response reconciles its existing comment
+  ---
+  duration_ms: 479.104536
+  type: 'test'
+  ...
+# Subtest: a changed native candidate cannot be adopted by a readiness observation
+ok 520 - a changed native candidate cannot be adopted by a readiness observation
+  ---
+  duration_ms: 412.563756
+  type: 'test'
+  ...
+# Subtest: readiness observations never mutate the native lifecycle
+ok 521 - readiness observations never mutate the native lifecycle
+  ---
+  duration_ms: 393.779059
+  type: 'test'
+  ...
+# Subtest: v4 prepublication inspection binds exact authority/admission and leaves all terminal evidence unchanged
+ok 522 - v4 prepublication inspection binds exact authority/admission and leaves all terminal evidence unchanged
+  ---
+  duration_ms: 20.036272
+  type: 'test'
+  ...
+# Subtest: human renderer header cannot bypass terminal digest, Writer identity or canonical target binding
+ok 523 - human renderer header cannot bypass terminal digest, Writer identity or canonical target binding
+  ---
+  duration_ms: 19.227894
+  type: 'test'
+  ...
+# Subtest: even a body with matching protected digest must bind the admitted v4 Step, attempt and authority
+ok 524 - even a body with matching protected digest must bind the admitted v4 Step, attempt and authority
+  ---
+  duration_ms: 15.362347
+  type: 'test'
+  ...
+# Subtest: changed original run, source authority or retained journal stops v4 inspection before recovery mutation
+ok 525 - changed original run, source authority or retained journal stops v4 inspection before recovery mutation
+  ---
+  duration_ms: 8.674013
+  type: 'test'
+  ...
+# Subtest: v4 inspection alone never authorizes collection or publication
+ok 526 - v4 inspection alone never authorizes collection or publication
+  ---
+  duration_ms: 5.100115
+  type: 'test'
+  ...
+# Subtest: terminal prepublication recovery publishes one successor for the original native Request and preserves the blocked history
+ok 527 - terminal prepublication recovery publishes one successor for the original native Request and preserves the blocked history
+  ---
+  duration_ms: 967.544755
+  type: 'test'
+  ...
+# Subtest: terminal prepublication continuation binds and fast-forwards its exact original previous branch head
+ok 528 - terminal prepublication continuation binds and fast-forwards its exact original previous branch head
+  ---
+  duration_ms: 1118.768989
+  type: 'test'
+  ...
+# Subtest: a later Actions rerun cannot stand in for the original sealed first attempt
+ok 529 - a later Actions rerun cannot stand in for the original sealed first attempt
+  ---
+  duration_ms: 313.568736
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer id before Outcome and Ready
+ok 530 - recovered PR rejects a changed native Writer id before Outcome and Ready
+  ---
+  duration_ms: 967.001875
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer type before Outcome and Ready
+ok 531 - recovered PR rejects a changed native Writer type before Outcome and Ready
+  ---
+  duration_ms: 872.68341
+  type: 'test'
+  ...
+# Subtest: recovered PR rejects a changed native Writer login before Outcome and Ready
+ok 532 - recovered PR rejects a changed native Writer login before Outcome and Ready
+  ---
+  duration_ms: 748.809362
+  type: 'test'
+  ...
+# Subtest: prepublication recovery requires a fresh exact owner-native comment and the original Writer Bot identity
+ok 533 - prepublication recovery requires a fresh exact owner-native comment and the original Writer Bot identity
+  ---
+  duration_ms: 229.23141
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects failed-result before importing retained bytes
+ok 534 - prepublication recovery rejects failed-result before importing retained bytes
+  ---
+  duration_ms: 171.075356
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects unknown-containment before importing retained bytes
+ok 535 - prepublication recovery rejects unknown-containment before importing retained bytes
+  ---
+  duration_ms: 179.713205
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects missing-journal before importing retained bytes
+ok 536 - prepublication recovery rejects missing-journal before importing retained bytes
+  ---
+  duration_ms: 166.47296
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects collection before importing retained bytes
+ok 537 - prepublication recovery rejects collection before importing retained bytes
+  ---
+  duration_ms: 171.510189
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects progress before importing retained bytes
+ok 538 - prepublication recovery rejects progress before importing retained bytes
+  ---
+  duration_ms: 179.059919
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects intent before importing retained bytes
+ok 539 - prepublication recovery rejects intent before importing retained bytes
+  ---
+  duration_ms: 176.349246
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects controller before importing retained bytes
+ok 540 - prepublication recovery rejects controller before importing retained bytes
+  ---
+  duration_ms: 185.739492
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed authority without a Writer push
+ok 541 - prepublication recovery rejects changed authority without a Writer push
+  ---
+  duration_ms: 165.748435
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed request without a Writer push
+ok 542 - prepublication recovery rejects changed request without a Writer push
+  ---
+  duration_ms: 163.874252
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed remote without a Writer push
+ok 543 - prepublication recovery rejects changed remote without a Writer push
+  ---
+  duration_ms: 344.92214
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed candidate without a Writer push
+ok 544 - prepublication recovery rejects changed candidate without a Writer push
+  ---
+  duration_ms: 262.01837
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed dirty without a Writer push
+ok 545 - prepublication recovery rejects changed dirty without a Writer push
+  ---
+  duration_ms: 225.221061
+  type: 'test'
+  ...
+# Subtest: prepublication recovery rejects changed incomplete without a Writer push
+ok 546 - prepublication recovery rejects changed incomplete without a Writer push
+  ---
+  duration_ms: 163.638213
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to identity
+ok 547 - prepublication recovery applies the ordinary isolated importer to identity
+  ---
+  duration_ms: 297.200613
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to mode
+ok 548 - prepublication recovery applies the ordinary isolated importer to mode
+  ---
+  duration_ms: 292.508163
+  type: 'test'
+  ...
+# Subtest: prepublication recovery applies the ordinary isolated importer to transient-secret
+ok 549 - prepublication recovery applies the ordinary isolated importer to transient-secret
+  ---
+  duration_ms: 316.143848
+  type: 'test'
+  ...
+# Subtest: a failed prepublication push consumes its one durable authorization and remains visible to admission drain
+ok 550 - a failed prepublication push consumes its one durable authorization and remains visible to admission drain
+  ---
+  duration_ms: 294.100484
+  type: 'test'
+  ...
+# Subtest: publication reservation failure performs zero pushes and preserves the original terminal state
+ok 551 - publication reservation failure performs zero pushes and preserves the original terminal state
+  ---
+  duration_ms: 307.201497
+  type: 'test'
+  ...
+# Subtest: a crash after reservation consumes the authorization without publishing or recollecting on replay
+ok 552 - a crash after reservation consumes the authorization without publishing or recollecting on replay
+  ---
+  duration_ms: 313.472504
+  type: 'test'
+  ...
+# Subtest: changed journal after object validation still blocks publication reservation
+ok 553 - changed journal after object validation still blocks publication reservation
+  ---
+  duration_ms: 304.778938
+  type: 'test'
+  ...
+# Subtest: changed authorization after object validation still blocks publication reservation
+ok 554 - changed authorization after object validation still blocks publication reservation
+  ---
+  duration_ms: 292.830621
+  type: 'test'
+  ...
+# Subtest: changed last-ref after object validation still blocks publication reservation
+ok 555 - changed last-ref after object validation still blocks publication reservation
+  ---
+  duration_ms: 260.685115
+  type: 'test'
+  ...
+# Subtest: a lost successor Outcome response resumes native observation without another publication push
+ok 556 - a lost successor Outcome response resumes native observation without another publication push
+  ---
+  duration_ms: 414.8951
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-id at receipt and Ready, then resumes its original publication
+ok 557 - successor Outcome rejects wrong-id at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 433.286755
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-type at receipt and Ready, then resumes its original publication
+ok 558 - successor Outcome rejects wrong-type at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 432.714255
+  type: 'test'
+  ...
+# Subtest: successor Outcome rejects wrong-parent at receipt and Ready, then resumes its original publication
+ok 559 - successor Outcome rejects wrong-parent at receipt and Ready, then resumes its original publication
+  ---
+  duration_ms: 475.904673
+  type: 'test'
+  ...
+# Subtest: failed recovered Ready retains the successor Outcome and resumes handoff without a push or recollection
+ok 560 - failed recovered Ready retains the successor Outcome and resumes handoff without a push or recollection
+  ---
+  duration_ms: 394.074686
+  type: 'test'
+  ...
+# Subtest: lost recovered Ready response is reconciled by exact native state without repeating the transition
+ok 561 - lost recovered Ready response is reconciled by exact native state without repeating the transition
+  ---
+  duration_ms: 342.126933
+  type: 'test'
+  ...
+# Subtest: owner recovery input keeps existing requests and makes prepublication an explicit bounded opt-in
+ok 562 - owner recovery input keeps existing requests and makes prepublication an explicit bounded opt-in
+  ---
+  duration_ms: 1.233763
+  type: 'test'
+  ...
+# Subtest: owner recovery CLI rejects an implicit prepublication input before invoking the protected helper
+ok 563 - owner recovery CLI rejects an implicit prepublication input before invoking the protected helper
+  ---
+  duration_ms: 47.77481
+  type: 'test'
+  ...
+# Subtest: real bounded dispatcher process returns the same attempt envelope without publication credentials
+ok 564 - real bounded dispatcher process returns the same attempt envelope without publication credentials
+  ---
+  duration_ms: 36.192635
+  type: 'test'
+  ...
+# Subtest: a failed process with unparseable stderr retains unknown child evidence
+ok 565 - a failed process with unparseable stderr retains unknown child evidence
+  ---
+  duration_ms: 37.934991
+  type: 'test'
+  ...
+# Subtest: native process timeout is bounded and cannot be relabeled not_started
+ok 566 - native process timeout is bounded and cannot be relabeled not_started
+  ---
+  duration_ms: 131.513236
+  type: 'test'
+  ...
+# Subtest: cancellation reaps the dispatcher before durable finalization
+ok 567 - cancellation reaps the dispatcher before durable finalization
+  ---
+  duration_ms: 28.760043
+  type: 'test'
+  ...
+# Subtest: an unsupported required validation stops before the process boundary
+ok 568 - an unsupported required validation stops before the process boundary
+  ---
+  duration_ms: 0.607572
+  type: 'test'
+  ...
+# Subtest: dispatcher refuses unresolved permission rather than supplying another default
+ok 569 - dispatcher refuses unresolved permission rather than supplying another default
+  ---
+  duration_ms: 0.953932
+  type: 'test'
+  ...
+# Subtest: specific safe worker failure and known cause survive the dispatcher
+ok 570 - specific safe worker failure and known cause survive the dispatcher
+  ---
+  duration_ms: 39.403477
+  type: 'test'
+  ...
+# Subtest: fallback admission fails closed before a dispatcher can start
+ok 571 - fallback admission fails closed before a dispatcher can start
+  ---
+  duration_ms: 2.378983
+  type: 'test'
+  ...
+# Subtest: synchronous spawn failure reaches finalization with safe OS evidence and no child
+ok 572 - synchronous spawn failure reaches finalization with safe OS evidence and no child
+  ---
+  duration_ms: 1.643019
+  type: 'test'
+  ...
+# Subtest: successful process cannot hide a cleanup failure
+ok 573 - successful process cannot hide a cleanup failure
+  ---
+  duration_ms: 34.32285
+  type: 'test'
+  ...
+# Subtest: worker cause survives a later cleanup failure and both retain durable references
+ok 574 - worker cause survives a later cleanup failure and both retain durable references
+  ---
+  duration_ms: 41.241592
+  type: 'test'
+  ...
+# Subtest: dispatcher process crash leaves an independently readable durable capsule
+ok 575 - dispatcher process crash leaves an independently readable durable capsule
+  ---
+  duration_ms: 156.586195
+  type: 'test'
+  ...
+# Subtest: ordinary uncertain publication and replay cannot authorize recovery or another push
+ok 576 - ordinary uncertain publication and replay cannot authorize recovery or another push
+  ---
+  duration_ms: 954.002817
+  type: 'test'
+  ...
+# Subtest: Issue continuation recovery binds its admitted previous head and reuses the same PR
+ok 577 - Issue continuation recovery binds its admitted previous head and reuses the same PR
+  ---
+  duration_ms: 1505.307811
+  type: 'test'
+  ...
+# Subtest: Issue publication recovery ignores a historical closed PR on the reused branch
+ok 578 - Issue publication recovery ignores a historical closed PR on the reused branch
+  ---
+  duration_ms: 890.132783
+  type: 'test'
+  ...
+# Subtest: Issue publication recovery ignores a historical merged PR on the reused branch
+ok 579 - Issue publication recovery ignores a historical merged PR on the reused branch
+  ---
+  duration_ms: 782.62815
+  type: 'test'
+  ...
+# Subtest: Issue recovery fails closed on multiple current PRs before another push
+ok 580 - Issue recovery fails closed on multiple current PRs before another push
+  ---
+  duration_ms: 499.832386
+  type: 'test'
+  ...
+# Subtest: Issue recovery preserves a previously resolved PR when it is closed
+ok 581 - Issue recovery preserves a previously resolved PR when it is closed
+  ---
+  duration_ms: 785.240816
+  type: 'test'
+  ...
+# Subtest: Issue recovery preserves a previously resolved PR when it is replaced
+ok 582 - Issue recovery preserves a previously resolved PR when it is replaced
+  ---
+  duration_ms: 742.449
+  type: 'test'
+  ...
+# Subtest: label-launched publication recovery binds the consumed command and preserves its Step
+ok 583 - label-launched publication recovery binds the consumed command and preserves its Step
+  ---
+  duration_ms: 568.384525
+  type: 'test'
+  ...
+# Subtest: fresh native owner authorization binds every intent coordinate and the completed original run
+ok 584 - fresh native owner authorization binds every intent coordinate and the completed original run
+  ---
+  duration_ms: 428.523188
+  type: 'test'
+  ...
+# Subtest: an original workflow rerun supplies no recovery authority, but a later fresh owner comment still can
+ok 585 - an original workflow rerun supplies no recovery authority, but a later fresh owner comment still can
+  ---
+  duration_ms: 584.584994
+  type: 'test'
+  ...
+# Subtest: recovery revalidates live Issue/PR/Reviewer authority before pushing
+ok 586 - recovery revalidates live Issue/PR/Reviewer authority before pushing
+  ---
+  duration_ms: 406.86284
+  type: 'test'
+  ...
+# Subtest: changed remote, changed candidate and missing bundle all block before recovery push
+ok 587 - changed remote, changed candidate and missing bundle all block before recovery push
+  ---
+  duration_ms: 722.863566
+  type: 'test'
+  ...
+# Subtest: valid recovery reserves once, pushes the exact candidate once, reconciles and replays its receipt
+ok 588 - valid recovery reserves once, pushes the exact candidate once, reconciles and replays its receipt
+  ---
+  duration_ms: 523.994877
+  type: 'test'
+  ...
+# Subtest: recovery does not push when the last authority/comment/ref observation changes or the reservation cannot be written
+ok 589 - recovery does not push when the last authority/comment/ref observation changes or the reservation cannot be written
+  ---
+  duration_ms: 812.630619
+  type: 'test'
+  ...
+# Subtest: a valid linear candidate that does not descend from the recorded previous publication is blocked
+ok 590 - a valid linear candidate that does not descend from the recorded previous publication is blocked
+  ---
+  duration_ms: 472.486961
+  type: 'test'
+  ...
+# Subtest: a nonzero recovery push with an exact successful observation reconciles without another push
+ok 591 - a nonzero recovery push with an exact successful observation reconciles without another push
+  ---
+  duration_ms: 390.465067
+  type: 'test'
+  ...
+# Subtest: ambiguous observation after a successful recovery push retains diagnostics and cannot retry
+ok 592 - ambiguous observation after a successful recovery push retains diagnostics and cannot retry
+  ---
+  duration_ms: 366.287138
+  type: 'test'
+  ...
+# Subtest: ambiguous observation after a failed recovery push retains diagnostics and cannot retry
+ok 593 - ambiguous observation after a failed recovery push retains diagnostics and cannot retry
+  ---
+  duration_ms: 375.755805
+  type: 'test'
+  ...
+# Subtest: a crash after reservation consumes the authorization before any Git mutation
+ok 594 - a crash after reservation consumes the authorization before any Git mutation
+  ---
+  duration_ms: 313.791768
+  type: 'test'
+  ...
+# Subtest: failed recovery requires a new owner decision and never discards earlier durable failure receipts
+ok 595 - failed recovery requires a new owner decision and never discards earlier durable failure receipts
+  ---
+  duration_ms: 480.106951
+  type: 'test'
+  ...
+# Subtest: recovery retains trusted identity validation for the recorded exact candidate
+ok 596 - recovery retains trusted identity validation for the recorded exact candidate
+  ---
+  duration_ms: 258.998885
+  type: 'test'
+  ...
+# Subtest: recovery retains trusted path validation for the recorded exact candidate
+ok 597 - recovery retains trusted path validation for the recorded exact candidate
+  ---
+  duration_ms: 250.146082
+  type: 'test'
+  ...
+# Subtest: recovery retains trusted file-mode validation for the recorded exact candidate
+ok 598 - recovery retains trusted file-mode validation for the recorded exact candidate
+  ---
+  duration_ms: 272.975697
+  type: 'test'
+  ...
+# Subtest: recovery retains trusted secret validation for the recorded exact candidate
+ok 599 - recovery retains trusted secret validation for the recorded exact candidate
+  ---
+  duration_ms: 279.818954
+  type: 'test'
+  ...
+# Subtest: recovery retains trusted merge validation for the recorded exact candidate
+ok 600 - recovery retains trusted merge validation for the recorded exact candidate
+  ---
+  duration_ms: 264.471859
+  type: 'test'
+  ...
+# Subtest: the explicit Issue recovery command continues the original readiness/Outcome without a new Codex call
+ok 601 - the explicit Issue recovery command continues the original readiness/Outcome without a new Codex call
+  ---
+  duration_ms: 414.151128
+  type: 'test'
+  ...
+# Subtest: the explicit Issue recovery command continues a handoff with generated residue without a new Codex call
+ok 602 - the explicit Issue recovery command continues a handoff with generated residue without a new Codex call
+  ---
+  duration_ms: 384.834823
+  type: 'test'
+  ...
+# Subtest: the explicit PR recovery command continues the original readiness/Outcome without a new Codex call
+ok 603 - the explicit PR recovery command continues the original readiness/Outcome without a new Codex call
+  ---
+  duration_ms: 456.493732
+  type: 'test'
+  ...
+# Subtest: the explicit PR recovery command continues a handoff with generated residue without a new Codex call
+ok 604 - the explicit PR recovery command continues a handoff with generated residue without a new Codex call
+  ---
+  duration_ms: 482.844193
+  type: 'test'
+  ...
+# Subtest: an ambiguous Outcome update resumes by observation of the same comment without another push
+ok 605 - an ambiguous Outcome update resumes by observation of the same comment without another push
+  ---
+  duration_ms: 494.662402
+  type: 'test'
+  ...
+# Subtest: recovery failure preview survives the durable store, helper wire and terminal JSON with explicit truncation
+ok 606 - recovery failure preview survives the durable store, helper wire and terminal JSON with explicit truncation
+  ---
+  duration_ms: 428.159716
+  type: 'test'
+  ...
+# Subtest: safe Git projection keeps UTF-8 byte bounds and the original truncation metadata across repeated projections
+ok 607 - safe Git projection keeps UTF-8 byte bounds and the original truncation metadata across repeated projections
+  ---
+  duration_ms: 0.318192
+  type: 'test'
+  ...
+# Subtest: a real rejecting Git remote supplies the sanitized durable recovery preview
+ok 608 - a real rejecting Git remote supplies the sanitized durable recovery preview
+  ---
+  duration_ms: 285.179689
+  type: 'test'
+  ...
+# Subtest: recovery cannot finish a blocked child with meaningful dirty work or a changed candidate, and missing execution evidence cannot push
+ok 609 - recovery cannot finish a blocked child with meaningful dirty work or a changed candidate, and missing execution evidence cannot push
+  ---
+  duration_ms: 508.043064
+  type: 'test'
+  ...
+# Subtest: new admission Outcome binds protected snapshot instead of manufacturing a public Request
+ok 610 - new admission Outcome binds protected snapshot instead of manufacturing a public Request
+  ---
+  duration_ms: 9.509915
+  type: 'test'
+  ...
+# Subtest: automatic Outcome keeps one canonical machine block and initially visible warnings
+ok 611 - automatic Outcome keeps one canonical machine block and initially visible warnings
+  ---
+  duration_ms: 2.560785
+  type: 'test'
+  ...
+# Subtest: worker claims cannot inject human-facing headings, folded HTML, links or authority fences
+ok 612 - worker claims cannot inject human-facing headings, folded HTML, links or authority fences
+  ---
+  duration_ms: 2.243074
+  type: 'test'
+  ...
+# Subtest: unique Issue PR discovery returns fresh detail including native mergeability
+ok 613 - unique Issue PR discovery returns fresh detail including native mergeability
+  ---
+  duration_ms: 3.043976
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed head between list and detail
+ok 614 - Issue PR discovery rejects changed head between list and detail
+  ---
+  duration_ms: 1.471754
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed branch between list and detail
+ok 615 - Issue PR discovery rejects changed branch between list and detail
+  ---
+  duration_ms: 0.473172
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed base head between list and detail
+ok 616 - Issue PR discovery rejects changed base head between list and detail
+  ---
+  duration_ms: 0.408977
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed base branch between list and detail
+ok 617 - Issue PR discovery rejects changed base branch between list and detail
+  ---
+  duration_ms: 0.418281
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed head repository between list and detail
+ok 618 - Issue PR discovery rejects changed head repository between list and detail
+  ---
+  duration_ms: 0.350233
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed base repository between list and detail
+ok 619 - Issue PR discovery rejects changed base repository between list and detail
+  ---
+  duration_ms: 0.404079
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed Issue linkage between list and detail
+ok 620 - Issue PR discovery rejects changed Issue linkage between list and detail
+  ---
+  duration_ms: 0.374804
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed PR number between list and detail
+ok 621 - Issue PR discovery rejects changed PR number between list and detail
+  ---
+  duration_ms: 0.792052
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed Step between list and detail
+ok 622 - Issue PR discovery rejects changed Step between list and detail
+  ---
+  duration_ms: 0.845732
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed title between list and detail
+ok 623 - Issue PR discovery rejects changed title between list and detail
+  ---
+  duration_ms: 0.408238
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed open state between list and detail
+ok 624 - Issue PR discovery rejects changed open state between list and detail
+  ---
+  duration_ms: 0.339876
+  type: 'test'
+  ...
+# Subtest: Issue PR discovery rejects changed merge state between list and detail
+ok 625 - Issue PR discovery rejects changed merge state between list and detail
+  ---
+  duration_ms: 0.33886
+  type: 'test'
+  ...
+# Subtest: fresh Issue publication creates a current PR with none branch history
+ok 626 - fresh Issue publication creates a current PR with none branch history
+  ---
+  duration_ms: 641.49131
+  type: 'test'
+  ...
+# Subtest: fresh Issue publication creates a current PR with closed branch history
+ok 627 - fresh Issue publication creates a current PR with closed branch history
+  ---
+  duration_ms: 711.618931
+  type: 'test'
+  ...
+# Subtest: fresh Issue publication creates a current PR with merged branch history
+ok 628 - fresh Issue publication creates a current PR with merged branch history
+  ---
+  duration_ms: 708.66014
+  type: 'test'
+  ...
+# Subtest: a matching current open PR reconciles idempotently alongside closed and merged history
+ok 629 - a matching current open PR reconciles idempotently alongside closed and merged history
+  ---
+  duration_ms: 764.700198
+  type: 'test'
+  ...
+# Subtest: a reconciled existing PR that later closes cannot authorize a replacement creation
+ok 630 - a reconciled existing PR that later closes cannot authorize a replacement creation
+  ---
+  duration_ms: 701.675235
+  type: 'test'
+  ...
+# Subtest: a reconciled existing PR that later merges cannot authorize a replacement creation
+ok 631 - a reconciled existing PR that later merges cannot authorize a replacement creation
+  ---
+  duration_ms: 605.582025
+  type: 'test'
+  ...
+# Subtest: a different compatible open PR cannot replace the already observed current publication target
+ok 632 - a different compatible open PR cannot replace the already observed current publication target
+  ---
+  duration_ms: 531.766062
+  type: 'test'
+  ...
+# Subtest: multiple current PR candidates fail closed without choosing a compatible subset
+ok 633 - multiple current PR candidates fail closed without choosing a compatible subset
+  ---
+  duration_ms: 356.943742
+  type: 'test'
+  ...
+# Subtest: an accepted PR POST with a lost response reconciles once despite historical branch reuse
+ok 634 - an accepted PR POST with a lost response reconciles once despite historical branch reuse
+  ---
+  duration_ms: 569.407749
+  type: 'test'
+  ...
+# Subtest: uncertain PR creation rejects a replacement with missing binding
+ok 635 - uncertain PR creation rejects a replacement with missing binding
+  ---
+  duration_ms: 472.371156
+  type: 'test'
+  ...
+# Subtest: uncertain PR creation rejects a replacement with another attempt binding
+ok 636 - uncertain PR creation rejects a replacement with another attempt binding
+  ---
+  duration_ms: 444.356652
+  type: 'test'
+  ...
+# Subtest: uncertain PR creation rejects a replacement with matching prefix binding
+ok 637 - uncertain PR creation rejects a replacement with matching prefix binding
+  ---
+  duration_ms: 429.506842
+  type: 'test'
+  ...
+# Subtest: an uncertain PR POST whose current result is absent never creates a duplicate
+ok 638 - an uncertain PR POST whose current result is absent never creates a duplicate
+  ---
+  duration_ms: 451.372702
+  type: 'test'
+  ...
+# Subtest: an uncertain PR POST whose current result is closed never creates a duplicate
+ok 639 - an uncertain PR POST whose current result is closed never creates a duplicate
+  ---
+  duration_ms: 475.024283
+  type: 'test'
+  ...
+# Subtest: an uncertain PR POST whose current result is merged never creates a duplicate
+ok 640 - an uncertain PR POST whose current result is merged never creates a duplicate
+  ---
+  duration_ms: 462.904191
+  type: 'test'
+  ...
+# Subtest: blocked Issue execution uses the Issue when only closed history exists
+ok 641 - blocked Issue execution uses the Issue when only closed history exists
+  ---
+  duration_ms: 59.339772
+  type: 'test'
+  ...
+# Subtest: blocked Issue execution uses the Issue when only merged history exists
+ok 642 - blocked Issue execution uses the Issue when only merged history exists
+  ---
+  duration_ms: 45.188444
+  type: 'test'
+  ...
+# Subtest: blocked publication targets and drafts only the current PR among historical branch matches
+ok 643 - blocked publication targets and drafts only the current PR among historical branch matches
+  ---
+  duration_ms: 341.024983
+  type: 'test'
+  ...
+# Subtest: current PR resolution preserves the head repository binding
+ok 644 - current PR resolution preserves the head repository binding
+  ---
+  duration_ms: 422.226949
+  type: 'test'
+  ...
+# Subtest: current PR resolution preserves the base repository binding
+ok 645 - current PR resolution preserves the base repository binding
+  ---
+  duration_ms: 397.425088
+  type: 'test'
+  ...
+# Subtest: current PR resolution preserves the base branch binding
+ok 646 - current PR resolution preserves the base branch binding
+  ---
+  duration_ms: 361.054058
+  type: 'test'
+  ...
+# Subtest: current PR resolution preserves the head branch binding
+ok 647 - current PR resolution preserves the head branch binding
+  ---
+  duration_ms: 307.050762
+  type: 'test'
+  ...
+# Subtest: current PR resolution preserves the Issue linkage binding
+ok 648 - current PR resolution preserves the Issue linkage binding
+  ---
+  duration_ms: 288.667985
+  type: 'test'
+  ...
+# Subtest: current open PR resolution preserves the exact published-head readiness gate
+ok 649 - current open PR resolution preserves the exact published-head readiness gate
+  ---
+  duration_ms: 240.165103
+  type: 'test'
+  ...
+# Subtest: production auto legacy dispatch verifies Draft before continuation
+ok 650 - production auto legacy dispatch verifies Draft before continuation
+  ---
+  duration_ms: 1035.390883
+  type: 'test'
+  ...
+# Subtest: production auto legacy label verifies Draft before continuation
+ok 651 - production auto legacy label verifies Draft before continuation
+  ---
+  duration_ms: 1029.347313
+  type: 'test'
+  ...
+# Subtest: production auto typed dispatch verifies Draft before continuation
+ok 652 - production auto typed dispatch verifies Draft before continuation
+  ---
+  duration_ms: 1046.900455
+  type: 'test'
+  ...
+# Subtest: production auto typed label verifies Draft before continuation
+ok 653 - production auto typed label verifies Draft before continuation
+  ---
+  duration_ms: 934.330297
+  type: 'test'
+  ...
+# Subtest: production auto Draft failed stops or reconciles before continuation
+ok 654 - production auto Draft failed stops or reconciles before continuation
+  ---
+  duration_ms: 813.496438
+  type: 'test'
+  ...
+# Subtest: production auto Draft unconfirmed stops or reconciles before continuation
+ok 655 - production auto Draft unconfirmed stops or reconciles before continuation
+  ---
+  duration_ms: 804.580166
+  type: 'test'
+  ...
+# Subtest: production auto Draft lost-readback stops or reconciles before continuation
+ok 656 - production auto Draft lost-readback stops or reconciles before continuation
+  ---
+  duration_ms: 730.542369
+  type: 'test'
+  ...
+# Subtest: production auto Draft lost-response stops or reconciles before continuation
+ok 657 - production auto Draft lost-response stops or reconciles before continuation
+  ---
+  duration_ms: 613.607341
+  type: 'test'
+  ...
+# Subtest: production auto binds the Draft transition to the admitted authority snapshot
+ok 658 - production auto binds the Draft transition to the admitted authority snapshot
+  ---
+  duration_ms: 124.367764
+  type: 'test'
+  ...
+# Subtest: production auto rejects an untrusted native Reviewer identity before Draft or continuation
+ok 659 - production auto rejects an untrusted native Reviewer identity before Draft or continuation
+  ---
+  duration_ms: 114.481178
+  type: 'test'
+  ...
+# Subtest: production manual legacy dispatch verifies Draft before continuation
+ok 660 - production manual legacy dispatch verifies Draft before continuation
+  ---
+  duration_ms: 209.826659
+  type: 'test'
+  ...
+# Subtest: production manual legacy label verifies Draft before continuation
+ok 661 - production manual legacy label verifies Draft before continuation
+  ---
+  duration_ms: 200.56751
+  type: 'test'
+  ...
+# Subtest: production manual typed dispatch verifies Draft before continuation
+ok 662 - production manual typed dispatch verifies Draft before continuation
+  ---
+  duration_ms: 287.195431
+  type: 'test'
+  ...
+# Subtest: production manual typed label verifies Draft before continuation
+ok 663 - production manual typed label verifies Draft before continuation
+  ---
+  duration_ms: 289.787993
+  type: 'test'
+  ...
+# Subtest: production manual Draft failed stops or reconciles before continuation
+ok 664 - production manual Draft failed stops or reconciles before continuation
+  ---
+  duration_ms: 383.673727
+  type: 'test'
+  ...
+# Subtest: production manual Draft unconfirmed stops or reconciles before continuation
+ok 665 - production manual Draft unconfirmed stops or reconciles before continuation
+  ---
+  duration_ms: 356.025912
+  type: 'test'
+  ...
+# Subtest: production manual Draft lost-readback stops or reconciles before continuation
+ok 666 - production manual Draft lost-readback stops or reconciles before continuation
+  ---
+  duration_ms: 342.302611
+  type: 'test'
+  ...
+# Subtest: production manual Draft lost-response stops or reconciles before continuation
+ok 667 - production manual Draft lost-response stops or reconciles before continuation
+  ---
+  duration_ms: 287.11495
+  type: 'test'
+  ...
+# Subtest: production manual binds the Draft transition to the admitted authority snapshot
+ok 668 - production manual binds the Draft transition to the admitted authority snapshot
+  ---
+  duration_ms: 112.316075
+  type: 'test'
+  ...
+# Subtest: production manual rejects an untrusted native Reviewer identity before Draft or continuation
+ok 669 - production manual rejects an untrusted native Reviewer identity before Draft or continuation
+  ---
+  duration_ms: 82.115352
+  type: 'test'
+  ...
+# Subtest: production manual handoff rechecks Draft after admission and recovers without republishing authority
+ok 670 - production manual handoff rechecks Draft after admission and recovers without republishing authority
+  ---
+  duration_ms: 264.727963
+  type: 'test'
+  ...
+# Subtest: repository Git paths reject traversal, metadata escape and malformed components
+ok 671 - repository Git paths reject traversal, metadata escape and malformed components
+  ---
+  duration_ms: 2.489399
+  type: 'test'
+  ...
+# Subtest: Writer verifies bot identity for repository-wide changes, remediation=false
+ok 672 - Writer verifies bot identity for repository-wide changes, remediation=false
+  ---
+  duration_ms: 618.949601
+  type: 'test'
+  ...
+# Subtest: Writer verifies bot identity for repository-wide changes, remediation=true
+ok 673 - Writer verifies bot identity for repository-wide changes, remediation=true
+  ---
+  duration_ms: 847.257211
+  type: 'test'
+  ...
+# Subtest: Writer rejects a non-linear task commit even with the expected bot identity
+ok 674 - Writer rejects a non-linear task commit even with the expected bot identity
+  ---
+  duration_ms: 580.943253
+  type: 'test'
+  ...
+# Subtest: Writer rejects symlink and gitlink file modes on any repository path
+ok 675 - Writer rejects symlink and gitlink file modes on any repository path
+  ---
+  duration_ms: 1057.438441
+  type: 'test'
+  ...
+# Subtest: Writer does not follow a symlink-style Git metadata handoff
+ok 676 - Writer does not follow a symlink-style Git metadata handoff
+  ---
+  duration_ms: 241.148415
+  type: 'test'
+  ...
+# Subtest: Writer cannot import a task checkout with a changed branch identity
+ok 677 - Writer cannot import a task checkout with a changed branch identity
+  ---
+  duration_ms: 231.633567
+  type: 'test'
+  ...
+# Subtest: Writer rejects malformed repository paths in imported commits
+ok 678 - Writer rejects malformed repository paths in imported commits
+  ---
+  duration_ms: 408.935208
+  type: 'test'
+  ...
+# Subtest: migrated Task executes only its complete request and ignores obsolete body execution prose/lookalike comments
+ok 679 - migrated Task executes only its complete request and ignores obsolete body execution prose/lookalike comments
+  ---
+  duration_ms: 148.117987
+  type: 'test'
+  ...
+# Subtest: closing authorization remains explicit rather than a PR auto-closing keyword
+ok 680 - closing authorization remains explicit rather than a PR auto-closing keyword
+  ---
+  duration_ms: 144.650853
+  type: 'test'
+  ...
+# Subtest: typed relationship projection removes all canonical GitHub closing forms without changing unrelated prose
+ok 681 - typed relationship projection removes all canonical GitHub closing forms without changing unrelated prose
+  ---
+  duration_ms: 2.161776
+  type: 'test'
+  ...
+# Subtest: typed semantic authority failures are visible domain blockers
+ok 682 - typed semantic authority failures are visible domain blockers
+  ---
+  duration_ms: 0.343408
+  type: 'test'
+  ...
+# Subtest: contained no-change Task completion publishes one Issue Outcome with immutable request/result binding and no PR
+ok 683 - contained no-change Task completion publishes one Issue Outcome with immutable request/result binding and no PR
+  ---
+  duration_ms: 452.645803
+  type: 'test'
+  ...
+# Subtest: Task source publication binds its typed Outcome to the unique durable PR
+ok 684 - Task source publication binds its typed Outcome to the unique durable PR
+  ---
+  duration_ms: 840.312637
+  type: 'test'
+  ...
+# Subtest: Task blocked without progress publishes an Issue Outcome without creating a review artifact
+ok 685 - Task blocked without progress publishes an Issue Outcome without creating a review artifact
+  ---
+  duration_ms: 389.14946
+  type: 'test'
+  ...
+# Subtest: same-Step Task Request supersession changes live authority deterministically without reading history prose
+ok 686 - same-Step Task Request supersession changes live authority deterministically without reading history prose
+  ---
+  duration_ms: 108.173714
+  type: 'test'
+  ...
+# Subtest: manual non-source Task creates a handoff without requiring a meaningless Git head
+ok 687 - manual non-source Task creates a handoff without requiring a meaningless Git head
+  ---
+  duration_ms: 99.544077
+  type: 'test'
+  ...
+# Subtest: route and Step projections mismatch visibly instead of becoming another authority source
+ok 688 - route and Step projections mismatch visibly instead of becoming another authority source
+  ---
+  duration_ms: 98.384474
+  type: 'test'
+  ...
+# Subtest: manual open PR implemented uses the same verified execution lifecycle
+ok 689 - manual open PR implemented uses the same verified execution lifecycle
+  ---
+  duration_ms: 109.620125
+  type: 'test'
+  ...
+# Subtest: manual open PR blocked uses the same verified execution lifecycle
+ok 690 - manual open PR blocked uses the same verified execution lifecycle
+  ---
+  duration_ms: 121.497015
+  type: 'test'
+  ...
+# Subtest: manual Ready failure recovers the same durable successful Outcome
+ok 691 - manual Ready failure recovers the same durable successful Outcome
+  ---
+  duration_ms: 105.073781
+  type: 'test'
+  ...
+# Subtest: manual result publication follows the Issue without manufacturing review artifacts
+ok 692 - manual result publication follows the Issue without manufacturing review artifacts
+  ---
+  duration_ms: 98.959562
+  type: 'test'
+  ...
+# Subtest: manual result publication follows the closed disposable PR without manufacturing review artifacts
+ok 693 - manual result publication follows the closed disposable PR without manufacturing review artifacts
+  ---
+  duration_ms: 94.249323
+  type: 'test'
+  ...
+# Subtest: a copied manual result transport authorization cannot impersonate the native owner identity
+ok 694 - a copied manual result transport authorization cannot impersonate the native owner identity
+  ---
+  duration_ms: 93.666592
+  type: 'test'
+  ...
+# Subtest: typed PR remediation publishes a new head and completes under the unchanged exact reviewed request
+ok 695 - typed PR remediation publishes a new head and completes under the unchanged exact reviewed request
+  ---
+  duration_ms: 828.428444
+  type: 'test'
+  ...
+# Subtest: a descriptive title projection mismatch after typed publication blocks visibly without a second push
+ok 696 - a descriptive title projection mismatch after typed publication blocks visibly without a second push
+  ---
+  duration_ms: 548.765985
+  type: 'test'
+  ...
+# Subtest: safe worker BLOCKED without progress stays green on replay
+ok 697 - safe worker BLOCKED without progress stays green on replay
+  ---
+  duration_ms: 428.622486
+  type: 'test'
+  ...
+# Subtest: safe worker BLOCKED with published progress stays green on replay
+ok 698 - safe worker BLOCKED with published progress stays green on replay
+  ---
+  duration_ms: 734.479003
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_RESULT_MISSING preserves progress once and terminalizes non-red
+ok 699 - known contained worker CODEX_RESULT_MISSING preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 671.638328
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_RESULT_INVALID preserves progress once and terminalizes non-red
+ok 700 - known contained worker CODEX_RESULT_INVALID preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 630.689684
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_JSON_INVALID preserves progress once and terminalizes non-red
+ok 701 - known contained worker CODEX_JSON_INVALID preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 587.192246
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_NONZERO_EXIT preserves progress once and terminalizes non-red
+ok 702 - known contained worker CODEX_NONZERO_EXIT preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 505.651324
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_OUTPUT_TOO_LARGE preserves progress once and terminalizes non-red
+ok 703 - known contained worker CODEX_OUTPUT_TOO_LARGE preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 436.608233
+  type: 'test'
+  ...
+# Subtest: known contained worker CODEX_RUNTIME_TIMEOUT preserves progress once and terminalizes non-red
+ok 704 - known contained worker CODEX_RUNTIME_TIMEOUT preserves progress once and terminalizes non-red
+  ---
+  duration_ms: 395.062185
+  type: 'test'
+  ...
+# Subtest: physical INTERNAL_FAILURE stays red even with known containment and a published Outcome
+ok 705 - physical INTERNAL_FAILURE stays red even with known containment and a published Outcome
+  ---
+  duration_ms: 210.861701
+  type: 'test'
+  ...
+# Subtest: physical DISPATCH_NOT_STARTED stays red even with known containment and a published Outcome
+ok 706 - physical DISPATCH_NOT_STARTED stays red even with known containment and a published Outcome
+  ---
+  duration_ms: 218.843176
+  type: 'test'
+  ...
+# Subtest: physical PROCESS_START_FAILED stays red even with known containment and a published Outcome
+ok 707 - physical PROCESS_START_FAILED stays red even with known containment and a published Outcome
+  ---
+  duration_ms: 207.208059
+  type: 'test'
+  ...
+# Subtest: physical WRITER_HELPER_TIMEOUT stays red even with known containment and a published Outcome
+ok 708 - physical WRITER_HELPER_TIMEOUT stays red even with known containment and a published Outcome
+  ---
+  duration_ms: 221.687243
+  type: 'test'
+  ...
+# Subtest: physical TRUSTED_GIT_FAILED stays red even with known containment and a published Outcome
+ok 709 - physical TRUSTED_GIT_FAILED stays red even with known containment and a published Outcome
+  ---
+  duration_ms: 201.787812
+  type: 'test'
+  ...
+# Subtest: blocked remediation is draft, including a no-progress result
+ok 710 - blocked remediation is draft, including a no-progress result
+  ---
+  duration_ms: 333.322116
+  type: 'test'
+  ...
+# Subtest: uncommitted work remains a physical preservation failure with no commits
+ok 711 - uncommitted work remains a physical preservation failure with no commits
+  ---
+  duration_ms: 191.963803
+  type: 'test'
+  ...
+# Subtest: uncommitted work remains a physical preservation failure with some commits
+ok 712 - uncommitted work remains a physical preservation failure with some commits
+  ---
+  duration_ms: 351.789743
+  type: 'test'
+  ...
+# Subtest: contained successful handoff with generated residue stays green with a durable actionable warning on replay
+ok 713 - contained successful handoff with generated residue stays green with a durable actionable warning on replay
+  ---
+  duration_ms: 411.461877
+  type: 'test'
+  ...
+# Subtest: replay restores the Writer warning receipt when completion preceded the runner terminal journal write
+ok 714 - replay restores the Writer warning receipt when completion preceded the runner terminal journal write
+  ---
+  duration_ms: 367.281379
+  type: 'test'
+  ...
+# Subtest: a failed terminal journal write remains red on replay even after Writer persisted successful handoff with a warning
+ok 715 - a failed terminal journal write remains red on replay even after Writer persisted successful handoff with a warning
+  ---
+  duration_ms: 331.206537
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when collection is uncertain or failed
+ok 716 - successful worker with generated residue stays red when collection is uncertain or failed
+  ---
+  duration_ms: 134.341353
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when clean-observation is uncertain or failed
+ok 717 - successful worker with generated residue stays red when clean-observation is uncertain or failed
+  ---
+  duration_ms: 196.462574
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when publication is uncertain or failed
+ok 718 - successful worker with generated residue stays red when publication is uncertain or failed
+  ---
+  duration_ms: 247.42023
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when authority is uncertain or failed
+ok 719 - successful worker with generated residue stays red when authority is uncertain or failed
+  ---
+  duration_ms: 234.521357
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when containment is uncertain or failed
+ok 720 - successful worker with generated residue stays red when containment is uncertain or failed
+  ---
+  duration_ms: 135.772419
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when outcome is uncertain or failed
+ok 721 - successful worker with generated residue stays red when outcome is uncertain or failed
+  ---
+  duration_ms: 345.213848
+  type: 'test'
+  ...
+# Subtest: successful worker with generated residue stays red when journal is uncertain or failed
+ok 722 - successful worker with generated residue stays red when journal is uncertain or failed
+  ---
+  duration_ms: 321.656364
+  type: 'test'
+  ...
+# Subtest: known success without changes is a normal incomplete result, never ready
+ok 723 - known success without changes is a normal incomplete result, never ready
+  ---
+  duration_ms: 158.306351
+  type: 'test'
+  ...
+# Subtest: a domain-looking code cannot hide unknown execution, containment or publication
+ok 724 - a domain-looking code cannot hide unknown execution, containment or publication
+  ---
+  duration_ms: 0.475308
+  type: 'test'
+  ...
+# Subtest: loss of scope with an unknown reserved execution remains red
+ok 725 - loss of scope with an unknown reserved execution remains red
+  ---
+  duration_ms: 45.265679
+  type: 'test'
+  ...
+# Subtest: failure at collection cannot turn a worker domain result green
+ok 726 - failure at collection cannot turn a worker domain result green
+  ---
+  duration_ms: 112.326662
+  type: 'test'
+  ...
+# Subtest: failure at publication cannot turn a worker domain result green
+ok 727 - failure at publication cannot turn a worker domain result green
+  ---
+  duration_ms: 160.193548
+  type: 'test'
+  ...
+# Subtest: failure at outcome cannot turn a worker domain result green
+ok 728 - failure at outcome cannot turn a worker domain result green
+  ---
+  duration_ms: 224.520185
+  type: 'test'
+  ...
+# Subtest: failure at journal cannot turn a worker domain result green
+ok 729 - failure at journal cannot turn a worker domain result green
+  ---
+  duration_ms: 243.554555
+  type: 'test'
+  ...
+# Subtest: failure at draft cannot turn a worker domain result green
+ok 730 - failure at draft cannot turn a worker domain result green
+  ---
+  duration_ms: 127.055347
+  type: 'test'
+  ...
+# Subtest: defaulted base remains immutable when live main advances after admission
+ok 731 - defaulted base remains immutable when live main advances after admission
+  ---
+  duration_ms: 279.533566
+  type: 'test'
+  ...
+# Subtest: resumed admission revalidates authority within the normal terminal boundary
+ok 732 - resumed admission revalidates authority within the normal terminal boundary
+  ---
+  duration_ms: 39.34224
+  type: 'test'
+  ...
+# Subtest: CLI reporting emits one warning for a domain block and returns a real nonzero exit for internal failure
+ok 733 - CLI reporting emits one warning for a domain block and returns a real nonzero exit for internal failure
+  ---
+  duration_ms: 0.51643
+  type: 'test'
+  ...
+# Subtest: a worker capability blocker reaches the Outcome as a bounded redacted claim
+ok 734 - a worker capability blocker reaches the Outcome as a bounded redacted claim
+  ---
+  duration_ms: 131.782434
+  type: 'test'
+  ...
+# Subtest: trusted fetch finishes without detached maintenance before checkout access is transferred
+ok 735 - trusted fetch finishes without detached maintenance before checkout access is transferred
+  ---
+  duration_ms: 226.944083
+  type: 'test'
+  ...
+# Subtest: same-UID mode-0600 tracked and untracked artifacts are fully observed without permission repair
+ok 736 - same-UID mode-0600 tracked and untracked artifacts are fully observed without permission repair
+  ---
+  duration_ms: 726.951936
+  type: 'test'
+  ...
+# Subtest: collection never invokes worker filters, fsmonitor, hooks, or copied nested metadata
+ok 737 - collection never invokes worker filters, fsmonitor, hooks, or copied nested metadata
+  ---
+  duration_ms: 631.398223
+  type: 'test'
+  ...
+# Subtest: trusted ignore copies retain nested patterns, negation, and raw pathname handling
+ok 738 - trusted ignore copies retain nested patterns, negation, and raw pathname handling
+  ---
+  duration_ms: 1286.948691
+  type: 'test'
+  ...
+# Subtest: copied attributes preserve safe line-ending normalization while raw source bytes stay intact
+ok 739 - copied attributes preserve safe line-ending normalization while raw source bytes stay intact
+  ---
+  duration_ms: 358.95886
+  type: 'test'
+  ...
+# Subtest: ignored and non-ignored empty directories retain the existing clean-tree meaning
+ok 740 - ignored and non-ignored empty directories retain the existing clean-tree meaning
+  ---
+  duration_ms: 306.777204
+  type: 'test'
+  ...
+# Subtest: checkout acquisition rejects symlinks in any absolute ancestor
+ok 741 - checkout acquisition rejects symlinks in any absolute ancestor
+  ---
+  duration_ms: 153.207427
+  type: 'test'
+  ...
+# Subtest: object import rejects metadata/ref directory symlinks and hardlinked object bytes
+ok 742 - object import rejects metadata/ref directory symlinks and hardlinked object bytes
+  ---
+  duration_ms: 608.705055
+  type: 'test'
+  ...
+# Subtest: worktree observation rejects hardlinks and sanitizes inaccessible-path failures
+ok 743 - worktree observation rejects hardlinks and sanitizes inaccessible-path failures
+  ---
+  duration_ms: 481.064378
+  type: 'test'
+  ...
+# Subtest: symlink residue is observed without opening its external target
+ok 744 - symlink residue is observed without opening its external target
+  ---
+  duration_ms: 260.273024
+  type: 'test'
+  ...
+# Subtest: distinct Linux worker/collector UIDs share 0640 access; 0600 fails while scoped root observation preserves it
+ok 745 - distinct Linux worker/collector UIDs share 0640 access; 0600 fails while scoped root observation preserves it # SKIP requires native root test identity for disposable synthetic UID separation; no escalation attempted
+  ---
+  duration_ms: 0.556289
+  type: 'test'
+  ...
+# Subtest: collection distinguishes ignored generated cache from tracked and non-ignored work without reconciling it
+ok 746 - collection distinguishes ignored generated cache from tracked and non-ignored work without reconciling it
+  ---
+  duration_ms: 1009.721983
+  type: 'test'
+  ...
+# Subtest: an unreadable generated regular file fails complete observation without changing its bytes
+ok 747 - an unreadable generated regular file fails complete observation without changing its bytes
+  ---
+  duration_ms: 411.97446
+  type: 'test'
+  ...
+# Subtest: an unreadable ignored cache is irrelevant while an unreadable non-ignored directory fails collection
+ok 748 - an unreadable ignored cache is irrelevant while an unreadable non-ignored directory fails collection
+  ---
+  duration_ms: 552.701073
+  type: 'test'
+  ...
+# Subtest: tracked permission failures are not accepted as ordinary diff exit one
+ok 749 - tracked permission failures are not accepted as ordinary diff exit one
+  ---
+  duration_ms: 351.443323
+  type: 'test'
+  ...
+# Subtest: an expected diff status never swallows a fatal trusted Git failure
+ok 750 - an expected diff status never swallows a fatal trusted Git failure
+  ---
+  duration_ms: 108.22671
+  type: 'test'
+  ...
+# Subtest: Writer publication token requests exactly the admitted permissions plus workflow writes
+ok 751 - Writer publication token requests exactly the admitted permissions plus workflow writes
+  ---
+  duration_ms: 10.714098
+  type: 'test'
+  ...
+# Subtest: one native session-total snapshot preserves all supported counters without deriving totals
+ok 752 - one native session-total snapshot preserves all supported counters without deriving totals
+  ---
+  duration_ms: 3.503517
+  type: 'test'
+  ...
+# Subtest: missing or unsafe native counters remain individually unavailable without coercion
+ok 753 - missing or unsafe native counters remain individually unavailable without coercion
+  ---
+  duration_ms: 0.821289
+  type: 'test'
+  ...
+# Subtest: missing, malformed, truncated or ambiguous native streams never select or sum usage
+ok 754 - missing, malformed, truncated or ambiguous native streams never select or sum usage
+  ---
+  duration_ms: 1.006613
+  type: 'test'
+  ...
+# Subtest: worker prose and semantic claims cannot establish native usage
+ok 755 - worker prose and semantic claims cannot establish native usage
+  ---
+  duration_ms: 1.090206
+  type: 'test'
+  ...
+# Subtest: native usage survives semantic validation failure and nonzero child exit
+ok 756 - native usage survives semantic validation failure and nonzero child exit
+  ---
+  duration_ms: 390.717173
+  type: 'test'
+  ...
+# Subtest: automatic execution transports runtime evidence separately from worker result on both paths
+ok 757 - automatic execution transports runtime evidence separately from worker result on both paths
+  ---
+  duration_ms: 1.98597
+  type: 'test'
+  ...
+# Subtest: successful runtime durably prepares evidence then cleans only after outer containment
+ok 758 - successful runtime durably prepares evidence then cleans only after outer containment
+  ---
+  duration_ms: 495.325984
+  type: 'test'
+  ...
+# Subtest: failures before child, child nonzero, parsing and runtime finalization persist independently
+    # Subtest: config
+    ok 1 - config
+      ---
+      duration_ms: 196.61954
+      type: 'test'
+      ...
+    # Subtest: arguments
+    ok 2 - arguments
+      ---
+      duration_ms: 294.878827
+      type: 'test'
+      ...
+    # Subtest: spawn
+    ok 3 - spawn
+      ---
+      duration_ms: 307.400329
+      type: 'test'
+      ...
+    # Subtest: child
+    ok 4 - child
+      ---
+      duration_ms: 345.740871
+      type: 'test'
+      ...
+    # Subtest: parse
+    ok 5 - parse
+      ---
+      duration_ms: 279.776928
+      type: 'test'
+      ...
+    1..5
+ok 759 - failures before child, child nonzero, parsing and runtime finalization persist independently
+  ---
+  duration_ms: 1426.070208
+  type: 'test'
+  ...
+# Subtest: diagnostic capture and primary store failure retain sandbox plus an independent durable capsule
+    # Subtest: capture
+    ok 1 - capture
+      ---
+      duration_ms: 239.757158
+      type: 'test'
+      ...
+    # Subtest: store
+    ok 2 - store
+      ---
+      duration_ms: 206.631594
+      type: 'test'
+      ...
+    1..2
+ok 760 - diagnostic capture and primary store failure retain sandbox plus an independent durable capsule
+  ---
+  duration_ms: 447.447914
+  type: 'test'
+  ...
+# Subtest: cleanup EACCES and EPERM survive as cleanup causes, with safe OS context and retained artifacts
+    # Subtest: EACCES
+    ok 1 - EACCES
+      ---
+      duration_ms: 222.635993
+      type: 'test'
+      ...
+    # Subtest: EPERM
+    ok 2 - EPERM
+      ---
+      duration_ms: 220.923703
+      type: 'test'
+      ...
+    1..2
+ok 761 - cleanup EACCES and EPERM survive as cleanup causes, with safe OS context and retained artifacts
+  ---
+  duration_ms: 444.293878
+  type: 'test'
+  ...
+# Subtest: primary and cleanup-store failure still leave cleanup cause in independent capsule
+ok 762 - primary and cleanup-store failure still leave cleanup cause in independent capsule
+  ---
+  duration_ms: 206.590201
+  type: 'test'
+  ...
+# Subtest: unknown containment and failure of fallback update prohibit deletion
+ok 763 - unknown containment and failure of fallback update prohibit deletion
+  ---
+  duration_ms: 187.537495
+  type: 'test'
+  ...
+# Subtest: existing protected sandbox is never adopted, chmodded or deleted by another invocation
+ok 764 - existing protected sandbox is never adopted, chmodded or deleted by another invocation
+  ---
+  duration_ms: 104.701232
+  type: 'test'
+  ...
+# Subtest: fallback update failure during finalization leaves the preceding durable operation intact
+ok 765 - fallback update failure during finalization leaves the preceding durable operation intact
+  ---
+  duration_ms: 150.966823
+  type: 'test'
+  ...
+# Subtest: continuation is explicit and keeps its exact task head separate from the base
+ok 766 - continuation is explicit and keeps its exact task head separate from the base
+  ---
+  duration_ms: 10.523133
+  type: 'test'
+  ...
+# Subtest: continuation never guesses a missing, malformed or conflicting branch/head/PR
+ok 767 - continuation never guesses a missing, malformed or conflicting branch/head/PR
+  ---
+  duration_ms: 2.150777
+  type: 'test'
+  ...
+# Subtest: canonical Task producer supplies an explicit valid closure decision
+ok 768 - canonical Task producer supplies an explicit valid closure decision
+  ---
+  duration_ms: 19.684719
+  type: 'test'
+  ...
+# Subtest: explicit Issue closure choices determine linkage without default warnings
+ok 769 - explicit Issue closure choices determine linkage without default warnings
+  ---
+  duration_ms: 1.241923
+  type: 'test'
+  ...
+# Subtest: missing, malformed and conflicting Issue closure metadata keeps the Issue open visibly
+ok 770 - missing, malformed and conflicting Issue closure metadata keeps the Issue open visibly
+  ---
+  duration_ms: 2.430028
+  type: 'test'
+  ...
+# Subtest: closure field limits cannot hide a conflicting value after an authorized prefix
+ok 771 - closure field limits cannot hide a conflicting value after an authorized prefix
+  ---
+  duration_ms: 8.108663
+  type: 'test'
+  ...
+# Subtest: worker arguments resolve absent profiles and preserve explicit unknown identifiers
+ok 772 - worker arguments resolve absent profiles and preserve explicit unknown identifiers
+  ---
+  duration_ms: 678.023586
+  type: 'test'
+  ...
+# Subtest: workspace preflight needs no path list and preserves sandbox and symlink containment
+ok 773 - workspace preflight needs no path list and preserves sandbox and symlink containment
+  ---
+  duration_ms: 43.049336
+  type: 'test'
+  ...
+# Subtest: missing and malformed diagnostics cannot prove the child did not start
+ok 774 - missing and malformed diagnostics cannot prove the child did not start
+  ---
+  duration_ms: 0.752529
+  type: 'test'
+  ...
+# Subtest: explicit launcher observations preserve each child state
+ok 775 - explicit launcher observations preserve each child state
+  ---
+  duration_ms: 0.635934
+  type: 'test'
+  ...
+# Subtest: launcher diagnostics preserve bounded inner child exits and safe signals
+ok 776 - launcher diagnostics preserve bounded inner child exits and safe signals
+  ---
+  duration_ms: 0.502372
+  type: 'test'
+  ...
+# Subtest: invalid inner child exit metadata remains unknown without discarding the causal diagnostic
+ok 777 - invalid inner child exit metadata remains unknown without discarding the causal diagnostic
+  ---
+  duration_ms: 1.004815
+  type: 'test'
+  ...
+# Subtest: semantic result contains no model-managed deterministic metadata
+ok 778 - semantic result contains no model-managed deterministic metadata
+  ---
+  duration_ms: 1.289761
+  type: 'test'
+  ...
+# Subtest: Codex child exit remains an execution exit and is not confused with publication exit
+ok 779 - Codex child exit remains an execution exit and is not confused with publication exit
+  ---
+  duration_ms: 260.999998
+  type: 'test'
+  ...
+# Subtest: sandbox identity capture rejects redirected roots and preserves integer precision
+ok 780 - sandbox identity capture rejects redirected roots and preserves integer precision
+  ---
+  duration_ms: 15.289635
+  type: 'test'
+  ...
+# Subtest: hung cleanup force-settles without claiming descendant containment or retrying
+ok 781 - hung cleanup force-settles without claiming descendant containment or retrying
+  ---
+  duration_ms: 8.01363
+  type: 'test'
+  ...
+# Subtest: cleanup crosses only the fixed runtime UID boundary with bounded sanitized failures
+ok 782 - cleanup crosses only the fixed runtime UID boundary with bounded sanitized failures
+  ---
+  duration_ms: 4.757494
+  type: 'test'
+  ...
+1..782
+# tests 813
+# suites 0
+# pass 809
+# fail 3
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 18270.055804
