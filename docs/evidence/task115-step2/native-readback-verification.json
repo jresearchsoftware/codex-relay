@@ -1,0 +1,142 @@
+{
+  "observed_at": "2026-10-12T09:10:51.617Z",
+  "status": "PASS",
+  "source_revision": "3fff4140c57b993b9f006159529d9459ec9ace13",
+  "installed_files": 490,
+  "installed_bytes_equal_exact_git_tree": true,
+  "installed_hash_map_sha256": "0624aa3e6170c9dba38930a31e906fa688455cdd2dccb8c9a9dbf4b23cb6e130",
+  "outcomes": [
+    {
+      "run": 9007115000401,
+      "id": 6120882274,
+      "sha256": "ee11bd9b2aa016210ff44a6e71e98c7070f206d654f3bbaefa3708913cf40ba5",
+      "parent": {
+        "kind": "issue",
+        "number": 6
+      },
+      "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6120882274",
+      "actor": {
+        "id": 338711029,
+        "login": "jresearch-relay-test-writer[bot]",
+        "type": "Bot"
+      },
+      "admission": {
+        "attempt": "run-9007115000401",
+        "sha256": "901fea4488555e841d718f5adb9be4d13635dbe49da6afe06ec01b56824e00e3",
+        "step": 1
+      },
+      "admitted_authority": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984",
+      "current_authority": "b60350f300d2f48bd896b2c8bf6125a77342ce730718489262cc8ec1dd4b55f4",
+      "changed_fields": [
+        "scope"
+      ],
+      "review_required": true,
+      "immutable_admission_unchanged": true,
+      "captured_resolution_unchanged": true,
+      "exact_native_body_verified": true,
+      "single_native_outcome": true,
+      "synthetic": true,
+      "real_admission": false,
+      "real_worker_model_execution": false
+    },
+    {
+      "run": 9007115000402,
+      "id": 6120948158,
+      "sha256": "b1a6388c6915f41c705e56f9833da2e9d9d9166d16213ae02204be14b61a9412",
+      "parent": {
+        "kind": "pull_request",
+        "number": 7
+      },
+      "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6120948158",
+      "actor": {
+        "id": 338711029,
+        "login": "jresearch-relay-test-writer[bot]",
+        "type": "Bot"
+      },
+      "admission": {
+        "attempt": "run-9007115000402",
+        "sha256": "e2584fedd83beef9a8c3491b90dece553589321e7d1f46d66f6eed83ef32d6d9",
+        "step": 1
+      },
+      "admitted_authority": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984",
+      "current_authority": "b60350f300d2f48bd896b2c8bf6125a77342ce730718489262cc8ec1dd4b55f4",
+      "changed_fields": [
+        "scope"
+      ],
+      "review_required": true,
+      "immutable_admission_unchanged": true,
+      "captured_resolution_unchanged": true,
+      "exact_native_body_verified": true,
+      "single_native_outcome": true,
+      "synthetic": true,
+      "real_admission": false,
+      "real_worker_model_execution": false
+    },
+    {
+      "run": 9007115000403,
+      "id": 6121034785,
+      "sha256": "1a2d562dbf31bf57a43bfaee4fc8449438abd0edb017418d6a2f0d9a22db4a0d",
+      "parent": {
+        "kind": "issue",
+        "number": 6
+      },
+      "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6121034785",
+      "actor": {
+        "id": 338711029,
+        "login": "jresearch-relay-test-writer[bot]",
+        "type": "Bot"
+      },
+      "admission": {
+        "attempt": "run-9007115000403",
+        "sha256": "57ff0cf668e38e606bf1e36a88a2003c86f9ccbbad333c763d09c3ba00ecf93c",
+        "step": 1
+      },
+      "admitted_authority": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984",
+      "current_authority": "b60350f300d2f48bd896b2c8bf6125a77342ce730718489262cc8ec1dd4b55f4",
+      "changed_fields": [
+        "scope"
+      ],
+      "review_required": true,
+      "immutable_admission_unchanged": true,
+      "captured_resolution_unchanged": true,
+      "exact_native_body_verified": true,
+      "single_native_outcome": true,
+      "synthetic": true,
+      "real_admission": false,
+      "real_worker_model_execution": false
+    },
+    {
+      "run": 9007115000404,
+      "id": 6121131253,
+      "sha256": "cdbd4b447fa9f033082fcf4879b3a2880933d831365df791fb3068c9126f991b",
+      "parent": {
+        "kind": "pull_request",
+        "number": 7
+      },
+      "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6121131253",
+      "actor": {
+        "id": 338711029,
+        "login": "jresearch-relay-test-writer[bot]",
+        "type": "Bot"
+      },
+      "admission": {
+        "attempt": "run-9007115000404",
+        "sha256": "46008b2dc0dabe632d6afc5e34475a82f4e6415747ba19caab7d7a4188ad427d",
+        "step": 1
+      },
+      "admitted_authority": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984",
+      "current_authority": "b60350f300d2f48bd896b2c8bf6125a77342ce730718489262cc8ec1dd4b55f4",
+      "changed_fields": [
+        "scope"
+      ],
+      "review_required": true,
+      "immutable_admission_unchanged": true,
+      "captured_resolution_unchanged": true,
+      "exact_native_body_verified": true,
+      "single_native_outcome": true,
+      "synthetic": true,
+      "real_admission": false,
+      "real_worker_model_execution": false
+    }
+  ]
+}

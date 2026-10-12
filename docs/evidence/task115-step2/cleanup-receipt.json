@@ -1,0 +1,49 @@
+{
+  "scope": "isolated TEST synthetic records only",
+  "records": [
+    {
+      "run": 9007115000401,
+      "kind": "claim",
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000401.json",
+      "sha256": "6b11db70a146c05f2031603efc8e9ec572301ee45522605f867b1f29504aeac5",
+      "immutable_envelope_unchanged": true
+    },
+    {
+      "run": 9007115000402,
+      "kind": "claim",
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000402.json",
+      "sha256": "11d89e9b640f190854f0af48ee36bf486e7669c52fca6193eab32df867c91062",
+      "immutable_envelope_unchanged": true
+    },
+    {
+      "run": 9007115000403,
+      "kind": "claim",
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000403.json",
+      "sha256": "a6f8bf1a0e25fbc478a2378d081d0431622e1f09270eb4fe92e52255eb8c935b",
+      "immutable_envelope_unchanged": true
+    },
+    {
+      "run": 9007115000403,
+      "kind": "journal",
+      "path": "/var/lib/codex-relay-test/dispatch/attempts-v2/9007115000403.json",
+      "sha256": "77aa9cf291ef27f80d91e98bf8c3cedfd075db3e02d68634fa3d3e7951207eab",
+      "immutable_envelope_unchanged": true
+    },
+    {
+      "run": 9007115000404,
+      "kind": "claim",
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000404.json",
+      "sha256": "4e39f9f04b63aba8016fe861f60d4210b336fac595a11bfcddb805cdbe4a07fd",
+      "immutable_envelope_unchanged": true
+    },
+    {
+      "run": 9007115000404,
+      "kind": "journal",
+      "path": "/var/lib/codex-relay-test/dispatch/attempts-v2/9007115000404.json",
+      "sha256": "03cf77b5745263d816e714d24f72079eab2f1885b9d77bab6b5e75ed350792b4",
+      "immutable_envelope_unchanged": true
+    }
+  ],
+  "attempts_directory_removed_if_empty": true,
+  "native_history_preserved": true
+}

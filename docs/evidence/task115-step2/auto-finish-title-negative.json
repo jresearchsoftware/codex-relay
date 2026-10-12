@@ -1,0 +1,6 @@
+{
+  "code": "AUTHORITY_TITLE_PROJECTION_MISMATCH",
+  "source": "Observed fixed Writer stderr; no Outcome was published by this failed fixture call",
+  "cause": "Fixture setup used an unbounded title instead of projectedRequestTitle(admission)",
+  "correction": "Only the synthetic TEST PR title was changed to the existing bounded projection; the same synthetic admission remained unchanged"
+}

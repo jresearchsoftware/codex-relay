@@ -1,0 +1,12 @@
+{
+  "operation": "finish-no-change",
+  "runId": 9007115000403,
+  "attemptId": "run-9007115000403",
+  "head": "82b505e7d37f8a26dde5fab4f3b05671d54da065",
+  "taskResult": {
+    "summary": "Synthetic TEST automatic-completion contract fixture after trusted Task drift. Admission, successful contained execution, clean collection and prior publication metadata are explicitly seeded expected-state inputs. No actual worker/model, ready/dispatch, Git push or real Actions run is asserted.",
+    "validation": [
+      "Fixture validates installed automatic Writer publication only; real admission, worker execution, trusted Git collection and native CI are not qualified."
+    ]
+  }
+}

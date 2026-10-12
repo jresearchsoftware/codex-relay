@@ -1,0 +1,26 @@
+{
+  "scope": "temporary isolated TEST candidate installation; not a product lifecycle receipt",
+  "source_revision": "3fff4140c57b993b9f006159529d9459ec9ace13",
+  "old_pointer": "/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a",
+  "candidate_pointer": "/opt/codex-relay-test/qualification-step2-3fff414",
+  "archive_sha256": "a68cee8f2bae7aefedf33f2627415e5209c25ec0e114c6699f7b11482fe059af",
+  "reviewer_binary_sha256": "0eb7a7bc6ad040de273bfe92a86914696357677a99c16a7fbd296117f1925145",
+  "original_active": {
+    "codex-relay-test-reviewer.service": true,
+    "codex-relay-test-runner.service": true,
+    "codex-relay-test-general-runner.service": true,
+    "codex-relay-test-relay-manual-outcome.socket": true
+  },
+  "admission_status_before": {
+    "version": 1,
+    "consumerDigest": "18fdd7fa538be3aef3ee6000181018230c5120f7371d524707b362e8bff30a5c",
+    "phase": "open",
+    "operationId": null,
+    "target": null,
+    "previousActive": null,
+    "verifiedRevision": null,
+    "active": [],
+    "unknown": []
+  },
+  "stage": "candidate_services_active"
+}

@@ -1,0 +1,131 @@
+    Blocking waiting for file lock on build directory
+   Compiling reviewer-mcp-http v0.1.0 (/home/hortonolite/work/task115-step2-validation-01a12efc/reviewer)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.56s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+
+running 1 test
+test tests::portability::two_consumer_same_artifact_reviewer_to_writer_qualification ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 119 filtered out; finished in 0.73s
+
+TAP version 13
+# Subtest: same modules: example-org/sample-project Issue and remediation publication and replay
+ok 1 - same modules: example-org/sample-project Issue and remediation publication and replay
+  ---
+  duration_ms: 593.5469
+  type: 'test'
+  ...
+# Subtest: consumer profile is resolved once; repository API and credentials use only the configured identity
+ok 2 - consumer profile is resolved once; repository API and credentials use only the configured identity
+  ---
+  duration_ms: 35.160617
+  type: 'test'
+  ...
+# Subtest: missing, malformed, unsafe and overlapping consumer configuration fails closed
+ok 3 - missing, malformed, unsafe and overlapping consumer configuration fails closed
+  ---
+  duration_ms: 22.327682
+  type: 'test'
+  ...
+# Subtest: consumer validation declarations are optional, bounded names rather than commands
+ok 4 - consumer validation declarations are optional, bounded names rather than commands
+  ---
+  duration_ms: 0.667211
+  type: 'test'
+  ...
+# Subtest: plain synthetic consumer and diagnostics examples pass the actual validators
+ok 5 - plain synthetic consumer and diagnostics examples pass the actual validators
+  ---
+  duration_ms: 2.834169
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 715.287337
+TAP version 13
+# Subtest: same modules: harmless-lab/relay-canary Issue and remediation publication and replay
+ok 1 - same modules: harmless-lab/relay-canary Issue and remediation publication and replay
+  ---
+  duration_ms: 498.931793
+  type: 'test'
+  ...
+# Subtest: consumer profile is resolved once; repository API and credentials use only the configured identity
+ok 2 - consumer profile is resolved once; repository API and credentials use only the configured identity
+  ---
+  duration_ms: 34.221505
+  type: 'test'
+  ...
+# Subtest: missing, malformed, unsafe and overlapping consumer configuration fails closed
+ok 3 - missing, malformed, unsafe and overlapping consumer configuration fails closed
+  ---
+  duration_ms: 24.104371
+  type: 'test'
+  ...
+# Subtest: consumer validation declarations are optional, bounded names rather than commands
+ok 4 - consumer validation declarations are optional, bounded names rather than commands
+  ---
+  duration_ms: 0.526535
+  type: 'test'
+  ...
+# Subtest: plain synthetic consumer and diagnostics examples pass the actual validators
+ok 5 - plain synthetic consumer and diagnostics examples pass the actual validators
+  ---
+  duration_ms: 2.473208
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 616.960917
+TAP version 13
+# Subtest: same modules: sample-co/inventory-api Issue and remediation publication and replay
+ok 1 - same modules: sample-co/inventory-api Issue and remediation publication and replay
+  ---
+  duration_ms: 490.988217
+  type: 'test'
+  ...
+# Subtest: consumer profile is resolved once; repository API and credentials use only the configured identity
+ok 2 - consumer profile is resolved once; repository API and credentials use only the configured identity
+  ---
+  duration_ms: 33.754321
+  type: 'test'
+  ...
+# Subtest: missing, malformed, unsafe and overlapping consumer configuration fails closed
+ok 3 - missing, malformed, unsafe and overlapping consumer configuration fails closed
+  ---
+  duration_ms: 21.681185
+  type: 'test'
+  ...
+# Subtest: consumer validation declarations are optional, bounded names rather than commands
+ok 4 - consumer validation declarations are optional, bounded names rather than commands
+  ---
+  duration_ms: 0.486502
+  type: 'test'
+  ...
+# Subtest: plain synthetic consumer and diagnostics examples pass the actual validators
+ok 5 - plain synthetic consumer and diagnostics examples pass the actual validators
+  ---
+  duration_ms: 2.422554
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 604.379645
+{"qualification": "THREE_CONSUMER_PASS", "sourceSha256": "222058dc8c69fa866532ee92374a04ef2a1ab9a2781d4b9fe5ff1e5eb0c380e9", "reviewerArtifactSha256": "3fd5c8b6eb7499a0d684d35d525cfeb989c0be89666f49288a84494ae5f68256", "reviewerTestArtifactSha256": "47a96ffe4b6f4991654cd690301ab75d227c07b6e98764696b53722e0d2b3107", "consumers": ["example-org/sample-project", "harmless-lab/relay-canary", "sample-co/inventory-api"], "scope": "real handlers/modules; isolated Git and loopback mock GitHub; no production deployment, production credentials or model calls"}

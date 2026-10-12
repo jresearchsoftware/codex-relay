@@ -1,0 +1,194 @@
+{
+  "expected_head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+  "limits": {
+    "annotations_total": 250,
+    "items_per_surface": 75,
+    "pages_per_surface": 3,
+    "requests": 40,
+    "response_bytes": 262144,
+    "timeout_seconds": 30,
+    "total_bytes": 2097152
+  },
+  "observed_check_annotation_warnings": 0,
+  "pr_number": 118,
+  "repository": "jresearchsoftware/codex-relay",
+  "requests_observed": 10,
+  "required_surfaces_complete": true,
+  "response_byte_budget_used": 302389,
+  "surfaces": [
+    {
+      "api_path": "/repos/jresearchsoftware/codex-relay/commits/3fff4140c57b993b9f006159529d9459ec9ace13/check-suites",
+      "availability": "available",
+      "items": [
+        {
+          "app_id": 12526,
+          "check_suite_id": 103555863155,
+          "conclusion": null,
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "queued"
+        },
+        {
+          "app_id": 4340311,
+          "check_suite_id": 103555863498,
+          "conclusion": null,
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "queued"
+        },
+        {
+          "app_id": 1236702,
+          "check_suite_id": 103555863783,
+          "conclusion": null,
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "queued"
+        },
+        {
+          "app_id": 5213202,
+          "check_suite_id": 103555864169,
+          "conclusion": null,
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "queued"
+        },
+        {
+          "app_id": 15368,
+          "check_suite_id": 103555884642,
+          "conclusion": "success",
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "completed"
+        }
+      ],
+      "pages_observed": 1,
+      "reason": null,
+      "source": "github_check_suites"
+    },
+    {
+      "api_path": "/repos/jresearchsoftware/codex-relay/actions/runs?head_sha=3fff4140c57b993b9f006159529d9459ec9ace13",
+      "availability": "available",
+      "items": [
+        {
+          "api_path": "/repos/jresearchsoftware/codex-relay/actions/runs/38222724596",
+          "association": "exact_head",
+          "check_suite_id": 103555884642,
+          "conclusion": "success",
+          "event": "pull_request",
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "issue_number": null,
+          "name": "Public CI",
+          "native_url": "https://github.com/jresearchsoftware/codex-relay/actions/runs/38222724596",
+          "outcome_comment_id": null,
+          "reviewed_head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "run_attempt": 1,
+          "run_id": 38222724596,
+          "status": "completed",
+          "text_redacted_or_truncated": false,
+          "workflow_id": 372390264
+        }
+      ],
+      "pages_observed": 1,
+      "reason": null,
+      "source": "github_actions_workflow_runs"
+    },
+    {
+      "additional_api_paths": [],
+      "api_path": "/repos/jresearchsoftware/codex-relay/commits/3fff4140c57b993b9f006159529d9459ec9ace13/check-runs?filter=all",
+      "availability": "available",
+      "items": [
+        {
+          "annotations": {
+            "api_path": "/repos/jresearchsoftware/codex-relay/check-runs/114722642550/annotations",
+            "availability": "absent",
+            "items": [],
+            "pages_observed": 1,
+            "reason": null,
+            "source": "github_check_run_annotations"
+          },
+          "app_id": 15368,
+          "app_slug": "github-actions",
+          "association": "exact_head",
+          "check_run_id": 114722642550,
+          "check_suite_id": 103555884642,
+          "conclusion": "success",
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "name": "Codex CLI compatibility",
+          "native_url": "https://github.com/jresearchsoftware/codex-relay/runs/114722642550",
+          "outcome_comment_id": null,
+          "reviewed_head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "completed",
+          "text_redacted_or_truncated": false,
+          "workflow_run_ids": [
+            38222724596
+          ]
+        },
+        {
+          "annotations": {
+            "api_path": "/repos/jresearchsoftware/codex-relay/check-runs/114722642216/annotations",
+            "availability": "absent",
+            "items": [],
+            "pages_observed": 1,
+            "reason": null,
+            "source": "github_check_run_annotations"
+          },
+          "app_id": 15368,
+          "app_slug": "github-actions",
+          "association": "exact_head",
+          "check_run_id": 114722642216,
+          "check_suite_id": 103555884642,
+          "conclusion": "success",
+          "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "name": "Candidate checks",
+          "native_url": "https://github.com/jresearchsoftware/codex-relay/runs/114722642216",
+          "outcome_comment_id": null,
+          "reviewed_head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+          "status": "completed",
+          "text_redacted_or_truncated": false,
+          "workflow_run_ids": [
+            38222724596
+          ]
+        }
+      ],
+      "pages_observed": 1,
+      "reason": null,
+      "source": "github_check_runs"
+    },
+    {
+      "availability": "unavailable",
+      "explanation": "UI-only GitHub service-level/pre-execution annotations are outside mandatory automated evidence acquisition. No HTML or browser-session fallback is used. Complete in-scope API evidence does not prove absence of GitHub UI warnings.",
+      "items": [],
+      "native_urls": [
+        "https://github.com/jresearchsoftware/codex-relay/actions/runs/38222724596"
+      ],
+      "reason": "GITHUB_UI_ONLY_SERVICE_ANNOTATIONS_OUT_OF_SCOPE",
+      "required_for_completeness": false,
+      "source": "github_workflow_run_platform_annotations"
+    },
+    {
+      "additional_api_paths": [
+        "/repos/jresearchsoftware/codex-relay/issues/115/comments"
+      ],
+      "api_path": "/repos/jresearchsoftware/codex-relay/issues/118/comments",
+      "availability": "absent",
+      "items": [],
+      "pages_observed": 2,
+      "reason": null,
+      "source": "github_relay_execution_outcomes"
+    },
+    {
+      "api_path": "/repos/jresearchsoftware/codex-relay/actions/runs",
+      "availability": "absent",
+      "items": [],
+      "pages_observed": 0,
+      "reason": null,
+      "source": "github_relay_execution_workflow_runs"
+    }
+  ],
+  "target": {
+    "api_path": "/repos/jresearchsoftware/codex-relay/pulls/118",
+    "final_binding": {
+      "availability": "available",
+      "binding_verified": true
+    },
+    "head_sha": "3fff4140c57b993b9f006159529d9459ec9ace13",
+    "initial_binding_verified": true,
+    "source": "github_pull_request"
+  },
+  "warning_observation": "none_observed"
+}

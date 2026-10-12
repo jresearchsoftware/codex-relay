@@ -1,0 +1,22 @@
+{
+  "repository": "jresearchsoftware/codex-relay-testbed",
+  "record": {
+    "schema_version": "4.0",
+    "kind": "decision",
+    "repository": "jresearchsoftware/codex-relay-testbed",
+    "task": 6,
+    "parent": {
+      "kind": "issue",
+      "number": 6
+    },
+    "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+    "purpose": "Qualify immutable manual Outcome publication after trusted Task requirement drift",
+    "amendments": {
+      "scope": [
+        "Verify that the installed TEST Writer honestly reports one immutable-admission-bound synthetic result after this trusted Task requirement amendment, with current-authority drift visible for independent review."
+      ]
+    },
+    "supersedes": null,
+    "context": []
+  }
+}

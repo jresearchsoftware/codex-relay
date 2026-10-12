@@ -1,0 +1,28 @@
+........................................................................ [  6%]
+........................................................................ [ 12%]
+...............................................ssssss.........s......... [ 18%]
+..s.......s..........................sss.sssssssssssssssssssssssssssssss [ 24%]
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssss................ [ 30%]
+........................................................................ [ 36%]
+........................................................................ [ 42%]
+......sss............................................................... [ 48%]
+........................................................................ [ 54%]
+........................................................................ [ 60%]
+..............ssssssssssssssss.........................ss..........sssss [ 66%]
+s.....sssssssssssssssssssssssssssssssssss.....................ssssssssss [ 72%]
+sssssssss...s...s...............................s.ssssssss...ss..s..sss. [ 78%]
+........sssssss.sssss.....s............................................. [ 84%]
+....................ssssssssssssssssssssssssssssssssssssssssss....sss... [ 90%]
+...............................................sssssssssssssssssssssssss [ 96%]
+ssssssssssssssssssss....................                                 [100%]
+=============================== warnings summary ===============================
+deploy/tests/test_instance_configuration.py::test_legacy_identities_and_isolated_rendered_units_do_not_overlap
+  /usr/lib/python3/dist-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+deploy/ansible/tests/test_general_runner.py: 18 warnings
+  /usr/lib/python3/dist-packages/jinja2/lexer.py:655: DeprecationWarning: invalid escape sequence '\s'
+    .decode("unicode-escape")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+892 passed, 300 skipped, 19 warnings in 211.31s (0:03:31)

@@ -1,0 +1,19 @@
+{
+  "provenance": "Recorded from read-only process and service observations during the temporary candidate window in this execution",
+  "scope": "TEST Reviewer service and manual Writer publication only",
+  "candidate_revision": "3fff4140c57b993b9f006159529d9459ec9ace13",
+  "reviewer_pid_during_candidate_window": 2290027,
+  "proc_exe_sha256": "0eb7a7bc6ad040de273bfe92a86914696357677a99c16a7fbd296117f1925145",
+  "proc_namespace_node_version": "22.20.0",
+  "service_user": "relay-test-reviewer",
+  "service_group": "www-data",
+  "no_new_privileges": true,
+  "existing_private_readonly_bind": "/opt/codex-relay-test/node22/bin/node:/usr/bin/node",
+  "manual_socket": "/run/codex-relay-test-manual-outcome.sock",
+  "socket_mode": "0660",
+  "socket_owner": "root:relay-test-reviewer",
+  "automatic_completion_fixture": "Fixed root Writer entrypoint through transient TEST units with NoNewPrivileges=yes and the same private Node22 read-only bind",
+  "shared_global_node_changed": false,
+  "product_installation_lifecycle_qualified": false,
+  "production_qualified": false
+}

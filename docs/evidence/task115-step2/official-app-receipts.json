@@ -1,0 +1,203 @@
+{
+  "task115_test_decision_receipt": {
+    "content": [
+      {
+        "type": "text",
+        "text": "AUTHORITY_PUBLISHED"
+      }
+    ],
+    "structuredContent": {
+      "actor": {
+        "id": 338712847,
+        "login": "jresearch-relay-test-reviewer[bot]",
+        "type": "Bot"
+      },
+      "check": null,
+      "context_provenance": [],
+      "issue_closure_performed": false,
+      "issue_closure_policy": "keep-open",
+      "merge_performed": false,
+      "native_url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6120864980",
+      "pr_lifecycle": null,
+      "record": {
+        "amendments": {
+          "scope": [
+            "Verify that the installed TEST Writer honestly reports one immutable-admission-bound synthetic result after this trusted Task requirement amendment, with current-authority drift visible for independent review."
+          ]
+        },
+        "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+        "context": [],
+        "kind": "decision",
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "purpose": "Qualify immutable manual Outcome publication after trusted Task requirement drift",
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "schema_version": "4.0",
+        "supersedes": null,
+        "task": 6
+      },
+      "reference": {
+        "id": 6120864980,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "sha256": "d19567904224987f68aa9844b89b3a91efde7cdc002f1874e557b037fc7622c0"
+      },
+      "task_acceptance": null,
+      "warnings": []
+    },
+    "isError": false
+  },
+  "task115_no_pr_receipt": {
+    "content": [
+      {
+        "type": "text",
+        "text": "PUBLISHED"
+      }
+    ],
+    "structuredContent": {
+      "independent_acceptance": false,
+      "issue_closure_performed": false,
+      "merge_performed": false,
+      "outcome": {
+        "id": 6120882274,
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "sha256": "ee11bd9b2aa016210ff44a6e71e98c7070f206d654f3bbaefa3708913cf40ba5",
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6120882274"
+      },
+      "repository": "jresearchsoftware/codex-relay-testbed",
+      "run_id": 9007115000401,
+      "status": "PUBLISHED",
+      "task": 6,
+      "writer_actor": "jresearch-relay-test-writer[bot]"
+    },
+    "isError": false
+  },
+  "task115_no_pr_replay": {
+    "content": [
+      {
+        "type": "text",
+        "text": "DUPLICATE_SUPPRESSED"
+      }
+    ],
+    "structuredContent": {
+      "independent_acceptance": false,
+      "issue_closure_performed": false,
+      "merge_performed": false,
+      "outcome": {
+        "id": 6120882274,
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "sha256": "ee11bd9b2aa016210ff44a6e71e98c7070f206d654f3bbaefa3708913cf40ba5",
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6120882274"
+      },
+      "repository": "jresearchsoftware/codex-relay-testbed",
+      "run_id": 9007115000401,
+      "status": "DUPLICATE_SUPPRESSED",
+      "task": 6,
+      "writer_actor": "jresearch-relay-test-writer[bot]"
+    },
+    "isError": false
+  },
+  "task115_no_pr_conflict": {
+    "content": [
+      {
+        "type": "text",
+        "text": "MANUAL_OUTCOME_CHANGED"
+      }
+    ],
+    "structuredContent": {
+      "error_code": "INVALID_ARGUMENT"
+    },
+    "isError": true
+  },
+  "task115_no_pr_tamper": {
+    "content": [
+      {
+        "type": "text",
+        "text": "MANUAL_OUTCOME_BINDING_INVALID"
+      }
+    ],
+    "structuredContent": {
+      "error_code": "INVALID_ARGUMENT"
+    },
+    "isError": true
+  },
+  "task115_pr_receipt": {
+    "content": [
+      {
+        "type": "text",
+        "text": "PUBLISHED"
+      }
+    ],
+    "structuredContent": {
+      "independent_acceptance": false,
+      "issue_closure_performed": false,
+      "merge_performed": false,
+      "outcome": {
+        "id": 6120948158,
+        "parent": {
+          "kind": "pull_request",
+          "number": 7
+        },
+        "sha256": "b1a6388c6915f41c705e56f9833da2e9d9d9166d16213ae02204be14b61a9412",
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6120948158"
+      },
+      "repository": "jresearchsoftware/codex-relay-testbed",
+      "run_id": 9007115000402,
+      "status": "PUBLISHED",
+      "task": 6,
+      "writer_actor": "jresearch-relay-test-writer[bot]"
+    },
+    "isError": false
+  },
+  "task115_pr_replay": {
+    "content": [
+      {
+        "type": "text",
+        "text": "DUPLICATE_SUPPRESSED"
+      }
+    ],
+    "structuredContent": {
+      "independent_acceptance": false,
+      "issue_closure_performed": false,
+      "merge_performed": false,
+      "outcome": {
+        "id": 6120948158,
+        "parent": {
+          "kind": "pull_request",
+          "number": 7
+        },
+        "sha256": "b1a6388c6915f41c705e56f9833da2e9d9d9166d16213ae02204be14b61a9412",
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6120948158"
+      },
+      "repository": "jresearchsoftware/codex-relay-testbed",
+      "run_id": 9007115000402,
+      "status": "DUPLICATE_SUPPRESSED",
+      "task": 6,
+      "writer_actor": "jresearch-relay-test-writer[bot]"
+    },
+    "isError": false
+  },
+  "task115_pr_marker_negative": {
+    "content": [
+      {
+        "type": "text",
+        "text": "PR_AUTHORITY_CHANGED"
+      }
+    ],
+    "structuredContent": {
+      "error_code": "INVALID_ARGUMENT"
+    },
+    "isError": true
+  }
+}
