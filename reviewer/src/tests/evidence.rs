@@ -260,6 +260,30 @@ async fn handler(
         if mock.mode == "runtime403" {
             return StatusCode::FORBIDDEN.into_response();
         }
+        if mock.mode.starts_with("typedoutcome") {
+            let mut authority = json!({"charter":{"kind":"issue-body","id":560,"parent":{"kind":"issue","number":56},"sha256":"c".repeat(64)},"decisions":[],"change_request":null,"compatibility_request":null});
+            authority["sha256"] = json!(crate::task_authority::hash(
+                &serde_json::to_string_pretty(&authority).unwrap()
+            ));
+            let record = json!({"schema_version":"4.0","kind":"outcome","repository":REPOSITORY,"task":56,"parent":{"kind":"issue","number":56},"charter_sha256":"c".repeat(64),
+                "authority":authority,"admission":{"attempt":"run-41","step":1,"sha256":"d".repeat(64)},"step":1,"attempt":"run-41","status":"implemented",
+                "result":{"kind":"git","revision":SHA,"identities":[]},"summary":"The source candidate awaits independent review.","limitations":["Installed behavior unverified."],
+                "warnings":[{"source":"runtime-check","impact":"Qualification remains pending.","resolution":"Deferred to owner-authorized qualification.","next_action":"Inspect the retained limitation.","evidence_gaps":["No ingress probe was authorized."]}]});
+            let mut native = comment(61, WRITER, &crate::task_authority::render(&record));
+            native["user"]["type"] = json!(if mock.mode == "typedoutcomeowner" {
+                "User"
+            } else {
+                "Bot"
+            });
+            native["user"]["id"] = json!(3);
+            if mock.mode == "typedoutcomeinvalid" {
+                native["body"] = json!(format!(
+                    "{}\n```relay-authority\n{{}}\n```",
+                    native["body"].as_str().unwrap()
+                ));
+            }
+            return Json(json!([native])).into_response();
+        }
         let attempt = if mock.mode.starts_with("execution") && mock.mode != "executionpartial" {
             "Attempt: run-41\n"
         } else {
@@ -741,4 +765,30 @@ async fn protected_content_is_redacted_and_multibyte_text_is_bounded() {
         &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
     assert!(annotation["message"].as_str().unwrap().len() <= 2048);
     assert_eq!(annotation["text_redacted_or_truncated"], true);
+}
+
+#[tokio::test]
+async fn folded_typed_outcomes_preserve_exact_head_execution_warning_and_bot_provenance() {
+    let evidence = acquire("typedoutcome").await.0.unwrap();
+    let outcomes = surface(&evidence, "github_relay_execution_outcomes");
+    assert_eq!(outcomes["availability"], "available");
+    assert_eq!(outcomes["items"][0]["workflow_run_id"], 41);
+    assert!(outcomes["items"][0]["warning_summaries"][0]
+        .as_str()
+        .unwrap()
+        .contains("No ingress probe was authorized."));
+    assert_eq!(
+        surface(&evidence, "github_relay_execution_workflow_runs")["items"][0]["head_sha"],
+        OTHER_SHA
+    );
+    for mode in ["typedoutcomeowner", "typedoutcomeinvalid"] {
+        let evidence = acquire(mode).await.0.unwrap();
+        assert_eq!(
+            surface(&evidence, "github_relay_execution_outcomes")["availability"],
+            "unavailable",
+            "{mode}"
+        );
+        assert_eq!(evidence["required_surfaces_complete"], false);
+        assert_eq!(evidence["warning_observation"], "unknown");
+    }
 }

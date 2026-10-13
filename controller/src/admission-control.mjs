@@ -11,6 +11,7 @@ const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
 function validServices(value) {
   const names = ['reviewer', 'production', 'general'];
+  if (value && Object.hasOwn(value, 'manualOutcome')) names.push('manualOutcome');
   return value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).length === names.length && names.every(name => {
       const service = value[name];
@@ -111,10 +112,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       || e.consumerDigest !== consumerDigest) fail('ADMISSION_ATTEMPT_INVALID');
     return e;
   }
-  async function inventory() {
+  async function inventory(task = null) {
     const active = []; const unknown = [];
     for (const record of await store.all()) {
       const e = validRecord(record);
+      if (task !== null && e.issueNumber !== task) continue;
       if (e.route !== 'auto' || record.admissionBlock) continue;
       const recovery = record.prepublicationRecovery;
       if (recovery) {
@@ -162,6 +164,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     },
     read,
     async assertOpen() { if ((await read()).phase !== 'open') fail('ADMISSION_QUIESCED'); },
+    async assertTaskComplete(task) {
+      if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
+      const pending = await inventory(task);
+      if (pending.active.length || pending.unknown.length) fail('PRIOR_EXECUTION_UNRESOLVED');
+    },
     async reserve() { await this.assertOpen(); return { version: 1, status: 'active' }; },
     async quiesce({ operationId, target }) {
       if (!operation(operationId) || !exactSha(target)) fail('ADMISSION_OPERATION_INVALID');

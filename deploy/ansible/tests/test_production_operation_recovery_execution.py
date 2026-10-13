@@ -53,6 +53,8 @@ class ProductionOperationFixture:
         self.manifest = self.root / "current-artifact-manifest.json"
         self.release_root = self.root / "releases"
         self.install_root = self.root / "install"
+        self.systemd_unit_root = self.root / "systemd-units"
+        self.systemd_unit_root.mkdir()
         self.scripts = {}
         self._install_fake_commands()
         self._render_helpers()
@@ -184,6 +186,8 @@ class ProductionOperationFixture:
     def _render_helpers(self):
         context = {
             "relay_install_root": str(self.install_root),
+            "relay_namespace": "codex-relay",
+            "relay_reviewer_group": "relay-reviewer",
             "relay_deployment_profile": "production",
             "relay_reviewer_service_name": "reviewer-mcp.service",
             "relay_runner_service_name": "relay-runner.service",
@@ -225,6 +229,7 @@ class ProductionOperationFixture:
             rendered = rendered.replace("/bin/systemctl", str(self.bin_root / "systemctl"))
             rendered = rendered.replace("/bin/ss", str(self.bin_root / "ss"))
             rendered = rendered.replace("/usr/bin/stat", str(self.bin_root / "stat"))
+            rendered = rendered.replace("/etc/systemd/system/", str(self.systemd_unit_root) + "/")
             path = self.operation_state if name == "operation_state" else self.root / name
             path.write_text(rendered, encoding="utf-8")
             path.chmod(0o755)

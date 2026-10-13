@@ -21,6 +21,8 @@ fn managed_multi_repository_template_is_accepted_by_runtime_contract() {
         runtime.policy,
         ReviewPolicy {
             github_native_authority_enabled: true,
+            manual_outcome_enabled: true,
+            manual_outcome_client_path: "/opt/example-relay/relay-manual-outcome".into(),
             ..test_policy()
         }
     );
@@ -329,7 +331,9 @@ async fn typed_authority_retains_repository_identity_in_the_shared_journal_and_n
     let (http, url, states, store) = client(true).await;
     let mut ids = Vec::new();
     for (index, repository) in REPOSITORIES.into_iter().enumerate() {
-        let record = request(repository);
+        let record = json!({"schema_version":"4.0","kind":"decision","repository":repository,"task":24,
+            "parent":{"kind":"issue","number":24},"charter_sha256":crate::task_authority::hash(CHARTER),
+            "purpose":"Clarify the bounded validation","amendments":{"validation":["diff-check"]},"supersedes":null,"context":[]});
         let arguments = json!({"repository":repository,"record":record});
         for expected in ["AUTHORITY_PUBLISHED", "DUPLICATE_SUPPRESSED"] {
             let result = call(&http, &url, "publish_task_authority", &arguments).await;
@@ -351,7 +355,7 @@ async fn typed_authority_retains_repository_identity_in_the_shared_journal_and_n
         }
         ids.push(crate::task_authority::hash(&format!(
             "task-authority-v1\n{}",
-            crate::task_authority::render(&record)
+            crate::task_authority::render_legacy(&record)
         )));
         assert_eq!(states[index].authority_comments.lock().unwrap().len(), 1);
         if index == 0 {

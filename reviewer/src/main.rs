@@ -18,7 +18,9 @@ use std::{
 use unicode_normalization::UnicodeNormalization;
 mod executable_cr;
 mod github;
+mod manual_outcome;
 mod mtls_identity;
+mod publication_rendering;
 mod step_sync;
 mod store;
 mod strict_json;
@@ -119,7 +121,7 @@ fn tools(validation_names: &[String], repositories: &BTreeSet<String>) -> Value 
     });
     let mut submit = json!({
         "name": "submit_pr_review",
-        "description": "Publish an exact-head GitHub review and SHA-bound check. REQUEST_CHANGES requires structured change_request; Reviewer validates and renders all executable data. APPROVE uses review_body only (optional non-executable structured_findings).",
+        "description": "Publish an exact-head GitHub review and SHA-bound check. NEW remediation requires publish_task_authority with schema_version 4.0 and the qualified enabled typed capability. REQUEST_CHANGES change_request is retained only for exact previously reserved legacy operation recovery when current authority is enabled; never downgrade new work. APPROVE uses review_body; material delivered/current Task drift also requires expected_task_authority_sha256 from the target preview.",
         "inputSchema": {
             "type": "object",
             "additionalProperties": false,
@@ -130,6 +132,7 @@ fn tools(validation_names: &[String], repositories: &BTreeSet<String>) -> Value 
                 "expected_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
                 "action": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES"]},
                 "review_body": {"type": "string", "minLength": 1, "maxLength": 12000},
+                "expected_task_authority_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
                 "structured_findings": {"type": "array", "maxItems": 30},
             }
         },
@@ -151,6 +154,9 @@ fn valid_input(
     name: &str,
     arguments: &Value,
 ) -> Result<(), &'static str> {
+    if name == "submit_manual_outcome" {
+        return manual_outcome::valid_input(repositories, arguments);
+    }
     if name == "publish_task_authority" {
         return task_authority::valid_input(repositories, arguments);
     }
@@ -166,6 +172,7 @@ fn valid_input(
             "review_body",
             "structured_findings",
             "change_request",
+            "expected_task_authority_sha256",
         ]
     } else {
         return Err("UNKNOWN_TOOL");
@@ -219,6 +226,7 @@ fn valid_input(
         if arguments["action"] == "REQUEST_CHANGES" {
             if arguments.get("review_body").is_some()
                 || arguments.get("structured_findings").is_some()
+                || arguments.get("expected_task_authority_sha256").is_some()
             {
                 return Err("STRUCTURED_CHANGE_REQUEST_REQUIRED");
             }
@@ -228,6 +236,19 @@ fn valid_input(
         if arguments.get("change_request").is_some() {
             return Err("APPROVAL_REMEDIATION_FIELDS");
         }
+        if arguments
+            .get("expected_task_authority_sha256")
+            .is_some_and(|value| {
+                value.as_str().is_none_or(|text| {
+                    text.len() != 64
+                        || !text
+                            .bytes()
+                            .all(|ch| ch.is_ascii_digit() || (b'a'..=b'f').contains(&ch))
+                })
+            })
+        {
+            return Err("INVALID_TASK_AUTHORITY_DIGEST");
+        }
         let body = arguments
             .get("review_body")
             .and_then(Value::as_str)
@@ -236,6 +257,9 @@ fn valid_input(
             || body.len() > 12_000
             || !body.nfc().eq(body.chars())
             || body.to_ascii_lowercase().contains("filecite")
+            || body
+                .lines()
+                .any(|line| line.starts_with("<!-- jresearchsoftware-reviewer-acceptance:v1 "))
             || body
                 .chars()
                 .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
@@ -314,10 +338,14 @@ fn valid_finding(finding: &Value) -> bool {
         })
 }
 fn operation_id(validation_names: &[String], arguments: &Value) -> String {
-    let body = review_body(validation_names, arguments);
+    let body = if arguments["action"] == "REQUEST_CHANGES" {
+        executable_cr::render_legacy(validation_names, arguments).expect("validated CR")
+    } else {
+        review_body(validation_names, arguments)
+    };
     let body_hash = format!("{:x}", Sha256::digest(body.as_bytes()));
     let finding_digest = finding_digest(validation_names, arguments);
-    let value = format!(
+    let mut value = format!(
         "{}:{}:{}:{}:{}:{body_hash}:{finding_digest}",
         arguments["repository"],
         arguments["pr_number"],
@@ -325,6 +353,9 @@ fn operation_id(validation_names: &[String], arguments: &Value) -> String {
         arguments["action"],
         "connected-reviewer-shape"
     );
+    if let Some(authority) = arguments["expected_task_authority_sha256"].as_str() {
+        value.push_str(&format!(":authority={authority}"));
+    }
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 fn review_body(validation_names: &[String], arguments: &Value) -> String {
@@ -343,6 +374,22 @@ fn native_review_body(validation_names: &[String], arguments: &Value, operation:
         "{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
         review_body(validation_names, arguments)
     )
+}
+fn retained_review_body(app: &RepositoryTarget<'_>, arguments: &Value, operation: &str) -> String {
+    let store = app.store.lock().expect("store lock");
+    if let Some(body) = store.publication_body(operation).expect("publication body") {
+        return body;
+    }
+    if store.known(operation).expect("operation").is_some()
+        && arguments["action"] == "REQUEST_CHANGES"
+    {
+        return format!(
+            "{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
+            executable_cr::render_legacy(&app.policy.validation_names, arguments)
+                .expect("validated CR")
+        );
+    }
+    native_review_body(&app.policy.validation_names, arguments, operation)
 }
 fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
     let findings = if arguments["action"] == "REQUEST_CHANGES" {
@@ -364,6 +411,8 @@ fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
 struct ReviewPolicy {
     validation_names: Vec<String>,
     github_native_authority_enabled: bool,
+    manual_outcome_enabled: bool,
+    manual_outcome_client_path: String,
     owner: String,
     base_branch: String,
     check_name: String,
@@ -391,6 +440,23 @@ fn review_policy(config: &Value) -> ReviewPolicy {
                     .expect("githubNativeAuthorityEnabled must be a boolean")
             })
             .unwrap_or(false),
+        manual_outcome_enabled: config
+            .get("manualOutcomeEnabled")
+            .map(|value| {
+                value
+                    .as_bool()
+                    .expect("manualOutcomeEnabled must be a boolean")
+            })
+            .unwrap_or(false),
+        manual_outcome_client_path: config
+            .get("manualOutcomeClientPath")
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("manualOutcomeClientPath must be a string")
+                    .to_string()
+            })
+            .unwrap_or_else(|| "/opt/codex-relay/relay-manual-outcome".into()),
         owner: field(&config["owner"]),
         base_branch: field(&config["baseBranch"]),
         check_name: field(&config["reviewCheckName"]),
@@ -403,6 +469,19 @@ fn review_policy(config: &Value) -> ReviewPolicy {
     assert!(
         valid_repository(&format!("{}/task", policy.owner)),
         "Invalid owner identity"
+    );
+    let client = &policy.manual_outcome_client_path;
+    assert!(
+        client.starts_with('/')
+            && client.rsplit('/').next() == Some("relay-manual-outcome")
+            && client[1..]
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..")
+            && client.len() <= 256
+            && client
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/_-.".contains(&byte)),
+        "manualOutcomeClientPath must be a fixed absolute protected client path"
     );
     let branch = &policy.base_branch;
     assert!(
@@ -572,7 +651,14 @@ async fn mcp(
             json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"codex-relay-reviewer","version":"0.1.0"}})
         }
         Some("tools/list") => {
-            json!({"tools":tools(&app.policy.validation_names, &app.repositories)})
+            let mut listed = tools(&app.policy.validation_names, &app.repositories);
+            if app.policy.manual_outcome_enabled {
+                listed
+                    .as_array_mut()
+                    .unwrap()
+                    .push(manual_outcome::tool(&app.repositories));
+            }
+            json!({"tools":listed})
         }
         Some("tools/call") => {
             let name = request
@@ -597,7 +683,9 @@ async fn mcp(
                 Ok(target) => target,
                 Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response(),
             };
-            if name == "publish_task_authority" {
+            if name == "submit_manual_outcome" {
+                manual_outcome::submit(&app, arguments).await
+            } else if name == "publish_task_authority" {
                 task_authority::publish(&app, arguments).await
             } else if name == "read_pr_review_evidence" {
                 match app
@@ -643,7 +731,15 @@ async fn mcp(
                             {
                                 json!({"content":[{"type":"text","text":"PR_STATE_UNAVAILABLE"}],"isError":true})
                             } else {
-                                json!({"content":[{"type":"text","text":"OK"}],"structuredContent":{"current_head_sha":current_head,"state":state,"draft":draft,"merged":merged,"ready_for_review":state == Some("open") && !merged.unwrap_or(true) && !draft.unwrap_or(true) && current_head == arguments["expected_head_sha"].as_str(),"author":pr.pointer("/user/login"),"authenticated_app_slug":identity.get("slug"),"expected_actor":app.policy.actor,"exact_head":current_head == arguments["expected_head_sha"].as_str()}})
+                                let mut preview_args = arguments.clone();
+                                preview_args["action"] = json!("APPROVE");
+                                preview_args["_preview"] = json!(true);
+                                let acceptance =
+                                    match current_approval_authority(&app, &preview_args).await {
+                                        Ok(binding) => json!(binding),
+                                        Err(code) => json!({"error_code":code}),
+                                    };
+                                json!({"content":[{"type":"text","text":"OK"}],"structuredContent":{"current_head_sha":current_head,"state":state,"draft":draft,"merged":merged,"ready_for_review":state == Some("open") && !merged.unwrap_or(true) && !draft.unwrap_or(true) && current_head == arguments["expected_head_sha"].as_str(),"author":pr.pointer("/user/login"),"authenticated_app_slug":identity.get("slug"),"expected_actor":app.policy.actor,"exact_head":current_head == arguments["expected_head_sha"].as_str(),"task_acceptance":acceptance}})
                             }
                         }
                         Ok(_) => {
@@ -659,6 +755,23 @@ async fn mcp(
                 tracing::info!(event = "review_attempt", outcome = "RELAY_DISABLED", repository = %arguments["repository"], pr_number = ?arguments["pr_number"]);
                 json!({"content":[{"type":"text","text":"RELAY_DISABLED"}],"isError":true})
             } else if name == "submit_pr_review" {
+                if app.policy.github_native_authority_enabled
+                    && arguments["action"] == "REQUEST_CHANGES"
+                {
+                    let known = app
+                        .store
+                        .lock()
+                        .expect("store lock")
+                        .known(&operation_id(&app.policy.validation_names, arguments));
+                    let rejection = match known {
+                        Ok(None) => Some("CURRENT_PROTOCOL_REQUIRED"),
+                        Err(_) => Some("INTERNAL_RELAY_ERROR"),
+                        Ok(Some(_)) => None,
+                    };
+                    if let Some(code) = rejection {
+                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                    }
+                }
                 let pr = match app.github.get_pr(arguments["repository"].as_str().unwrap_or(""),arguments["pr_number"].as_i64().unwrap_or(0)).await { Ok(value)=>value, Err(code)=>return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response() };
                 // Writer may already have drafted this exact published CR.
                 // Permit its own publication recovery, never a new review of
@@ -693,10 +806,48 @@ async fn mcp(
                     let operation = operation_id(&app.policy.validation_names, arguments);
                     let marker =
                         format!("jresearchsoftware-reviewer-relay:v1 operation={operation}");
-                    let reserve = app.store.lock().expect("store lock").reserve(
+                    let approval_binding = match current_approval_authority(&app, arguments).await {
+                        Ok(binding) => binding,
+                        Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response(),
+                    };
+                    if let Err(code) = verify_approval_authority(
+                        &app,
+                        &operation,
+                        approval_binding.as_ref(),
+                        false,
+                    ) {
+                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                    }
+                    let mut current_body =
+                        native_review_body(&app.policy.validation_names, arguments, &operation);
+                    if let Some(binding) = &approval_binding {
+                        current_body.push_str(&format!("\n<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256={} -->", binding["authority"]["sha256"].as_str().unwrap()));
+                    }
+                    let legacy_body = if arguments["action"] == "REQUEST_CHANGES" {
+                        format!("{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
+                            executable_cr::render_legacy(&app.policy.validation_names, arguments).expect("validated CR"))
+                    } else {
+                        current_body.clone()
+                    };
+                    let reservation = app.store.lock().expect("store lock").reserve_publication(
                         &operation,
                         &finding_digest(&app.policy.validation_names, arguments),
+                        &current_body,
+                        &legacy_body,
                     );
+                    let body = reservation
+                        .as_ref()
+                        .map(|(_, body)| body.clone())
+                        .unwrap_or(current_body);
+                    let reserve = reservation.map(|(reserved, _)| reserved);
+                    if let Err(code) = verify_approval_authority(
+                        &app,
+                        &operation,
+                        approval_binding.as_ref(),
+                        reserve.as_ref().is_ok_and(|reserved| *reserved),
+                    ) {
+                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                    }
                     match reserve {
                         Ok(false) => {
                             let known = app
@@ -773,6 +924,27 @@ async fn mcp(
                                     }
                                 }
                             } else {
+                                if arguments["action"] == "APPROVE" {
+                                    if let Some(known) = &known {
+                                        if let (Some(review_id), Some(url), Some(actor)) = (
+                                            known.review_id,
+                                            known.review_url.as_deref(),
+                                            known.actor_login.as_deref(),
+                                        ) {
+                                            let result = complete_check(
+                                                &app,
+                                                &operation,
+                                                review_id,
+                                                url,
+                                                actor,
+                                                arguments,
+                                                "DUPLICATE_SUPPRESSED",
+                                            )
+                                            .await;
+                                            return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":result}))).into_response();
+                                        }
+                                    }
+                                }
                                 if arguments["action"] == "REQUEST_CHANGES" {
                                     let synced = match known.as_ref().and_then(|x| x.review_id) {
                                         Some(review_id) => {
@@ -832,7 +1004,32 @@ async fn mcp(
                                         .retryable_failure(&operation);
                                     return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
                                 }
-                                let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":native_review_body(&app.policy.validation_names, arguments, &operation)});
+                                let latest = match current_approval_authority(&app, arguments).await
+                                {
+                                    Ok(binding) => binding,
+                                    Err(code) => {
+                                        let _ = app
+                                            .store
+                                            .lock()
+                                            .expect("store lock")
+                                            .retryable_failure(&operation);
+                                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                                    }
+                                };
+                                if let Err(code) = verify_approval_authority(
+                                    &app,
+                                    &operation,
+                                    latest.as_ref(),
+                                    false,
+                                ) {
+                                    let _ = app
+                                        .store
+                                        .lock()
+                                        .expect("store lock")
+                                        .retryable_failure(&operation);
+                                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
+                                }
+                                let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":body});
                                 match app
                                     .github
                                     .create_review(
@@ -853,11 +1050,13 @@ async fn mcp(
                                         .await
                                     }
                                     Err(code) => {
-                                        let _ = app
-                                            .store
-                                            .lock()
-                                            .expect("store lock")
-                                            .retryable_failure(&operation);
+                                        if approval_binding.is_none() {
+                                            let _ = app
+                                                .store
+                                                .lock()
+                                                .expect("store lock")
+                                                .retryable_failure(&operation);
+                                        }
                                         tracing::warn!(event = "review_attempt", outcome = "RETRYABLE_FAILURE", operation = %operation, error_code = code);
                                         json!({"content":[{"type":"text","text":code}],"isError":true})
                                     }
@@ -895,12 +1094,58 @@ async fn complete_check(
 ) -> Value {
     let repository = arguments["repository"].as_str().unwrap_or("");
     let sha = arguments["expected_head_sha"].as_str().unwrap_or("");
+    if arguments["action"] == "APPROVE" {
+        let native = match app
+            .github
+            .authority_source(
+                repository,
+                "review",
+                arguments["pr_number"].as_u64().unwrap(),
+                review_id as u64,
+            )
+            .await
+        {
+            Ok(native) => native,
+            Err(code) => return task_authority::error(code),
+        };
+        if native["id"].as_i64() != Some(review_id)
+            || native["state"] != "APPROVED"
+            || native["commit_id"] != arguments["expected_head_sha"]
+            || native["user"]["login"] != app.policy.actor
+            || native["user"]["type"] != "Bot"
+            || native["pull_request_url"]
+                != format!(
+                    "https://api.github.com/repos/{repository}/pulls/{}",
+                    arguments["pr_number"]
+                )
+            || native["body"] != retained_review_body(app, arguments, operation)
+        {
+            return task_authority::error("APPROVAL_NATIVE_BINDING_MISMATCH");
+        }
+    }
+    let binding = match current_approval_authority(app, arguments).await {
+        Ok(binding) => binding,
+        Err(code) => return task_authority::error(code),
+    };
+    if let Err(code) = verify_approval_authority(app, operation, binding.as_ref(), false) {
+        return task_authority::error(code);
+    }
     if let Err(code) = step_sync::synchronize(app, operation, review_id, arguments).await {
         return json!({"content":[{"type":"text","text":"REVIEW_PUBLISHED_METADATA_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"error_code":code}});
     }
     let check = match app.github.find_check(repository, sha, operation).await {
         Ok(Some(check)) => check,
         Ok(None) => {
+            if binding.is_some()
+                && !app
+                    .store
+                    .lock()
+                    .expect("store lock")
+                    .reserve_authority_check(operation)
+                    .unwrap_or(false)
+            {
+                return task_authority::error("CHECK_PUBLICATION_UNCERTAIN");
+            }
             let action = arguments["action"].as_str().unwrap_or("");
             let conclusion = if action == "APPROVE" {
                 "success"
@@ -943,9 +1188,34 @@ async fn complete_check(
     };
     let check_id = check.get("id").and_then(Value::as_i64);
     let check_url = check.get("html_url").and_then(Value::as_str);
+    if app
+        .store
+        .lock()
+        .expect("store lock")
+        .known(operation)
+        .ok()
+        .flatten()
+        .and_then(|row| row.check_id)
+        .is_some_and(|id| check_id != Some(id))
+    {
+        return task_authority::error("CHECK_VERIFICATION_FAILED");
+    }
     if check.get("name").and_then(Value::as_str) != Some(app.policy.check_name.as_str())
         || check.get("head_sha").and_then(Value::as_str) != Some(sha)
         || check.pointer("/app/slug").and_then(Value::as_str) != Some(app.policy.slug.as_str())
+        || check["app"]["id"]
+            .as_u64()
+            .map(|id| id.to_string())
+            .as_deref()
+            != Some(app.policy.app_id.as_str())
+        || check["external_id"] != operation
+        || check["status"] != "completed"
+        || check["conclusion"]
+            != if arguments["action"] == "APPROVE" {
+                "success"
+            } else {
+                "failure"
+            }
         || check_id.is_none()
         || check_url.is_none()
     {
@@ -955,6 +1225,15 @@ async fn complete_check(
             .expect("store lock")
             .check_retryable_failure(operation, "CHECK_VERIFICATION_RETRYABLE_FAILURE");
         return json!({"content":[{"type":"text","text":"CHECK_VERIFICATION_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"check_stage":"CHECK_VERIFICATION_RETRYABLE_FAILURE"}});
+    }
+    if binding.is_some() {
+        let latest = match current_approval_authority(app, arguments).await {
+            Ok(binding) => binding,
+            Err(code) => return task_authority::error(code),
+        };
+        if let Err(code) = verify_approval_authority(app, operation, latest.as_ref(), false) {
+            return task_authority::error(code);
+        }
     }
     if app
         .store
@@ -999,7 +1278,7 @@ async fn approval_continuation_plan(
             || native["commit_id"] != arguments["expected_head_sha"]
             || native["user"]["login"] != app.policy.actor || native["user"]["type"] != "Bot"
             || native["pull_request_url"] != format!("https://api.github.com/repos/{}/pulls/{}",app.repository,arguments["pr_number"])
-            || native["body"] != native_review_body(&app.policy.validation_names, arguments, &operation_id(&app.policy.validation_names, arguments)) {
+            || native["body"] != retained_review_body(app, arguments, &operation_id(&app.policy.validation_names, arguments)) {
             return Err("APPROVAL_NATIVE_BINDING_MISMATCH");
         }
         let issue_number = step_sync::linked_issue(&pr)?;
@@ -1011,24 +1290,152 @@ async fn approval_continuation_plan(
         }
         let body = issue["body"].as_str().ok_or("ISSUE_NOT_ADMITTED")?;
         let lines: Vec<_> = body.lines().filter(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("issue closure policy")).collect();
-        let close_authorized = lines.len() == 1 && lines[0] == "Issue closure policy: close-authorized";
+        let mut close_authorized = lines.len() == 1 && lines[0] == "Issue closure policy: close-authorized";
         let valid_closure = lines.len() == 1 && matches!(lines[0], "Issue closure policy: close-authorized" | "Issue closure policy: keep-open");
         let typed = body.lines().any(|line| line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*').to_ascii_lowercase().starts_with("authority model"));
-        let request = if typed { task_authority::approved_continuation(app, &issue, &pr, &arguments["expected_head_sha"]).await? } else { Value::Null };
+        let request = if typed { task_authority::approved_continuation(app, &issue, &pr, &arguments["expected_head_sha"], false).await? } else { Value::Null };
+        if request["schema_version"] == "4.0" {
+            verify_approval_authority(app, &operation_id(&app.policy.validation_names, arguments), Some(&request), false)?;
+        }
+        if request["schema_version"]=="4.0" { close_authorized=request["issue_closure_policy"]=="close-authorized"; }
         let held = request["continuation"]["hold"] == true;
         let task_complete = !typed || request["continuation"]["task_complete"] == true;
         let remaining_task_work = request["continuation"]["next"]["task"].as_u64() == Some(issue_number);
-        Ok(json!({"policy":"native-approve-exact-head-squash-v1","repository":app.repository,
+        let mut plan=json!({"policy":"native-approve-exact-head-squash-v1","repository":app.repository,
             "task":issue_number,"pr_number":arguments["pr_number"],"review_id":review_id,
             "approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash",
             "automatic_continuation_authorized":!held,"required_native_checks":"must_pass_for_exact_head",
             "mergeability":"must_be_verified","unresolved_checks":"block_continuation",
             "issue_closure_policy":if close_authorized {"close-authorized"} else {"keep-open"},
             "close_issue_authorized":close_authorized && task_complete && !held && !remaining_task_work,"hold":held,"task_complete":task_complete,"remaining_task_work":remaining_task_work,"request_authority":request,"warnings":if valid_closure {json!([])} else {json!(["ISSUE_CLOSURE_POLICY_INVALID"])},
-            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
+            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false});
+        if request["schema_version"]=="4.0" {
+            let object=plan.as_object_mut().unwrap();
+            for key in ["task_complete","remaining_task_work","close_issue_authorized"] { object.remove(key); }
+            object.insert("completion_conditions".into(),json!("trusted-owner-canonical-state-required"));
+            object.insert("next".into(),request["continuation"]["next"].clone());
+            object.insert("warnings".into(),request["warnings"].clone());
+        }
+        Ok(plan)
     }.await;
     result.unwrap_or_else(|code| json!({"policy":"native-approve-exact-head-squash-v1","approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash","required_native_checks":"must_pass_for_exact_head","automatic_continuation_authorized":false,"close_issue_authorized":false,
         "error_code":code,"execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
+}
+
+async fn current_approval_authority(
+    app: &RepositoryTarget<'_>,
+    arguments: &Value,
+) -> Result<Option<Value>, &'static str> {
+    if arguments["action"] != "APPROVE" || !app.policy.github_native_authority_enabled {
+        return Ok(None);
+    }
+    let pr = app
+        .github
+        .get_pr(&app.repository, arguments["pr_number"].as_i64().unwrap())
+        .await?;
+    let candidates = step_sync::linked_issue_candidates(&pr)?;
+    // These existing projections/transport markers are refusal cues only. They
+    // cannot admit a Task, but incomplete inspection must not turn a governed
+    // candidate into an ordinary ungoverned approval.
+    let governed = pr["labels"].as_array().is_some_and(|labels| {
+        labels.iter().any(|label| {
+            label["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("step-"))
+        })
+    }) || pr["title"]
+        .as_str()
+        .is_some_and(|title| title.starts_with("Task "))
+        || pr["body"].as_str().is_some_and(|body| {
+            body.lines().any(|line| {
+                line.starts_with("Execution admission digest: ")
+                    || line.starts_with("Execution request digest: ")
+            })
+        });
+    if governed && (candidates.is_empty() || candidates.len() > 20) {
+        return Err("CANONICAL_ISSUE_AMBIGUOUS");
+    }
+    let marked = |issue: &Value| {
+        issue["body"].as_str().is_some_and(|body| {
+            body.lines().any(|line| {
+                line.trim_start_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == '*')
+                    .to_ascii_lowercase()
+                    .starts_with("authority model")
+            })
+        })
+    };
+    let mut issue = None;
+    for candidate in candidates.iter().take(20) {
+        match app.github.get_issue(&app.repository, *candidate).await {
+            Ok(native) => {
+                if marked(&native) {
+                    issue = Some(native);
+                    break;
+                }
+            }
+            Err(code) if governed => return Err(code),
+            Err(_) => {}
+        }
+    }
+    let Some(issue) = issue else {
+        return Ok(None);
+    };
+    if candidates.len() != 1 {
+        return Err("CANONICAL_ISSUE_AMBIGUOUS");
+    }
+    let authority = task_authority::approved_continuation(
+        app,
+        &issue,
+        &pr,
+        &arguments["expected_head_sha"],
+        true,
+    )
+    .await?;
+    if authority["schema_version"] == "4.0" && arguments["_preview"] != true {
+        if let Some(expected) = arguments.get("expected_task_authority_sha256") {
+            if *expected != authority["authority"]["sha256"] {
+                return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+            }
+        } else if authority["authority_drift"]["review_required"] == true {
+            return Err("AUTHORITY_APPROVAL_CURRENT_TASK_REQUIRED");
+        }
+    }
+    Ok((authority["schema_version"] == "4.0").then_some(authority))
+}
+
+fn verify_approval_authority(
+    app: &RepositoryTarget<'_>,
+    operation: &str,
+    current: Option<&Value>,
+    prepare: bool,
+) -> Result<(), &'static str> {
+    let Some(current) = current else {
+        return Ok(());
+    };
+    let binding = json!({"authority":current["authority"],"original_authority":current["original_authority"],"admission":current["admission"],"outcome":current["outcome"]});
+    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    let original = store
+        .authority_binding(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    if let Some(original) = original {
+        let original: Value =
+            serde_json::from_str(&original).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        if original != binding {
+            return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+        }
+    } else if prepare {
+        store
+            .bind_authority(operation, &binding.to_string())
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    } else if store
+        .known(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .is_some()
+        && current["authority"] != current["original_authority"]
+    {
+        return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
+    }
+    Ok(())
 }
 
 async fn record_review(
@@ -1038,12 +1445,13 @@ async fn record_review(
     outcome: &str,
     arguments: &Value,
 ) -> Value {
-    if arguments["action"] == "REQUEST_CHANGES"
-        && (review["state"] != "CHANGES_REQUESTED"
-            || review["body"].as_str()
-                != Some(
-                    native_review_body(&app.policy.validation_names, arguments, operation).as_str(),
-                ))
+    if review["state"]
+        != if arguments["action"] == "APPROVE" {
+            "APPROVED"
+        } else {
+            "CHANGES_REQUESTED"
+        }
+        || review["body"].as_str() != Some(retained_review_body(app, arguments, operation).as_str())
     {
         return json!({"content":[{"type":"text","text":"REVIEW_CONTRACT_VERIFICATION_FAILED"}],"isError":true});
     }
@@ -1052,7 +1460,8 @@ async fn record_review(
     let url = review.get("html_url").and_then(Value::as_str);
     if review.get("commit_id") != Some(&arguments["expected_head_sha"])
         || actor != Some(app.policy.actor.as_str())
-        || review_id.is_none()
+        || review["user"]["type"] != "Bot"
+        || review_id.is_none_or(|id| id <= 0)
         || url.is_none()
     {
         return json!({"content":[{"type":"text","text":"ACTOR_VERIFICATION_FAILED"}],"isError":true});
@@ -1314,6 +1723,8 @@ mod tests {
         ReviewPolicy {
             validation_names: Vec::new(),
             github_native_authority_enabled: false,
+            manual_outcome_enabled: false,
+            manual_outcome_client_path: "/opt/codex-relay/relay-manual-outcome".into(),
             owner: "example-owner".into(),
             base_branch: "main".into(),
             check_name: "chatgpt-review".into(),
@@ -1451,7 +1862,12 @@ mod tests {
         let (http, url) = client_with_state(true, None, state.clone()).await;
         let args = cr_fixture();
         let expected = fs::read_to_string(fixture_path("executable-cr-v2.md")).unwrap();
-        assert_eq!(review_body(&[], &args), expected.trim_end());
+        assert_eq!(
+            executable_cr::render_legacy(&[], &args).unwrap(),
+            expected.trim_end()
+        );
+        assert!(review_body(&[], &args)
+            .contains("<details><summary>Machine-readable authority (JSON)</summary>"));
         for expected_status in ["PUBLISHED", "DUPLICATE_SUPPRESSED"] {
             let result = rpc(
                 &http,
@@ -1471,7 +1887,7 @@ mod tests {
         assert!(reviews[0]["body"]
             .as_str()
             .unwrap()
-            .starts_with(expected.trim_end()));
+            .starts_with(&review_body(&[], &args)));
         assert_consumer_admits(&args, &reviews[0]);
     }
 
@@ -1979,6 +2395,7 @@ mod tests {
     struct MockState {
         repository: String,
         policy: ReviewPolicy,
+        store: Arc<Mutex<store::Store>>,
         installation_id: String,
         observed_arguments: ObservedArguments,
         requests: Arc<Mutex<Vec<String>>>,
@@ -1994,6 +2411,10 @@ mod tests {
         authority_pr_comments: Arc<Mutex<Vec<Value>>>,
         authority_sources: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
         authority_publication_mode: Arc<Mutex<Option<String>>>,
+        authority_review_mode: Arc<Mutex<Option<String>>>,
+        authority_check_mode: Arc<Mutex<Option<String>>>,
+        authority_check_read_failure: Arc<Mutex<bool>>,
+        check_runs: Arc<Mutex<Vec<Value>>>,
     }
 
     impl Default for MockState {
@@ -2001,6 +2422,7 @@ mod tests {
             Self {
                 repository: TEST_REPOSITORY.into(),
                 policy: test_policy(),
+                store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
                 installation_id: "1".into(),
                 observed_arguments: Default::default(),
                 requests: Default::default(),
@@ -2016,6 +2438,10 @@ mod tests {
                 authority_pr_comments: Default::default(),
                 authority_sources: Default::default(),
                 authority_publication_mode: Default::default(),
+                authority_review_mode: Default::default(),
+                authority_check_mode: Default::default(),
+                authority_check_read_failure: Default::default(),
+                check_runs: Default::default(),
             }
         }
     }
@@ -2222,6 +2648,8 @@ mod tests {
                 .collect::<Vec<_>>())),
             (Method::POST, "pulls/25/reviews") => {
                 let payload: Value = serde_json::from_slice(&body).unwrap();
+                let mode = state.authority_review_mode.lock().unwrap().take();
+                if mode.as_deref() == Some("missing") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
                 let response = state
                     .review_response
                     .lock()
@@ -2229,13 +2657,26 @@ mod tests {
                     .clone()
                     .unwrap_or_else(|| { let mut review = native_review_for_repository(&payload, &state.repository); review["id"] = json!(state.reviews.lock().unwrap().len() + 1); review["user"]["login"] = json!(state.policy.actor); review });
                 state.reviews.lock().unwrap().push(payload);
+                if mode.as_deref() == Some("lost") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
                 response
             }
             (Method::GET, "commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/check-runs") => {
-                json!({"check_runs":[]})
+                if std::mem::take(&mut *state.authority_check_read_failure.lock().unwrap()) { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+                json!({"check_runs":*state.check_runs.lock().unwrap()})
             }
             (Method::POST, "check-runs") => {
-                json!({"id":2,"html_url":"https://example/check-runs/2","head_sha":HEAD,"name":state.policy.check_name,"app":{"slug":if check_mode == Some("wrong-app") { "other-app" } else { &state.policy.slug }}})
+                let mode = state.authority_check_mode.lock().unwrap().take();
+                if mode.as_deref() == Some("missing") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+                let mut check: Value = serde_json::from_slice(&body).unwrap();
+                let mut checks = state.check_runs.lock().unwrap();
+                let id = checks.len() + 2;
+                check["id"] = json!(id);
+                check["html_url"] = json!(format!("https://example/check-runs/{id}"));
+                check["app"] = json!({"slug":if check_mode == Some("wrong-app") { "other-app" } else { &state.policy.slug },"id":state.policy.app_id.parse::<u64>().unwrap()});
+                checks.push(check.clone());
+                if mode.as_deref() == Some("reread") { *state.authority_check_read_failure.lock().unwrap() = true; }
+                if mode.as_deref() == Some("lost") { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+                check
             }
             _ => return StatusCode::NOT_FOUND.into_response(),
         };
@@ -2288,6 +2729,7 @@ mod tests {
     ) -> (reqwest::Client, String) {
         let observed_arguments = state.observed_arguments.clone();
         let policy = state.policy.clone();
+        let store = state.store.clone();
         let installation_id = state.installation_id.clone();
         let github = github::Github::mock_api_with_check_mode(mock_api(state).await, check_mode)
             .with_test_installation(installation_id);
@@ -2296,7 +2738,7 @@ mod tests {
             repositories: BTreeSet::from([repository.into()]),
             observed_arguments,
             enabled,
-            store: Arc::new(Mutex::new(store::Store::open(":memory:").expect("store"))),
+            store,
             github,
             trusted_client_ca: Arc::new(Vec::new()),
         });
@@ -2493,6 +2935,7 @@ mod tests {
                 relay_github_base_branch => "main",
                 relay_review_check_name => "chatgpt-review",
                 relay_writer_expected_actor => "example-writer[bot]",
+                relay_install_root => "/opt/example-relay",
                 relay_reviewer_app_slug => "example-reviewer",
                 relay_reviewer_app_id => "102",
                 relay_reviewer_app_installation_id => "202",
@@ -2524,6 +2967,8 @@ mod tests {
             RuntimeConfig {
                 policy: ReviewPolicy {
                     github_native_authority_enabled: true,
+                    manual_outcome_enabled: true,
+                    manual_outcome_client_path: "/opt/example-relay/relay-manual-outcome".into(),
                     ..test_policy()
                 },
                 repositories: BTreeSet::from([TEST_REPOSITORY.into()]),

@@ -154,6 +154,11 @@ def inspect(config):
         for root in SYSTEMD_ROOTS:
             absent(Path(root) / unit)
         dropins = inspect_dropins(config, unit)
+        if unit.endswith('@.service'):
+            # Empty templates have no runtime state. Their file and drop-in
+            # absence are sufficient; only instantiated services are probed.
+            state['units'][unit] = {'template': True, 'dropins': dropins}
+            continue
         output = command(['/bin/systemctl', 'show', unit,
                           '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,FragmentPath,DropInPaths'])
         values = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
@@ -196,7 +201,7 @@ def execute(config, mode):
             and config['archiveRoot'] == config['stateRoot'] + '/superseded-operations'
             and config['lock'] == config['runtimeRoot'] + '/production-operation.lock', 'layout')
     require(config['productionRunnerUnit'] in config['units']
-            and all(re.fullmatch(r'[A-Za-z0-9_.@-]+\.(service|timer)', unit) for unit in config['units'])
+            and all(re.fullmatch(r'[A-Za-z0-9_.@-]+\.(service|timer|socket)', unit) for unit in config['units'])
             and config['dropinRoot'] == str(Path(SYSTEMD_ROOTS[0]) / (config['productionRunnerUnit'] + '.d')),
             'dropin-layout')
     lock_meta = metadata(config['lock'], stat.S_ISREG, 0o644)

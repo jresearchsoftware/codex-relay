@@ -26,7 +26,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(self.job['timeout-minutes'], 120)
         self.assertNotIn('uses', self.step)
         self.assertEqual(self.step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
-        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v2',
+        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v3',
             'RELAY_LIFECYCLE_ACTION': '${{ inputs.action }}', 'NODE_OPTIONS': '', 'NODE_PATH': ''})
         self.assertNotIn('${{', self.step['run'])
         self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', self.step['run'])
@@ -107,7 +107,7 @@ class ProductionWorkflowTests(unittest.TestCase):
             self.assertNotIn('FIXTURE_HELPER=', blocked.stdout)
             identity.write_text(json.dumps({'revision': HEAD}))
             self.assertEqual(run(FIXTURE_EXIT='64').returncode, 64)
-            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v2'}))
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v3'}))
             self.assertNotEqual(run().returncode, 0)
             compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))
             next_head = 'd' * 40

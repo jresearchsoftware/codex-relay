@@ -1,0 +1,1137 @@
+# Task 115 bounded qualification observations
+
+This note preserves historical Step 1 source, TEST and publication observations.
+Its claims of an owner-authorized missing-Writer-Outcome exception were
+subsequently rejected by the owner and grant no completion authority or
+precedent. The original Step 1 Outcome remains absent; its admission, Request
+and protected records are unchanged. The corrected
+[CR-115-001](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5487214267)
+and selected [Decision 6119068011](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6119068011)
+governed Step 2. See the [Step 3 report](task115-step3-validation.md) and current
+[CR-115-002](https://github.com/jresearchsoftware/codex-relay/pull/118#pullrequestreview-5490953732) for the current
+disposition. Historical sections named "current" below describe their original
+observations. This evidence grants no independent acceptance, product merge,
+Issue closure, production installation or deployment authority.
+
+## Current qualification disposition
+
+Current trusted [Request 6114012178](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114012178)
+selects [Decision 6114003261](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6114003261).
+The owner explicitly adopts general full operational control of an owned,
+isolated disposable TEST sandbox for manual and automatic Codex. Suitable
+shell/tool cleanup, service management and removal of disposable blocking
+journals/state are authorized; production-safe lifecycle procedures are optional
+for that cleanup. This supersedes the earlier mandatory-public-removal boundary
+recorded below. PROD, shared/foreign resources and external permissions or
+credentials outside established authority remain excluded. General production
+upgrade recovery belongs to Task 119 and is not developed here.
+
+The current continuation starts from published PR 118 head `7862bb742...`,
+preserving original admission/Step 1 and the missing-Writer-Outcome handoff
+exception. The [completed clean installation and live fixture qualification](#completed-clean-test-installation-and-live-manual-outcome-qualification)
+below supersede the old installation/recovery stop. Installed TEST revision is
+`5699432e95440307fa799b0a3b8ac3150ffd574a`; the newer product source includes a
+separately tested TEST-policy prompt routing sentence. The [later official TEST App qualification](#official-connected-test-app-e2e-completion)
+resolves the earlier four-tool catalog gap and verifies new-tool publication
+through the official connected OpenAI mTLS path. Admission-shaped records remain
+explicitly synthetic. The [TEST manual-service correction](#test-manual-service-node-22-correction)
+qualifies the manual client/Writer on isolated Node 22; global host/lifecycle
+Node 18.20.4 remains a broader unsupported-runtime limitation.
+
+The historical supported recovery to `44f97a8...` failed after partial apply, before the
+release pointer changed from `dbfea188...`. Its retained exact-head record and
+lifecycle operation `73034a9b-47a1-4ec3-993a-166560bfd39e` remain intact and
+recovery-required at the earlier observation. The subsequent read-only check
+performed zero changes and reported `recovery-requires-disposition`. The source
+packaging/reuse correction is qualified. Earlier removal and live E2E blockers
+below retain their then-current authority; they are not current prohibitions
+on authorized disposable TEST cleanup.
+
+The current owner-authorized handoff uses PR 118 plus committed evidence,
+explicitly without a normal Writer Outcome. The general authority-change
+publication requirement is deferred and is not a Task 115 completion gate.
+Earlier observations below retain their historical heads/authority; later
+sections record each superseding fact rather than changing old evidence.
+
+## Original admission and historical authority
+
+The original launch was installed schema-v3 Request
+[6109630038](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6109630038),
+whose native body SHA-256 is
+`baead0f01eb40853eff28791cbb067d703f811037fa26e25b8c121d52e4d4bde`.
+Native run [38144146016](https://github.com/jresearchsoftware/codex-relay/actions/runs/38144146016)
+completed its first owner-triggered Issue/manual handoff attempt at product
+`b4cb4943d52dd375d8c6800959b3264fad082cb8`.
+
+The owner later authorized bounded isolated TEST consumer/configuration work
+through current v3 [Decision 6110064799](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6110064799)
+and same-Step [successor Request 6110068398](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6110068398).
+Their read-back body SHA-256 values are
+`1d662713e73803586945c7644601f8029d8398447f571b6bfd9a43b4212c4468` and
+`e9eb320876b41a34e03d9e8f033280be36fa72c109cbe96d42bb41cf32d1b978`.
+No new ready event, execution, Step or admitted-journal rewrite accompanied
+that authoring change.
+
+## TEST configuration and read-only inventory
+
+A separate clean TEST consumer checkout started from main
+`52d66305557a74264cd0f5b82ec0b90804baa98c`. Its literal configuration identifies
+`jresearchsoftware/codex-relay-testbed`, owner `foal`, namespace
+`codex-relay-test`, distinct TEST Unix/App/runner identities, dedicated port
+18787 and hostname `codex-relay-test.jresearch.org`. Owner SSH host
+`195.201.83.241` and nginx topology are shared; TEST identity does not authorize
+shared-ingress or production mutation. Configuration references were inspected;
+private keys, tokens and credential contents were not read.
+
+The supported public inventory ran from a separate clean native Debian checkout
+at the then-configured accepted source
+`afb2cbdbcb82294604c51ec0ce4c2a62cf272a49`:
+
+```sh
+python3 deploy/relay-deploy.py \
+  --config /mnt/q/work/task115-test-consumer-01a12b33/deploy/relay.json \
+  --requested-revision afb2cbdbcb82294604c51ec0ce4c2a62cf272a49 \
+  --resolved-revision afb2cbdbcb82294604c51ec0ce4c2a62cf272a49 \
+  --phase inventory
+```
+
+The result was `status: blocked`, blocker `configuration-different`, consumer
+equivalent, deployment different, installed revision
+`dbfea1889da994791a5b6c05d97a71405d21eac5`, `readOnly: true` and
+`mutationAuthorized: false`. Exit 0 and the read-only PASS line meant that
+observation completed, not that the blocker was resolved.
+
+The explicitly authorized bounded comparison verified the protected literal
+nonsecret deployment snapshot against its release manifest SHA-256, current
+release/source identity, regular single-link 0600 file and protected parents.
+After public inventory normalization, only
+`environment.reviewerRepositories` differed: the installed snapshot listed
+`jresearchsoftware/codex-relay-testbed`, `jresearchsoftware/codex-relay`,
+`jresearchsoftware/shared-governance` and
+`jresearchsoftware/codex-relay-testbed-2`; tracked configuration omitted it.
+
+[TEST draft PR 3](https://github.com/jresearchsoftware/codex-relay-testbed/pull/3)
+records those exact existing values and the README's Task-115-only TEST
+fixture/call boundary. Its head is
+`1602f1cdc765f844eebacc5d750cfa4667ce3ccb`; only configuration and README changed.
+Eight native Debian unittest checks and whitespace validation passed. The
+[native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38147715218/job/114494456644)
+passed at that head. No App grant, credential, historical Task 76 artifact or
+installed-state change occurred.
+
+The subsequent README-only commit records the explicit TEST-local development
+qualification disposition under the same Task authority. Its exact head is
+`86f60dff90e3275948ac947a6d8d63811715017f`. Local consumer validation again
+passed eight tests, the consumer checkout is clean, and its
+[native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38148432830/job/114496598707)
+passed at that exact head. These checks do not establish a later candidate or
+installation.
+
+The old `afb2cbdb...` entrypoint cannot represent the explicit allowlist and
+returns `INVALID_DEPLOYMENT_CONFIG:environment`. To inspect matching current
+intent, the public inventory ran from a clean exact already-installed
+`dbfea1889da994791a5b6c05d97a71405d21eac5` checkout, with both revision arguments
+explicitly set to that SHA. Its sanitized result was:
+
+```json
+{
+  "status": "observed",
+  "blockers": [],
+  "readOnly": true,
+  "mutationAuthorized": false,
+  "configuration": {"consumer": "equivalent", "deployment": "equivalent", "status": "equivalent"},
+  "installed": {"status": "present", "revision": "dbfea1889da994791a5b6c05d97a71405d21eac5"}
+}
+```
+
+Both runner registrations were reported reusable without a fresh token.
+Credential/TLS observations were metadata-only. Live App permissions,
+runner-group ACLs and DNS/ingress remain separate owner-admin observations;
+inventory does not inspect every retained operation journal.
+
+The supported TEST `relay-admission status` reported version 1, phase `open`,
+null operation/target, zero active attempts and zero unknown attempts. Its
+consumer digest was
+`18fdd7fa538be3aef3ee6000181018230c5120f7371d524707b362e8bff30a5c`.
+No quiesce, drain, reset or journal clearing was invoked. These are bounded
+read-only snapshots; a future upgrade must recheck state under its own lock.
+
+Read-only TEST MCP inspection of historical closed/merged PR 2 confirmed exact
+head `91e29c09ac089dfd10dbaf6e8feeb42a9171395e`, authenticated App slug
+`jresearch-relay-test-reviewer` and `ready_for_review: false`. The exposed TEST
+connector had four existing review/authority tools and no
+`submit_manual_outcome`; its repository enum reflects the broader installed
+allowlist. Other repositories were not probed through that connector.
+
+## Original Task 115 public Writer state
+
+The existing qualified owner SSH transport and strict host checking reached
+the product's installed namespace. The current pointer/release manifest/source
+identity bind exact product
+`b4cb4943d52dd375d8c6800959b3264fad082cb8`. The fixed root-owned wrapper matches
+the public template and selects `/etc/codex-relay/consumer.json` for repository
+`jresearchsoftware/codex-relay` and owner `foal`.
+
+Five relevant installed source files matched their exact published Git blobs:
+
+| File | SHA-256 |
+| --- | --- |
+| `consumer/consumer-config.mjs` | `7c3bb6733c554d7e932dfdd35ef103d47ab00b09eec119495da127776b634547` |
+| `controller/src/local-writer.mjs` | `19968b7d78627dead0707996ada10a80d100874ed14c65649e45171efb16e526` |
+| `controller/src/privileged-writer-helper.mjs` | `80bb02dc0b07644dcadbe893351820ffb3c75e8fb6c4dc28f8b77784e4ee070d` |
+| `controller/src/publication-broker.mjs` | `1a30ed0200b1094d35cdc64d975ade59fd996875c8d1cf596cf805f71f3575cb` |
+| `deploy/ansible/roles/relay_controller/templates/relay-writer-controller.j2` | `eb89f14b018d527d78bee2b5c1f533b1490e91ee38565d11588d87935a635431` |
+
+An initial diagnostic probe rejected the helper's root:root 0664 source mode.
+That was the probe's overly strict assumption, not an observed public product
+gate, unsafe-installation finding or regression. No mode was changed. Exact
+manifest/source/blob parity and the installed public contract supplied the
+required provenance; group-read-only deployment metadata remained protected.
+Diagnostic read stamps excluded access time, which ordinary reads can change.
+
+Only the fixed `/opt/codex-relay/relay-writer-controller` was invoked, with no
+command arguments and this bounded stdin request:
+
+```json
+{"operation":"publication-state","runId":38144146016,"attemptId":"run-38144146016"}
+```
+
+The version-2 repository-bound receipt confirms Task 115 Step 1, manual Issue
+route, branch `codex/task-115-step-1`, starting head `b4cb4943...`, no publication
+intent, no published head and no recovery. The admitted Request remains
+6109630038 with its original body digest. Immutable authority digest:
+`1e4d521f871f38cd415fab03d010dd9e83e00612d14bcea75b5cf19520673142`.
+Consumer digest:
+`4955dd18448f0859b43f28111e89a534ab83f4070124deab7d191b59df073837`.
+
+The live same-Step successor Request does not rewrite that stored binding.
+Installed manual publication revalidates current native authority, so the
+changed selected Request can be a genuine publication boundary. That is exact
+installed-source analysis, not an observed manual-publication failure. No
+`manual-outcome` request, credential read, journal rebind, new execution or
+other production Task/global-journal inspection was performed.
+
+## Next supported TEST action and limits
+
+The consumer README and public deployment contract require an explicitly
+selected exact product source under current owner authority, separate clean
+product/consumer checkouts and reviewed/published compatible workflow bytes.
+Current Task 115 authority explicitly permits implementation, tests and bounded
+isolated TEST qualification before independent exact-head review. Accordingly,
+the published candidate, after required local/native CI checks, is an
+owner-selected TEST-local development qualification target. This task-local
+disposition is not independent source acceptance, a general deployment-policy
+change or production installation authority. The TEST README directs development
+revisions through the explicit public source selector and retains denied
+lifecycle-runner scheduling; the accepted-main lifecycle workflow is not used.
+
+Once the exact published Task 115 product SHA is supplied, update the consumer
+source selector to that SHA on its Task-owned branch. From a separate clean
+exact product checkout, validate configuration, generate the supported
+`workflow-project --authorize-workflow-projection`, inspect the bounded changes,
+commit/publish them through the existing TEST PR and run `workflow-verify`.
+Rerun public inventory; after exact ownership/configuration and safe state are
+established, the admitted public action is:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/TEST/deploy/relay.json \
+  --consumer-root /path/to/clean/TEST/consumer \
+  --requested-revision "$task115_product_sha" \
+  --resolved-revision "$task115_product_sha" \
+  --phase upgrade --authorize-upgrade
+```
+
+The public primitive verifies projection before target contact, obtains its
+host apply lock, quiesces/drains valid attempts and checks protected operation
+and recovery state. Only the source selector may differ from the equivalent
+installed configuration. Credentials, registrations, activation intent,
+TLS/mTLS, consumer identity and actor separation are preserved. Unknown or
+retained failed operations require their supported diagnosis/recovery path;
+there is no private backend, manual restart, permission repair or blind retry.
+
+The inspected Debian controller has Git, Python, SSH and explicit Node 22.20.0.
+Its default Ansible Core 2.14.18 was below declared `>=2.16,<2.18`, and
+`ansible-lint` was absent. A separate unprivileged local environment at
+`/home/hortonolite/work/task115-test-upgrade-tools-01a12b33` now contains
+Ansible Core 2.16.19 and ansible-lint 26.9.0 from the declared requirements;
+`pip check` and both version entrypoints succeeded. Invoking lint without the
+environment's bin directory initially emitted a PATH-adjustment warning;
+explicit per-invocation PATH selection of that environment and Node 22 resolved
+it. No target or system-tool installation occurred. Candidate source/CI,
+installed TEST upgrade,
+actual manual socket/mTLS/identity delivery and real GitHub expand/copy
+qualification remain unproven until their exact receipts exist.
+
+## Exact development candidate preparation
+
+The published product candidate is
+`e3ade68311d3c328b18ef840a4744d5bfd468bc5` on
+[source draft PR 118](https://github.com/jresearchsoftware/codex-relay/pull/118).
+Both required native jobs at that exact head succeeded:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38149407840/job/114499520587)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38149407840/job/114499520732).
+This is the Task-authorized TEST-local development selector, not independent
+acceptance or a production target.
+
+The TEST selector/runbook commit is
+`de1c5644e3700f85ee626dff65d8f631531b37e1`. An initial public projection with
+that dirty selector correctly stopped at `clean-source` before writing files.
+After committing it, projection on Windows drvfs stopped at
+`workflow-regular-file`: the regular manifest was exposed as executable mode
+0777. No permission bypass or product correction was applied. A separate clean
+native Debian consumer clone supplied regular Git modes and the existing
+manifest/digest baseline. Public `workflow-project` then succeeded, updating
+only the two managed routing/recovery workflows and their manifest to
+`relay-workflows-v3`.
+
+The generated projection was inspected, committed and non-force published on
+the existing TEST draft PR 3 at exact head
+`7b0464ec250fa66a53d846d1475c54b7524e60b7`. Eight native Linux consumer tests,
+whitespace validation and its
+[native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38149675231/job/114500317455)
+passed. Both consumer clones were clean. Exact-source public `workflow-verify`
+passed, and `inventory` reported `observed`, no blockers, equivalent deployment
+and consumer configuration, retaining installed `dbfea188...`. It still
+reported owner-admin App/runner/ingress observations as unavailable; no broader
+qualification is inferred.
+
+One public `upgrade --authorize-upgrade` was invoked using the exact candidate,
+clean native consumer and the qualified dependency environment. Its initial
+public progress reached QUIESCE, DRAIN and APPLY, then the entrypoint stopped
+with `INVALID_DEPLOYMENT_CONFIG:upgrade-apply-failed` and explicit
+`next=diagnose-operation-before-retry`. It did not install the candidate.
+
+The controller's retained public log is
+`/home/hortonolite/work/task115-test-upgrade-logs-01a12b33/relay-e3ade68311d3-upgrade-en95pynm.log`.
+Its relevant sanitized failure is:
+
+```text
+TASK [Retain the first activation snapshot in the exact protected admission operation]
+/opt/codex-relay-test/relay-admission snapshot --operation 73034a9b-47a1-4ec3-993a-166560bfd39e
+stderr: {"code":"ADMISSION_SNAPSHOT_INVALID"}
+rc: 1
+PLAY RECAP: ok=50 changed=0 unreachable=0 failed=1 skipped=11
+```
+
+Read-only supported `/opt/codex-relay-test/relay-admission status` then reported:
+
+```json
+{
+  "version": 1,
+  "phase": "recovery-required",
+  "operationId": "73034a9b-47a1-4ec3-993a-166560bfd39e",
+  "target": "e3ade68311d3c328b18ef840a4744d5bfd468bc5",
+  "previousActive": null,
+  "verifiedRevision": null,
+  "active": [],
+  "unknown": []
+}
+```
+
+Post-failure public inventory still observes installed
+`dbfea1889da994791a5b6c05d97a71405d21eac5`, equivalent configuration and no
+inventory blockers. That inventory result does not resolve the protected
+recovery-required admission operation. The failure is introduced by candidate
+`e3ade683...` relative to installed `dbfea188...`: the old installed admission
+helper accepts exactly `reviewer`, `production` and `general` service snapshot
+keys, while the candidate's pre-install snapshot supplies a fourth
+`manualOutcome` key to that old helper. The public log observes the three
+existing services loaded/active/enabled and the new socket absent/inactive;
+the failure occurs before its first activation snapshot is retained.
+
+The exact operation and original source remain preserved. No retry, target
+rebind, state reset, private backend, permission/service mutation or historical
+fixture cleanup was attempted. A compatible source correction and an explicitly
+qualified supported recovery path are needed before TEST qualification can
+continue. New installed socket/Writer transport, connected MCP discovery and
+a v4 manual-result fixture remain unqualified. Production was not upgraded and
+the original Task 115 Writer publication binding was not changed.
+
+The TEST README records this boundary in a subsequent documentation-only
+commit, `b63236c0f4965f0c2636c04ceb1c59ad2eb6da2d`, published on the same draft
+PR 3. The configuration and generated projection remain unchanged. The cited
+projection/native-CI receipt above belongs to `7b0464e...`; later checks must
+be read from their exact native candidate records.
+
+## Supported same-operation TEST recovery disposition
+
+The installed admission helper's `recovery-target` command deliberately permits
+changing an exact target while `recovery-required`, bound to the same operation
+and with no active/unknown attempts. It preserves `previousActive`; this is the
+existing recovery interface, not an operation reset. Public `relay-deploy.py`
+exposes it only inside `upgrade --authorize-upgrade
+--authorize-lifecycle-recovery --lifecycle-recovery-operation <UUID>` after
+checking bound status and obtaining the host apply mutex. It then returns the
+same operation to APPLY, performs final verification and resumes only after
+matching same-operation proof.
+
+The first failed invocation's public operation inspection found no ordinary
+production mutation record and failed before its begin task. The subsequent
+read-only public `check` again reports `PRODUCTION_RECONCILIATION_STATE=STABLE`
+and skips reading an absent ordinary record. The separately retained admission
+gate remains `recovery-required`; `STABLE` here describes the ordinary
+apply/activation journal and does not reopen admission or complete recovery.
+
+Current Task 115 owner authority and its trusted Decision/Request cover verified
+isolated TEST fixes and supported recovery. The scoped disposition is to select
+the corrected published CI-green Task 115 development candidate as the TEST
+recovery target in operation `73034a9b-47a1-4ec3-993a-166560bfd39e`, after its
+consumer selector/projection are committed and publicly verified, status again
+shows no active/unknown attempts, and the public guard confirms no intervening
+ordinary mutation record. This does not claim independent source acceptance,
+authorize production recovery or permit protected file edits. The selected
+corrected target must be supplied explicitly; no recovery invocation has yet
+been made. No install/rollback to the known broken `e3ade683...` is required by
+the existing helper ABI merely to change target through this supported path.
+
+The scoped recovery disposition is also published in the TEST README at
+`6c7101111c5144a0b07858b87ce6fb37dcbf92ec`; its
+[native consumer check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38150244453/job/114502015652)
+passed. This documentation commit did not change the target, projection or
+protected operation.
+
+## New native fixture admission boundary
+
+Read-only GitHub inspection confirms that TEST `main` still carries routing
+blob `4576c3ccea631ed96e6adb7ef4e1df2356eba1c8` and workflow-manifest blob
+`49ec662f3ff078741689379235f4ad346c289c28`, both from the old
+`relay-workflows-v2` projection. PR 3's new projection is
+`relay-workflows-v3`. The routing job requires owner `foal`, the corresponding
+triggering actor and `github.ref == refs/heads/main`. It checks that the
+installed release contract equals its explicit `EXPECTED_WORKFLOW_CONTRACT`
+before routing; mismatch throws `INSTALLED_RELAY_IDENTITY_MISMATCH`.
+
+Therefore, after a v3 workflow-contract installation, a ready-label or manual
+dispatch through current `main` cannot create a new v4 manual admission using
+the old workflow. Dispatching the unmerged PR branch fails the main-ref job
+condition and is outside the existing only-main workflow runner restriction.
+No alternate supported fixture admission route has been identified:
+`publish_task_authority` authors native authority, while
+`submit_manual_outcome` only submits results for an already admitted manual
+attempt. Neither supplies a replacement run/admission authority.
+
+Genuine new v4 manual-ready/Actions qualification consequently requires
+independent consumer review and ordinary owner merge of compatible generated
+workflows into TEST `main`. Current authority does not authorize that merge.
+Compatible installation, socket/service qualification and connected capability
+discovery remain separately admitted TEST activities, but cannot establish this
+live Actions/one-Outcome fixture proof before the projection boundary is
+resolved. No consumer merge, base-branch change, runner-policy change, fabricated
+run environment, direct root worker or nested model execution was used.
+
+## Completed read-only recovery diagnosis
+
+The public `check` invoked from exact `e3ade683...` completed in 297 seconds:
+`RELAY_DEPLOYMENT_RESULT=PASS;phase=check`. Its controller log is
+`/home/hortonolite/work/task115-test-upgrade-logs-01a12b33/relay-e3ade68311d3-check-0ce74ckx.log`.
+The recap was `ok=323 changed=14 unreachable=0 failed=0 skipped=144`; those
+fourteen changes are Ansible check-mode plans, not performed installation.
+`PRODUCTION_RECONCILIATION_STATE=STABLE` and the skipped ordinary-record read
+confirm the absent mutation record at this observation. Bound public admission
+status afterwards remains `recovery-required`, operation `73034a9b...`, target
+`e3ade683...`, null activation snapshot/verified revision and no active/unknown
+attempts. No recovery or admission reopening accompanied diagnosis.
+
+## Corrected candidate prepared; target recovery held
+
+The snapshot compatibility correction is published at exact product
+`d11f65218eaa57e8fd48f753231e21088c87e94b`. Both required native jobs succeeded:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38150552349/job/114502933369)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38150552349/job/114502933352).
+The correction supplies the historical three-service snapshot to the old
+installed helper when the new socket is absent, retaining existing service
+intent before installation.
+
+The separate TEST branch now selects that exact corrected development target
+at `3fe97cc7b8bee890471216d5613fda9220929810` in the existing draft PR 3.
+Both consumer checkouts are clean. The public exact-source `workflow-project`
+and `workflow-verify` succeeded with that committed consumer head; projection
+was already equivalent `relay-workflows-v3`, so no additional generated bytes
+or empty projection commit were needed. Eight native Linux consumer tests,
+whitespace validation and the
+[exact-head native consumer check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38150735987/job/114503483855)
+passed. The TEST PR description records the selected source, prior failure,
+native proof and current limits.
+
+This preparation changes no installed source, protected operation target,
+activation, credentials or runner policy. Recovery, installation and TEST main
+merge remain held for the owner's concrete consumer-PR disposition. The
+original retained operation still requires fresh bound public status and the
+same-operation guard before any subsequently authorized target action. No
+new fixture or model execution was launched.
+
+## Peer-audit finding before target recovery
+
+A subsequent peer audit found a P2 legacy admission regression introduced in
+the Task 115 routing template at `e3ade683...` relative to baseline
+`b4cb4943...`, and retained through `681f091...`. The generated Actions
+run-name expression used substring `contains` to detect
+`Authority model: github-native-v1`. A valid legacy Issue quoting that marker
+inside ordinary prose was consequently displayed as native authority, hiding
+its legacy Step label. Trusted Writer still classified the Issue as legacy and
+could reject the inconsistent native run title with `STEP_DISPLAY_MISMATCH`.
+The baseline routing expression always displayed the legacy labels and did
+not introduce that substring classification.
+
+This is an introduced source/template compatibility defect, not an installed
+TEST regression: the candidate has not been installed and TEST main still
+uses v2. Prior deterministic CI success did not cover this quoted-marker case.
+The product correction and meaningful projection/admission checks are being
+prepared in the same Task. TEST PR 3 remains at `3fe97cc...`, and recovery,
+installation and merge remain held. A corrected published CI-green target
+must replace its selector and regenerate the routing/manifest projection
+before a concrete final consumer review/merge or target recovery.
+
+## Selected historical review inputs
+
+The historical [Task 76 Writer Outcome](https://github.com/jresearchsoftware/codex-relay/issues/76#issuecomment-6022132933)
+records `REINSTALL_FOREIGN_UNIT_WARNING` for pre-existing
+`/etc/systemd/system/actions.runner.jresearchsoftware-ai-pr-flow-canary.debian-codexexp-01.service`,
+then observed root:root mode 0664 outside TEST ownership. This is a retained
+Task 76 warning, not a new Task 115 host observation, installation defect or
+remediation authority. Current qualification stopped before installation and
+does not dispose that historical warning. No foreign-unit read, permission
+repair or service mutation was performed for this Task.
+
+The old post-merge [native CI run 37536691150](https://github.com/jresearchsoftware/codex-relay/actions/runs/37536691150)
+records an `ENOENT` `collectProgress` object-directory race on the unchanged
+baseline/reviewed/accepted lineage `5a4b787...` / `2d0613c...` / `afb2cbdb...`.
+The deleting process/cause remains undetermined; no introduced regression is
+established by that record. Current Task 115 Node/native-CI success neither
+changes the old native record nor resolves its cause. These selected historical
+inputs remain immutable review context and do not expand current execution or
+qualification scope.
+
+## Final corrected consumer projection and retained boundary
+
+Product correction `44f97a8000eac6f3c6284b32c62f574d7b8edd7b` replaces the
+substring run-title classifier with standalone LF/CRLF native marker checks.
+Both required exact-head native jobs passed:
+[Candidate checks](https://github.com/jresearchsoftware/codex-relay/actions/runs/38152427265/job/114508442037)
+and [Codex CLI compatibility](https://github.com/jresearchsoftware/codex-relay/actions/runs/38152427265/job/114508442174).
+Source tests and the parent's read-only peer audit close the P2 in source;
+the latter reports 56 expression/parser cases: 22 native LF/CRLF/mixed,
+20 legacy and 14 malformed-parser rejections. This is peer source evidence,
+separate from installed behavior and independent exact-head acceptance.
+
+The TEST selector/README commit is `65d1e3e95c9ffba272ab14185d6f8feeef637b58`.
+Supported exact-source public `workflow-project` regenerated only routing and
+its manifest digest. Their inspected changes were committed and non-force
+published in the same draft PR 3 at final consumer head
+`944eda973981d94ec7cefd69a375ca71b116e1c6`. Routing SHA-256 now equals
+`84229930ce49e2135a9c7254fb1ec1b63fac64592c6dd2f049528d60f8c5b635`;
+recovery bytes remain at
+`323aeb4544b5834ae1dafaec09d2ce4b5551f59b7cfab771f5b6b72e0f6ed342`.
+Public exact-source `workflow-verify`, eight native Linux consumer tests,
+whitespace validation and the
+[native consumer check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38152709600/job/114509269890)
+passed. The refreshed PR description reports the exact selector, proofs and
+retained limits; PR 3 remains open/draft and unmerged.
+
+The clean native product checkout is
+`/home/hortonolite/work/task115-test-inventory-source-01a12b33` at `44f97a8...`;
+the clean native consumer is
+`/home/hortonolite/work/task115-test-consumer-01a12b33` at `944eda9...`.
+The native consumer config is a regular single-link nonsymlink file, owner
+UID/GID 1000, mode 0644, selecting exact `44f97a8...`. The Windows review
+checkout is synchronized to the same published consumer head.
+
+Fresh exact-source public inventory observes installed
+`dbfea1889da994791a5b6c05d97a71405d21eac5`, equivalent consumer/deployment
+configuration and no inventory blockers with `readOnly: true` and
+`mutationAuthorized: false`. Bound public admission status still retains
+operation `73034a9b-47a1-4ec3-993a-166560bfd39e`, target `e3ade683...`, phase
+`recovery-required`, null activation snapshot/verified revision and no
+active/unknown attempts. These observations do not clear the retained operation.
+Owner-admin App/runner/ingress proof gaps remain explicit. No target recovery,
+main merge, installation, new fixture, model call or production mutation
+accompanied final projection preparation. Consumer review/merge and the
+subsequently qualified same-operation recovery remain distinct pending gates.
+
+## Connected TEST Reviewer evidence gap
+
+The parent's fresh connected TEST `read_pr_review_evidence` call at exact
+consumer PR 3 head `944eda973981d94ec7cefd69a375ca71b116e1c6` verified target
+binding and reported zero check annotations. It nevertheless reported
+`required_surfaces_complete: false` and `warning_observation: unknown`, with
+`CANONICAL_ISSUE_AMBIGUOUS` and `GITHUB_EXECUTION_RUN_POINTER_UNAVAILABLE`.
+PR 3 is a consumer configuration/projection PR, not a new admitted TEST
+execution fixture. These are evidence gaps under the existing installed
+schema-v3 aggregation contract; no Task 115 introduced regression is established
+by this observation. No arbitrary Issue/Task linkage, remediation execution or
+new authority was added to manufacture complete surfaces.
+
+The separately scoped product PR 118 evidence at `44f97a8...` had complete
+required API surfaces, zero check annotations and an empty inspected native UI
+annotation surface. It does not resolve the consumer aggregation/run-pointer
+gaps. Consumer native CI success and verified exact target likewise do not
+establish global warning absence or independent Reviewer acceptance. The
+unresolved TEST evidence gaps remain material inputs to the next review/owner
+boundary alongside the preserved recovery-required operation.
+
+## Canonical TEST autonomy and exact consumer merge
+
+The resumed same-Step owner clarification is recorded by trusted
+[Decision 6112655517](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112655517)
+and [successor Request 6112661946](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6112661946).
+Live read-back verified Bot identity 306850842 and respective body SHA-256
+`d08cd6a43de555e2d7bc6678ba6060efb075cb19349c484b75bf55cf83037a80` and
+`8a49967ddf924bec46220e05646936beee0d94cb7ad5d97bb3fb8c0ee593ba8b`.
+They explicitly authorize the verified isolated TEST full cycle, including
+reviewed TEST PR merge and supported same-operation recovery, while excluding
+product PR 118 merge, PROD, shared/foreign infrastructure and external App,
+permission or credential changes. No original Task 115 admission/journal was
+rewritten. The standing policy is the single
+[TEST Environment Authority](https://github.com/jresearchsoftware/codex-relay/blob/6ae8f984aed8596411a62b6490d096c7030b6f0c/docs/execution-policy.md#test-environment-authority);
+that policy commit changes documentation, not the selected TEST runtime source.
+
+Fresh PR 3 inspection verified unchanged head `944eda9...`, base `52d6630...`,
+five bounded configuration/runbook/projected files, native candidate CI success,
+MERGEABLE/CLEAN status and no new findings from the prior scoped peer audit.
+PR 3 was marked ready and squash-merged through the ordinary owner interface
+with exact `--match-head-commit 944eda973981d94ec7cefd69a375ca71b116e1c6`.
+No admin/force merge, branch deletion or self-authored Reviewer verdict was used.
+GitHub read-back confirms merged by `foal` at 2026-10-11 19:14:18 UTC, exact
+merge/main SHA `4598e74602b02247adebbaba71ecccf33958da9d`.
+The [native main candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38167160268/job/114551998276)
+passed at that exact SHA.
+
+Windows consumer `main` and the clean detached native consumer now match
+`4598e746...`; the earlier reviewed branch is preserved. Exact-source public
+`workflow-verify` passed for selected runtime `44f97a8...` and consumer
+`4598e746...`. Fresh pre-recovery inventory still observed `dbfea188...`,
+equivalent configuration and no blockers. Bound public status retained the
+same recovery-required operation, old target `e3ade683...`, null activation
+snapshot/verified revision and no active/unknown attempts. The consumer
+main-projection prerequisite is resolved; the separate installed recovery and
+MCP/one-Outcome proofs still require their actual receipts.
+
+The exact source diagnosis is that `step_sync::linked_issue` recognizes one
+same-repository `Related to #N` / closing-keyword reference in the PR body.
+PR 3 instead points to its authorized cross-repository Task 115 URL, leaving
+zero recognized same-repository IDs. The outcome source consequently remains
+unavailable, which also prevents the execution source from establishing absence.
+Comparison of installed-source revision `dbfea188...` with `44f97a8...` shows
+that this linkage and incomplete-source behavior is unchanged. The synthetic
+owner-authored native COMMENT is excluded by Writer-actor filtering. The gap
+does not establish an introduced product defect and requires no fabricated
+TEST Task link. Signed-in Chrome also showed success and an empty Annotations
+section for native consumer run `38152709600`; that scoped UI observation
+does not close the outcome/execution aggregation gap.
+
+A final read-only peer comparison of consumer `944eda9...` against
+`52d66305557a74264cd0f5b82ec0b90804baa98c` verified the complete five-file
+diff, exact renderer/manifest bytes, canonical regular file modes, valid
+configuration and unchanged protected guards. Its 56 marker and eight guard
+cases passed, with no material findings in that bounded consumer audit. This
+qualifies the prepared projection, not execution of the installed workflow,
+independent product acceptance or permission to merge/recover the target.
+
+## Supported recovery: staged Reviewer schema failure
+
+The canonically authorized public `upgrade --authorize-upgrade
+--authorize-lifecycle-recovery --lifecycle-recovery-operation
+73034a9b-47a1-4ec3-993a-166560bfd39e` resumed that same retained TEST operation
+with exact source `44f97a8000eac6f3c6284b32c62f574d7b8edd7b` and merged consumer
+`4598e74602b02247adebbaba71ecccf33958da9d`. It passed the older installed
+snapshot compatibility boundary and reached protected artifact staging. It
+failed at the locked Rust Reviewer release build: `task_authority.rs:17`
+includes `../../contracts/src/github-authority-v4.json`, but the artifact
+staging task copies only `github-authority-v1.json`. This is a concrete Task
+115 deployment packaging omission; local Rust builds have the full source
+tree and therefore did not qualify this staged layout.
+
+The backend recap was `ok=168 changed=20 unreachable=0 failed=1`; this is a
+partially applied upgrade, not the earlier pre-install failure. The public
+entrypoint returned `INVALID_DEPLOYMENT_CONFIG:upgrade-apply-failed` with
+`next=diagnose-operation-before-retry`. The raw private log
+`relay-44f97a8000ea-upgrade-m1o38pd6.log` is retained locally; no credential or
+private configuration contents are reproduced here. The compiler also emitted
+two `unused_mut` warnings at `github.rs:350` and `:399`; those same declarations
+exist on installed source `dbfea1889da994791a5b6c05d97a71405d21eac5`, so these
+warnings do not establish an introduced Task 115 regression.
+
+Fresh bound public admission status reports `recovery-required`, the same
+operation UUID and target `44f97a8...`, `verifiedRevision: null`, and empty
+active/unknown attempt arrays. Unlike the first failed upgrade, its retained
+`previousActive` snapshot now records Reviewer, production runner and general
+runner as active, enabled and loaded. The current installed pointer still
+names `dbfea1889da994791a5b6c05d97a71405d21eac5`. Those observations preserve
+activation intent; they do not prove that the staged target is complete or
+that the old installation was untouched. No retry, activation, release cleanup,
+operation reset, fixture admission or MCP Outcome submission followed the
+failure. Installed manual socket and new Reviewer capability remain unqualified.
+
+Source inspection also identifies a separate recovery constraint: an ordinary
+retained apply record binds its exact failed source head, while existing
+stale-apply disposition requires a completed release at that recorded head.
+The old current pointer cannot be asserted to be a completed `44f97a8...`
+apply. The next action is supported read-only classification of the retained
+ordinary operation, then an evidence-bound public recovery disposition; a
+new corrected source does not itself authorize bypassing those guards.
+
+The subsequent supported public `--phase check` confirmed an ordinary retained
+`apply` record at exact `44f97a8...`. Its classifier observed Reviewer and
+production runner active/enabled, listener present, activation authorized,
+registration evidence valid, no reactivation required and planned scope
+`preserve-reviewer-and-runner`. It explicitly reported
+`mutation_boundary=matching-phase-and-exact-head-only` and
+`apply_state_hash=not-applicable`. The read-only recap was `ok=45 changed=0
+failed=0 skipped=17`; the public entrypoint deliberately remained blocked as
+`recovery-requires-disposition`. The private log is
+`relay-44f97a8000ea-check-yujl26bq.log`. This narrows the next recovery decision
+without retiring the record or claiming that a different target is admitted.
+
+The scoped source audit found no truthful existing public continuation for this
+exact incomplete apply. Matching recovery would replay the broken `44f97a8...`
+source; a different target or rollback conflicts with the retained ordinary
+head binding. Reinstall decommission refuses that record, while reinstall
+recovery requires a DECOMMISSIONED journal that this operation did not create.
+Completed stale-apply disposition requires a current release at the recorded
+head; bootstrap-only disposition requires absent runtime state. Neither shape
+matches the observed old current pointer and existing installation.
+
+`site.yml` runs `relay_runtime` before `relay_artifacts`; therefore the twenty
+changed tasks can include managed wrappers, configuration or units before the
+artifact failure and pointer switch. Observed active old services and the old
+current pointer do not prove byte equivalence of the installation. No extra
+protected file inspection or invented runtime inventory is claimed. The
+retained raw logs, journal and activation intent remain preserved. Task 115
+will correct and validate the packaging omission in source, but this bounded
+Task does not invent a new partial-apply disposition protocol. Further host
+mutation needs a precise supported recovery disposition; no reset, bypass,
+retry, reinstall, activation or fixture admission is performed here.
+
+The useful consumer runbook correction is committed and pushed as final head
+`adc3937fa2f64e4d722cc3ca528a3fcdc10d5f71` on
+`codex/task-115-test-recovery`, in draft
+[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5).
+Its sole changed file is README: it references the single standing TEST policy,
+replaces the obsolete PR 3 merge hold, distinguishes the two upgrade failures,
+and records the actual partial-state/public-recovery boundary. The config,
+selected source and projected workflows retain merged main `4598e746...` bytes.
+Native Linux eight scenario/isolation tests and whitespace validation passed.
+The [native candidate check](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38168457362/job/114555825705)
+completed successfully at exact `adc3937...`, with API check annotation count
+zero. Windows branch and detached native
+consumer match that published head and are clean; no unpublished consumer
+commits remain. PR 5 remains draft and unmerged. This repository handoff
+preserves progress without another host operation or a successful E2E claim.
+
+Read-only native metadata inspection verified both new raw logs as UID/GID
+1000, mode `0600`, regular non-symlink files with one link. They remain outside
+the repositories and are not copied into publication or committed:
+
+| Private log basename | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `relay-44f97a8000ea-upgrade-m1o38pd6.log` | 127588 | `20e94501e46936beafe9f1986d5b24cfaf90633eba49e989d32f4fe6b62d3744` |
+| `relay-44f97a8000ea-check-yujl26bq.log` | 10782 | `580163d7e1efd792561c10e40a64da31f33510355026b569e0a6fa23cfc4be50` |
+
+A sanitized extraction of task headings and changed markers, excluding all
+parameters, invocations and returned contents, identifies exactly twenty
+changed tasks (29 changed item lines). Four are the ordinary operation
+reservation and runtime installation of the stale-disposition helper,
+Reviewer activation helper and Reviewer configuration contract. The remaining
+sixteen are artifact namespace/object/source/build-input staging tasks,
+including stable routing/recovery invocation paths and staged Writer,
+dispatch and diagnostics artifacts. The observed task footprint confirms
+managed helper/configuration changes before the failed build; it does not
+prove every resulting byte, process identity or completed installation.
+
+## Owner-selected clean installation: current protected boundary
+
+The owner-selected continuation was normalized into trusted Decision
+[6113642915](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113642915)
+and complete same-Step Request
+[6113666253](https://github.com/jresearchsoftware/codex-relay/issues/115#issuecomment-6113666253).
+Native read-back verified the existing Reviewer Bot identity and exact body
+SHA-256 values `24b6624b87d0c0df767fb6d6bf10d6df9c93b143d7b3e27a7ca60f0a56cddf98`
+and `60b9efba70eb4d8396bb687e4e9bb1abd5a18bf5c260c086a5e656e57ee2b22b`.
+They supersede the preceding selected Decision/Request without changing the
+original admission, journal, PR execution markers, Step or requested profile.
+The corrected starting gate is product PR 118 at
+`54ad87f3bfd6500b37a6257defb4ae0ef4bc84aa`, branch
+`codex/task-115-step-1`, base `b4cb4943d52dd375d8c6800959b3264fad082cb8`.
+Fresh fetch confirmed local, remote and live PR heads equal that gate, with
+no dirty or unpublished work. PR 118 was marked ready after exact-head native
+CI verification because the installed authority publisher rejects a draft
+existing PR. It remains open and unmerged; readiness is not acceptance.
+
+Request publication returned `AUTHORITY_PUBLICATION_UNCERTAIN`. Native GitHub
+nevertheless contains exactly one matching complete Request, with the correct
+Issue/PR Step, title and head projections. One evidence-based invocation of the
+existing same-record publication recovery returned the same uncertainty.
+No further retry or protected publication-journal inspection/edit occurred.
+The native authority bytes are verified; successful completion of the publisher's
+protected journal remains unproven. This warning remains an owner/review input.
+
+At 2026-10-11 21:04:46–21:04:48 UTC, the public read-only inventory ran from the
+clean native corrected source `54ad87f3...`, using both exact revision arguments
+and the clean separate consumer `adc3937fa2f64e4d722cc3ca528a3fcdc10d5f71`'s
+`deploy/relay.json`. Its durable selected source and projection were not changed.
+The receipt reports:
+
+| Observation | Result |
+| --- | --- |
+| Consumer / deployment configuration | `equivalent` / `equivalent` |
+| Installed release pointer | `dbfea1889da994791a5b6c05d97a71405d21eac5` |
+| Inventory status | `blocked` |
+| Sole blocker | `production-operation-recovery-present;inspect-before-retry` |
+| Mutation boundary | `readOnly: true`, `mutationAuthorized: false` |
+
+Exit 0 and `RELAY_DEPLOYMENT_RESULT=PASS;phase=inventory;authority=read-only`
+prove that observation completed, not permission to remove the installation.
+The private receipt log `task115-corrective-clean-install-inventory-54ad87f3.log`
+is 4002 bytes, SHA-256
+`1b0ae4060df1b4d41ed26ad17ff43fc08a26027b17d754266da2f2c7d2a6434d`,
+UID/GID 1000, mode `0600`, regular non-symlink, one link. It remains outside
+the repositories alongside the preserved failed-operation logs.
+
+The exact supported boundary precedes removal: `deploy/inventory.py` classifies
+the existing namespace ordinary `production-operation.json` as a blocker;
+`deploy/relay-deploy.py` requires a blocker-free inventory before reinstall
+projection or decommission; `deploy/clean_reinstall.py::decommission` independently
+requires that record and any clean-reinstall journal to be absent, checking
+again under lock. The public phase list has no standalone removal operation.
+This retained partial apply has no DECOMMISSIONED journal, no completed release
+at its failed head, and an existing runtime. Reinstall recovery, completed-apply
+disposition and bootstrap-only disposition therefore do not fit it.
+
+The selected clean-install path cannot advance through current public interfaces
+without bypassing those guards. No predictable failing reinstall, manual
+record deletion, fabricated retirement receipt, private backend or retry of the
+broken source was attempted. The next protected action would need a qualified
+public evidence-preserving retirement/disposition for this exact ordinary
+partial-operation state. General partial-upgrade recovery development remains
+outside this Task under the owner's explicit direction; no new Task or phase
+was created. The already authorized committed-evidence handoff is used instead.
+The retained operation, external TEST credentials and App permissions, shared
+infrastructure and all PROD resources remain unchanged by this continuation.
+No new live socket, `submit_manual_outcome` or complete E2E proof is claimed.
+
+## Completed clean TEST installation and live manual Outcome qualification
+
+On 2026-10-11 the current trusted Decision/Request were verified again by full
+native body SHA-256 and the configured Reviewer Bot identity. Their digests are
+`f987f402e76dd643ddc72c86cf2a20d5b3e797d549e908a0571caa07f4e48dbf` and
+`6ea0db6f77c7ae97df3c8cde019f0bedcbd766ce36b94d4ae9b01c52d6dc9dc9`.
+The stable charter remains
+`c36bf4e867ba254818d1e0807329ab50387c8e53eccdc2e751b9cbb5b87f646f`.
+The continuation gate `7862bb742534be663c434f6ca2e27ffccccbab45` matched clean
+local, refreshed remote and live PR 118 heads before the authorized task commits.
+No original admission, Step, Request hash or PR execution marker was rebound.
+
+General [TEST Environment Authority](execution-policy.md#test-environment-authority)
+was promoted in AGENTS routing, the execution policy, deployment/architecture
+routing and the consumer runbook. The shared execution prompt now routes its
+generic preservation/cleanup stops to that policy for owned disposable TEST.
+Normal product source acceptance, publication and external boundaries remain.
+This is a permanent general rule awaiting ordinary independent source acceptance,
+not an accepted policy claimed solely from implementation. Current operations
+derive from the already verified owner-authorized Decision and Request.
+
+All targeted services, paths and effects were confined to `codex-relay-test`.
+Direct sandbox cleanup stopped/disabled TEST units, removed the broken TEST
+runtime and disposable state/operation journals, and retained registered runner
+directories, TEST credentials and TLS material. No product recovery mechanism
+was added. The final cleanup wrapper's `reset-failed` returned 1 because its
+already removed unit files no longer existed; read-back confirmed completed
+removal. It was not retried. Native historical evidence remains intact;
+retention of disposable installation state was not required. External TEST
+credentials, App installations/permissions, shared ingress and all PROD resources
+were outside the mutation scope.
+
+[TEST PR 5](https://github.com/jresearchsoftware/codex-relay-testbed/pull/5)
+was reviewed at `5fee2194aaf0829bde368d890974e086442f0bb2` and merged under
+standing TEST authority to main `6355e1ef2afc1094ac580995c0e8db2465986ec4`.
+Its config selects exact corrected product source `5699432e95440307fa799b0a3b8ac3150ffd574a`.
+The existing v3 workflow projection was verified without generated changes.
+The four-repository Reviewer allowlist and external App grants were unchanged.
+Existing group 6/7 GitHub UI read-back confirmed TEST-only repository scheduling,
+public repositories disabled, routing/publication-recovery main refs for group 6
+and zero selected workflows for lifecycle group 7. No permissions were changed.
+
+The public entrypoint ran from the separate clean native source at `5699432e`
+with clean consumer `5fee2194` and its `deploy/relay.json`:
+
+| Operation | Actual result |
+| --- | --- |
+| `workflow-project` | PASS; no generated changes |
+| `inventory` after sandbox cleanup | PASS, blockers empty; runtime/config missing, retained credentials/TLS/runners reusable |
+| `bootstrap` | PASS; installed `5699432e`, previous `none`, clean post-check; 823 seconds |
+| `activate` | PASS; positive official TEST MCP transport/App/exact-PR identity was checked separately |
+| TEST service management | Three TEST services enabled with direct `systemctl` under sandbox authority; this is not proof of the public runner-enable phases |
+| `post-check` | PASS; installed `5699432e`, previous `none`; 325 seconds |
+
+Private deployment logs remain outside source publication. Their SHA-256 values
+are `843505b5f7d3f6ad077bc6ce5ecba0384f5f2f5062ddee8d2f31f4b40aa93218`
+(bootstrap, 449713 bytes),
+`7fb7c5f18c230c661655defc9afb42e0b0ca739dfb7018f4275d067c8d098fce`
+(activate, 19805 bytes), and
+`dc44b8376eb118a100bb86898fb5c0f1cc878a0ac7bc7a44ba04ad7ae6c65826`
+(operational post-check, 220526 bytes).
+
+### Installed manual Outcome chain and limits
+
+At the private-fixture observation, the connected TEST App passed `check_pr_review_target` for fixture PR 7/H1,
+with expected TEST Reviewer App/actor identity and official OpenAI mTLS.
+Its then-available catalog contained only four old Reviewer tools.
+No available connector operation refreshes that catalog. The new tool was
+therefore exercised using a separate private loopback mTLS fixture, not an
+asserted official connected-client call. No shared ingress, official CA,
+Reviewer configuration or external credential was changed for that fixture.
+
+The fixture ran the exact installed Rust binary at
+`/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http`;
+its process executable and installed file both hash to
+`a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de`.
+The synthetic TLS client/CA are explicitly not an OpenAI identity claim.
+That frontend used the real installed fixed client, Unix socket, capability-specific
+root Writer service, TEST Writer App and native GitHub publication.
+Reviewer process UID 979 had `NoNewPrivs: 1`; the socket was
+`root:relay-test-reviewer 0660`, nonroot client `0750`, root Writer wrapper `0700`.
+The official Reviewer retained its supplementary socket group and
+`NoNewPrivileges=yes`. Writer credentials were consumed only by the existing
+protected Writer process and were not exposed to Codex or Reviewer.
+
+Two protected publication-contract records and their result bindings were seeded
+as disposable synthetic inputs: run IDs `9007115000101`/`9007115000102`, Issue 6
+and PR 7. This did not invoke real admission, a ready command, workflow dispatch,
+Relay worker/model execution, or a new project Task/Step. The native fixture
+charter and both Outcomes explicitly state that provenance. The fixture therefore
+qualifies publication of an already admitted-shaped record, not real admission.
+
+| Live check | Result |
+| --- | --- |
+| MCP catalog | HTTP 200, five tools including `submit_manual_outcome` |
+| No-PR submission | `PUBLISHED`, one Writer-Bot Outcome on Issue 6 |
+| Exact no-PR repeat | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| PR submission at H1 `913541440ba165be6cb7b5ebb60cedd061239259` | `PUBLISHED`, one Writer-Bot Outcome and Ready transition |
+| Exact PR repeat | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| Conflicting result | `MANUAL_OUTCOME_CHANGED` |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+| Unknown synthetic run | `MANUAL_OUTCOME_NOT_ADMITTED` |
+| Removed PR admission marker | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Restored marker, ordinary branch advance to H2 `c9d63e215e0543b39630dee2ee4663646354ffa1` | `PR_AUTHORITY_CHANGED`; prior Outcome unchanged, PR remained draft |
+| Missing TLS client certificate | TLS certificate-required alert |
+| Valid fixture certificate with wrong SAN / backend request without identity | HTTP 403 / HTTP 403 |
+
+Native full-body read-back verified TEST Writer Bot ID `338711029`, exact
+machine-result equality with each submitted claim, one comment per record,
+and these immutable Outcomes:
+
+- [No-PR Outcome 6114353386](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114353386),
+  body SHA-256 `8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf`.
+- [PR Outcome 6114357552](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114357552),
+  body SHA-256 `c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600`.
+
+[Sanitized receipts and native read-back](task115-live-manual-outcome.json) are
+committed with this report. Two fixture harness failures were corrected using
+new evidence: the proxy first truncated the large tool catalog, then an immediate
+call raced its restart. Neither call reached Writer publication. The bounded
+response reader and confirmed listener readiness resolved them; these are
+fixture harness observations, not product regressions.
+
+After collection, the two private transient fixture services, synthetic CA/keys,
+fixture SQLite/scripts and the two synthetic publication records were removed.
+Native Issue/PR/Outcome history was retained. Read-back confirmed the official
+Reviewer, both TEST runners and manual socket active. Disposable fixture cleanup
+does not replay or erase native history. Fixture PR 7 remains draft/unmerged;
+Issue 6 remains open with no ready labels.
+
+The updated consumer [runbook PR 8](https://github.com/jresearchsoftware/codex-relay-testbed/pull/8)
+was reviewed at exact head `3793f79f5c5915469a7b909ce711b334b982daa1`, with
+eight consumer unit checks and its native candidate check. It was ordinarily
+merged under standing TEST authority to main
+`f6af49649a35ff0bdd6728e22e99c1c13258ae5d`. This README-only change preserves
+the exact installed selection and distinguishes historical failures, direct
+sandbox service management, synthetic proof and the official catalog gap.
+
+Installed/live proof is exact to `5699432e`. Product source `74660d74b888d1669ea54779e74667315cce1305`
+adds only the generic TEST policy routing sentence to the execution prompt;
+manual MCP/socket/Writer/admission/workflow bytes are unchanged. Its complete
+source checks are separately recorded in the [validation report](task115-validation.md#current-source-validation-and-handoff-disposition).
+This does not claim a new model traversal of that sentence. Later evidence-only
+commits do not change the installed revision. Real admission remains outside
+the live proof; official new-tool invocation was then unqualified and is recorded
+in the later completion below.
+
+The Task 115 Writer Outcome is still not published because original PROD
+admission binds Request 6109630038 and currentness would return `AUTHORITY_CHANGED`.
+The current owner-authorized committed-evidence handoff exception remains in
+effect. Native current Request publication exists with exact bytes, but its
+publisher returned `AUTHORITY_PUBLICATION_UNCERTAIN`; protected journal completion
+is unavailable and no retry was made. These warnings remain decision inputs for
+independent review; the connected-client gap is resolved below. General production recovery
+is deferred to Task 119; general authority-change completion remains bounded
+backlog work, not a mandatory expansion here. Product PR 118 remains unmerged,
+Task 115 open, and independent exact-head acceptance unclaimed.
+
+## Official connected TEST App E2E completion
+
+The owner requested completion of the remaining official TEST App checks within
+this same admitted Step 1. Current canonical authority and clean local/refreshed
+remote/live PR head `547cf3937f959f94879aec2ec050d23c1c21265d` were reverified.
+No successor authority, new Task/Step, ready command or real Relay/model attempt
+was needed. The original missing-Writer-Outcome exception remains operative.
+
+Fresh official tool metadata now exposes all five TEST App tools, including
+`submit_manual_outcome`, with the expected four-field input schema and this TEST
+repository in its allowlist. No App refresh, reconnection, installation,
+permission, credential, ingress or source-code mutation caused this observation.
+The exact cause of earlier cache/propagation delay is undetermined; a server
+schema defect was not reproduced. The installed and candidate manual Rust
+frontend files are identical. The earlier four-tool limitation is historical,
+not a current blocker.
+
+The real connected `Jresearch Codex Relay TEST Reviewer` tool was used directly.
+Its existing official OpenAI mTLS ingress reached the running installed Reviewer,
+fixed client, Unix socket/root Writer, existing TEST Writer App and native GitHub.
+The official process and installed Rust binary both hash to
+`a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de` at installed
+`5699432e95440307fa799b0a3b8ac3150ffd574a`. No synthetic CA or substitute
+frontend was used in this completion.
+
+Two separate disposable protected publication records, IDs `9007115000201` and
+`9007115000202`, were explicitly synthetic admission-shaped inputs on existing
+fixture Issue 6/PR 7. They exercised publication without real Writer admission,
+ready/dispatch, worker/model execution or a new project Task/Step. Their native
+Outcomes disclose that provenance. Original PROD admission/journal and previous
+native fixture Outcome bytes were unchanged.
+
+| Official connected-client check | Result |
+| --- | --- |
+| No-PR submission | `PUBLISHED`, Outcome 6114753829 |
+| Exact no-PR repeat | `DUPLICATE_SUPPRESSED`, same ID/body hash |
+| PR submission at H2 `c9d63e215e0543b39630dee2ee4663646354ffa1` | `PUBLISHED`, Outcome 6114756310; PR became Ready |
+| Exact PR repeat | `DUPLICATE_SUPPRESSED`, same ID/body hash |
+| Conflicting summary | `MANUAL_OUTCOME_CHANGED` |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+| Unknown fixture run | `MANUAL_OUTCOME_NOT_ADMITTED` |
+| Removed PR admission marker | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Restored marker, ordinary fixture head advance to H3 `36d4e73b8a0b3450f78b5a00d672f0079d7f8b18` | `PR_AUTHORITY_CHANGED`; PR remained draft |
+| Official read-only target check at H3 | Expected `jresearch-relay-test-reviewer` App/actor, exact head, open/draft/unmerged |
+| Unauthenticated official endpoint | HTTP 400, `No required SSL certificate was sent` |
+
+Full native read-back verified Writer Bot `jresearch-relay-test-writer[bot]`, ID
+`338711029`, exact machine-result equality and one new comment per synthetic
+attempt. There are now two historical fixture Outcomes per parent, one from
+each separate qualification record; duplicates created no extra comments.
+
+- [Official no-PR Outcome 6114753829](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114753829):
+  SHA-256 `fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1`.
+- [Official PR Outcome 6114756310](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114756310):
+  SHA-256 `7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360`.
+
+[Official receipts, process identity and native read-back](task115-official-test-app.json)
+are committed. The fixture directory/scripts and only the two new synthetic
+local publication records were removed under the publication lock after collection.
+No temporary CA/service was created in this phase. Official Reviewer, both TEST
+runners and manual socket were active afterward; native history and ordinary
+published H1/H2/H3 commits remain intact. PR 7 remains draft/unmerged at H3.
+
+### Host runtime warning and proof boundary
+
+At the first official phase the installed Writer ran `/usr/bin/node` version `18.20.4`, below the package
+minimum Node 22. This is a material unsupported-runtime warning. A bounded
+comparison with baseline `b4cb4943d52dd375d8c6800959b3264fad082cb8` verifies that
+`package.json` already required Node >=22, the ordinary Writer wrapper already
+used `/usr/bin/node`, and deployment installed unversioned `nodejs`. The new
+manual wrappers use that same path. No Node-22-only failure was reproduced in
+the manual path; all official calls above returned their expected receipts.
+The mismatch is pre-existing deployment behavior included in this qualification
+boundary, not an evidenced newly introduced regression. The existing installed
+runtime proof requires >=22; it is not claimed to pass on this host. Source/local
+tests on Node 22 remain a separate proof.
+
+Changing the shared host's global Node would affect resources outside this TEST
+sandbox and was not authorized or performed. Successful bounded official
+publication does not resolve that warning or establish full supported-host
+qualification. Independent review/owner disposition must retain it. No general
+production upgrade recovery or unrelated runtime mechanism was developed here.
+
+One fixture-construction error used `CONSUMER.github.repository` instead of
+the actual `CONSUMER.repository`; it failed before journal creation/publication.
+The bounded harness correction succeeded. This is not a product source failure.
+Source behavior is unchanged in this completion; only repository-accessible
+evidence and the TEST runbook are updated. A changed carrying PR head requires
+fresh independent exact-head review; no product merge is authorized or performed.
+Original Task 115 Writer Outcome remains absent under the canonical exception,
+and current Request publisher-journal uncertainty remains unresolved.
+
+## TEST manual-service Node 22 correction
+
+The manual-path interpreter warning was corrected entirely inside TEST. The
+official Node `22.20.0` Linux x64 archive was downloaded over verified HTTPS and
+matched its official [SHA-256 manifest](https://nodejs.org/dist/v22.20.0/SHASUMS256.txt):
+`00bbd05e306ea68b6e13e17360d0e2f680b493ef95f2fea1c4296ff7437530bc`.
+The extracted binary SHA-256 is
+`b1cbec894e45a5814b6ab756e1e14f8a76516273197e67e0412b57c1e10d0d9f`,
+verified again before installation at `/opt/codex-relay-test/node22/bin/node`.
+That binary and its TEST parents are `root:root 0755`.
+
+Two TEST-only unit drop-ins use a read-only private mount:
+
+```ini
+[Service]
+BindReadOnlyPaths=/opt/codex-relay-test/node22/bin/node:/usr/bin/node
+```
+
+They are `/etc/systemd/system/codex-relay-test-reviewer.service.d/10-test-node22.conf`
+and `/etc/systemd/system/codex-relay-test-relay-manual-outcome@.service.d/10-test-node22.conf`.
+The [systemd v252 contract](https://raw.githubusercontent.com/systemd/systemd/v252/man/systemd.exec.xml)
+confines these mounts to their services and children. The actual Reviewer mount
+is read-only/nosuid. Fixed ExecStart, actor/group, socket/credential boundaries,
+`NoNewPrivileges` and existing service hardening were retained. Only the TEST
+Reviewer was restarted; no runner overlay, source/template/API change, global
+Node upgrade, App/credential mutation, shared ingress change or PROD operation
+was performed. The host still directly reports Node `18.20.4`.
+
+Fresh process-root and mount-namespace probes verified Reviewer Node `22.20.0`.
+During an actual official submission, root Writer helper PID `2149003` in
+`codex-relay-test-relay-manual-outcome@19-2148990-979.service` was observed running
+the exact binary hash above, version `22.20.0`, UID 0 and `NoNewPrivs: 1`.
+Reviewer retained its dedicated UID and `NoNewPrivs: 1`; the Rust binary/source
+identity and fixed socket/wrapper modes are unchanged.
+
+Separate synthetic input records `9007115000301`/`9007115000302` then qualified
+the official no-PR/PR path again on those Node 22 service namespaces:
+
+| Official supported-manual-runtime check | Result |
+| --- | --- |
+| No-PR submission | `PUBLISHED`, [Outcome 6114881010](https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114881010), body SHA-256 `e954aaf3ded65e0986c217ee56d07f7043e578e52e525eb74231eb283d120cea` |
+| PR submission at H3 `36d4e73b8a0b3450f78b5a00d672f0079d7f8b18` | `PUBLISHED`, [Outcome 6114885276](https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114885276), body SHA-256 `0147f1e51bbe41bce16ef160b4484525bdc1a5979d4c957494946514ed8efe25`; Ready transition |
+| Both exact repeats | `DUPLICATE_SUPPRESSED`, same native ID/body hash |
+| Wrong admission digest | `MANUAL_OUTCOME_BINDING_INVALID` |
+
+Native full-body/result/Writer Bot identity read-back verified both new records
+and all four earlier Outcome hashes unchanged. There are three separate
+qualification comments per parent, exactly one per distinct synthetic attempt.
+The new native claims explicitly carry the broader global/lifecycle Node 18
+warning. The two temporary input records, fixture scripts and temporary
+installation/probe scripts were removed; the useful TEST binary and two drop-ins
+remain. Official TEST services/socket stayed active; native history and H1/H2/H3
+branch commits remain. PR 7 was returned to draft after its Ready proof.
+[Node 22 process/publication receipts](task115-test-node22.json) are committed.
+
+The initial immediate namespace assertion did not observe Node 22; subsequent
+independent process-root/mount probes did, without reapplying installation.
+Probe/startup timing is an inference, not a reproduced product defect. A later
+fixture warning was first encoded as an invalid string rather than the schema's
+structured warning object. Validation rejected it before publication; its known
+incomplete disposable fixture record was removed and corrected inputs passed.
+These harness observations are retained instead of being called source regressions.
+
+This closes the unsupported interpreter warning for the qualified manual client/
+Writer path. The global host and lifecycle wrappers still see Node 18, including
+paths which deliberately enter PID 1's mount namespace. Whole-host/all-CLI Node
+support, real admission/model execution, PROD qualification and independent
+product acceptance remain unclaimed. That broader pre-existing limitation remains
+an explicit review input; fixing it is not generalized production upgrade recovery
+and was not added to this Task. The public operational post-check after this
+TEST environment correction returned `RELAY_INSTALL_RESULT=PASS` and
+`RELAY_DEPLOYMENT_RESULT=PASS;phase=post-check;elapsed_seconds=328`, installed
+`5699432e95440307fa799b0a3b8ac3150ffd574a`, previous `none`, from the same clean
+source/consumer and supported entrypoint. Its private log is
+`relay-5699432e9544-post-check-gq8ua4c3.log`; this successful composition check
+does not turn the broader global/lifecycle Node limitation into full-host proof.

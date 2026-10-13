@@ -1,0 +1,43 @@
+{
+  "synthetic": true,
+  "real_admission": false,
+  "real_execution": false,
+  "records": [
+    {
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000401.json",
+      "sha256": "470b584f5696327ddcafc8403cfc2745a6f9c1de1eded0f632b36da9a2709510",
+      "run": 9007115000401,
+      "existing_verified_own_partial_seed": true
+    },
+    {
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000402.json",
+      "sha256": "1d310de9db721155e6fae5de3d4b568ae5cc173fe1621522e37c619dfff0258d",
+      "run": 9007115000402,
+      "existing_verified_own_partial_seed": true
+    },
+    {
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000403.json",
+      "sha256": "e17dd717326bdc7f258ce2798b59dcadda403712bf21a07566ede4b6f0615d22",
+      "run": 9007115000403,
+      "existing_verified_own_partial_seed": true
+    },
+    {
+      "path": "/var/lib/codex-relay-test/dispatch/attempts-v2/9007115000403.json",
+      "sha256": "77aa9cf291ef27f80d91e98bf8c3cedfd075db3e02d68634fa3d3e7951207eab",
+      "run": 9007115000403,
+      "existing_verified_own_partial_seed": false
+    },
+    {
+      "path": "/var/lib/codex-relay-test/writer-claims/publication-v2/9007115000404.json",
+      "sha256": "51fe2201dc8f94d83f8d2dfc10c9e73eaafcf4d262f782741a31b9441ea8191b",
+      "run": 9007115000404,
+      "existing_verified_own_partial_seed": false
+    },
+    {
+      "path": "/var/lib/codex-relay-test/dispatch/attempts-v2/9007115000404.json",
+      "sha256": "03cf77b5745263d816e714d24f72079eab2f1885b9d77bab6b5e75ed350792b4",
+      "run": 9007115000404,
+      "existing_verified_own_partial_seed": false
+    }
+  ]
+}

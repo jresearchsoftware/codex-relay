@@ -1,0 +1,9 @@
+{
+  "issue": 6,
+  "pr": 7,
+  "labels": [
+    "step-1"
+  ],
+  "title": "Task 6 · Step 1 · TEST qualification fixture — manual Outcome transport",
+  "body": "Related to #6\n\nExecution admission digest: 46008b2dc0dabe632d6afc5e34475a82f4e6415747ba19caab7d7a4188ad427d\n\nDisposable TEST PR for installed manual Outcome exact-head qualification. Its admission-contract record, run ID and Step are synthetic test inputs. No real Relay admission, model execution, new project Task or Step is asserted. This fixture does not authorize ready labels, workflow dispatch, product acceptance, product merge or Issue closure.\n\nThe test will publish one native TEST Writer Outcome, observe its Ready transition, advance the disposable fixture branch and remove the fixture's marker to verify rejection. It will not merge this PR or alter historical Issue1/PR2.\n\nOfficial TEST App continuation uses separate explicitly synthetic publication records at the current fixture head. Earlier native fixture Outcomes remain immutable; no real admission or new execution is asserted.\n"
+}

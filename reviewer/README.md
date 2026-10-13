@@ -1,6 +1,6 @@
 # Reviewer MCP service
 
-This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review`, `read_pr_review_evidence` and `publish_task_authority`.
+This is a deliberately minimal custom Streamable HTTP transport, using pinned `axum 0.7.9` rather than an MCP crate because the required wire protocol is small and version-sensitive. It implements the narrow request/response subset of the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports): JSON-RPC POST, JSON/SSE `Accept` negotiation, origin rejection, and no SSE GET session. It exposes `check_pr_review_target`, `submit_pr_review`, `read_pr_review_evidence` and `publish_task_authority`, plus the separately enabled `submit_manual_outcome` Writer handoff capability.
 
 It reads the admitted bind, repositories, base branch, check name and App settings
 from `reviewer-mcp.json`. It publishes verdicts/findings authored by an external
@@ -28,7 +28,8 @@ Environment: `REVIEWER_MCP_CONFIG` (CLI alternative), `REVIEWER_CLIENT_CA_FILE`,
 variable enables review/check publication; startup logs `publication_mode`.
 The obsolete `mutation` config field is rejected, rather than implying an
 enabled publisher is read-only. Disabled instances can still read GitHub targets
-and initialize SQLite; they reject publication with `RELAY_DISABLED`.
+and initialize SQLite; they reject Reviewer publication with `RELAY_DISABLED`.
+The manual Writer submission capability has its own installed configuration gate.
 App/installation credential IDs must agree with config. Keep durable DB/WAL state
 private across restarts. `artifact.commit`/`artifact.sha256` are operator-recorded,
 shape-validated metadata, not verification by the running binary. The consumer
@@ -37,17 +38,20 @@ Do not bind this binary publicly.
 
 `publish_task_authority` implements the opted-in
 [`github-native-v1` authority contract](../contracts/README.md#github-native-task-authority). Its input is
-`repository` and one structured `record`: Decision, Task Request, PR-only Change
-Request, Task review evidence, or Task Approval. The publisher uses the shared
-version `3.0` schema and canonical `relay-authority` envelope; callers cannot
-choose an API path, credential, native author, arbitrary GitHub body, labels or
-PR title. Writer Outcomes remain a separate trusted Writer responsibility and
-this tool rejects their publication.
-
+`repository` and one structured `record`: Task Decision, independent exact-head
+PR Change Request, no-PR Task Approval or Task review findings. New publication
+uses schema `4.0`; historical schema `3.0` Task Requests, Decisions, CRs and
+acceptance records remain readable and recoverable. New Task work and
+continuation require no public full Task Request. The stable charter marker
+remains `Authority model: github-native-v1`; callers cannot choose an API path,
+credential, native author, arbitrary GitHub body, labels or PR title. Writer
+Outcomes remain a separate trusted Writer responsibility and this tool rejects
+their publication.
 See the [Task workflow guide](../docs/task-workflow.md) and
 [complete synthetic authoring examples](../examples/task-authority.md). Publish
 typed PR remediation through `publish_task_authority` with a `change-request`
-record; legacy `submit_pr_review` uses its CR2 `change_request` input instead.
+record; the retained legacy installation path uses the CR2 `change_request`
+input to `submit_pr_review`. It is not a fallback for new v4 work.
 Native exact-head PR `APPROVE` continues through `submit_pr_review` in either
 model. Task Approval and Task review findings use typed Issue records and do
 not substitute for a genuine PR verdict.
@@ -59,9 +63,39 @@ deployment enables it only with the paired controller/workflow contract. Install
 and qualify that same release and reviewed workflow projection before adding
 the exact `Authority model: github-native-v1` line to an owner-authored Issue.
 An old binary cannot recognize a new charter marker; manual mixing of old and
-new components is unsupported. An unmarked Issue retains legacy CR behavior.
-The new binary rejects legacy CR2 publication on a marked Issue; native PR
-`APPROVE` remains available for a genuine exact-head PR.
+new components is unsupported. With the qualified native capability enabled,
+fresh legacy CR2 or v3 Decision/Task Request/CR publication fails with
+`CURRENT_PROTOCOL_REQUIRED`; use the current v4 path or explicit owner-authorized
+migration. Historical reads, already-reserved exact publication recovery and
+safe completion/Outcome publication of old admitted attempts retain their
+original contract. Native PR `APPROVE` remains available for a genuine exact-head PR.
+Reserved v3 Decisions retain exact-operation recovery; schema-v3 result
+acceptance for an old admitted attempt remains supported.
+
+## Current protocol capabilities
+
+`tools/list` advertises the current schema-v4 authority input and the separately
+enabled `submit_manual_outcome` tool. A caller needing current Task Decisions,
+CR publication, independent review or a manual Writer Outcome must use the
+required current connected App/Reviewer/Writer capability. If the tool is absent
+or its exposed schema is outdated, stop before mutation, identify the missing
+tool/schema and the qualified installation/connection needed, and ask the owner
+to correct that mismatch within existing installation authority. Never substitute
+a v3 Decision/Task Request/CR, legacy CR2, old owner-result comment transport or alternate
+legacy routing. Historical exact-attempt completion/recovery uses its preserved
+contract; it does not initiate fresh work.
+
+The installed service enforces its own native publication and manual-transport
+configuration. Missing current native publication capability returns
+`CURRENT_PROTOCOL_CAPABILITY_REQUIRED` before publication; manual Writer
+transport retains its bounded disabled/unavailable errors with actionable
+installed-capability guidance.
+These checks cannot observe inaccessible client tools or a stale connected App
+cache. Client-visible tools/schema verification belongs to the caller; source
+version, a charter marker and configuration alone do not prove that connection
+was upgraded or qualified. No new client handshake or mandatory probe is added.
+
+## Native authority and publication
 
 The service re-reads the owner-authored Issue and hashes its entire UTF-8 body,
 including the marker, as the stable charter. It resolves configured owner,
@@ -74,36 +108,80 @@ and compared with its exact body digest. Sources may be the canonical Issue body
 Issue comments, native PR reviews or review comments on a PR linked to that
 Issue. Caller text cannot establish native identity or source provenance.
 
-The complete bounded native Request chain determines currentness through exact
-supersession references. A new Task Request supersedes its current predecessor;
-a new PR CR uses the same chain and advances Step, while a correction of the
-same CR identity and reviewed head may retain Step. Cited Decisions are checked
-for trust, supersession and normalization into the complete Request snapshot.
-PR-scoped Decisions apply only to a Request bound to that same existing PR.
-Selected context remains native references in the durable record; the response
-returns bounded native author and digest provenance. Native review findings for
-a Task are durable `task-review` evidence, then context for the next Task Request.
-They never fabricate an executable PR CR.
+For new work, the original charter plus trusted, active Task Decisions supplies
+current authority. Decisions accumulate without a Step; exact supersession
+references remove the replaced Decision, and the remaining Decisions apply in
+ascending native comment-ID order. Ordinary comments cannot amend the Task.
+A Task-scoped Decision can explicitly change effective closure policy; a
+PR-scoped Decision or CR cannot. A v4 PR CR is an independent native exact-head
+review with actionable findings and bounded profile/validation/boundary
+overrides. It requires no replacement Task Request, carries no Step and changes
+no Step labels or PR title. Writer allocates Step only when admitting execution.
+Fresh v4 CR publication binds `base_sha` to the observed native PR base SHA;
+recovery retains the reserved original body/base after base movement.
+The old complete Request chain, Step projection and exact body recovery remain
+supported for schema-v3 histories and already admitted executions.
 
-Task Approval binds the current, non-superseded Task Request, its explicit Step,
-a trusted native Writer Outcome on the Issue or a linked PR, and identical
-immutable result identities. Git results bind an
-exact SHA; deployment, qualification, evidence and no-change results bind an
-immutable revision or native run/result identities. Approval preserves every
-Outcome warning's source and impact, records its disposition and evidence gaps,
-and retains all Outcome limitations. This rule applies to automatic and manual
-Requests. A Task can be approved without a PR; a closed disposable PR may supply
-context and the Writer Outcome without being reopened. The service creates no
-PR and closes no Issue.
-Missing or conflicting closure metadata stays `keep-open` with a visible warning.
+A v4 Task Approval or Task review binds current charter/Decision sources, the
+protected Writer admission digest and Step, one trusted native Writer Outcome,
+and identical immutable result identities. A carried v3 Request and originating
+CR remain exact source references when applicable. Completion/acceptance and
+continuation follow the immutable compatibility selection: `null` remains `null`
+despite historical v3 Requests, and a retained reference keeps its exact source
+and currentness checks. A later independent native
+APPROVE does not erase the originating CR from the accepted Outcome's lineage;
+a different newer active CR still stops acceptance. Valid trusted Task
+Decisions added during execution do not suppress the original Outcome. Review
+compares its immutable admitted authority with the effective current Task;
+acceptance binds that current authority and requires disposition of amended
+requirements. Missing work needs actionable remediation, while an unused
+permission expansion alone does not invalidate the result. Material Task
+changes after acceptance require fresh acceptance before protected
+continuation. Native PR approval retains its acceptance-time authority binding
+in the review; a receipt cannot silently attach an old approval to newer Task
+semantics. Retained v3 currentness and exact source bindings remain unchanged.
+Git results bind an exact SHA; deployment, qualification, evidence and no-change
+results bind an immutable revision or native run/result identities. Approval
+preserves every Outcome warning's source and impact, records disposition and
+evidence gaps, and retains all limitations. An open implementation PR needs a
+native exact-head PR verdict, rather than an additional Task Approval. Genuine
+no-PR work can be approved on the Issue; a closed disposable PR can supply
+context and Outcome without reopening. Reviewer creates no PR, merges no PR and
+closes no Issue. Missing or conflicting charter closure metadata remains
+`keep-open` with a visible warning.
 
+Validated records render human-readable English substance before one collapsed
+`Machine-readable authority (JSON)` details block. Findings, corrections,
+acceptance criteria, warning impact/disposition/next action/evidence gaps and
+limitations remain visible. Untrusted HTML, Markdown, links, mentions and
+fences render as literal text. Canonical JSON bytes remain unchanged. If the
+complete summary would exceed native size limits, canonical JSON opens with a
+visible presentation-limit explanation; material facts are never truncated.
+The shared Node/Rust fixtures cover both schema generations and malicious text.
 The publisher reserves the existing SQLite operation journal before mutation.
-Operation identity binds the canonical record, and a returned publication is
+Operation identity retains the historical canonical record identity across
+renderer versions. New reservations retain the exact publication body; old rows
+without it recover the original legacy rendering. A returned publication is
 re-read by its native ID before being reported durable. An uncertain POST can
 recover only one exact native body and trusted author; an absent or ambiguous
 match stops without another POST. Partial Step projection resumes the same
 native identity and requires the reserved PR title or its canonical projection;
-changed authority stops recovery. After publication, Task Request/CR Step labels and the bounded
+changed authority stops recovery. The same reserved typed operation resumes
+`AUTHORITY_PUBLISHED` through metadata reconciliation, check publication and
+journal completion. Recovery verifies one original trusted native body,
+parent, review state and reviewed SHA before further mutations. It reconciles
+the exact-operation check by external ID, SHA and configured App identity;
+duplicate, conflicting or uncertain check state fails closed. Check creation
+intent is reserved before POST, so a lost response can recover by read-back
+without creating a second check. A durable receipt requires the completed
+journal, original review and verified check. Recovery allocates no Step and
+does not launch execution. Historical journal rows without a recorded check
+intent may recover an already observed exact check. If no check can be observed,
+the old row cannot prove that a prior POST was never attempted; it remains
+`CHECK_PUBLICATION_UNCERTAIN` without another POST. The migration does not invent
+an earlier authority or check-intent observation. Newly reserved v3 and v4
+operations retain that intent before creation. For retained schema-v3 publication, Task
+Request/CR Step labels and the bounded
 existing PR title are deterministic projections, preserving unrelated labels.
 This is one trusted publisher, not a second ordinary owner metadata workflow.
 Each source response is limited to 256 KiB and five seconds. Comments, reviews
@@ -152,7 +230,46 @@ merge nor closure. Execution belongs to a separately authorized trusted owner
 channel, never the worker. `REQUEST_CHANGES` requires an owner-authorized
 publication after review preview; a preview alone grants no mutation authority.
 Task Approval is independent acceptance of the bound result, not PR approval.
+The v4 continuation receipt carries effective closure permission, hold/next,
+exact source/admission/Outcome identities and a requirement for trusted owner
+canonical completion evidence. It does not infer Task completion from an
+implemented Step or absence of a next direction. Owner orchestration verifies
+remaining work and applicable qualification conditions before conditional closure.
 
+`submit_manual_outcome` accepts only `{repository, task, run_id, result}`;
+`task` and `run_id` are positive safe integers, and `result` is the canonical
+schema-v3 or schema-v4 Outcome claim for an already admitted manual attempt.
+The optional installed `manualOutcomeEnabled` boolean defaults to false. When
+false, the tool is not advertised and calls fail before contacting GitHub or
+Writer. It is independent of Reviewer review-publication mode. The installed
+`manualOutcomeClientPath` defaults to `/opt/codex-relay/relay-manual-outcome`;
+it is a fixed absolute POSIX path with that basename, never a caller field.
+Consumer deployment sets the namespace-specific protected client path.
+
+The same qualified OpenAI mTLS route authenticates submission. Reviewer runs
+the fixed nonprivileged client with a cleared environment, sending bounded JSON
+on stdin and accepting only a normalized public Writer receipt. The client
+uses the protected local UNIX socket and narrowly scoped root Writer service;
+Reviewer retains `NoNewPrivileges`, receives no Writer GitHub credential and
+cannot choose another Writer operation. Socket admission and Writer publication
+are separate from Reviewer Bot credentials and SQLite review state. Foreign
+repositories, invalid/currentness-changing authority, automatic/unadmitted
+attempts, incorrect Step or result, duplicates and uncertain publication are
+validated or recovered by Writer under its existing publication lock/journal.
+There is no owner-authored manual-result precursor, identity-proof comment,
+second dispatch transport or owner approval step for delivering the claim.
+
+Submission arguments are limited to 60,000 UTF-8 JSON bytes within the existing
+62,000-byte JSON-RPC body limit, public receipts to 32 KiB and the client wait to
+60 seconds. Oversize input/response and unavailable or uncertain Writer state
+remain explicit errors, without truncation, raw helper diagnostics or secret
+output. A retry supplies the same admitted result and recovers its existing
+Writer publication; it cannot launch another execution. The receipt names the
+Writer actor, exact native Outcome ID/parent/body digest and URL. It records
+Codex claims and verified binding, not proof that every claimed test ran or
+independent acceptance. Old owner-authored manual-result and Writer Outcome
+records remain immutable readable history. Source tests of this boundary do
+not qualify an installed UNIX socket, service, mTLS ingress or credentials.
 Configure either the existing top-level `repository` string or a nonempty
 `repositories` array of strings, never both. Both forms normalize to a repository
 set; duplicate entries collapse. For example, replace the `repository` field in
@@ -237,6 +354,20 @@ completeness does not itself establish independent acceptance or warning disposi
 `submit_pr_review` has two action-specific inputs. `APPROVE` needs only the
 target (`repository`, `pr_number`, `expected_head_sha`), action and a bounded
 `review_body`; legacy non-executable `structured_findings` remain optional.
+For schema-v4 work with a verified material difference between the delivered
+Outcome's admitted Task and the current Task, or an unresolved comparison gap,
+`APPROVE` additionally requires
+`expected_task_authority_sha256` equal to the current authority digest exposed
+by the review target. This binds the reviewer's current-requirement comparison
+in the same review call; a stale or missing expectation stops before native
+approval publication. Without it, the service could silently attach old review
+prose to amended requirements the reviewer had not assessed. The conditional
+digest adds no separate event or review phase; unchanged v4 and historical
+v3 calls retain their existing inputs. New Writer Outcomes export bounded
+`authority_resolution` captured under the original admission digest for their
+actual resolver defaults; old admissions are never rewritten to add it.
+For older Outcomes lacking it, unknown defaults are reported as comparison
+gaps rather than a proven material change or an assumed profile.
 `REQUEST_CHANGES` requires a structured `change_request` instead of either
 `review_body` or `structured_findings`. The tool exposes ordinary top-level
 properties with required `repository`, `pr_number`, `expected_head_sha` and
@@ -307,8 +438,11 @@ deployment require separate owner authorization; source implementation does not
 grant those actions.
 The native review body remains sole executable PR CR authority, linked to the
 canonical Issue for Task identity. Legacy native `1.0` read and `2.0` publication
-remain unchanged for unmarked Issues; marked Issues use the shared `3.0` typed
-envelope and native Request chain.
+remain compatible under the retained older installation/exact-operation
+contract; fresh CR2 publication is refused by a qualified v4 installation.
+Marked Issues use the shared `4.0` typed
+envelope for new Decisions, CRs and acceptance, with retained `3.0` histories and
+in-flight Request chains.
 
 See the [producer/consumer contract and fixtures](../contracts/README.md)
 for the semantic example, compatibility boundary and local checks. Cargo tests

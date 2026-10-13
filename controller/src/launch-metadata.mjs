@@ -19,7 +19,7 @@ export function remediationThreadTitle(title, issueNumber, step) {
 
 export function dispatchRunName({ route, issueNumber, step, target, number }) {
   const phase = route === 'manual' ? 'Manual handoff' : target === 'pull_request' ? 'Auto remediation' : 'Auto implementation';
-  const title = `${phase} · Task ${issueNumber} · Step ${step}${target === 'pull_request' ? ` · PR #${number}` : ''}`;
+  const title = `${phase} · Task ${issueNumber}${step ? ` · Step ${step}` : ''}${target === 'pull_request' ? ` · PR #${number}` : ''}`;
   if (Array.from(title).length > RUN_NAME_MAX_CHARS) fail('LAUNCH_METADATA_TOO_LONG');
   return title;
 }
@@ -27,7 +27,7 @@ export function dispatchRunName({ route, issueNumber, step, target, number }) {
 export function parseLaunchInputs(inputs) {
   if (!inputs || !['auto', 'manual'].includes(inputs.route)) fail('ROUTE_INVALID');
   const issueNumber = positiveDecimal(inputs.task, 'LAUNCH_TASK_INVALID');
-  const step = launchStep(inputs.step);
+  const step = inputs.step === undefined || inputs.step === '' ? null : launchStep(inputs.step);
   const target = inputs.pull_request ? 'pull_request' : 'issue';
   const number = target === 'pull_request' ? positiveDecimal(inputs.pull_request, 'LAUNCH_PR_INVALID') : issueNumber;
   const launch = { route: inputs.route, issueNumber, step, target, number };
@@ -43,6 +43,7 @@ function labelRunPrefix({ route, target, number }) {
 }
 
 export function labelRunName(launch, subject) {
+  if (launch.target === 'issue' && /^Authority model: github-native-v1$/m.test(subject.body ?? '')) return labelRunPrefix(launch) + `codex-ready-${launch.route}`;
   return labelRunPrefix(launch) + (launch.target === 'issue' ? labelNames(subject.labels).join(' · ') : subject.title);
 }
 

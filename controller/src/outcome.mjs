@@ -2,28 +2,37 @@ import { exactSha } from './execution-contract.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
-import { renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { admissionBinding, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
 const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
-export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [] } = {}) {
+export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift } = {}) {
   if (!e.request || !e.requestReference) return body;
+  const snapshot = e.request.kind === 'admission';
   const warningSources = [...(e.admission?.warnings ?? []).map(warning => warning.code), ...executionWarnings];
   const warnings = [...new Set(warningSources)].map(source => ({ source: `Attempt ${e.attemptId}: ${source}`,
     impact: source === 'UNCOMMITTED_WORK_REMAINS' ? 'Uncommitted checkout work requires reconciliation before acceptance.' : 'Admission selected a safe default; inspect the canonical authority before acceptance.',
     resolution: 'Unresolved at execution handoff.', next_action: 'Owner and independent reviewer must inspect and disposition this warning.', evidence_gaps: [] }));
-  const record = { schema_version: '3.0', kind: 'outcome', repository: e.repository, task: e.issueNumber,
+  const record = { schema_version: snapshot ? '4.0' : '3.0', kind: 'outcome', repository: e.repository, task: e.issueNumber,
     parent: { kind: pr ? 'pull_request' : 'issue', number: pr?.number ?? e.issueNumber },
-    charter_sha256: e.request.charter_sha256, request: e.requestReference, attempt: e.attemptId, status,
+    charter_sha256: e.request.charter_sha256,
+    ...(snapshot ? { authority: e.request.authority, admission: admissionBinding(e.request), step: e.step,
+      ...(e.request.authority_resolution ? { authority_resolution: e.request.authority_resolution } : {}),
+      ...(authorityDrift && authorityDrift.current_authority.sha256 !== e.request.authority.sha256
+        ? { authority_drift: authorityDrift } : {}) }
+      : { request: e.requestReference }), attempt: e.attemptId, status,
     result: { kind: exactSha(head) && head !== e.startHead ? 'git' : 'no-change',
       revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) }] },
     warnings, limitations: ['Native exact-head checks and independent acceptance remain separate.',
       'Execution and publication grant no deployment, credential, release, merge or Issue-closure authority.'],
     summary: status === 'implemented' ? 'The admitted execution completed; independent review remains required.' : 'The admitted execution stopped; useful durable work and its boundary are recorded above.' };
-  return `${body}\n\nExecution request native ID: ${e.requestReference.id}\nExecution request digest: ${e.requestReference.sha256}\n\n${renderAuthorityRecord(record)}`;
+  const source = snapshot ? `Authority source native ID: ${e.requestReference.id}\nAuthority digest: ${e.request.authority.sha256}\nAdmission digest: ${record.admission.sha256}`
+    : `Execution request native ID: ${e.requestReference.id}\nExecution request digest: ${e.requestReference.sha256}`;
+  return `${body}\n\n${source}\n\n${renderAuthorityRecord(record)}`;
 }
 
 // These are controller observations, separate from worker validation claims and
@@ -93,8 +102,7 @@ export function workerOutcomeClaims(result) {
   const claim = (value, maxBytes) => {
     if (typeof value !== 'string' || !value.trim()) return 'UNAVAILABLE';
     const bounded = boundedDiagnosticText(value, maxBytes);
-    const escaped = bounded.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/[\\`*_[\]]/g, '\\$&');
+    const escaped = safePublicationText(bounded.text);
     const rendered = boundedDiagnosticText(escaped, maxBytes);
     return rendered.text + (bounded.truncated || rendered.truncated ? ' [TRUNCATED]' : '');
   };

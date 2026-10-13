@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { NATIVE_CR_VALIDATIONS } from '../../contracts/src/executable-cr.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
-import { validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { validateAuthorityRecord, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
 export const OWNER = CONSUMER.owner;
@@ -88,6 +88,14 @@ export function safeDomainTerminal(error, record, stage) {
     && (collected.head === record.envelope.startHead || record.progress?.head === collected.head);
 }
 export const fail = code => { throw Object.assign(new Error(code), { code }); };
+// A protocol mismatch has no admitted execution or Outcome authority. Keep it
+// outside domain blockers so an old-format rejection cannot create a new chain.
+export function requireCurrentProtocol() {
+  throw Object.assign(new Error('CURRENT_PROTOCOL_REQUIRED: New execution requires schema 4.0 native authority on a coordinated, qualified installation. '
+    + 'Reconcile the canonical Task marker; for an older Task, authorize current work through an active trusted Task-scoped schema 4.0 Decision amending purpose or scope after its latest schema 3.0 Request. '
+    + 'PR remediation requires a current schema 4.0 Change Request. Preserve already-admitted attempts and exact bindings; do not fall back to legacy or schema 3.0 execution.'),
+  { code: 'CURRENT_PROTOCOL_REQUIRED' });
+}
 export const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const exactSha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
 export const positive = value => Number.isSafeInteger(value) && value > 0;
@@ -107,7 +115,7 @@ export function validateEnvelope(e) {
   // smoke; neither path invents Step metadata for a new automatic admission.
   const nativeDispatch = e && positive(e.step) && e.attemptId === `run-${e.runId}`;
   const legacyEvent = e && positive(e.eventId) && e.attemptId === `event-${e.eventId}`;
-  const manualNoSource = e?.route === 'manual' && e?.request?.kind === 'task-request'
+  const manualNoSource = e?.route === 'manual' && ['task-request', 'admission'].includes(e?.request?.kind)
     && e.branch === null && e.startHead === null && e.historicalBase === null;
   if (!e || e.version !== VERSION || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
     || !safeModel(e.profile?.cliModelId) || !safeEffort(e.profile?.effort)
@@ -118,12 +126,16 @@ export function validateEnvelope(e) {
     || !/^[a-f0-9]{64}$/.test(e.authorityDigest)) fail('EXECUTION_ENVELOPE_INVALID');
   if (!manualNoSource) branchName(e.branch);
   if (e.request) {
-    validateAuthorityRecord(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
+    const validator = e.request.kind === 'admission' ? validateAdmissionSnapshot : validateAuthorityRecord;
+    validator(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
     if (e.request.step !== e.step || e.request.route !== e.route || e.request.branch !== e.branch
       || e.request.starting_head !== e.startHead || e.request.base_sha !== e.historicalBase
       || e.request.model !== e.profile.cliModelId || e.request.effort !== e.profile.effort
       || e.request.subagents !== e.subagentsAllowed || !e.requestReference
       || !/^[a-f0-9]{64}$/.test(e.requestReference.sha256 ?? '')) fail('EXECUTION_ENVELOPE_INVALID');
+    if (e.request.kind === 'admission' && (e.request.authority.sha256 !== e.authorityDigest
+      || e.request.attempt !== e.attemptId || e.request.run_id !== String(e.runId)
+      || canonicalAuthorityJson(e.requestReference) !== canonicalAuthorityJson(e.request.authority.change_request ?? e.request.authority.charter))) fail('EXECUTION_ENVELOPE_INVALID');
   }
   if (e.continuation && (e.target !== 'issue' || !exactSha(e.continuation.head) || e.continuation.head !== e.startHead
     || (e.continuation.pullRequest !== null && !positive(e.continuation.pullRequest)))) fail('EXECUTION_ENVELOPE_INVALID');

@@ -1,0 +1,298 @@
+{
+  "observedAt": "2026-10-12T13:43:05.393Z",
+  "selector": "PASS",
+  "actor": {
+    "login": "jresearchsoftware-chatgpt-reviewer[bot]",
+    "id": 306850842,
+    "type": "Bot"
+  },
+  "recordCount": 17,
+  "selected": {
+    "kind": "review",
+    "id": 5490953732,
+    "parent": {
+      "kind": "pull_request",
+      "number": 118
+    },
+    "sha256": "bca63319759a22eb837c38d4a513467b4f7b81e30f2783f19ffcb67b4144abc4"
+  },
+  "kind": "change-request",
+  "step": 3,
+  "decisions": [
+    {
+      "id": 6124295101,
+      "kind": "issue-comment",
+      "parent": {
+        "kind": "issue",
+        "number": 115
+      },
+      "sha256": "edc97f46204af9759c295b551657901907a773498d294d058bb99e4692ce50e5"
+    }
+  ],
+  "warnings": [],
+  "latestDecisiveReview": 5490953732,
+  "latestMatches": true,
+  "charterHash": "c36bf4e867ba254818d1e0807329ab50387c8e53eccdc2e751b9cbb5b87f646f",
+  "supersessionEdges": [
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6110068398,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "e9eb320876b41a34e03d9e8f033280be36fa72c109cbe96d42bb41cf32d1b978"
+      },
+      "predecessor": {
+        "id": 6109630038,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "baead0f01eb40853eff28791cbb067d703f811037fa26e25b8c121d52e4d4bde"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6112655517,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "d08cd6a43de555e2d7bc6678ba6060efb075cb19349c484b75bf55cf83037a80"
+      },
+      "predecessor": {
+        "id": 6110064799,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "1d662713e73803586945c7644601f8029d8398447f571b6bfd9a43b4212c4468"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6112661946,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "8a49967ddf924bec46220e05646936beee0d94cb7ad5d97bb3fb8c0ee593ba8b"
+      },
+      "predecessor": {
+        "id": 6110068398,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "e9eb320876b41a34e03d9e8f033280be36fa72c109cbe96d42bb41cf32d1b978"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6113642915,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "24b6624b87d0c0df767fb6d6bf10d6df9c93b143d7b3e27a7ca60f0a56cddf98"
+      },
+      "predecessor": {
+        "id": 6112655517,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "d08cd6a43de555e2d7bc6678ba6060efb075cb19349c484b75bf55cf83037a80"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6113666253,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "60b9efba70eb4d8396bb687e4e9bb1abd5a18bf5c260c086a5e656e57ee2b22b"
+      },
+      "predecessor": {
+        "id": 6112661946,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "8a49967ddf924bec46220e05646936beee0d94cb7ad5d97bb3fb8c0ee593ba8b"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6114003261,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "f987f402e76dd643ddc72c86cf2a20d5b3e797d549e908a0571caa07f4e48dbf"
+      },
+      "predecessor": {
+        "id": 6113642915,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "24b6624b87d0c0df767fb6d6bf10d6df9c93b143d7b3e27a7ca60f0a56cddf98"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6114012178,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "6ea0db6f77c7ae97df3c8cde019f0bedcbd766ce36b94d4ae9b01c52d6dc9dc9"
+      },
+      "predecessor": {
+        "id": 6113666253,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "60b9efba70eb4d8396bb687e4e9bb1abd5a18bf5c260c086a5e656e57ee2b22b"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6118514167,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "a7a95faa94bab20b213e057daadc9a5df19520ba12aaa4aa49f6e4a21121161c"
+      },
+      "predecessor": {
+        "id": 6114003261,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "f987f402e76dd643ddc72c86cf2a20d5b3e797d549e908a0571caa07f4e48dbf"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6119068011,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "b90242f664f6ab8c5a8dffb0b0d38dadb322c213e0ffb6b4b19045cbfab9734c"
+      },
+      "predecessor": {
+        "id": 6118514167,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "a7a95faa94bab20b213e057daadc9a5df19520ba12aaa4aa49f6e4a21121161c"
+      }
+    },
+    {
+      "source": {
+        "kind": "issue-comment",
+        "id": 6124295101,
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "edc97f46204af9759c295b551657901907a773498d294d058bb99e4692ce50e5"
+      },
+      "predecessor": {
+        "id": 6119068011,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "b90242f664f6ab8c5a8dffb0b0d38dadb322c213e0ffb6b4b19045cbfab9734c"
+      }
+    },
+    {
+      "source": {
+        "kind": "review",
+        "id": 5486911916,
+        "parent": {
+          "kind": "pull_request",
+          "number": 118
+        },
+        "sha256": "90c0b46dbf620591e8af09b1ae459099ffb92fef33c8b5e1cd763e50edc5fe81"
+      },
+      "predecessor": {
+        "id": 6114012178,
+        "kind": "issue-comment",
+        "parent": {
+          "kind": "issue",
+          "number": 115
+        },
+        "sha256": "6ea0db6f77c7ae97df3c8cde019f0bedcbd766ce36b94d4ae9b01c52d6dc9dc9"
+      }
+    },
+    {
+      "source": {
+        "kind": "review",
+        "id": 5487214267,
+        "parent": {
+          "kind": "pull_request",
+          "number": 118
+        },
+        "sha256": "0d79d88997613c03a726272998acf51f08a865335aee286fd6c20f2f7d0ad038"
+      },
+      "predecessor": {
+        "id": 5486911916,
+        "kind": "review",
+        "parent": {
+          "kind": "pull_request",
+          "number": 118
+        },
+        "sha256": "90c0b46dbf620591e8af09b1ae459099ffb92fef33c8b5e1cd763e50edc5fe81"
+      }
+    },
+    {
+      "source": {
+        "kind": "review",
+        "id": 5490953732,
+        "parent": {
+          "kind": "pull_request",
+          "number": 118
+        },
+        "sha256": "bca63319759a22eb837c38d4a513467b4f7b81e30f2783f19ffcb67b4144abc4"
+      },
+      "predecessor": {
+        "id": 5487214267,
+        "kind": "review",
+        "parent": {
+          "kind": "pull_request",
+          "number": 118
+        },
+        "sha256": "0d79d88997613c03a726272998acf51f08a865335aee286fd6c20f2f7d0ad038"
+      }
+    }
+  ]
+}

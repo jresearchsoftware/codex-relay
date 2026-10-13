@@ -1,0 +1,56 @@
+{
+  "repository": "jresearchsoftware/codex-relay-testbed",
+  "task": 6,
+  "run_id": 9007115000401,
+  "result": {
+    "schema_version": "4.0",
+    "kind": "outcome",
+    "repository": "jresearchsoftware/codex-relay-testbed",
+    "task": 6,
+    "parent": {
+      "kind": "issue",
+      "number": 6
+    },
+    "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+    "step": 1,
+    "authority": {
+      "charter": {
+        "kind": "issue-body",
+        "id": 5805525646,
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+      },
+      "decisions": [],
+      "change_request": null,
+      "compatibility_request": null,
+      "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+    },
+    "admission": {
+      "attempt": "run-9007115000401",
+      "step": 1,
+      "sha256": "901fea4488555e841d718f5adb9be4d13635dbe49da6afe06ec01b56824e00e3"
+    },
+    "attempt": "run-9007115000401",
+    "status": "implemented",
+    "result": {
+      "kind": "qualification",
+      "revision": "3fff4140c57b993b9f006159529d9459ec9ace13",
+      "identities": [
+        {
+          "kind": "qualification-fixture",
+          "id": "task115-step2-installed-f1-no_pr"
+        }
+      ]
+    },
+    "summary": "Official TEST App F1 publication fixture after a trusted Task Decision changed current requirements. Protected admission-shaped state is synthetic; no real admission, Relay/model execution, new project Task or Step is asserted.",
+    "warnings": [],
+    "limitations": [
+      "Synthetic admission-shaped state qualifies installed publication, not real Writer admission or worker/model execution.",
+      "Product Task115 Step1/Step2 PROD admissions and original PR118 execution markers are untouched.",
+      "No independent product acceptance, product merge, PROD installation or Issue closure is asserted."
+    ]
+  }
+}

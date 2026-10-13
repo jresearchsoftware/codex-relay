@@ -1,0 +1,20 @@
+import {execFileSync} from 'node:child_process';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+const {selectCurrentRequest,sha256Body,extractAuthorityRecord,referenceKey,nativeReference}=await import(pathToFileURL(resolve('contracts/src/github-authority.mjs')));
+const repository='jresearchsoftware/codex-relay';
+const api=p=>JSON.parse(execFileSync('gh',['api',p],{encoding:'utf8'}));
+const pages=p=>JSON.parse(execFileSync('gh',['api','--paginate','--slurp',p],{encoding:'utf8'})).flat();
+const issue=api('repos/'+repository+'/issues/115');
+const actor=api('users/jresearchsoftware-chatgpt-reviewer%5Bbot%5D');
+const map=(v,kind,parent)=>({kind,id:v.id,repository,parent,author:v.user,body:v.body??'',state:v.state,commit_id:v.commit_id});
+const comments=pages('repos/'+repository+'/issues/115/comments?per_page=100');
+const prcomments=pages('repos/'+repository+'/issues/118/comments?per_page=100');
+const reviews=pages('repos/'+repository+'/pulls/118/reviews?per_page=100');
+const records=[...comments.filter(v=>/^```relay-authority/m.test(v.body??'')).map(v=>map(v,'issue-comment',{kind:'issue',number:115})),...prcomments.filter(v=>/^```relay-authority/m.test(v.body??'')).map(v=>map(v,'issue-comment',{kind:'pull_request',number:118})),...reviews.map(v=>map(v,'review',{kind:'pull_request',number:118}))];
+const s=selectCurrentRequest(records,{repository,task:115,charterBody:issue.body,trustedAuthor:actor,step:3});
+const decisive=reviews.filter(v=>v.user.id===actor.id&&['CHANGES_REQUESTED','APPROVED','DISMISSED'].includes(v.state)).sort((a,b)=>a.id-b.id).at(-1);
+const selectedRef={kind:'review',id:5490953732,parent:{kind:'pull_request',number:118},sha256:'bca63319759a22eb837c38d4a513467b4f7b81e30f2783f19ffcb67b4144abc4'};
+if(JSON.stringify(s.reference)!==JSON.stringify(selectedRef)||decisive.id!==s.record.id)throw Error('EXPECTED_REQUEST_NOT_CURRENT');
+const edges=[];for(const r of records){if(r.author.id!==actor.id||r.author.type!=='Bot')continue;const p=extractAuthorityRecord(r.body,{repository,task:115});if(!p?.supersedes)continue;const prior=records.find(x=>referenceKey(x)===referenceKey(p.supersedes));if(!prior||sha256Body(prior.body)!==p.supersedes.sha256||prior.author.id!==actor.id||prior.author.type!=='Bot')throw Error('SUPERCESSION_SOURCE_MISMATCH');edges.push({source:nativeReference(r),predecessor:p.supersedes});}
+console.log(JSON.stringify({observedAt:new Date().toISOString(),selector:'PASS',actor:{login:actor.login,id:actor.id,type:actor.type},recordCount:records.length,selected:s.reference,kind:s.request.kind,step:s.request.step,decisions:s.decisions.map(d=>d.reference),warnings:s.warnings,latestDecisiveReview:decisive.id,latestMatches:true,charterHash:sha256Body(issue.body),supersessionEdges:edges},null,2));

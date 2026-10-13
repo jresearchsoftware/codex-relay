@@ -1,0 +1,1 @@
+{"candidate": "PASS", "trackedFiles": 544, "localLinks": 335, "scope": "JSON syntax, local Markdown links, bounded credential markers"}

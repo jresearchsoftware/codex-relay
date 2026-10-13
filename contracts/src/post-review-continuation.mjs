@@ -1,6 +1,6 @@
 import {
   authorityMode, canonicalAuthorityJson, extractAuthorityRecord, nativeReference, referenceKey,
-  selectCurrentRequest, sha256Body, stableClosurePolicy, validateTaskApproval
+  selectCurrentRequest, sha256Body, stableClosurePolicy, validateTaskApproval, resolveTaskAuthority, resolveOutcomeAuthority
 } from './github-authority.mjs';
 
 const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
@@ -25,18 +25,50 @@ function acceptedState(receipt, state, transition = null) {
     || !trusted(native, binding.trustedAuthor)) stop('CONTINUATION_APPROVAL_UNVERIFIED');
   let current;
   if (authorityMode(binding.charterBody) === 'github-native-v1') {
-    current = selectCurrentRequest(state.nativeRecords, binding);
-    if (!same(current.reference, transition?.reference ?? receipt.request)) stop('CONTINUATION_REQUEST_CHANGED');
-    if (transition) preparedRequest(current, transition.source, transition.target, receipt);
+    if (receipt.authority) {
+      current = resolveOutcomeAuthority(receipt.authority, state.nativeRecords, binding);
+      // Receipt authority is the independently accepted current Task, rather
+      // than the immutable authority of the execution's historical Outcome.
+      if (!same(current.authority, receipt.authority)) stop('AUTHORITY_APPROVAL_STALE_REQUEST');
+      if (!receipt.admission || receipt.admission.step < 1 || !Number.isSafeInteger(receipt.admission.step)
+        || !/^[a-f0-9]{64}$/.test(receipt.admission.sha256)) stop('CONTINUATION_AUTHORITY_CHANGED');
+      if (typeof state.task.complete !== 'boolean') stop('CONTINUATION_COMPLETION_UNVERIFIED');
+    } else {
+      current = selectCurrentRequest(state.nativeRecords, binding);
+      if (!same(current.reference, transition?.reference ?? receipt.request)) stop('CONTINUATION_REQUEST_CHANGED');
+      if (transition) preparedRequest(current, transition.source, transition.target, receipt);
+    }
   } else if (receipt.request !== null || typeof receipt.authority_digest !== 'string'
     || !/^[a-f0-9]{64}$/.test(receipt.authority_digest) || state.authorityDigest !== receipt.authority_digest) {
     stop('CONTINUATION_AUTHORITY_CHANGED');
   }
   const continuation = current?.request.continuation ?? state.legacyContinuation ?? defaults;
-  if (!continuation || typeof continuation.hold !== 'boolean' || typeof continuation.task_complete !== 'boolean'
+  if (!continuation || typeof continuation.hold !== 'boolean' || !receipt.authority && typeof continuation.task_complete !== 'boolean'
     || !Object.hasOwn(continuation, 'next')) stop('CONTINUATION_AUTHORITY_CHANGED');
   if (continuation.hold || state.task.hold || state.task.protectedBoundary) stop('CONTINUATION_PROTECTED_BOUNDARY');
   if (native.kind === 'review') {
+    if (receipt.authority) {
+      const markers = native.body.split(/\r?\n/).filter(line => line.startsWith('<!-- jresearchsoftware-reviewer-acceptance:v1 '));
+      if (markers.length > 1 || markers.length === 1
+        && markers[0] !== `<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256=${receipt.authority.sha256} -->`) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      // Historical v4 approvals carried no authority marker. They can retain
+      // unchanged original-Outcome acceptance, never acquire new Task semantics
+      // from a caller-carried receipt after the native approval.
+      const outcomes = state.nativeRecords.filter(record => record.kind === 'issue-comment' && trusted(record, binding.trustedWriter))
+        .map(native => ({ native, outcome: extractAuthorityRecord(native.body, binding) }))
+        .filter(({ outcome }) => outcome?.kind === 'outcome' && outcome.schema_version === '4.0'
+          && same(outcome.admission, receipt.admission));
+      if (outcomes.some(({ native, outcome }) => !same(native.parent, outcome.parent)
+        || outcome.parent.kind === 'pull_request' && outcome.parent.number !== state.pr?.number
+        || outcome.parent.kind === 'issue' && outcome.parent.number !== receipt.task
+        || outcome.status !== 'implemented' || !['git', 'no-change'].includes(outcome.result.kind)
+        || outcome.result.revision !== receipt.reviewed_head_sha)) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      const deliveredOutcome = outcomes[0]?.outcome;
+      if (outcomes.length !== 1 || !markers.length && !same(deliveredOutcome.authority, receipt.authority)) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      const delivered = resolveOutcomeAuthority(deliveredOutcome.authority, state.nativeRecords,
+        { ...binding, ...(deliveredOutcome.authority_resolution ? { authorityResolution: deliveredOutcome.authority_resolution } : {}) });
+      if (!same(delivered.authority, receipt.authority)) stop('AUTHORITY_APPROVAL_STALE_REQUEST');
+    }
     if (native.state !== 'APPROVED' || !sha(receipt.reviewed_head_sha) || native.commit_id !== receipt.reviewed_head_sha
       || !state.pr || native.parent.kind !== 'pull_request' || native.parent.number !== state.pr.number
       || state.pr.taskNumber !== receipt.task
@@ -50,7 +82,10 @@ function acceptedState(receipt, state, transition = null) {
       const outcomeNative = state.nativeRecords.find(record => same(nativeReference(record), nativeReference(previous.outcomeRecord)));
       if (!same(approval, previous.approval) || !outcomeNative || !trusted(outcomeNative, binding.trustedWriter)
         || !state.nativeRecords.some(record => same(nativeReference(record), receipt.request))) stop('CONTINUATION_APPROVAL_UNVERIFIED');
-    } else current.approvalValidation = validateTaskApproval(approval, state.nativeRecords, binding);
+    } else {
+      if (receipt.authority && (!same(approval.authority, receipt.authority) || !same(approval.admission, receipt.admission))) stop('CONTINUATION_APPROVAL_UNVERIFIED');
+      current.approvalValidation = validateTaskApproval(approval, state.nativeRecords, binding);
+    }
     // A Task Approval accepts its immutable Task result; it is not a PR review
     // and does not supply permission to merge a disposable artifact PR.
   } else stop('CONTINUATION_APPROVAL_UNVERIFIED');
@@ -164,19 +199,47 @@ export async function continueAfterApproval(receipt, ports) {
       }
     }
     accepted = await read();
-    const closure = stableClosurePolicy(accepted.binding.charterBody);
-    if (closure.policy === 'close-authorized' && accepted.continuation.task_complete && !accepted.state.task.remainingWork
+    const closure = receipt.authority ? { policy: accepted.current.request.issue_closure_policy, warnings: accepted.current.warnings }
+      : stableClosurePolicy(accepted.binding.charterBody);
+    const taskComplete = receipt.authority ? accepted.state.task.complete : accepted.continuation.task_complete;
+    if (closure.policy === 'close-authorized' && taskComplete && !accepted.state.task.remainingWork
       && accepted.continuation.next?.task !== receipt.task
       && !accepted.state.task.closed) {
       await act('close-issue', { issueNumber: receipt.task }, ports.closeIssue, fresh => {
-        if (stableClosurePolicy(fresh.binding.charterBody).policy !== 'close-authorized' || !fresh.continuation.task_complete
+        const effective = receipt.authority ? fresh.current.request.issue_closure_policy : stableClosurePolicy(fresh.binding.charterBody).policy;
+        const complete = receipt.authority ? fresh.state.task.complete : fresh.continuation.task_complete;
+        if (effective !== 'close-authorized' || !complete
           || fresh.state.task.remainingWork || fresh.state.task.closed) stop('CONTINUATION_CLOSURE_CHANGED');
       });
       accepted = await read();
       if (!accepted.state.task.closed) stop('CONTINUATION_CLOSURE_UNVERIFIED');
     }
+    if (receipt.authority && closure.policy === 'keep-open' && taskComplete && !accepted.state.task.remainingWork
+      && accepted.continuation.next === null && !accepted.state.task.closed) stop('CONTINUATION_CLOSURE_POLICY_RECONCILIATION_REQUIRED');
     let next = accepted.continuation.next;
     if (next !== null) {
+      if (receipt.authority) {
+        if (!Number.isSafeInteger(next.task) || next.task < 1 || !next.direction
+          || typeof ports.readNextAuthority !== 'function') stop('CONTINUATION_NEXT_AUTHORITY_INVALID');
+        const readNext = async () => {
+          const state = await ports.readNextAuthority({ repository: receipt.repository, task: next.task, direction: next.direction });
+          if (state?.binding?.repository !== receipt.repository || state.binding.task !== next.task) stop('CONTINUATION_NEXT_AUTHORITY_INVALID');
+          const resolved = resolveTaskAuthority(state.nativeRecords, { ...state.binding, compatibility: false });
+          if (!resolved || !resolved.decisions.some(item => same(item.reference, next.direction))) stop('CONTINUATION_NEXT_REQUEST_CHANGED');
+          if (resolved.request.continuation.hold || state.protectedBoundary !== false) stop('CONTINUATION_PROTECTED_BOUNDARY');
+          if (!['auto', 'manual'].includes(resolved.request.route)) stop('CONTINUATION_NEXT_AUTHORITY_INVALID');
+          return resolved;
+        };
+        const selected = await readNext();
+        const kind = selected.request.route === 'auto' ? 'launch-authority' : 'manual-handoff';
+        const mutation = selected.request.route === 'auto' ? ports.launchAuthority ?? ports.launchRequest : ports.manualHandoff;
+        await act(kind, { nextTask: next.task, nextAuthority: selected.authority, direction: next.direction,
+          route: selected.request.route }, mutation, async () => {
+          const fresh = await readNext();
+          if (!same(fresh.authority, selected.authority) || fresh.request.route !== selected.request.route) stop('CONTINUATION_NEXT_REQUEST_CHANGED');
+        });
+        return { status: 'complete', actions, warnings: closure.warnings };
+      }
       if (!next || !Number.isSafeInteger(next.task) || next.task < 1 || (!next.request && !next.direction)
         || typeof ports.readNextAuthority !== 'function') stop('CONTINUATION_NEXT_AUTHORITY_INVALID');
       if (next.direction) {

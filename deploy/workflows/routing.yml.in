@@ -3,9 +3,11 @@
 name: Relay routing
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch' &&
-      format('{0} · Task {1} · Step {2}{3}', inputs.route == 'manual' && 'Manual handoff' || inputs.pull_request != '' && 'Auto remediation' || 'Auto implementation', inputs.task, inputs.step, inputs.pull_request != '' && format(' · PR #{0}', inputs.pull_request) || '') ||
+      format('{0} · Task {1}{2}{3}', inputs.route == 'manual' && 'Manual handoff' || inputs.pull_request != '' && 'Auto remediation' || 'Auto implementation', inputs.task, inputs.step != '' && format(' · Step {0}', inputs.step) || '', inputs.pull_request != '' && format(' · PR #{0}', inputs.pull_request) || '') ||
       github.event_name == 'issues' &&
-      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto implementation', github.event.issue.number, join(github.event.issue.labels.*.name, ' · ')) ||
+      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto implementation', github.event.issue.number,
+      (contains(format('{0}{1}{0}', fromJSON('"\n"'), github.event.issue.body), format('{0}Authority model: github-native-v1{0}', fromJSON('"\n"'))) ||
+      contains(format('{0}{1}{0}', fromJSON('"\n"'), github.event.issue.body), format('{0}Authority model: github-native-v1{1}{0}', fromJSON('"\n"'), fromJSON('"\r"')))) && github.event.label.name || join(github.event.issue.labels.*.name, ' · ')) ||
       format('{0} · PR #{1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto remediation', github.event.pull_request.number, github.event.pull_request.title) }}
 
 on:
@@ -21,8 +23,9 @@ on:
         required: true
         type: string
       step:
-        description: Current admitted positive Step
-        required: true
+        description: Legacy Step hint; native admission allocates its own Step
+        required: false
+        default: ''
         type: string
       route:
         description: Admitted execution route

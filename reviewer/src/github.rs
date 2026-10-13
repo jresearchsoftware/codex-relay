@@ -348,7 +348,7 @@ impl Github {
         let mut checks = Vec::new();
         for page in 1..=20 {
             let mut request = self.client.get(format!(
-                "{}/repos/{repository}/commits/{sha}/check-runs?per_page=100&page={page}",
+                "{}/repos/{repository}/commits/{sha}/check-runs?filter=all&per_page=100&page={page}",
                 self.api
             ));
             #[cfg(test)]
@@ -368,10 +368,14 @@ impl Github {
                 return Err("GITHUB_PAGINATION_LIMIT");
             }
         }
-        Ok(checks
+        let matches: Vec<_> = checks
             .iter()
-            .find(|check| check.get("external_id").and_then(Value::as_str) == Some(operation))
-            .cloned())
+            .filter(|check| check.get("external_id").and_then(Value::as_str) == Some(operation))
+            .collect();
+        if matches.len() > 1 {
+            return Err("CHECK_PUBLICATION_AMBIGUOUS");
+        }
+        Ok(matches.first().map(|check| (*check).clone()))
     }
     pub async fn create_review(
         &self,

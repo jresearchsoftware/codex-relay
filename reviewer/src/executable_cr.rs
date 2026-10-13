@@ -214,7 +214,7 @@ fn human(value: &Value) -> String {
         .collect()
 }
 
-fn list(body: &mut String, heading: &str, items: &Value) {
+fn list(body: &mut String, heading: &str, items: &Value, human: fn(&Value) -> String) {
     body.push_str(&format!("\n## {heading}\n"));
     for item in items.as_array().expect("list") {
         body.push_str(&format!("\n- {}", human(item)));
@@ -222,7 +222,11 @@ fn list(body: &mut String, heading: &str, items: &Value) {
     body.push('\n');
 }
 
-pub fn render(validation_names: &[String], arguments: &Value) -> Result<String, &'static str> {
+fn render_unfolded(
+    validation_names: &[String],
+    arguments: &Value,
+    human: fn(&Value) -> String,
+) -> Result<String, &'static str> {
     let cr = normalized(validation_names, &arguments["change_request"])?;
     let wire = json!({
         "schema_version": definition()["schema_version"],
@@ -289,7 +293,7 @@ pub fn render(validation_names: &[String], arguments: &Value) -> Result<String, 
         ("owner_policy_reconciliation", "Owner-policy reconciliation"),
     ] {
         if !cr[key].as_array().unwrap().is_empty() {
-            list(&mut body, label, &cr[key]);
+            list(&mut body, label, &cr[key], human);
         }
     }
     body.push_str(&format!(
@@ -306,4 +310,26 @@ pub fn render(validation_names: &[String], arguments: &Value) -> Result<String, 
         return Err("CR_RENDER_TOO_LARGE");
     }
     Ok(body)
+}
+
+pub fn render(validation_names: &[String], arguments: &Value) -> Result<String, &'static str> {
+    let body = render_unfolded(
+        validation_names,
+        arguments,
+        crate::publication_rendering::text,
+    )?;
+    let heading = "## Reviewer-owned execution data\n\n";
+    let (human, machine) = body.rsplit_once(heading).ok_or("CR_RENDER_INVALID")?;
+    let body = format!("{human}<details><summary>Machine-readable authority (JSON)</summary>\n\n{machine}\n\n</details>");
+    if body.len() > definition()["max_body_bytes"].as_u64().unwrap() as usize {
+        return Err("CR_RENDER_TOO_LARGE");
+    }
+    Ok(body)
+}
+
+pub fn render_legacy(
+    validation_names: &[String],
+    arguments: &Value,
+) -> Result<String, &'static str> {
+    render_unfolded(validation_names, arguments, human)
 }

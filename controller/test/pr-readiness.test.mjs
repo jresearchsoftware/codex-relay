@@ -90,7 +90,7 @@ test('one bounded observation resolves transient mergeability on the same Outcom
   assert.equal(result.readiness.status, 'READY'); assert.equal(result.draft, false);
   assert.equal(result.outcomeId, f.outcome.outcomeId); assert.equal(f.comments.length, 1);
   assert.match(f.comments[0].body, /Integration readiness: READY/);
-  assert.match(f.comments[0].body, /Candidate complete\./);
+  assert.ok(f.comments[0].body.includes('Candidate complete\\.'));
   assert.deepEqual(await f.broker.invoke(request), result);
   assert.equal(f.executions(), 1); assert.equal(f.pushes(), 1);
 });

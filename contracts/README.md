@@ -1,11 +1,13 @@
 # Task and Change Request authority
 
 Start with the [Task workflow guide](../docs/task-workflow.md) for the human
-path and [typed examples](../examples/task-authority.md) for schema-v3 authoring.
+path and [typed examples](../examples/task-authority.md) for current v4 and
+retained v3 records.
 [GitHub-native Task authority](#github-native-task-authority) governs explicitly
 migrated Tasks. The CR2 and owner metadata procedures below describe supported
-legacy compatibility; they do not provide another execution path for a migrated
-Task.
+legacy compatibility for older qualified installations and historical/already
+admitted attempts; they do not provide a fresh execution path on a qualified
+v4 installation or a second execution path for a migrated Task.
 
 Native Reviewer identity/head selection and common attempt orchestration live in
 `../controller/src`. This directory owns shared Task/Decision/CR validation,
@@ -78,8 +80,9 @@ pretend that local tests satisfy an installed-runtime proof.
 The consumer checks the canonical JSON encoding, including duplicate keys,
 version and target binding, and reads findings and validation directly from it.
 Existing `1.0` YAML/native reviews remain readable through the historical parser;
-the current legacy Reviewer path publishes only `2.0` executable CRs. Migrated
-Tasks instead use schema-v3 typed native reviews. Unknown versions,
+the retained legacy Reviewer path publishes only `2.0` executable CRs. Current
+qualified v4 publication uses typed schema-v4 native reviews; old schema-v3
+reviews remain historical/in-flight inputs. Unknown versions,
 multiple execution blocks and mixtures of old/new contracts fail closed.
 
 The [semantic input fixture](test/fixtures/executable-cr-v2-input.json) and
@@ -104,10 +107,12 @@ for Task identity.
 Implementation branch, commit and PR flow remains Codex-owned under
 [the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
 
-Owner `advance-phase` and `keep-step` procedures in this section are for legacy
-Tasks. A migrated Task resolves Step from its complete trusted Request and
-advances through an explicit successor Request. The typed publisher projects
-labels and the existing PR title; legacy owner helpers reject migrated Tasks.
+Owner `advance-phase` and `keep-step` procedures in this section describe the
+retained legacy contract. They cannot admit fresh legacy work on a qualified v4
+installation. Historical schema-v3 migrated Tasks resolve Step from their complete
+trusted Request and advance through an explicit successor Request; their typed
+publisher projects labels and the existing PR title. Current v4 admission instead
+allocates Step in Writer. Legacy owner helpers reject migrated Tasks.
 Both authority models retain same-CR publication recovery without an increment.
 
 Task producers and updates preserve exactly one explicit `Issue closure policy`
@@ -238,10 +243,156 @@ they do not limit local correction iterations or authorize automatic retries.
 
 A Task explicitly opts into `github-native-v1` with exactly one canonical
 `Authority model: github-native-v1` line in its Issue body. Missing that line
-preserves the legacy Issue/CR authority model, including native CR `1.0` and
-`2.0`; typed comments alone never migrate a Task. An unknown, malformed or
-multiple marker fails closed. Migration is an owner decision, not a publisher
+preserves the legacy Issue/CR authority model for historical reads and retained
+attempts, including native CR `1.0` and `2.0`; it cannot initiate fresh work on a
+qualified v4 installation. Typed comments alone never migrate a Task. An unknown,
+malformed or multiple marker fails closed. Migration is an owner decision, not a publisher
 or controller heuristic. The two models are never combined for execution.
+
+### Streamlined schema 4.0 admissions
+
+The qualified `relay-workflows-v3` controller/Writer pair resolves new native
+admissions from the unchanged `github-native-v1` charter and trusted Task
+Decisions. Schema version `4.0` explicitly distinguishes this path from retained
+schema-v3 records; it requires no new charter marker or public Task Request.
+An owner-authorized ready label supplies the native launch command and route.
+Decisions can accumulate in backlog without assigning a Step. Writer assigns a
+Step only when it durably admits a new execution under the existing lock.
+Replay/recovery of that attempt retains its snapshot and Step; a genuinely new
+execution after `BLOCKED` receives the next Step.
+
+The qualified v4 pair rejects fresh unmarked/legacy Task admission and new v3
+Task Request/CR execution chains with `CURRENT_PROTOCOL_REQUIRED`. New work on
+an older Task must resolve current v4 authority or stop for explicitly
+owner-authorized migration; the gate cannot infer migration from typed comments,
+Step metadata or a ready label. Fresh durable Decision/Request/CR publication
+follows the same boundary, including new schema-v3 Decisions. Historical
+parsing/verification and reserved exact-operation recovery remain available,
+as do safe completion and Outcome publication for an
+exact already-admitted old attempt. These operations preserve original bytes,
+source bindings and Step and cannot create another execution. Result acceptance
+remains available for exact old admitted attempts, including schema-v3 acceptance
+records. Older qualified installations keep their reviewed contract;
+this is not a general upgrade bridge
+or a blanket historical support cutoff.
+
+The shared [schema-v4 definition](src/github-authority-v4.json) has public
+`decision`, `change-request`, `outcome`, `task-approval` and `task-review` records,
+plus the internal `admission_schema`. Schema-v3 Task Requests and results remain
+readable, and already-admitted schema-v3 attempts retain their original selector,
+exact body digests and replay/publication rules. Fresh v4 admission does not
+select a v3 Request as compatibility input or inherit its execution fields.
+When a marked Task has v3 Request history, an active trusted Task-scoped v4
+Decision newer than the latest v3 Request must explicitly amend purpose or scope
+to establish current v4 direction. A closure/profile-only amendment is
+insufficient. The latest applicable v3 CR also stops fresh admission; a current
+v4 CR can become current while preserving historical records. This is current v4
+authority selection, not automatic conversion or rewriting of old records.
+Retained snapshots keep their original exact compatibility references and Step.
+A public Request is not a new-work prerequisite. The qualified paired upgrade
+is still required before the new contract is used; standalone or partially
+upgraded components provide no
+admission authority.
+
+Trusted non-superseded Decisions are applied in ascending native comment-ID
+order. Independent scoped amendments accumulate; an explicit `supersedes`
+reference replaces the entire earlier Decision in its same scope. Missing or
+edited predecessors, forks and invalid native identities fail closed. Ordinary
+comments remain evidence. PR-scoped Decisions apply only to that exact Task
+artifact. A Task-scoped Decision may explicitly change effective closure policy
+in either direction without editing the original charter; a PR-scoped Decision
+or native CR cannot change Task-wide closure policy.
+
+Schema-v4 CRs remain independent native `CHANGES_REQUESTED` reviews bound to an
+exact PR/head, branch/base and actionable findings. They have no preallocated
+Step, superseding Task Request or mandatory complete profile copy. Each requested
+profile field resolves from applicable CR overrides, trusted Decision amendments,
+current project defaults, then supported system defaults. CR boundaries are
+additive protection and do not enlarge charter scope. Requested profile values
+do not prove actual runtime model or effort.
+
+`resolveTaskAuthority(records, binding)` returns resolved semantic fields,
+selected contextual evidence, active Decisions and a native authority source
+binding. It requires the exact trusted-API Issue-body identity and separately
+verified publisher Bot identity. The binding is
+`{charter, decisions, change_request, compatibility_request, sha256}`; absent CR
+or compatibility Request references are `null`. Its `sha256` is SHA-256 of UTF-8
+`canonicalAuthorityJson({charter, decisions, change_request, compatibility_request})`.
+Fresh v4 admission resolves without a compatibility Request; that field remains
+in the shared binding for historical snapshots and exact-attempt verification.
+Completion, result acceptance and owner continuation preserve that immutable
+selection: a `null` compatibility binding remains `null` despite historical v3
+Requests, while a retained reference keeps its exact original source/currentness
+checks. Later verification must not silently reselect an old Request for a new
+v4 result or discard a reference from an older admitted snapshot.
+Each native reference hashes the complete original source body. Project-default
+and exact starting-state resolution is captured in the protected snapshot, while
+this source digest binds public authority independently of the result.
+
+`createAdmissionSnapshot(resolved, {step, route, attempt, runId, lineage, ...})`
+materializes the complete internal `kind: admission` snapshot. Writer may supply
+exact current starting-state observations within the admitted charter and its
+own verified publication lineage; these are trusted Writer inputs, not worker
+or arbitrary caller overrides. The snapshot binds resolved profile, scope,
+boundaries, validation, route, exact branch/PR/head/base, source references,
+run/attempt and lineage. A charter-only snapshot may omit duplicate scope and
+boundary arrays: the complete charter stays visible in the worker input and is
+bound by its exact native hash. `validateAdmissionSnapshot` validates the internal
+shape and binding; `admissionBinding(snapshot)` returns `{attempt, step, sha256}`
+with the digest of the complete canonical snapshot. Only protected Writer
+reservation/persistence makes that snapshot an admitted execution.
+
+Schema-v4 Outcomes and Task acceptance records bind both `authority` and
+`admission`, plus exact immutable results and native Outcome identity. They do
+not require a public Request. `resolveOutcomeAuthority` retains the originating
+exact CR as acceptance provenance after `APPROVE` or disposal of an artifact,
+verifies the original charter/Decision source integrity, resolves current
+trusted Task Decisions separately and rejects a newer applicable CR or changed
+charter/compatibility source. Its result cannot create a new admission.
+An Outcome keeps its admitted `authority` and `admission`. If valid later
+Decisions change the source binding, Writer adds `authority_drift` with
+`current_authority`, sorted `changed_fields` and `review_required`. The latter
+signals a semantic difference or an explicitly reported comparison gap; a
+provenance-only replacement can leave no changed fields. Optional bounded
+`authority_resolution` is captured inside new immutable admission snapshots
+and preserves nonsecret original resolution inputs, including consumer
+profile/validation defaults and starting state. Writer exports that captured
+value without changing the admission or retrofitting older snapshots. A
+reviewer can therefore distinguish a real amendment from an explicit restatement
+of nonstandard admitted defaults. Historical Outcomes without this evidence
+expose sorted `comparison_gaps` for changed fields whose original defaults are
+unknown, rather than inventing them. Visible Markdown exposes both digests,
+known changed fields, comparison gaps and the review signal.
+This report is not a claim that amended work was performed or permission to
+exercise newly granted protected operations.
+
+Task acceptance binds the current authority while preserving the exact
+Outcome/admission and immutable result. The reviewer explicitly evaluates
+admitted versus current requirements: missing work needs remediation, unused
+expanded permission alone does not invalidate the work. An original admission
+cannot supply revoked action permission. A material later authority change
+invalidates acceptance for merge/closure continuation; original native source
+tampering and changed result/identity bindings still fail closed.
+No-PR Task Approval preserves every material Outcome warning and limitation;
+implementation PR acceptance remains the native exact-head PR review.
+
+Owner continuation uses effective Decision closure policy and verified canonical
+Task completion/remaining-work/hold/protected-boundary facts. Schema-v4
+continuation has only `hold` and an optional trusted next-direction reference;
+it has no competing `task_complete` or future Step field. A completed `keep-open`
+Task with no actual remaining condition requires owner disposition. An already
+authorized next execution uses the existing owner ports without publishing a
+new Request or allocating its Step before Writer admission. Reviewer acceptance
+does not itself merge or close the Task.
+
+### Retained schema 3.0 Requests and attempts
+
+The following Request-specific rules describe historical schema-v3 publication
+and already-admitted attempts. They remain operative for that compatibility
+path, rather than becoming prerequisites or an alternative fresh execution path
+for a qualified schema-v4 installation. The migration and new-Request authoring
+steps below describe the retained v3 installation contract, not the current v4
+launch path.
 
 Migration uses the paired deployed Reviewer/controller with workflow contract
 `relay-workflows-v2`. Existing Reviewer configurations default the new
@@ -344,7 +495,7 @@ Task continuation. A disposed or unrelated PR Decision remains evidence unless
 an explicit Task-scoped Decision accepts its Task amendment. Publisher and
 controller adapters verify the native PR belongs to the canonical Task.
 
-Closure stays in the charter. A Decision's closure amendment cannot independently
+For retained schema 3.0 Requests, closure stays in the charter. A Decision's closure amendment cannot independently
 override that charter decision; the next Request must preserve its current effective
 `Issue closure policy`; it cannot independently expand closure authority.
 Missing, malformed or conflicting closure metadata remains `keep-open` with a
@@ -384,18 +535,19 @@ contract creates no authority registry or parallel Task ledger.
 
 Before every new Task Decision or complete Task Request, consciously reassess
 the known work or evidence expected after implementation that justifies
-`keep-open`; do not carry it forward by habit. Use the live charter and relevant
-current evidence within the existing authoring action.
+`keep-open`; do not carry it forward by habit. Use the stable charter, applicable
+trusted Decisions and relevant current evidence within the existing authoring action.
 
-- When work or evidence remains, retain `keep-open` and explain adjacent to the
-  charter's closure field the concrete remaining condition and the explicit
-  owner disposition needed before closure policy may change.
+- When work or evidence remains, retain `keep-open` and explain the concrete
+  remaining condition and owner disposition in the existing charter or trusted
+  Decision that supplies the effective policy.
 - When that rationale no longer applies, seek explicit owner authorization, or
-  apply existing explicit owner authorization, to reconcile the canonical
-  charter to `close-authorized`. Until that reconciliation, preserve the
-  charter's effective policy. A Decision or Request cannot independently
-  override it. Bind subsequent records to the reconciled live charter using
-  the existing digest and complete successor Request rules.
+  apply existing explicit owner authorization. For schema 4.0, publish the
+  Task-scoped trusted Decision changing effective policy to `close-authorized`;
+  the stable charter needs no rewrite or complete successor Request. For retained
+  schema 3.0 or legacy authority, reconcile the canonical charter and preserve
+  its policy until then, using the existing digest and successor Request rules.
+  A native CR cannot change Task closure policy in either model.
 
 `close-authorized` permits closure only after Task completion, verified
 independent acceptance and no remaining work through the existing authorized
@@ -421,7 +573,13 @@ of current checks, mergeability or independent review acceptance.
 
 ### Authorized continuation after independent acceptance
 
-Task Requests and Change Requests may include
+The complete Request, authored Step and `task_complete` details below describe
+the retained schema 3.0 path. Schema 4.0 uses the exact authority/admission/Outcome
+binding, verified canonical completion and `{hold,next}` direction described in
+[streamlined admissions](#streamlined-schema-40-admissions); its continuation
+does not prepare another public Request or allocate a Step.
+
+Retained Task Requests and Change Requests may include
 `continuation: {hold,task_complete,next}`. All three fields are explicit when
 present; absence means `hold: false`, `task_complete: false`, `next: null`.
 `next` is null, `{task,request}` identifying an already-published exact current
@@ -461,9 +619,10 @@ No synthetic merge, stale-head approval or review fallback is supplied.
 An implemented no-PR result follows the same path through trusted native Task
 Approval and its exact Writer Outcome. Task Approval does not substitute for a
 PR review or authorize merging an artifact PR. Closure occurs only under the
-charter's `close-authorized` policy, explicit Task-complete continuation, no
+effective `close-authorized` policy, verified Task completion, no
 remaining work and a verified native acceptance result. `keep-open` always
 preserves the Issue and does not prevent a separately authorized next action.
+The retained schema 3.0 path also requires its explicit `task_complete` flag.
 
 A selected exact next Request routes to automatic launch or a manual handoff
 without another owner prompt. The helper checks its own Task charter, current
@@ -493,12 +652,14 @@ const result = await continueAfterApproval(verifiedPublicationReceipt, ownerNati
 ```
 
 The publication receipt identifies repository, Task, exact native approval
-reference, exact Request reference, charter digest and, for PR acceptance,
-reviewed head. Legacy native PR acceptance retains its existing canonical
+reference and, for PR acceptance, reviewed head. Schema 4.0 binds exact authority
+sources and execution admission; retained schema 3.0 binds the exact Request
+reference and charter digest. Legacy native PR acceptance retains its existing canonical
 `authority_digest` with a null typed Request reference; it does not migrate
 implicitly. Required ports are `readCanonicalState`, `reserveAction` and
 `recordActionResult`. The relevant bounded action ports are `mergeSquash`,
-`closeIssue`, `readNextAuthority`, `prepareNextAuthority`, `launchRequest` and
+`closeIssue`, `readNextAuthority`, `prepareNextAuthority`, `launchRequest`,
+schema 4.0 `launchAuthority`, and
 `manualHandoff`.
 `readCanonicalState` supplies trusted native records/binding, the current
 native approval reference, exact PR/check facts and canonical remaining-work,

@@ -615,6 +615,53 @@ impl Github {
                 let Some(body) = comment.get("body").and_then(Value::as_str) else {
                     continue;
                 };
+                // New folded bodies retain the same single canonical machine
+                // block; human presentation is never evidence authority.
+                match crate::task_authority::parse(body) {
+                    Ok(Some(record)) if record["kind"] == "outcome" => {
+                        if record["repository"] != repository
+                            || record["parent"]["number"] != *target
+                            || record["result"]["kind"] != "git"
+                            || record["result"]["revision"] != sha
+                        {
+                            continue;
+                        }
+                        if comment["user"]["type"] != "Bot"
+                            || identifier(comment.pointer("/user/id")).is_none()
+                        {
+                            outcomes.fail(Failure::unavailable("GITHUB_EVIDENCE_BINDING_MISMATCH"));
+                            continue;
+                        }
+                        let Some(id) = identifier(comment.get("id")) else {
+                            outcomes.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
+                            continue;
+                        };
+                        let run_id = record["attempt"]
+                            .as_str()
+                            .and_then(|attempt| attempt.strip_prefix("run-"))
+                            .filter(|id| !id.starts_with('0'))
+                            .and_then(|id| id.parse::<u64>().ok())
+                            .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991);
+                        if let Some(run_id) = run_id {
+                            execution_pointers.push((*target, id, run_id));
+                        } else {
+                            missing_execution_pointer = true;
+                        }
+                        let warnings = record["warnings"].as_array().unwrap();
+                        let mut altered = warnings.len() > 10;
+                        let warning_summaries=warnings.iter().take(10).map(|warning| text(Some(&json!(format!("{}: {}; disposition: {}; next action: {}; evidence gaps: {}",
+                            warning["source"].as_str().unwrap(),warning["impact"].as_str().unwrap(),warning["resolution"].as_str().unwrap(),warning["next_action"].as_str().unwrap(),
+                            warning["evidence_gaps"].as_array().unwrap().iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")))),2048,&mut altered)).collect::<Vec<_>>();
+                        runtime_items.push(json!({"comment_id":id,"issue_number":target,"head_sha":sha,"actor":writer_actor,
+                            "native_url":format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),"workflow_run_id":run_id,"warning_summaries":warning_summaries,"text_redacted_or_truncated":altered}));
+                        continue;
+                    }
+                    Err(_) => {
+                        outcomes.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
+                        continue;
+                    }
+                    _ => {}
+                }
                 if !body.starts_with("## Codex Outcome\n") {
                     continue;
                 }

@@ -10,7 +10,7 @@
       - show
       - '{{ item }}'
       - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
-  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}']
+  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}', '{{ relay_namespace }}-relay-manual-outcome.socket']
   register: relay_upgrade_lifecycle_initial_services
   changed_when: false
   failed_when: false
@@ -22,16 +22,26 @@
       - item.stdout is search('(?m)^LoadState=(loaded|not-found)$')
       - item.stdout is search('(?m)^ActiveState=(active|inactive|failed)$')
       - >-
+        not (item.item is search('[.]socket$') and item.stdout is search('(?m)^LoadState=not-found$')) or
+        (item.stdout is search('(?m)^ActiveState=inactive$') and
+         item.stdout is search('(?m)^SubState=dead$') and
+         (not (item.stdout is search('(?m)^UnitFileState=.+$')) or
+          item.stdout is search('(?m)^UnitFileState=(not-found|disabled)$')))
+      - >-
         item.stdout is search('(?m)^LoadState=not-found$') or
         item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$')
       - >-
         not (item.stdout is search('(?m)^ActiveState=active$')) or
         (
           item.rc == 0 and
-          item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
-          item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$') and
-          item.stdout is search('(?m)^SubState=running$') and
-          item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime)$')
+          (
+            (item.item is search('[.]socket$') and item.stdout is search('(?m)^SubState=listening$')) or
+            (not (item.item is search('[.]socket$')) and
+             item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
+             item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$') and
+             item.stdout is search('(?m)^SubState=running$'))
+          ) and
+          (item.item is search('[.]socket$') or item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime)$'))
         )
     fail_msg: RELAY_UPGRADE_SERVICE_ACTIVITY_UNPROVEN
   loop: '{{ relay_upgrade_lifecycle_initial_services.results }}'
@@ -53,11 +63,24 @@
     - {name: reviewer, index: 0}
     - {name: production, index: 1}
     - {name: general, index: 2}
+    - {name: manualOutcome, index: 3}
+
+- name: Use the compatible snapshot wire shape only for a proved absent manual socket
+  ansible.builtin.set_fact:
+    # The installed pre-capability helper accepts exactly the original three
+    # components. A proved absent socket has no activation intent to preserve;
+    # present sockets always require the complete four-component journal.
+    relay_upgrade_lifecycle_snapshot_activity: >-
+      {{ relay_upgrade_lifecycle_observed_activity |
+         dict2items | rejectattr('key', 'equalto', 'manualOutcome') | items2dict
+         if relay_upgrade_lifecycle_observed_activity.manualOutcome ==
+            {'active': false, 'enabled': 'disabled', 'load': 'not-found'}
+         else relay_upgrade_lifecycle_observed_activity }}
 
 - name: Retain the first activation snapshot in the exact protected admission operation
   ansible.builtin.command:
     argv: ['{{ relay_install_root }}/relay-admission', snapshot, --operation, '{{ relay_admission_operation_id }}']
-    stdin: '{{ relay_upgrade_lifecycle_observed_activity | to_json }}'
+    stdin: '{{ relay_upgrade_lifecycle_snapshot_activity | to_json }}'
     stdin_add_newline: false
   register: relay_upgrade_lifecycle_retained_snapshot
   changed_when: false
@@ -65,7 +88,9 @@
 
 - name: Read the original activation intent retained across recovery
   ansible.builtin.set_fact:
-    relay_upgrade_lifecycle_previous_active: '{{ (relay_upgrade_lifecycle_retained_snapshot.stdout | from_json).previousActive }}'
+    relay_upgrade_lifecycle_previous_active: >-
+      {{ {'manualOutcome': {'active': false, 'enabled': 'disabled', 'load': 'not-found'}} |
+         combine((relay_upgrade_lifecycle_retained_snapshot.stdout | from_json).previousActive) }}
 
 - name: Retain the previously active components and general transport identity
   ansible.builtin.set_fact:
@@ -82,7 +107,7 @@
         relay_upgrade_lifecycle_observed_activity[item].active or
         (item != 'general' and relay_admission_recovery_authorized | default(false) | bool)
     fail_msg: RELAY_UPGRADE_RETAINED_ACTIVITY_RECOVERY_REQUIRED
-  loop: [reviewer, production, general]
+  loop: [reviewer, production, general, manualOutcome]
 
 - name: Require the active production runner to retain its Reviewer prerequisite
   ansible.builtin.assert:

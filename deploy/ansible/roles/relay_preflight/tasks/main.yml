@@ -16,6 +16,8 @@
       - '{{ relay_general_runner_service_name }}'
       - '{{ relay_controller_service_name }}'
       - '{{ relay_superseded_proxy_service_name }}'
+      - '{{ relay_namespace }}-relay-manual-outcome.socket'
+      - '{{ relay_namespace }}-relay-manual-outcome@.service'
   changed_when: false
   check_mode: false
 

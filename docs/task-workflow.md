@@ -1,178 +1,226 @@
 # Task workflow
 
-Use this guide for a Task on a qualified installation with GitHub-native
-authority enabled. It describes the current repository product, not a separate
-consumer Skill or adapter distribution; that work remains Task #91. Detailed
-rules live in the [authority](../contracts/README.md#github-native-task-authority),
+This guide describes the streamlined GitHub-native **source contract** for a
+paired, qualified Reviewer/controller installation. It does not claim an
+existing installation has been upgraded or qualified. Older installations and
+already-admitted attempts retain the bounded compatibility path below. Consumer Skill/adapter
+distribution remains separate Task #91. Detailed rules live in the
+[authority](../contracts/README.md#github-native-task-authority),
 [routing](../controller/README.md) and [Reviewer](../reviewer/README.md) contracts.
+
+Owner-designated isolated TEST development and qualification follow
+[TEST Environment Authority](execution-policy.md#test-environment-authority).
 
 ## From Task to completion
 
-1. **Write the Issue charter.** Task N is GitHub Issue #N. Describe the problem,
-   goal, scope, protected boundaries and exactly one closure field:
-   `Issue closure policy: keep-open` or `Issue closure policy: close-authorized`.
-   Explain any remaining work that keeps it open. Include exactly one standalone
-   `Authority model: github-native-v1` line. Start fresh work with `step-1`;
-   the [repository Issue template](../.github/ISSUE_TEMPLATE/codex-task.md) supplies
-   that label baseline. Issue creation does not launch work.
-2. **Publish a complete trusted Task Request.** The owner-authorized caller uses
-   Reviewer `publish_task_authority` with `repository` and a structured
-   `record` of kind `task-request`, schema version `3.0`. Resolve Step, route,
-   model/effort/Subagents, purpose, scope, validation, boundaries, closure policy,
-   branch, exact base/head, applicable existing PR and selected references before
-   publication. Before every complete Task Request, reassess known
-   post-implementation work or evidence justifying `keep-open`, following the
-   [closure authoring guidance](../contracts/README.md#closure-policy-authoring).
-   The [normal Request example](../examples/task-authority.md#new-task-request)
-   shows a complete record. For repository execution, all starting facts are
-   explicit; only manual non-repository work may set branch/base/head all null.
-   The trusted publisher verifies the live charter digest, native identities
-   and current Request chain, then projects Step labels and the bounded existing
-   PR title. A pasted block in an ordinary comment has no authority.
-3. **Launch the chosen route.** Apply `codex-ready-auto` to the Issue for an
-   automatic Request, or `codex-ready-manual` for a manual Request. The command
-   must match its `route` and current Step projections; `step-N` alone grants
-   no execution. Trusted routing validates the native owner event and consumes
-   it once. Automatic execution runs an isolated credential-free worker;
-   manual routing produces a copyable handoff for an owner-launched session.
-   Optional owner `workflow_dispatch` remains a fallback, with inputs matching
-   the same authority. See [admission and routing](../controller/README.md).
-4. **Inspect the Writer Outcome.** The worker preserves ordinary task commits
-   and reports local validation; trusted Writer imports bounded object bytes
-   into fresh Git, scans every introduced blob, revalidates authority and
-   publishes without force. Writer owns the typed `outcome`, bound to the exact
-   Request, attempt and immutable result. It appears on the unique durably bound
-   PR, or the Issue before PR creation and for legitimate no-PR/no-change work.
-   An ambiguous PR publication cannot fall back to the Issue. Successful
-   execution handoff makes the PR Ready for review; active or blocked execution
-   stays Draft. Ready proves neither CI success nor independent acceptance.
-   Manual non-source results use Writer's bounded
-   [manual-outcome authorization path](../controller/README.md#issue-publication-and-worker-handoff);
-   that authorization publishes the result and cannot amend execution scope.
-5. **Review independently at the exact result.** Inspect the complete candidate
-   against charter, current Request and applicable Decisions/CR. Compare material
-   findings with the starting/base state and retain provenance; passing checks
-   alone do not establish acceptance. For a genuine PR, the independent caller
-   publishes native exact-head `APPROVE` or a typed PR Change Request. For a
-   Task-scoped implemented result, including no-PR work or a disposed artifact
-   PR, publish Issue `task-approval` bound to the current Task Request, its Step,
-   trusted Writer Outcome and identical immutable results. This does not replace
-   a genuine PR's native acceptance. Issue `task-review` findings are evidence
-   for a next Task Request, not an executable PR CR. Approval never advances
-   Step or creates a PR.
-6. **Complete through the authorized owner channel.** After verified independent
-   acceptance, owner orchestration calls the existing
-   [post-review continuation helper](../contracts/README.md#authorized-continuation-after-independent-acceptance).
-   It re-reads authority, exact head, required checks, readiness and boundaries
-   before a separately authorized squash merge, then verifies the native result.
-   Reviewer publishes the verdict/policy; its `execution_supported: false`
-   receipt means the service performs neither merge nor closure. The worker
-   also has no merge/close authority. Explicit Issue closure requires
-   `close-authorized`, Task-complete continuation, independent acceptance and
-   no remaining work. Migrated PRs use `Related to #N` even when closure is
-   authorized, so merge cannot close the Task prematurely.
+The connected App must expose the current typed authority inputs and the tools
+required for the selected operation, including `submit_manual_outcome` for new
+manual v4 results. If a required tool is absent or its schema is outdated, stop
+and identify the capability/installation mismatch and the owner action needed
+to qualify the connection. Do not publish a new v3 Decision/Request/CR, use legacy CR2 or
+switch to the old owner-result comment transport as a workaround. The service
+cannot inspect tools hidden from the caller or a stale client-side tool cache.
+See [current protocol capabilities](../reviewer/README.md#current-protocol-capabilities).
 
-## Decisions and subsequent work
+1. **Write the stable Issue charter.** Task N is GitHub Issue #N. State the
+   problem, goal, scope, protected boundaries and exactly one initial closure
+   field: `Issue closure policy: keep-open` or
+   `Issue closure policy: close-authorized`. Explain concrete outstanding work
+   when it remains open. Include exactly one standalone
+   `Authority model: github-native-v1` line. Issue creation, Decisions and ready
+   labels do not allocate a Step. The [Issue template](../.github/ISSUE_TEMPLATE/codex-task.md)
+   supplies the authoring baseline; creation alone does not launch work.
+2. **Publish only needed trusted Decisions.** An owner-authorized caller uses
+   Reviewer `publish_task_authority` for a schema-v4 `decision` when durable Task
+   semantics change. Multiple Decisions can accumulate in backlog without a
+   Step or execution. Writer resolves the initial charter plus the active,
+   trusted, non-superseded Decision chain; ordinary discussion cannot amend it.
+   New work does not require a duplicate complete public Task Request.
+3. **Launch with the native ready command.** Apply `codex-ready-auto` to the
+   canonical Issue for automatic work or `codex-ready-manual` for an
+   owner-launched manual session. An exact native PR Change Request may instead
+   admit remediation on its bound existing PR. Trusted routing verifies the
+   owner event/run and selects route, profile, branch/PR, head/base and current
+   authority. Applicable CR overrides take precedence over trusted Decisions,
+   then project defaults, then supported system defaults. Existing protected
+   Writer records hold one immutable admission snapshot with source
+   references/digests, attempt/run, lineage, boundaries and the admitted Step.
+   The ready event is consumed once; a display label is not execution authority.
+4. **Use the admitted Step and handoff.** Writer allocates the next Step only
+   when a genuinely new execution is admitted. Iterative implementation, tests
+   and corrections stay inside that attempt/Step. A new execution after BLOCKED
+   gets a fresh Step and a fresh manual thread where applicable. Recovery or
+   replay of the same admitted attempt keeps its Step and cannot launch again.
+   Actions run names can show route/Task/PR and a bounded available purpose;
+   they do not preallocate Step. Manual routing retains
+   `MANUAL_CODEX_HANDOFF_READY`, its exact identity/profile/authority references
+   and full copyable prompt. Only the prompt fence may be folded by default,
+   after actual GitHub expand/copy usability is qualified; otherwise it stays
+   open. The handoff does not allocate a future Step.
+5. **Inspect the single Writer Outcome.** Automatic workers preserve task
+   commits and report validation claims. Trusted Writer imports bounded objects
+   into fresh Git, scans every introduced blob, revalidates authority and pushes
+   without force. A manual Codex session submits structured result JSON through
+   the narrow owner-connected `submit_manual_outcome` MCP capability to the
+   protected Writer. No preceding public owner `relay-manual-result` comment or
+   repeated approval is needed merely to transport a new result. Writer
+   validates the admitted manual route/Task/Step, current authority, exact
+   PR/head or immutable qualification identities, warnings/limitations, native
+   target and replay state before publishing one canonical Writer-Bot Outcome.
+   It records claims and verified bindings, not independent proof of every
+   claimed test or operation.
+   For schema-v4 work, valid trusted Decisions added during execution are
+   reported alongside the original immutable admission. They do not suppress
+   a truthful Outcome or prove that newly added work was performed. Permission
+   for each action still has to remain within admitted and current boundaries.
+6. **Review independently at the exact result.** Review the complete candidate
+   against effective charter/Decisions and applicable native CR. Compare
+   findings against the starting/base state and retain provenance. Implementation
+   PRs use native exact-head `APPROVE` or `REQUEST_CHANGES`; an additional Task
+   Approval for the same PR is unnecessary. Genuine no-PR work, including
+   qualification with a closed disposable artifact PR, retains one independent
+   Issue `task-approval` bound to the exact Writer Outcome, authority/admission
+   and immutable result. Issue `task-review` findings are evidence for later
+   owner-authorized direction, not an executable PR CR. Deterministic checks do
+   not establish independent acceptance. Review and approval allocate no Step.
+   Compare admitted and current Task authority explicitly. An unused permission
+   expansion does not invalidate the delivered work; missing amended
+   requirements require actionable remediation. For material schema-v4 drift
+   or an explicitly unresolved comparison gap,
+   include the target's current `expected_task_authority_sha256` in the native
+   `APPROVE` call so the verdict binds the authority actually reviewed.
+   Acceptance binds the current trusted Task, and subsequent material changes
+   require fresh acceptance before
+   protected continuation.
+7. **Complete through trusted owner orchestration.** The
+   [post-review continuation helper](../contracts/README.md#authorized-continuation-after-independent-acceptance)
+   re-reads effective authority, acceptance, head, required checks, readiness,
+   completion evidence and protected boundaries. A separately authorized exact
+   squash merge proceeds through the owner channel. Reviewer publishes review
+   evidence and performs neither merge nor Issue closure; the worker has neither
+   capability. Conditional `close-authorized` closure proceeds only after the
+   Task objective and applicable installation/qualification are complete,
+   independent acceptance is verified, no work remains and no hold/protected
+   boundary applies. Already-authorized conditional closure does not require
+   repeating the Decision. Migrated PRs use `Related to #N`, preventing an
+   automatic closing keyword from bypassing Task authority.
 
-Keep the Issue as a stable charter. A substantive accepted amendment is a
-trusted scoped `decision`, not an instruction hidden in discussion. The
-[Decision example](../examples/task-authority.md#decision-and-replacement-request)
-shows how to publish an amendment and normalize it into a complete successor
-Request. Put its returned native reference in `decisions`; copy the amended
-semantic values into the Request itself. Publishing a Decision alone does not
-launch work or rewrite an already selected Request. Closure authority still
-comes from the charter.
+## Decisions, closure and subsequent work
 
-Before every new Task Decision or complete Task Request, consciously reassess
-the charter's `keep-open` rationale. Retain it with adjacent concrete remaining
-conditions and the owner disposition needed to change it, or seek or apply
-existing explicit owner authorization to reconcile the charter to
-`close-authorized`. A Decision or Request cannot independently override it.
-Closure still waits for Task completion, verified independent acceptance and
-no remaining work; approval, merge or Step completion alone grants no closure
-authority. This belongs to existing authoring, with no new field, parser or
-validator gate, workflow, automation or historical Issue rewrite.
+The original Issue remains the stable charter. A trusted scoped Decision carries
+the accepted semantic delta; do not rewrite the original charter or require a
+replacement public Request to make a new Decision operative. Native references
+bind kind, ID, parent and SHA-256 of the entire published body, including markers.
+Worker prose and selected ordinary comments remain contextual evidence.
+Supersession is explicit and deterministic; edited or superseded references
+cannot stay active. PR-scoped decisions and CRs stay within that PR and the
+Task's protected boundaries.
 
-Each next Request explicitly `supersedes` the exact current Request/CR native
-reference. There is one linear chain, not selection by newest comment or largest
-Step. Same-phase continuation may keep Step; a new phase advances precisely by
-one. A new PR CR advances by one; correction/recovery of the same CR identity,
-PR and reviewed head may retain it. Approval increments nothing. The typed
-publisher projects labels/titles; do not run legacy owner metadata helpers for
-a migrated Task or fix authority by changing a label alone.
+The effective closure policy starts with the charter. An explicitly
+owner-authorized trusted **Task Decision** may change it to `keep-open` or
+`close-authorized` in either direction. A PR Change Request cannot independently
+change Task closure or enlarge Task authority. Before a substantive Decision,
+reassess the concrete `keep-open` condition within the existing authoring action,
+using [closure guidance](../contracts/README.md#closure-policy-authoring).
+Completion evidence supplied through the trusted owner continuation boundary
+distinguishes accepted Step from complete Task; it does not create another
+competing Request/continuation closure policy.
 
-Select only relevant native sources in `context`. Source references contain
-`kind`, immutable native `id`, `parent` and `sha256` of the entire native body,
-including publication markers. Use returned publisher references or trusted
-native reads; a comment's number/URL or JSON-only digest is insufficient.
-Ordinary selected comments and prior Outcomes remain evidence. They cannot
-fill omitted execution fields. A PR-scoped Decision requires that exact
-`existing_pr`; carrying its semantics beyond that PR needs an explicit
-Task-scoped Decision. Superseded or body-edited references cannot remain active.
+If review/merge/qualification leaves no genuine Task work but effective policy
+still says `keep-open`, surface that mismatch for owner disposition. Do not
+silently close or indefinitely treat stale remaining-work prose as current truth.
+Source completion, independent acceptance, merge, installation, closure and
+release remain distinct facts and permissions.
 
-## When PR review requests changes
+## Native PR Change Requests
 
-Review the exact current PR head, aggregate material findings, and preview them
-through the owner-authorized review path before publication. For a migrated Task,
-use Reviewer `publish_task_authority` with a complete `change-request` record:
-PR parent, `existing_pr`, `change_request_id`, `reviewed_head_sha`, the identical
-`starting_head`, stable findings, predecessor and full execution snapshot. The
-[PR remediation example](../examples/task-authority.md#pr-change-request-and-remediation)
-shows these bindings. A Task finding without a PR instead uses `task-review`
-and a later complete Task Request; do not manufacture a PR to obtain a CR.
+Review the exact candidate head and aggregate material findings before native
+publication. The schema-v4 `change-request` records its PR parent, stable CR ID,
+reviewed head, branch/base, findings and applicable bounded remediation overrides.
+It does not allocate a Step or require a full replacement Task Request. The
+native `CHANGES_REQUESTED` review remains independent exact-head authority.
+It cannot manufacture an unrelated Task Decision or closure permission.
 
-Successful publication creates the native `CHANGES_REQUESTED` review and
-synchronizes Step/title projections. Its bounded Writer lifecycle action verifies
-Draft for that same CR/head before remediation. Owner orchestration can invoke
-the action directly; routing also enforces it during admission. Apply the ready
-label matching the CR's route to the existing PR only after verified publication
-and synchronization. Remediation preserves that branch/PR and starting-head
-gate. The next Outcome identifies the new candidate, which requires new
-exact-head review; approval of the old head cannot accept it.
+The bounded Writer lifecycle verifies Draft for that exact CR/head before
+remediation. Owner orchestration may invoke it directly; admission also enforces
+it. Apply the matching native ready command to the existing PR after the review
+has been verified. Writer admits the new execution and projects its Step/title;
+review publication itself is not Step allocation. Preserve the canonical branch,
+PR and starting-head gate. A new candidate needs fresh exact-head review;
+approval of an older head cannot accept it.
 
-## Warnings, blockers and continuation
+## Visible evidence, warnings and recovery
 
-Before review, continuation, merge or closure, inspect Outcomes and applicable
-execution-time job/check/controller annotations through supported APIs. Preserve
-each material warning's source, impact, disposition, next action and evidence
-gaps, plus Outcome limitations. Unavailable required evidence is a stated gap;
-green status is not warning disposition. UI-only service/pre-execution banners
-are outside mandatory automated acquisition. See the
-[warning policy](execution-policy.md#execution-warning-disposition) and Reviewer
-`read_pr_review_evidence` for bounded native evidence reads.
+Necessary Decisions, CRs/reviews, Outcomes, Task Approvals/findings and retained
+compatibility Requests lead with concise English substance. All material
+findings, corrections, warning dispositions, evidence gaps and limitations stay
+understandable before expanding JSON. One collapsed GitHub `<details>` normally
+contains the single unchanged canonical `relay-authority` fence. Use a visible
+JSON fallback only for an established rendering/integrity/size/copyability
+constraint. Escaped untrusted text cannot inject Markdown/HTML, links, misleading
+status or a second authority fence. Presentation never creates authority.
 
-Blocked work may still preserve useful commits. Fix a clear in-scope local
-failure within the admitted execution; uncertain authority, head/publication or
-containment stops progress. Do not blindly rerun the workflow or worker.
-[Publication recovery](../controller/README.md#writer-publication-recovery)
-reconciles the retained attempt through separate owner authorization without
-another model execution.
+Before review, continuation, merge or closure, inspect supported native
+execution-time check/job/controller/Outcome evidence. Preserve every material
+warning's source, impact, disposition, next action and gaps. Unavailable required
+evidence is a stated limitation; green status does not disposition warnings.
+UI-only service/pre-execution banners remain outside mandatory automated
+acquisition. See [warning policy](execution-policy.md#execution-warning-disposition)
+and Reviewer `read_pr_review_evidence`.
 
-Requests may declare `continuation: {hold, task_complete, next}`. Omission means
-no hold, incomplete Task and no next action. An explicit hold stops automatic
-continuation. `next` selects an already-published exact current Request, or a
-bounded same-Task direction Decision for preparation after acceptance/merge.
-The owner helper executes only already-authorized actions, without another
-confirmation; it cannot invent scope, re-execute the accepted Request or ignore
-unresolved checks. Known same-Task next work keeps the Issue open. Source
-completion, review acceptance, merge, closure, deployment and release remain
-distinct decisions.
+A local in-scope correction can continue within the admitted attempt while its
+next action is clear and authorized. Uncertain authority, containment, native
+head or prior publication stops progress. Publication recovery reconciles exact
+retained bytes/markers and frozen renderer intent through existing protected
+operations; it never blindly repeats POST/push or launches Codex again.
+Already-admitted v3 records keep their exact historical body/digest/Step.
+Useful commits and unresolved warnings remain preserved. A genuinely new launch
+after a terminal BLOCKED result is a new admitted Step.
 
-## Compatibility and local policy
+Typed native CR publication also resumes the same reserved operation after
+partial review, Step/title projection or check publication. It verifies one
+original trusted review, current authority and the exact-operation SHA-bound
+check before completing the journal and returning a durable receipt. A lost
+response is reconciled by native read-back; absent or conflicting records do
+not justify another non-idempotent review POST. No recovery allocates a Step
+or launches execution.
 
-GitHub-native authority is explicit opt-in. Qualify the paired
-Reviewer/controller with `relay-workflows-v2` and enabled
-`githubNativeAuthorityEnabled` before migration. Finish or drain any admitted
-legacy execution first; publish a complete first Request and verify projections
-before the next ready event. Unmarked Issues retain legacy mutable Issue-body
-execution fields, label-led Step preparation and native CR1/CR2 compatibility.
-Typed comments alone do not migrate a Task; mixed authority paths fail closed.
-See the [migration contract](../contracts/README.md#github-native-task-authority).
+## Installed and in-flight compatibility
 
-The product owns typed/native provenance, exact-head acceptance, safe publication
-and actor separation. This repository's [AGENTS.md](../AGENTS.md) adds local
-development policy such as English GitHub publication, its default
-`gpt-6.1-sol` / `xhigh` / Subagents On profile, candidate checks and manual task
-renaming. Consumers retain their own effective profile, checks and operations;
-the complete Request records the resolved choices. Future workflow changes must
-follow the [same-Task documentation rule](../CONTRIBUTING.md#keep-workflow-documentation-current).
+The `github-native-v1` marker is explicit opt-in, not proof that an installation
+supports schema v4. Older qualified installations retain their legacy/v3
+contract. A qualified v4 installation does not initiate fresh unmarked/legacy
+Task work or new schema-v3 Task Request/CR chains: use current v4 authority or
+stop for an explicitly owner-authorized migration/installation correction.
+For an exact already-admitted old attempt, preserve historical reads,
+completion, Outcome publication and safe recovery with its complete Request
+chain, selected references, Step projections and original result transport.
+Those compatibility operations never authorize a fresh old-style execution.
+New durable Decision publication uses v4 as well; exact reserved v3 Decision
+recovery and old admitted-result acceptance retain their original contract.
+For a marked Task with v3 Request history, establish current v4 direction through
+an active trusted Task-scoped v4 Decision newer than the latest v3 Request and
+explicitly amending purpose or scope. A closure/profile-only amendment does not
+suffice. Replace a latest applicable v3 CR with a current v4 CR before fresh
+remediation. Fresh admission does not inherit the old Request's execution fields;
+retained snapshots keep their original exact references.
+Do not rewrite history, fabricate new admission snapshots for old attempts or
+use new source semantics to bypass an installed contract.
+
+Task 115 Step 1 itself was admitted on the **then-current installed schema-v3**
+path: exact trusted Request 6109630038, synchronized Step 1, manual route and
+durable handoff. The future removal of public Request ceremony did not change
+that initial admission. Its source implementation/tests/permitted isolated-TEST
+qualification remain one admitted manual Step; this guide does not assert the
+paired live runtime has been upgraded or qualified. Installation, ingress,
+credentials, activation, release, production mutation, merge and Issue closure
+retain their separately authorized boundaries.
+
+Qualify the coordinated source/parser/renderer/publication path and compatible
+workflow projection before enabling it on an installation. Preserve retained
+reservations and original body/version during mixed-version recovery. The
+product owns typed provenance, exact-head acceptance and actor separation;
+consumers own effective profile, checks and operations. Local [AGENTS.md](../AGENTS.md)
+adds English publication, development profile, candidate checks and manual title
+renaming. Workflow changes follow the existing
+[same-Task documentation rule](../CONTRIBUTING.md#keep-workflow-documentation-current).

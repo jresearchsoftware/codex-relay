@@ -29,6 +29,10 @@ def service(pid=0, *, active=False, enabled='disabled', loaded=True):
     ))
 
 
+def socket_state(*, active=False, enabled='disabled', loaded=True):
+    return service(active=active, enabled=enabled, loaded=loaded).replace('SubState=running', 'SubState=listening')
+
+
 @unittest.skipUnless(ANSIBLE, 'Linux Ansible required')
 class UpgradeActivationTests(unittest.TestCase):
     def run_play(self, root, tasks, values, *, handlers=None):
@@ -42,7 +46,11 @@ class UpgradeActivationTests(unittest.TestCase):
         return subprocess.run(['ansible-playbook', '-i', 'localhost,', str(play)],
                               env=env, text=True, capture_output=True, timeout=75)
 
-    def fixture(self, root, initial, final):
+    def fixture(self, root, initial, final, *, legacy_snapshot=False):
+        initial = {**initial, 'codex-relay-relay-manual-outcome.socket': initial.get(
+            'codex-relay-relay-manual-outcome.socket', socket_state())}
+        final = {**final, 'codex-relay-relay-manual-outcome.socket': final.get(
+            'codex-relay-relay-manual-outcome.socket', socket_state())}
         state = root / 'state.json'
         state.write_text(json.dumps(initial))
         trace = root / 'calls'
@@ -76,7 +84,13 @@ class UpgradeActivationTests(unittest.TestCase):
             'await gate.initialize(); await gate.quiesce({operationId,target:"a".repeat(40)});'
             'await gate.drained({operationId}); await gate.phase({operationId,phase:"applying"});}\n'
             'let output; if(action==="snapshot") {let input=""; for await(const chunk of process.stdin) input+=chunk;'
-            'output=await gate.snapshot({operationId,services:JSON.parse(input)});}\n'
+            'const services=JSON.parse(input);'
+            # dbfea188's installed snapshot ABI accepted precisely these three
+            # keys. Keep its rejection independent of the current validator.
+            + ('if(Object.keys(services).sort().join(",")!=="general,production,reviewer") '
+               'throw Object.assign(Error("ADMISSION_SNAPSHOT_INVALID"),{code:"ADMISSION_SNAPSHOT_INVALID"});'
+               if legacy_snapshot else '') +
+            'output=await gate.snapshot({operationId,services});}\n'
             'else if(action==="phase" && phaseFlag==="--phase") output=await gate.phase({operationId,phase});\n'
             'else throw Error("fixture action invalid");\nconsole.log(JSON.stringify(output));\n')
         gate_helper = root / 'relay-admission'
@@ -102,6 +116,7 @@ class UpgradeActivationTests(unittest.TestCase):
         listener.listen(16)
         self.addCleanup(listener.close)
         values = {
+            'relay_namespace': 'codex-relay',
             'relay_reviewer_service_name': 'reviewer.service',
             'relay_production_runner_service_name': 'production.service',
             'relay_general_runner_service_name': 'general.service',
@@ -136,6 +151,106 @@ class UpgradeActivationTests(unittest.TestCase):
             result = self.run_play(root, tasks, values)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse(trace.exists())
+
+    def test_socket_activation_and_enabled_runtime_are_preserved(self):
+        for active, enabled in ((True, 'enabled-runtime'), (True, 'disabled'), (False, 'disabled'), (False, 'enabled')):
+            with self.subTest(active=active, enabled=enabled), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                states = {'reviewer.service': service(), 'production.service': service(), 'general.service': service(),
+                          'codex-relay-relay-manual-outcome.socket': socket_state(active=active, enabled=enabled)}
+                tasks, values, trace = self.fixture(root, states, states)
+                result = self.run_play(root, tasks, values)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']['manualOutcome']
+                self.assertEqual(saved, {'active': active, 'enabled': enabled, 'load': 'loaded'})
+                self.assertFalse(trace.exists())
+
+    def test_absent_old_socket_remains_disabled_and_inactive_after_upgrade(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                       'production.service': service(), 'general.service': service(),
+                       'codex-relay-relay-manual-outcome.socket': socket_state(loaded=False)}
+            final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                     'codex-relay-relay-manual-outcome.socket': socket_state()}
+            tasks, values, _trace = self.fixture(root, initial, final)
+            result = self.run_play(root, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
+            self.assertEqual(set(saved), {'reviewer', 'production', 'general'})
+
+    def test_old_three_component_snapshot_helper_upgrades_without_activating_new_socket(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                       'production.service': service(), 'general.service': service(),
+                       'codex-relay-relay-manual-outcome.socket': socket_state(loaded=False)}
+            final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                     'codex-relay-relay-manual-outcome.socket': socket_state()}
+            tasks, values, trace = self.fixture(root, initial, final, legacy_snapshot=True)
+            result = self.run_play(root, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
+            self.assertEqual(set(saved), {'reviewer', 'production', 'general'})
+            self.assertEqual(trace.read_text(), 'restart\n')
+            self.assertIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=' + HEAD, result.stdout)
+
+    def test_old_helper_never_drops_present_socket_activity_or_enablement(self):
+        for active, enabled in ((True, 'enabled-runtime'), (False, 'enabled'), (False, 'disabled')):
+            with self.subTest(active=active, enabled=enabled), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initial = {'reviewer.service': service(), 'production.service': service(), 'general.service': service(),
+                           'codex-relay-relay-manual-outcome.socket': socket_state(active=active, enabled=enabled)}
+                tasks, values, trace = self.fixture(root, initial, initial, legacy_snapshot=True)
+                rejected = self.run_play(root, tasks, values)
+                self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+                self.assertIn('ADMISSION_SNAPSHOT_INVALID', rejected.stdout)
+                self.assertIsNone(json.loads((root / 'gate/admission-v1.json').read_text())['previousActive'])
+                self.assertFalse(trace.exists())
+
+    def test_old_first_snapshot_remains_authority_after_new_socket_installation(self):
+        for new_activity in (False, True):
+            with self.subTest(new_activity=new_activity), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                original = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                            'production.service': service(), 'general.service': service(),
+                            'codex-relay-relay-manual-outcome.socket': socket_state(loaded=False)}
+                tasks, values, _trace = self.fixture(root, original, original, legacy_snapshot=True)
+                first = self.run_play(root, tasks[:1], values)
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
+                helper = root / 'relay-admission'
+                for phase in ('recovery-required', 'applying'):
+                    subprocess.run([str(helper), 'phase', '--operation', OPERATION, '--phase', phase],
+                                   check=True, text=True, capture_output=True)
+                failed = {**original, 'reviewer.service': service(enabled='enabled'),
+                          'codex-relay-relay-manual-outcome.socket': socket_state(active=new_activity)}
+                restored = {**original, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                            'codex-relay-relay-manual-outcome.socket': socket_state()}
+                tasks, values, trace = self.fixture(root, failed, restored)
+                values['relay_admission_recovery_authorized'] = True
+                recovered = self.run_play(root, tasks, values)
+                self.assertEqual(recovered.returncode == 0, not new_activity, recovered.stdout + recovered.stderr)
+                self.assertEqual(json.loads((root / 'gate/admission-v1.json').read_text())['previousActive'], saved)
+                if new_activity:
+                    self.assertIn('RELAY_UPGRADE_RETAINED_ACTIVITY_RECOVERY_REQUIRED', recovered.stdout)
+                    self.assertFalse(trace.exists())
+                else:
+                    self.assertEqual(trace.read_text(), 'restart\n')
+                    self.assertIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=' + HEAD, recovered.stdout)
+
+    def test_ambiguous_absent_socket_cannot_bypass_old_snapshot_contract(self):
+        for old, new in (('SubState=dead', 'SubState=unknown'), ('UnitFileState=disabled', 'UnitFileState=unknown')):
+            with self.subTest(field=new), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initial = {'reviewer.service': service(), 'production.service': service(), 'general.service': service(),
+                           'codex-relay-relay-manual-outcome.socket': socket_state(loaded=False).replace(old, new)}
+                tasks, values, trace = self.fixture(root, initial, initial, legacy_snapshot=True)
+                rejected = self.run_play(root, tasks, values)
+                self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+                self.assertIn('RELAY_UPGRADE_SERVICE_ACTIVITY_UNPROVEN', rejected.stdout)
+                self.assertFalse((root / 'gate/admission-v1.json').exists())
+                self.assertFalse(trace.exists())
 
     def test_lost_health_enablement_or_transport_never_yields_activation_proof(self):
         initial = {'reviewer.service': service(41, active=True, enabled='enabled'),

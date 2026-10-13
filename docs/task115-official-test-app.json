@@ -1,0 +1,450 @@
+{
+  "recorded_at": "2026-10-12T00:50:57.398093+02:00",
+  "official_app": "Jresearch Codex Relay TEST Reviewer",
+  "endpoint": "https://codex-relay-test.jresearch.org/mcp",
+  "official_connected_client_qualified": true,
+  "real_admission_qualified": false,
+  "synthetic_admission_provenance": "Disposable protected admission-shaped records only; no ready command, actual admission, new Task/Step, Relay worker/model execution.",
+  "supported_host_runtime_qualified": false,
+  "host_runtime_warning": "Installed Writer uses /usr/bin/node v18.20.4 below package Node>=22. Baseline b4cb4943 already declares >=22, hardcodes /usr/bin/node and installs unversioned nodejs. Bounded publication passed; shared-host global Node was not changed.",
+  "catalog_observation": "Fresh official tool metadata contains five tools; earlier four-tool absence is historical. No App refresh/reconnection, external permissions or credential mutation was performed. Exact cache/propagation cause is undetermined.",
+  "host": {
+    "installed_revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+    "installed_binary_path": "/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http",
+    "installed_binary_sha256": "a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de",
+    "official_process_executable": "/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http",
+    "official_process_binary_sha256": "a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de",
+    "official_process_identity": [
+      "Uid:\t979\t979\t979\t979",
+      "NoNewPrivs:\t1"
+    ],
+    "official_service_properties": "User=relay-test-reviewer\nGroup=www-data\nSupplementaryGroups=relay-test-reviewer\nNoNewPrivileges=yes\nActiveState=active\nSubState=running\nUnitFileState=enabled",
+    "socket_properties": "ActiveState=active\nSubState=listening\nUnitFileState=enabled",
+    "boundary_modes": "660:root:relay-test-reviewer:/run/codex-relay-test-manual-outcome.sock\n750:root:relay-test-reviewer:/opt/codex-relay-test/relay-manual-outcome\n700:root:root:/opt/codex-relay-test/relay-manual-outcome-writer",
+    "host_node_version": "v18.20.4",
+    "synthetic_claims": {
+      "9007115000201": {
+        "qualificationFixture": {
+          "synthetic": true,
+          "realExecution": false,
+          "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "ownerDecision": "6114003261",
+          "channel": "official-test-app"
+        },
+        "manualSubmission": {
+          "sha256": "a3af16a0a9490120bb9c06ca1030bcd7f71ead09dfbbe915ce1d9fca3e42354f",
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "rendererVersion": "human-v1"
+        },
+        "outcome": {
+          "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+          "head": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "prNumber": null,
+          "outcomeId": 6114753829,
+          "bodySha256": "fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1",
+          "manual": true
+        }
+      },
+      "9007115000202": {
+        "qualificationFixture": {
+          "synthetic": true,
+          "realExecution": false,
+          "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+          "ownerDecision": "6114003261",
+          "channel": "official-test-app"
+        },
+        "manualSubmission": {
+          "sha256": "0185c465456915372fdbad19c371d08cc9e9bb66e0fb36ebbcc799e34a6d5347",
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "rendererVersion": "human-v1"
+        },
+        "outcome": {
+          "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+          "head": "c9d63e215e0543b39630dee2ee4663646354ffa1",
+          "prNumber": 7,
+          "outcomeId": 6114756310,
+          "bodySha256": "7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360",
+          "manual": true
+        }
+      }
+    }
+  },
+  "receipts": {
+    "catalog_tool_names": [
+      "mcp__codex_apps__jresearch_codex_relay_test_reviewer_check_pr_review_target",
+      "mcp__codex_apps__jresearch_codex_relay_test_reviewer_publish_task_authority",
+      "mcp__codex_apps__jresearch_codex_relay_test_reviewer_read_pr_review_evidence",
+      "mcp__codex_apps__jresearch_codex_relay_test_reviewer_submit_manual_outcome",
+      "mcp__codex_apps__jresearch_codex_relay_test_reviewer_submit_pr_review"
+    ],
+    "cases": {
+      "published_no_pr": {
+        "content": [
+          {
+            "type": "text",
+            "text": "PUBLISHED"
+          }
+        ],
+        "structuredContent": {
+          "independent_acceptance": false,
+          "issue_closure_performed": false,
+          "merge_performed": false,
+          "outcome": {
+            "id": 6114753829,
+            "parent": {
+              "kind": "issue",
+              "number": 6
+            },
+            "sha256": "fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1",
+            "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114753829"
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "run_id": 9007115000201,
+          "status": "PUBLISHED",
+          "task": 6,
+          "writer_actor": "jresearch-relay-test-writer[bot]"
+        },
+        "isError": false
+      },
+      "duplicate_no_pr": {
+        "content": [
+          {
+            "type": "text",
+            "text": "DUPLICATE_SUPPRESSED"
+          }
+        ],
+        "structuredContent": {
+          "independent_acceptance": false,
+          "issue_closure_performed": false,
+          "merge_performed": false,
+          "outcome": {
+            "id": 6114753829,
+            "parent": {
+              "kind": "issue",
+              "number": 6
+            },
+            "sha256": "fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1",
+            "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114753829"
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "run_id": 9007115000201,
+          "status": "DUPLICATE_SUPPRESSED",
+          "task": 6,
+          "writer_actor": "jresearch-relay-test-writer[bot]"
+        },
+        "isError": false
+      },
+      "published_pr": {
+        "content": [
+          {
+            "type": "text",
+            "text": "PUBLISHED"
+          }
+        ],
+        "structuredContent": {
+          "independent_acceptance": false,
+          "issue_closure_performed": false,
+          "merge_performed": false,
+          "outcome": {
+            "id": 6114756310,
+            "parent": {
+              "kind": "pull_request",
+              "number": 7
+            },
+            "sha256": "7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360",
+            "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114756310"
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "run_id": 9007115000202,
+          "status": "PUBLISHED",
+          "task": 6,
+          "writer_actor": "jresearch-relay-test-writer[bot]"
+        },
+        "isError": false
+      },
+      "duplicate_pr": {
+        "content": [
+          {
+            "type": "text",
+            "text": "DUPLICATE_SUPPRESSED"
+          }
+        ],
+        "structuredContent": {
+          "independent_acceptance": false,
+          "issue_closure_performed": false,
+          "merge_performed": false,
+          "outcome": {
+            "id": 6114756310,
+            "parent": {
+              "kind": "pull_request",
+              "number": 7
+            },
+            "sha256": "7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360",
+            "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114756310"
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "run_id": 9007115000202,
+          "status": "DUPLICATE_SUPPRESSED",
+          "task": 6,
+          "writer_actor": "jresearch-relay-test-writer[bot]"
+        },
+        "isError": false
+      },
+      "conflict": {
+        "content": [
+          {
+            "type": "text",
+            "text": "MANUAL_OUTCOME_CHANGED"
+          }
+        ],
+        "structuredContent": {
+          "error_code": "INVALID_ARGUMENT"
+        },
+        "isError": true
+      },
+      "binding_invalid": {
+        "content": [
+          {
+            "type": "text",
+            "text": "MANUAL_OUTCOME_BINDING_INVALID"
+          }
+        ],
+        "structuredContent": {
+          "error_code": "INVALID_ARGUMENT"
+        },
+        "isError": true
+      },
+      "unknown_run": {
+        "content": [
+          {
+            "type": "text",
+            "text": "MANUAL_OUTCOME_NOT_ADMITTED"
+          }
+        ],
+        "structuredContent": {
+          "error_code": "INVALID_ARGUMENT"
+        },
+        "isError": true
+      },
+      "missing_marker": {
+        "content": [
+          {
+            "type": "text",
+            "text": "PR_AUTHORITY_CHANGED"
+          }
+        ],
+        "structuredContent": {
+          "error_code": "INVALID_ARGUMENT"
+        },
+        "isError": true
+      },
+      "moved_head": {
+        "content": [
+          {
+            "type": "text",
+            "text": "PR_AUTHORITY_CHANGED"
+          }
+        ],
+        "structuredContent": {
+          "error_code": "INVALID_ARGUMENT"
+        },
+        "isError": true
+      }
+    },
+    "identity_check": {
+      "content": [
+        {
+          "type": "text",
+          "text": "OK"
+        }
+      ],
+      "structuredContent": {
+        "authenticated_app_slug": "jresearch-relay-test-reviewer",
+        "author": "foal",
+        "current_head_sha": "36d4e73b8a0b3450f78b5a00d672f0079d7f8b18",
+        "draft": true,
+        "exact_head": true,
+        "expected_actor": "jresearch-relay-test-reviewer[bot]",
+        "merged": false,
+        "ready_for_review": false,
+        "state": "open"
+      },
+      "isError": false
+    },
+    "unauthenticated_http": {
+      "chunk_id": "c0b609",
+      "wall_time_seconds": 0.5377775,
+      "exit_code": 0,
+      "original_token_count": 60,
+      "output": "<html>\r\n<head><title>400 No required SSL certificate was sent</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>No required SSL certificate was sent</center>\r\n<hr><center>nginx/1.29.1</center>\r\n</body>\r\n</html>\r\n"
+    },
+    "inputs": {
+      "no_pr": {
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "task": 6,
+        "run_id": 9007115000201,
+        "result": {
+          "schema_version": "4.0",
+          "kind": "outcome",
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "task": 6,
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "step": 1,
+          "authority": {
+            "charter": {
+              "kind": "issue-body",
+              "id": 5805525646,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "decisions": [],
+            "change_request": null,
+            "compatibility_request": null,
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "admission": {
+            "attempt": "run-9007115000201",
+            "step": 1,
+            "sha256": "c65d1365f5bd7dc8a690a586174f43e0340b87aef472dfc55f446bb0b754ab18"
+          },
+          "attempt": "run-9007115000201",
+          "status": "implemented",
+          "result": {
+            "kind": "qualification",
+            "revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+            "identities": [
+              {
+                "kind": "qualification-fixture",
+                "id": "task115-official-test-app-no-pr"
+              }
+            ]
+          },
+          "summary": "Official TEST App manual Outcome publication fixture. Protected admission-shaped state is synthetic; no real admission, Relay/model execution, new project Task or Step is asserted.",
+          "warnings": [],
+          "limitations": [
+            "The protected record is a disposable synthetic input; real Writer admission is not qualified.",
+            "This publication tests the official connected TEST App with its existing OpenAI mTLS and installed TEST Writer path; it does not establish PROD or independent source acceptance.",
+            "Product PR118 merge, Task115 Writer Outcome and Issue closure remain unclaimed."
+          ]
+        }
+      },
+      "pr": {
+        "repository": "jresearchsoftware/codex-relay-testbed",
+        "task": 6,
+        "run_id": 9007115000202,
+        "result": {
+          "schema_version": "4.0",
+          "kind": "outcome",
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "task": 6,
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "step": 1,
+          "authority": {
+            "charter": {
+              "kind": "issue-body",
+              "id": 5805525646,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "decisions": [],
+            "change_request": null,
+            "compatibility_request": null,
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "admission": {
+            "attempt": "run-9007115000202",
+            "step": 1,
+            "sha256": "c3fc8456ed8800d7095736dac5bfa210e11649fd344d0cde53d9c0a14342e89c"
+          },
+          "attempt": "run-9007115000202",
+          "status": "implemented",
+          "result": {
+            "kind": "git",
+            "revision": "c9d63e215e0543b39630dee2ee4663646354ffa1",
+            "identities": [
+              {
+                "kind": "qualification-fixture",
+                "id": "task115-official-test-app-pr"
+              }
+            ]
+          },
+          "summary": "Official TEST App manual Outcome publication fixture. Protected admission-shaped state is synthetic; no real admission, Relay/model execution, new project Task or Step is asserted.",
+          "warnings": [],
+          "limitations": [
+            "The protected record is a disposable synthetic input; real Writer admission is not qualified.",
+            "This publication tests the official connected TEST App with its existing OpenAI mTLS and installed TEST Writer path; it does not establish PROD or independent source acceptance.",
+            "Product PR118 merge, Task115 Writer Outcome and Issue closure remain unclaimed."
+          ]
+        }
+      }
+    }
+  },
+  "native_readback": {
+    "outcomes": [
+      {
+        "id": 6114753829,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114753829",
+        "writer_actor": "jresearch-relay-test-writer[bot]",
+        "writer_actor_id": 338711029,
+        "body_sha256": "fa0c3722dfce2a7d1a85bd12403290da081a6846e0610afe1cdd105f31b5b4c1",
+        "canonical_result_equals_submitted": true,
+        "one_comment_for_attempt": true
+      },
+      {
+        "id": 6114756310,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114756310",
+        "writer_actor": "jresearch-relay-test-writer[bot]",
+        "writer_actor_id": 338711029,
+        "body_sha256": "7b65f4238d1f27fa470701d8f7ce6c7edd0c6d68e27d426e75b3872db800d360",
+        "canonical_result_equals_submitted": true,
+        "one_comment_for_attempt": true
+      }
+    ],
+    "historical_outcomes_unchanged": true,
+    "issue_comment_ids": [
+      "6114353386",
+      "6114753829"
+    ],
+    "pr_comment_ids": [
+      "6114357552",
+      "6114756310"
+    ],
+    "fixture_pr_final_head": "36d4e73b8a0b3450f78b5a00d672f0079d7f8b18",
+    "fixture_pr_final_draft": true,
+    "fixture_pr_unmerged": true
+  },
+  "cleanup": {
+    "official_fixture_state_removed": true,
+    "synthetic_publication_records_removed": [
+      9007115000201,
+      9007115000202
+    ],
+    "native_history_preserved": true,
+    "official_services": {
+      "codex-relay-test-reviewer.service": "active",
+      "codex-relay-test-runner.service": "active",
+      "codex-relay-test-general-runner.service": "active",
+      "codex-relay-test-relay-manual-outcome.socket": "active"
+    }
+  }
+}

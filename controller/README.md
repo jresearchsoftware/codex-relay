@@ -3,10 +3,26 @@
 Load an explicit [consumer configuration](../consumer/README.md) before execution.
 
 For the ordinary human path, see the [Task workflow guide](../docs/task-workflow.md).
-A Task marked `Authority model: github-native-v1` executes the complete current
-trusted Task Request or native Change Request, with its explicit Step, route,
-profile, scope and starting facts. Issue bodies are stable charters; labels and
-titles are verified projections. Unmarked Tasks retain legacy Issue/CR parsing.
+A Task marked `Authority model: github-native-v1` uses its current stable charter,
+applicable trusted Decisions and an independent exact-head native Change Request
+when remediation is needed. New schema `4.0` execution snapshots are created by
+trusted Writer at admission; no complete public Task Request or authored Step is
+required. Writer resolves route, profile, scope and starting facts and allocates
+Step once in the protected attempt record. Labels and titles are projections.
+Already admitted schema `3.0` attempts retain their exact public Request/CR chain
+and authored Step; unmarked Tasks retain legacy parsing for historical reads and
+exact already-admitted attempts. On a qualified v4 installation, fresh unmarked
+or legacy Task work and fresh v3 Task/CR chains fail with
+`CURRENT_PROTOCOL_REQUIRED` before worker execution. Use current v4 authority
+or explicitly owner-authorized migration; labels and metadata cannot supply it.
+Safe completion, Outcome publication and recovery of an old admitted attempt
+keep its original bindings and cannot launch a new attempt.
+For a marked Task with v3 Request history, current v4 direction requires an
+active trusted Task-scoped v4 Decision newer than the latest v3 Request that
+explicitly amends purpose or scope. A closure/profile-only Decision is
+insufficient. The latest applicable v3 CR must be replaced by a current v4 CR;
+superseded historical v3 reviews remain readable. Fresh resolution does not
+inherit a v3 Request's execution fields.
 Use the [authority contract](../contracts/README.md#github-native-task-authority)
 for migration, trust, supersession and selected context.
 
@@ -16,17 +32,22 @@ continuation or applicable PR remediation by applying
 handoff. These are first-class native commands. No Actions UI, dispatch inputs,
 comment command or additional launch form is required. Owner `workflow_dispatch`
 on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
-`pull_request`; those inputs must match current metadata and the selected typed
-Request or legacy Issue/CR authority. Labels do not select a different route
-from a migrated Request's `route`.
+`pull_request`; compatibility inputs cannot replace current authority. For new
+schema `4.0` admissions the ready command selects the route and Writer allocates
+Step. Already-admitted schema `3.0` and legacy inputs retain their existing checks
+and cannot select a different route from their trusted execution authority.
+The dispatch fallback does not bypass the fresh-v4 protocol gate.
 
-The canonical Issue retains exactly one `step-N` label throughout its lifetime.
-Fresh work uses `step-1`; a migrated successor Request explicitly advances N to
-N+1 for a new phase. Legacy Tasks use owner new-phase metadata preparation.
-Same-phase retry explicitly keeps Step. Writer copies the Issue Step to its
-created PR, without incrementing or removing the Issue label. Step alone
-never launches work and grants no authority. Missing, multiple, malformed or
-mismatched labels block new admission. The `step` label namespace is reserved.
+For schema `4.0`, the first successful Writer admission allocates Step 1; a new
+admission allocates the next Step from successful protected admissions for that
+Task. Rejected routing does not allocate Step. Replay of an existing admission
+retains its Step; unresolved prior execution or publication blocks another
+admission. Writer projects exactly one `step-N` label onto the Issue and current
+PR and the bounded title. Labels are not allocation inputs or execution authority.
+Retained schema `3.0` and legacy attempts preserve their historical Step
+procedures and projection checks; these are not fresh-admission authority on a
+qualified v4 installation. The `step` namespace remains
+reserved; Step alone never launches work.
 
 The trusted Writer verifies the owner actor and triggering actor, repository,
 workflow path, first native run execution, native title binding, current command
@@ -38,9 +59,14 @@ ready command are safely bound, the Writer reserves that event in the existing
 bounded attempt record and consumes the command exactly once, including when
 Step or Issue/CR/head admission is rejected. Safe rejection publishes one
 `BLOCKED_BEFORE_WORKER` Outcome on the bound target; no Codex worker starts.
+`CURRENT_PROTOCOL_REQUIRED` is outside that domain-blocker path: it stops before
+new admission reservation, ready-command consumption, Step projection, worker
+launch or Writer Outcome. A protocol mismatch cannot fabricate an old-schema
+BLOCKED chain; the visible diagnostic identifies the current-v4 correction.
 Correct the metadata/authority and apply the ready label again for a fresh
-event. An invalid event-time Step cannot become valid through a later label
-repair. Unbound, unauthorized, stale, cross-target or replaced commands cause no
+event. A rejected compatibility Step cannot become valid through a later label
+repair. New schema `4.0` admission binds the resolved protected snapshot instead.
+Unbound, unauthorized, stale, cross-target or replaced commands cause no
 label mutation or unrelated publication. An uncertain consumption stays reserved
 and is never blindly repeated. Step stays in place. `runId` / `run-<runId>`
 uniquely identifies the attempt. Same-run replay cannot repeat a model call, and a fresh run cannot
@@ -49,19 +75,16 @@ transition, authored by the owner, no more than two minutes before native run
 creation, and after completion of any preceding admitted run for this task.
 Stale commands and prewritten retries fail closed; no retry queue is created.
 
-A new typed executable `REQUEST_CHANGES` carries the current Request's Step + 1;
-a legacy CR uses N+1 from synchronized Issue/PR labels. After successful native
-publication, the same Reviewer operation
-synchronizes both labels and the existing bounded PR Task/Step/CR-ID title via the
+A schema `4.0` native `REQUEST_CHANGES` binds the exact repository, PR, branch,
+base and reviewed head, findings and bounded execution overrides. It does not
+contain Step, require a replacement Request or independently authorize Task
+closure. Reviewer publishes the independent review; Writer allocates Step and
+projects metadata only when remediation is admitted. Repeating publication
+retains the same native review ID. Retained schema `3.0` and legacy CR publications retain
+their authored Step and Reviewer projection procedure through the
 [metadata procedure](../contracts/README.md#owner-step-metadata-procedure).
-The Reviewer App owns verdict publication and that bounded post-CR projection.
-Repeating publication or metadata repair retains the same native review ID and
-authored Step; ordinary owner orchestration no longer writes post-CR metadata.
-Legacy owner preparation is limited to a newly authorized implementation phase;
-the typed publisher owns migrated successor Request projections.
-Execution retries keep Step;
-`APPROVE` does not increment it. New remediation must match the current CR's
-required launch profile; Step display metadata never replaces that authority.
+`APPROVE` does not allocate Step. Remediation must match the applicable CR's
+execution requirements; display metadata never replaces that authority.
 A historical published record without a Reviewer Step anchor may require
 [explicit bounded migration recovery](../contracts/README.md#legacy-publication-migration-recovery)
 on `LEGACY_STEP_BINDING_REQUIRED`; replay retains its native review ID and Step.
@@ -73,32 +96,40 @@ number and native label projection, for example
 `Auto implementation · Task 12 · step-5 · codex-ready-auto`. Unrelated Issue
 labels also appear purely for display; adding, removing or reordering them
 does not change launch authority. Admission binds only the ready command and
-reserved Step metadata in the Issue label projection. PR names use the existing
+Step display metadata in the Issue label projection; new schema `4.0` execution
+uses the Step resolved by Writer. PR names use the existing
 synchronized bounded title, for example
 `Auto remediation · PR #13 · Task 12 · Step 6 · CR purpose`; manual
 names begin `Manual handoff`. Descriptive PR tails are bounded, and Task/Step
-lead the title. A stale Task/Step or ready-command projection blocks new label
-admission. Neither Issue prose nor arbitrary PR/CR prose is parsed to construct
+lead the title. A stale ready command blocks admission; compatibility Task/Step
+projection checks remain unchanged. Neither Issue prose nor arbitrary PR/CR prose is parsed to construct
 the pre-start name.
 This uses GitHub's native [run-name contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#run-name)
 and [label projection/join expressions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#join).
 
-Legacy fresh Issues use the exact configured base at admission and `<taskBranchPrefix>task-<issue-number>`
+Under the retained older installation contract, legacy fresh Issues use the exact
+configured base at admission and `<taskBranchPrefix>task-<issue-number>`
 when base/branch fields are omitted, without warnings. A malformed or conflicting
 explicit base blocks; the admitted exact base cannot move during execution.
-Typed repository Requests include explicit `base_sha`, `starting_head` and
-`branch`; admission does not fill these fields from old Issue-body prose.
+New schema `4.0` admission resolves repository starting facts from current
+charter/Decisions, exact refs and an applicable CR. Retained schema `3.0` repository
+Requests include explicit `base_sha`, `starting_head` and `branch`; admission does
+not fill those compatibility fields from old Issue-body execution prose.
 The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
 
 ## Issue-authorized implementation continuation
 
-The fields in this section describe legacy Tasks. After explicit migration to
-`github-native-v1`, a complete trusted Task Request supplies starting-state,
-Step, route, profile, scope and permission bindings. Historical body execution
-prose is not parsed. The publisher projects Step labels and the bounded PR
-title; a projection mismatch is a visible blocker. Ordinary owner Step helpers
-cannot become a competing writer for migrated Tasks. See the
+The fields in this section describe the retained unmarked legacy contract;
+changing them does not satisfy the qualified v4 fresh-admission gate. For new
+`github-native-v1` schema `4.0` admissions, current charter/Decisions and trusted
+starting facts supply continuation authority; Writer creates the protected
+snapshot and Step, without selecting a v3 compatibility Request. Retained
+snapshots preserve any original exact compatibility reference. Publishing
+another complete Request is not a prerequisite. Already
+admitted schema `3.0` attempts retain their Request, starting state, Step and
+projection checks. Ordinary owner Step helpers cannot become a competing writer
+for migrated Tasks. See the
 [authority contract](../contracts/README.md#github-native-task-authority).
 
 To continue implementation on an existing task branch, update the canonical
@@ -148,8 +179,12 @@ service or state registry is introduced.
 
 ## Issue publication and worker handoff
 
-For a migrated Task, authority parent and result surface are separate. Writer
-records the native Request reference in the attempt and PR binding. It posts
+For a migrated Task, authority parent and result surface are separate. New
+schema `4.0` attempts bind the exact charter, active Decisions and applicable CR
+by native body hashes, together with the protected
+admission digest, attempt and Step. Already admitted schema `3.0` attempts retain
+the exact native Request reference; previously admitted snapshots preserve any
+original compatibility Request binding. Writer posts
 the terminal typed Outcome on the unique durably known PR, or the Issue before
 PR creation and for legitimate no-PR/no-change work. A pending PR creation
 intent or ambiguous artifact blocks surface selection; it cannot fall back to
@@ -157,31 +192,59 @@ the Issue. No-change success requires a contained successful worker, complete
 clean collection at the admitted source head and current authority; it performs
 no push and creates no PR. The ordinary native `issue_comment` event on that
 typed Outcome is the completion signal: automation verifies Writer identity,
-Request, attempt and immutable result before acting. No additional label,
+authority/admission or compatibility Request, attempt and immutable result before acting. No additional label,
 receipt comment, Check or parallel completion ledger is needed.
 
-A manual non-source Request may omit branch/base/head and receives the same
-minimal handoff. Manual results use the existing trusted Writer protocol's
-bounded `manual-outcome` operation with the admitted `runId`, `attemptId` and
-one native owner `authorizationId`. The source comment on the Task contains
-only a canonical typed `outcome` object in a `relay-manual-result` fence. This
-is authorization to publish that manual result, not execution authority or an
-ordinary comment that changes scope. Writer verifies the owner native identity,
-the current Request, charter and exact result bytes, reserves the source ID and
-digest, re-reads it and publishes one typed Outcome. It does not import Git,
-launch work, approve, deploy, merge or close anything. The manual result can
-identify immutable checks/runs without inventing a Git head. A PR result must
-be uniquely bound to the Task in the PR body, including a disposable PR already
-closed without merge; Writer does not reopen it. When the Request has no
-`existing_pr`, Reviewer discovers its artifact by branch and requires both
-exact standalone binding lines in that body:
+A manual non-source admission may omit branch/base/head and receives the same
+minimal handoff. After an owner-admitted manual session, the owner-managed OpenAI
+MCP tool `submit_manual_outcome` submits only `{repository, task, run_id, result}`;
+Task and run ID are positive JSON integers and `result` is the complete canonical
+schema `3.0` or `4.0` Outcome. No public owner manual-result comment, second
+dispatch or approval is required. The qualified mTLS Reviewer ingress invokes a
+fixed nonprivileged client and a protected socket-activated Writer capability.
+Writer validates the exact admitted attempt, current authority, result and unique
+artifact, reserves the result digest, publishes one Writer Bot Outcome and reads
+back its identity and exact bytes. The submission remains an execution claim,
+not independent acceptance. It does not import Git, launch work, approve, deploy,
+merge or close anything. An immutable check/run result does not invent a Git head.
+
+The installed historical `manual-outcome` protocol with owner `authorizationId`
+and a canonical `relay-manual-result` source comment remains available for
+compatible schema `3.0` callers. It is no longer a required precursor to the
+narrow MCP submission. Existing in-flight attempts are not rewritten.
+
+For schema-v4 completion, valid intervening trusted Task Decisions do not
+invalidate the original execution's truthful result. Writer verifies the
+original source bytes, native identities and immutable admission, resolves
+current trusted Task authority separately, and records the difference in the
+same Outcome for independent review. It never rewrites the admission or claims
+that the executor satisfied requirements added later. This applies to manual
+and automatic completion, including a blocked result when a later action is
+no longer authorized.
+
+Reporting a result grants no new operation permission. Source publication and
+other execution actions remain bounded by both admitted and current protected
+authority; uncertain or revoked permission stops the action while preserving
+useful progress and allowing truthful result reporting. Independent exact-head
+PR review or no-PR Task Approval evaluates the delivered result against current
+requirements. Missing amended work needs normal remediation, and material Task changes
+authority after approval requires fresh acceptance before merge or closure.
+Native source tampering, changed charter/CR/compatibility identity, attempt or
+PR/head mismatches and duplicate delivery still fail closed. Retained schema-v3
+Requests and attempts keep their strict historical currentness and bindings;
+neither ordinary recovery nor new source code rebinds them.
+
+A PR result must be uniquely bound to the Task, including a disposable PR already
+closed without merge; Writer does not reopen it. Schema `4.0` PR bodies retain
+`Related to #N` and the exact standalone line `Execution admission digest:
+<admission.sha256>`. Schema `3.0` branch discovery retains both standalone lines:
 
 ```text
 Execution request native ID: <reference.id>
 Execution request digest: <reference.sha256>
 ```
 
-Copy both values from the trusted Task Request publisher's returned `reference`.
+For schema `3.0`, copy both values from the trusted Task Request publisher's returned `reference`.
 The digest covers the complete native Request comment, including publication
 provenance, not only its JSON payload. Retain the ordinary `Related to #N` Task
 linkage. Automatic Writer PR creation already emits both lines; an owner-created
@@ -385,7 +448,8 @@ Draft is a valid remediation starting state, and publication recovery of the
 same CR remains supported after Writer drafts it. Fresh review still requires
 Ready. No new routing event, credential or App permission is introduced.
 
-Manual results retain the existing owner-authorized `manual-outcome` operation.
+Manual results use the narrow `submit_manual_outcome` Writer capability or the
+retained schema `3.0` owner-authorized `manual-outcome` protocol.
 An open PR requires the successful exact Git candidate and durable successful
 Outcome before its verified Ready transition; blocked results draft it. Replay
 reuses that Outcome. Disposed manual qualification artifacts retain their state.

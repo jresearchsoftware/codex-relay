@@ -92,6 +92,27 @@ def test_existing_foreign_unit_is_rejected_without_changing_it(tmp_path):
     guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second', ['second-reviewer.service'], units)
 
 
+def test_manual_outcome_units_bind_the_same_namespace_and_fixed_writer(tmp_path):
+    socket = tmp_path / 'first-relay-manual-outcome.socket'
+    template = tmp_path / 'first-relay-manual-outcome@.service'
+    socket.write_text('ListenStream=/run/first-manual-outcome.sock\nAccept=yes\n')
+    template.write_text('ExecStart=/opt/first/relay-manual-outcome-writer\nUser=root\n')
+    names = [socket.name, template.name]
+    guard.verify('/opt/first', str(tmp_path / 'config'), 'example/first', names, tmp_path)
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify('/opt/other', str(tmp_path / 'config'), 'example/first', names, tmp_path)
+    template.write_text('ExecStart=/opt/first/foreign-program\nUser=root\n')
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify('/opt/first', str(tmp_path / 'config'), 'example/first', names, tmp_path)
+
+
+def test_renamed_socket_cannot_hide_the_existing_namespace(tmp_path):
+    (tmp_path / 'foreign.socket').write_text('ListenStream=/run/first-manual-outcome.sock\nAccept=yes\n')
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify('/opt/first', str(tmp_path / 'config'), 'example/first',
+                     ['first-relay-manual-outcome.socket'], tmp_path)
+
+
 def test_same_namespace_cannot_repoint_repository(tmp_path):
     installed = tmp_path / 'reviewer-mcp.json'
     installed.write_text(json.dumps({'repository': 'example/first'}))
@@ -175,3 +196,55 @@ def test_readiness_cannot_accept_another_instances_similar_socket(tmp_path, list
     result = subprocess.run(['bash', str(script)], capture_output=True, text=True,
                             env={**os.environ, 'PATH': str(binaries) + ':' + os.environ['PATH']})
     assert (result.returncode == 0) == healthy, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux activation helper required')
+@pytest.mark.parametrize('installed', ['absent', 'valid', 'partial', 'foreign', 'symlink', 'bad-readback'])
+def test_existing_authorized_activate_handles_manual_socket_without_new_config(tmp_path, installed):
+    calls = tmp_path / 'systemctl-calls'
+    systemctl = tmp_path / 'systemctl'
+    systemctl.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> ' + str(calls) + '\n'
+                        'case "$1" in\n is-active) echo active;;\n'
+                        ' is-enabled) echo ' + ('disabled' if installed == 'bad-readback' else 'enabled') + ';;\nesac\n')
+    systemctl.chmod(0o755)
+    stat = tmp_path / 'stat'
+    stat.write_text('#!/bin/sh\necho "root root 644"\n')
+    stat.chmod(0o755)
+    operation = tmp_path / 'operation-state'
+    operation.write_text('#!/bin/sh\necho phase=activate\nexit 10\n')
+    operation.chmod(0o755)
+    units = tmp_path / 'units'
+    units.mkdir()
+    values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()),
+              **config.compile_inputs(inputs()), 'relay_production_operation_state_path': str(operation),
+              'relay_production_operation_lock_path': str(tmp_path / 'operation.lock')}
+    socket = values['relay_namespace'] + '-relay-manual-outcome.socket'
+    template = values['relay_namespace'] + '-relay-manual-outcome@.service'
+    if installed != 'absent':
+        (units / socket).write_text('ListenStream=/run/' + values['relay_namespace'] + '-manual-outcome.sock\n'
+                                   'Accept=yes\nSocketUser=root\nSocketGroup=' + values['relay_reviewer_group'] + '\nSocketMode=0660\n')
+        if installed != 'partial':
+            (units / template).write_text('ExecStart=' + values['relay_install_root'] + '/relay-manual-outcome-writer\nUser=root\n')
+        if installed == 'foreign':
+            (units / template).write_text('ExecStart=/opt/foreign/writer\nUser=root\n')
+        elif installed == 'symlink':
+            (units / socket).rename(units / 'socket-target')
+            (units / socket).symlink_to(units / 'socket-target')
+    source = (BACKEND / 'roles/relay_runtime/templates/relay-reviewer-activation-start.j2').read_text()
+    rendered = Templar(loader=DataLoader(), variables=values).template(source, convert_data=False)
+    rendered = rendered.replace('/etc/systemd/system/', str(units) + '/')
+    rendered = rendered.replace('/bin/systemctl', str(systemctl)).replace('/usr/bin/stat', str(stat))
+    helper = tmp_path / 'activate'
+    helper.write_text(rendered)
+    result = subprocess.run(['bash', str(helper)], capture_output=True, text=True)
+    observed = calls.read_text().splitlines()
+    assert (result.returncode == 0) == (installed in ['absent', 'valid']), result.stdout + result.stderr
+    reviewer = values['relay_reviewer_service_name']
+    if installed == 'absent':
+        assert observed == ['daemon-reload', 'enable ' + reviewer, 'start ' + reviewer]
+    elif installed in ['valid', 'bad-readback']:
+        assert observed[:5] == ['daemon-reload', 'enable ' + socket, 'start ' + socket,
+                               'is-active ' + socket, 'is-enabled ' + socket]
+        assert observed[5:] == (['enable ' + reviewer, 'start ' + reviewer] if installed == 'valid' else [])
+    else:
+        assert observed == ['daemon-reload']

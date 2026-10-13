@@ -129,7 +129,8 @@ test('a new run cannot reuse a consumed native event or queue a prewritten retry
   const run = { ...f.run, id: 100, display_title: labelRunName(f.envelope, subject) };
   const api = { ...f.api, getRun: async id => id === 100 ? run : { ...f.run, status: 'completed', updated_at: '2026-09-04T12:01:00Z' },
     get: async path => path === '/issues/42' ? subject : f.api.get(path) };
-  const broker = createPublicationBroker({ api, store: f.store, publisher: f.publisher });
+  // This fixture tests the previously qualified legacy event/retry contract.
+  const broker = createPublicationBroker({ api, store: f.store, publisher: f.publisher, streamlinedAdmission: false });
   await assert.rejects(broker.dispatch(request), { code: 'READY_EVENT_ALREADY_CONSUMED' });
   f.events[0].id++;
   await assert.rejects(broker.dispatch(request), { code: 'READY_EVENT_QUEUED' });
@@ -148,7 +149,7 @@ test('a label run cannot target an unrelated invalid Issue even for a blocked Ou
   const f = await fixture(t, { labelLaunch: true });
   const api = { ...f.api, get: async path => path === '/issues/44'
     ? { ...f.issue, number: 44, labels: [] } : f.api.get(path) };
-  const broker = createPublicationBroker({ api, store: memoryStore(), publisher: f.publisher });
+  const broker = createPublicationBroker({ api, store: memoryStore(), publisher: f.publisher, streamlinedAdmission: false });
   await assert.rejects(broker.dispatch({ ...f.admissionRequest, number: 44, issueNumber: 44 }), { code: 'OWNER_RUN_NOT_ADMITTED' });
   assert.equal(f.comments.length, 0); assert.equal(f.pushes(), 0);
 });
@@ -345,7 +346,8 @@ test('ambiguous blocked-command consumption reserves the event without retrying 
   const store = memoryStore(); let deletes = 0;
   f.issue.labels = labels('step-05', 'codex-ready-auto');
   const api = { ...f.api, delete: async () => { deletes++; throw Object.assign(new Error('transport'), { code: 'EIO' }); } };
-  const broker = createPublicationBroker({ api, store, publisher: f.publisher });
+  // Preserve the legacy rejection/consumption boundary under qualification.
+  const broker = createPublicationBroker({ api, store, publisher: f.publisher, streamlinedAdmission: false });
   await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'EIO' });
   assert.equal((await store.get(99)).envelope.readyEventId, 71);
   assert.equal((await store.get(99)).admissionBlock.code, 'STEP_LABEL_INVALID');

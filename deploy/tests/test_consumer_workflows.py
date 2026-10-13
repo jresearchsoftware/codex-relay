@@ -80,7 +80,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v2')
+                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v3')
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
                 self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
@@ -146,13 +146,18 @@ class ConsumerWorkflowTests(unittest.TestCase):
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dispatchRunName, labelRunName } from './controller/src/launch-metadata.mjs';
+import { authorityMode } from './contracts/src/github-authority.mjs';
 const [routing, recovery] = JSON.parse(readFileSync(0, 'utf8'));
 const evaluate = (source, github, inputs = {}) => {
   const expression = source.trim().replace(/^\$\{\{/, '').replace(/\}\}$/, '')
+    // GitHub strings escape apostrophes by doubling them; backslashes stay
+    // literal until fromJSON explicitly decodes a JSON value.
+    .replace(/'(?:[^']|'')*'/g, token => JSON.stringify(token.slice(1, -1).replace(/''/g, "'")))
     .replace(/\.labels\.\*\.name/g, '.labels.map(label => label.name)');
   const format = (template, ...values) => template.replace(/\{([0-9]+)\}/g, (_, index) => values[Number(index)]);
-  return Function('github', 'inputs', 'format', 'join', `return (${expression});`)
-    (github, inputs, format, (values, separator) => values.join(separator));
+  return Function('github', 'inputs', 'format', 'join', 'contains', 'fromJSON', `return (${expression});`)
+    (github, inputs, format, (values, separator) => values.join(separator),
+      (value, part) => String(value ?? '').toLowerCase().includes(String(part).toLowerCase()), JSON.parse);
 };
 const base = { repository: 'jresearchsoftware/codex-relay', actor: 'foal', triggering_actor: 'foal',
   ref: 'refs/heads/main', event_name: 'workflow_dispatch', event: {} };
@@ -170,6 +175,29 @@ for (const route of ['auto', 'manual']) {
       event: { action: 'labeled', label: { name: `codex-ready-${route}` },
         [target === 'issue' ? 'issue' : 'pull_request']: subject } };
     assert.equal(evaluate(routing['run-name'], github), labelRunName(launch, subject));
+    if (target === 'issue') {
+      const marker = 'Authority model: github-native-v1';
+      for (const body of [`Example migration marker: \`${marker}\``, `Quoted marker: "${marker}"`,
+        `Before ${marker}`, `> ${marker}`, `\\n${marker}\\n`,
+        JSON.stringify(`\n${marker}\n`), `example authority model: GITHUB-NATIVE-V1`]) {
+        const legacy = { ...subject, body };
+        assert.equal(authorityMode(body), 'legacy');
+        assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: legacy } }), labelRunName(launch, legacy), body);
+      }
+      for (const body of [marker, `${marker}\nCharter`, `Charter\n${marker}\nScope`, `Charter\n${marker}`,
+        `${marker}\r\nCharter`, `Charter\r\n${marker}\r\nScope`, `Charter\r\n${marker}`, `\`\`\`\n${marker}\n\`\`\``]) {
+        const native = { ...subject, body, labels: [{ name: 'step-900' }, { name: `codex-ready-${route}` }] };
+        assert.equal(authorityMode(body), 'github-native-v1');
+        assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: native } }), labelRunName(launch, native), body);
+        assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: native } }),
+          `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 27 · codex-ready-${route}`);
+      }
+      for (const body of ['authority model: github-native-v1', ` ${marker}`, `${marker} `, `${marker} after`, `- ${marker}`, `${marker}\n${marker}`]) {
+        assert.throws(() => authorityMode(body), { code: 'AUTHORITY_MODEL_INVALID' });
+      }
+      const newInputs = { ...inputs, step: '' };
+      assert.equal(evaluate(routing['run-name'], base, newInputs), dispatchRunName({ ...launch, step: null }));
+    }
     assert.equal(evaluate(condition, github), true);
     assert.equal(evaluate(condition, { ...github, event: { ...github.event, label: { name: 'step-3' } } }), false);
     assert.equal(evaluate(condition, { ...github, event: { ...github.event, action: 'unlabeled' } }), false);
@@ -316,7 +344,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 self.assertIn('RECOVERY_REQUEST_INVALID', blocked.stderr)
                 self.assertNotIn('fixtureRequest', blocked.stdout)
 
-            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v2'}))
+            compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v3'}))
             for value in (self.routing, self.recovery):
                 blocked = execute(value)
                 self.assertNotEqual(blocked.returncode, 0)

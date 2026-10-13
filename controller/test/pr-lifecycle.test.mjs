@@ -137,7 +137,7 @@ test('successful CR continuation drafts its exact target before remediation and 
   // Re-admission of the already-Draft exact head is valid, without a new Step.
   const { createPublicationBroker } = await import('../src/publication-broker.mjs');
   const fresh = createPublicationBroker({ api: f.api, store: { get: async () => null, put: async () => {} }, publisher: f.publisher,
-    lifecycleStore: f.lifecycleStore });
+    lifecycleStore: f.lifecycleStore, streamlinedAdmission: false });
   assert.equal((await fresh.dispatch(f.admissionRequest)).envelope.startHead, drafted.head);
   await f.broker.invoke(f.admissionRequest);
   const completed = await runAttempt({ ...f, execute: async () => { await f.commit(); return success(f.envelope); } });

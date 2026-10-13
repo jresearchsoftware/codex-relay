@@ -1,0 +1,456 @@
+{
+  "recorded_at": "2026-10-12T00:09:31.911903+02:00",
+  "scope": "Installed TEST manual Outcome chain with explicitly synthetic admission and mTLS identity; no real admission, ready command, worker/model execution, product acceptance or PROD operation.",
+  "installed_revision": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+  "binary_path": "/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http",
+  "binary_sha256": "a54697922dcc30e420b59f84969520189deef7a9741bfd8f15d826307dda55de",
+  "fixture_process_executable": "/opt/codex-relay-test/releases/5699432e95440307fa799b0a3b8ac3150ffd574a/bin/reviewer-mcp-http",
+  "fixture_process_identity": [
+    "Uid:\t979\t979\t979\t979",
+    "NoNewPrivs:\t1"
+  ],
+  "official_reviewer_properties": "User=relay-test-reviewer\nGroup=www-data\nSupplementaryGroups=relay-test-reviewer\nNoNewPrivileges=yes\nActiveState=active\nSubState=running\nUnitFileState=enabled",
+  "manual_socket_properties": "ActiveState=active\nSubState=listening\nUnitFileState=enabled",
+  "boundary_modes": "660:root:relay-test-reviewer:/run/codex-relay-test-manual-outcome.sock\n750:root:relay-test-reviewer:/opt/codex-relay-test/relay-manual-outcome\n700:root:root:/opt/codex-relay-test/relay-manual-outcome-writer",
+  "writer_service_definition": "# /etc/systemd/system/codex-relay-test-relay-manual-outcome@.service\n[Unit]\nDescription=Relay bounded Writer manual Outcome publication\n\n[Service]\nUser=root\nGroup=root\n# Preserve the existing quiescence proof's /system.slice/<unit> cgroup binding.\nSlice=system.slice\nExecStart=/opt/codex-relay-test/relay-manual-outcome-writer\nStandardInput=socket\nStandardOutput=socket\nStandardError=null\nTimeoutStartSec=60\nRuntimeMaxSec=60\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/lib/codex-relay-test/writer-claims",
+  "receipts": {
+    "binding-invalid": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "MANUAL_OUTCOME_BINDING_INVALID",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    "changed": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "MANUAL_OUTCOME_CHANGED",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    "duplicate": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "DUPLICATE_SUPPRESSED",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "independent_acceptance": false,
+            "issue_closure_performed": false,
+            "merge_performed": false,
+            "outcome": {
+              "id": 6114353386,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf",
+              "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114353386"
+            },
+            "repository": "jresearchsoftware/codex-relay-testbed",
+            "run_id": 9007115000101,
+            "status": "DUPLICATE_SUPPRESSED",
+            "task": 6,
+            "writer_actor": "jresearch-relay-test-writer[bot]"
+          }
+        }
+      }
+    },
+    "list": {
+      "http_status": 200,
+      "tools": [
+        "check_pr_review_target",
+        "submit_pr_review",
+        "read_pr_review_evidence",
+        "publish_task_authority",
+        "submit_manual_outcome"
+      ]
+    },
+    "negative-transport": [
+      {
+        "case": "no-client-certificate",
+        "tls_error": "TLSV13_ALERT_CERTIFICATE_REQUIRED"
+      },
+      {
+        "case": "wrong-client-san",
+        "http_status": 403
+      },
+      {
+        "case": "direct-backend-no-identity",
+        "http_status": 403
+      }
+    ],
+    "no-pr": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "PUBLISHED",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "independent_acceptance": false,
+            "issue_closure_performed": false,
+            "merge_performed": false,
+            "outcome": {
+              "id": 6114353386,
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf",
+              "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114353386"
+            },
+            "repository": "jresearchsoftware/codex-relay-testbed",
+            "run_id": 9007115000101,
+            "status": "PUBLISHED",
+            "task": 6,
+            "writer_actor": "jresearch-relay-test-writer[bot]"
+          }
+        }
+      }
+    },
+    "pr-duplicate": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "DUPLICATE_SUPPRESSED",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "independent_acceptance": false,
+            "issue_closure_performed": false,
+            "merge_performed": false,
+            "outcome": {
+              "id": 6114357552,
+              "parent": {
+                "kind": "pull_request",
+                "number": 7
+              },
+              "sha256": "c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600",
+              "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114357552"
+            },
+            "repository": "jresearchsoftware/codex-relay-testbed",
+            "run_id": 9007115000102,
+            "status": "DUPLICATE_SUPPRESSED",
+            "task": 6,
+            "writer_actor": "jresearch-relay-test-writer[bot]"
+          }
+        }
+      }
+    },
+    "pr-headmoved": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "PR_AUTHORITY_CHANGED",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    "pr-missingmarker": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "PR_AUTHORITY_CHANGED",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    "pr": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "PUBLISHED",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "independent_acceptance": false,
+            "issue_closure_performed": false,
+            "merge_performed": false,
+            "outcome": {
+              "id": 6114357552,
+              "parent": {
+                "kind": "pull_request",
+                "number": 7
+              },
+              "sha256": "c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600",
+              "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114357552"
+            },
+            "repository": "jresearchsoftware/codex-relay-testbed",
+            "run_id": 9007115000102,
+            "status": "PUBLISHED",
+            "task": 6,
+            "writer_actor": "jresearch-relay-test-writer[bot]"
+          }
+        }
+      }
+    },
+    "unadmitted": {
+      "http_status": 200,
+      "result": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "MANUAL_OUTCOME_NOT_ADMITTED",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    }
+  },
+  "synthetic_claims": {
+    "9007115000101": {
+      "qualificationFixture": {
+        "synthetic": true,
+        "realExecution": false,
+        "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+        "ownerDecision": "6114003261"
+      },
+      "manualSubmission": {
+        "sha256": "4dc478bb4997395247a429448f90093c25469d0221ad7cfa734e5cf18a6f0049",
+        "parent": {
+          "kind": "issue",
+          "number": 6
+        },
+        "rendererVersion": "human-v1"
+      },
+      "outcome": {
+        "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+        "head": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+        "prNumber": null,
+        "outcomeId": 6114353386,
+        "bodySha256": "8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf",
+        "manual": true
+      }
+    },
+    "9007115000102": {
+      "qualificationFixture": {
+        "synthetic": true,
+        "realExecution": false,
+        "source": "5699432e95440307fa799b0a3b8ac3150ffd574a",
+        "ownerDecision": "6114003261"
+      },
+      "manualSubmission": {
+        "sha256": "167e406605b9fbf85610426b09707fd769baec2cb363d9d2c35ad42c9982e79c",
+        "parent": {
+          "kind": "pull_request",
+          "number": 7
+        },
+        "rendererVersion": "human-v1"
+      },
+      "outcome": {
+        "status": "IMPLEMENTED_PENDING_FRESH_REVIEW",
+        "head": "913541440ba165be6cb7b5ebb60cedd061239259",
+        "prNumber": 7,
+        "outcomeId": 6114357552,
+        "bodySha256": "c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600",
+        "manual": true
+      }
+    }
+  },
+  "native_readback": {
+    "outcomes": [
+      {
+        "id": 6114353386,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/issues/6#issuecomment-6114353386",
+        "actor": "jresearch-relay-test-writer[bot]",
+        "actor_id": 338711029,
+        "actor_type": "Bot",
+        "body_sha256": "8aff9847ed5a7489be176800b6cad3331f07fa5eacc4babef4079ed0b021aeaf",
+        "canonical_result_equals_submitted": true,
+        "record": {
+          "admission": {
+            "attempt": "run-9007115000101",
+            "sha256": "980376f75be3a2e06f064ab1e33f1d55197a7e2ff2b5ee9cc8432cad6bb27119",
+            "step": 1
+          },
+          "attempt": "run-9007115000101",
+          "authority": {
+            "change_request": null,
+            "charter": {
+              "id": 5805525646,
+              "kind": "issue-body",
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "compatibility_request": null,
+            "decisions": [],
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "kind": "outcome",
+          "limitations": [
+            "The admission record was seeded as a disposable TEST fixture; this does not qualify real Writer admission.",
+            "The separate private mTLS fixture uses a synthetic qualification CA/identity; official OpenAI connector proof is reported separately.",
+            "Independent product acceptance, PROD installation, product merge and Issue closure remain unclaimed."
+          ],
+          "parent": {
+            "kind": "issue",
+            "number": 6
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "result": {
+            "identities": [
+              {
+                "id": "task115-installed-manual-outcome-no-pr",
+                "kind": "qualification-fixture"
+              }
+            ],
+            "kind": "qualification",
+            "revision": "5699432e95440307fa799b0a3b8ac3150ffd574a"
+          },
+          "schema_version": "4.0",
+          "status": "implemented",
+          "step": 1,
+          "summary": "Synthetic protected-journal fixture for the installed manual Outcome contract. No real Relay admission, execution, model call, new project Task or Task Step is asserted.",
+          "task": 6,
+          "warnings": []
+        }
+      },
+      {
+        "id": 6114357552,
+        "url": "https://github.com/jresearchsoftware/codex-relay-testbed/pull/7#issuecomment-6114357552",
+        "actor": "jresearch-relay-test-writer[bot]",
+        "actor_id": 338711029,
+        "actor_type": "Bot",
+        "body_sha256": "c0b64a86f89a75c153236ba9f8489127c356a011d4197f879c7f681275e41600",
+        "canonical_result_equals_submitted": true,
+        "record": {
+          "admission": {
+            "attempt": "run-9007115000102",
+            "sha256": "23ee465c66df74ea2278defb2dba42a296b0500582fe85a075f2693b32ea915c",
+            "step": 1
+          },
+          "attempt": "run-9007115000102",
+          "authority": {
+            "change_request": null,
+            "charter": {
+              "id": 5805525646,
+              "kind": "issue-body",
+              "parent": {
+                "kind": "issue",
+                "number": 6
+              },
+              "sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7"
+            },
+            "compatibility_request": null,
+            "decisions": [],
+            "sha256": "1253fd707679e5972a22574146e73c03fa38d4748761097424ba37eccd060984"
+          },
+          "charter_sha256": "2b675e8106198bf8c040ff308d948071b12c038fc112abf38e5447bbd4892dd7",
+          "kind": "outcome",
+          "limitations": [
+            "The admission record was seeded as a disposable TEST fixture; this does not qualify real Writer admission.",
+            "The separate private mTLS fixture uses a synthetic qualification CA/identity; official OpenAI connector proof is reported separately.",
+            "Independent product acceptance, PROD installation, product merge and Issue closure remain unclaimed."
+          ],
+          "parent": {
+            "kind": "pull_request",
+            "number": 7
+          },
+          "repository": "jresearchsoftware/codex-relay-testbed",
+          "result": {
+            "identities": [
+              {
+                "id": "task115-installed-manual-outcome-pr",
+                "kind": "qualification-fixture"
+              }
+            ],
+            "kind": "git",
+            "revision": "913541440ba165be6cb7b5ebb60cedd061239259"
+          },
+          "schema_version": "4.0",
+          "status": "implemented",
+          "step": 1,
+          "summary": "Synthetic protected-journal fixture for the installed manual Outcome contract. No real Relay admission, execution, model call, new project Task or Task Step is asserted.",
+          "task": 6,
+          "warnings": []
+        }
+      }
+    ],
+    "issue_comment_ids": [
+      "6114353386"
+    ],
+    "pr_comment_ids": [
+      "6114357552"
+    ],
+    "fixture_issue_open_without_ready_labels": true,
+    "fixture_pr_final_head": "c9d63e215e0543b39630dee2ee4663646354ffa1",
+    "fixture_pr_draft_after_guards": true,
+    "fixture_pr_unmerged": true
+  },
+  "fixture_cleanup": {
+    "private_fixture_removed": true,
+    "synthetic_publication_records_removed": [
+      9007115000101,
+      9007115000102
+    ],
+    "official_test_services": {
+      "codex-relay-test-reviewer.service": "active",
+      "codex-relay-test-runner.service": "active",
+      "codex-relay-test-general-runner.service": "active",
+      "codex-relay-test-relay-manual-outcome.socket": "active"
+    },
+    "native_github_outcome_history_preserved": true
+  }
+}

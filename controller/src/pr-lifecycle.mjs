@@ -1,6 +1,9 @@
-import { assertPr, readAuthority } from './live-authority.mjs';
+import { assertPr, currentReview, linkedIssue, readAuthority, revalidateAuthority } from './live-authority.mjs';
 import { currentStep } from './step-metadata.mjs';
-import { digest, exactSha, fail, positive, REVIEWER, REPOSITORY } from './execution-contract.mjs';
+import { digest, exactSha, fail, positive, validateEnvelope, NATIVE_VALIDATIONS, OWNER, REVIEWER, REPOSITORY } from './execution-contract.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
+import { authorityMode, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { readTaskAuthority } from './task-authority.mjs';
 
 // A reversible native transition still reserves its exact intent before
 // mutation. A fresh GET reconciles a lost response; replay never probes by push.
@@ -30,12 +33,37 @@ export async function transitionPr({ api, store, key, record, readPr, head, draf
   return pr;
 }
 
-export async function beginRemediation({ api, store, request, authorityDigest }) {
+export async function beginRemediation({ api, store, request, authorityDigest, admittedEnvelope }) {
   if (Object.keys(request).some(key => !['operation', 'prNumber', 'reviewId', 'head'].includes(key))
     || !positive(request.prNumber) || !positive(request.reviewId) || !exactSha(request.head)) fail('PR_LIFECYCLE_REQUEST_INVALID');
   const read = async () => {
     const pr = await api.get(`/pulls/${request.prNumber}`); assertPr(pr, request.prNumber);
-    const authority = await readAuthority(api, 'pull_request', pr.number, { step: currentStep(pr.labels) });
+    let authority;
+    if (admittedEnvelope?.request?.kind === 'admission') {
+      // Only the internal broker supplies this already-resolved admission.
+      // Revalidate its immutable binding without allocating another Step.
+      validateEnvelope(admittedEnvelope);
+      if (admittedEnvelope.target !== 'pull_request' || admittedEnvelope.number !== request.prNumber
+        || admittedEnvelope.reviewId !== request.reviewId || admittedEnvelope.startHead !== request.head) fail('PR_LIFECYCLE_BINDING_CHANGED');
+      authority = await revalidateAuthority(api, admittedEnvelope);
+    } else {
+      const review = currentReview(await api.list(`/pulls/${pr.number}/reviews`));
+      const payload = extractAuthorityRecord(review.body, { repository: REPOSITORY, task: linkedIssue(pr.body) });
+      if (payload?.schema_version === '4.0') {
+        const issue = await api.get(`/issues/${linkedIssue(pr.body)}`);
+        if (issue.state !== 'open' || issue.user?.login !== OWNER || issue.pull_request
+          || authorityMode(issue.body) !== 'github-native-v1') fail('ISSUE_NOT_ADMITTED');
+        // Reviewer publication drafts the reviewed PR before any execution.
+        // Resolve sources/profile directly: no Request, snapshot or Step exists.
+        const typed = await readTaskAuthority(api, issue, pr, { streamlined: true,
+          projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
+            subagents: true, validation: [...NATIVE_VALIDATIONS] },
+          startingState: { branch: pr.head.ref, base_sha: pr.base.sha, starting_head: pr.head.sha, existing_pr: pr.number } });
+        if (typed.request.kind !== 'change-request' || typed.request.parent.number !== pr.number) fail('CURRENT_CHANGE_REQUEST_MISSING');
+        if (typed.request.branch !== pr.head.ref) fail('STARTING_STATE_MISMATCH');
+        authority = { ...typed, pr, review: typed.record, startHead: typed.request.reviewed_head_sha };
+      } else authority = await readAuthority(api, 'pull_request', pr.number, { step: currentStep(pr.labels) });
+    }
     const publisher = await api.userIdentity(REVIEWER);
     // Typed records retain the verified native publisher as `author`; legacy
     // GitHub review responses use `user`. Neither spelling grants authority.

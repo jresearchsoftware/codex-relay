@@ -88,7 +88,7 @@ def test_disposition_preserves_original_bytes_state_and_activation_authority(ins
     assert snapshot(value.archive / 'runtime') == old_runtime
     assert [snapshot(value.paths['install'] / name) for name in ['runner', 'general-runner']] == registration
     assert (snapshot(value.paths['config']), snapshot(value.paths['state'])) == config_state
-    assert [(action, name) for action, name in value.systemd.calls if action != 'show'] == [
+    assert [(action, name) for action, name in value.systemd.calls if action not in ['show', 'list-units']] == [
         ('stop', reinstall.unit_names(value.config)[0])]
     assert value.probes == 2
     assert value.admission == {'phase': 'open', 'active': [], 'unknown': []}
