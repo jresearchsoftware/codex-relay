@@ -4,4 +4,8 @@
 # request on stdin and never accepts a path, mode, or executable override.
 set -eu
 test "$#" -eq 0 || exit 40
-exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' PATH=/usr/bin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/node '{{ relay_diagnostics_store_release_path }}'
+exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' \
+{% if relay_execution_slot is defined %}
+  RELAY_EXECUTION_SLOT='{{ relay_execution_slot }}' \
+{% endif %}
+  PATH=/usr/bin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/node '{{ relay_diagnostics_store_release_path }}'

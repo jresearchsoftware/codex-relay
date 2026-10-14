@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, EXECUTION_CONSUMER, executionConsumer } from '../../consumer/consumer.mjs';
 import { mkdir, lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { git, collectProgress, REMOTE } from './trusted-git.mjs';
@@ -7,16 +7,17 @@ import { establishCanonicalCheckout } from './canonical-checkout.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { grantSharedCheckoutAccess, runGovernedCodexTask, CODEX_WRITER_IDENTITY, CODEX_REMEDIATION_IDENTITY } from '../../runtime/src/codex-runtime.mjs';
 
-export const WORK_ROOT = CONSUMER.paths.workRoot;
-export const checkoutPath = (e, root = WORK_ROOT) => join(root, validateEnvelope(e).attemptId);
-export async function prepareCheckout(e, { root = WORK_ROOT, remote = REMOTE, token = process.env.GITHUB_TOKEN } = {}) {
+export const WORK_ROOT = EXECUTION_CONSUMER.paths.workRoot;
+export const checkoutPath = (e, root) => join(root ?? executionConsumer(e.executionSlot).paths.workRoot, validateEnvelope(e).attemptId);
+export async function prepareCheckout(e, { root, remote = REMOTE, token = process.env.GITHUB_TOKEN } = {}) {
   const cwd = checkoutPath(e, root);
   // Existing work is evidence, not disposable scratch. Preparation failure is
   // visible and needs inspection instead of an automatic destructive retry.
   if (await lstat(cwd).catch(() => null)) fail('CHECKOUT_ALREADY_EXISTS');
   await mkdir(cwd, { recursive: true, mode: 0o2770 });
   await git(cwd, ['init']);
-  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation }, { remote, token });
+  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation,
+    allowBaseAdvance: e.request?.kind === 'admission' }, { remote, token });
   if (e.target === 'pull_request') {
     await git(cwd, ['fetch', '--no-tags', remote, `refs/heads/${CONSUMER.baseBranch}:refs/remotes/main`], { token });
     if ((await git(cwd, ['rev-parse', 'refs/remotes/main'])).trim() !== e.targetBase) fail('STARTING_STATE_MISMATCH');

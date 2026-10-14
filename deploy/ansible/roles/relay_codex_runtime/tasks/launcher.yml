@@ -2,7 +2,7 @@
 - name: Require the fixed root Codex launcher binding path
   ansible.builtin.assert:
     that:
-      - relay_codex_launcher_path == (relay_install_root ~ '/relay-codex')
+      - relay_codex_launcher_path == ((relay_execution_slot_install_root | default(relay_install_root)) ~ '/relay-codex')
     fail_msg: 'CODEX_LAUNCHER_PATH_CONTRACT_INVALID'
 
 - name: Install the fixed Codex diagnostic helper with every launcher reconciliation
@@ -16,16 +16,24 @@
 - name: Install the fixed Codex execution module
   ansible.builtin.template:
     src: relay-codex-launcher.mjs.j2
-    dest: '{{ relay_install_root }}/relay-codex.mjs'
+    dest: '{{ relay_codex_launcher_path }}.mjs'
     owner: root
     group: root
     mode: '0644'
   register: relay_codex_launcher_module_install
 
+- name: Install the fixed isolated-slot namespace builder
+  ansible.builtin.copy:
+    src: relay-codex-isolation.mjs
+    dest: '{{ relay_codex_launcher_path | dirname }}/relay-codex-isolation.mjs'
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Install the bounded sandbox cleanup helper for the runtime identity
   ansible.builtin.template:
     src: relay-codex-cleanup.py.j2
-    dest: '{{ relay_install_root }}/relay-codex-cleanup.py'
+    dest: '{{ relay_codex_launcher_path | dirname }}/relay-codex-cleanup.py'
     owner: root
     group: root
     mode: '0644'

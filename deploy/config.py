@@ -111,6 +111,24 @@ def validate(c, product_root):
     require(len(set(users)) == len(users), 'isolated-users')
     require(e['codexWorkGroup'] not in users, 'isolated-work-group')
     require(r['name'] != g['name'], 'isolated-runner-names')
+    slots = c['consumer'].get('executionSlots')
+    if slots is not None:
+        primary = slots[0]
+        require(primary['id'] == 'primary' and primary['runnerName'] == g['name']
+                and primary['runnerUser'] == g['user']
+                and primary['workGroup'] == e['codexWorkGroup'], 'executionSlots.primary')
+        require('instance' in e, 'executionSlots.namespaced-instance')
+        slot_users = [slot[key] for slot in slots for key in ['runnerUser', 'runtimeUser']]
+        protected_users = [e['serviceUser'], e['reviewerUser'], r['user']]
+        require(len(set(slot_users + protected_users)) == len(slot_users + protected_users),
+                'executionSlots.isolated-users')
+        groups = [slot['workGroup'] for slot in slots]
+        require(len(set(groups)) == len(groups) and not set(groups) & set(slot_users + protected_users),
+                'executionSlots.isolated-work-groups')
+        require(r['name'] not in [slot['runnerName'] for slot in slots], 'executionSlots.production-runner')
+        for slot in slots[1:]:
+            require(slot['paths'] == execution_slot_paths(e['namespace'], slot['id']),
+                    'executionSlots.fixed-paths')
     if 'instance' in e:
         instance = e['instance']
         require(object_keys(instance, ['reviewerPort', 'publicationEnabled']), 'instance')
@@ -192,6 +210,47 @@ def validate(c, product_root):
         require(relative(alias) and '/' in alias and alias.split('/')[0] not in
                 ['controller', 'consumer', 'contracts', 'runtime', 'reviewer', 'deploy'], 'compatibilityLinks.alias')
         require(destination in ['controller', 'consumer', 'contracts', 'runtime', 'reviewer'], 'compatibilityLinks.destination')
+
+
+def execution_slot_paths(namespace, slot_id):
+    install = '/opt/' + namespace + '/slots/' + slot_id
+    config = '/etc/' + namespace + '/slots/' + slot_id
+    state = '/var/lib/' + namespace + '/slots/' + slot_id
+    return {'workRoot': state + '/work', 'attemptRoot': state + '/dispatch/attempts-v2',
+            'dispatch': install + '/relay-codex-dispatch', 'launcher': install + '/relay-codex',
+            'diagnosticsConfig': config + '/runtime-diagnostics.json',
+            'diagnosticsStore': install + '/relay-diagnostics-store', 'diagnosticsRoot': state + '/debug'}
+
+
+def execution_slot_inputs(c, slot):
+    """Fixed namespaced overrides; no executable, credential or repository selector."""
+    e = c['environment']
+    ns, slot_id = e['namespace'], slot['id']
+    install, config, state = '/opt/' + ns + '/slots/' + slot_id, '/etc/' + ns + '/slots/' + slot_id, '/var/lib/' + ns + '/slots/' + slot_id
+    return {
+        'relay_execution_slot': slot_id, 'relay_execution_slot_install_root': install,
+        'relay_execution_slot_isolation': True,
+        'relay_runner_name': slot['runnerName'], 'relay_runner_user': slot['runnerUser'],
+        'relay_runner_group': slot['runnerUser'], 'relay_runner_root': install + '/runner',
+        'relay_runner_work_root': state + '/runner/work', 'relay_runner_home': state + '/runner/home',
+        'relay_runner_service_name': ns + '-slot-' + slot_id + '-runner.service',
+        'relay_runner_registration_helper_path': install + '/relay-runner-registration',
+        'relay_runner_registration_scope': e['generalRunner'].get('scope', 'repository'),
+        'relay_runner_registration_group': e['generalRunner'].get('group', ''),
+        'relay_dispatch_user': slot['runnerUser'], 'relay_dispatch_group': slot['runnerUser'],
+        'relay_codex_user': slot['runtimeUser'], 'relay_codex_group': slot['runtimeUser'],
+        'relay_codex_work_group': slot['workGroup'], 'relay_codex_home': state + '/codex-home',
+        'relay_codex_access_token_root': config + '/codex-credentials',
+        'relay_codex_access_token_file': config + '/codex-credentials/access-token',
+        'relay_dispatch_state_root': state + '/dispatch', 'relay_dispatch_home': state + '/dispatch-home',
+        'relay_dispatch_evidence_root': state + '/dispatch/evidence',
+        'relay_dispatch_remediation_root': state + '/dispatch/remediation',
+        'relay_dispatch_work_root': slot['paths']['workRoot'],
+        'relay_codex_dispatch_path': slot['paths']['dispatch'], 'relay_codex_launcher_path': slot['paths']['launcher'],
+        'relay_diagnostics_config_path': slot['paths']['diagnosticsConfig'],
+        'relay_diagnostics_store_path': slot['paths']['diagnosticsStore'], 'relay_diagnostics_root': slot['paths']['diagnosticsRoot'],
+        'relay_codex_sudoers_file': '/etc/sudoers.d/' + ns + '-slot-' + slot_id + '-codex',
+    }
 
 
 def compile_inputs(c):
@@ -307,4 +366,9 @@ def compile_inputs(c):
     require(consumer['paths']['attemptRoot'].endswith('/attempts-v2'), 'paths.attemptRoot')
     if 'validationNames' in consumer:
         result['relay_validation_names'] = consumer['validationNames']
+    if 'executionSlots' in consumer:
+        result['relay_execution_slots'] = consumer['executionSlots']
+        result['relay_execution_slot'] = 'primary'
+        result['relay_execution_slot_isolation'] = True
+        result['relay_additional_execution_slots'] = [execution_slot_inputs(c, slot) for slot in consumer['executionSlots'][1:]]
     return result

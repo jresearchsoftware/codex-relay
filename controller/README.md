@@ -69,14 +69,27 @@ repair. New schema `4.0` admission binds the resolved protected snapshot instead
 Unbound, unauthorized, stale, cross-target or replaced commands cause no
 label mutation or unrelated publication. An uncertain consumption stays reserved
 and is never blindly repeated. Step stays in place. `runId` / `run-<runId>`
-uniquely identifies the attempt. Same-run replay cannot repeat a model call, and a fresh run cannot
+identifies the attempt inside its configured repository and installation. Protected
+records verify the explicit repository; separate installations retain separate
+roots even when native numeric run IDs coincide. Each runner journal uses an
+exclusive initial file reservation and a Linux kernel lock for that run across
+checkout, inference, collection and handoff. A competing same-run controller
+reports `ATTEMPT_CONTROLLER_BUSY` without touching the original controller's
+diagnostics or completion receipt. Independent run locks do not serialize model
+calls; process death releases the lock while retained execution state still
+prevents unknown work from being inferred again. Same-run replay cannot repeat a model call, and a fresh run cannot
 reuse the consumed native command event. The event must be the latest ready
 transition, authored by the owner, no more than two minutes before native run
 creation, and after completion of any preceding admitted run for this task.
 Stale commands and prewritten retries fail closed; no retry queue is created.
 
-Routing and recovery use native Actions `queue: max` in their shared control
-group and retain SERIAL execution. The two-minute ready-event check compares
+The default SERIAL projection uses native Actions `queue: max` in the shared
+control group. An explicit bounded parallel projection retains that queue
+guarantee for each independent target, with installed execution slots providing
+finite capacity and protected Writer reservations preserving Task conflicts.
+Native groups coordinate only their GitHub repository; distinct repository
+installations need separate protected paths and qualified host identities.
+The two-minute ready-event check compares
 event time with native run creation, so later job waiting does not change that
 comparison; current authority and protected prior attempts are still verified
 at admission. Native scheduling does not reserve a Step or permit a retry.
@@ -125,6 +138,19 @@ Requests include explicit `base_sha`, `starting_head` and `branch`; admission do
 not fill those compatibility fields from old Issue-body execution prose.
 The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
+
+For new schema `4.0` Issue work, independent advancement of the configured base
+does not replace the immutable admitted starting commit. Admission and preflight
+verify exact GitHub commit ancestry; trusted checkout and publication verify it
+again against fetched base objects. A fresh task branch starts at the original
+commit, excluding unrelated later main content. A diverged/replaced base,
+unavailable commit or moved task ref still blocks. Issue continuation keeps its
+exact task head; PR remediation keeps its exact admitted integration-base gate.
+Retained schema `3.0` and legacy attempts keep their historical checks.
+These base observations apply to active admission, preflight, checkout and
+ordinary progress publication. Exact-attempt publication and terminal
+prepublication recovery retain their original evidence and authorization gates;
+recovery does not acquire an additional current-main ancestry requirement.
 
 ## Issue-authorized implementation continuation
 
@@ -668,6 +694,14 @@ that separate owner admission. This source Step does not inspect, alter or
 publish the Task 97 retained candidate or mutate its original authority.
 
 ## Runtime diagnostic retention
+
+Primary diagnostic writes and oldest-record eviction share a short Linux kernel
+lock for their configured store, including independent processes. The bounded
+thirty-second acquisition wait covers persistence only; no model call runs under
+this lock. Unique exclusive temporary filenames preserve complete records during
+interleaving writes. Slots and separately configured repository installations
+use their own diagnostic roots. A lock/store failure remains visible through the
+independent fallback capsule and does not authorize another inference.
 
 Governed runtime attempts reserve an independent diagnostic capsule under
 `paths.attemptRoot/runtime-diagnostics` before launching the dispatcher. It is

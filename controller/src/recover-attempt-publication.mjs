@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, runnerExecutionSlot } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
@@ -33,6 +33,7 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId, attemptId, ...value });
   const state = await invoke('publication-state', { authorizationId });
   const e = validateEnvelope(state.envelope);
+  if (CONSUMER.executionSlots && (e.executionSlot ?? 'primary') !== EXECUTION_SLOT) fail('EXECUTION_SLOT_BINDING_CHANGED');
   const record = await journal.get(runId);
   if (!record || record.version !== e.version || digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
   const execution = record.execution;
@@ -89,7 +90,8 @@ export async function main() {
   try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('RECOVERY_REQUEST_INVALID'); }
   parseRecoveryRequest(request);
   const local = createLocalWriterAdapter();
-  const broker = { invoke: value => local.invoke({ ...value, workflowReadToken: process.env.GITHUB_TOKEN }) };
+  const executionSlot = runnerExecutionSlot();
+  const broker = { invoke: value => local.invoke({ ...value, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: process.env.GITHUB_TOKEN }) };
   if (request.operation === 'inspect-prepublication') {
     return broker.invoke({ ...request, operation: 'prepublication-state' });
   }
@@ -101,7 +103,7 @@ export async function main() {
   }
   if (Object.keys(request).sort().join(',') !== 'attemptId,authorizationId,runId') fail('RECOVERY_REQUEST_INVALID');
   return recoverAttemptPublication({ ...request, broker,
-    journal: createAttemptStore(CONSUMER.paths.attemptRoot), collect: collectCheckout });
+    journal: createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot), collect: collectCheckout });
 }
 
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }

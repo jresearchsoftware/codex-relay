@@ -5,7 +5,9 @@ import { createBoundedUtf8Capture } from "./utf8-capture.mjs";
 import { failureDiagnosticFromDetails } from "./diagnostics.mjs";
 
 const DEFAULT_HELPER = CONSUMER.paths.writerHelper;
-const INVOCATION_TIMEOUT_MS = 180000;
+// Includes the fixed wrapper's 300-second lock wait and a bounded 120-second
+// trusted Git operation. Contention never authorizes another model invocation.
+const INVOCATION_TIMEOUT_MS = 450000;
 
 function requestError(error) {
   let payload;

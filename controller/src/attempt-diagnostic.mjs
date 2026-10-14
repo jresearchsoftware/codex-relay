@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { createExecutionDiagnostic, persistExecutionDiagnostic, readDiagnosticsConfig,
   safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';

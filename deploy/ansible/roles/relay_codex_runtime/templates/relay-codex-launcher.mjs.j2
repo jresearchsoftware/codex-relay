@@ -2,13 +2,16 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { isolatedCodexProcess } from "./relay-codex-isolation.mjs";
 // The root-owned relay-codex-diagnostic.mjs is installed by the governed role.
 import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretRedactor, decodeUtf8, MAX_DEBUG_CAPTURE_BYTES, MAX_DIAGNOSTIC_CAPTURE_BYTES, writeChildDiagnostic } from "{{ relay_codex_diagnostic_path }}";
 
 const CODEX_BINARY = "{{ relay_codex_binary_path }}";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
-const CLEANUP_HELPER = "{{ relay_install_root }}/relay-codex-cleanup.py";
+const CLEANUP_HELPER = fileURLToPath(new URL('./relay-codex-cleanup.py', import.meta.url));
+const TOOLCHAIN_ROOT = "{{ relay_rust_toolchain_root }}";
 const MAX_TOKEN_BYTES = 16 * 1024;
 const MAX_INPUT_BYTES = 256 * 1024;
 const DIAGNOSTICS_CONFIG_PATH = "{{ relay_diagnostics_config_path }}";
@@ -151,12 +154,21 @@ async function main() {
   try {
     // The relay runner and relay-codex share one governed checkout; keep new Git objects group-writable for the handoff.
     process.umask(0o0007);
-    child = spawn(CODEX_BINARY, ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const args = ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"];
+    const spec = process.env.RELAY_ISOLATED_SLOT === '1'
+      ? isolatedCodexProcess({ binary: CODEX_BINARY, resolvedBinary: await realpath(CODEX_BINARY), cwd,
+        toolchainRoot: TOOLCHAIN_ROOT, args })
+      : { command: CODEX_BINARY, args };
+    child = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   } catch {
     fail("PROCESS_START_FAILED");
   }
   let childStarted = false;
-  child.once("spawn", () => { childStarted = true; observedChildStarted = true; });
+  child.once("spawn", () => {
+    // Bubblewrap starting does not prove that its inner Codex exec succeeded.
+    childStarted = process.env.RELAY_ISOLATED_SLOT === '1' ? null : true;
+    observedChildStarted = childStarted;
+  });
   const stdoutRedactor = createStatefulSecretRedactor(token);
   const stdoutChunks = [];
   let stdoutBytes = 0;
@@ -170,6 +182,7 @@ async function main() {
   // the worker still receives the structured result, but a leaked credential
   // cannot enter the detached diagnostic bundle.
   child.stdout.on("data", chunk => {
+    childStarted = true; observedChildStarted = true;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     stdoutBytes += bytes.length;
     const previousBytes = stdoutBytes - bytes.length;

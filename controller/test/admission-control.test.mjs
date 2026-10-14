@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
-import { CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
+import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { parseAdmissionArguments, drainAdmission, readAdmissionSnapshot } from '../src/admission-cli.mjs';
@@ -398,7 +398,7 @@ if (process.argv[2] === 'reserve') {
   const controllerLifecycle = await gate.reserve();
   await writeFile(root + '/reserved-lock-held', 'yes');
   while (!await access(root + '/release-reservation').then(() => true, () => false)) await setTimeout(10);
-  await store.put(99, { envelope: { version: 2, runId: 99, attemptId: 'run-99', consumerDigest: ${JSON.stringify(CONSUMER_DIGEST)}, route: 'auto' }, controllerLifecycle });
+  await store.put(99, { envelope: { version: 2, repository: ${JSON.stringify(CONSUMER.repository)}, runId: 99, attemptId: 'run-99', consumerDigest: ${JSON.stringify(CONSUMER_DIGEST)}, route: 'auto' }, controllerLifecycle });
 } else if (process.argv[2] === 'quiesce') {
   await gate.quiesce({ operationId: ${JSON.stringify(operationId)}, target: ${JSON.stringify(target)} });
 } else {

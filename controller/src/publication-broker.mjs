@@ -17,6 +17,7 @@ import { prepublicationState, recoverPrepublication } from './prepublication-rec
 import { publishManualOutcome } from './manual-outcome.mjs';
 import { nextAdmissionStep } from './admission-step.mjs';
 import { foldManualHandoff, safePublicationText, PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
+import { executionConsumer } from '../../consumer/consumer.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -82,7 +83,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     });
     const error = new Error(code); error.code = code; error.details = { failureDiagnostic }; throw error;
   }
-  async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false } = {}) {
+  async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false, verifyStartingBase = false } = {}) {
     if (!positive(request.runId)) fail('RUN_ID_INVALID');
     const record = await store.get(request.runId);
     if (!record || request.attemptId !== record.envelope.attemptId) fail('ATTEMPT_NOT_ADMITTED');
@@ -92,7 +93,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       return record;
     }
     validateEnvelope(record.envelope);
-    if (revalidate) record.authorityDrift = (await revalidateAuthority(api, record.envelope, { reporting })).authorityDrift;
+    if (revalidate) record.authorityDrift = (await revalidateAuthority(api, record.envelope, { reporting, verifyStartingBase })).authorityDrift;
     return record;
   }
   async function commentOnce(r, key, number, body, { legacyBody } = {}) {
@@ -277,13 +278,16 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (!request || !positive(request.runId)) fail('BROKER_REQUEST_INVALID');
       if (request.operation === 'admit') {
+        if (CONSUMER.executionSlots && request.route === 'auto') executionConsumer(request.executionSlot);
+        if (!CONSUMER.executionSlots && Object.hasOwn(request, 'executionSlot')) fail('EXECUTION_SLOT_INVALID');
         const existing = await store.get(request.runId);
         if (existing && existing.envelope.consumerDigest !== CONSUMER_DIGEST) fail('CONSUMER_CONFIG_CHANGED');
         if (existing) {
           const e = existing.envelope;
           if (e.target !== request.target || e.number !== request.number || e.route !== request.route
             || (e.request?.kind !== 'admission' && e.step !== request.step) || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
-            || e.transport !== request.transport) fail('RUN_BINDING_CHANGED');
+            || e.transport !== request.transport
+            || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
           if (e.transport === 'label' && !existing.readyConsumed) {
             if (e.request?.kind !== 'admission') fail('READY_CONSUMPTION_UNCERTAIN');
             await revalidateReadyEvent(api, e);
@@ -304,6 +308,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // Reserve full controller ownership in this existing attempt before
         // the ready event is consumed or a child can be launched.
         if (request.route === 'auto') await admission?.assertOpen();
+        if (request.route === 'auto' && CONSUMER.executionSlots) {
+          if (!request.executionSlot || !admission?.assertSlotComplete) fail('EXECUTION_SLOT_INVALID');
+          await admission.assertSlotComplete(request.executionSlot);
+        }
         const subject = await api.get(request.target === 'issue' ? `/issues/${request.number}` : `/pulls/${request.number}`);
         let task = request.target === 'issue' ? request.number : null;
         if (streamlinedAdmission && request.target === 'pull_request') {
@@ -320,7 +328,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, { automaticCompletionVerified: true }) : {};
         const previousRecord = allocation.lineage ? priorRecords.find(record => record.envelope?.attemptId === allocation.lineage.attempt) : undefined;
         const admitted = await admitEnvelope(api, request, { streamlined: streamlinedAdmission, nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
-        const envelope = admitted.blocked ? blockedAdmissionEnvelope(admitted) : validateEnvelope(admitted);
+        const slotBound = { ...admitted, ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) };
+        const envelope = admitted.blocked ? { ...blockedAdmissionEnvelope(admitted), ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) }
+          : validateEnvelope(slotBound);
         // Reserve the native event in the existing attempt record, under the
         // Writer lock. This is replay protection, never a Step ledger.
         if (envelope.transport === 'label') {
@@ -360,10 +370,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       const r = await bound(request, request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
         : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false }
-          : { reporting: ['finish', 'finish-no-change', 'manual-outcome-direct'].includes(request.operation) }); const e = r.envelope;
+          : { reporting: ['finish', 'finish-no-change', 'manual-outcome-direct'].includes(request.operation),
+            verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
       if (r.prepublicationRecovery && !['prepublication-state', 'recover-prepublication'].includes(request.operation)) fail('PREPUBLICATION_RECOVERY_RESERVED');
       if (['prepublication-state', 'recover-prepublication'].includes(request.operation)
-        && Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'head', 'authorizationId', 'workflowReadToken'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
+        && Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'head', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
       if (request.operation === 'prepublication-state') {
         const { binding, authorizationBody, recovery } = await prepublicationState({ api, journal, record: r, head: request.head });
         return receipt({ binding, authorizationBody, recovery });
@@ -510,6 +521,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       if (request.operation === 'publish-progress') {
         if (e.route !== 'auto' || r.finalHead) fail('PROGRESS_NOT_ADMITTED');
         return publisher.inspect(e, request.bundle, async g => {
+          if (e.request?.kind === 'admission' && e.target === 'issue' && !e.continuation
+            && !await g.ancestor(e.startHead, 'refs/remotes/main')) fail('STARTING_STATE_MISMATCH');
           const previous = r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null);
           if (r.publicationIntent && r.publicationIntent.head !== g.head) fail('PUBLICATION_RECONCILIATION_REQUIRED');
           if (g.remoteHead === g.head) {
@@ -519,7 +532,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             if (g.remoteHead !== previous || !(await g.ancestor(e.startHead, g.head))
               || (previous && !(await g.ancestor(previous, g.head)))) fail('REMOTE_HEAD_CHANGED');
             if (!g.commits.length) fail('NO_PROGRESS');
-            await revalidateAuthority(api, e);
+            await revalidateAuthority(api, e, { verifyStartingBase: true });
             if (e.continuation) {
               const pr = await existingPullRequest(r);
               if (pr && pr.head.sha !== previous) fail('REMOTE_HEAD_CHANGED');

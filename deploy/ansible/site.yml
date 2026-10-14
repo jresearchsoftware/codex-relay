@@ -94,6 +94,30 @@
     - role: relay_controller
 
   post_tasks:
+    - name: Install the optional qualified parallel namespace primitive
+      ansible.builtin.apt:
+        name: bubblewrap
+        state: present
+      when: relay_execution_slots is defined
+
+    - name: Prove the primary runtime can enter its private process namespace
+      ansible.builtin.command:
+        argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', /usr/bin/bwrap,
+               --unshare-user, --unshare-pid, --unshare-ipc, --unshare-uts,
+               --die-with-parent, --new-session, --ro-bind, /usr, /usr,
+               --ro-bind, /bin, /bin, --ro-bind, /lib, /lib,
+               --ro-bind, /lib64, /lib64, --proc, /proc, --dev, /dev,
+               /usr/bin/true]
+      changed_when: false
+      when: relay_execution_slots is defined and not ansible_check_mode | bool
+
+    - name: Reconcile finite additional automatic execution slots without activation
+      ansible.builtin.include_tasks: tasks/execution-slot.yml
+      loop: '{{ relay_additional_execution_slots | default([]) }}'
+      loop_control:
+        loop_var: relay_slot_inputs
+        label: '{{ relay_slot_inputs.relay_execution_slot }}'
+
     - name: Reconcile the separate general runner as ordinary installed state
       ansible.builtin.include_tasks: tasks/production-general-runner.yml
       when: relay_deployment_profile == 'production'

@@ -36,6 +36,9 @@
 {% endif %}
   },
   "runtimeUser": {{ (relay_codex_user) | to_json }},
+{% if relay_execution_slots is defined %}
+  "executionSlots": {{ relay_execution_slots | to_json }},
+{% endif %}
   "paths": {
     "workRoot": {{ (relay_dispatch_work_root) | to_json }},
     "attemptRoot": {{ (relay_dispatch_state_root ~ '/attempts-v2') | to_json }},

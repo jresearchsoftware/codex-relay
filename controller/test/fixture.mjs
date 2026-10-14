@@ -139,12 +139,22 @@ export async function fixture(t, { remediation = false, continuation = false, co
         }) : [];
       }
       if (path === `/git/ref/heads/${CONSUMER.baseBranch}`) return { object: { sha: await command(root, ['--git-dir='+remote, 'rev-parse', CONSUMER.baseBranch]) } };
+      if (/^\/compare\/[a-f0-9]{40}\.\.\.[a-f0-9]{40}\?per_page=1$/.test(path)) {
+        const [baseSha, headSha] = path.slice('/compare/'.length).split('?')[0].split('...');
+        let mergeBase;
+        try { mergeBase = await command(root, ['--git-dir=' + remote, 'merge-base', baseSha, headSha]); }
+        catch (error) {
+          if (error.code === 128) throw Object.assign(new Error('GITHUB_REQUEST_FAILED'), { code: 'GITHUB_REQUEST_FAILED', status: 404 });
+          if (error.code !== 1) throw error;
+        }
+        return { status: mergeBase === baseSha ? 'ahead' : 'diverged', base_commit: { sha: baseSha }, merge_base_commit: { sha: mergeBase } };
+      }
       if (path === '/pulls/43' && pr) return { ...copy(pr), head: { ...pr.head, sha: await remoteHead() } };
       throw new Error(`Unexpected GET ${path}`);
     },
     async list(path) {
       if (path.endsWith('/events')) return copy(events);
-      if (path === '/pulls/43/reviews') return [copy(review)];
+      if (path === '/pulls/43/reviews') return review ? [copy(review)] : [];
       if (path.startsWith('/pulls?')) {
         if (!pr) return [];
         // GitHub's PR list response omits detail-only mergeability fields.

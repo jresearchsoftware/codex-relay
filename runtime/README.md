@@ -24,6 +24,19 @@ Every governed invocation receives the shared
 corrections within the admitted goal without a fixed correction count. This
 never authorizes a duplicate execution or broadens publication/credential scope.
 
+When the consumer enables execution slots, each fixed launcher runs its Codex
+child through Bubblewrap with private user/PID/IPC/UTS namespaces, private
+`/proc`, `/dev`, `/tmp` and `/run`, read-only operating-system/managed toolchain
+and pinned CLI files, and one writable admitted checkout. Network access remains
+available for the model and task dependency downloads. Host credential directories,
+other checkout roots and host sockets are not mounted. Each slot also has a
+distinct host runner UID, runtime UID and work group; runner journals and primary
+diagnostics live outside its worker checkout. The launcher marks an inner child
+as unknown when Bubblewrap started but Codex execution has not been observed.
+Legacy configurations retain their existing launcher behavior. Installed UID,
+sudo, namespace, process containment and concurrent isolation require separate
+host qualification; local source tests alone do not prove those properties.
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching

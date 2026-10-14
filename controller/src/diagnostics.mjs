@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

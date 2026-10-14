@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { executionConsumer } from '../../consumer/consumer.mjs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createBoundedUtf8Capture } from './utf8-capture.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
@@ -82,7 +82,7 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         await fallbackStore.write({ stage: 'dispatcher', operation: 'dispatch', childState: 'unknown',
           containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown' });
         try {
-          child = spawnImpl(CONSUMER.paths.dispatch, [], {
+          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, [], {
             env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
             stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
         } catch (error) {

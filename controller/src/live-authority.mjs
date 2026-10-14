@@ -232,8 +232,13 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     }
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
     const noSource = a.request?.route === 'manual' && a.branch === null;
-    if ((!noSource && target === 'issue' && !a.continuation && targetBase !== a.historicalBase)
-      || (a.pr && a.pr.head.sha !== a.startHead)) fail('STARTING_STATE_MISMATCH');
+    if (!noSource && target === 'issue' && !a.continuation) {
+      if (nativeAdmission) {
+        await verifyPublishedBase(api, a.historicalBase, targetBase);
+        if (a.startHead !== a.historicalBase) await verifyPublishedBase(api, a.startHead, targetBase);
+      } else if (targetBase !== a.historicalBase) fail('STARTING_STATE_MISMATCH');
+    }
+    if (a.pr && a.pr.head.sha !== a.startHead) fail('STARTING_STATE_MISMATCH');
     if (target === 'issue' && !noSource) {
       const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
       if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
@@ -290,7 +295,7 @@ export async function revalidateReadyEvent(api, e) {
     run: await api.getRun(e.runId), subject });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
 }
-export async function revalidateAuthority(api, e, { reporting = false } = {}) {
+export async function revalidateAuthority(api, e, { reporting = false, verifyStartingBase = false } = {}) {
   if (e.request?.kind === 'admission') validateEnvelope(e);
   // A missing authoring base was resolved once, before worker mutation. Main
   // advancement cannot silently rebind that immutable admission resolution.
@@ -313,9 +318,29 @@ export async function revalidateAuthority(api, e, { reporting = false } = {}) {
       || current.validation.some(value => !old.validation.includes(value))
       || current.continuation.hold && !old.continuation.hold)) fail('AUTHORITY_CHANGED');
   }
+  // This starting-state observation belongs only to active execution actions.
+  // Exact retained result/recovery authority does not acquire a new main gate.
+  if (verifyStartingBase && !reporting && e.request?.kind === 'admission' && e.target === 'issue' && !e.continuation && e.branch !== null) {
+    const currentBase = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha;
+    await verifyPublishedBase(api, e.historicalBase, currentBase);
+    if (e.startHead !== e.historicalBase) await verifyPublishedBase(api, e.startHead, currentBase);
+  }
   return a;
 }
 
 export async function revalidateIntegrationBase(api, e) {
   if ((await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha !== e.targetBase) fail('STARTING_STATE_MISMATCH');
+}
+
+// GitHub comparison binds two exact repository commits, not a moving branch.
+// An immutable admitted base may precede current main, but never diverge from
+// it or be replaced by an unverified worker-supplied object.
+export async function verifyPublishedBase(api, base, current) {
+  if (!exactSha(base) || !exactSha(current)) fail('STARTING_STATE_MISMATCH');
+  if (base === current) return;
+  let comparison;
+  try { comparison = await api.get(`/compare/${base}...${current}?per_page=1`); }
+  catch (error) { if (error.status === 404) fail('STARTING_STATE_MISMATCH'); throw error; }
+  if (comparison.status !== 'ahead' || comparison.base_commit?.sha !== base
+    || comparison.merge_base_commit?.sha !== base) fail('STARTING_STATE_MISMATCH');
 }

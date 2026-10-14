@@ -1,6 +1,6 @@
 # Relay control scheduling
 
-Relay selects **SERIAL** scheduling: canonical routing and publication-recovery
+Relay defaults to **SERIAL** scheduling: canonical routing and publication-recovery
 workflows share the existing `<namespace>-control` concurrency group, with
 `queue: max` and `cancel-in-progress: false`. One control invocation runs at a
 time within one GitHub repository; newer independent work waits instead of replacing an earlier pending run
@@ -19,7 +19,7 @@ and the [May 7, 2026 release notice](https://github.blog/changelog/2026-05-07-gi
 | --- | --- | --- |
 | A: global group with the native default queue | One running and one pending invocation; a new arrival replaces the pending invocation. Model concurrency stays at one, but independent waiting work can be lost. | Historical projection behavior; existing evidence retains its original meaning. |
 | B: global group with `queue: max` | One running invocation and up to 100 waiting invocations; no replacement merely because newer work arrives within that bound. Model concurrency stays at one. | Selected SERIAL source behavior; consumer projection and native TEST evidence establish adoption separately. |
-| C: bounded parallel execution | Could improve throughput only with multiple qualified execution slots. It also permits overlapping collection, diagnostics and protected helper calls. | **NOT QUALIFIED**. The current single-runner deployment and shared runtime boundaries do not establish safe independent parallel execution. |
+| C: bounded parallel execution | The optional source candidate declares finite isolated execution slots and per-subject native queues, while keeping trusted Writer critical sections serialized. | **NOT QUALIFIED**. Real automatic model overlap, complete slot lifecycle and multi-repository installation proof remain required. |
 
 For an illustrative batch of three admitted executions taking the same time
 `T`, one qualified slot needs about `3T`, excluding controller overhead and
@@ -29,7 +29,47 @@ Queueing itself starts no model call. Relay does not infer account quota from
 native token counters, automatically choose another profile or retry a model
 failure; the admitted profile and existing failure boundary remain effective.
 
-## Current runtime bounds
+## Parallel source candidate
+
+The optional `consumer.executionSlots` installation snapshot declares one
+`primary` slot retaining legacy locations and a finite set of additional slots.
+Each slot has its own runner identity, model identity, work group, checkout,
+journal, diagnostics and fixed launcher paths. Slot selection keeps the complete
+installation digest stable and is bound to the configured runner name, actual
+Unix UID and immutable protected attempt envelope. The root Writer selects
+retained evidence through that stored envelope, never through a caller path.
+
+The candidate parallel projection uses `relay-workflows-v4`; ordinary projections
+retain `relay-workflows-v3` and the SERIAL group. Parallel subject groups retain
+`queue: max` and cancellation disabled. A finite qualified runner pool bounds
+active jobs. GitHub groups are repository-local: independent consumer
+installations sharing a host additionally need distinct namespaces, identities,
+paths and capacity allocations. This does not implement one Writer selecting
+multiple repositories.
+
+Source corrections add a kernel lock for each automatic controller's complete
+lifetime, exclusive initial journal creation and a short diagnostic-retention
+lock. Different run IDs and separately scoped repositories can hold independent
+locks. An overlapping same-run contender cannot overwrite the active controller's
+diagnostic or completion receipt. The automatic Writer wrapper has a bounded
+300-second lock wait and a 450-second outer helper timeout; it holds no model
+execution inside the publication lock.
+
+Native schema-v4 fresh Issue executions retain the immutable admitted commit
+when main advances through ordinary descendant commits. Admission, preflight,
+checkout and publication prove ancestry; moved task refs, unrelated main
+rewrites and stale remediation integration remain blockers. Historical v3 and
+legacy starting-state checks retain their original contract.
+
+This source candidate is incomplete. Additional-slot registration/activation,
+complete owner lifecycle and clean reinstall support must be finished and
+qualified before enabling parallel operation. Real same-repository and
+cross-repository automatic inference overlap and attributable terminal Outcomes
+are absent. Deterministic source tests and namespace construction cannot replace
+that evidence. The accepted SERIAL projection remains the supported fallback,
+and cannot satisfy an objective requiring real parallel execution.
+
+## Accepted SERIAL runtime bounds
 
 The source [deployment configuration](../deploy/config.py) has one general
 runner and a separate production runner role. The routing and recovery
@@ -49,14 +89,13 @@ worker-modified Git metadata. See [attempt preparation](../controller/src/attemp
 [process containment](../controller/src/github.mjs) and
 [trusted collection](../controller/src/trusted-git.mjs).
 
-Those separate paths are insufficient proof of parallel isolation. All model
-attempts share one runtime UID and Codex work group. Runner journals use atomic
-replacement with scheduling serialization rather than a concurrent same-run
-reservation primitive. Primary diagnostic retention lists and evicts shared
-records without a store-wide lock. The root Writer helper waits five seconds
-for its lock while a Git operation inside it can have a two-minute timeout.
-These are concrete reasons to retain SERIAL, not new controls or authority to
-change Unix identities, runner registrations, credentials or external ACLs.
+Those separate paths were insufficient proof of parallel isolation. The
+accepted SERIAL topology shares one runtime UID and work group. Its audit
+identified journal reservation, diagnostic eviction and a five-second Writer
+lock wait against a two-minute Git operation as concrete race/capacity gaps.
+The source candidate addresses those stores and waits above, but these changes
+do not qualify an existing installation or grant runner registrations,
+credentials or external ACL changes.
 See [shared work permissions](../deploy/ansible/roles/relay_runner/tasks/general-runtime.yml),
 [attempt storage](../controller/src/attempt-store.mjs),
 [diagnostic storage](../controller/src/diagnostic-store.mjs) and

@@ -168,6 +168,7 @@ class SandboxCleanupTests(unittest.TestCase):
         self.helper.rename(self.base / 'relay-codex-cleanup.py')
         diagnostic = self.base / 'diagnostic.mjs'
         shutil.copyfile(ROOT / 'roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs', diagnostic)
+        shutil.copyfile(ROOT / 'roles/relay_codex_runtime/files/relay-codex-isolation.mjs', self.base / 'relay-codex-isolation.mjs')
         values = {
             'relay_install_root': str(self.base), 'relay_dispatch_work_root': str(self.work),
             'relay_codex_diagnostic_path': str(diagnostic),

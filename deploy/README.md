@@ -63,6 +63,64 @@ repository set. Preflight accepts either singleton `repository` or plural
 adding targets to the same instance while retaining its installed targets; the
 existing service, Unix identity and namespace collision checks still apply.
 
+### Bounded automatic execution slots (source candidate)
+
+The optional `consumer.executionSlots` array describes one finite installation
+topology, including a `primary` slot and additional independent automatic
+workers. Every slot supplies `id`, `runnerName`, `runnerUser`, `runtimeUser`,
+`workGroup` and `paths` with `workRoot`, `attemptRoot`, `dispatch`, `launcher`,
+`diagnosticsConfig`, `diagnosticsStore` and `diagnosticsRoot`. There is one
+installation-wide consumer digest, Writer identity, credential/claim namespace
+and repository. A slot is pinned at admission from the qualified native runner
+name and Unix identity; a worker cannot select another slot or supply paths.
+
+The primary entry must retain the existing top-level runtime user/paths and
+match `environment.generalRunner` and `environment.codexWorkGroup`. Slots use
+distinct runner/runtime users and work groups. Additional paths are fixed under
+`/opt/<namespace>/slots/<id>`, `/etc/<namespace>/slots/<id>` and
+`/var/lib/<namespace>/slots/<id>`; they cannot point into another installation.
+The array is bounded to 32 entries. `environment.instance` is required, and
+every slot inherits the existing general runner registration scope/group and
+consumer labels. The production runner remains outside this pool.
+
+The source installer prepares private slot roots, runtime identities, fixed
+sudo/dispatch/diagnostic/launcher bindings and runner services. It preserves
+registration and activity; it does not mint registration permission or activate
+a new slot. Optional parallel workers additionally require qualified bubblewrap
+user/PID namespaces under each actual runtime UID. Shared-host qualification must
+prove distinct installed namespaces, Unix identities, work access, process
+visibility, credentials, services and finite resource capacity across consumers.
+Separate repository installations retain separate Writer locks and claim roots;
+this does not introduce a multi-repository Writer.
+
+**This topology remains an incomplete, unqualified source candidate.** Additional
+slot registration/activation, host inventory, lifecycle activity preservation,
+upgrade and clean-reinstall integration are unfinished. Public deployment
+rejects host operations for opt-in inputs before host/network mutation with
+`PARALLEL_INSTALLATION_NOT_QUALIFIED`; local configuration validation and
+workflow proposal/verification remain available. Installed opt-in owner apply or
+resume likewise stops with `PARALLEL_LIFECYCLE_NOT_QUALIFIED`; the credential-free
+admission stop/drain path remains available. No unsupported CLI fallback or
+manual production activation is established. Configurations omitting the array
+retain their existing deployment/lifecycle paths and SERIAL scheduling.
+
+Opt-in projections use `relay-workflows-v4`, retaining native `queue: max` and
+`cancel-in-progress: false` for distinct Issue/PR subject groups. Recovery has
+its original-run group. The finite qualified runner pool bounds active work;
+Writer still serializes admission, Task conflicts, publication/recovery and
+lifecycle critical sections. A projection requires an installed v4 capability;
+it cannot silently select a SERIAL v3 runtime. V3 remains the unchanged default
+ABI for consumers without slots. Source tests and generated fixtures do not
+qualify native overlap or update any installed consumer projection. See the
+[scheduling audit](../docs/concurrency-scheduling.md).
+
+The automatic root Writer wrapper now waits at most 300 seconds for its existing
+per-installation publication lock; its caller's 450-second invocation budget
+includes that wait and the bounded 120-second Git operation. Timeout leaves the
+original attempt for supported recovery and does not authorize another inference.
+The independent manual Outcome socket retains its existing 60-second contract
+and original uncertain-publication/recovery behavior.
+
 To serve two repositories with one Reviewer, add the following under
 `environment` in the owner-controlled deployment input:
 

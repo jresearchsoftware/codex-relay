@@ -72,7 +72,7 @@
 - name: Install only the existing automatic relay sudo capabilities for the general identity
   ansible.builtin.template:
     src: '{{ item.src }}'
-    dest: '/etc/sudoers.d/{{ relay_namespace }}-general-{{ item.name }}'
+    dest: '/etc/sudoers.d/{{ relay_namespace }}-{{ "slot-" ~ relay_execution_slot if relay_execution_slot | default("primary") != "primary" else "general" }}-{{ item.name }}'
     owner: root
     group: root
     mode: '0440'

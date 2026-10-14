@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import threading
+import time
 
 import yaml
 
@@ -97,10 +99,38 @@ class ProductionWriterReleaseBindingTests(unittest.TestCase):
         self.assertIn('state: absent', self.controller_tasks)
         self.assertNotIn('remediation-state.yml', self.writer_tasks)
 
-    def test_publication_lock_is_os_owned_and_waits_for_short_lifecycle_snapshots(self):
-        self.assertIn('/usr/bin/flock -w 5', self.template)
+    def test_publication_lock_is_os_owned_and_bounds_parallel_writer_contention(self):
+        self.assertIn('/usr/bin/flock -w 300', self.template)
         self.assertIn('publication-v2.lock', self.template)
         self.assertNotIn('remediation-state.json', self.writer_tasks)
+
+    @unittest.skipUnless(os.name != 'nt' and Path('/usr/bin/flock').exists()
+                         and Path('/usr/bin/node').exists(), 'Linux native flock and Node required')
+    def test_actual_wrapper_waits_past_the_old_five_second_publication_limit(self):
+        import fcntl
+        with tempfile.TemporaryDirectory(prefix='relay-writer-contention-') as temporary:
+            root = Path(temporary)
+            child = root / 'receipt.mjs'
+            child.write_text('process.stdout.write(JSON.stringify({callerUid:process.env.RELAY_CALLER_UID}));')
+            wrapper = root / 'writer'
+            text = render_writer_wrapper(self.template).replace(
+                '/var/lib/codex-relay/writer-claims', str(root)).replace(
+                f'{INSTALL_ROOT}/current{HELPER_SUFFIX}', str(child))
+            wrapper.write_text(text)
+            wrapper.chmod(0o750)
+            with (root / 'publication-v2.lock').open('w') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                release = threading.Timer(6, lambda: fcntl.flock(lock, fcntl.LOCK_UN))
+                start = time.monotonic()
+                release.start()
+                try:
+                    result = subprocess.run([str(wrapper)], env={'PATH': '/usr/bin:/bin'},
+                                            capture_output=True, text=True, timeout=15)
+                finally:
+                    release.join()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertGreater(time.monotonic() - start, 5)
+                self.assertEqual(json.loads(result.stdout), {'callerUid': '0'})
 
     def test_lifecycle_admission_helper_is_root_only_credential_free_and_shares_writer_lock(self):
         template = (ROOT / 'roles/relay_controller/templates/relay-admission.j2').read_text(encoding='utf-8')

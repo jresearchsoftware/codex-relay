@@ -201,7 +201,7 @@ authorize another review POST or a new Step.
 | Owner | Record | Purpose |
 | --- | --- | --- |
 | GitHub/Git | Original Issue charter, trusted Decisions/CR, owner event/run, Step display labels, commits/ref/PR, checks, reviews and Outcome; retained v3 Requests | Authority, durable progress and acceptance truth |
-| Runner | Configured `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic |
+| Runner | Configured primary or immutable execution-slot `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic; repository binding and per-run controller lock |
 | Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable effective-authority/execution snapshot and Step lineage, controller reservation/completion, manual submission binding, frozen publication body/version, verified head and recovery receipts |
 | Writer | Configured `paths.claimRoot/pr-lifecycle-v1/<review-id>.json` | Exact native CR/head Draft intent and reconciliation before an execution run exists; no Task or launch authority |
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
@@ -303,12 +303,23 @@ lock, fixed wrappers/sudo policy, worker isolation and deployment lifecycle. Cal
 Keep root-owned configuration and separate consumer state outside worker-writable
 paths. Never execute PR/fork-controlled code on a persistent privileged runner.
 
-Routing and publication recovery share the existing control group with native
+Default routing and publication recovery share the existing control group with native
 `queue: max` and cancellation disabled. This preserves up to 100 waiting control
 invocations while keeping SERIAL execution; the current one-general-runner
 layout supplies no parallel speedup. See [control scheduling](concurrency-scheduling.md)
 for runtime bounds, authority while waiting and the explicit NOT QUALIFIED
 parallel/many-repository boundary. Root locks and lifecycle drain remain intact.
+
+The optional parallel source candidate keeps one immutable consumer
+configuration while resolving isolated runner/model identities and resource
+paths from a protected execution-slot binding. Admission rejects occupied slots;
+root drain reads each retained journal through the original protected envelope.
+Per-run kernel locks exclude duplicate controller inference, and a short store
+lock serializes diagnostic retention. Separate repository installations keep
+their own namespaces and Writer locks. A candidate parallel workflow ABI and
+finite runner pool do not prove actual worker overlap or external access policy.
+Additional-slot registration, activation and complete deployment lifecycle
+remain unfinished; parallel operation is not qualified or enabled by this source.
 
 Relay owns the [deployment interface](../deploy/README.md), source/build/install
 mechanics, layout, wrappers, users/services, upgrade/rollback and verification.

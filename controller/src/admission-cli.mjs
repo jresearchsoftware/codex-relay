@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore } from './attempt-store.mjs';
 import { createAdmissionControl, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createSlotJournal } from './slot-journal.mjs';
 import { fail } from './execution-contract.mjs';
 
 const exec = promisify(execFile);
@@ -37,9 +38,9 @@ export function parseAdmissionArguments(args) {
   return { command, options };
 }
 export function installedAdmissionControl() {
+  const store = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
   return createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-    store: createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`),
-    journal: createAttemptStore(CONSUMER.paths.attemptRoot) });
+    store, journal: createSlotJournal(store) });
 }
 export async function readAdmissionSnapshot(input = process.stdin) {
   let size = 0; const chunks = [];

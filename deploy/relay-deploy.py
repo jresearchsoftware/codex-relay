@@ -317,6 +317,12 @@ def run(args):
     if args.phase == 'validate':
         print('RELAY_DEPLOYMENT_CONFIG=PASS;schemaVersion=1')
         return
+    # The optional topology is a reviewable source candidate. Its additional
+    # registration/lifecycle/inventory paths still need qualification; do not
+    # silently run the legacy two-runner host composition for these inputs.
+    require('executionSlots' not in config['consumer']
+            or args.phase in ['workflow-project', 'workflow-verify'],
+            'PARALLEL_INSTALLATION_NOT_QUALIFIED;additional-runner-registration-lifecycle-inventory-required')
     require(sys.platform == 'linux', 'linux-controller')
     if args.local_reconcile:
         # An unprivileged runner can reach only the installed fixed sudo helper,

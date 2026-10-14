@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { resolveCodexProfile } from './codex-profile.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from './execution-policy.mjs';
 import { access, chmod, lstat, mkdir, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
