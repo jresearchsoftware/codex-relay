@@ -670,6 +670,14 @@ public source identity, and requires that release's workflow contract to match
 before invoking code. The installed revision is still logged and bound to the
 production helper; it is not embedded in consumer workflow bytes.
 
+The routing/recovery templates select SERIAL control scheduling with
+`queue: max` in the existing shared group. This scheduling-byte change retains
+the `relay-workflows-v3` ABI; an older v3 projection remains compatible with its
+earlier queue behavior. Changed projection bytes still require normal consumer
+review/publication, and source checks do not authorize PROD adoption. See
+[control scheduling](../docs/concurrency-scheduling.md) for the one-runner
+capacity bound and separate native TEST/parallel qualification limits.
+
 When content, workflow contract and consumer inputs are unchanged, a different
 product SHA yields identical files and manifest, so bootstrap/reinstall requires
 no consumer PR. Actual managed content or compatibility changes yield a bounded

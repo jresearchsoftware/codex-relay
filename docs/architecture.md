@@ -303,6 +303,13 @@ lock, fixed wrappers/sudo policy, worker isolation and deployment lifecycle. Cal
 Keep root-owned configuration and separate consumer state outside worker-writable
 paths. Never execute PR/fork-controlled code on a persistent privileged runner.
 
+Routing and publication recovery share the existing control group with native
+`queue: max` and cancellation disabled. This preserves up to 100 waiting control
+invocations while keeping SERIAL execution; the current one-general-runner
+layout supplies no parallel speedup. See [control scheduling](concurrency-scheduling.md)
+for runtime bounds, authority while waiting and the explicit NOT QUALIFIED
+parallel/many-repository boundary. Root locks and lifecycle drain remain intact.
+
 Relay owns the [deployment interface](../deploy/README.md), source/build/install
 mechanics, layout, wrappers, users/services, upgrade/rollback and verification.
 Consumers own configuration, secret references, target properties, policy and
