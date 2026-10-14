@@ -204,7 +204,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
   function assertLabelPath(path) {
     if (!labelLaunch || path !== `/issues/${launch.number}/labels/codex-ready-${route}`) throw new Error('Unexpected label mutation');
   }
-  const store = memoryStore(); const journal = createJournal(root); const lifecycleStore = memoryStore();
+  const store = memoryStore(); const journal = createJournal(root, { runId: fixtureRunId }); const lifecycleStore = memoryStore();
   const realPublisher = createGitPublisher({ remote, root });
   const publisher = { inspect: (e, bundle, fn) => realPublisher.inspect(e, bundle, g => fn({ ...g,
     push: async () => {

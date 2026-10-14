@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, lstat, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { fixture } from './fixture.mjs';
+import { fixture as controllerFixture } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
@@ -19,8 +19,13 @@ const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'
 // runtime imports resolve inside the staged release, including the fixture's
 // real admission/publication core. GitHub transport is a local fake; Git is real.
 assert.equal(process.getuid(), Number(process.env.INSTALLED_RUNNER_UID ?? 24001));
-const attemptStore = f => createAttemptStore(process.getuid() === 24003
-  ? `/var/lib/codex-relay/dispatch/attempts-v2/${f.envelope.attemptId}` : `${f.root}/journal`);
+async function fixture(t, options) {
+  const f = await controllerFixture(t, { ...options,
+    createJournal: (root, { runId }) => createAttemptStore(process.getuid() === 24003
+      ? `/var/lib/codex-relay/dispatch/attempts-v2/run-${runId}` : `${root}/journal`) });
+  assert.equal(f.envelope.attemptId, `run-${f.envelope.runId}`);
+  return f;
+}
 
 async function retireVerifiedFixtureCapsule(f) {
   // Test-owned synthetic teardown after assertions; product failure retention
@@ -92,7 +97,7 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     const f = await fixture(t, { remediation, installed: true, profile: { cliModelId, effort },
       instruction: `fixture-mode=success; fixture-profile=${cliModelId}/${effort}; Маркер UTF-8` });
     assert.deepEqual(f.envelope.profile, { cliModelId, effort });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
     const result = await runAttempt(args);
@@ -142,7 +147,7 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
   test(`installed ${mode} publication observes worker ownership and collector permissions`, async t => {
     const f = await fixture(t, { installed: true, remediation: true,
       instruction: `fixture-mode=${mode}; Маркер UTF-8` });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
     if (mode === 'generated-residue') {
@@ -209,7 +214,7 @@ for (const [mode, code, state] of [
     const retainCheckout = mode === 'missing-import';
     const f = await fixture(t, { installed: true, remediation: true, retainCheckout,
       instruction: `fixture-mode=${mode}; Маркер UTF-8` });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const path = mode === 'missing-token' ? '/etc/codex-relay/codex-credentials/access-token'
       : mode === 'missing-binary' ? '/opt/codex-relay/codex-runtime/bin/codex'
@@ -317,7 +322,7 @@ for (const [mode, code, state] of [
 
 test('installed first collection ENOENT remains a failure before progress publication', async t => {
   const f = await fixture(t, { installed: true, remediation: true });
-  const journal = attemptStore(f);
+  const journal = f.journal;
   const missing = Object.assign(new Error('first required collection unavailable'), { code: 'ENOENT' });
   let collections = 0;
   await assert.rejects(runAttempt({ ...f, journal,
