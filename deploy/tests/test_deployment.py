@@ -192,6 +192,7 @@ class ConfigurationTests(unittest.TestCase):
         templar = Templar(loader=DataLoader(), variables=values)
         keys = ['relay_codex_cli_version', 'relay_codex_installer_url', 'relay_codex_user', 'relay_codex_group',
                 'relay_codex_launcher_path', 'relay_install_root', 'relay_codex_binary_path',
+                'relay_codex_package_home', 'relay_codex_package_install_dir',
                 'relay_codex_access_token_file', 'relay_config_root', 'relay_codex_work_group']
         resolved = {k: templar.template(values[k]) for k in keys}
         contract = yaml.safe_load((backend / 'roles/relay_codex_runtime/tasks/main.yml').read_text())[0]

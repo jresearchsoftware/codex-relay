@@ -316,7 +316,10 @@ read=subprocess.run([str(node),str(current/'reviewed-source/controller/src/admis
 assert read.returncode==0, 'original admission status unavailable; retain state'
 status=json.loads(read.stdout); assert status['active']==[] and status['unknown']==[], 'original attempt is not idle'
 if previous==binding['consumer']: os.close(lock); sys.exit(0)
-archive=state/'evidence/task103-step3'/('before-'+binding['revision']); archive.mkdir(parents=True,mode=0o700,exist_ok=False)
+archive_parent=state/'task103-step3-retained-local-state'
+archive_parent.mkdir(mode=0o700,exist_ok=True)
+info=archive_parent.lstat(); assert stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==0 and stat.S_IMODE(info.st_mode)==0o700
+archive=archive_parent/('before-'+binding['revision']); archive.mkdir(mode=0o700,exist_ok=False)
 shutil.copyfile(config,archive/'consumer.json'); (archive/'consumer.json').chmod(0o600)
 for filename in ['artifact-manifest.json','deployment-config.json']:
     origin=current/filename

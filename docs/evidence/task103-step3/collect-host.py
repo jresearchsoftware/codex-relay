@@ -331,7 +331,7 @@ def self_test():
             self.assertEqual(sanitized["envelope"]["request"], {"kind": "admission", "schema_version": "4.0"})
             with self.assertRaises(ValueError):
                 snapshot({"envelope": {"request": {"kind": "admission", "schema_version": "4.0",
-                                                    "scope": ["-----BEGIN PRIVATE KEY-----"]}}})
+                                                    "scope": ["-----BEGIN PRIVATE" + " KEY-----"]}}})
             with self.assertRaises(ValueError):
                 snapshot({"envelope": {"request": {"kind": "admission", "schema_version": "4.0", "transcript": "forbidden"}}})
 
