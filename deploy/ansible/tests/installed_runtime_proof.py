@@ -8,6 +8,8 @@ archive into temporary CI storage. The real artifact tasks install it privately.
 The only substituted behavior is the external Codex distribution and GitHub transport. The
 real Ansible tasks/templates, sudo user switch, dispatcher, launcher, result
 parser, attempt journal and Git publication execute unchanged.
+The fixture stages the real socket units but does not activate systemd services:
+its private PID 1 is Python. Live socket activation has separate qualification.
 """
 import argparse
 import hashlib
@@ -213,7 +215,7 @@ def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
     def admission(expected):
         # Malformed stdin must reach REQUEST_INVALID only AFTER the real
         # assertRootConsumer gate, and BEFORE token()/any credential access.
-        result = subprocess.run(['/usr/sbin/runuser', '-u', 'relay-runner', '--',
+        result = subprocess.run(['/usr/sbin/runuser', '-u', values['relay_runner_user'], '--',
             'sudo', '-n', str(wrapper)], input='{', env=clean_env, text=True, capture_output=True, timeout=15)
         assert result.returncode == 1 and result.stdout == '', result
         assert result.stderr == json.dumps({'code': expected}, separators=(',', ':')) + '\n', result.stderr
@@ -775,6 +777,9 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             source.mkdir()
             run(['mount', '--bind', str(source), target])
         etc = Path('/etc')
+        # The private OS fixture needs the standard systemd unit directory.
+        # Creating it here keeps socket-unit staging inside the disposable mount.
+        (etc / 'systemd/system').mkdir(parents=True)
         (etc / 'passwd').write_text('root:x:0:0:root:/root:/bin/sh\nrelay-runner:x:24001:24001:runner:/tmp:/bin/sh\nrelay-codex:x:24002:24002:codex:/var/lib/codex-relay/codex-home:/usr/sbin/nologin\nrelay-general-runner:x:24003:24003:general:/var/lib/codex-relay/general-runner/home:/usr/sbin/nologin\nrelay:x:24004:24004:relay:/nonexistent:/usr/sbin/nologin\nrelay-reviewer:x:24005:24005:reviewer:/nonexistent:/usr/sbin/nologin\n')
         (etc / 'group').write_text('root:x:0:\nrelay-runner:x:24001:\nrelay-codex:x:24002:\nrelay-general-runner:x:24003:\nrelay-codex-work:x:24000:relay-runner,relay-codex,relay-general-runner\nrelay:x:24004:\nrelay-reviewer:x:24005:\n')
         (etc / 'nsswitch.conf').write_text('passwd: files\ngroup: files\nshadow: files\nhosts: files\n')
@@ -849,6 +854,24 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         # Execute actual install tasks, including the original module relocation
         # seam. The closure probe fails if it is replaced by a standalone copy.
         codex_tasks = ROOT / 'roles/relay_codex_runtime/tasks/main.yml'
+        # Preserve the real role context and file tasks without asking Python
+        # PID 1 to activate systemd. No production task or guard is modified.
+        proof_roles = temp / 'roles'
+        writer_role = proof_roles / 'relay_controller'
+        shutil.copytree(ROOT / 'roles/relay_controller', writer_role)
+        writer_tasks = yaml.safe_load((writer_role / 'tasks/writer-entrypoint.yml').read_text())
+        service_start = next(index for index, entry in enumerate(writer_tasks)
+                             if 'ansible.builtin.systemd' in entry)
+        # These real tasks follow socket activation in the product role. Keep
+        # the fixed-helper-only grant and validation in this non-service proof.
+        writer_file_tasks = writer_tasks[:service_start] + [
+            task(writer_role / 'tasks/writer-entrypoint.yml',
+                 'Install the narrowly scoped runner sudoers rule for the Writer helper'),
+            task(writer_role / 'tasks/writer-entrypoint.yml',
+                 'Validate the installed Writer helper sudoers rule'),
+        ]
+        (writer_role / 'tasks/writer-proof-files.yml').write_text(
+            yaml.safe_dump(writer_file_tasks))
         tasks = [
             task(ROOT / 'roles/relay_runtime/tasks/main.yml', 'Inspect directory ownership identities in check mode'),
             task(ROOT / 'roles/relay_runtime/tasks/main.yml', 'Create namespaced relay directories'),
@@ -856,7 +879,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),
             {'ansible.builtin.include_role': {'name': 'relay_artifacts', 'tasks_from': 'stage-source.yml'}},
             task(codex_tasks, 'Create the fixed Codex runtime and credential namespaces'),
-            {'ansible.builtin.include_role': {'name': 'relay_controller', 'tasks_from': 'writer-entrypoint.yml'}},
+            {'ansible.builtin.include_role': {'name': 'relay_controller', 'tasks_from': 'writer-proof-files.yml'}},
         ]
         if not consumer_only:
             tasks.extend([
@@ -875,7 +898,8 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             tasks.append({'ansible.builtin.include_role': {'name': 'relay_codex_runtime', 'tasks_from': 'production-launcher-validation.yml'}})
         playbook = temp / 'install.yml'
         playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': values, 'tasks': tasks}]))
-        env = {**os.environ, 'PATH': '/usr/bin:/bin', 'ANSIBLE_ROLES_PATH': str(ROOT / 'roles'), 'ANSIBLE_NOCOLOR': '1'}
+        env = {**os.environ, 'PATH': '/usr/bin:/bin',
+               'ANSIBLE_ROLES_PATH': f'{proof_roles}:{ROOT / "roles"}', 'ANSIBLE_NOCOLOR': '1'}
         # Installed entrypoints must resolve their deployed snapshot even when
         # the source-workspace/workflow consumer environment is absent.
         env.pop('RELAY_CONSUMER_CONFIG', None)
