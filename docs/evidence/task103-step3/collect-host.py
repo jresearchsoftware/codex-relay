@@ -19,7 +19,7 @@ TARGETS = {
     "codex-relay-test-two": ("jresearchsoftware/codex-relay-testbed-2", 1409883950),
 }
 MAX_RECORD = 512 * 1024
-SECRET = re.compile(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+SECRET = re.compile(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE\sKEY-----")
 ENVELOPE_KEYS = ("version", "repository", "consumerDigest", "runId", "attemptId", "target", "number",
                  "issueNumber", "route", "step", "executionSlot", "transport", "readyEventId", "readyEventAt",
                  "readyLabel", "runName", "branch", "startHead", "historicalBase", "targetBase", "reviewId",
