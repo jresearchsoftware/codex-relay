@@ -1,0 +1,47 @@
+schema = 1
+source_hash = "sha256:df90ef1a287c2ce5a70aff4443a0782410b628459722792ed326bde5aaf86ecc"
+spec_format = "mixed"
+
+[[file]]
+path = "DISTRIBUTION.json"
+sha256 = "a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc"
+
+[[file]]
+path = "LICENSE"
+sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
+
+[[file]]
+path = "README.md"
+sha256 = "a769714f767ad972030225ba29d9bc476cba484be6e7e347a65fa6e59f179414"
+
+[[file]]
+path = "vibe.toml"
+sha256 = "bfcceaed6af61b02ae489b3c1e49094ec3a23309de209809d7c4a7c3f9297165"
+
+[[file]]
+path = "vibevm/vibespecs/boot/development-governance.md"
+sha256 = "8e932a4ae27a9efa440acb59488f3687fa5e2e8f1b9f19cef63e8670b2216e8d"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/github-repository-governance.md"
+sha256 = "335cbc73ecb355919d5ca5bd8d4a525d8371aedaf92381e6c8244f41ebe5d45b"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/package-versioning.md"
+sha256 = "14c48fcc25bae6c7dee9b0a6c2e6310fa8df2917c6e17c4553fdefb461fec652"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/proportional-controls.md"
+sha256 = "6fbd1dc55bd40ee67c442614cd3d71fda45f4ebdba7012b976e72857c0eacfed"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/requirement-authority.md"
+sha256 = "9e5af613383c2c1492325338d9c37933bc83e1175ae809055718fc354a5532ca"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/self-adoption.md"
+sha256 = "43d56c78d4d12803ad28eef24afaa809e5941b19727da9f30274600e95d5be53"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/task-handoff.md"
+sha256 = "b3e9058f8ff80bc7c57854ef97a71e57983d4c3f18d538ead66cb8e4ebca9ac2"

@@ -5,4 +5,4 @@ version = "0.0.0"
 spec_format = "mixed"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = { version = "=1.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "fa901b9e866ea0246b99bf9025ca00a0ca20267c", auth = "none" }
+"org.jresearch.ai/development-governance" = { version = "=2.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "4211f55dcaeb3077d6abdbfba53a42ed848351b2", auth = "none" }

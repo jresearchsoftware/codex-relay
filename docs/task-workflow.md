@@ -3,8 +3,9 @@
 This guide describes the streamlined GitHub-native **source contract** for a
 paired, qualified Reviewer/controller installation. It does not claim an
 existing installation has been upgraded or qualified. Older installations and
-already-admitted attempts retain the bounded compatibility path below. Consumer Skill/adapter
-distribution remains separate Task #91. Detailed rules live in the
+already-admitted attempts retain the bounded compatibility path below. The
+[Relay guidance bundle](relay-guidance.md) supplies separately installable
+human/native Skill adapters without a VibeVM runtime requirement. Detailed rules live in the
 [authority](../contracts/README.md#github-native-task-authority),
 [routing](../controller/README.md) and [Reviewer](../reviewer/README.md) contracts.
 

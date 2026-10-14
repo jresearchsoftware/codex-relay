@@ -72,6 +72,42 @@ original contract. Native PR `APPROVE` remains available for a genuine exact-hea
 Reserved v3 Decisions retain exact-operation recovery; schema-v3 result
 acceptance for an old admitted attempt remains supported.
 
+## Independent review and finding provenance
+
+Review the complete exact candidate head against the live canonical Issue and
+applicable Change Request authority. Aggregate reasonably discoverable material
+findings rather than stopping at the first blocker. Independent acceptance
+remains bound to that exact head; deterministic checks alone do not establish it.
+
+For each material finding, including a failing test/check or claimed regression,
+compare the candidate with the reviewed starting/base state. Identify the exact
+candidate and comparison SHAs, relevant evidence, and finding provenance:
+
+- introduced by the current implementation or remediation;
+- pre-existing on the baseline;
+- pre-existing but newly exposed or made blocking by changed validation;
+- undetermined, with the missing evidence stated explicitly.
+
+Use `regression` only when evidence supports introduction by the current
+implementation or remediation. A newly failing gate does not by itself prove a
+newly introduced defect. Pre-existing baseline defects do not automatically
+become current-task remediation unless current authority covers them or the
+current change materially depends on, modifies, or newly includes them in its
+authorized acceptance boundary. Explain that authority or dependency when
+prescribing remediation; discovery alone does not expand scope.
+
+On rereview after a Change Request, separately assess closure of prior findings,
+behavior changed by remediation, adjacent regression risk, and genuinely new
+findings. If a blocker survives remediation, explain why the previous review or
+remediation missed the invariant before prescribing another correction; state
+any remaining evidence gap rather than inventing a cause. Keep this reasoning in
+the existing review/Change Request record without a new state machine, ledger,
+or schema.
+
+These Relay review obligations were relocated unchanged from root AGENTS to
+keep one product reference. Shared methodology supplies their neutral context;
+its additional topics do not alter native verdict, identity or routing behavior.
+
 ## Current protocol capabilities
 
 `tools/list` advertises the current schema-v4 authority input and the separately

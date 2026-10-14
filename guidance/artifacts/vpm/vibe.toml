@@ -1,0 +1,16 @@
+# Generated from guidance/source.json; candidate content, no external publication.
+[package]
+group = "org.jresearch.ai"
+name = "codex-relay"
+version = "0.1.0"
+kind = "flow"
+description = "Version-bound Codex Relay workflow Skill with offline shared references"
+
+[requires.packages]
+"org.jresearch.ai/development-governance" = "=2.1.0"
+
+[[skill]]
+name = "codex-relay"
+path = "skill"
+agents = ["codex"]
+include = ["SKILL.md", "PROVENANCE.json", "references/**", "scripts/**"]

@@ -85,7 +85,8 @@ class CommittedFlowTests(unittest.TestCase):
 
     def test_manifest_and_lock_graph_source_and_hash_are_bound(self):
         for name, replacements in (
-                ("vibe.toml", [('version = "=1.1.0"', 'version = ">=1.1.0"'),
+                ("vibe.toml", [('version = "=' + QUALIFICATION.VERSION + '"',
+                                'version = ">=' + QUALIFICATION.VERSION + '"'),
                                ('auth = "none"', 'auth = "github"'),
                                (QUALIFICATION.DISTRIBUTION_REVISION, "0" * 40),
                                (QUALIFICATION.DISTRIBUTION_REPOSITORY, "https://example.invalid/package.git")]),
@@ -198,6 +199,17 @@ class CommittedFlowTests(unittest.TestCase):
         shutil.copytree(distribution, source)
         (source / QUALIFICATION.RECEIPT).unlink()
         QUALIFICATION.compare_inputs(self.root, source, distribution)
+        # Native producer routes are explicitly excluded by the accepted exporter;
+        # arbitrary authoring files must still fail whole-payload comparison.
+        for name in QUALIFICATION.SOURCE_ONLY:
+            target = source / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("Producer-only generated route\n")
+        QUALIFICATION.compare_inputs(self.root, source, distribution)
+        (source / "unexpected-source.md").write_text("Not part of the accepted export\n")
+        with self.assertRaises(RuntimeError):
+            QUALIFICATION.compare_inputs(self.root, source, None)
+        (source / "unexpected-source.md").unlink()
         (source / "README.md").write_text("Changed acquired source\n")
         with self.assertRaises(RuntimeError):
             QUALIFICATION.compare_inputs(self.root, source, None)
