@@ -46,6 +46,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   await writeFile(config, JSON.stringify({ schemaVersion: '1.0', mode: 'normal' }));
   const variables = {
     relay_install_root: root,
+    relay_codex_package_home: join(root, 'package-home'),
     relay_codex_binary_path: child, relay_codex_access_token_file: token,
     relay_dispatch_work_root: work, relay_diagnostics_config_path: config,
     relay_rust_toolchain_root: rust,

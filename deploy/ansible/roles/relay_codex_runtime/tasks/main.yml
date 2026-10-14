@@ -8,6 +8,8 @@
       - relay_codex_group == relay_codex_user
       - relay_codex_launcher_path == (relay_install_root ~ '/relay-codex')
       - relay_codex_binary_path == (relay_install_root ~ '/codex-runtime/bin/codex')
+      - relay_codex_package_home == (relay_install_root ~ '/codex-runtime/package-home')
+      - relay_codex_package_install_dir == (relay_install_root ~ '/codex-runtime/package-bin')
       - relay_codex_access_token_file == (relay_config_root ~ '/codex-credentials/access-token')
       - relay_codex_work_group not in ['root', relay_codex_group]
     fail_msg: 'CODEX_RUNTIME_PIN_OR_BOUNDARY_INVALID'
@@ -176,6 +178,16 @@
   register: relay_codex_existing_binary
   changed_when: false
 
+- name: Verify existing managed package metadata before any root CLI version probe
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", role_path + "/files/relay-codex-package-guard.py") }}', '{{ relay_codex_package_home }}', '{{ relay_codex_binary_path }}', '{{ relay_codex_cli_version }}', check]
+  changed_when: false
+  when:
+    - not ansible_check_mode | bool
+    - relay_codex_existing_binary.stat.exists
+    - relay_codex_existing_binary.stat.islnk | default(false)
+    - relay_codex_existing_binary.stat.lnk_source | default('') is match('^' ~ (relay_codex_package_home | regex_escape) ~ '/packages/standalone/releases/' ~ (relay_codex_cli_version | regex_escape) ~ '-[a-z0-9_-]+/(bin/)?codex$')
+
 - name: Inspect the existing Codex CLI version before installation
   ansible.builtin.command:
     argv: ['{{ relay_codex_binary_path }}', '--version']
@@ -186,17 +198,30 @@
   when:
     - not ansible_check_mode | bool
     - relay_codex_existing_binary.stat.exists
+    - relay_codex_existing_binary.stat.islnk | default(false)
+    - relay_codex_existing_binary.stat.lnk_source | default('') is match('^' ~ (relay_codex_package_home | regex_escape) ~ '/packages/standalone/releases/' ~ (relay_codex_cli_version | regex_escape) ~ '-[a-z0-9_-]+/(bin/)?codex$')
 
 - name: Determine whether the pinned Codex CLI needs installation
   ansible.builtin.set_fact:
     relay_codex_install_needed: >-
       {{
         not relay_codex_existing_binary.stat.exists
+        or not (relay_codex_existing_binary.stat.lnk_source | default('') is match('^' ~ (relay_codex_package_home | regex_escape) ~ '/packages/standalone/releases/' ~ (relay_codex_cli_version | regex_escape) ~ '-[a-z0-9_-]+/(bin/)?codex$'))
         or (relay_codex_existing_version.rc | default(1)) != 0
         or not (((relay_codex_existing_version.stdout | default('')) ~
         (relay_codex_existing_version.stderr | default(''))) is search(relay_codex_cli_version))
       }}
   when: not ansible_check_mode | bool
+
+- name: Create the private immutable package staging namespace before official installation
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: ['{{ relay_codex_package_home }}', '{{ relay_codex_package_install_dir }}']
+  when: not ansible_check_mode | bool and relay_codex_install_needed | bool
 
 - name: Download the official Codex installer
   ansible.builtin.get_url:
@@ -217,8 +242,8 @@
       - --release
       - '{{ relay_codex_cli_version }}'
   environment:
-    CODEX_HOME: '{{ relay_codex_home }}'
-    CODEX_INSTALL_DIR: '{{ relay_codex_install_dir }}'
+    CODEX_HOME: '{{ relay_codex_package_home }}'
+    CODEX_INSTALL_DIR: '{{ relay_codex_package_install_dir }}'
     CODEX_NON_INTERACTIVE: '1'
   register: relay_codex_install
   changed_when: relay_codex_install.stdout is search('Codex CLI')
@@ -228,6 +253,10 @@
 
 - name: Reconcile the Codex temporary roots after runtime installation
   ansible.builtin.include_tasks: runtime-namespace.yml
+
+- name: Reconcile installed Codex package traversal for its execution identity
+  ansible.builtin.include_tasks: package-access.yml
+  when: not ansible_check_mode | bool
 
 - name: Inspect the installed Codex binary without authentication
   ansible.builtin.stat:
@@ -242,21 +271,17 @@
   register: relay_codex_version
   changed_when: false
   check_mode: false
-  when: relay_codex_binary.stat.exists
+  when: not ansible_check_mode | bool and relay_codex_binary.stat.exists
 
 - name: Require the pinned Codex CLI version after installation
   ansible.builtin.assert:
     that:
       - relay_codex_binary.stat.exists or ansible_check_mode | bool
       - ansible_check_mode | bool or relay_codex_binary.stat.islnk | default(false)
-      - ansible_check_mode | bool or relay_codex_binary.stat.lnk_source.startswith(relay_codex_home ~ '/packages/standalone/releases/' ~ relay_codex_cli_version ~ '-')
+      - ansible_check_mode | bool or relay_codex_binary.stat.lnk_source.startswith(relay_codex_package_home ~ '/packages/standalone/releases/' ~ relay_codex_cli_version ~ '-')
       - ansible_check_mode | bool or relay_codex_version.rc == 0
       - ansible_check_mode | bool or (relay_codex_version.stdout ~ relay_codex_version.stderr) is search(relay_codex_cli_version)
     fail_msg: 'CODEX_RUNTIME_VERSION_MISMATCH'
-
-- name: Reconcile installed Codex package traversal for its execution identity
-  ansible.builtin.include_tasks: package-access.yml
-  when: not ansible_check_mode | bool
 
 - name: Install the fixed Codex execution launcher
   ansible.builtin.include_tasks: launcher.yml

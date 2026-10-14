@@ -8,6 +8,7 @@ import { isolatedCodexProcess } from "./relay-codex-isolation.mjs";
 import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretRedactor, decodeUtf8, MAX_DEBUG_CAPTURE_BYTES, MAX_DIAGNOSTIC_CAPTURE_BYTES, writeChildDiagnostic } from "{{ relay_codex_diagnostic_path }}";
 
 const CODEX_BINARY = "{{ relay_codex_binary_path }}";
+const CODEX_PACKAGE_ROOT = "{{ relay_codex_package_home }}/packages";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
 const CLEANUP_HELPER = fileURLToPath(new URL('./relay-codex-cleanup.py', import.meta.url));
@@ -156,7 +157,7 @@ async function main() {
     process.umask(0o0007);
     const args = ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"];
     const spec = process.env.RELAY_ISOLATED_SLOT === '1'
-      ? isolatedCodexProcess({ binary: CODEX_BINARY, resolvedBinary: await realpath(CODEX_BINARY), cwd,
+      ? isolatedCodexProcess({ binary: CODEX_BINARY, packageRoot: CODEX_PACKAGE_ROOT, cwd,
         toolchainRoot: TOOLCHAIN_ROOT, args })
       : { command: CODEX_BINARY, args };
     child = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });

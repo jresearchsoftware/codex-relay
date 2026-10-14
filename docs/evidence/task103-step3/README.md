@@ -134,3 +134,37 @@ Its records and timestamps are explicitly deterministic in-memory inputs.
 It validates all four Decisions and negative cases for forged/moved/duplicate
 records, incomplete inventory, missing native model usage and absent overlap.
 Passing it does not prove live admission, worker execution or acceptance.
+
+## Read-only TEST host collector
+
+Run `collect-host.py` only through the qualified root channel on the isolated
+TEST host. It reads the root-owned `/etc/codex-relay-test/consumer.json` and
+`/etc/codex-relay-test-two/consumer.json`, their fixed configured slots,
+`systemctl show` metadata, numeric protected journals/Writer claims, and procfs.
+It never reads credentials, tokens, environments or model conversations.
+
+```sh
+python3 collect-host.py observe --namespace codex-relay-test --namespace codex-relay-test-two --duration 900 --output /root/task103-observe-UNIQUE
+python3 collect-host.py snapshot --namespace codex-relay-test --namespace codex-relay-test-two --run codex-relay-test:REAL_RUN_ID --run codex-relay-test-two:REAL_RUN_ID --output /root/task103-snapshot-UNIQUE
+python3 collect-host.py --self-test
+```
+
+Output directories must be new children of a root-private directory under
+`/root`; the collector creates them `0700` and JSON files `0600`. Observe is
+bounded to 900 seconds with a two-second sampling interval and compact counts.
+The primary services are exactly `codex-relay-test-general-runner.service` and
+`codex-relay-test-two-general-runner.service`; additional slot services follow
+the qualified namespace/slot contract. UID, exact service cgroup, checkout and
+original claim/journal binding must all agree. Unknown slots, processes or
+ambiguous attribution yield explicit gaps rather than timing-based assignment.
+
+`protected-host-observations.json` and `protected-execution-inventory.json`
+are compatible with the verifier. `protected-sources.json` preserves original
+byte hashes, owners, modes and source metadata. Snapshot exports full immutable
+v4 admission machine fields plus the required usage/receipts, omitting worker
+input, result prose and diagnostics. Original native/protected records stay
+untouched; exports are sanitized readbacks, never synthetic state. A complete
+window is asserted only when collection finishes without unit, source or
+attribution gaps. Procfs exit races can miss short invocations; absence of a
+sample is not proof of zero inference. Snapshot run IDs must be actually
+observed; root execution grants no non-TEST or model-launch authority.

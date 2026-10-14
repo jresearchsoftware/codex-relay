@@ -1150,6 +1150,15 @@ stdin task bytes, strict schema delivery and Relay semantic-result extraction,
 non-zero provider failure, isolated homes, and effective workspace/network
 policy. No model call, login or production installation occurs.
 
+Installation keeps the complete official distribution under the root-owned
+`codex-runtime/package-home/packages`, outside every private worker home.
+The stable `codex-runtime/bin/codex` entrypoint links to that immutable payload;
+isolated slots mount the complete payload read-only, including auxiliary
+resources. Runtime homes and tokens retain their private ownership and modes.
+An upgrade from the old private-home layout installs the pinned distribution
+afresh without executing or copying the old model-owned binary. Package metadata
+is checked before any root version probe; check mode does not execute that binary.
+
 The probe also preserves native limitations: missing backend usage becomes
 native zero counters; the CLI requests the output schema but Relay must still
 validate the returned result; and Ultra resolves through the native model

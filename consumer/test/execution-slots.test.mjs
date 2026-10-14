@@ -62,14 +62,16 @@ test('slots reject overlapping work/evidence/helper roots and reused Unix identi
   ]) { const c = pool(); mutate(c); assert.throws(() => validateConsumer(c)); }
 });
 
-test('isolated child sees only installed readonly code and its admitted checkout', () => {
-  const spec = isolatedCodexProcess({ binary: '/opt/sample/codex-runtime/bin/codex', resolvedBinary: '/var/lib/sample/packages/bin/codex',
+test('isolated child sees the complete immutable package payload and its admitted checkout', () => {
+  const spec = isolatedCodexProcess({ binary: '/opt/sample/codex-runtime/bin/codex', packageRoot: '/opt/sample/codex-runtime/package-home/packages',
     cwd: '/var/lib/sample/slot-two/work/run-103', toolchainRoot: '/opt/sample/rust', args: ['exec', '--json'] });
   assert.equal(spec.command, '/usr/bin/bwrap');
   for (const flag of ['--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts', '--die-with-parent', '--new-session']) assert.ok(spec.args.includes(flag));
   assert.equal(spec.args.filter(value => value === '--bind').length, 1);
   assert.equal(spec.args[spec.args.indexOf('--bind') + 1], '/var/lib/sample/slot-two/work/run-103');
-  assert.ok(spec.args.includes('/var/lib/sample/packages/bin'));
+  assert.ok(spec.args.includes('/opt/sample/codex-runtime/package-home/packages'));
+  assert.ok(!spec.args.includes('/opt/sample/codex-runtime/package-home'));
+  assert.ok(!spec.args.includes('/var/lib/sample/codex-home'));
   assert.ok(!spec.args.includes('/etc'));
   assert.ok(!spec.args.includes('/var/lib'));
   assert.ok(!spec.args.includes('/opt/sample'));

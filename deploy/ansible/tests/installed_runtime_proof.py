@@ -884,7 +884,12 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         if not consumer_only:
             tasks.extend([
                 {'ansible.builtin.include_role': {'name': 'relay_artifacts', 'tasks_from': 'rust-toolchain.yml'}},
+                task(codex_tasks, 'Create the private immutable package staging namespace before official installation'),
                 task(codex_tasks, 'Install the pinned official Codex CLI into the relay namespace'),
+                # This fixture deliberately defers normalization to reproduce
+                # the original EACCES before testing the real repair tasks.
+                {'ansible.builtin.file': {'src': '{{ relay_codex_package_install_dir }}/codex',
+                    'dest': '{{ relay_codex_binary_path }}', 'state': 'link', 'owner': 'root', 'group': 'root'}},
                 {'ansible.builtin.include_role': {'name': 'relay_codex_runtime', 'tasks_from': 'runtime-namespace.yml'}},
                 task(artifacts, 'Stage the exact reviewed on-demand Codex dispatch artifact'),
                 {'ansible.builtin.include_role': {'name': 'relay_codex_runtime', 'tasks_from': 'launcher.yml'}},
@@ -930,12 +935,12 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         general_runner_proof(temp, values, env)
         if not runtime_only:
             runner_root_proof()
-        package = Path('/var/lib/codex-relay/codex-home/packages')
+        package = runtime / 'package-home/packages'
         assert (package.stat().st_uid, stat.S_IMODE(package.stat().st_mode)) == (0, 0o700)
         assert (runtime / 'bin/codex').is_symlink()
-        assert subprocess.run(['/usr/sbin/runuser', '-u', 'relay-codex', '--', 'test', '-x', str(package.parent)]).returncode == 0
+        assert subprocess.run(['/usr/sbin/runuser', '-u', 'relay-codex', '--', 'test', '-x', str(package.parent)]).returncode == 1
         assert subprocess.run(['/usr/sbin/runuser', '-u', 'relay-codex', '--', 'test', '-x', str(package)]).returncode == 1
-        print(f'CODEX_DENIED_TRAVERSAL user=relay-codex;path={package};operation=search;parent=accessible', flush=True)
+        print(f'CODEX_DENIED_TRAVERSAL user=relay-codex;path={package};operation=search;parent=private-staging', flush=True)
         for path in [package, package / 'standalone', package / 'standalone/releases', (runtime / 'bin/codex').resolve().parents[1]]:
             info = path.stat()
             print(f'CODEX_PACKAGE_METADATA path={path};uid={info.st_uid};gid={info.st_gid};mode={stat.S_IMODE(info.st_mode):04o}', flush=True)
@@ -956,18 +961,20 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         package_playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': values, 'tasks': package_tasks}]))
         payload = (runtime / 'bin/codex').resolve()
         payload_before = payload.stat()
+        payload_bytes = payload.read_bytes()
         result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(package_playbook)],
                                 env=env, text=True, capture_output=True, umask=0o077)
         assert result.returncode == 0, result.stdout + result.stderr
         payload_after = payload.stat()
-        assert (payload_before.st_ino, payload_before.st_mode, payload_before.st_uid, payload_before.st_gid, payload_before.st_mtime_ns) == (
-            payload_after.st_ino, payload_after.st_mode, payload_after.st_uid, payload_after.st_gid, payload_after.st_mtime_ns)
+        assert (payload_before.st_ino, payload_before.st_mtime_ns, payload_bytes) == (
+            payload_after.st_ino, payload_after.st_mtime_ns, payload.read_bytes())
+        assert (payload_after.st_uid, payload_after.st_gid, stat.S_IMODE(payload_after.st_mode)) == (0, 0, 0o755)
         for path in [package, package / 'standalone', package / 'standalone/releases', (runtime / 'bin/codex').resolve().parents[1]]:
             info = path.stat()
-            assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 24002, 0o750)
+            assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 0, 0o755)
         for user in ['relay-runner', 'relay-general-runner']:
             assert subprocess.run(['runuser', '-u', user, '--', 'test', '-r', str(token)]).returncode == 1
-            assert subprocess.run(['runuser', '-u', user, '--', 'test', '-x', str(package)]).returncode == 1
+            assert subprocess.run(['runuser', '-u', user, '--', 'test', '-x', str(package)]).returncode == 0
         # A redirected command must be rejected before permission mutation.
         visible = runtime / 'bin/codex'
         saved_link = runtime / 'bin/codex.saved'
