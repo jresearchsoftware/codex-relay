@@ -80,10 +80,15 @@ async function terminalReplay(f, journal, args, { retainCheckout = false } = {})
     await assert.rejects(access(f.cwd), { code: 'ENOENT' });
   }
   const forbidden = boundary => () => assert.fail(`terminal replay invoked ${boundary}`);
+  let handoffs = 0;
   return { ...args, admissionResumed: true,
-    journal: { get: journal.get, put: forbidden('journal mutation') },
+    journal: { get: journal.get, put: forbidden('journal mutation'), reserve: forbidden('journal reservation') },
     prepare: forbidden('prepare'), execute: forbidden('execute'), collect: forbidden('collect'),
-    broker: { invoke: forbidden('broker') } };
+    broker: { invoke: request => {
+      assert.deepEqual(request, { operation: 'complete-handoff', runId: f.envelope.runId, attemptId: f.envelope.attemptId });
+      assert.equal(++handoffs, 1);
+      return args.broker.invoke(request);
+    } } };
 }
 
 const explicitProfiles = [
@@ -111,8 +116,10 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     await assert.rejects(access(`${f.cwd}/.codex-sandbox`), { code: 'ENOENT' });
     assert.equal(artifact.model, cliModelId); assert.equal(artifact.effort, effort);
     assert.equal(artifact.identity, remediation ? 'example-remediation' : 'example-writer');
+    const commentsBeforeReplay = structuredClone(f.comments);
     assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args)), result);
     assert.deepEqual(await journal.get(f.envelope.runId), saved);
+    assert.deepEqual(f.comments, commentsBeforeReplay);
     assert.equal(calls, 1); assert.equal(f.pushes(), 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
   });
@@ -158,7 +165,10 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
       assert.equal(saved.progress.head, await f.remoteHead());
       assert.equal(f.pushes(), 1);
       assert.match(f.comments[0].body, /UNCOMMITTED_WORK_REMAINS/);
-      assert.deepEqual(await runAttempt(args), result);
+      const commentsBeforeReplay = structuredClone(f.comments);
+      assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args, { retainCheckout: true })), result);
+      assert.deepEqual(await journal.get(f.envelope.runId), saved);
+      assert.deepEqual(f.comments, commentsBeforeReplay);
     } else {
       await assert.rejects(runAttempt(args), error => {
         assert.equal(error.code, 'TRUSTED_GIT_FAILED');
@@ -174,8 +184,18 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
     const metadata = await stat(remaining);
     assert.equal(metadata.uid, 24002);
     assert.notEqual(metadata.uid, process.getuid());
-    assert.equal(metadata.mode & 0o777, 0o600);
-    await assert.rejects(access(remaining, constants.R_OK), { code: 'EACCES' });
+    if (mode === 'generated-residue') {
+      const group = (await exec('/usr/bin/getent', ['group', 'relay-codex-work'])).stdout.trim().split(':');
+      assert.equal(group[0], 'relay-codex-work');
+      assert.match(group[2], /^[1-9][0-9]*$/);
+      assert.equal(metadata.gid, Number(group[2]));
+      assert.equal(metadata.gid, (await stat('/var/lib/codex-relay/dispatch-work')).gid);
+      assert.equal(metadata.mode & 0o777, 0o640);
+      await access(remaining, constants.R_OK);
+    } else {
+      assert.equal(metadata.mode & 0o777, 0o600);
+      await assert.rejects(access(remaining, constants.R_OK), { code: 'EACCES' });
+    }
     assert.equal(calls, 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
     await retireVerifiedFixtureCapsule(f);

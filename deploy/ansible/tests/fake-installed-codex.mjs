@@ -71,10 +71,9 @@ writeFileSync('docs/work.md', JSON.stringify({ uid: process.getuid(), input: tru
 execFileSync('git', ['add', 'docs/work.md']);
 execFileSync('git', ['commit', '-m', 'installed child task progress']);
 if (input.includes('fixture-mode=generated-residue')) {
-  // A generated regular file can be visible to the collector even when only
-  // the worker can read it. Collection records its presence without adopting,
-  // deleting or publishing its bytes.
-  writeFileSync('validation-output.tmp', 'repeatable generated fixture output\n', { mode: 0o600 });
+  // Shared-group readability lets the strict Reader observe generated residue
+  // while retaining worker ownership and an uncommitted-work warning.
+  writeFileSync('validation-output.tmp', 'repeatable generated fixture output\n', { mode: 0o640 });
 } else if (input.includes('fixture-mode=unreadable-task-work')) {
   // Replace the runner-owned baseline as a worker editor would; the worker
   // cannot chmod another identity's file merely because it can write it.
