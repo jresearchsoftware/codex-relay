@@ -1157,6 +1157,10 @@ Installation keeps the complete official distribution under the root-owned
 The stable `codex-runtime/bin/codex` entrypoint links to that immutable payload;
 isolated slots mount the complete payload read-only, including auxiliary
 resources. Runtime homes and tokens retain their private ownership and modes.
+Temporary-root reconciliation processes `tmp` before `tmp/arg0` and rejects
+existing root symlinks before processing a child path. Recursive ownership
+changes do not follow descendant links, preserving shared payloads and other
+private homes when the CLI creates native arg0 aliases.
 An upgrade from the old private-home layout installs the pinned distribution
 afresh without executing or copying the old model-owned binary. Package metadata
 is checked before any root version probe; check mode does not execute that binary.

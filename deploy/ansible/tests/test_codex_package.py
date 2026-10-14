@@ -114,6 +114,124 @@ def test_root_probes_reject_mutated_payload(package):
         guard.qualify(home, command, '0.160.0')
 
 
+def test_source_runtime_reconciliation_preserves_arg0_alias_targets_on_repeated_apply(package):
+    if not shutil.which('ansible-playbook'):
+        pytest.skip('requires Ansible for source task execution')
+    root, home, release, command, binary, auxiliary = package
+    private = root / 'runtime-home'
+    private.mkdir(mode=0o700)
+    os.chown(private, 65534, 65534)
+    outsider = root / 'other-private-home'
+    outsider.mkdir(mode=0o700)
+    os.chown(outsider, 65533, 65533)
+    outside_file = outsider / 'retained'
+    outside_file.write_text('unrelated private fixture bytes\n')
+    outside_file.chmod(0o600)
+    os.chown(outside_file, 65533, 65533)
+    binary.write_text('''#!/bin/sh
+set -eu
+: "${HOME:?HOME is mandatory}"
+: "${CODEX_HOME:?CODEX_HOME is mandatory}"
+[ "$CODEX_HOME" = "$TASK_FIXTURE_HOME" ]
+if [ "$(id -u)" = 0 ]; then [ "$HOME" = "$TASK_FIXTURE_HOME" ]; fi
+arg0="$CODEX_HOME/tmp/arg0/fixture"
+mkdir -p "$arg0"
+for alias in apply_patch applypatch codex-execve-wrapper codex-linux-sandbox; do
+    ln -sfn "$(readlink -f "$0")" "$arg0/$alias"
+done
+ln -sfn "$TASK_FIXTURE_OUTSIDE" "$arg0/other-private-home"
+ln -sfn "$TASK_FIXTURE_OUTSIDE/retained" "$arg0/other-private-file"
+printf 'codex-cli 0.160.0\\n'
+''')
+    binary.chmod(0o755)
+    guard.qualify(home, command, '0.160.0', normalize=True)
+    watched = [binary, auxiliary, outsider, outside_file]
+    before = {path: (path.stat().st_uid, path.stat().st_gid, path.stat().st_mode,
+                     path.stat().st_ino, path.read_bytes() if path.is_file() else None) for path in watched}
+    role = ROOT / 'roles/relay_codex_runtime'
+    source_tasks = yaml.safe_load((role / 'tasks/main.yml').read_text())
+    names = ['Inspect the existing Codex binary before installation',
+             'Verify existing managed package metadata before any root CLI version probe',
+             'Inspect the existing Codex CLI version before installation',
+             'Determine whether the pinned Codex CLI needs installation']
+    tasks = [next(item for item in source_tasks if item['name'] == name) for name in names]
+    tasks += [{'ansible.builtin.include_tasks': str(role / 'tasks/runtime-namespace.yml')},
+              {'block': yaml.safe_load((role / 'tasks/package-access.yml').read_text())}]
+    values = dict(relay_codex_binary_path=str(command), relay_codex_install_dir=str(command.parent),
+                  relay_codex_package_home=str(home), relay_codex_package_install_dir=str(root / 'unused-staging'),
+                  relay_codex_cli_version='0.160.0', relay_codex_user='nobody', relay_codex_group='nogroup',
+                  relay_codex_home=str(private), role_path=str(role))
+    environment = {'HOME': str(private), 'CODEX_HOME': str(private), 'TASK_FIXTURE_HOME': str(private),
+                   'TASK_FIXTURE_OUTSIDE': str(outsider)}
+    play = root / 'arg0-reconciliation.yml'
+    play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': values,
+                                   'environment': environment, 'tasks': tasks}]))
+    for _ in range(2):
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+                                text=True, capture_output=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert {path: (path.stat().st_uid, path.stat().st_gid, path.stat().st_mode,
+                       path.stat().st_ino, path.read_bytes() if path.is_file() else None)
+                for path in watched} == before
+        for path in [private, private / 'tmp', private / 'tmp/arg0', private / 'tmp/arg0/fixture']:
+            assert path.stat().st_uid == path.stat().st_gid == 65534
+        for path in [private, private / 'tmp', private / 'tmp/arg0']:
+            assert stat.S_IMODE(path.stat().st_mode) == 0o700
+        for alias in ['apply_patch', 'applypatch', 'codex-execve-wrapper', 'codex-linux-sandbox']:
+            link = private / 'tmp/arg0/fixture' / alias
+            assert link.is_symlink() and link.resolve() == binary
+            assert link.lstat().st_uid == link.lstat().st_gid == 65534
+        for alias, target in [('other-private-home', outsider), ('other-private-file', outside_file)]:
+            link = private / 'tmp/arg0/fixture' / alias
+            assert link.is_symlink() and link.resolve() == target
+            assert link.lstat().st_uid == link.lstat().st_gid == 65534
+        guard.qualify(home, command, '0.160.0')
+
+
+@pytest.mark.parametrize('root_alias', ['tmp', 'arg0'])
+def test_runtime_namespace_rejects_symlink_roots_before_target_mutation(package, root_alias):
+    if not shutil.which('ansible-playbook'):
+        pytest.skip('requires Ansible for source task execution')
+    root, home, _, command, binary, auxiliary = package
+    guard.qualify(home, command, '0.160.0', normalize=True)
+    private = root / 'runtime-home'
+    private.mkdir(mode=0o700)
+    os.chown(private, 65534, 65534)
+    outsider = root / 'other-private-home'
+    outsider.mkdir(mode=0o700)
+    os.chown(outsider, 65533, 65533)
+    descendant = outsider / 'arg0'
+    descendant.mkdir(mode=0o700)
+    os.chown(descendant, 65533, 65533)
+    retained = descendant / 'retained'
+    retained.write_text('unrelated private fixture bytes\n')
+    retained.chmod(0o600)
+    os.chown(retained, 65533, 65533)
+    if root_alias == 'tmp':
+        (private / 'tmp').symlink_to(outsider)
+    else:
+        (private / 'tmp').mkdir(mode=0o700)
+        os.chown(private / 'tmp', 65534, 65534)
+        (private / 'tmp/arg0').symlink_to(outsider)
+    watched = [binary, auxiliary, outsider, descendant, retained]
+    before = {path: (path.stat().st_uid, path.stat().st_gid, path.stat().st_mode,
+                     path.stat().st_ino, path.read_bytes() if path.is_file() else None) for path in watched}
+    role = ROOT / 'roles/relay_codex_runtime'
+    play = root / 'root-alias-reconciliation.yml'
+    play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
+                                   'vars': {'relay_codex_home': str(private), 'relay_codex_user': 'nobody',
+                                            'relay_codex_group': 'nogroup'},
+                                   'tasks': [{'ansible.builtin.include_tasks':
+                                              str(role / 'tasks/runtime-namespace.yml')}]}]))
+    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+                            text=True, capture_output=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert {path: (path.stat().st_uid, path.stat().st_gid, path.stat().st_mode,
+                   path.stat().st_ino, path.read_bytes() if path.is_file() else None)
+            for path in watched} == before
+    guard.qualify(home, command, '0.160.0')
+
+
 def test_legacy_migration_uses_source_installer_tasks_and_never_executes_old_binary(tmp_path):
     if not shutil.which('ansible-playbook'):
         pytest.skip('requires Ansible for source task execution')
