@@ -54,6 +54,14 @@ emitted. Routing and recovery
 share one concurrency group with cancellation disabled; the existing root Writer
 lock still serializes publication. Logs record the installed and workflow SHAs.
 
+The canonical routing/recovery templates also select native `queue: max` for
+that group, retaining SERIAL execution while preserving up to 100 waiting runs.
+This keeps the v3 workflow ABI and requires a reviewed consumer projection to
+adopt the changed scheduling bytes. The older accepted installed projection
+retains its existing queue behavior until that owner transition. See
+[control scheduling](concurrency-scheduling.md) for ready-event age,
+cancellation/overflow and the NOT QUALIFIED parallel/many-repository boundary.
+
 ## Activation boundary
 
 Workflow existence and passing source tests do not qualify activation. Before

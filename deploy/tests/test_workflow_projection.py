@@ -121,6 +121,33 @@ class ProjectionTests(unittest.TestCase):
             self.assertEqual(projection.prepare(self.config, next_head, ROOT, self.root, output)['state'], 'ready')
             self.assertEqual(list(Path(output).iterdir()), [])
 
+    def test_serial_queue_change_requires_projection_review_without_a_contract_bump(self):
+        with tempfile.TemporaryDirectory(prefix='relay-single-pending-source-') as source:
+            templates = Path(source) / 'deploy/workflows'
+            shutil.copytree(ROOT / 'deploy/workflows', templates)
+            for name in ('routing.yml.in', 'recovery.yml.in'):
+                template = templates / name
+                template.write_text(template.read_text().replace('  queue: max\n', ''))
+            previous = projection.project(self.config, HEAD, source, self.root)
+        before = {path: (self.root / path).read_bytes()
+                  for path in [*previous['files'], projection.MANIFEST]}
+        with tempfile.TemporaryDirectory(prefix='relay-serial-queue-proposal-') as output:
+            proposal = projection.prepare(self.config, 'b' * 40, ROOT, self.root, output)
+            self.assertEqual(proposal['state'], 'workflow-review-required')
+            proposed = projection.verify(self.config, 'b' * 40, ROOT, output)
+            self.assertEqual(proposed['workflowContract'], previous['workflowContract'])
+            self.assertEqual(before, {path: (self.root / path).read_bytes() for path in before})
+            groups = set()
+            for path in proposed['files']:
+                workflow = yaml.safe_load((Path(output) / path).read_bytes())
+                concurrency = workflow['concurrency']
+                groups.add(concurrency['group'])
+                self.assertIs(concurrency['cancel-in-progress'], False)
+                self.assertEqual(concurrency['queue'], 'max')
+            self.assertEqual(len(groups), 1)
+            with self.assertRaisesRegex(InvalidConfig, 'workflow-projection-target-mismatch'):
+                projection.verify(self.config, 'b' * 40, ROOT, self.root)
+
     def test_content_and_contract_changes_require_review_without_mutating_consumer(self):
         self.project()
         before = {path: (self.root / path).read_bytes() for path in self.rendered}

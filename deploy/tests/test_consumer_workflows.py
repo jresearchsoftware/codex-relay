@@ -72,7 +72,8 @@ class ConsumerWorkflowTests(unittest.TestCase):
         for value in (self.routing, self.recovery):
             with self.subTest(workflow=value['name']):
                 self.assertEqual(value['permissions'], permissions)
-                self.assertEqual(value['concurrency'], {'group': 'codex-relay-control', 'cancel-in-progress': False})
+                self.assertEqual(value['concurrency'], {
+                    'group': 'codex-relay-control', 'cancel-in-progress': False, 'queue': 'max'})
                 job, step = control_step(value)
                 self.assertEqual(job['runs-on'], ['self-hosted', 'Linux', 'X64', 'codex-relay'])
                 self.assertNotIn('permissions', job)

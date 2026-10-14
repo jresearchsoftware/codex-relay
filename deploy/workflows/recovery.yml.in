@@ -39,6 +39,7 @@ permissions:
 concurrency:
   group: @@CONTROL_GROUP_YAML@@
   cancel-in-progress: false
+  queue: max
 
 jobs:
   recover:

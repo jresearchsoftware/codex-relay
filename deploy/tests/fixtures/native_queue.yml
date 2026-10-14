@@ -1,0 +1,39 @@
+name: Relay native queue probe
+run-name: Relay native queue probe ${{ inputs.probe }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: Unique qualification observation identifier
+        required: true
+        type: string
+      hold_seconds:
+        description: Hold the disposable scheduling slot (0 to 180 seconds)
+        required: true
+        default: '0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-native-queue-probe
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Observe native scheduling only
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          HOLD_SECONDS: ${{ inputs.hold_seconds }}
+          PROBE: ${{ inputs.probe }}
+        run: |
+          [[ "$HOLD_SECONDS" =~ ^[0-9]{1,3}$ ]] && ((10#$HOLD_SECONDS <= 180))
+          printf 'PROBE_START run=%s probe=%s timestamp=%s\n' "$GITHUB_RUN_ID" "$PROBE" "$(date -u +%FT%TZ)"
+          sleep "$HOLD_SECONDS"
+          printf 'PROBE_COMPLETE run=%s probe=%s timestamp=%s\n' "$GITHUB_RUN_ID" "$PROBE" "$(date -u +%FT%TZ)"

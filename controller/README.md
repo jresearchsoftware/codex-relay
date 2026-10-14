@@ -75,6 +75,14 @@ transition, authored by the owner, no more than two minutes before native run
 creation, and after completion of any preceding admitted run for this task.
 Stale commands and prewritten retries fail closed; no retry queue is created.
 
+Routing and recovery use native Actions `queue: max` in their shared control
+group and retain SERIAL execution. The two-minute ready-event check compares
+event time with native run creation, so later job waiting does not change that
+comparison; current authority and protected prior attempts are still verified
+at admission. Native scheduling does not reserve a Step or permit a retry.
+See [control scheduling](../docs/concurrency-scheduling.md) for cancellation,
+overflow, runtime bounds and qualification limits.
+
 A schema `4.0` native `REQUEST_CHANGES` binds the exact repository, PR, branch,
 base and reviewed head, findings and bounded execution overrides. It does not
 contain Step, require a replacement Request or independently authorize Task
