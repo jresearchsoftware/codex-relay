@@ -21,7 +21,7 @@
     "references/shared/vibevm/vibespecs/protocols/self-adoption.md": "43d56c78d4d12803ad28eef24afaa809e5941b19727da9f30274600e95d5be53",
     "references/shared/vibevm/vibespecs/protocols/task-handoff.md": "b3e9058f8ff80bc7c57854ef97a71e57983d4c3f18d538ead66cb8e4ebca9ac2",
     "references/workflow.md": "399e1a93e969203d0b39d0a9f2c7046f90718698a17a292af7210c2e9abd1903",
-    "scripts/project.py": "a828556db202415b3b1bd9bce66609c4573786373425e5309bdf0106fa8265ac"
+    "scripts/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b"
   },
   "generator": "scripts/build-relay-guidance.py",
   "name": "codex-relay",
@@ -36,7 +36,7 @@
   "source_files": {
     "contracts/src/github-authority-v1.json": "b4a7c7561ca8697e3b00df21c8c624d59d6cb5f3f2f56bde35d7ed6bdd161874",
     "contracts/src/github-authority-v4.json": "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5",
-    "guidance/project.py": "a828556db202415b3b1bd9bce66609c4573786373425e5309bdf0106fa8265ac",
+    "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
     "guidance/source.json": "7e22be493bd613b0bb1cdbd0f3af021b8091ebb6e8178094d7895bca6dde4719",
     "packages/codex-relay/skill/SKILL.md": "5ea2928ab771422d908acfae582ada5b030028bab2875556f23ea6a7d1ca7064",
     "packages/codex-relay/skill/references/compatibility.md": "9ec1edfa25860db5ec2380a25329460bcdf67e7064aa8d7a7d6a4feb21acae82",

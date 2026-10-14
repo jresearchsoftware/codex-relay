@@ -133,8 +133,23 @@ def duplicate_names(target, destination):
                 continue
             text = skill.read_text(encoding="utf-8")
             match = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.S)
-            if match and re.search(r"^name:\s*['\"]?codex-relay['\"]?\s*$", match.group(1), re.M):
-                raise ValueError(f"Duplicate codex-relay Skill name: {skill}; reconcile local ownership")
+            if match:
+                # Read a single-line YAML scalar, including its optional trailing comment.
+                # Codex owns general YAML parsing; this dependency-free check covers the
+                # ordinary plain/quoted scalar name forms used by native Skill authors.
+                name = re.search(r"^name:[ \t]*(.*)$", match.group(1), re.M)
+                if name:
+                    scalar = name.group(1).strip()
+                    if scalar.startswith('"'):
+                        token = re.match(r'"(?:[^"\\]|\\.)*"', scalar)
+                        value = json.loads(token.group()) if token else None
+                    elif scalar.startswith("'"):
+                        token = re.match(r"'(?:[^']|'')*'", scalar)
+                        value = token.group()[1:-1].replace("''", "'") if token else None
+                    else:
+                        value = re.split(r"[ \t]+#", scalar, maxsplit=1)[0].strip()
+                    if value == "codex-relay":
+                        raise ValueError(f"Duplicate codex-relay Skill name: {skill}; reconcile local ownership")
 
 
 def run(args):

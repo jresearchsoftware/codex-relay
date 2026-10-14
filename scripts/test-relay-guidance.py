@@ -102,10 +102,13 @@ class ProjectionTests(unittest.TestCase):
 
     def test_duplicate_skill_name_at_other_local_path_is_preserved_and_refused(self):
         path = self.consumer / ".agents/skills/local-skill/SKILL.md"
-        path.write_text("---\nname: codex-relay\ndescription: my existing adapter\n---\nlocal")
-        before = self.snapshot()
-        self.install(success=False)
-        self.assertEqual(before, self.snapshot())
+        for name in ("codex-relay", "codex-relay # local adapter", '"codex-relay" # comment',
+                     "'codex-relay' # comment", '"\\u0063odex-relay" # escaped scalar'):
+            with self.subTest(name=name):
+                path.write_text("---\nname: " + name + "\ndescription: my existing adapter\n---\nlocal")
+                before = self.snapshot()
+                self.install(success=False)
+                self.assertEqual(before, self.snapshot())
 
     def test_corrupt_ownership_suffix_cannot_delete_user_agents(self):
         self.install()

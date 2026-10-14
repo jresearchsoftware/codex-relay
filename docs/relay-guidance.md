@@ -49,9 +49,11 @@ with `--bootstrap`, one small routing block in AGENTS. Without `--bootstrap`,
 AGENTS is untouched. Existing human bytes, other Skills and project overlays are
 preserved. The projector refuses a foreign target, malformed/foreign markers,
 changed managed bytes, duplicate `codex-relay` names in target repository
-`.agents/skills`/legacy `.codex/skills`, link/reparse traversal and a newly managed
+`.agents/skills`/legacy `.codex/skills` using ordinary single-line plain/quoted
+frontmatter names, link/reparse traversal and a newly managed
 path colliding with local content. User/global/ancestor Skill catalogs remain
-client-owned; inspect those when the client reports a duplicate. It does not
+client-owned, as is general YAML parsing; inspect unusual metadata forms and
+those catalogs when the client reports a duplicate. It does not
 silently merge instructions. Resolve a collision
 by reviewing and preserving local work before another projection.
 
