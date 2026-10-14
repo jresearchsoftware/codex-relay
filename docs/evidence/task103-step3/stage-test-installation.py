@@ -68,13 +68,14 @@ def prepare(args):
     partial = None
     if args.resume_partial_proof:
         partial = json.loads(args.resume_partial_proof.read_text())
-        require(set(partial) == {'namespace', 'revision', 'originalConsumerSha256',
+        require(set(partial) == {'namespace', 'revision', 'originalArchiveRevision', 'originalConsumerSha256',
                 'originalConsumerDigest', 'manifestSha256', 'retainedStatusSha256', 'deploymentConfigSha256'},
                 'exact-own-partial-proof-required')
         require(partial['namespace'] == namespace and re.fullmatch('[0-9a-f]{40}', partial['revision']),
                 'own-partial-namespace-revision')
+        require(re.fullmatch('[0-9a-f]{40}', partial['originalArchiveRevision']), 'original-own-archive-revision')
         require(all(re.fullmatch('[0-9a-f]{64}', partial[key]) for key in partial
-                    if key not in ['namespace', 'revision']), 'own-partial-proof-digests')
+                    if key not in ['namespace', 'revision', 'originalArchiveRevision']), 'own-partial-proof-digests')
     require(args.reviewer_binary.is_file() and not args.reviewer_binary.is_symlink(), 'regular-Reviewer-build-required')
     output = args.output.absolute()
     require(not output.exists(), 'new-bundle-directory-required')
@@ -321,9 +322,12 @@ def own_partial(binding, install, config, state, claim):
     # the original archive and native bodies remain untouched.
     proof=binding['resumePartial']; old=proof['revision']
     assert proof['namespace']==binding['namespace'] and re.fullmatch('[0-9a-f]{40}',old)
-    assert set(proof)=={'namespace','revision','originalConsumerSha256','originalConsumerDigest','manifestSha256','retainedStatusSha256','deploymentConfigSha256'}
-    assert all(re.fullmatch('[0-9a-f]{64}',proof[k]) for k in proof if k not in ['namespace','revision'])
-    archive=state/'task103-step3-retained-local-state'/('before-'+old)
+    assert set(proof)=={'namespace','revision','originalArchiveRevision','originalConsumerSha256','originalConsumerDigest','manifestSha256','retainedStatusSha256','deploymentConfigSha256'}
+    assert re.fullmatch('[0-9a-f]{40}',proof['originalArchiveRevision'])
+    assert all(re.fullmatch('[0-9a-f]{64}',proof[k]) for k in proof if k not in ['namespace','revision','originalArchiveRevision'])
+    # The first idle archive survives later bounded install corrections. It is
+    # independent from the most recently staged manifest/revision above.
+    archive=state/'task103-step3-retained-local-state'/('before-'+proof['originalArchiveRevision'])
     protected(archive,stat.S_ISDIR,mode=0o700)
     protected(archive/'claims',stat.S_ISDIR,mode=0o700)
     for filename,key in [('consumer.json','originalConsumerSha256'),('idle-status.json','retainedStatusSha256')]:

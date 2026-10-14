@@ -242,6 +242,7 @@
       - --release
       - '{{ relay_codex_cli_version }}'
   environment:
+    HOME: '{{ relay_codex_package_home }}'
     CODEX_HOME: '{{ relay_codex_package_home }}'
     CODEX_INSTALL_DIR: '{{ relay_codex_package_install_dir }}'
     CODEX_NON_INTERACTIVE: '1'
