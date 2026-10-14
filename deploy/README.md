@@ -846,8 +846,10 @@ Source installation and retained-release reconciliation normalize the fixed
 owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`, `config.py`,
 `installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
 parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
-and its release parents, retaining their assigned groups and modes. Other
-archived source modes remain unchanged. The fixed bootstrap still rejects
+and its release parents, retaining their assigned groups and modes. The complete
+archived source loses group/world write permissions while retaining its bytes,
+assigned groups and read/search/execute bits. Artifact links update their own
+metadata without changing target ownership. The fixed bootstrap still rejects
 writable, non-root-owned or aliased code and unsafe substitution parents before
 executing root Python. This requires no additional owner action. An older
 installed helper that already fails this bootstrap cannot apply its own repair;

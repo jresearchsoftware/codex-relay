@@ -24,9 +24,20 @@
     group: root
   when: not ansible_check_mode | bool and not relay_release_manifest.stat.exists
 
-# Git archives normally carry 0664 files and 0775 directories. Normalize only
-# code executed as root by the fixed owner-lifecycle bootstrap, on both new
-# installation and retained-release reconciliation. Keep its fail-closed check.
+# Git archives carry group-writable files/directories. Every installed source
+# dependency must resist replacement by service/runner identities. Preserve
+# bytes, read/search/execute bits and assigned groups; do not follow aliases.
+- name: Remove non-owner write permissions from the complete installed source
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/reviewed-source'
+    state: directory
+    owner: root
+    mode: 'g-w,o-w'
+    recurse: true
+    follow: false
+  when: not ansible_check_mode | bool
+
+# Keep the fixed owner's existing root:root bootstrap dependency contract.
 - name: Protect owner lifecycle code substitution parents
   ansible.builtin.file:
     # The enclosing reviewed-source/release parents are already normalized by
@@ -88,6 +99,7 @@
     state: link
     owner: root
     group: root
+    follow: false
   loop: '{{ relay_compatibility_links }}'
   when: not ansible_check_mode | bool
 
@@ -98,6 +110,7 @@
     state: link
     owner: root
     group: root
+    follow: false
   loop:
     - {source: entrypoint.mjs, destination: relay-routing.mjs}
     - {source: recover-attempt-publication.mjs, destination: relay-publication-recovery.mjs}

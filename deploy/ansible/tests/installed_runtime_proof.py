@@ -70,7 +70,8 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
     artifacts = ROOT / 'roles/relay_artifacts/tasks/main.yml'
     stage = ROOT / 'roles/relay_artifacts/tasks/stage-source.yml'
     normalization = {'Protect owner lifecycle code substitution parents',
-                     'Protect the fixed owner lifecycle Python dependency closure'}
+                     'Protect the fixed owner lifecycle Python dependency closure',
+                     'Remove non-owner write permissions from the complete installed source'}
     names = ['owner_lifecycle.py', 'lifecycle.py', 'config.py',
              'installed_config.py', 'deployment_lock.py']
     fixture = Path(values['relay_install_root']).with_name('owner-lifecycle-trust-fixture')
@@ -105,7 +106,7 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
         return run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
                    env=env, capture_output=True, umask=deploy_umask)
 
-    # Reproduce the existing product path without the two correcting tasks.
+    # Reproduce the existing product path without its source protection tasks.
     # No synthetic chmod is used to create the incident's 0664/0775 shape.
     stage_source([
         task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),
@@ -126,7 +127,8 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
     for relative, (mode, content) in before.items():
         path = root / relative
         if relative not in allowed:
-            assert path.lstat().st_mode == mode, relative
+            expected = mode if path.is_symlink() else mode & ~0o022
+            assert path.lstat().st_mode == expected, relative
         if content is not None:
             assert path.read_bytes() == content, relative
 
