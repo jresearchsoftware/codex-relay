@@ -65,6 +65,16 @@ def prepare(args):
     names.append(configuration['environment']['runner']['user'])
     names += [slot[key] for slot in slots for key in ['runnerUser', 'runtimeUser', 'workGroup']]
     require(all(name.startswith(prefix) for name in names), 'TEST-identities-only')
+    partial = None
+    if args.resume_partial_proof:
+        partial = json.loads(args.resume_partial_proof.read_text())
+        require(set(partial) == {'namespace', 'revision', 'originalConsumerSha256',
+                'originalConsumerDigest', 'manifestSha256', 'retainedStatusSha256', 'deploymentConfigSha256'},
+                'exact-own-partial-proof-required')
+        require(partial['namespace'] == namespace and re.fullmatch('[0-9a-f]{40}', partial['revision']),
+                'own-partial-namespace-revision')
+        require(all(re.fullmatch('[0-9a-f]{64}', partial[key]) for key in partial
+                    if key not in ['namespace', 'revision']), 'own-partial-proof-digests')
     require(args.reviewer_binary.is_file() and not args.reviewer_binary.is_symlink(), 'regular-Reviewer-build-required')
     output = args.output.absolute()
     require(not output.exists(), 'new-bundle-directory-required')
@@ -208,7 +218,8 @@ def prepare(args):
     guard = output / 'guard-idle-test.py'
     guard.write_text(IDLE_GUARD)
     fixed = {'namespace': namespace, 'revision': args.revision,
-             'consumer': configuration['consumer'], 'claimRoot': configuration['consumer']['paths']['claimRoot']}
+             'consumer': configuration['consumer'], 'claimRoot': configuration['consumer']['paths']['claimRoot'],
+             'deploymentConfigSha256': hashlib.sha256(snapshot.encode()).hexdigest(), 'resumePartial': partial}
     (output / 'guard-binding.json').write_text(json.dumps(fixed) + '\n')
     pre_tasks = [task('Require idle stopped isolated TEST resources and preserve previous local state', 'command', {
         'argv': ['/usr/bin/python3', '-I', '{{ playbook_dir }}/../guard-idle-test.py',
@@ -218,6 +229,9 @@ def prepare(args):
          'vars': {'relay_slot_topology_preflight': True}},
         {'name': 'Resolve the immutable source identity before rendering runtime contracts',
          'ansible.builtin.include_tasks': 'roles/relay_artifacts/tasks/resolve-identities.yml'},
+        {'name': 'Discover the admitted shared Docker gateway through the unchanged read-only source role',
+         'ansible.builtin.include_role': {'name': 'relay_docker_network_gateway'},
+         'when': "relay_reviewer_bind_mode == 'nexus_gateway'"},
         {'name': 'Install the fixed TEST local-apply and owner-lifecycle boundaries',
          'ansible.builtin.include_role': {'name': 'relay_runner', 'tasks_from': 'production-local-apply.yml'}}]
     post_tasks = [
@@ -263,6 +277,7 @@ def prepare(args):
             'namespace': namespace, 'repository': TARGETS[namespace],
             'reviewerBinarySha256': digest(args.reviewer_binary), 'cargoVersion': args.cargo_version,
             'reviewerBuildFlags': ['--release', '--locked'], 'localBuildArchiveSha256': 'UNAVAILABLE',
+            'resumePartial': partial,
             'adaptations': adaptations, 'authority': 'Task103 admitted isolated TEST; preparation only',
             'prerequisites': ['Stop only this TEST Reviewer, recovery timer, manual Outcome socket and runner services.',
                 'Stage the two qualified private tools under /opt/' + namespace + '/node22 and /opt/' + namespace + '/tools/bwrap.',
@@ -289,8 +304,71 @@ def prepare(args):
     print(json.dumps({'prepared': str(output), 'sourceRevision': args.revision, 'namespace': namespace}))
 
 
-IDLE_GUARD = r'''import fcntl,json,os,re,shutil,stat,subprocess,sys
+IDLE_GUARD = r'''import fcntl,hashlib,json,os,re,shutil,stat,subprocess,sys
 from pathlib import Path
+def protected(path, kind, *, root_group=True, mode=None):
+    for parent in path.parents:
+        info=parent.lstat(); assert stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022
+    info=path.lstat(); assert kind(info.st_mode) and info.st_uid==0 and (stat.S_ISLNK(info.st_mode) or not info.st_mode&0o022)
+    assert not root_group or info.st_gid==0
+    assert mode is None or stat.S_IMODE(info.st_mode)==mode
+    if stat.S_ISREG(info.st_mode): assert info.st_nlink==1
+    return (info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid)
+
+def own_partial(binding, install, config, state, claim):
+    # Only this explicit TEST stage's artifact-staged/consumer-not-reconciled
+    # interruption is recoverable here. No status is fabricated or initialized;
+    # the original archive and native bodies remain untouched.
+    proof=binding['resumePartial']; old=proof['revision']
+    assert proof['namespace']==binding['namespace'] and re.fullmatch('[0-9a-f]{40}',old)
+    assert set(proof)=={'namespace','revision','originalConsumerSha256','originalConsumerDigest','manifestSha256','retainedStatusSha256','deploymentConfigSha256'}
+    assert all(re.fullmatch('[0-9a-f]{64}',proof[k]) for k in proof if k not in ['namespace','revision'])
+    archive=state/'task103-step3-retained-local-state'/('before-'+old)
+    protected(archive,stat.S_ISDIR,mode=0o700)
+    protected(archive/'claims',stat.S_ISDIR,mode=0o700)
+    for filename,key in [('consumer.json','originalConsumerSha256'),('idle-status.json','retainedStatusSha256')]:
+        path=archive/filename; protected(path,stat.S_ISREG,mode=0o600)
+        assert hashlib.sha256(path.read_bytes()).hexdigest()==proof[key]
+    protected(config,stat.S_ISREG)
+    assert hashlib.sha256(config.read_bytes()).hexdigest()==proof['originalConsumerSha256']
+    previous=json.loads(config.read_text()); assert previous['paths']['claimRoot']==str(claim)
+    status=json.loads((archive/'idle-status.json').read_text())
+    assert status['active']==[] and status['unknown']==[] and status['consumerDigest']==proof['originalConsumerDigest']
+    assert status['phase']=='open' and status['operationId'] is None and status['target'] is None
+    binding_stamp=protected(install/'current',stat.S_ISLNK)
+    release=install/'releases'/old
+    assert os.readlink(install/'current')==str(release)
+    protected(release,stat.S_ISDIR,root_group=False)
+    manifest=release/'artifact-manifest.json'; protected(manifest,stat.S_ISREG,root_group=False)
+    assert hashlib.sha256(manifest.read_bytes()).hexdigest()==proof['manifestSha256']
+    data=json.loads(manifest.read_text())
+    assert data['schemaVersion']=='1.0' and data['commit']==data['installedRevision']==data['resolvedRevision']==old
+    snapshot=release/'deployment-config.json'; protected(snapshot,stat.S_ISREG,mode=0o600)
+    assert hashlib.sha256(snapshot.read_bytes()).hexdigest()==proof['deploymentConfigSha256']==data['deploymentConfigSha256']
+    previous_deployment=json.loads(snapshot.read_text())
+    assert previous_deployment['source']['revision']==old and previous_deployment['environment']['namespace']==binding['namespace']
+    # A corrective commit changes the source revision. Every other frozen
+    # deployment input must remain the same for this narrowly bound recovery.
+    previous_deployment['source']['revision']=binding['revision']
+    updated=json.dumps(previous_deployment,sort_keys=True,separators=(',',':'),ensure_ascii=False)+'\n'
+    assert hashlib.sha256(updated.encode()).hexdigest()==binding['deploymentConfigSha256']
+    assert data['reviewerArtifactProvenance']=='task103-local-locked-build'
+    binary=release/'bin/reviewer-mcp-http'; protected(binary,stat.S_ISREG,root_group=False)
+    assert hashlib.sha256(binary.read_bytes()).hexdigest()==data['reviewerBinarySha256']
+    claim_stamp=protected(claim,stat.S_ISDIR,mode=0o700)
+    names={p.name for p in claim.iterdir()}; assert names in [set(),{'publication-v2.lock'}]
+    lock=None
+    try:
+        if names:
+            protected(claim/'publication-v2.lock',stat.S_ISREG)
+            lock=os.open(claim/'publication-v2.lock',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        assert protected(claim,stat.S_ISDIR,mode=0o700)==claim_stamp and {p.name for p in claim.iterdir()}==names
+        assert protected(install/'current',stat.S_ISLNK)==binding_stamp
+    finally:
+        if lock is not None: os.close(lock)
+    print('TEST_OWN_PARTIAL_STAGE_VERIFIED='+old+';original-archive=preserved;execution-state=empty')
+
 assert os.geteuid()==0
 binding=json.loads(Path(sys.argv[1]).read_text()); ns=binding['namespace']
 assert ns in ['codex-relay-test','codex-relay-test-two']
@@ -306,6 +384,9 @@ meta=config.lstat(); assert stat.S_ISREG(meta.st_mode) and meta.st_uid==0 and me
 previous=json.loads(config.read_text()); claim=Path(binding['claimRoot'])
 assert previous['paths']['claimRoot']==str(claim) and claim.is_relative_to(state)
 assert claim.is_dir() and not claim.is_symlink() and claim.lstat().st_uid==0
+if binding.get('resumePartial') is not None:
+    own_partial(binding,install,config,state,claim)
+    sys.exit(0)
 lock=os.open(claim/'publication-v2.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
 info=os.fstat(lock); assert stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nlink==1 and not info.st_mode&0o022
 fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -340,6 +421,8 @@ def main():
     parser.add_argument('--reviewer-binary', required=True, type=Path)
     parser.add_argument('--cargo-version', required=True)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--resume-partial-proof', type=Path,
+                        help='Explicit root-read-back hashes for this own artifact-staged TEST interruption only')
     args = parser.parse_args()
     require(re.fullmatch('[0-9a-f]{40}', args.revision or ''), 'exact-candidate-required')
     prepare(args)
