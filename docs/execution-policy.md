@@ -126,13 +126,14 @@ preservation or recovery requirements.
 ## Proportional controls and operator usability
 
 The complete reusable procedure now has one semantic owner: the committed
-[development-governance 1.1.0 proportional-controls protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md).
+[development-governance 2.1.0 proportional-controls protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md).
 Read it in full for relevant controls, including behaviorally free hardening,
 and use its existing-proof rule when considering another process step. For a
 relevant requirement-origin decision, read its
-[requirement-authority protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/requirement-authority.md).
-Root AGENTS adopts these topics; the bundled package-versioning procedure is
-not adopted as Relay policy. Normal execution reads these committed files
+[requirement-authority protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/requirement-authority.md).
+Root AGENTS adopts these two unchanged topics; other bundled procedures remain
+unactivated references, as recorded in the [ownership mapping](relay-guidance-ownership.md).
+Normal execution reads these committed files
 without VibeVM, resolution, networking or another owner action.
 
 ### Relay bindings

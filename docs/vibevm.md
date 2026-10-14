@@ -1,13 +1,27 @@
 # Pinned passive governance consumer
 
-Task [#97](https://github.com/jresearchsoftware/codex-relay/issues/97), Step 3,
-adopts the proportional-controls and relevant requirement-authority topics from
-`org.jresearch.ai/development-governance` 1.1.0. The
-[semantic comparison](vibevm-adoption-assessment.md) explains the transfer and
-its limits. The full Relay material contract-change gate, Task/Step/CR authority,
+The Task [#91](https://github.com/jresearchsoftware/codex-relay/issues/91)
+source proposal upgrades the exact `org.jresearch.ai/development-governance`
+dependency from 1.1.0 to **2.1.0**, retaining the explicitly adopted
+proportional-controls and relevant requirement-authority topics.
+The [ownership mapping](relay-guidance-ownership.md) distinguishes shared meaning
+from Relay's typed authority, admission, publication and independent review.
+The full Relay material contract-change gate, native Task/Step/CR authority,
 Writer/Reviewer separation, warning review and protected boundaries stay local.
-Package-versioning is bundled but **not adopted** as Relay policy. Independent
-exact-head acceptance, merge and Issue closure remain separate; #97 stays open.
+Task-handoff, package-versioning, producer self-adoption and GitHub repository
+governance are bundled but **not adopted** by installing this dependency.
+Task-handoff is a pinned semantic reference for the ownership comparison, not a
+partially activated protocol. Full topic adoption needs an explicit owner
+disposition reconciling its Deliberative verdict prerequisite and multi-result
+Outcome routing with Relay's accepted product contract. Conditional boot
+paragraphs grant no new operation, approval, routing or settings authority.
+
+Task [#97](https://github.com/jresearchsoftware/codex-relay/issues/97), Step 3,
+previously adopted the first two topics at 1.1.0. Its
+[semantic comparison](vibevm-adoption-assessment.md) remains historical evidence.
+Candidate guidance does not govern its own implementation or review; those
+remain bound to accepted Relay source at admission. Independent acceptance,
+merge, external publication, consumer adoption and Issue closure remain separate.
 
 Ordinary manual Codex and automatic Relay workers read committed plain files.
 They need no VibeVM binary, network, registry, cache, resolution or new owner
@@ -28,7 +42,7 @@ vibevm/vibespecs/boot/INDEX.md      native generated file
                   +--> installed package boot pointer
                   |       +--> proportional-controls     when relevant
                   |       +--> requirement-authority     when relevant
-                  |       +--> package-versioning        unadopted; skip
+                  |       +--> other four topics         unadopted; skip
                   +--> 90-user.md          local routing/adoption bindings
 ```
 
@@ -38,7 +52,7 @@ pointer even though the package declares `boot_snippet.link = "dynamic"`.
 Neither that declaration nor conditional reading selectively installs clauses.
 Unrelated tasks skip the full protocols. No STATIC lane is generated.
 
-Root [AGENTS](../AGENTS.md) explicitly adopts the two relevant topics and links
+Root [AGENTS](../AGENTS.md) selects the relevant topics and links
 directly to their slot files for JIT access. Its existing
 [Relay policy anchor](execution-policy.md#proportional-controls-and-operator-usability)
 now holds only routing and product bindings, replacing the proven portable
@@ -57,29 +71,61 @@ File-route checks do not prove actual model traversal or compliance.
 
 ## Reviewed identity
 
-The [manifest](../vibe.toml) declares exact `=1.1.0`, the public distribution Git
+The [manifest](../vibe.toml) declares exact `=2.1.0`, the public distribution Git
 URL and full immutable revision, with anonymous authentication. There is one
 root dependency and no transitive dependency. The schema-7 [lock](../vibe.lock),
-complete [slot](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/README.md),
-[DISTRIBUTION receipt](../vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/DISTRIBUTION.json)
+complete [slot](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/README.md),
+[DISTRIBUTION receipt](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/DISTRIBUTION.json)
 and native slot inventory are committed together. Project version `0.0.0` is
 not a Relay release.
 
 | Identity | Accepted value |
 | --- | --- |
-| Producer source | `jresearchsoftware/shared-governance` `129d452ddfa6b9ac1030ccc7803994793467ab2d` |
-| Public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `fa901b9e866ea0246b99bf9025ca00a0ca20267c` |
-| Observed annotated `v1.1.0` object | `f33ffaf4f8a95faeea24f5acf4a37ef9c9f0ece9`, peeling to that distribution commit |
-| Receipt payload SHA-256 | `4393a4e44c20a33a4b8c26437de77467e162ebd2ae74922ea56c9c83dc29173d` |
-| VibeVM complete distribution tree hash | `sha256:1bac72e869c1766d794a108f9c876d680d83844a7a29ed40bab3be1ce3a869bd` |
+| Producer source | `jresearchsoftware/shared-governance` `c3fbc8c2d10982889bea526161f810902def4289` |
+| Public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `4211f55dcaeb3077d6abdbfba53a42ed848351b2` |
+| Observed annotated `v2.1.0` object | `8c920e57728b47f35cf671536b1d4dffc5488383`, peeling to that distribution commit |
+| Receipt payload SHA-256 | `1d6e4098ee557319dc04d21defc33260aee1ce21e82b502f8e60726b2b68e955` |
+| Receipt file SHA-256 | `a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc` |
+| VibeVM complete distribution tree hash | `sha256:df90ef1a287c2ce5a70aff4443a0782410b628459722792ed326bde5aaf86ecc` |
 
-The receipt hashes seven payload files, while the native tree hash also includes
+The receipt hashes ten payload files, while the native tree hash also includes
 the receipt. They use different recipes and must not be conflated. Anonymous
 full-revision acquisition confirmed every payload byte against the accepted
 producer path `packages/development-governance`, the complete distribution file
-set and receipt hashes before consumer deletion. The annotated tag is unsigned;
+set and receipt hashes. Producer-only generated AGENTS/CLAUDE/GEMINI/INDEX routes
+are excluded by the accepted exporter, rather than shipped as package payload.
+The annotated tag is unsigned;
 its observed object identity is not signature proof or a guarantee against
 future tag mutation. The manifest pins the commit, not the tag alone.
+
+The source acceptance chain is [Task #14 completion](https://github.com/jresearchsoftware/shared-governance/issues/14#issuecomment-6114995015)
+for the original task-handoff topic, [Task #26 completion](https://github.com/jresearchsoftware/shared-governance/issues/26#issuecomment-6139463745)
+for the 2.0.0 execution-cycle/chronology/acceptance/Outcome contract, and
+[Task #13 owner acceptance](https://github.com/jresearchsoftware/shared-governance/issues/13#issuecomment-6149080652)
+plus [completion/publication](https://github.com/jresearchsoftware/shared-governance/issues/13#issuecomment-6149144574)
+for additive 2.1.0. Those shared reviews disclose owner-account advisory/project
+acceptance rather than authenticated distinct-reviewer GitHub approval. Relay's
+stronger native independent-review requirements are preserved.
+
+The major task-handoff transition requires explicit adoption: one newly
+authorized execution after a terminal result advances Step, even on the same PR;
+the historical charter and chronological Decisions define current authority;
+minimal handoffs navigate to it; Deliberative review withholds formal approval
+until the necessary owner Decision; one canonical Outcome follows the complete
+actual result. Those are shared protocol semantics, not newly activated Relay
+behavior. The ownership mapping identifies matching existing principles and
+retains Relay's accepted typed routing, verdict, exact-head, identity, replay
+and protected-action guarantees. Incompatible additional shared obligations
+await explicit owner disposition. The 2.1.0 GitHub topic adds no automatic
+settings audit or mutation.
+
+Historical 1.1.0 remains readable at accepted Relay
+[source `4847c36`](https://github.com/jresearchsoftware/codex-relay/tree/4847c368ae5ea956fd6370bee207c8e4a176e8e0/vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0)
+and public distribution
+[`fa901b9`](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/tree/fa901b9e866ea0246b99bf9025ca00a0ca20267c).
+The native maintenance install prunes the superseded active slot; this does not
+rewrite either frozen release or historical source. Git revert restores the
+previous manifest, lock, slot and routing as one source change.
 
 The unchanged [tool pin](../toolchain/vibevm.json) is VibeVM 1.0.7, source
 `b6659978453f50e6d1d4d99626d70b980a2c5847`, Linux x86_64 musl binary SHA-256
@@ -132,13 +178,24 @@ same reviewed source proposal; human overlays and authored user input stay free.
 The historical [routing comparison script](../scripts/qualify-vibevm-routing.py)
 remains a separate stock/synthetic experiment, not package-consumer proof.
 
-Linux probes passed accepted-source/public byte comparison, an independent
-cold anonymous full-commit install, two repeat maintenance installs and two
-existing-slot offline reinstalls. Slot and generated route bytes remained
-identical; a cold install refreshed only the lock's generation timestamp.
-Regeneration preserved human prefixes/suffixes around all three managed blocks.
-The [baseline comparison](vibevm-adoption-assessment.md#same-content-baseline-and-evidence-limits)
-records clean-clone file reads and disposable Git revert/removal separately.
+The Task #91 dependency probe ran the pinned Linux musl tool with isolated
+HOME/settings/cache and no inherited credentials against the exact public
+revision. Its native 1.1.0 to 2.1.0 upgrade produced the committed lock, complete
+slot and INDEX, and pruned the old active slot. Independent API readback compared
+every published payload byte to accepted producer source and checked the complete
+file set, receipt and native tree hash. Linux filesystem qualification then
+passed all 13 focused verifier tests, acquired-source/public comparisons, two
+existing-slot offline reinstalls, route repair and overlay/collision probes.
+Slot and generated route bytes stayed identical; regeneration preserved human
+prefixes/suffixes around all three managed blocks. These are tool/file proofs,
+not model traversal or Relay installation evidence.
+
+The prior [Task #97 baseline comparison](vibevm-adoption-assessment.md#same-content-baseline-and-evidence-limits)
+records the 1.1.0 clean-clone reads, cold acquisition and removal experiment as
+historical evidence. Do Linux mode/symlink probes on a Linux filesystem; Windows
+mounted files can expose executable bits through the filesystem projection.
+Copy candidate bytes with their Git modes into isolated Linux storage instead
+of weakening passive-payload mode checks.
 
 ## Drift, missing files and recovery
 
@@ -157,9 +214,11 @@ source comparison remain maintenance evidence. Offline reads from a clean clone
 are distinct from cold offline CLI acquisition, which is not promised for a
 remote Git dependency. Existing-slot offline reinstall is the bounded probe.
 
-Rollback or removal is an ordinary Git revert of this atomic migration,
-restoring the previous local controls, AGENTS/user pointers and empty graph/INDEX
-along with removing the slot. It needs no VibeVM, cache or network. Do not remove
+Rollback of the Task #91 dependency upgrade is an ordinary Git revert of the
+reviewed source change, restoring the previous 1.1.0 manifest, lock, slot and
+AGENTS/user pointers together. The older Task #97 adoption's removal restores its
+previous local controls and empty graph/INDEX. Neither needs VibeVM, cache or
+network. Do not remove
 only the package while leaving adopted pointers behind. `vibe clean` is not
 rollback: it can remove INDEX without restoring local policy. Updates require a
 separately authorized reviewed source change; new package topics do not activate

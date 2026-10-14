@@ -18,21 +18,25 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "1.1.0"
+VERSION = "2.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 PACKAGE_BOOT = "vibevm/vibespecs/boot/development-governance.md"
 PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
-                  ("package-versioning", "proportional-controls", "requirement-authority"))
+                  ("package-versioning", "proportional-controls", "requirement-authority",
+                   "task-handoff", "self-adoption", "github-repository-governance"))
 PAYLOAD = {"LICENSE", "README.md", "vibe.toml", PACKAGE_BOOT, *PROTOCOLS}
+# Accepted producer exports omit only their generated local client routes.
+SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/INDEX.md",
+               "vibevm/vibespecs/boot/.vibe-boot-artifacts.lock"}
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "fa901b9e866ea0246b99bf9025ca00a0ca20267c"
+DISTRIBUTION_REVISION = "4211f55dcaeb3077d6abdbfba53a42ed848351b2"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "129d452ddfa6b9ac1030ccc7803994793467ab2d"
-PAYLOAD_HASH = "4393a4e44c20a33a4b8c26437de77467e162ebd2ae74922ea56c9c83dc29173d"
-RECEIPT_HASH = "d278c1264bcb9cfa62addfaed32d936b103db75714f305a3c58a49a7bfb83bd9"
-TREE_HASH = "sha256:1bac72e869c1766d794a108f9c876d680d83844a7a29ed40bab3be1ce3a869bd"
+SOURCE_REVISION = "c3fbc8c2d10982889bea526161f810902def4289"
+PAYLOAD_HASH = "1d6e4098ee557319dc04d21defc33260aee1ce21e82b502f8e60726b2b68e955"
+RECEIPT_HASH = "a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc"
+TREE_HASH = "sha256:df90ef1a287c2ce5a70aff4443a0782410b628459722792ed326bde5aaf86ecc"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -186,7 +190,9 @@ def check_project(root):
 def compare_inputs(root, source, distribution):
     files = check_package(root / SLOT)
     if source:
-        require(files_in(source, ignore_git=True) == {name: files[name] for name in PAYLOAD},
+        source_files = {name: data for name, data in files_in(source, ignore_git=True).items()
+                        if name not in SOURCE_ONLY}
+        require(source_files == {name: files[name] for name in PAYLOAD},
                 "Supplied accepted-source package differs from the committed whole payload")
     if distribution:
         require(files_in(distribution, ignore_git=True) == {name: data for name, data in files.items() if name != MARKER},

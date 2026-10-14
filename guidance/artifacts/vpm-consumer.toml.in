@@ -1,0 +1,10 @@
+# Generated example. Review and replace only the Relay distribution URL/revision.
+# VibeVM 1.0.7 needs both explicit Git source roots; transitive Git tables are ignored.
+[project]
+name = "relay-guidance-consumer"
+version = "0.0.0"
+spec_format = "mixed"
+
+[requires.packages]
+"org.jresearch.ai/codex-relay" = { version = "=0.1.0", git = "REPLACE_WITH_SELECTED_RELAY_DISTRIBUTION_GIT_URL", rev = "REPLACE_WITH_IMMUTABLE_RELAY_DISTRIBUTION_COMMIT", auth = "none" }
+"org.jresearch.ai/development-governance" = { version = "=2.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "4211f55dcaeb3077d6abdbfba53a42ed848351b2", auth = "none" }

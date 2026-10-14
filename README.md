@@ -10,6 +10,10 @@ owners: what may run, which commit was reviewed, what work survived a failure,
 and whether publication actually happened. GitHub is the durable authority;
 Relay supplies execution and publication mechanics.
 
+For practical human examples and an independently installable native Codex
+Skill, see the [versioned guidance bundle](docs/relay-guidance.md). Its standalone
+and VibeVM forms share one source; ordinary use reads committed files offline.
+
 It is for a **single human owner of a GitHub repository** who wants explicitly
 launched Codex implementation, an external ChatGPT review conversation, and an
 owner-governed merge decision. The owner chooses scope and launches work; the Codex

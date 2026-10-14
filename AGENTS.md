@@ -206,12 +206,8 @@ choice inside its sandbox follows
 
 ## Work within the admitted goal
 
-Use [progress-bounded execution](docs/execution-policy.md): inspect evidence,
-make a justified correction, run relevant validation and continue while the
-next action is clear and authorized. Preserve useful work. Stop when progress
-needs a human decision, authority is uncertain, the next material correction
-is ambiguous, the same action fails without new evidence, or prior execution
-or external mutation is unknown or uncontained.
+Use the canonical [progress-bounded execution policy](docs/execution-policy.md)
+for correction, stop, prior-state and work-preservation decisions.
 
 Default ordinary repository-only implementation or remediation to automatic
 Relay when its required unprivileged checks are available to the governed
@@ -282,35 +278,11 @@ an implementation-originated behavior change into policy after the fact.
 
 ## Independent review and finding provenance
 
-Review the complete exact candidate head against the live canonical Issue and
-applicable Change Request authority. Aggregate reasonably discoverable material
-findings rather than stopping at the first blocker. Independent acceptance
-remains bound to that exact head; deterministic checks alone do not establish it.
-
-For each material finding, including a failing test/check or claimed regression,
-compare the candidate with the reviewed starting/base state. Identify the exact
-candidate and comparison SHAs, relevant evidence, and finding provenance:
-
-- introduced by the current implementation or remediation;
-- pre-existing on the baseline;
-- pre-existing but newly exposed or made blocking by changed validation;
-- undetermined, with the missing evidence stated explicitly.
-
-Use `regression` only when evidence supports introduction by the current
-implementation or remediation. A newly failing gate does not by itself prove a
-newly introduced defect. Pre-existing baseline defects do not automatically
-become current-task remediation unless current authority covers them or the
-current change materially depends on, modifies, or newly includes them in its
-authorized acceptance boundary. Explain that authority or dependency when
-prescribing remediation; discovery alone does not expand scope.
-
-On rereview after a Change Request, separately assess closure of prior findings,
-behavior changed by remediation, adjacent regression risk, and genuinely new
-findings. If a blocker survives remediation, explain why the previous review or
-remediation missed the invariant before prescribing another correction; state
-any remaining evidence gap rather than inventing a cause. Keep this reasoning in
-the existing review/Change Request record without a new state machine, ledger,
-or schema.
+Before review, read the canonical [review and finding-provenance
+contract](reviewer/README.md#independent-review-and-finding-provenance).
+Independent native acceptance stays bound to the complete exact head and live
+Task/CR authority; implementation helpers and deterministic checks supply evidence.
+The material user/operator contract-change gate above remains binding.
 
 ## Minimum sufficient ceremony
 
@@ -320,16 +292,19 @@ Task/PR and review; do not introduce a separate documentation approval process.
 
 Before introducing or enforcing a new security, validation, privilege,
 filesystem/platform, or operator gate, read
-[the pinned proportional-controls protocol](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md)
+[the pinned proportional-controls protocol](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md)
 and its [Relay bindings](docs/execution-policy.md#proportional-controls-and-operator-usability).
 
-Apply the shared protocol's [existing-proof rule](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/proportional-controls.md#existing-proof-before-another-step)
+Apply the shared protocol's [existing-proof rule](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md#existing-proof-before-another-step)
 when considering another process step. Relay's evidence stays in the live
 Issue/CR, PR diff, exact Git facts, native checks and one Writer Outcome.
 When deciding whether an earlier requirement binds newly authorized work, read
-[requirement-authority](vibevm/vibedeps/org.jresearch.ai.development-governance/1.1.0/vibevm/vibespecs/protocols/requirement-authority.md)
-on demand within the current Task/CR authority. These are the adopted shared
-topics; the bundled package-versioning protocol is not Relay policy. The full
+[requirement-authority](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/requirement-authority.md)
+on demand within the current Task/CR authority. These remain the only adopted
+shared topics. The other bundled topics, including task-handoff's additional
+acceptance strategies and multi-result routing, are references pending separate
+owner reconciliation, not activated policy. See the
+[ownership mapping](docs/relay-guidance-ownership.md). The full
 material user/operator contract-change gate above remains Relay-owned.
 
 Wait for required native CI, but leave reconstructible CI/status results in
