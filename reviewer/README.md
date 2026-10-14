@@ -359,6 +359,26 @@ raw logs, artifacts, annotation `raw_details` and protected diagnostics are
 excluded. Text is bounded and known credential/protected-content markers are
 redacted. Redaction is not proof that arbitrary private text is public.
 
+The same sanitizer covers Outcome warning summaries, annotation paths, titles
+and messages, and check/run names. It scans the full original and control-filtered
+field before byte truncation, including the exact active Reader token/JWT, so
+shortening cannot expose a credential fragment. Recognized secrets or protected
+content suppress the whole field; mixed benign text does not exempt a secret.
+Credential-shaped prefixes and assignment/header syntax remain protected,
+while incidental word fragments such as `Task-authorized` and `task-local`
+remain readable.
+
+Plain references to `/etc/systemd/system/`, service unit filenames there, and
+their `.service.d/*.conf` drop-in filenames remain readable. This narrow path
+exception does not authorize returning unit contents: configuration sections,
+assignment syntax and other protected markers still suppress the field.
+Traversal, malformed paths and other `/etc/`, `/var/lib/`, `/run/` or `/home/`
+references remain conservatively redacted. This deliberate limitation can still
+hide a harmless protected-path description; treat it as an explicit evidence
+gap for independent disposition, never as proof that no warning occurred. Do
+not disclose configuration/diagnostics or add a second evidence channel to work
+around it. Source tests do not establish adoption by an installed Reader.
+
 Acquisition is limited to 256 KiB per response, 2 MiB aggregate transfer,
 40 requests including authentication, three pages of 25 items per source,
 250 annotations overall, five seconds per request and 30 seconds per read.
@@ -372,8 +392,8 @@ supported GitHub/runtime APIs. The reader acquires supported
 exact-head check/run state, and bound Relay execution Outcome warning fields.
 `required_surfaces_complete` reports completeness within that scope;
 `warning_observation` is `observed`, `none_observed` or `unknown`.
-A required in-scope source that is unavailable, permission-denied or truncated
-prevents an absence claim. An empty successfully inspected source means absence
+A required in-scope source that is unavailable, permission-denied, redacted or
+truncated prevents an absence claim. An empty successfully inspected source means absence
 on that source; it does not establish absence on other sources.
 
 GitHub service-level or pre-execution workflow annotations and platform policy
