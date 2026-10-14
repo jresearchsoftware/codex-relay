@@ -304,46 +304,26 @@ impl Listing {
 
 // Fields are allowlisted. Credentials, raw_details, logs, artifacts, arbitrary
 // response URLs and protected diagnostic content are never returned.
-fn text(value: Option<&Value>, limit: usize, altered: &mut bool) -> Value {
+fn text(value: Option<&Value>, limit: usize, altered: &mut bool, secrets: &[&str]) -> Value {
     let Some(value) = value.and_then(Value::as_str) else {
         return Value::Null;
     };
-    let lower = value.to_ascii_lowercase();
-    let sensitive = [
-        concat!("gh", "p_"),
-        concat!("gh", "o_"),
-        concat!("gh", "u_"),
-        concat!("gh", "s_"),
-        concat!("gh", "r_"),
-        concat!("github", "_pat_"),
-        concat!("sk", "-"),
-        concat!("AK", "IA"),
-        "private key",
-        "private_key",
-        "authorization:",
-        "bearer ",
-        "password=",
-        "token=",
-        "secret=",
-        "credential=",
-        "/etc/",
-        "/var/lib/",
-        "/run/",
-        "/home/",
-        "protected diagnostic",
-    ]
-    .iter()
-    .any(|marker| lower.contains(&marker.to_ascii_lowercase()));
-    if sensitive {
+    let normalized: String = value
+        .chars()
+        .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
+        .collect();
+    *altered |= normalized != value;
+    // Inspect the entire field before shortening it, including exact runtime
+    // credentials. Inspect both forms: control removal must not reconstruct a
+    // secret that escaped detection, or hide an exact original credential.
+    if sensitive_text(value, secrets)
+        || (normalized != value && sensitive_text(&normalized, secrets))
+    {
         *altered = true;
         return json!("[REDACTED_PROTECTED_CONTENT]");
     }
     let mut result = String::new();
-    for character in value.chars() {
-        if character.is_control() && !matches!(character, '\n' | '\t') {
-            *altered = true;
-            continue;
-        }
+    for character in normalized.chars() {
         if result.len() + character.len_utf8() > limit {
             *altered = true;
             break;
@@ -351,6 +331,156 @@ fn text(value: Option<&Value>, limit: usize, altered: &mut bool) -> Value {
         result.push(character);
     }
     json!(result)
+}
+
+fn sensitive_text(value: &str, secrets: &[&str]) -> bool {
+    if secrets
+        .iter()
+        .any(|secret| !secret.is_empty() && value.contains(secret))
+    {
+        return true;
+    }
+    let lower = value.to_ascii_lowercase();
+    // These distinctive markers remain conservative, even for short values.
+    if [
+        concat!("gh", "p_"),
+        concat!("gh", "o_"),
+        concat!("gh", "u_"),
+        concat!("gh", "s_"),
+        concat!("gh", "r_"),
+        concat!("github", "_pat_"),
+        "private key",
+        "private_key",
+        "protected diagnostic",
+        "protected_diagnostic",
+        "protected-diagnostic",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        return true;
+    }
+
+    // No left word boundary: embedded credentials still count. A substantial
+    // token-shaped suffix separates sk- keys from Task-authorized/task-local.
+    if lower
+        .match_indices(concat!("sk", "-"))
+        .any(|(start, prefix)| {
+            let length = lower[start + prefix.len()..]
+                .bytes()
+                .take_while(|b| b.is_ascii_alphanumeric() || b"_-".contains(b))
+                .take(20)
+                .count();
+            let embedded = start > 0
+                && (lower.as_bytes()[start - 1].is_ascii_alphanumeric()
+                    || lower.as_bytes()[start - 1] == b'_');
+            length == 20 || (length > 0 && !embedded)
+        })
+        || [concat!("ak", "ia"), concat!("as", "ia")]
+            .iter()
+            .any(|prefix| {
+                lower.match_indices(prefix).any(|(start, _)| {
+                    lower[start + prefix.len()..]
+                        .bytes()
+                        .take_while(u8::is_ascii_alphanumeric)
+                        .take(16)
+                        .count()
+                        == 16
+                })
+            })
+    {
+        return true;
+    }
+
+    // Recognize assignments/headers in shell, JSON and ordinary prose without
+    // requiring exactly one spelling of whitespace or quoting around the key.
+    if [
+        "authorization",
+        "password",
+        "passwd",
+        "token",
+        "secret",
+        "credential",
+        "credentials",
+        "api_key",
+        "apikey",
+        "access_key",
+        "accesskey",
+    ]
+    .iter()
+    .any(|key| {
+        lower.match_indices(key).any(|(start, _)| {
+            lower[start + key.len()..]
+                .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | '`'))
+                .starts_with(['=', ':'])
+        })
+    }) || lower
+        .match_indices("bearer")
+        .any(|(start, _)| lower[start + "bearer".len()..].starts_with(char::is_whitespace))
+    {
+        return true;
+    }
+
+    // A reference exception must not declassify configuration beside the path,
+    // including unfamiliar directives. Keep assignment/section syntax closed.
+    let plain_reference = !lower.contains('=')
+        && !["[service]", "[unit]", "[install]"]
+            .iter()
+            .any(|section| lower.contains(section));
+    ["/etc/", "/var/lib/", "/run/", "/home/"]
+        .iter()
+        .any(|root| {
+            lower.match_indices(root).any(|(start, _)| {
+                // A public service/drop-in filename is an operational reference,
+                // not its contents. Only exempt that path, never the whole field.
+                !plain_reference || !systemd_reference(&lower[start..])
+            })
+        })
+}
+
+fn systemd_reference(value: &str) -> bool {
+    if !value.starts_with("/etc/systemd/system") {
+        return false;
+    }
+    // Bound each scan even when hostile text repeats the prefix without a
+    // delimiter. Two bounded basenames and their suffixes fit within 600 bytes.
+    let end = value
+        .char_indices()
+        .take(600)
+        .find_map(|(index, c)| {
+            (c.is_whitespace() || "`'\"<>[](){},;:".contains(c)).then_some(index)
+        })
+        .unwrap_or(value.len());
+    if end > 600 {
+        return false;
+    }
+    let path = &value[..end];
+    let path = path.strip_suffix('.').unwrap_or(path);
+    if matches!(path, "/etc/systemd/system" | "/etc/systemd/system/") {
+        return true;
+    }
+    let Some(rest) = path.strip_prefix("/etc/systemd/system/") else {
+        return false;
+    };
+    let basename = |name: &str| {
+        !name.is_empty()
+            && name.len() <= 255
+            && !name.starts_with('.')
+            && !name.contains("..")
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_.@-".contains(&b))
+    };
+    let (unit, dropin) = rest
+        .split_once('/')
+        .map_or((rest, None), |(unit, file)| (unit, Some(file)));
+    match dropin {
+        None => unit.strip_suffix(".service").is_some_and(basename),
+        Some(file) => {
+            unit.strip_suffix(".service.d").is_some_and(basename)
+                && file.strip_suffix(".conf").is_some_and(basename)
+        }
+    }
 }
 
 fn identifier(value: Option<&Value>) -> Option<u64> {
@@ -416,6 +546,7 @@ fn project_run(
     repository: &str,
     reviewed_sha: &str,
     outcome: Option<(u64, u64, u64)>,
+    secrets: &[&str],
 ) -> Option<Value> {
     let actual_sha = run.get("head_sha").and_then(Value::as_str)?;
     let id = identifier(run.get("id"))?;
@@ -435,7 +566,7 @@ fn project_run(
         "outcome_comment_id": outcome.map(|(_, comment, _)| comment), "issue_number": outcome.map(|(issue, _, _)| issue),
         "api_path": format!("/repos/{repository}/actions/runs/{id}"),
         "run_attempt": identifier(run.get("run_attempt")), "workflow_id": identifier(run.get("workflow_id")),
-        "name": text(run.get("name"), 256, &mut altered), "event": state(run.get("event")),
+        "name": text(run.get("name"), 256, &mut altered, secrets), "event": state(run.get("event")),
         "status": state(run.get("status")), "conclusion": state(run.get("conclusion")),
         "native_url": format!("https://github.com/{repository}/actions/runs/{id}"), "text_redacted_or_truncated": altered}),
     )
@@ -651,7 +782,7 @@ impl Github {
                         let mut altered = warnings.len() > 10;
                         let warning_summaries=warnings.iter().take(10).map(|warning| text(Some(&json!(format!("{}: {}; disposition: {}; next action: {}; evidence gaps: {}",
                             warning["source"].as_str().unwrap(),warning["impact"].as_str().unwrap(),warning["resolution"].as_str().unwrap(),warning["next_action"].as_str().unwrap(),
-                            warning["evidence_gaps"].as_array().unwrap().iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")))),2048,&mut altered)).collect::<Vec<_>>();
+                            warning["evidence_gaps"].as_array().unwrap().iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")))),2048,&mut altered,&[&session.token, &session.jwt])).collect::<Vec<_>>();
                         runtime_items.push(json!({"comment_id":id,"issue_number":target,"head_sha":sha,"actor":writer_actor,
                             "native_url":format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),"workflow_run_id":run_id,"warning_summaries":warning_summaries,"text_redacted_or_truncated":altered}));
                         continue;
@@ -709,7 +840,14 @@ impl Github {
                 let warning_summaries: Vec<Value> = warning_fields
                     .into_iter()
                     .take(10)
-                    .map(|summary| text(Some(&json!(summary)), 2048, &mut altered))
+                    .map(|summary| {
+                        text(
+                            Some(&json!(summary)),
+                            2048,
+                            &mut altered,
+                            &[&session.token, &session.jwt],
+                        )
+                    })
                     .collect();
                 if body.contains("COMPLETED_WITH_WARNINGS") && warning_summaries.is_empty() {
                     outcomes.fail(Failure::unavailable(
@@ -752,7 +890,13 @@ impl Github {
                 .get(&format!("/repos/{repository}/actions/runs/{run_id}"), false)
                 .await
             {
-                Ok((run, _)) => match project_run(&run, repository, sha, Some(pointer)) {
+                Ok((run, _)) => match project_run(
+                    &run,
+                    repository,
+                    sha,
+                    Some(pointer),
+                    &[&session.token, &session.jwt],
+                ) {
                     Some(run) => execution_run_items.push(run),
                     None => {
                         execution.fail(Failure::unavailable("GITHUB_EVIDENCE_BINDING_MISMATCH"))
@@ -790,7 +934,7 @@ impl Github {
             .await;
         let mut run_items = vec![];
         for run in &runs.items {
-            match project_run(run, repository, sha, None) {
+            match project_run(run, repository, sha, None, &[&session.token, &session.jwt]) {
                 Some(run) => run_items.push(run),
                 None => {
                     runs.availability = "unavailable";
@@ -907,10 +1051,10 @@ impl Github {
                 }
                 let mut altered = false;
                 annotation_items.push(json!({"level": level,
-                    "path": text(annotation.get("path"), 256, &mut altered),
+                    "path": text(annotation.get("path"), 256, &mut altered, &[&session.token, &session.jwt]),
                     "start_line": identifier(annotation.get("start_line")), "end_line": identifier(annotation.get("end_line")),
-                    "title": text(annotation.get("title"), 256, &mut altered),
-                    "message": text(annotation.get("message"), 2048, &mut altered),
+                    "title": text(annotation.get("title"), 256, &mut altered, &[&session.token, &session.jwt]),
+                    "message": text(annotation.get("message"), 2048, &mut altered, &[&session.token, &session.jwt]),
                     "text_redacted_or_truncated": altered}));
                 warning_count += usize::from(level == "warning");
             }
@@ -926,8 +1070,8 @@ impl Github {
                 "head_sha": actual_sha, "reviewed_head_sha": sha,
                 "association": if execution_binding.is_some() { "writer_exact_head_outcome" } else { "exact_head" },
                 "outcome_comment_id": execution_binding.and_then(|(_, comment)| *comment),
-                "name": text(check.get("name"), 256, &mut altered),
-                "app_id": identifier(check.pointer("/app/id")), "app_slug": text(check.pointer("/app/slug"), 100, &mut altered),
+                "name": text(check.get("name"), 256, &mut altered, &[&session.token, &session.jwt]),
+                "app_id": identifier(check.pointer("/app/id")), "app_slug": text(check.pointer("/app/slug"), 100, &mut altered, &[&session.token, &session.jwt]),
                 "status": state(check.get("status")), "conclusion": state(check.get("conclusion")),
                 "native_url": format!("https://github.com/{repository}/runs/{id}"),
                 "text_redacted_or_truncated": altered,

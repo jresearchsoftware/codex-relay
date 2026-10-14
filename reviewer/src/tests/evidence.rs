@@ -18,6 +18,9 @@ const WRITER: &str = "example-writer[bot]";
 struct MockEvidence {
     mode: &'static str,
     calls: Arc<Mutex<Vec<Value>>>,
+    outcome_warnings: Option<Vec<Value>>,
+    annotations: Option<Vec<Value>>,
+    metadata_text: Option<String>,
 }
 
 fn pr(sha: &str, issue: u64) -> Value {
@@ -122,7 +125,7 @@ async fn handler(
             41
         };
         return Json(json!({"id": id, "head_sha": OTHER_SHA, "check_suite_id": 41, "run_attempt": 1, "workflow_id": 31,
-            "name": "Relay routing", "event": "issues", "status": "completed", "conclusion": "success",
+            "name": mock.metadata_text.as_deref().unwrap_or("Relay routing"), "event": "issues", "status": "completed", "conclusion": "success",
             "repository": {"full_name": repository}})).into_response();
     }
     if uri.path().ends_with("/check-suites") {
@@ -149,7 +152,7 @@ async fn handler(
         } else {
             REPOSITORY
         };
-        return Json(json!({"total_count": 1, "workflow_runs": [{"id": 21, "name": "CI", "head_sha": SHA,
+        return Json(json!({"total_count": 1, "workflow_runs": [{"id": 21, "name": mock.metadata_text.as_deref().unwrap_or("CI"), "head_sha": SHA,
             "repository": {"full_name": repository}, "check_suite_id": 11, "run_attempt": 2, "workflow_id": 31,
             "event": "pull_request", "status": "completed", "conclusion": if mock.mode == "preexecution" { "skipped" } else { "success" }}]})).into_response();
     }
@@ -195,9 +198,17 @@ async fn handler(
             skipped["started_at"] = Value::Null;
             return Json(json!({"total_count": 1, "check_runs": [skipped]})).into_response();
         }
-        return Json(json!({"total_count": 1, "check_runs": [check(12, sha)]})).into_response();
+        let mut native_check = check(12, sha);
+        if let Some(text) = &mock.metadata_text {
+            native_check["name"] = json!(text);
+            native_check["app"]["slug"] = json!(text);
+        }
+        return Json(json!({"total_count": 1, "check_runs": [native_check]})).into_response();
     }
     if uri.path().ends_with("/annotations") {
+        if let Some(items) = &mock.annotations {
+            return Json(json!(items)).into_response();
+        }
         if matches!(
             mock.mode,
             "clean" | "executiononlyruntimewarning" | "preexecution"
@@ -265,10 +276,13 @@ async fn handler(
             authority["sha256"] = json!(crate::task_authority::hash(
                 &serde_json::to_string_pretty(&authority).unwrap()
             ));
-            let record = json!({"schema_version":"4.0","kind":"outcome","repository":REPOSITORY,"task":56,"parent":{"kind":"issue","number":56},"charter_sha256":"c".repeat(64),
+            let mut record = json!({"schema_version":"4.0","kind":"outcome","repository":REPOSITORY,"task":56,"parent":{"kind":"issue","number":56},"charter_sha256":"c".repeat(64),
                 "authority":authority,"admission":{"attempt":"run-41","step":1,"sha256":"d".repeat(64)},"step":1,"attempt":"run-41","status":"implemented",
                 "result":{"kind":"git","revision":SHA,"identities":[]},"summary":"The source candidate awaits independent review.","limitations":["Installed behavior unverified."],
                 "warnings":[{"source":"runtime-check","impact":"Qualification remains pending.","resolution":"Deferred to owner-authorized qualification.","next_action":"Inspect the retained limitation.","evidence_gaps":["No ingress probe was authorized."]}]});
+            if let Some(warnings) = &mock.outcome_warnings {
+                record["warnings"] = json!(warnings);
+            }
             let mut native = comment(61, WRITER, &crate::task_authority::render(&record));
             native["user"]["type"] = json!(if mock.mode == "typedoutcomeowner" {
                 "User"
@@ -289,7 +303,13 @@ async fn handler(
         } else {
             ""
         };
-        let accepted = comment(61, WRITER, &format!("## Codex Outcome\n\n{attempt}Latest durable and ready head: {SHA}\nWarning summary: UNCOMMITTED_WORK_REMAINS: retained work\nPrimary diagnostics: do-not-return-protected-diagnostics"));
+        let summary = mock
+            .outcome_warnings
+            .as_ref()
+            .and_then(|warnings| warnings.first())
+            .and_then(|warning| warning["impact"].as_str())
+            .unwrap_or("UNCOMMITTED_WORK_REMAINS: retained work");
+        let accepted = comment(61, WRITER, &format!("## Codex Outcome\n\n{attempt}Latest durable and ready head: {SHA}\nWarning summary: {summary}\nPrimary diagnostics: do-not-return-protected-diagnostics"));
         let foreign_actor = comment(62, "unrelated-author", &format!("## Codex Outcome\nAttempt: run-666\nDurable/published head: {SHA}\nWarning summary: do-not-return-untrusted-warning"));
         let stale = comment(63, WRITER, &format!("## Codex Outcome\nDurable/published head: {OTHER_SHA}\nWarning summary: do-not-return-stale-warning"));
         let wrong_marker = comment(64, WRITER, &format!("Quoted ## Codex Outcome\nDurable/published head: {SHA}\nWarning summary: do-not-return-quoted-warning"));
@@ -338,9 +358,25 @@ async fn server(
     MockEvidence,
     tokio::task::JoinHandle<()>,
 ) {
+    server_with_text(mode, None, None, None).await
+}
+
+async fn server_with_text(
+    mode: &'static str,
+    outcome_warnings: Option<Vec<Value>>,
+    annotations: Option<Vec<Value>>,
+    metadata_text: Option<String>,
+) -> (
+    crate::github::Github,
+    MockEvidence,
+    tokio::task::JoinHandle<()>,
+) {
     let state = MockEvidence {
         mode,
         calls: Arc::new(Mutex::new(vec![])),
+        outcome_warnings,
+        annotations,
+        metadata_text,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -365,6 +401,26 @@ async fn acquire(mode: &'static str) -> (Result<Value, &'static str>, Vec<Value>
     task.abort();
     let calls = mock.calls.lock().unwrap().clone();
     (result, calls)
+}
+
+fn warning(source: &str, impact: &str) -> Value {
+    json!({"source": source, "impact": impact, "resolution": "Retained for independent review.",
+        "next_action": "Review this warning.", "evidence_gaps": []})
+}
+
+async fn acquire_text(
+    warnings: Vec<Value>,
+    annotations: Vec<Value>,
+    metadata: Option<String>,
+) -> Value {
+    let (github, _, task) =
+        server_with_text("typedoutcome", Some(warnings), Some(annotations), metadata).await;
+    let result = github
+        .review_evidence(REPOSITORY, REPOSITORY, 25, SHA, WRITER)
+        .await
+        .unwrap();
+    task.abort();
+    result
 }
 
 fn surface<'a>(evidence: &'a Value, name: &str) -> &'a Value {
@@ -791,4 +847,425 @@ async fn folded_typed_outcomes_preserve_exact_head_execution_warning_and_bot_pro
         assert_eq!(evidence["required_surfaces_complete"], false);
         assert_eq!(evidence["warning_observation"], "unknown");
     }
+}
+
+#[tokio::test]
+async fn task_wording_and_test_service_warning_patterns_remain_complete() {
+    // Synthetic schema-v4 equivalents of the two Task 127 / PR 126 patterns.
+    // These are operational summaries, not private host data or live fixtures.
+    let warnings = vec![
+        json!({"source": "disposable-test", "impact": "Task-authorized qualification used task-local instrumentation.",
+            "resolution": "The isolated TEST sandbox was restored.", "next_action": "Review source acceptance separately.",
+            "evidence_gaps": ["This does not establish installed Reviewer adoption."]}),
+        json!({"source": "node22-test-service", "impact": "The isolated TEST Node 22 service used /etc/systemd/system/example-test.service.d/node22.conf.",
+            "resolution": "Temporary service instrumentation was removed.", "next_action": "Owner disposition of later adoption remains pending.",
+            "evidence_gaps": []}),
+    ];
+    let evidence = acquire_text(warnings, vec![], None).await;
+    let outcome = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+    assert_eq!(outcome["warning_summaries"], json!([
+        "disposable-test: Task-authorized qualification used task-local instrumentation.; disposition: The isolated TEST sandbox was restored.; next action: Review source acceptance separately.; evidence gaps: This does not establish installed Reviewer adoption.",
+        "node22-test-service: The isolated TEST Node 22 service used /etc/systemd/system/example-test.service.d/node22.conf.; disposition: Temporary service instrumentation was removed.; next action: Owner disposition of later adoption remains pending.; evidence gaps: "
+    ]));
+    assert_eq!(outcome["text_redacted_or_truncated"], false);
+    assert_eq!(outcome["head_sha"], SHA);
+    assert_eq!(outcome["actor"], WRITER);
+    assert_eq!(outcome["workflow_run_id"], 41);
+    assert_eq!(evidence["required_surfaces_complete"], true);
+    assert_eq!(evidence["warning_observation"], "observed");
+}
+
+#[tokio::test]
+async fn ordinary_annotations_and_legacy_warning_summaries_remain_readable() {
+    for message in [
+        "Task-authorized task-local risk-based checks in Slovakia.",
+        "Service instrumentation under /etc/systemd/system/ was removed.",
+        "Service /etc/systemd/system/example-test.service; environment: TEST.",
+        "Inspect `/etc/systemd/system/example-test.service` after qualification.",
+        "Inspect /etc/systemd/system/example-test@one.service.d/22-node.conf.",
+        "A normal warning\nwith a tab\tand Unicode: é.",
+    ] {
+        let mut native = annotation(message);
+        native["path"] = json!("/etc/systemd/system/example-test.service.d/node22.conf");
+        native["title"] = json!("Task-authorized task-local check");
+        let evidence = acquire_text(vec![], vec![native], None).await;
+        let item = &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
+        assert_eq!(item["message"], message);
+        assert_eq!(
+            item["path"],
+            "/etc/systemd/system/example-test.service.d/node22.conf"
+        );
+        assert_eq!(item["title"], "Task-authorized task-local check");
+        assert_eq!(item["text_redacted_or_truncated"], false);
+        assert_eq!(evidence["required_surfaces_complete"], true);
+        assert_eq!(evidence["warning_observation"], "observed");
+    }
+    for (message, altered) in [
+        (
+            "Task-authorized task-local service /etc/systemd/system/example-test.service.",
+            false,
+        ),
+        ("Task-authorized check: password = synthetic-value", true),
+    ] {
+        let (github, _, task) = server_with_text(
+            "execution",
+            Some(vec![warning("legacy", message)]),
+            Some(vec![]),
+            None,
+        )
+        .await;
+        let evidence = github
+            .review_evidence(REPOSITORY, REPOSITORY, 25, SHA, WRITER)
+            .await
+            .unwrap();
+        task.abort();
+        let item = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+        assert_eq!(
+            item["warning_summaries"][0],
+            if altered {
+                "[REDACTED_PROTECTED_CONTENT]"
+            } else {
+                message
+            }
+        );
+        assert_eq!(item["text_redacted_or_truncated"], altered);
+        assert_eq!(evidence["required_surfaces_complete"], !altered);
+        assert_eq!(
+            evidence["warning_observation"],
+            if altered { "unknown" } else { "observed" }
+        );
+    }
+}
+
+fn synthetic_secrets() -> Vec<String> {
+    let mut values: Vec<String> = [
+        concat!("gh", "p_"),
+        concat!("gh", "o_"),
+        concat!("gh", "u_"),
+        concat!("gh", "s_"),
+        concat!("gh", "r_"),
+        concat!("github", "_pat_"),
+        concat!("sk", "-"),
+        concat!("sk", "-proj-"),
+        concat!("sk", "-svcacct-"),
+    ]
+    .iter()
+    .map(|prefix| {
+        let length = if prefix.starts_with("github") {
+            82
+        } else if prefix.starts_with("sk") {
+            48
+        } else {
+            36
+        };
+        format!(
+            "{prefix}{}",
+            "aB9x".repeat(21).chars().take(length).collect::<String>()
+        )
+    })
+    .collect();
+    for prefix in [concat!("AK", "IA"), concat!("AS", "IA")] {
+        values.push(format!("{prefix}{}", "A1B2".repeat(4)));
+    }
+    for value in values.clone() {
+        values.push(format!("embedded{value}suffix"));
+    }
+    values.extend(
+        [
+            "Authorization: Basic c3ludGhldGljOm9ubHk=",
+            "AUTHORIZATION \t: Bearer synthetic-value",
+            "Bearer\tsynthetic-value",
+            "bearer\nsynthetic-value",
+            "password=synthetic-value",
+            "PASSWORD = 'synthetic-value'",
+            "\"password\" : \"synthetic-value\"",
+            "'credential' : 'synthetic-value'",
+            "credentials=synthetic-value",
+            "token = synthetic-value",
+            "secret : synthetic-value",
+            "AWS_SECRET_ACCESS_KEY = synthetic-value",
+            "api_key=synthetic-value",
+            "apikey: synthetic-value",
+            "private_key: synthetic-value",
+            "protected diagnostics: synthetic-private-data",
+            "protected_diagnostic: synthetic-private-data",
+            "protected-diagnostic: synthetic-private-data",
+            "synthetic-evidence-token",
+            "test-jwt",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
+    values.push(format!(
+        "{} PRIVATE KEY-----\nsynthetic-key-data",
+        "-----BEGIN"
+    ));
+    values.push(format!("{}short-key", concat!("sk", "-")));
+    values
+}
+
+#[tokio::test]
+async fn plausible_credentials_and_mixed_protected_content_never_escape_in_warning_text() {
+    for (index, secret) in synthetic_secrets().iter().enumerate() {
+        for context in [
+            "Task-authorized check",
+            "Task-authorized check of /etc/systemd/system/example-test.service",
+        ] {
+            let message = format!("{context}: ({secret}); task-local follow-up.");
+            // Typed authority rejects controls before projection; exercise header
+            // whitespace in annotations and its single-line Outcome equivalent.
+            let outcome_message = message.replace(['\n', '\t'], " ");
+            let evidence = acquire_text(
+                vec![
+                    warning("sensitive", &outcome_message),
+                    warning("benign", "Safe warning retained."),
+                ],
+                vec![annotation(&message)],
+                None,
+            )
+            .await;
+            let outcome = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+            assert_eq!(
+                outcome["warning_summaries"][0], "[REDACTED_PROTECTED_CONTENT]",
+                "case {index}"
+            );
+            assert!(outcome["warning_summaries"][1]
+                .as_str()
+                .unwrap()
+                .contains("Safe warning retained."));
+            assert_eq!(outcome["text_redacted_or_truncated"], true);
+            let item =
+                &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
+            assert_eq!(
+                item["message"], "[REDACTED_PROTECTED_CONTENT]",
+                "case {index}"
+            );
+            assert_eq!(item["text_redacted_or_truncated"], true);
+            assert!(!evidence.to_string().contains(secret), "case {index}");
+            assert_eq!(evidence["required_surfaces_complete"], false);
+            assert_eq!(evidence["warning_observation"], "unknown");
+        }
+    }
+}
+
+#[tokio::test]
+async fn protected_paths_and_unit_contents_are_not_declassified_by_a_safe_reference() {
+    for protected in [
+        "/etc/relay-example/consumer.json",
+        "/etc/shadow",
+        "/var/lib/relay-example/diagnostics/run.json",
+        "/run/credentials/example/token",
+        "/home/example/.aws/credentials",
+        "/etc/systemd/system/../shadow",
+        "/etc/systemd/system/example.service.d/../../shadow",
+        "/etc/systemd/system/example.service/extra",
+        "/etc/systemd/system/example.service.d/extra/file.conf",
+        "/etc/systemd/system/example.service.d/secret.env",
+        "/etc/systemd/system/example.service.d/.private.conf",
+        "/etc/systemd/system/example.service.d/%2e%2e.conf",
+        "/etc/systemd/system/example.service\\private",
+        "/etc/systemd/system/example.service..",
+        "/etc/systemd/system/example.service.d/node.conf/",
+        "[Service]\nOpaqueSetting=synthetic-private-data",
+        "[Unit]\nDescription=synthetic-private-data",
+        "[Install]\nWantedBy=synthetic-private-data",
+        "Environment=OPAQUE=synthetic-private-data",
+        "EnvironmentFile=synthetic-private-data",
+        "ExecStart=/opt/private-command synthetic-private-data",
+        "ExecStartPre=synthetic-private-data",
+        "ExecStartPost=synthetic-private-data",
+        "LoadCredential=synthetic-private-data",
+        "SetCredential=synthetic-private-data",
+        "ImportCredential=synthetic-private-data",
+        "WorkingDirectory=/opt/synthetic-private-data",
+        "UnrecognizedDirective=synthetic-private-data",
+    ] {
+        let message = format!(
+            "Task-authorized /etc/systemd/system/example-test.service.d/node22.conf; {protected}"
+        );
+        let evidence = acquire_text(
+            vec![warning("protected", &message.replace('\n', " "))],
+            vec![annotation(&message)],
+            None,
+        )
+        .await;
+        assert_eq!(
+            surface(&evidence, "github_relay_execution_outcomes")["items"][0]["warning_summaries"]
+                [0],
+            "[REDACTED_PROTECTED_CONTENT]",
+            "{protected}"
+        );
+        assert_eq!(
+            surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0]
+                ["message"],
+            "[REDACTED_PROTECTED_CONTENT]",
+            "{protected}"
+        );
+        assert_eq!(evidence["required_surfaces_complete"], false);
+        assert_eq!(evidence["warning_observation"], "unknown");
+    }
+}
+
+#[tokio::test]
+async fn credentials_are_checked_before_truncation_and_after_control_removal() {
+    let key = format!("{}{}", concat!("sk", "-proj-"), "aB9x".repeat(20));
+    for secret in ["synthetic-evidence-token", "test-jwt", &key] {
+        for offset in [2030, 2040, 2050] {
+            let message = format!("{}{secret}embedded-tail", "x".repeat(offset));
+            let evidence = acquire_text(
+                vec![warning("boundary", &message)],
+                vec![annotation(&message)],
+                None,
+            )
+            .await;
+            assert_eq!(
+                surface(&evidence, "github_relay_execution_outcomes")["items"][0]
+                    ["warning_summaries"][0],
+                "[REDACTED_PROTECTED_CONTENT]"
+            );
+            assert_eq!(
+                surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0]
+                    ["message"],
+                "[REDACTED_PROTECTED_CONTENT]"
+            );
+            assert_eq!(evidence["required_surfaces_complete"], false);
+            assert_eq!(evidence["warning_observation"], "unknown");
+        }
+        for offset in [95, 250, 260] {
+            let message = format!("{}{secret}", "x".repeat(offset));
+            let mut native = annotation("Safe message retained.");
+            native["title"] = json!(message);
+            native["path"] = json!(message);
+            let evidence = acquire_text(vec![], vec![native], Some(message)).await;
+            for source in [
+                "github_actions_workflow_runs",
+                "github_relay_execution_workflow_runs",
+                "github_check_runs",
+            ] {
+                let item = &surface(&evidence, source)["items"][0];
+                assert_eq!(item["name"], "[REDACTED_PROTECTED_CONTENT]");
+                assert_eq!(item["text_redacted_or_truncated"], true);
+            }
+            let check = &surface(&evidence, "github_check_runs")["items"][0];
+            assert_eq!(check["app_slug"], "[REDACTED_PROTECTED_CONTENT]");
+            assert_eq!(
+                check["annotations"]["items"][0]["title"],
+                "[REDACTED_PROTECTED_CONTENT]"
+            );
+            assert_eq!(
+                check["annotations"]["items"][0]["path"],
+                "[REDACTED_PROTECTED_CONTENT]"
+            );
+            assert_eq!(
+                check["annotations"]["items"][0]["message"],
+                "Safe message retained."
+            );
+            assert_eq!(evidence["required_surfaces_complete"], false);
+            assert_eq!(evidence["warning_observation"], "unknown");
+        }
+    }
+    for message in [
+        "synthetic-evi\0dence-token".to_owned(),
+        "test-\rjwt".to_owned(),
+        format!("g\0{}{}", "hp_", "aB9x".repeat(20)),
+        format!("s\0{}{}", "k-proj-", "aB9x".repeat(20)),
+        "pass\0word = synthetic-value".to_owned(),
+    ] {
+        let evidence = acquire_text(vec![], vec![annotation(&message)], None).await;
+        assert_eq!(
+            surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0]
+                ["message"],
+            "[REDACTED_PROTECTED_CONTENT]"
+        );
+        assert_eq!(evidence["required_surfaces_complete"], false);
+        assert_eq!(evidence["warning_observation"], "unknown");
+    }
+}
+
+#[tokio::test]
+async fn every_warning_field_is_sanitized_and_genuine_loss_remains_unknown() {
+    for field in [
+        "source",
+        "impact",
+        "resolution",
+        "next_action",
+        "evidence_gaps",
+    ] {
+        let mut native = warning("field-check", "Safe warning.");
+        native[field] = if field == "evidence_gaps" {
+            json!(["synthetic-evidence-token"])
+        } else {
+            json!("synthetic-evidence-token")
+        };
+        let evidence = acquire_text(vec![native], vec![], None).await;
+        let outcome = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+        assert_eq!(
+            outcome["warning_summaries"][0], "[REDACTED_PROTECTED_CONTENT]",
+            "{field}"
+        );
+        assert_eq!(outcome["text_redacted_or_truncated"], true);
+        assert_eq!(evidence["required_surfaces_complete"], false);
+        assert_eq!(evidence["warning_observation"], "unknown");
+    }
+    let message = "é".repeat(1200);
+    let evidence = acquire_text(
+        vec![warning("loss", &message)],
+        vec![annotation(&message)],
+        None,
+    )
+    .await;
+    let outcome = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+    let item = &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
+    assert!(outcome["warning_summaries"][0].as_str().unwrap().len() <= 2048);
+    assert_eq!(item["message"], "é".repeat(1024));
+    assert_eq!(outcome["text_redacted_or_truncated"], true);
+    assert_eq!(item["text_redacted_or_truncated"], true);
+    assert_eq!(evidence["required_surfaces_complete"], false);
+    assert_eq!(evidence["warning_observation"], "unknown");
+
+    let message = "Safe\0warning\r retained.";
+    let evidence = acquire_text(
+        vec![warning("invalid-authority", message)],
+        vec![annotation(message)],
+        None,
+    )
+    .await;
+    let outcomes = surface(&evidence, "github_relay_execution_outcomes");
+    assert!(outcomes["items"].as_array().unwrap().is_empty());
+    assert_eq!(outcomes["reason"], "GITHUB_RESPONSE_INVALID");
+    let item = &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
+    assert_eq!(item["message"], "Safewarning retained.");
+    assert_eq!(item["text_redacted_or_truncated"], true);
+    assert_eq!(evidence["required_surfaces_complete"], false);
+    assert_eq!(evidence["warning_observation"], "unknown");
+    let warnings = (0..11)
+        .map(|index| warning(&format!("warning-{index}"), "Safe warning."))
+        .collect();
+    let evidence = acquire_text(warnings, vec![], None).await;
+    let outcome = &surface(&evidence, "github_relay_execution_outcomes")["items"][0];
+    assert_eq!(outcome["warning_summaries"].as_array().unwrap().len(), 10);
+    assert_eq!(outcome["text_redacted_or_truncated"], true);
+    assert_eq!(evidence["required_surfaces_complete"], false);
+    assert_eq!(evidence["warning_observation"], "unknown");
+
+    // A large repeated path cannot turn reference recognition into unbounded
+    // suffix scans; it remains one protected annotation within the byte budget.
+    let evidence = acquire_text(
+        vec![],
+        vec![annotation(&"/etc/systemd/system/".repeat(4000))],
+        None,
+    )
+    .await;
+    let item = &surface(&evidence, "github_check_runs")["items"][0]["annotations"]["items"][0];
+    assert_eq!(item["message"], "[REDACTED_PROTECTED_CONTENT]");
+    assert_eq!(item["text_redacted_or_truncated"], true);
+    assert_eq!(evidence["required_surfaces_complete"], false);
+    assert_eq!(evidence["warning_observation"], "unknown");
+
+    let mut notice = annotation("synthetic-evidence-token");
+    notice["annotation_level"] = json!("notice");
+    let evidence = acquire_text(vec![], vec![notice], None).await;
+    assert_eq!(evidence["observed_check_annotation_warnings"], 0);
+    assert_eq!(evidence["required_surfaces_complete"], false);
+    assert_eq!(evidence["warning_observation"], "unknown");
 }
