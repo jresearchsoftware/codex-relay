@@ -23,7 +23,9 @@ const exec = promisify(execFile);
 const serviceIntent = () => ({
   reviewer: { active: true, enabled: 'disabled', load: 'loaded' },
   production: { active: true, enabled: 'enabled', load: 'loaded' },
-  general: { active: true, enabled: 'enabled-runtime', load: 'loaded' }
+  general: { active: true, enabled: 'enabled-runtime', load: 'loaded' },
+  ...Object.fromEntries((CONSUMER.executionSlots ?? []).filter(slot => slot.id !== 'primary')
+    .map(slot => [`slot-${slot.id}`, { active: true, enabled: 'enabled', load: 'loaded' }]))
 });
 async function control(t, { store = memoryStore(), journal = memoryStore() } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-admission-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -108,7 +110,8 @@ test('service snapshot rejects incomplete, unknown or inconsistent states and bo
   const unknown = serviceIntent(); unknown.reviewer.enabled = 'unknown';
   const inconsistent = serviceIntent(); inconsistent.production.load = 'not-found';
   const extra = serviceIntent(); extra.general.secret = 'forbidden';
-  for (const services of [incomplete, unknown, inconsistent, extra]) {
+  const foreignSlot = serviceIntent(); foreignSlot['slot-other'] = { active: true, enabled: 'enabled', load: 'loaded' };
+  for (const services of [incomplete, unknown, inconsistent, extra, foreignSlot]) {
     await assert.rejects(admission.snapshot({ operationId, services }), { code: 'ADMISSION_SNAPSHOT_INVALID' });
     assert.equal((await admission.read()).previousActive, null);
   }

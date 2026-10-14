@@ -63,7 +63,7 @@ repository set. Preflight accepts either singleton `repository` or plural
 adding targets to the same instance while retaining its installed targets; the
 existing service, Unix identity and namespace collision checks still apply.
 
-### Bounded automatic execution slots (source candidate)
+### Bounded automatic execution slots
 
 The optional `consumer.executionSlots` array describes one finite installation
 topology, including a `primary` slot and additional independent automatic
@@ -93,20 +93,26 @@ visibility, credentials, services and finite resource capacity across consumers.
 Separate repository installations retain separate Writer locks and claim roots;
 this does not introduce a multi-repository Writer.
 
-**This topology remains an incomplete, unqualified source candidate.** Additional
-slot registration/activation, host inventory, lifecycle activity preservation,
-upgrade and clean-reinstall integration are unfinished. Public deployment
-rejects host operations for opt-in inputs before host/network mutation with
-`PARALLEL_INSTALLATION_NOT_QUALIFIED`; local configuration validation and
-workflow proposal/verification remain available. Installed opt-in owner apply or
-resume likewise stops with `PARALLEL_LIFECYCLE_NOT_QUALIFIED`; the credential-free
-admission stop/drain path remains available. No unsupported CLI fallback or
-manual production activation is established. Configurations omitting the array
-retain their existing deployment/lifecycle paths and SERIAL scheduling.
+Use the existing `general-runner-register` and `general-runner-enable` phases
+with `--execution-slot <id>` for an additional configured slot; omission selects
+`primary`. The same registration token transport and explicit phase authority
+apply. Inventory lists every slot, upgrade preserves its original service
+activity, and clean reinstall retains its registration tree while retiring the
+managed runtime. Installed numeric identities, group access and namespace paths
+are checked before activation. Global admission drain still accounts for all
+retained attempts through their original protected slot bindings.
+
+Source support does not qualify a particular host or prove real automatic
+model overlap. Configurations omitting the array retain their existing
+deployment/lifecycle paths and SERIAL scheduling. Parallel installation and
+operational claims require the actual TEST or consumer evidence described below.
 
 Opt-in projections use `relay-workflows-v4`, retaining native `queue: max` and
 `cancel-in-progress: false` for distinct Issue/PR subject groups. Recovery has
-its original-run group. The finite qualified runner pool bounds active work;
+its original-run group and an allowlisted `execution_slot` choice matching the
+retained attempt; historical attempts default to `primary`. `inspect` and the
+Outcome expose the original slot. Ordinary publication recovery must use its
+original runner identity. The finite qualified runner pool bounds active work;
 Writer still serializes admission, Task conflicts, publication/recovery and
 lifecycle critical sections. A projection requires an installed v4 capability;
 it cannot silently select a SERIAL v3 runtime. V3 remains the unchanged default
@@ -970,6 +976,19 @@ an admitted consumer's scope requires explicit owner acceptance and external
 qualification before registration or enablement.
 
 ### Ephemeral runner registration
+
+Dedicated TEST runner and runner-group administration follows
+[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority)
+and the concrete admitted owner scope. For the direct local manual path, sign
+a short-lived App JWT from the owner's private local PEM, verify the App and
+organization installation, obtain an installation token with the actual runner
+permission, and probe runner/group reads before changing exact TEST targets.
+Use an explicit Authorization header, or account for `GH_TOKEN` taking
+precedence over `GITHUB_TOKEN` when invoking `gh`; a default user token is not
+proof of App authentication. An organization runner token is not technically
+TEST-scoped. Preserve the selected TEST repository allowlist, restricted trusted
+workflow/ref policy and secret boundary during every operation. This authority
+does not permit production or shared-resource administration.
 
 Use the public registration phase after installing the exact accepted product:
 

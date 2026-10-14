@@ -12,8 +12,10 @@ test('new admission Outcome binds protected snapshot instead of manufacturing a 
   const snapshot = createAdmissionSnapshot({ request: { ...request, continuation: { hold: false, next: null } }, authority },
     { step: 2, attempt: 'run-456', runId: '456' });
   const e = { request: snapshot, requestReference: source.charter, step: 2, repository: request.repository,
-    issueNumber: request.task, attemptId: snapshot.attempt, runId: 456, startHead: request.starting_head, admission: { warnings: [] } };
-  const record = extractAuthorityRecord(boundOutcomeBody(e, 'Recorded worker validation claims.', { head: e.startHead }));
+    issueNumber: request.task, attemptId: snapshot.attempt, runId: 456, startHead: request.starting_head, executionSlot: 'second', admission: { warnings: [] } };
+  const body = boundOutcomeBody(e, 'Recorded worker validation claims.', { head: e.startHead });
+  const record = extractAuthorityRecord(body);
+  assert.match(body.slice(0, body.indexOf('<details>')), /Execution slot: second/);
   assert.equal(record.schema_version, '4.0');
   assert.deepEqual(record.authority, authority);
   assert.deepEqual(record.admission, admissionBinding(snapshot));

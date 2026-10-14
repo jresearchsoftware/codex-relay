@@ -234,6 +234,8 @@ def execution_slot_inputs(c, slot):
         'relay_runner_group': slot['runnerUser'], 'relay_runner_root': install + '/runner',
         'relay_runner_work_root': state + '/runner/work', 'relay_runner_home': state + '/runner/home',
         'relay_runner_service_name': ns + '-slot-' + slot_id + '-runner.service',
+        'relay_runner_service_unit_path': '/etc/systemd/system/' + ns + '-slot-' + slot_id + '-runner.service',
+        'relay_runner_labels': e['runner']['labels'] + [execution_slot_label(c, slot)],
         'relay_runner_registration_helper_path': install + '/relay-runner-registration',
         'relay_runner_registration_scope': e['generalRunner'].get('scope', 'repository'),
         'relay_runner_registration_group': e['generalRunner'].get('group', ''),
@@ -251,6 +253,39 @@ def execution_slot_inputs(c, slot):
         'relay_diagnostics_store_path': slot['paths']['diagnosticsStore'], 'relay_diagnostics_root': slot['paths']['diagnosticsRoot'],
         'relay_codex_sudoers_file': '/etc/sudoers.d/' + ns + '-slot-' + slot_id + '-codex',
     }
+
+
+def execution_slot_label(c, slot):
+    """A fixed native runner label, unique to repository, installation and slot."""
+    import hashlib
+    identity = c['consumer']['repository'] + ':' + c['environment']['namespace'] + ':' + slot['id']
+    return 'relay-slot-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]
+
+
+def select_execution_slot(c, slot_id='primary'):
+    """Resolve only an automatic runner from validated durable configuration."""
+    slots = c['consumer'].get('executionSlots', [])
+    require(slot_id == 'primary' or any(slot['id'] == slot_id for slot in slots), 'execution-slot')
+    if slot_id != 'primary':
+        return execution_slot_inputs(c, next(slot for slot in slots if slot['id'] == slot_id))
+    values = compile_inputs(c)
+    ns = c['environment']['namespace']
+    return {'relay_execution_slot': 'primary',
+            'relay_runner_name': values['relay_general_runner_name'],
+            'relay_runner_user': values['relay_general_runner_user'],
+            'relay_runner_group': values['relay_general_runner_user'],
+            'relay_runner_registration_scope': values['relay_general_runner_registration_scope'],
+            'relay_runner_registration_group': values['relay_general_runner_registration_group'],
+            'relay_runner_root': '/opt/' + ns + '/general-runner',
+            'relay_runner_work_root': '/var/lib/' + ns + '/general-runner/work',
+            'relay_runner_home': '/var/lib/' + ns + '/general-runner/home',
+            'relay_runner_service_name': values.get('relay_general_runner_service_name', 'relay-general-runner.service'),
+            'relay_runner_service_unit_path': '/etc/systemd/system/' + values.get('relay_general_runner_service_name', 'relay-general-runner.service'),
+            'relay_runner_registration_helper_path': '/opt/' + ns + '/relay-general-runner-registration',
+            'relay_runner_labels': values['relay_runner_labels'] + ([execution_slot_label(c, slots[0])] if slots else []),
+            'relay_runner_service_state_management': 'preserve', 'relay_runner_service_enabled': False,
+            'relay_runner_registration_enabled': False, 'relay_runner_registration_authorized': False,
+            'relay_runner_registration_completed': False}
 
 
 def compile_inputs(c):
@@ -274,7 +309,8 @@ def compile_inputs(c):
         'relay_general_runner_registration_group': g.get('group', ''),
         'relay_runner_name': r['name'], 'relay_runner_user': r['user'], 'relay_runner_group': r['user'],
         'relay_runner_registration_scope': r['scope'], 'relay_runner_registration_group': r['group'],
-        'relay_runner_labels': r['labels'], 'relay_runner_repository': consumer['repository'],
+        'relay_runner_labels': r['labels'], 'relay_general_runner_labels': r['labels'],
+        'relay_runner_repository': consumer['repository'],
         'relay_runner_package_cache_root': '/var/cache/' + ns,
         'relay_dispatch_user': g['user'], 'relay_dispatch_group': g['user'],
         'relay_codex_user': consumer['runtimeUser'], 'relay_codex_group': consumer['runtimeUser'],
@@ -370,5 +406,6 @@ def compile_inputs(c):
         result['relay_execution_slots'] = consumer['executionSlots']
         result['relay_execution_slot'] = 'primary'
         result['relay_execution_slot_isolation'] = True
+        result['relay_general_runner_labels'] = e['runner']['labels'] + [execution_slot_label(c, consumer['executionSlots'][0])]
         result['relay_additional_execution_slots'] = [execution_slot_inputs(c, slot) for slot in consumer['executionSlots'][1:]]
     return result

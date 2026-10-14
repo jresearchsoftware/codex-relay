@@ -74,6 +74,33 @@ def observe(target, config=None):
     return inventory.inspect(config or target.config, root=target.root, owner_uid=os.getuid(), user_ids=target.ids)
 
 
+def test_parallel_inventory_binds_each_slot_without_reading_registration_credentials(target, monkeypatch):
+    from test_execution_slots import inputs
+    target.config = inputs()
+    slot = target.config['consumer']['executionSlots'][1]
+    target.ids.update({slot['runnerUser']: (os.getuid(), os.getgid()),
+                       slot['runtimeUser']: (os.getuid(), os.getgid())})
+    marker = {'gitHubUrl': 'https://github.com/' + target.config['consumer']['repository'],
+              'agentName': slot['runnerName'], 'agentId': 124,
+              'workFolder': '/var/lib/codex-relay/slots/second/runner/work'}
+    root = '/opt/codex-relay/slots/second/runner'
+    write(target, root + '/.runner', marker)
+    write(target, root + '/.credentials', 'PRIVATE_SLOT_FIXTURE_NEVER_READ')
+    before = snapshot(target.root)
+    read = inventory.Probe.read
+    def bounded_read(self, value, **kwargs):
+        assert not value.endswith(('.credentials', 'access-token'))
+        return read(self, value, **kwargs)
+    monkeypatch.setattr(inventory.Probe, 'read', bounded_read)
+    report = observe(target)
+    assert report['runners']['slot-second']['status'] == 'reusable'
+    assert inventory._validate_report(report, target.config) == report
+    assert snapshot(target.root) == before
+    report['runners'].pop('slot-second')
+    with pytest.raises(ValueError, match='inventory-runners-proof'):
+        inventory._validate_report(report, target.config)
+
+
 def snapshot(root):
     return {str(p.relative_to(root)): (stat.S_IFMT(p.lstat().st_mode), p.lstat().st_mode,
             p.lstat().st_ino, p.lstat().st_mtime_ns, p.lstat().st_ctime_ns, p.lstat().st_size,

@@ -268,6 +268,7 @@ relay_production_local_apply_checkout_root: "{{ relay_runner_work_root }}/{{ rel
 relay_production_local_apply_stage_root: '{{ relay_state_root }}/production-apply'
 relay_runner_name: "{{ relay_production_runner_name if relay_deployment_profile == 'production' else 'relay-general' }}"
 relay_runner_labels: [codex-relay]
+relay_general_runner_labels: [codex-relay]
 # Registration is an explicitly authorized later transition. Qualification is
 # repository-scoped; production requires the restricted organization runner group
 # documented in README.md, with access only to this repository's main deploy.

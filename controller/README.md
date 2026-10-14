@@ -87,6 +87,13 @@ The default SERIAL projection uses native Actions `queue: max` in the shared
 control group. An explicit bounded parallel projection retains that queue
 guarantee for each independent target, with installed execution slots providing
 finite capacity and protected Writer reservations preserving Task conflicts.
+The pool bounds active automatic controllers to the configured slot count;
+`queue: max` bounds native waiting to 100 per Task/PR group. Distinct target
+groups can also wait for the finite runner pool, so this is not a single
+installation-wide pending-count limit. Native overflow or owner cancellation
+before admission leaves the ready command unconsumed and visible on its target;
+reconcile the canceled run before issuing a fresh owner command. Cancellation
+after reservation preserves that attempt and cannot trigger new inference.
 Native groups coordinate only their GitHub repository; distinct repository
 installations need separate protected paths and qualified host identities.
 The two-minute ready-event check compares
@@ -379,7 +386,12 @@ only lifecycle control state and reuses the existing attempt records.
 
 During `applying`, the trusted backend records its original Reviewer,
 production-runner and general-runner activity/enablement intent through
-`snapshot --operation UUID` with bounded JSON on stdin. The gate stores the
+`snapshot --operation UUID` with bounded JSON on stdin. Additional runner
+intents use exactly `slot-<slot-id>` keys;
+`primary` retains the `general` key. Snapshot keys must match the immutable
+consumer topology bound by the existing digest, including all configured slots.
+The previous three-component format and optional `manualOutcome` key remain
+valid when no additional slots are configured. The gate stores the
 first complete known snapshot in `previousActive` and returns that same intent
 on subsequent calls for the operation. A failed activation therefore cannot
 replace formerly active intent with the failure's current inactive state.
@@ -520,6 +532,15 @@ authorization as a new unedited owner comment on the admitted target, then use
 a fresh recovery invocation. The helper accepts bounded JSON on stdin and never
 accepts caller-selected executable, checkout, credential or remote paths. Its
 read-only workflow token and separate Writer credential boundary remain intact.
+In a parallel projection, `execution_slot` selects the original slot recorded
+by the Outcome or protected `inspect` result; historical unbound attempts use
+`primary`. The projected choice list and unique repository/namespace/slot runner
+label target the correct runner, and the fixed guard verifies slot, runner name
+and UID. A mismatched ordinary recovery stops before accessing its private
+journal. Inspection can return the original slot from any qualified slot;
+root-owned prepublication recovery retains its separately authorized original
+journal access. Ordinary recovery takes the same per-run journal lock as the
+controller, so an overlapping replay/recovery cannot alter its retained receipt.
 
 ## Authority and receipts
 

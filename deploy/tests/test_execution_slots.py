@@ -112,13 +112,71 @@ def test_parallel_projection_cannot_silently_accept_an_older_serial_runtime_cont
         projection.render(inputs(), 'a' * 40, tmp_path)
 
 
-def test_unqualified_parallel_host_operation_stops_before_source_or_remote_transport(tmp_path):
+def test_unknown_slot_stops_before_source_or_remote_transport(tmp_path):
     public = inputs()
     pathname = tmp_path / 'relay.json'
     pathname.write_text(json.dumps(public))
     result = subprocess.run([sys.executable, str(ROOT / 'deploy/relay-deploy.py'),
-                             '--config', str(pathname), '--phase', 'apply'],
+                             '--config', str(pathname), '--phase', 'general-runner-enable',
+                             '--authorize-general-runner-enable', '--execution-slot', 'foreign'],
                             capture_output=True, text=True, timeout=15)
     assert result.returncode != 0
-    assert 'PARALLEL_INSTALLATION_NOT_QUALIFIED' in result.stderr
+    assert 'INVALID_DEPLOYMENT_CONFIG:execution-slot' in result.stderr
     assert 'source-identity' not in result.stderr
+
+
+def test_slot_selector_and_native_label_bind_repository_namespace_and_fixed_paths():
+    public = inputs()
+    primary = config.select_execution_slot(public)
+    extra = config.select_execution_slot(public, 'second')
+    assert primary['relay_runner_root'] == '/opt/codex-relay/general-runner'
+    assert extra['relay_runner_root'] == '/opt/codex-relay/slots/second/runner'
+    assert extra['relay_codex_access_token_file'] == '/etc/codex-relay/slots/second/codex-credentials/access-token'
+    assert primary['relay_runner_labels'][0] == extra['relay_runner_labels'][0]
+    assert primary['relay_runner_labels'][1] != extra['relay_runner_labels'][1]
+    original = config.execution_slot_label(public, public['consumer']['executionSlots'][1])
+    public['consumer']['repository'] = 'another/consumer'
+    assert config.execution_slot_label(public, public['consumer']['executionSlots'][1]) != original
+
+
+def test_recovery_projection_targets_only_the_selected_fixed_slot():
+    public = inputs()
+    rendered = projection.render(public, 'a' * 40, ROOT)
+    recovery = yaml.safe_load(rendered[public['consumer']['recoveryWorkflow']])
+    event = recovery.get('on', recovery.get(True))
+    selector = event['workflow_dispatch']['inputs']['execution_slot']
+    assert selector == {'description': 'Original execution slot from the retained attempt; primary for historical attempts',
+                        'required': False, 'type': 'choice', 'default': 'primary', 'options': ['primary', 'second']}
+    job = recovery['jobs']['recover']
+    assert "inputs.execution_slot || 'primary'" in job['runs-on']
+    for slot in public['consumer']['executionSlots']:
+        assert config.execution_slot_label(public, slot) in job['runs-on']
+    step, = job['steps']
+    assert step['env']['RECOVERY_SLOT'] == "${{ inputs.execution_slot || 'primary' }}"
+    assert 'RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH' in step['run']
+
+
+def test_parallel_runtime_reconciliation_keeps_production_out_of_the_automatic_work_group():
+    public = inputs()
+    values = {**config.compile_inputs(public), 'relay_codex_work_group_planned': False,
+              'relay_runner_group': public['environment']['runner']['user'],
+              'relay_codex_user_planned': False, 'relay_codex_primary_group_planned': False,
+              'relay_codex_runner_user_materialized': True, 'ansible_check_mode': False,
+              'relay_production_slot_groups': {'stdout': public['environment']['runner']['user'] + ' ' +
+                    public['environment']['codexWorkGroup'] + ' existing-approved-group'}}
+    tasks = yaml.safe_load((ROOT / 'deploy/ansible/roles/relay_codex_runtime/tasks/main.yml').read_text())
+    templar = Templar(loader=DataLoader(), variables=values)
+    enabled = lambda task: all(templar.template('{{ ' + condition + ' }}') for condition in task['when'])
+    legacy = next(task for task in tasks if task['name'] == 'Add the unprivileged relay runner to the shared Codex work group')
+    assert not enabled(legacy)
+    isolated = next(task for task in tasks if task['name'] == 'Reconcile only the primary runtime work membership for an isolated pool')
+    assert enabled(isolated)
+    assert isolated['ansible.builtin.user']['append'] is False
+    production = next(task for task in tasks if task['name'] == 'Remove only automatic work access from the separate production runner')
+    assert enabled(production)
+    groups = templar.template(production['ansible.builtin.user']['groups'])
+    assert groups == ['existing-approved-group']
+    values.pop('relay_execution_slots')
+    templar = Templar(loader=DataLoader(), variables=values)
+    assert enabled(legacy)
+    assert not enabled(isolated)

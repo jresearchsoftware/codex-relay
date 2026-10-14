@@ -87,8 +87,6 @@ def run(request):
     require(match is not None, 'argument-contract')
     action, installed, consumer_head = match.groups()
     config, _, _ = installed_config(ROOT, installed)
-    require('executionSlots' not in config['consumer'] or action == 'stop',
-            'PARALLEL_LIFECYCLE_NOT_QUALIFIED;additional-runner-activity-must-be-bound')
     values = compile_inputs(config)
     repository = config['consumer']['repository']
     source_repository = config['source']['repository'].removeprefix('https://github.com/').removeprefix(

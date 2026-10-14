@@ -84,6 +84,7 @@
     append: true
   register: relay_codex_user_work_group_membership
   when:
+    - relay_execution_slots is not defined
     - not ansible_check_mode | bool or not relay_codex_primary_group_planned | bool
     - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
     - not ansible_check_mode | bool or not relay_codex_user_planned | bool
@@ -96,8 +97,40 @@
     append: true
   register: relay_runner_codex_group_membership
   when:
+    - relay_execution_slots is not defined
     - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
     - not ansible_check_mode | bool or relay_codex_runner_user_materialized | bool
+
+- name: Reconcile only the primary runtime work membership for an isolated pool
+  ansible.builtin.user:
+    name: '{{ relay_codex_user }}'
+    groups: ['{{ relay_codex_work_group }}']
+    append: false
+  when:
+    - relay_execution_slots is defined
+    - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
+    - not ansible_check_mode | bool or not relay_codex_user_planned | bool
+
+- name: Inspect production supplementary groups before separating the automatic pool
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -Gn, '{{ relay_runner_user }}']
+  register: relay_production_slot_groups
+  changed_when: false
+  check_mode: false
+  when:
+    - relay_execution_slots is defined
+    - relay_codex_runner_user_materialized | bool
+
+- name: Remove only automatic work access from the separate production runner
+  ansible.builtin.user:
+    name: '{{ relay_runner_user }}'
+    groups: '{{ relay_production_slot_groups.stdout.split() | reject("equalto", relay_codex_work_group) | reject("equalto", relay_runner_group) | list }}'
+    append: false
+  register: relay_runner_slot_group_membership
+  when:
+    - relay_execution_slots is defined
+    - relay_codex_runner_user_materialized | bool
+    - relay_codex_work_group in relay_production_slot_groups.stdout.split()
 
 - name: Inspect the runner service before adopting the shared Codex work group
   ansible.builtin.service_facts:
@@ -111,7 +144,7 @@
     - not ansible_check_mode | bool
     - not relay_production_defer_lifecycle | default(false) | bool
     - not relay_upgrade_lifecycle_managed | default(false) | bool
-    - relay_runner_codex_group_membership.changed | bool
+    - relay_runner_codex_group_membership.changed | bool or relay_runner_slot_group_membership.changed | default(false) | bool
     - ansible_facts.services[relay_production_runner_service_name] is defined
     - ansible_facts.services[relay_production_runner_service_name].state == 'running'
 

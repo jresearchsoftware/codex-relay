@@ -94,3 +94,26 @@ test('native publication rejects external advancement of the task branch even wh
   await assert.rejects(publish(), { code: 'REMOTE_HEAD_CHANGED' });
   assert.equal(await f.remoteHead(), remote); assert.equal(f.pushes(), 1);
 });
+
+test('native completed publication retains its exact candidate when later main movement changes mergeability', async t => {
+  const f = await native(t); let executions = 0;
+  const result = await runAttempt({ ...f, execute: async e => {
+    executions++; await f.commit('task.md', 'independent task result\n');
+    return { version: 2, attemptId: e.attemptId, child: 'started', containment: 'reaped',
+      result: { status: 'success', summary: 'Independent candidate published.', validation: [] } };
+  } });
+  const laterBase = await advance(f);
+  const get = f.api.get.bind(f.api);
+  f.api.get = async path => {
+    const value = await get(path);
+    return path === '/pulls/43' ? { ...value, mergeable: false, base: { ...value.base, sha: laterBase } } : value;
+  };
+  const observed = await f.broker.invoke({ operation: 'observe-readiness', runId: f.envelope.runId,
+    attemptId: f.envelope.attemptId, head: result.head });
+  assert.equal(observed.readiness.status, 'BLOCKED');
+  assert.equal(observed.readiness.observedBase, laterBase);
+  assert.equal(observed.head, result.head); assert.equal(observed.outcomeId, result.outcomeId);
+  assert.equal(await f.remoteHead(), result.head);
+  assert.equal((await f.store.get(f.envelope.runId)).envelope.startHead, f.envelope.startHead);
+  assert.equal(executions, 1); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+});

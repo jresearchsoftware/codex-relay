@@ -106,6 +106,9 @@ test('root journal routing and global admission drain read each immutable stored
     await assertWriterSlot({operation:'admit',executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second'});
     await assert.rejects(assertWriterSlot({operation:'admit',executionSlot:'primary'}, {callerUid:'1202',resolveSlot:()=> 'second'}));
     await assert.rejects(assertWriterSlot({operation:'finish',runId:1,executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second',store}),e=>e.code==='EXECUTION_SLOT_BINDING_CHANGED');
+    await assert.rejects(assertWriterSlot({operation:'recover-publication',runId:1,executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second',store}),e=>e.code==='EXECUTION_SLOT_BINDING_CHANGED');
+    await assertWriterSlot({operation:'recover-publication',runId:2,executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second',store});
+    await assertWriterSlot({operation:'publication-state',runId:1,executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second',store});
   `;
   await exec(process.execPath, ['--input-type=module', '-e', source], { env: { ...process.env, RELAY_CONSUMER_CONFIG: config, RELAY_EXECUTION_SLOT: 'second' } });
 });
@@ -124,4 +127,74 @@ test('a duplicate controller never persists failure or completes the active owne
     persistFailure: () => assert.fail('duplicate modified diagnostics')
   }), error => error.code === 'ATTEMPT_CONTROLLER_BUSY');
   assert.deepEqual(operations, ['admit']);
+});
+
+for (const slotCount of [2, 32]) test(`lifecycle activity snapshot binds all ${slotCount} immutable configured slots and retains original recovery intent`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-slot-lifecycle-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const config = pool();
+  if (slotCount === 32) {
+    config.executionSlots.splice(1);
+    for (let index = 1; index < slotCount; index++) {
+      const id = `s${String(index).padStart(2, '0')}${'a'.repeat(29)}`;
+      config.executionSlots.push({ id, runnerName: `sample-slot-${index}`, runnerUser: `relay-runner-${index}`,
+        runtimeUser: `relay-worker-${index}`, workGroup: `relay-work-${index}`,
+        paths: Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name, `/var/lib/relay-example-slot-${index}/${name}`])) });
+    }
+  }
+  const pathname = join(root, 'consumer.json');
+  await writeFile(pathname, JSON.stringify(validateConsumer(config)), { mode: 0o644 });
+  const source = `
+    import assert from 'node:assert/strict';
+    import {readFile,writeFile} from 'node:fs/promises';
+    import {CONSUMER,CONSUMER_DIGEST} from './consumer/consumer.mjs';
+    import {createAdmissionControl,ADMISSION_STATE_BYTES} from './controller/src/admission-control.mjs';
+    const root=${JSON.stringify(root)};
+    const store={all:async()=>[]}; const journal={get:async()=>null};
+    const options={root,consumerDigest:CONSUMER_DIGEST,store,journal,protectedRoot:false};
+    const gate=createAdmissionControl(options);
+    const operationId='12345678-1234-1234-1234-123456789abc'; const target='a'.repeat(40);
+    const original={reviewer:{active:true,enabled:'disabled',load:'loaded'},
+      production:{active:false,enabled:'enabled',load:'loaded'},
+      general:{active:true,enabled:'enabled-runtime',load:'loaded'},
+      manualOutcome:{active:false,enabled:'disabled',load:'not-found'}};
+    const additional=CONSUMER.executionSlots.filter(slot=>slot.id!=='primary');
+    for(const slot of additional) original['slot-'+slot.id]={active:false,enabled:'enabled-runtime',load:'loaded'};
+    await gate.initialize(); await gate.quiesce({operationId,target}); await gate.drained({operationId});
+    await gate.phase({operationId,phase:'applying'});
+    const slotKey='slot-'+additional[0].id;
+    for(const modify of [
+      value=>{delete value[slotKey];},
+      value=>{value['slot-foreign']={...value[slotKey]};},
+      value=>{value['slot-primary']={...value.general};},
+      value=>{value[slotKey].active='false';},
+      value=>{value[slotKey].enabled='unknown';},
+      value=>{value[slotKey].load='not-found';},
+      value=>{value[slotKey].extra=true;}
+    ]){
+      const invalid=structuredClone(original);modify(invalid);
+      await assert.rejects(gate.snapshot({operationId,services:invalid}),{code:'ADMISSION_SNAPSHOT_INVALID'});
+      assert.equal((await gate.read()).previousActive,null);
+    }
+    assert.deepEqual((await gate.snapshot({operationId,services:original})).previousActive,original);
+    const gatePath=root+'/admission-v1.json';
+    const saved=await readFile(gatePath,'utf8'); assert.ok(Buffer.byteLength(saved)<=ADMISSION_STATE_BYTES);
+    const changed=JSON.parse(saved); delete changed.previousActive[slotKey];
+    await writeFile(gatePath,JSON.stringify(changed),{mode:0o600});
+    await assert.rejects(gate.read(),{code:'ADMISSION_STATE_INVALID'});
+    await writeFile(gatePath,saved,{mode:0o600});
+    await assert.rejects(createAdmissionControl({...options,consumerDigest:'b'.repeat(64)}).read(),{code:'CONSUMER_CONFIG_CHANGED'});
+    await gate.phase({operationId,phase:'recovery-required'});
+    const reopened=createAdmissionControl(options);
+    assert.deepEqual((await reopened.initialize()).previousActive,original);
+    const failed=structuredClone(original);
+    for(const component of Object.values(failed))component.active=false;
+    assert.deepEqual((await reopened.snapshot({operationId,services:failed})).previousActive,original);
+    await reopened.phase({operationId,phase:'applying'});
+    assert.deepEqual((await reopened.snapshot({operationId,services:failed})).previousActive,original);
+    await reopened.phase({operationId,phase:'verified',revision:target}); await reopened.resume({operationId});
+    assert.equal((await reopened.read()).previousActive,null);
+  `;
+  await promisify(execFile)(process.execPath, ['--input-type=module', '-e', source],
+    { env: { ...process.env, RELAY_CONSUMER_CONFIG: pathname, RELAY_EXECUTION_SLOT: 'primary' } });
 });

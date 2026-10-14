@@ -18,16 +18,17 @@ def register_runner(target, key, values, revision, token, guard):
         raise RuntimeError('runner-registration-token-invalid-input;fresh registration token required')
     if guard is None or guard.poll() is not None:
         raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
-    general = values['relay_runner_name'] in (
+    extra = values.get('relay_execution_slot', 'primary') != 'primary'
+    general = extra or values['relay_runner_name'] in (
         values['relay_general_runner_name'], '{{ relay_general_runner_name }}')
-    name = values['relay_general_runner_name'] if general else values['relay_production_runner_name']
+    name = values['relay_runner_name'] if extra else values['relay_general_runner_name'] if general else values['relay_production_runner_name']
     scope = values['relay_general_runner_registration_scope'] if general else 'organization'
     group = (values['relay_general_runner_registration_group'] if general
              else values['relay_production_runner_registration_group']) if scope == 'organization' else '-'
-    work = values['relay_state_root'] + ('/general-runner/work' if general else '/runner/work')
+    work = values['relay_runner_work_root'] if extra else values['relay_state_root'] + ('/general-runner/work' if general else '/runner/work')
     repository = values['relay_github_repository']
     url = 'https://github.com/' + (repository.split('/')[0] if scope == 'organization' else repository)
-    helper = values['relay_install_root'] + ('/relay-general-runner-registration' if general
+    helper = values['relay_runner_registration_helper_path'] if extra else values['relay_install_root'] + ('/relay-general-runner-registration' if general
                                            else '/relay-runner-registration')
     binding = f'url={url} name={name} label={",".join(values["relay_runner_labels"])} group={group} work={work}'
     argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
@@ -58,7 +59,7 @@ def register_runner(target, key, values, revision, token, guard):
             next_action = ('fresh registration token required' if code == 'FRESH_REGISTRATION_TOKEN_REQUIRED'
                            else 'inspect-before-retry')
             raise RuntimeError(f'RUNNER_REGISTRATION_FAIL code={code};next={next_action}')
-        proof = re.fullmatch(r'RUNNER_REGISTRATION_PASS url=(\S+) name=(\S+) label=([A-Za-z0-9_.-]+) '
+        proof = re.fullmatch(r'RUNNER_REGISTRATION_PASS url=(\S+) name=(\S+) label=([A-Za-z0-9_.,-]+) '
                              r'version=2\.336\.0 state=(registered|reused) group=(\S+) work=(\S+)\n?', output)
         if (proof is None or proof[1] != url or proof[2] != name
                 or proof[3] != ','.join(values['relay_runner_labels'])

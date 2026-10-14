@@ -13,7 +13,7 @@ import shlex
 import stat
 import tempfile
 
-from config import require, unique_object
+from config import require, unique_object, execution_slot_label
 
 
 MANIFEST = '.github/relay-workflows.json'
@@ -98,11 +98,16 @@ def render(config, revision, source_root):
         'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
+        'RECOVERY_RUNS_ON_YAML': json.dumps(general_runs_on),
+        'RECOVERY_SLOT_INPUT': '',
+        'RECOVERY_SLOT_ENV': '',
         'PRODUCTION_RUNS_ON_YAML': json.dumps({'group': production['group'], 'labels': labels}),
         'GENERAL_RUNNER_NAME': shlex.quote(general['name']),
         'GENERAL_RUNNER_USER': shlex.quote(general['user']),
         'GENERAL_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
                                 '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
+        'RECOVERY_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
+                                 '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
         'PRODUCTION_RUNNER_NAME': shlex.quote(production['name']),
         'PRODUCTION_RUNNER_USER': shlex.quote(production['user']),
     }
@@ -118,6 +123,29 @@ def render(config, revision, source_root):
                      + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
         lines.extend(['            *) echo RELAY_RUNNER_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
         values['GENERAL_RUNNER_GUARD'] = '\n'.join(lines)
+        # The ordinary collector must run on the original immutable slot. A
+        # general pool label could place recovery on a different runner, where
+        # the original private journal and checkout are deliberately unreadable.
+        recovery_targets = {}
+        for slot in slots:
+            slot_labels = [*labels, execution_slot_label(config, slot)]
+            recovery_targets[slot['id']] = ({'group': general['group'], 'labels': slot_labels}
+                                            if general.get('scope', 'repository') == 'organization'
+                                            else slot_labels)
+        targets = json.dumps(recovery_targets, separators=(',', ':'))
+        values['RECOVERY_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + targets + "')[inputs.execution_slot || 'primary'] }}")
+        values['RECOVERY_SLOT_INPUT'] = '\n'.join([
+            '      execution_slot:',
+            '        description: Original execution slot from the retained attempt; primary for historical attempts',
+            '        required: false', '        default: primary', '        type: choice',
+            '        options: ' + json.dumps([slot['id'] for slot in slots]),
+        ])
+        values['RECOVERY_SLOT_ENV'] = '          RECOVERY_SLOT: ${{ inputs.execution_slot || \'primary\' }}'
+        lines = ['case "$RECOVERY_SLOT:$RUNNER_NAME:$(/usr/bin/id -un)" in']
+        lines.extend('            ' + shlex.quote(':'.join([slot['id'], slot['runnerName'], slot['runnerUser']]))
+                     + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
+        lines.extend(['            *) echo RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
+        values['RECOVERY_RUNNER_GUARD'] = '\n'.join(lines)
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
     if environment['localApply'].get('source') == 'installed':
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],

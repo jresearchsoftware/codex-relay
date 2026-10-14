@@ -24,6 +24,16 @@ export function parseRecoveryRequest(request) {
 // An explicit operator entrypoint, never called by the router or ordinary replay.
 // It has no prepare/execute callback: the original child receipt is mandatory.
 export async function recoverAttemptPublication(options) {
+  // Ordinary replay and explicit recovery share the same private journal.
+  // Serialize before reading it or obtaining a Writer recovery receipt; a
+  // contender cannot overwrite the active controller's returned evidence.
+  if (options.journal.withLock) {
+    return options.journal.withLock(options.runId, () => recoverLockedPublication(options));
+  }
+  return recoverLockedPublication(options);
+}
+
+async function recoverLockedPublication(options) {
   const outcome = await recoverContainedPublication(options);
   return options.broker.invoke({ operation: 'complete-handoff', runId: options.runId, attemptId: options.attemptId });
 }
@@ -99,6 +109,7 @@ export async function main() {
   if (request.operation === 'inspect' && Object.keys(request).sort().join(',') === 'attemptId,operation,runId') {
     const state = await broker.invoke({ operation: 'publication-state', runId: request.runId, attemptId: request.attemptId });
     return { repository: state.repository, runId: request.runId, attemptId: request.attemptId,
+      ...(CONSUMER.executionSlots ? { executionSlot: state.envelope.executionSlot ?? 'primary' } : {}),
       publicationIntent: state.publicationIntent, publishedHead: state.publishedHead, authorizationBody: state.authorizationBody };
   }
   if (Object.keys(request).sort().join(',') !== 'attemptId,authorizationId,runId') fail('RECOVERY_REQUEST_INVALID');

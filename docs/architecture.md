@@ -318,8 +318,13 @@ Per-run kernel locks exclude duplicate controller inference, and a short store
 lock serializes diagnostic retention. Separate repository installations keep
 their own namespaces and Writer locks. A candidate parallel workflow ABI and
 finite runner pool do not prove actual worker overlap or external access policy.
-Additional-slot registration, activation and complete deployment lifecycle
-remain unfinished; parallel operation is not qualified or enabled by this source.
+Additional slots reuse the public registration and activation phases with an
+allowlisted slot selector. Inventory, upgrade activity preservation and clean
+reinstall use the same finite topology; drain retains every original attempt
+binding. Ordinary publication recovery selects the original slot and shares
+the controller's per-run journal lock. Source support still requires installed
+identity/containment proof and actual automatic worker overlap before a host
+can be considered qualified for parallel operation.
 
 Relay owns the [deployment interface](../deploy/README.md), source/build/install
 mechanics, layout, wrappers, users/services, upgrade/rollback and verification.

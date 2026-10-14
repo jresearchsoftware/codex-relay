@@ -6,7 +6,7 @@
       - show
       - '{{ item }}'
       - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
-  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}', '{{ relay_namespace }}-relay-manual-outcome.socket']
+  loop: '{{ [relay_reviewer_service_name, relay_production_runner_service_name, relay_general_runner_service_name, relay_namespace ~ "-relay-manual-outcome.socket"] + (relay_additional_execution_slots | default([]) | map(attribute="relay_runner_service_name") | list) }}'
   register: relay_upgrade_lifecycle_final_services
   changed_when: false
   check_mode: false
@@ -46,7 +46,7 @@
     index_var: service_index
     label: '{{ item.item }}'
   vars:
-    component: "{{ ['reviewer', 'production', 'general', 'manualOutcome'][service_index] }}"
+    component: "{{ (['reviewer', 'production', 'general', 'manualOutcome'] + (relay_additional_execution_slots | default([]) | map(attribute='relay_execution_slot') | map('regex_replace', '^', 'slot-') | list))[service_index] }}"
 
 - name: Prove active Reviewer and production processes adopted the installed transition
   ansible.builtin.assert:
@@ -73,6 +73,21 @@
         (relay_upgrade_lifecycle_final_services.results[2].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
     fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_CHANGED
   when: relay_upgrade_lifecycle_general_was_active | bool
+
+- name: Prove every additional automatic runner retained the exact live transport
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[slot_index + 4].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$'))
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[slot_index + 4].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
+    fail_msg: RELAY_UPGRADE_SLOT_TRANSPORT_CHANGED
+  loop: '{{ relay_additional_execution_slots | default([]) }}'
+  loop_control:
+    index_var: slot_index
+  when: relay_upgrade_lifecycle_previous_active['slot-' ~ item.relay_execution_slot].active | bool
 
 - name: Report same-operation activation and general transport proof
   ansible.builtin.debug:

@@ -19,7 +19,7 @@ and the [May 7, 2026 release notice](https://github.blog/changelog/2026-05-07-gi
 | --- | --- | --- |
 | A: global group with the native default queue | One running and one pending invocation; a new arrival replaces the pending invocation. Model concurrency stays at one, but independent waiting work can be lost. | Historical projection behavior; existing evidence retains its original meaning. |
 | B: global group with `queue: max` | One running invocation and up to 100 waiting invocations; no replacement merely because newer work arrives within that bound. Model concurrency stays at one. | Selected SERIAL source behavior; consumer projection and native TEST evidence establish adoption separately. |
-| C: bounded parallel execution | The optional source candidate declares finite isolated execution slots and per-subject native queues, while keeping trusted Writer critical sections serialized. | **NOT QUALIFIED**. Real automatic model overlap, complete slot lifecycle and multi-repository installation proof remain required. |
+| C: bounded parallel execution | The optional source topology declares finite isolated execution slots and per-subject native queues, while keeping trusted Writer critical sections serialized. | Source lifecycle support requires installed qualification, real automatic model overlap and separate repository-installation proof. |
 
 For an illustrative batch of three admitted executions taking the same time
 `T`, one qualified slot needs about `3T`, excluding controller overhead and
@@ -61,13 +61,23 @@ checkout and publication prove ancestry; moved task refs, unrelated main
 rewrites and stale remediation integration remain blockers. Historical v3 and
 legacy starting-state checks retain their original contract.
 
-This source candidate is incomplete. Additional-slot registration/activation,
-complete owner lifecycle and clean reinstall support must be finished and
-qualified before enabling parallel operation. Real same-repository and
-cross-repository automatic inference overlap and attributable terminal Outcomes
-are absent. Deterministic source tests and namespace construction cannot replace
-that evidence. The accepted SERIAL projection remains the supported fallback,
-and cannot satisfy an objective requiring real parallel execution.
+Additional slots reuse registration/activation with the public
+`--execution-slot` selector. Inventory, upgrade and clean reinstall account for
+each slot and preserve original activity/registration. Numeric UID/group and
+cross-slot access checks validate installed topology. Recovery exposes and
+targets the original slot, and explicit recovery takes the same journal lock
+as its controller. These source paths require installed qualification; they
+do not establish actual same-repository or cross-repository model overlap or
+attributable terminal Outcomes. The accepted SERIAL projection remains the
+supported fallback, and cannot satisfy an objective requiring real parallel
+execution.
+
+The finite pool bounds active executions, not the total installation-wide
+waiting population. Each native subject group retains up to 100 pending runs;
+independent subjects have separate groups. GitHub owns runner waiting and queue
+overflow/cancellation records. There is no Relay-wide durable queue or automatic
+retry. Pending runs do not consume an admitted execution slot, and an overflow
+or cancellation before controller entry creates no invented admission/Outcome.
 
 ## Accepted SERIAL runtime bounds
 
@@ -162,5 +172,5 @@ fixtures demonstrate identity separation only: current Writer remains bound to
 one configured consumer per process. Native TEST observations must additionally
 show multiple waiting runs surviving, serial worker entry and truthful terminal
 state. Independent parallel execution and future many-repository scheduling
-remain **NOT QUALIFIED**; native concurrency groups alone do not coordinate
+require native qualification; native concurrency groups alone do not coordinate
 different repositories or establish a multi-repository Writer.

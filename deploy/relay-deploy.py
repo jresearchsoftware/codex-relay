@@ -18,7 +18,7 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, compile_inputs, require, selector
+from config import load, compile_inputs, require, selector, select_execution_slot
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -216,6 +216,7 @@ def arguments():
     p.add_argument('--projection-output', type=Path, help='optional directory for derived workflow review files')
     p.add_argument('--authorize-runner-register', action='store_true')
     p.add_argument('--authorize-general-runner-register', action='store_true')
+    p.add_argument('--execution-slot', default='primary', help='configured automatic slot for general runner registration or enablement')
     p.add_argument('--runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--general-runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
@@ -295,6 +296,9 @@ def run(args):
     else:
         config = load(config_path, ROOT)
     values = compile_inputs(config)
+    require(args.execution_slot == 'primary' or args.phase in ['general-runner-register', 'general-runner-enable'],
+            'execution-slot-phase')
+    selected_slot = select_execution_slot(config, args.execution_slot)
     if args.local_lifecycle:
         root_owned(ROOT)
         root_owned(config_path)
@@ -317,12 +321,6 @@ def run(args):
     if args.phase == 'validate':
         print('RELAY_DEPLOYMENT_CONFIG=PASS;schemaVersion=1')
         return
-    # The optional topology is a reviewable source candidate. Its additional
-    # registration/lifecycle/inventory paths still need qualification; do not
-    # silently run the legacy two-runner host composition for these inputs.
-    require('executionSlots' not in config['consumer']
-            or args.phase in ['workflow-project', 'workflow-verify'],
-            'PARALLEL_INSTALLATION_NOT_QUALIFIED;additional-runner-registration-lifecycle-inventory-required')
     require(sys.platform == 'linux', 'linux-controller')
     if args.local_reconcile:
         # An unprivileged runner can reach only the installed fixed sudo helper,
@@ -502,8 +500,7 @@ def run(args):
         values.update(relay_docker_nginx_manage=True, relay_docker_nginx_service_enabled=True,
                       relay_docker_nginx_validation_mode='active')
     if args.phase in ['general-runner-enable', 'general-runner-register']:
-        import yaml  # part of the private Ansible backend dependency set
-        values.update(yaml.safe_load((BACKEND / 'vars/general-runner.yml').read_text()))
+        values.update(selected_slot)
         values['relay_general_runner_authorized'] = args.phase == 'general-runner-enable'
     if args.phase in ['runner-register', 'general-runner-register']:
         from runner_registration import register_runner

@@ -89,6 +89,30 @@ The authority includes TEST repositories, configuration, workflows and TEST
 PR creation, review and merge using already available permissions. A prohibition
 on product-source merge does not prohibit TEST repository merges.
 
+Established standing owner authority may also include dedicated TEST GitHub App
+installations, selected TEST repository grants and TEST-only permissions, TEST
+runner registration/removal, and TEST runner-group membership and access policy.
+For each operation, verify the authenticated App/installation and actual API
+permission, exact dedicated target names/IDs, selected TEST repository allowlist,
+trusted workflow/ref restrictions and isolation from shared or production
+resources. Keep runner groups restricted to the authorized TEST repositories
+and trusted workflows; labels alone do not establish that boundary. Once these
+facts and the operation's owner authority are established, no additional
+per-operation approval is required. Do not assume that source policy creates an
+unavailable credential or administrative capability.
+
+An owner-authorized local manual Codex session may authenticate directly with
+the dedicated TEST Admin App: keep its PEM in the owner's private local storage
+outside Git checkouts, generate a short-lived JWT and installation access token
+on demand, verify read-only API access, then perform the authorized TEST
+operations. Organization runner administration can grant organization-wide
+technical access. When the owner explicitly accepts that scope, TEST-only
+enforcement rests on the verified targets and governance instructions, not an
+assertion that the token excludes production. This path requires no separate
+admin helper, broker or server. Keep credentials out of repositories, workers,
+GitHub publications and logs; ambiguous targets or shared-host effects remain
+stop conditions.
+
 Production-safe public lifecycle interfaces are optional for disposable TEST
 cleanup and rebuilding. Codex may clean or reconstruct sandbox state directly;
 it need not preserve that state for forensics, prove ownership of individual

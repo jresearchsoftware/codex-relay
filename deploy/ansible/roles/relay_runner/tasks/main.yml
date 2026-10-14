@@ -20,8 +20,9 @@
           (relay_runner_registration_group == relay_general_runner_registration_group and
            relay_runner_registration_group is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$') and
            relay_runner_registration_group | lower != relay_production_runner_registration_group | lower)))
-      - relay_runner_labels | length == 1
-      - relay_runner_labels[0] is match('^[A-Za-z0-9_.-]+$')
+      - relay_runner_labels | length in [1, 2]
+      - relay_runner_labels | select('match', '^[A-Za-z0-9_.-]+$') | list | length == relay_runner_labels | length
+      - relay_runner_labels | unique | list | length == relay_runner_labels | length
     fail_msg: 'RUNNER_PINNED_PACKAGE_OR_IDENTITY_CONTRACT_INVALID'
 
 - name: Require isolated namespaces for the general instance on a production host
@@ -525,7 +526,7 @@
   register: relay_upgrade_lifecycle_general_unit
   when:
     - relay_upgrade_lifecycle_managed | default(false) | bool
-    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_runner_name != relay_production_runner_name
     - relay_upgrade_lifecycle_general_was_active | default(false) | bool
     - not ansible_check_mode | bool
 
@@ -540,7 +541,7 @@
     fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_RESTART_REQUIRED
   when:
     - relay_upgrade_lifecycle_managed | default(false) | bool
-    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_runner_name != relay_production_runner_name
     - relay_upgrade_lifecycle_general_was_active | default(false) | bool
     - not ansible_check_mode | bool
 

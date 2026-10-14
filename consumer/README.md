@@ -50,7 +50,13 @@ Ordinary runner-side publication recovery uses the original execution slot;
 a workflow arriving on another slot stops with `EXECUTION_SLOT_BINDING_CHANGED`
 before reading or mutating its journal. Root-owned prepublication recovery can
 read the original immutable slot through its separately authorized fixed path.
-Native workflow targeting of retained per-slot recovery is not yet qualified.
+The parallel recovery projection supplies an optional `execution_slot` choice
+with `primary` as its historical default, and targets a deterministic runner
+label bound to repository, namespace and slot. The fixed workflow guard proves
+that the selected slot, runner name and UID agree. Protected inspection reports
+the retained slot without accepting a caller-selected journal or checkout path.
+Actual native targeting and installed identities require TEST qualification;
+source projection and deterministic tests alone do not establish that evidence.
 
 With no explicit consumer effort override, the shared execution resolver uses
 the schema representation of [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal).

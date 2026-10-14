@@ -3,6 +3,7 @@ import { open, lstat, rename } from 'node:fs/promises';
 import { dirname, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION } from './execution-contract.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -10,7 +11,11 @@ const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', '
 const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
 function validServices(value) {
-  const names = ['reviewer', 'production', 'general'];
+  // The primary service keeps the original `general` key. Additional activity
+  // intent is complete only for this immutable installation topology; caller
+  // JSON cannot invent or omit a runner that a lifecycle operation will touch.
+  const names = ['reviewer', 'production', 'general',
+    ...(CONSUMER.executionSlots ?? []).filter(slot => slot.id !== 'primary').map(slot => `slot-${slot.id}`)];
   if (value && Object.hasOwn(value, 'manualOutcome')) names.push('manualOutcome');
   return value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).length === names.length && names.every(name => {

@@ -4,6 +4,11 @@
   become: true
   gather_facts: true
   pre_tasks:
+    - name: Verify existing slot UID and GID aliases before account reconciliation
+      ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
+      vars:
+        relay_slot_topology_preflight: true
+
     - name: Establish or inspect the durable production operation state
       ansible.builtin.include_tasks: tasks/production-operation-state.yml
 
@@ -98,7 +103,7 @@
       ansible.builtin.apt:
         name: bubblewrap
         state: present
-      when: relay_execution_slots is defined
+      when: relay_execution_slots is defined and relay_manage_base_packages | bool
 
     - name: Prove the primary runtime can enter its private process namespace
       ansible.builtin.command:
@@ -128,6 +133,9 @@
     - name: Reconcile the primary runner software and preserve authorized state
       ansible.builtin.include_role:
         name: relay_runner
+
+    - name: Verify the complete installed execution pool before lifecycle activation
+      ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
 
     # Keep address-bound artifact refresh in the check path as well.  The copy
     # tasks are check-mode safe, so their changed count is the ordinary apply

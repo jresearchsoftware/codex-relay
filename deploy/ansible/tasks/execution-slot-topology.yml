@@ -1,0 +1,9 @@
+---
+- name: Prove installed numeric identity and ACL isolation for the complete finite pool
+  ansible.builtin.command:
+    argv: '{{ ["/usr/bin/python3", "-I", "-c", lookup("file", playbook_dir + "/../execution_topology.py")] + (["--identities"] if relay_slot_topology_preflight | default(false) | bool else []) }}'
+    stdin: '{{ relay_installed_deployment_config | string }}'
+    stdin_add_newline: false
+  changed_when: false
+  when: relay_execution_slots is defined and (relay_slot_topology_preflight | default(false) | bool or not ansible_check_mode | bool)
+  check_mode: false

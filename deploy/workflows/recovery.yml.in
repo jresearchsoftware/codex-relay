@@ -29,6 +29,7 @@ on:
         required: false
         default: ''
         type: string
+@@RECOVERY_SLOT_INPUT@@
 
 permissions:
   actions: read
@@ -48,7 +49,7 @@ jobs:
           github.actor == '@@OWNER@@' && github.triggering_actor == '@@OWNER@@' &&
           github.ref == 'refs/heads/@@BASE_BRANCH@@' }}
     # External scheduling restrictions remain required; see the workflow contract.
-    runs-on: @@GENERAL_RUNS_ON_YAML@@
+    runs-on: @@RECOVERY_RUNS_ON_YAML@@
     timeout-minutes: 15
     steps:
       - name: Recover through the accepted installed Writer boundary
@@ -62,10 +63,11 @@ jobs:
           RECOVERY_ATTEMPT_ID: ${{ inputs.attempt_id }}
           RECOVERY_AUTHORIZATION_ID: ${{ inputs.authorization_id }}
           RECOVERY_HEAD: ${{ inputs.candidate_head }}
+@@RECOVERY_SLOT_ENV@@
           NODE_OPTIONS: ''
           NODE_PATH: ''
         run: |
-          @@GENERAL_RUNNER_GUARD@@
+          @@RECOVERY_RUNNER_GUARD@@
           /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           import { spawn } from 'node:child_process';

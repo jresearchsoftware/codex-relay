@@ -33,9 +33,10 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   if (request.operation === 'admit') return;
   const record = await store.get(request.runId);
   if (!record) fail('ATTEMPT_NOT_ADMITTED');
-  // Explicit owner-authorized recovery only reads the original stored slot;
-  // its current runner need not be the original execution identity.
-  const recovery = ['publication-state', 'recover-publication', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
+  // Inspection and root-owned retained collection can read the stored slot.
+  // Ordinary runner-owned publication recovery still uses its original private
+  // journal/collector identity, even with a fresh owner authorization.
+  const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
   if (!recovery && (record.envelope.executionSlot ?? 'primary') !== slot) fail('EXECUTION_SLOT_BINDING_CHANGED');
 }
 
