@@ -616,20 +616,88 @@ def test_thaw_failure_is_resolved_only_by_fresh_stopped_empty_cgroup_proof(tmp_p
         return b''
 
     host.service, host.command = service, command
+    clock = [0]
+    timing = {'now': lambda: clock[0], 'wait': lambda seconds: clock.__setitem__(0, clock[0] + seconds)}
     if after_stop in ['inactive-absent', 'failed-empty']:
-        assert host.stop_idle(member, lambda: True) is True
+        assert host.stop_idle(member, lambda: True, **timing) is True
         assert len(service_reads) == 3  # Initial state, thaw reconciliation, final proof.
+        assert clock[0] == 0
     else:
         with pytest.raises(pool.PoolError) as error:
-            host.stop_idle(member, lambda: True)
+            host.stop_idle(member, lambda: True, **timing)
         if after_stop != 'foreign-cgroup':
             assert error.value is thaw_error
+            assert clock[0] == pytest.approx(5)
         else:
             assert 'SERVICE_CGROUP_UNPROVEN' in str(error.value)
-        assert len(service_reads) == 2
+            assert clock[0] == 0
+        assert len(service_reads) >= 2
     assert [argv[1] for argv in calls] == ['freeze', 'kill', 'disable', 'stop', 'thaw']
     assert calls[1] == ['/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=SIGTERM', member['service']]
     assert calls[3] == ['/usr/bin/systemctl', 'stop', '--no-block', member['service']]
+
+
+@pytest.mark.parametrize('thaw_fails', [True, False])
+@pytest.mark.parametrize('after_stop', ['settles', 'never-stops', 'residual', 'foreign-cgroup'])
+def test_graceful_stop_acknowledgement_waits_read_only_with_one_bounded_budget(monkeypatch, thaw_fails, after_stop):
+    member = pool.pool_contract(inputs(1))['members'][0]
+    group_name = '/system.slice/' + member['service']
+    host = object.__new__(pool.Host)
+    clock, queued, probes, calls = [0], [False], [], []
+    host.service = lambda member: {'ActiveState': 'active', 'MainPID': '50', 'ControlPID': '0', 'ControlGroup': group_name}
+
+    class IdleCgroup:
+        def __init__(self, value):
+            self.value = str(value)
+
+        def __truediv__(self, value):
+            return IdleCgroup(self.value + '/' + str(value))
+
+        def read_text(self):
+            return 'frozen 1\n' if self.value.endswith('cgroup.events') else ''
+
+        def rglob(self, pattern):
+            return []
+
+    monkeypatch.setattr(pool, 'Path', IdleCgroup)
+    thaw_error = pool.PoolError('SYNTHETIC_THAW_FAILED')
+
+    def command(argv):
+        calls.append(argv)
+        if argv[1] == 'stop':
+            queued[0] = True
+        elif argv[1] == 'thaw' and thaw_fails:
+            raise thaw_error
+        return b''
+
+    def removal_stopped(member):
+        assert queued[0]
+        probes.append(clock[0])
+        if after_stop == 'foreign-cgroup':
+            raise pool.PoolError('MANAGED_POOL_SERVICE_CGROUP_UNPROVEN')
+        # A still-deactivating unit has not acknowledged graceful stop. Even
+        # after the transition, a residual worker cannot provide idle proof.
+        return clock[0] >= 0.342 and after_stop == 'settles'
+
+    host.command, host.removal_stopped = command, removal_stopped
+    timing = {'now': lambda: clock[0], 'wait': lambda seconds: clock.__setitem__(0, clock[0] + seconds)}
+    if after_stop == 'foreign-cgroup':
+        with pytest.raises(pool.PoolError, match='SERVICE_CGROUP_UNPROVEN'):
+            host.stop_idle(member, lambda: True, **timing)
+        assert clock[0] == 0
+    elif after_stop == 'settles':
+        assert host.stop_idle(member, lambda: True, **timing) is True
+        assert 0.342 <= clock[0] < 0.5
+    elif thaw_fails:
+        with pytest.raises(pool.PoolError) as error:
+            host.stop_idle(member, lambda: True, **timing)
+        assert error.value is thaw_error
+        assert clock[0] == pytest.approx(5)
+    else:
+        assert host.stop_idle(member, lambda: True, **timing) is False
+        assert clock[0] == pytest.approx(5)
+    assert probes and max(probes) <= 5
+    assert [argv[1] for argv in calls] == ['freeze', 'kill', 'disable', 'stop', 'thaw']
 
 
 def install_fixture(tmp_path):

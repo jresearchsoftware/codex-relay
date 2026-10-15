@@ -273,7 +273,7 @@ class Host:
                 return False
         return True
 
-    def stop_idle(self, member, remote_idle):
+    def stop_idle(self, member, remote_idle, *, now=time.monotonic, wait=time.sleep, timeout=5):
         """Freeze before inspecting local workers; no signal can hit an active job.
 
         Labels have already been removed. A final remote read detects a job
@@ -284,6 +284,17 @@ class Host:
             return self.removal_stopped(member)
         require(state.get('ActiveState') == 'active', 'SERVICE_STATE_AMBIGUOUS')
         self.command(['/usr/bin/systemctl', 'freeze', member['service']])
+        stop_deadline = None
+
+        def stopped():
+            while True:
+                if self.removal_stopped(member):
+                    return True
+                remaining = 0 if stop_deadline is None else stop_deadline - now()
+                if remaining <= 0:
+                    return False
+                wait(min(0.1, remaining))
+
         try:
             group = state.get('ControlGroup', '')
             require(group == '/system.slice/' + member['service'], 'SERVICE_CGROUP_UNPROVEN')
@@ -306,16 +317,17 @@ class Host:
             self.command(['/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=SIGTERM', member['service']])
             self.command(['/usr/bin/systemctl', 'disable', member['service']])
             self.command(['/usr/bin/systemctl', 'stop', '--no-block', member['service']])
+            stop_deadline = now() + timeout
         finally:
             try:
                 self.command(['/usr/bin/systemctl', 'thaw', member['service']])
             except PoolError:
-                # An asynchronous stop can remove the cgroup before thaw.
-                # Only fresh proof of an inactive, empty unit resolves that
-                # race; an active or uncertain unit must retain the failure.
-                if not self.removal_stopped(member):
+                # Stop may reject thaw while still deactivating, or remove
+                # the cgroup before thaw. Await only its read-only completion
+                # proof within the same budget; never repeat a stop/signal.
+                if not stopped():
                     raise
-        return self.removal_stopped(member)
+        return stopped()
 
     def retire(self, member):
         # Registration package is disposable; journals/attempt work live in
