@@ -1,4 +1,6 @@
 ---
+# Migration retains actual target-pool activity, not the stopped SERIAL unit.
+# The same PID/start-time checks remain binding for any already active peer pool.
 - name: Inspect managed upgrade service activity after exact installed proof
   ansible.builtin.command:
     argv:

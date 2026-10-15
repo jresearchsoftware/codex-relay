@@ -13,6 +13,8 @@ import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
+import { historicalProgram } from './serial-pool-program.mjs';
+import { loadSerialPoolCompatibility, createCompatibilityStore } from './serial-pool-compatibility.mjs';
 
 export function callerExecutionSlot({ uid, slotId, uidForUser = unixUserId } = {}) {
   if (!CONSUMER.executionSlots) return undefined;
@@ -26,7 +28,7 @@ export function callerExecutionSlot({ uid, slotId, uidForUser = unixUserId } = {
   return matches[0].id;
 }
 export async function assertWriterSlot(request, { callerUid = process.env.RELAY_CALLER_UID,
-  store = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`), resolveSlot = callerExecutionSlot } = {}) {
+  store, resolveSlot = callerExecutionSlot } = {}) {
   if (!CONSUMER.executionSlots) {
     if (Object.hasOwn(request ?? {}, 'executionSlot')) fail('EXECUTION_SLOT_INVALID');
     return;
@@ -35,6 +37,10 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   const slot = resolveSlot({ uid: Number(callerUid), slotId: request.executionSlot });
   if (request.executionSlot !== slot) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   if (request.operation === 'admit') return;
+  if (!store) {
+    const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
+    store = createAttemptStore(compatibility?.current.storeRoot ?? `${CONSUMER.paths.claimRoot}/publication-v2`);
+  }
   const record = await store.get(request.runId);
   if (!record) fail('ATTEMPT_NOT_ADMITTED');
   // Inspection and root-owned retained collection can read the stored slot.
@@ -68,6 +74,9 @@ export async function main() {
   for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
   let request; try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
   if (request?.operation === 'manual-outcome-direct') fail('MANUAL_CAPABILITY_REQUIRED');
+  const historical = await historicalProgram({ kind: 'writer', request, consumer: CONSUMER,
+    consumerPath: process.env.RELAY_CONSUMER_CONFIG });
+  if (historical.handled) return historical.value;
   await assertWriterSlot(request);
   const admission = installedAdmissionControl();
   if (request?.operation === 'complete-execution') {
@@ -78,7 +87,11 @@ export async function main() {
 export async function protectedWriterBroker({ deployment = resolveWriterDeploymentContract(), runToken, admission = installedAdmissionControl(), allowManualOutcome = false } = {}) {
   if (process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
   const value = await token();
-  const store = createAttemptStore(`${deployment.claimRoot}/publication-v2`);
+  const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
+  const store = compatibility ? createCompatibilityStore({ compatibility,
+    currentStore: createAttemptStore(compatibility.current.storeRoot),
+    originalStore: createAttemptStore(compatibility.original.storeRoot) })
+    : createAttemptStore(`${deployment.claimRoot}/publication-v2`);
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store,
     lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),

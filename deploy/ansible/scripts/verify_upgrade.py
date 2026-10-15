@@ -90,7 +90,30 @@ def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=
 
     if (intent(installed_config) != intent(expected_config)
             or json.loads(consumer_path.read_text()) != expected_config['consumer']):
-        raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
+        # A separately reserved SERIAL transition may change only the selected
+        # pool topology. Ordinary upgrades retain their original exact gate.
+        receipt_path = config_root / 'serial-pool-compat-v1.json'
+        state_path = Path(installed_config['consumer']['paths']['claimRoot']) / 'serial-pool-transition-v1.json'
+        if not receipt_path.exists() or not state_path.exists():
+            raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
+        for path in [receipt_path, state_path]:
+            protected(path, **protection)
+        receipt_raw = receipt_path.read_bytes()
+        receipt = json.loads(receipt_raw)
+        state = json.loads(state_path.read_bytes())
+        prospective = json.dumps(expected_config, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
+        if (state.get('phase') not in ['stopped', 'target-ready', 'remove-intent', 'retired']
+                or state.get('targetRevision') != expected_config['source']['revision']
+                and expected_config['source']['revision'] != 'main'
+                or state.get('receiptSha256') != hashlib.sha256(receipt_raw).hexdigest()
+                or state.get('plan', {}).get('targetConfigSha256') != hashlib.sha256(prospective).hexdigest()
+                or receipt.get('original', {}).get('revision') != release.name
+                or receipt.get('original', {}).get('configSha256') != hashlib.sha256(snapshot).hexdigest()
+                or receipt.get('original', {}).get('consumerSha256') != hashlib.sha256(consumer_path.read_bytes()).hexdigest()
+                or receipt.get('operationId') != state.get('operationId')
+                or receipt.get('namespace') != installed_config['environment']['namespace']
+                or receipt.get('repository') != expected_config['consumer']['repository']):
+            raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
     return release.name
 
 

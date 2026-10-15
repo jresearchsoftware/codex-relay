@@ -599,14 +599,87 @@ def run(args):
                         host_locks.callback(release_pool_guard)
                 try:
                     lifecycle_operation = None
+                    serial_transition = False
+                    new_gate_installed = False
                     if ('generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
                         from managed_pool_transport import preflight_pool
-                        preflight_pool(target, key, config, guard,
+                        pool_preflight_proof = preflight_pool(target, key, config, guard,
                             local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
+                        serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
+                    if serial_transition:
+                        from lifecycle import progress
+                        require(not args.local_lifecycle and not args.local_reconcile,
+                                'MANAGED_POOL_SERIAL_TRANSITION_EXTERNAL_OWNER_APPLY_REQUIRED')
+                        require(args.phase in ['apply', 'upgrade'],
+                                'MANAGED_POOL_SERIAL_TRANSITION_OWNER_APPLY_REQUIRED')
+                        from managed_pool_transport import transition_pool
+                        retained_operation = getattr(pool_preflight_proof, 'operation_id', None)
+                        require(not (retained_operation and args.lifecycle_recovery_operation)
+                                or retained_operation == args.lifecycle_recovery_operation,
+                                'MANAGED_POOL_SERIAL_TRANSITION_OPERATION_CONFLICT')
+                        lifecycle_operation = retained_operation or admission_operation_id or str(uuid.uuid4())
+                        values['relay_admission_operation_id'] = lifecycle_operation
+                        transition = transition_pool(target, key, config, revision, lifecycle_operation,
+                            guard, extra_guard=pool_guard, action='begin')
+                        require(transition['phase'] in ['stopped', 'installed', 'retired'], 'MANAGED_POOL_SERIAL_TRANSITION_STOP_UNPROVEN')
+                        if transition['phase'] in ['installed', 'retired']:
+                            # The backend completed or retirement already did.
+                            # Reconcile, verify read-only, then finish the SAME
+                            # new gate operation without reapplying the backend.
+                            if transition['phase'] == 'installed':
+                                from managed_pool_transport import reconcile_pool
+                                proof = reconcile_pool(target, key, config, revision, guard, extra_guard=pool_guard)
+                                log.write(proof + '\n')
+                                log.flush()
+                                print(proof, flush=True)
+                            values.update(relay_serial_pool_transition=False,
+                                relay_production_operation_phase='post-check',
+                                relay_upgrade_requested=False,
+                                relay_upgrade_lifecycle_managed=False)
+                            inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                            (work / 'inventory.json').write_text(json.dumps(inventory))
+                            returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard, pool_guard)
+                            log.flush()
+                            checked = Path(log_name).read_text()
+                            require(returncode == 0 and 'failed=0' in checked
+                                    and not re.search(r'changed=[1-9][0-9]*', checked)
+                                    and f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in checked,
+                                    'MANAGED_POOL_SERIAL_TRANSITION_FINAL_CHECK_UNPROVEN')
+                            new_gate_installed = True
+                            if transition['phase'] == 'installed':
+                                transition = transition_pool(target, key, config, revision, lifecycle_operation,
+                                    guard, extra_guard=pool_guard, action='finish')
+                                require(transition['phase'] == 'retired',
+                                        'MANAGED_POOL_SERIAL_TRANSITION_RETIREMENT_UNPROVEN')
+                            gate = remote_admission(target, key, values['relay_namespace'], 'status')
+                            if gate['phase'] != 'open':
+                                require(gate['operationId'] == lifecycle_operation and gate['target'] == revision
+                                        and gate['active'] == [] and gate['unknown'] == [],
+                                        'MANAGED_POOL_SERIAL_TRANSITION_FINAL_GATE_UNPROVEN')
+                                if gate['phase'] == 'recovery-required':
+                                    remote_admission(target, key, values['relay_namespace'], 'phase',
+                                        '--operation', lifecycle_operation, '--phase', 'applying')
+                                if gate['phase'] != 'verified':
+                                    remote_admission(target, key, values['relay_namespace'], 'phase',
+                                        '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
+                                remote_admission(target, key, values['relay_namespace'], 'resume',
+                                    '--operation', lifecycle_operation)
+                            require(remote_admission(target, key, values['relay_namespace'], 'status')['phase'] == 'open',
+                                    'MANAGED_POOL_SERIAL_TRANSITION_RESUME_UNPROVEN')
+                            previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', checked)
+                            require(previous is not None, 'previous-revision-proof')
+                            print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
+                            print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};verification=same-operation;log={log_name}')
+                            return
+                        values.update(relay_serial_pool_transition=True,
+                            relay_upgrade_lifecycle_managed=True,
+                            relay_admission_operation_id=lifecycle_operation)
+                        inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                        (work / 'inventory.json').write_text(json.dumps(inventory))
                     completed_pool_reinstall = False
                     retirement_report = None
-                    if args.phase == 'upgrade' and not args.local_lifecycle:
+                    if args.phase == 'upgrade' and not args.local_lifecycle and not serial_transition:
                         from lifecycle import progress
                         lifecycle_operation = admission_operation_id
                         if not args.authorize_lifecycle_recovery:
@@ -667,6 +740,9 @@ def run(args):
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
                     returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard, pool_guard)
+                    if serial_transition and returncode == 0:
+                        log.flush()
+                        new_gate_installed = f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in Path(log_name).read_text()
                     if (returncode == 0 and 'generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not completed_pool_reinstall):
                         from managed_pool_transport import reconcile_pool
@@ -676,7 +752,7 @@ def run(args):
                         log.write(proof + '\n')
                         log.flush()
                         print(proof, flush=True)
-                    if (args.phase == 'upgrade' or install_flow) and not completed_pool_reinstall:
+                    if (args.phase == 'upgrade' or install_flow or serial_transition) and not completed_pool_reinstall:
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
@@ -685,7 +761,7 @@ def run(args):
                                 args.phase + '-final-runtime-proof')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
                                 args.phase + '-installed-identity-proof')
-                        if args.phase == 'upgrade':
+                        if args.phase == 'upgrade' or serial_transition:
                             require(f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in apply_evidence,
                                     'upgrade-same-operation-activation-proof')
                         # Bootstrap/reinstall keep their independent qualification
@@ -716,6 +792,11 @@ def run(args):
                                 'lifecycle-same-operation-activation-proof')
                     if lifecycle_operation:
                         require(guard is not None and guard.poll() is None, 'lifecycle-host-lock-lost')
+                        if serial_transition:
+                            transition = transition_pool(target, key, config, revision, lifecycle_operation,
+                                guard, extra_guard=pool_guard, action='finish')
+                            require(transition['phase'] == 'retired',
+                                    'MANAGED_POOL_SERIAL_TRANSITION_RETIREMENT_UNPROVEN')
                         progress('ACTIVATE/VERIFY', revision)
                         remote_admission(target, key, values['relay_namespace'], 'phase',
                                          '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
@@ -724,9 +805,12 @@ def run(args):
                                           guard=guard, operation_id=lifecycle_operation)
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
+                        if serial_transition:
+                            require(remote_admission(target, key, values['relay_namespace'], 'status')['phase'] == 'open',
+                                    'MANAGED_POOL_SERIAL_TRANSITION_RESUME_UNPROVEN')
                         progress('OPEN', revision)
                 except Exception:
-                    if lifecycle_operation:
+                    if lifecycle_operation and (not serial_transition or new_gate_installed):
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')

@@ -8,6 +8,7 @@ import { reportRoutingResult } from './entrypoint.mjs';
 import { causalEvidence, digest, fail, positive, validateEnvelope } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
+import { historicalProgram } from './serial-pool-program.mjs';
 
 export function parseRecoveryRequest(request) {
   if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
@@ -116,6 +117,9 @@ export async function main() {
   let request;
   try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('RECOVERY_REQUEST_INVALID'); }
   parseRecoveryRequest(request);
+  const historical = await historicalProgram({ kind: 'publication-recovery', request, consumer: CONSUMER,
+    consumerPath: process.env.RELAY_CONSUMER_CONFIG });
+  if (historical.handled) return historical.value;
   const local = createLocalWriterAdapter();
   const executionSlot = runnerExecutionSlot();
   const broker = { invoke: value => local.invoke({ ...value, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: process.env.GITHUB_TOKEN }) };

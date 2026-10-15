@@ -38,9 +38,31 @@ export function parseAdmissionArguments(args) {
   return { command, options };
 }
 export function installedAdmissionControl() {
-  const store = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
-  return createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-    store, journal: createSlotJournal(store) });
+  // Keep the synchronous factory interface used by the protected Writer. Each
+  // async action revalidates the protected migration context and whole stores;
+  // a previously observed receipt cannot hide later changes before admission.
+  const methods = ['initialize', 'read', 'assertOpen', 'assertTaskComplete', 'assertSlotComplete',
+    'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete'];
+  return Object.fromEntries(methods.map(name => [name, async (...args) => {
+    const { loadSerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
+      await import('./serial-pool-compatibility.mjs');
+    const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
+    const originalStore = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
+    if (!compatibility) {
+      const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
+        store: originalStore, journal: createSlotJournal(originalStore) });
+      return admission[name](...args);
+    }
+    const currentStore = createAttemptStore(compatibility.current.storeRoot);
+    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
+    const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
+      supplementalInventory: async ({ task, slot }) => {
+        await composite.all();
+        return invokeOriginalReader(compatibility, { operation: 'inventory', task, slot });
+      } });
+    return admission[name](...args);
+  }]));
 }
 export async function readAdmissionSnapshot(input = process.stdin) {
   let size = 0; const chunks = [];

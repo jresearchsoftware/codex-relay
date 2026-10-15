@@ -151,22 +151,26 @@ bringing additional consumers into service uses the existing staged installation
 and owner-controlled runner-group administration. Apply does not install missing
 peers or adjust external settings to make qualification pass.
 
-An existing SERIAL installation cannot currently be converted to the managed
-pool through Apply or upgrade. Preflight stops with
-`MANAGED_POOL_SERIAL_TRANSITION_REQUIRED` before lifecycle, backend or pool
-mutations, preserving the original registration, service, paths, journals and
-protected deployment snapshot. Renaming the pool or choosing a new namespace is
-not a supported transition workaround; Apply does not adopt or deregister the
-original runner.
+For an existing registered, idle SERIAL installation, an external owner Apply
+or authorized upgrade performs the bounded
+[SERIAL-to-pool migration](../docs/serial-pool-migration.md). Keep its namespace,
+Unix identities, paths and other owner policy; select the managed pool fields
+and exact product revision. Read-only preflight qualifies ownership and the
+complete group workflow trust before the original gate is closed and drained.
+The transition disables the original idle listener before installing pool
+capacity, retains its exact original configuration and attempt readers, and
+retires its exact native registration only after target validation. Historical
+digests, admissions, snapshots and journals are not rewritten.
 
-Adding derived slots changes the consumer configuration digest, which also
-binds the existing admission gate and retained Writer publication/recovery
-envelopes. The owner must select and authorize a compatibility design and its
-qualification that preserve those original bindings before this transition can
-be supported. There is no automatic migration or digest rewrite. Conflicting
-existing pool bindings remain blocked rather than being rewritten. Unconfigured
-SERIAL installations keep their existing behavior, and source support does not
-establish live or production qualification.
+Reapplying the same configuration and target observes the retained operation
+UUID and continues forward, including after a lost acknowledgement. Unknown,
+busy, conflicting or unproved state stops closed; do not rename a runner,
+delete a receipt or edit a gate to bypass it. The installed general runner
+cannot stop itself to perform this handover: use the existing external owner
+deployment command. This needs no additional migration command or manual
+record repair. Conflicting pool bindings remain blocked. Unconfigured SERIAL
+installations keep their existing behavior; source support and synthetic
+fixtures do not establish installed TEST or PROD qualification.
 
 Namespace upgrade, stop and reinstall retain shared physical services and
 registrations. Pool contraction owns their retirement. Reinstall closes and

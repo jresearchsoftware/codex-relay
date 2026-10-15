@@ -480,13 +480,18 @@ def installed_main(revision):
     source = Path(__file__).resolve().parents[1]
     config, _, _ = verify(source, revision, require_local_apply=False)
     contract = pool_contract(config)
-    from pool_migration import reject_serial_transition
-    reject_serial_transition(contract)
     payload = json.loads(sys.stdin.read(16385))
     require(set(payload) == {'installationToken', 'appId', 'installationId', 'organization'}
             and all(payload[key] == contract[key] for key in ['appId', 'installationId', 'organization'])
             and isinstance(payload['installationToken'], str) and 0 < len(payload['installationToken']) <= 4096,
             'TOKEN_BINDING_INVALID')
+    github = GitHub(payload['installationToken'], contract['organization'])
+    github.qualify(contract)
+    from serial_pool_installation import preflight, consumer_digest
+    transition = preflight(config, github, consumer_digest(config['consumer'], source))
+    if transition is not None and transition.get('phase') != 'retired':
+        require(transition.get('phase') in ['stopped', 'target-ready', 'remove-intent'],
+                'SERIAL_TRANSITION_STOP_UNPROVEN')
     root = Path('/var/lib/codex-relay-pools') / contract['name']
     protected_parents(root)
     descriptor = os.open(root / 'pool.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -495,7 +500,7 @@ def installed_main(revision):
         require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1
                 and stat.S_IMODE(info.st_mode) == 0o600, 'LOCK_UNSAFE')
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        report = reconcile(contract, State(root), GitHub(payload['installationToken'], contract['organization']), Host(contract))
+        report = reconcile(contract, State(root), github, Host(contract))
         print('MANAGED_POOL_RESULT=' + json.dumps(report, sort_keys=True))
     finally:
         os.close(descriptor)

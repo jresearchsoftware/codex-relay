@@ -1193,6 +1193,10 @@ def recovery_admission_program(config, *, source_base=None):
     source += "const store = createAttemptStore(CONSUMER.paths.claimRoot + '/publication-v2');\n"
     source += "const journal = {async get(runId) {const record = await store.get(runId); if (!record?.envelope) return null; const id = record.envelope.executionSlot ?? 'primary'; const slot = CONSUMER.executionSlots?.find(slot => slot.id === id); if ((CONSUMER.executionSlots && !slot) || (!CONSUMER.executionSlots && id !== 'primary')) fail('EXECUTION_SLOT_INVALID'); return createAttemptStore(slot?.paths.attemptRoot ?? CONSUMER.paths.attemptRoot).get(runId);}};\n"
     source += "const admission = createAdmissionControl({root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST, store, journal});\n"
+    source += 'const {existsSync} = await import("node:fs");\n'
+    source += 'if (existsSync(join(dirname(process.env.RELAY_CONSUMER_CONFIG), "serial-pool-compat-v1.json"))) {\n'
+    source += '  const {installedAdmissionControl} = await import(' + json.dumps(base + 'controller/src/admission-cli.mjs') + ');\n'
+    source += '  Object.assign(admission, installedAdmissionControl());\n}\n'
     source += "process.stdout.write(JSON.stringify(await admission.status()) + '\\n');\n"
     return source
 
