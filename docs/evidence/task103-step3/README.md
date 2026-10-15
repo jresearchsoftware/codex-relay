@@ -158,6 +158,17 @@ the qualified namespace/slot contract. UID, exact service cgroup, checkout and
 original claim/journal binding must all agree. Unknown slots, processes or
 ambiguous attribution yield explicit gaps rather than timing-based assignment.
 
+Before a slot's first reservation, its configured `attempts-v2` or shared
+`publication-v2` leaf may not exist. The collector reports that as observed empty
+only after no-follow inspection and access to every existing protected parent;
+it never creates the leaf. `protected-sources.json` records the absent-leaf
+observation and parent metadata. Missing parents, denied access, unsafe metadata
+and aliases remain gaps. Disappearance of a directory or numeric record already
+observed during the window also remains a gap, including a claim after its
+journal appeared. Cached records revalidate metadata changes. The directory
+and cache checks in `--self-test` require native root private fixtures; other
+offline checks still run without root.
+
 `protected-host-observations.json` and `protected-execution-inventory.json`
 are compatible with the verifier. `protected-sources.json` preserves original
 byte hashes, owners, modes and source metadata. Snapshot exports full immutable

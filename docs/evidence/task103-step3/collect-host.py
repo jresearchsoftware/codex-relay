@@ -154,7 +154,8 @@ def load_slots(namespaces):
             binding = unit_binding(unit, value["runnerUser"])
             slots.append({"namespace": ns, "repository": repository, "repository_id": repository_id, "id": slot_id,
                           "uid": runtime.pw_uid, "runner_uid": runner.pw_uid, "work": work, "attempts": attempts,
-                          "claims": claims, "unit": unit, "cgroup": binding["ControlGroup"], "unit_source": binding["FragmentPath"]})
+                          "claims": claims, "state_root": state, "unit": unit,
+                          "cgroup": binding["ControlGroup"], "unit_source": binding["FragmentPath"]})
         directory = Path(f"/var/lib/{ns}/slots")
         if directory.exists():
             require(all(child.name in known and not child.is_symlink() for child in directory.iterdir()), "UNEXPECTED_INSTALLED_SLOT")
@@ -172,10 +173,60 @@ def record_binding(record, slot, run_id):
 class Records:
     def __init__(self, slots):
         self.slots, self.cache, self.sources, self.source_history = slots, {}, {}, {}
+        self.seen_directories, self.seen_records, self.directories = set(), {}, {}
+
+    def entries(self, directory, owners, state_root):
+        """Only a missing lazy leaf below accessible, protected parents is empty."""
+        require(directory.is_relative_to(state_root) and directory != state_root, "PATH_SCOPE_INVALID")
+        parents = []
+        for parent in reversed(directory.parents):
+            meta = parent.lstat()
+            allowed = owners if parent != state_root and parent.is_relative_to(state_root) else {0}
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in allowed and not meta.st_mode & 0o022,
+                    "PROTECTED_PARENT_UNTRUSTED")
+            parents.append({"path": str(parent), "uid": meta.st_uid, "gid": meta.st_gid,
+                            "mode": oct(stat.S_IMODE(meta.st_mode)), "dev": meta.st_dev, "inode": meta.st_ino})
+        # Opening/listing the existing parent distinguishes absence from denied
+        # access. lstat also distinguishes a dangling symlink from a missing leaf.
+        fd = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            opened = os.fstat(fd)
+            require((opened.st_dev, opened.st_ino) == (parents[-1]["dev"], parents[-1]["inode"]),
+                    "PROTECTED_PARENT_CHANGED")
+            os.listdir(fd)
+            try:
+                meta = os.stat(directory.name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                require(directory not in self.seen_directories, "OBSERVED_PROTECTED_DIRECTORY_DISAPPEARED")
+                self.directories[(str(directory), "absent-lazy")] = {
+                    "path": str(directory), "status": "absent-lazy", "observed_at": utc(), "parents": parents}
+                return []
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in owners and not meta.st_mode & 0o022,
+                    "PROTECTED_DIRECTORY_UNTRUSTED")
+            child_fd = os.open(directory.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                opened = os.fstat(child_fd)
+                require((opened.st_dev, opened.st_ino) == (meta.st_dev, meta.st_ino), "PROTECTED_DIRECTORY_CHANGED")
+                names = [directory / name for name in os.listdir(child_fd)]
+                current = os.stat(directory.name, dir_fd=fd, follow_symlinks=False)
+                require((current.st_dev, current.st_ino, current.st_mode, current.st_uid, current.st_gid) ==
+                        (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_uid, meta.st_gid), "PROTECTED_DIRECTORY_CHANGED")
+            finally:
+                os.close(child_fd)
+        finally:
+            os.close(fd)
+        require(len(names) <= 10000, "PROTECTED_RECORD_COUNT_LIMIT")
+        self.seen_directories.add(directory)
+        self.directories[(str(directory), "present")] = {
+            "path": str(directory), "status": "present", "observed_at": utc(), "parents": parents,
+            "uid": meta.st_uid, "gid": meta.st_gid, "mode": oct(stat.S_IMODE(meta.st_mode)),
+            "dev": meta.st_dev, "inode": meta.st_ino}
+        return names
 
     def read(self, path, owners):
         metadata = path.lstat()
-        identity = (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
+        identity = (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns,
+                    metadata.st_uid, metadata.st_gid, metadata.st_mode, metadata.st_nlink, metadata.st_ctime_ns)
         if path not in self.cache or self.cache[path][0] != identity:
             value, source = json_source(path, owners)
             self.cache[path] = (identity, value)
@@ -185,24 +236,27 @@ class Records:
 
     def scan(self):
         inventory, pairs, scanned_claims, gaps, counts = [], {}, {}, [], {"journals": 0, "claims": 0}
+        observed_records = set()
         for slot in self.slots:
             for kind, directory, owners in [("journal", slot["attempts"], {0, slot["runner_uid"]}),
                                              ("claim", slot["claims"], {0})]:
-                if not directory.exists():
-                    gaps.append({"code": "PROTECTED_DIRECTORY_MISSING", "namespace": slot["namespace"], "slot": slot["id"], "kind": kind})
-                    continue
-                meta = directory.lstat()
-                require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in owners and not meta.st_mode & 0o022, "PROTECTED_DIRECTORY_UNTRUSTED")
                 if kind == "claim" and directory in scanned_claims:
                     continue
                 if kind == "claim":
                     scanned_claims[directory] = True
-                names = list(directory.iterdir())
-                require(len(names) <= 10000, "PROTECTED_RECORD_COUNT_LIMIT")
+                try:
+                    names = self.entries(directory, owners, slot["state_root"])
+                except (ValueError, OSError) as error:
+                    gaps.append({"code": safe_error_code(error), "namespace": slot["namespace"],
+                                 "slot": slot["id"], "kind": kind})
+                    continue
                 for path in names:
                     if not re.fullmatch(r"[1-9][0-9]*\.json", path.name):
                         continue  # canonical temporary/lock entries are not records
                     run_id = int(path.stem)
+                    observed_records.add(path)
+                    self.seen_records.setdefault(path, {"namespace": slot["namespace"],
+                        "slot": slot["id"], "kind": kind, "run_id": run_id})
                     try:
                         value = self.read(path, owners)
                         assigned = slot
@@ -230,6 +284,8 @@ class Records:
                     except (ValueError, OSError, KeyError, TypeError):
                         gaps.append({"code": "PROTECTED_RECORD_READ_OR_BINDING_GAP", "namespace": slot["namespace"],
                                      "slot": slot["id"], "kind": kind, "run_id": run_id})
+        for path in self.seen_records.keys() - observed_records:
+            gaps.append({"code": "OBSERVED_PROTECTED_RECORD_DISAPPEARED", **self.seen_records[path]})
         for key, pair in pairs.items():
             if "journal" in pair and "claim" in pair:
                 if pair["journal"]["envelope"] != pair["claim"]["envelope"]:
@@ -322,6 +378,120 @@ def self_test():
     import unittest
 
     class Checks(unittest.TestCase):
+        def fixture(self):
+            import tempfile
+            temporary = tempfile.TemporaryDirectory(prefix="task103-collector-", dir="/run")
+            self.addCleanup(temporary.cleanup)
+            root = Path(temporary.name)
+            slots = []
+            for ns, (repository, repository_id) in TARGETS.items():
+                state = root / ns
+                state.mkdir(mode=0o755)
+                (state / "writer-claims").mkdir(mode=0o700)
+                for slot_id in ["primary", "second"]:
+                    parent = state / slot_id / "dispatch"
+                    parent.mkdir(parents=True, mode=0o700)
+                    slots.append({"namespace": ns, "repository": repository, "repository_id": repository_id,
+                                  "id": slot_id, "runner_uid": os.getuid(), "state_root": state,
+                                  "attempts": parent / "attempts-v2",
+                                  "claims": state / "writer-claims/publication-v2"})
+            return Records(slots), slots
+
+        def record(self, slot, directory):
+            directory.mkdir(mode=0o700, exist_ok=True)
+            path = directory / "123.json"
+            value = {"envelope": {"repository": slot["repository"], "runId": 123,
+                                  "attemptId": "run-123", "executionSlot": slot["id"]}}
+            path.write_text(json.dumps(value))
+            path.chmod(0o600)
+            return path
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private fixtures validate protected parent ownership")
+        def test_four_unused_slots_are_observed_empty_then_become_real_pair(self):
+            records, slots = self.fixture()
+            inventory, pairs, gaps, counts = records.scan()
+            self.assertEqual((inventory, pairs, gaps, counts), ([], {}, [], {"journals": 0, "claims": 0}))
+            self.assertEqual(len(records.directories), 6)  # namespace claims scanned once
+            self.assertTrue(all(item["status"] == "absent-lazy" and item["parents"]
+                                for item in records.directories.values()))
+            self.assertTrue(all(not slot["attempts"].exists() and not slot["claims"].exists() for slot in slots))
+            self.assertEqual(records.scan()[2], [])
+            slot = slots[1]
+            self.record(slot, slot["attempts"])
+            self.record(slot, slot["claims"])
+            inventory, pairs, gaps, counts = records.scan()
+            self.assertEqual(gaps, [])
+            self.assertEqual(counts, {"journals": 1, "claims": 1})
+            self.assertEqual(len(inventory), 1)
+            self.assertIn("claim", pairs[(slot["repository"], 123)])
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private protected-directory fixture")
+        def test_missing_parent_is_not_lazy_empty(self):
+            records, slots = self.fixture()
+            slots[0]["attempts"].parent.rmdir()
+            self.assertTrue(records.scan()[2])
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private protected-directory fixture")
+        def test_missing_leaf_with_unreadable_parent_remains_gap(self):
+            from unittest.mock import patch
+            records, _ = self.fixture()
+            with patch("os.listdir", side_effect=PermissionError("unreadable parent")):
+                self.assertTrue(records.scan()[2])
+            self.assertEqual(records.directories, {})
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private protected-directory fixture")
+        def test_unsafe_directory_parent_and_dangling_leaf_alias_are_gaps(self):
+            for shape in ["parent-write", "leaf-write", "leaf-file", "leaf-link", "parent-link", "foreign-owner"]:
+                with self.subTest(shape=shape):
+                    records, slots = self.fixture()
+                    directory = slots[0]["attempts"]
+                    if shape == "parent-write":
+                        directory.parent.chmod(0o770)
+                    elif shape == "parent-link":
+                        parent = directory.parent
+                        parent.rmdir()
+                        parent.symlink_to(parent.parent / "missing")
+                    elif shape == "leaf-link":
+                        directory.symlink_to(directory.parent / "missing")
+                    elif shape == "leaf-file":
+                        directory.write_text("not a directory")
+                    else:
+                        directory.mkdir(mode=0o770 if shape == "leaf-write" else 0o700)
+                        if shape == "leaf-write":
+                            directory.chmod(0o770)
+                        if shape == "foreign-owner":
+                            os.chown(directory, 65534, 65534)
+                    self.assertTrue(records.scan()[2])
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private protected-record fixture")
+        def test_cached_record_metadata_is_rechecked_and_unreadable_record_is_gap(self):
+            from unittest.mock import patch
+            records, slots = self.fixture()
+            path = self.record(slots[0], slots[0]["attempts"])
+            self.assertEqual(records.scan()[2], [])
+            path.chmod(0o666)  # inode/size/mtime stay unchanged
+            self.assertTrue(records.scan()[2])
+            path.chmod(0o600)
+            with patch.object(records, "read", side_effect=PermissionError("unreadable record")):
+                self.assertTrue(records.scan()[2])
+
+        @unittest.skipUnless(os.geteuid() == 0, "native root private protected-record fixture")
+        def test_observed_claim_and_journal_disappearance_remain_gaps(self):
+            records, slots = self.fixture()
+            slot = slots[0]
+            journal = self.record(slot, slot["attempts"])
+            claim = self.record(slot, slot["claims"])
+            self.assertEqual(records.scan()[2], [])
+            claim.unlink()
+            self.assertTrue(any(g["code"] == "OBSERVED_PROTECTED_RECORD_DISAPPEARED" and g["kind"] == "claim"
+                                for g in records.scan()[2]))
+            journal.unlink()
+            slot["attempts"].rmdir()
+            gaps = records.scan()[2]
+            self.assertTrue(any(g["code"] == "OBSERVED_PROTECTED_DIRECTORY_DISAPPEARED" for g in gaps))
+            self.assertTrue(any(g["code"] == "OBSERVED_PROTECTED_RECORD_DISAPPEARED" and g["kind"] == "journal"
+                                for g in gaps))
+
         def test_snapshot_excludes_input_prose_transcripts_and_secret_paths(self):
             value = {"envelope": {"runId": 1, "input": "private input", "request": {"kind": "admission", "schema_version": "4.0"}},
                      "execution": {"result": {"status": "success", "summary": "private summary"}, "diagnostic": "transcript"}}
@@ -469,6 +639,7 @@ def main():
         write_json(output, "protected-execution-inventory.json", {"complete_for_window": not gaps, "started_at": start,
                    "ended_at": utc(), "attempts": list(inventory_window.values()), "scan_counts": history, "gaps": gaps})
         write_json(output, "protected-sources.json", {"configs": config_sources, "records": list(records.source_history.values()),
+                   "directories": list(records.directories.values()),
                    "slots": [{key: str(value) if isinstance(value, Path) else value for key, value in slot.items()} for slot in slots],
                    "collector_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "gaps": gaps})
     print(json.dumps({"output": str(output), "samples": len(samples), "gaps": len(gaps), "complete_for_window": not gaps}), flush=True)
