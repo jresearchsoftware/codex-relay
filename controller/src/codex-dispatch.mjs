@@ -10,8 +10,7 @@ export async function main() {
   if (process.argv.length !== 2) fail('DISPATCH_ARGUMENTS_INVALID');
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort();
-  const lifetime = new Socket({ fd: 3, readable: true, writable: false });
-  lifetime.on('end', cancel); lifetime.on('error', cancel); lifetime.resume();
+  let lifetime;
   process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
   try {
     const chunks = []; let size = 0;
@@ -21,9 +20,11 @@ export async function main() {
       const slot = CONSUMER.executionSlots.find(value => value.id === EXECUTION_SLOT);
       if (!slot || (e.executionSlot ?? 'primary') !== slot.id || process.getuid?.() !== unixUserId(slot.runnerUser)) fail('EXECUTION_SLOT_IDENTITY_INVALID');
     }
+    lifetime = new Socket({ fd: 3, readable: true, writable: false });
+    lifetime.on('end', cancel); lifetime.on('error', cancel); lifetime.resume();
     return await executeCodex(e, { signal: cancellation.signal });
   } finally {
-    lifetime.destroy();
+    lifetime?.destroy();
     process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
   }
 }
