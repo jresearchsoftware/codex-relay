@@ -307,7 +307,14 @@ class Host:
             self.command(['/usr/bin/systemctl', 'disable', member['service']])
             self.command(['/usr/bin/systemctl', 'stop', '--no-block', member['service']])
         finally:
-            self.command(['/usr/bin/systemctl', 'thaw', member['service']])
+            try:
+                self.command(['/usr/bin/systemctl', 'thaw', member['service']])
+            except PoolError:
+                # An asynchronous stop can remove the cgroup before thaw.
+                # Only fresh proof of an inactive, empty unit resolves that
+                # race; an active or uncertain unit must retain the failure.
+                if not self.removal_stopped(member):
+                    raise
         return self.removal_stopped(member)
 
     def retire(self, member):

@@ -554,6 +554,84 @@ def test_dead_unit_with_remaining_cgroup_worker_is_not_retired(monkeypatch):
     assert host.stop_idle(member, lambda: True) is False
 
 
+@pytest.mark.parametrize('after_stop', ['inactive-absent', 'failed-empty', 'active',
+                                      'inactive-residual', 'inactive-nested-residual',
+                                      'inactive-control-pid', 'unknown', 'foreign-cgroup'])
+def test_thaw_failure_is_resolved_only_by_fresh_stopped_empty_cgroup_proof(tmp_path, monkeypatch, after_stop):
+    member = pool.pool_contract(inputs(1))['members'][0]
+    group_name = '/system.slice/' + member['service']
+    group = tmp_path / 'sys/fs/cgroup' / group_name.lstrip('/')
+    group.mkdir(parents=True)
+    (group / 'cgroup.events').write_text('frozen 1\n')
+    (group / 'cgroup.procs').write_text('50\n')
+    process = tmp_path / 'proc/50'
+    process.mkdir(parents=True)
+    (process / 'cmdline').write_bytes(b'/runner/bin/Runner.Listener\x00run\x00')
+    (process / 'exe').symlink_to(tmp_path / 'Runner.Listener')
+    real_path = Path
+
+    def local_path(value):
+        value = str(value)
+        return real_path(tmp_path / value.lstrip('/')) if value.startswith(('/sys/fs/cgroup/', '/proc/')) else real_path(value)
+
+    monkeypatch.setattr(pool, 'Path', local_path)
+    host = object.__new__(pool.Host)
+    state = {'ActiveState': 'active', 'MainPID': '50', 'ControlPID': '0', 'ControlGroup': group_name}
+    service_reads, calls = [], []
+
+    def service(member):
+        service_reads.append(dict(state))
+        return dict(state)
+
+    thaw_error = pool.PoolError('SYNTHETIC_THAW_FAILED')
+
+    def command(argv):
+        calls.append(argv)
+        if argv[1] == 'stop':
+            state.update(ActiveState='inactive', MainPID='0', ControlPID='0')
+            (group / 'cgroup.procs').write_text('')
+            if after_stop == 'inactive-absent':
+                (group / 'cgroup.procs').unlink()
+                (group / 'cgroup.events').unlink()
+                group.rmdir()
+                state['ControlGroup'] = ''
+            elif after_stop == 'failed-empty':
+                state['ActiveState'] = 'failed'
+            elif after_stop == 'active':
+                state.update(ActiveState='active', MainPID='50')
+            elif after_stop == 'inactive-residual':
+                (group / 'cgroup.procs').write_text('99\n')
+            elif after_stop == 'inactive-nested-residual':
+                nested = group / 'retained-child'
+                nested.mkdir()
+                (nested / 'cgroup.procs').write_text('99\n')
+            elif after_stop == 'inactive-control-pid':
+                state['ControlPID'] = '51'
+            elif after_stop == 'unknown':
+                state['ActiveState'] = 'deactivating'
+            elif after_stop == 'foreign-cgroup':
+                state['ControlGroup'] = '/system.slice/foreign.service'
+        elif argv[1] == 'thaw':
+            raise thaw_error
+        return b''
+
+    host.service, host.command = service, command
+    if after_stop in ['inactive-absent', 'failed-empty']:
+        assert host.stop_idle(member, lambda: True) is True
+        assert len(service_reads) == 3  # Initial state, thaw reconciliation, final proof.
+    else:
+        with pytest.raises(pool.PoolError) as error:
+            host.stop_idle(member, lambda: True)
+        if after_stop != 'foreign-cgroup':
+            assert error.value is thaw_error
+        else:
+            assert 'SERVICE_CGROUP_UNPROVEN' in str(error.value)
+        assert len(service_reads) == 2
+    assert [argv[1] for argv in calls] == ['freeze', 'kill', 'disable', 'stop', 'thaw']
+    assert calls[1] == ['/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=SIGTERM', member['service']]
+    assert calls[3] == ['/usr/bin/systemctl', 'stop', '--no-block', member['service']]
+
+
 def install_fixture(tmp_path):
     contract = pool.pool_contract(inputs(1))
     template = (ROOT / 'deploy/ansible/roles/relay_runner/templates/relay-managed-pool.service.j2').read_text()
