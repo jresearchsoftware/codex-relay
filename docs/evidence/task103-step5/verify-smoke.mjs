@@ -45,6 +45,13 @@ export function verifyInstallation(installed, expectedCandidate, nativePool) {
     assert.match(config.sha256, /^[a-f0-9]{64}$/);
     assert.equal(config.pool_id, installed.pool.id, 'one pool across both repositories');
     id(config.runtime_uid);
+    assert.deepEqual(config.execution_slots.map(slot => slot.id), ['primary', ...Array.from({ length: 31 }, (_, n) => `pool-${n + 2}`)]);
+    for (const slot of config.execution_slots) {
+      id(slot.runtime_uid); id(slot.runner_uid);
+      assert(Number.isSafeInteger(slot.work_gid) && slot.work_gid >= 0);
+      assert.notEqual(slot.runtime_uid, slot.runner_uid);
+      assert.match(slot.work_group, /^[a-z_][a-z0-9_-]*$/);
+    }
   }
   const { pool } = installed; id(pool.desired_capacity); id(pool.runner_group_id);
   assert(pool.desired_capacity >= 2 && pool.desired_capacity <= 32);
@@ -106,10 +113,20 @@ export function verifyOverlap(pair, results, observations, inventory, installed)
     const member = installed.pool.members.find(value => value.runner_id === first.runner_id);
     assert.equal(first.runner_service, member.unit);
     assert.equal(first.cgroup, member.cgroup, 'actual systemctl cgroup binding');
-    assert.equal(first.uid, installed.configurations.find(value => value.repository === result.repository).runtime_uid);
+    const config = installed.configurations.find(value => value.repository === result.repository);
+    const binding = config.execution_slots.find(value => value.id === result.execution_slot);
+    assert(binding, 'original execution slot comes from protected consumer configuration');
+    assert.equal(first.execution_slot, result.execution_slot);
+    assert.equal(first.uid, binding.runtime_uid);
+    assert.equal(member.runner_uid, binding.runner_uid);
     for (const sample of samples) {
-      for (const key of ['pid', 'uid', 'proc_start_ticks', 'executable', 'cgroup', 'runner_id', 'runner_name', 'runner_service', 'checkout'])
+      for (const key of ['pid', 'uid', 'proc_start_ticks', 'executable', 'cgroup', 'runner_id', 'runner_name', 'runner_service', 'checkout', 'execution_slot', 'process_gid'])
         assert.equal(sample[key], first[key], `stable process ${key}`);
+      assert(Number.isSafeInteger(sample.process_gid) && sample.process_gid >= 0);
+      assert(Array.isArray(sample.process_groups) && sample.process_groups.every(value => Number.isSafeInteger(value) && value >= 0));
+      assert.deepEqual(sample.process_groups, first.process_groups, 'stable observed supplementary groups');
+      const actualGroups = new Set([sample.process_gid, ...sample.process_groups]);
+      const identities = new Map();
       assert.equal(sample.attempt, result.attempt); assert.equal(sample.host, installed.host);
       assert.notEqual(sample.process_state, 'Z');
       assert(timestamp(sample.observed_at) >= timestamp(result.job_started_at));
@@ -117,7 +134,14 @@ export function verifyOverlap(pair, results, observations, inventory, installed)
       for (const key of keys) {
         assert.equal(sample.environment_paths[key], `${sample.checkout}/.codex-sandbox/${suffixes[key]}`, `actual bounded ${key}`);
         const directory = sample.directory_metadata[key];
-        assert.equal(directory.uid, first.uid); id(directory.inode); assert(Number.isInteger(directory.dev));
+        assert([binding.runner_uid, binding.runtime_uid].includes(directory.uid), 'configured runner/runtime directory owner');
+        assert.equal(directory.gid, binding.work_gid, 'protected execution slot work group');
+        assert(['0o770', '0o2770'].includes(directory.mode), 'private owner/group writable sandbox directory');
+        assert(directory.uid === sample.uid || actualGroups.has(directory.gid), 'observed process has owner or group rwx access');
+        id(directory.inode); assert(Number.isInteger(directory.dev));
+        const identity = `${directory.dev}:${directory.inode}`, path = sample.environment_paths[key];
+        assert(!identities.has(identity) || identities.get(identity) === path, 'distinct sandbox paths cannot alias one inode');
+        identities.set(identity, path);
       }
     }
     return samples;

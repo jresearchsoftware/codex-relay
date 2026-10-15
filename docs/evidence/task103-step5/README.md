@@ -183,11 +183,22 @@ Use a fresh window after capacity or protected config changes: changing config
 inside a closed overlap window makes its completeness claim fail. The collector
 reads no credential file or transcript. It reads only explicit sandbox path
 values from the actual process environment, discards all other entries without
-exporting them, and checks actual directory device/inode/UID inside the process
-mount namespace. No raw environment or argv is stored. It retains only bounded
+exporting them, and checks actual directory device/inode/UID/GID/mode inside the process
+mount namespace. Protected per-slot configuration binds the runner UID, runtime
+UID and work-group GID. Sandbox directories may be runner-owned or runtime-owned;
+their private `0770`/`02770` permissions and the observed process primary and
+supplementary groups must prove owner or group read/write/search access. Distinct
+sandbox paths cannot share an inode, except `HOME` and `CODEX_HOME` naming the
+same path. No raw environment or argv is stored. It retains only bounded
 machine fields from original claim/journal records; synthetic fixture records
 are refused. Missing attribution, mutable config, unsafe/missing protected
 parents or incomplete source reads become gaps, not invented observations.
+
+The original `6883490` observation window failed with `SANDBOX_DIRECTORY_OWNER`:
+its collector incorrectly required runtime ownership of runner-created shared
+work directories. Preserve that failed window unchanged. This correction does
+not repair its observations or qualify its overlap; use a fresh complete window
+and separately admitted new fixture attempts after installing the corrected head.
 
 For native Issue events/comments, PR comments and jobs use complete paginated
 reads. The jobs input is `{total_count: N, jobs: ALL_NATIVE_JOB_OBJECTS}` after

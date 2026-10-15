@@ -23,7 +23,7 @@ function nativeCase(variant, task, runId, runner) {
       purpose: issue.title, startingState: { branch: decision.amendments.branch, base_sha: candidate, starting_head: candidate, existing_pr: null } });
   const admission = createAdmissionSnapshot(resolved, { step: 1, attempt: `run-${runId}`, runId });
   const envelope = { repository: repository.full_name, issueNumber: task, runId, attemptId: `run-${runId}`, route: 'auto', transport: 'label',
-    runName: `Automatic fixture ${task}`, readyLabel: 'codex-ready-auto', readyEventId: task + 3000, readyEventAt: '2026-10-15T12:00:00Z',
+    runName: `Automatic fixture ${task}`, executionSlot: runner.id, readyLabel: 'codex-ready-auto', readyEventId: task + 3000, readyEventAt: '2026-10-15T12:00:00Z',
     step: 1, request: admission, branch: admission.branch, startHead: candidate, profile: { cliModelId: 'gpt-6.1-sol', effort: 'medium' }, subagentsAllowed: false };
   const record = { schema_version: '4.0', kind: 'outcome', repository: repository.full_name, task, parent: { kind: 'pull_request', number: task + 50 },
     charter_sha256: sha256Body(issue.body), step: 1, authority: admission.authority, admission: admissionBinding(admission), authority_resolution: admission.authority_resolution,
@@ -51,7 +51,9 @@ function nativeCase(variant, task, runId, runner) {
 function fixture(cross = false) {
   const members = [1, 2].map(n => ({ id: n === 1 ? 'primary' : 'pool-2', runner_id: 50 + n, runner_name: `relay-test-pool-${n}`, runner_uid: 900, unit: `relay-test-pool-pool-${n}.service`, cgroup: `/offline/runner-${n - 1}` }));
   const installed = { source: 'trusted-root-installed-readback', candidate, host: 'offline-host', complete: true, gaps: [], pool_manifest_sha256: 'f'.repeat(64),
-    configurations: [repoA, repoB].map(repository => ({ repository, runtime_uid: 300, candidate, pool_id: 'relay-test-pool', sha256: 'c'.repeat(64) })),
+    configurations: [repoA, repoB].map(repository => ({ repository, runtime_uid: 300, candidate, pool_id: 'relay-test-pool', sha256: 'c'.repeat(64),
+      execution_slots: Array.from({ length: 32 }, (_, n) => ({ id: n === 0 ? 'primary' : `pool-${n + 1}`,
+        runtime_uid: 300, runner_uid: 900, work_group: 'fixture-work', work_gid: 700 })) })),
     pool: { id: 'relay-test-pool', desired_capacity: 2, runner_group_id: 6, members } };
   const native = { native_reads_complete: true, group: { id: 6, visibility: 'selected', allows_public_repositories: false,
     restricted_to_workflows: true, selected_workflows: [repoA, repoB].flatMap(repo =>
@@ -63,12 +65,13 @@ function fixture(cross = false) {
   const observations = { source: 'trusted-host-procfs', complete_for_window: true, candidate, gaps: [], samples: results.flatMap((result, index) => times.map(observed_at => {
     const checkout = `/var/lib/codex-relay-test/work/${result.attempt}`, environment_paths = {}, directory_metadata = {};
     for (const [key, suffix] of Object.entries({ HOME: 'home', CODEX_HOME: 'home', XDG_CACHE_HOME: 'cache', XDG_CONFIG_HOME: 'config', XDG_DATA_HOME: 'data', XDG_STATE_HOME: 'state', TMPDIR: 'tmp' })) {
-      environment_paths[key] = `${checkout}/.codex-sandbox/${suffix}`; directory_metadata[key] = { uid: 300, dev: 1, inode: index * 100 + 10 + suffix.length };
+      environment_paths[key] = `${checkout}/.codex-sandbox/${suffix}`; directory_metadata[key] = { uid: 900, gid: 700, mode: '0o2770', dev: 1,
+        inode: index * 100 + 10 + ['home', 'cache', 'config', 'data', 'state', 'tmp'].indexOf(suffix) };
     }
     return { observed_at, repository: result.repository, run_id: result.run_id, attempt: result.attempt, pid: 200 + index, uid: 300,
       proc_start_ticks: '12345', executable: '/opt/test/codex', command_role: 'codex-exec', process_state: 'S', cgroup: `/offline/runner-${index}`,
       host: installed.host, runner_name: result.runner_name, runner_id: result.runner_id, runner_service: members[index].unit, pool_id: installed.pool.id,
-      checkout, environment_paths, directory_metadata };
+      execution_slot: result.execution_slot, process_gid: 300, process_groups: [700], checkout, environment_paths, directory_metadata };
   })), scan_counts: times.map(observed_at => ({ observed_at, active_attributable_codex: 2 })) };
   const inventory = { complete_for_window: true, gaps: [], attempts: results.map(result => ({ ...result, child: 'started' })) };
   return { installed, native, cases, results, observations, inventory, pair: { kind: cross ? 'cross-repository' : 'same-repository', cases: results.map(value => value.name) } };
@@ -117,6 +120,7 @@ test('reject process gaps, distinct UID substitution, shared HOME inode, duplica
 test('repository-specific UID probe is explicit and cannot be passed off as shared default', () => {
   const f = fixture(true);
   f.installed.configurations[1].runtime_uid = 301;
+  f.installed.configurations[1].execution_slots.forEach(slot => slot.runtime_uid = 301);
   for (const sample of f.observations.samples.filter(value => value.repository === repoB)) {
     sample.uid = 301;
     for (const directory of Object.values(sample.directory_metadata)) directory.uid = 301;
@@ -124,4 +128,18 @@ test('repository-specific UID probe is explicit and cannot be passed off as shar
   assert.throws(() => verifyOverlap(f.pair, f.results, f.observations, f.inventory, f.installed));
   f.pair.identity_mode = 'repository-override';
   assert.equal(verifyOverlap(f.pair, f.results, f.observations, f.inventory, f.installed).identity_mode, 'repository-override');
+});
+
+test('directory evidence uses protected slot ownership and actual process groups', () => {
+  const f = fixture();
+  assert.equal(verifyOverlap(f.pair, f.results, f.observations, f.inventory, f.installed).observed_overlap_ms, 2000);
+  for (const sample of f.observations.samples) for (const entry of Object.values(sample.directory_metadata)) entry.uid = sample.uid;
+  assert.equal(verifyOverlap(f.pair, f.results, f.observations, f.inventory, f.installed).observed_overlap_ms, 2000);
+  for (const change of [sample => sample.directory_metadata.HOME.uid = 1,
+    sample => sample.directory_metadata.HOME.gid++, sample => sample.directory_metadata.HOME.mode = '0o777',
+    sample => sample.process_groups = [], sample => sample.directory_metadata.XDG_CACHE_HOME.inode = sample.directory_metadata.HOME.inode,
+    sample => sample.execution_slot = 'pool-32']) {
+    const value = fixture(); change(value.observations.samples[0]);
+    assert.throws(() => verifyOverlap(value.pair, value.results, value.observations, value.inventory, value.installed));
+  }
 });

@@ -6,6 +6,7 @@ claim/journal attribution. Only the listed sandbox path environment values are
 retained; no raw environment, argv, credential file or transcript is exported.
 """
 import argparse
+import grp
 import hashlib
 import importlib.util
 import json
@@ -42,8 +43,20 @@ def path_environment(raw, checkout):
     return selected
 
 
-def directory_metadata(pid, selected, uid):
+def process_groups(pid):
+    status = Path(f'/proc/{pid}/status').read_text()
+    gid_line, groups_line = re.search(r'^Gid:[ \t]+(.+)$', status, re.M), re.search(r'^Groups:[ \t]*(.*)$', status, re.M)
+    require(gid_line is not None and groups_line is not None, 'PROCESS_GROUPS_MISSING')
+    gids = [int(value) for value in gid_line.group(1).split()]
+    require(len(gids) == 4 and len(set(gids)) == 1, 'PROCESS_MIXED_GIDS')
+    return {'process_gid': gids[0], 'process_groups': sorted({int(value) for value in groups_line.group(1).split()})}
+
+
+def directory_metadata(pid, selected, slot, uid, groups):
+    require(uid == slot['uid'], 'SANDBOX_RUNTIME_BINDING')
+    actual_groups = {groups['process_gid'], *groups['process_groups']}
     result = {}
+    identities = {}
     for key, value in selected.items():
         # Resolve inside the actual process mount namespace, not the host view.
         target = Path(f'/proc/{pid}/root') / value.lstrip('/')
@@ -51,8 +64,16 @@ def directory_metadata(pid, selected, uid):
             info = node.lstat()
             require(stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode), 'SANDBOX_DIRECTORY_ALIAS')
         info = target.stat()
-        require(info.st_uid == uid, 'SANDBOX_DIRECTORY_OWNER')
-        result[key] = {'dev': info.st_dev, 'inode': info.st_ino, 'uid': info.st_uid, 'mode': oct(stat.S_IMODE(info.st_mode))}
+        require(info.st_uid in {slot['runner_uid'], uid}, 'SANDBOX_DIRECTORY_OWNER')
+        require(info.st_gid == slot['work_gid'], 'SANDBOX_DIRECTORY_GROUP')
+        mode = stat.S_IMODE(info.st_mode)
+        require(mode in {0o770, 0o2770}, 'SANDBOX_DIRECTORY_MODE')
+        require(info.st_uid == uid or info.st_gid in actual_groups, 'SANDBOX_DIRECTORY_ACCESS')
+        identity = (info.st_dev, info.st_ino)
+        require(identity not in identities or identities[identity] == value, 'SANDBOX_DIRECTORY_SHARED_INODE')
+        identities[identity] = value
+        result[key] = {'dev': info.st_dev, 'inode': info.st_ino, 'uid': info.st_uid,
+                       'gid': info.st_gid, 'mode': oct(mode)}
     return result
 
 
@@ -80,6 +101,7 @@ def load_installation(candidate, native):
         require(general['scope'] == 'organization' and native['group']['name'] == general['group'], 'POOL_GROUP_MISMATCH')
         require(native['group']['restricted_to_workflows'] is True and native['group']['visibility'] == 'selected', 'RESTRICTED_TEST_GROUP_REQUIRED')
         configured = config['executionSlots']
+        resource_bindings = []
         require([value['id'] for value in configured] == ['primary'] + [f'pool-{number}' for number in range(2, 33)],
                 'FIXED_INTERNAL_POOL_TOPOLOGY_REQUIRED')
         if pool is None:
@@ -89,7 +111,10 @@ def load_installation(candidate, native):
             expected_name = pool_id if index == 1 else f'{pool_id}-{index}'
             require(value['runnerName'] == expected_name and value['runnerUser'] == general['user'], 'POOL_RUNNER_BINDING_MISMATCH')
             runner, runtime = pwd.getpwnam(value['runnerUser']), pwd.getpwnam(value['runtimeUser'])
+            work_gid = grp.getgrnam(value['workGroup']).gr_gid
             require(runner.pw_uid > 0 and runtime.pw_uid > 0 and runner.pw_uid != runtime.pw_uid, 'NONROOT_SEPARATE_TRUSTED_RUNNER_REQUIRED')
+            resource_bindings.append({'id': value['id'], 'runtime_uid': runtime.pw_uid, 'runner_uid': runner.pw_uid,
+                                      'work_group': value['workGroup'], 'work_gid': work_gid})
             unit = f'{pool_id}-pool-{index}.service'
             if index <= desired:
                 matches = [item for item in native['runners'] if item['name'] == expected_name]
@@ -111,14 +136,15 @@ def load_installation(candidate, native):
             claims = base.safe_path(Path(config['paths']['claimRoot']) / 'publication-v2', state)
             require(attempts.name == 'attempts-v2', 'ATTEMPT_ROOT_INVALID')
             slots.append({'namespace': ns, 'repository': repository, 'repository_id': repository_id, 'id': value['id'],
-                          'uid': runtime.pw_uid, 'runner_uid': runner.pw_uid, 'work': work, 'attempts': attempts,
+                          'uid': runtime.pw_uid, 'runner_uid': runner.pw_uid, 'work_gid': work_gid, 'work': work, 'attempts': attempts,
                           'claims': claims, 'state_root': state, 'unit': unit, 'cgroup': binding['ControlGroup'],
                           'unit_source': binding['FragmentPath'], 'runner_name': expected_name,
                           'runner_id': next((member['runner_id'] for member in pool['members'] if member['runner_name'] == expected_name), None),
                           'pool_id': pool_id})
         sources += [source, deployment_source]
         configurations.append({'namespace': ns, 'repository': repository, 'runtime_uid': pwd.getpwnam(config['runtimeUser']).pw_uid, 'sha256': source['sha256'],
-                               'deployment_sha256': deployment_source['sha256'], 'candidate': candidate, 'pool_id': pool_id})
+                               'deployment_sha256': deployment_source['sha256'], 'candidate': candidate, 'pool_id': pool_id,
+                               'execution_slots': resource_bindings})
     managed_ids = {member['runner_id'] for member in pool['members']}
     pool_label = 'relay-pool-' + hashlib.sha256(pool['id'].encode()).hexdigest()[:24]
     for extra in [runner for runner in native['runners'] if runner['id'] not in managed_ids]:
@@ -201,11 +227,12 @@ def main():
                             raw = environment.read(256 * 1024 + 1)
                         selected = path_environment(raw, attributed['checkout'])
                         del raw
-                        directories = directory_metadata(int(entry.name), selected, process['uid'])
+                        groups = process_groups(int(entry.name))
+                        directories = directory_metadata(int(entry.name), selected, slot, process['uid'], groups)
                         samples.append({'observed_at': observed, 'host': installed['host'], **attributed,
                                         **{key: process[key] for key in ('pid', 'uid', 'proc_start_ticks', 'process_state', 'executable', 'command_role')},
                                         'pool_id': slot['pool_id'], 'runner_name': slot['runner_name'], 'runner_id': slot['runner_id'],
-                                        'environment_paths': selected, 'directory_metadata': directories})
+                                        **groups, 'environment_paths': selected, 'directory_metadata': directories})
                         active += 1
                     except (FileNotFoundError, ProcessLookupError):
                         continue
