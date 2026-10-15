@@ -100,6 +100,9 @@ def patch_bundle(output, source, capacity, transformed, guard):
     play = yaml.safe_load(play_path.read_text())
     current = play[0]
     current['name'] = 'Task103 Step5 scoped managed-pool TEST installation; registration and activation are separate'
+    # The inherited root-local play disabled task-level become_user, making
+    # Runner.Listener version probes create root-owned private diagnostics.
+    current['become'] = True
     current['post_tasks'] = [item for item in current['post_tasks'] if item['name'] not in {
         'Create only dedicated TEST service tool overlay directories',
         'Expose qualified private TEST tools inside only TEST service namespaces',
@@ -123,7 +126,7 @@ def patch_bundle(output, source, capacity, transformed, guard):
     plan.update({'phase': 'Task103-Step5-preparation-only', 'physicalPool': POOL, 'desiredCapacity': capacity,
                  'previousPreparationSha256': sha(PREVIOUS_PATH), 'adaptedPreparationSha256': hashlib.sha256(transformed.encode()).hexdigest(),
                  'idleGuardSha256': hashlib.sha256(guard.encode()).hexdigest(), 'physicalPoolUnits': units})
-    plan['adaptations'].append({'path': 'stage.yml', 'change': 'fixed32 internal routes; one shared physical pool; pool-service-only tool overlays', 'stagedSha256': sha(play_path)})
+    plan['adaptations'].append({'path': 'stage.yml', 'change': 'fixed32 internal routes; one shared physical pool; preserve task identity changes; pool-service-only tool overlays', 'stagedSha256': sha(play_path)})
     plan['adaptations'].append({'path': '../managed_pool.py', 'change': 'unchanged exact candidate helper for installed pool preflight', 'sourceSha256': sha(source / 'deploy/managed_pool.py'), 'stagedSha256': sha(output / 'managed_pool.py')})
     plan['limitations'].extend(['Existing completed TEST claims/journals are archived only after stopped services and open/idle original status; no original Outcome or recovery journal is rewritten.',
         'Windows private PEM path is an owner-side config binding only. This bundle contains no PEM/JWT/installation token.',
