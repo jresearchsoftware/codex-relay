@@ -76,7 +76,7 @@ jobs:
         run: |
           test "$RUNNER_NAME" = codex-relay-general-runner
           test "$(/usr/bin/id -un)" = codex-relay-general-runner
-          /usr/bin/node --input-type=module <<'NODE'
+          exec /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           const expectedContract = process.env.EXPECTED_WORKFLOW_CONTRACT;
           const release = await realpath('/opt/codex-relay/current');
@@ -84,7 +84,7 @@ jobs:
           const head = identity.revision;
           const compatibility = JSON.parse(await readFile(`${release}/reviewed-source/deploy/workflows/contract.json`, 'utf8'));
           if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/codex-relay/releases/${head}` ||
-              compatibility.workflowContract !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+              compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
             throw new Error('INSTALLED_RELAY_IDENTITY_MISMATCH');
           }
           console.log(JSON.stringify({ installedRelayHead: head, workflowHead: process.env.GITHUB_SHA }));
