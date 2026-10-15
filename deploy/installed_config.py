@@ -70,7 +70,8 @@ def check_public_main(repository, expected_head):
 
 
 def verify(product_root, expected_head, expected_digest=None,
-           expected_consumer_revision=None, check_main=False, workflow_consumer_revision=None):
+           expected_consumer_revision=None, check_main=False, workflow_consumer_revision=None,
+           *, require_local_apply=True):
     require(os.geteuid() == 0, 'root-required')
     require(isinstance(expected_head, str) and re.fullmatch('[0-9a-f]{40}', expected_head), 'installed-head')
     if check_main:
@@ -105,8 +106,11 @@ def verify(product_root, expected_head, expected_digest=None,
         require(expected_consumer_revision is None or consumer_revision == expected_consumer_revision,
                 'installed-consumer-revision')
         config = loads(config_raw.decode('utf-8'), product_root)
-        require(config['environment']['localApply'] == {'source': 'installed'}
-                and config['environment']['namespace'] == install.name, 'installed-config-binding')
+        require(config['environment']['namespace'] == install.name, 'installed-config-binding')
+        # Only the root owner pool helper opts out of the self-consumer Apply
+        # policy; every protected snapshot and release binding still applies.
+        require(not require_local_apply or config['environment']['localApply'] == {'source': 'installed'},
+                'installed-config-binding')
     except (UnicodeError, json.JSONDecodeError, KeyError, TypeError):
         raise ValueError('invalid-installed-config') from None
     except ValueError as error:

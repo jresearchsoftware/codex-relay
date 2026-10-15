@@ -452,7 +452,7 @@ def installed_main(revision):
     require(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}', revision), 'ROOT_EXACT_REVISION_REQUIRED')
     from installed_config import verify
     source = Path(__file__).resolve().parents[1]
-    config, _, _ = verify(source, revision)
+    config, _, _ = verify(source, revision, require_local_apply=False)
     contract = pool_contract(config)
     payload = json.loads(sys.stdin.read(16385))
     require(set(payload) == {'installationToken', 'appId', 'installationId', 'organization'}
