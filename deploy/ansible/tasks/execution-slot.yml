@@ -65,6 +65,7 @@
         create_home: false
         home: '{{ relay_codex_home }}'
         shell: /usr/sbin/nologin
+      when: relay_general_runner_pool is not defined
 
     - name: Create root-owned slot namespace parents
       ansible.builtin.file:
@@ -178,6 +179,7 @@
     - name: Install or reconcile the slot runner while preserving owner activity
       ansible.builtin.include_role:
         name: relay_runner
+      when: relay_general_runner_pool is not defined
 
     - name: Prove that the optional runtime can enter its private process namespace
       ansible.builtin.command:

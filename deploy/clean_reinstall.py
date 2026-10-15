@@ -95,14 +95,19 @@ def unit_names(config):
         names = ['reviewer-mcp-recovery.timer', 'reviewer-mcp-recovery.service', 'reviewer-mcp.service',
                  'relay-runner.service', 'relay-general-runner.service', 'relay-controller.service',
                  'relay-openai-mtls-proxy.service']
+    # Physical pool services have a separate owner and serve other namespaces.
+    # Their registrations and unit lifecycle are never namespace retirement.
+    extra_slots = [] if 'generalRunnerPool' in config['consumer'] else config['consumer'].get('executionSlots', [])[1:]
     return names + [namespace + '-slot-' + slot['id'] + '-runner.service'
-                    for slot in config['consumer'].get('executionSlots', [])[1:]] + [
+                    for slot in extra_slots] + [
         namespace + '-relay-manual-outcome.socket', namespace + '-relay-manual-outcome@.service']
 
 
 def runner_specs(config):
     namespace = config['environment']['namespace']
     names = unit_names(config)
+    if 'generalRunnerPool' in config['consumer']:
+        return [('runner', config['environment']['runner']['user'], names[3])]
     return [('runner', config['environment']['runner']['user'], names[3]),
             ('general-runner', config['environment']['generalRunner']['user'], names[4])] + [
         ('slots/' + slot['id'] + '/runner', slot['runnerUser'],
@@ -318,6 +323,22 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
 
 
 def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_units=None):
+    if 'generalRunnerPool' not in config['consumer']:
+        return _legacy_workers_quiescent(config, root, user_ids, listeners=listeners, stopped_units=stopped_units)
+    # Keep the exact original idle-chain proof for this namespace's dedicated
+    # Production Runner. Shared General Runner/model UIDs can legitimately be
+    # busy for another repository and are not a whole-host stop authority.
+    production = config['environment']['runner']['user']
+    selected = {**config, 'consumer': {**config['consumer'], 'runtimeUser': production, 'executionSlots': []},
+                'environment': {**config['environment'], 'generalRunner': {'user': production}}}
+    _legacy_workers_quiescent(selected, root, user_ids, listeners=listeners, stopped_units=stopped_units)
+    allowed = {value['cgroup'] for value in (listeners or {}).values()}
+    if not stopped_units:
+        allowed.add('/system.slice/' + unit_names(config)[2])  # separately proved managed Reviewer, stopped below
+    _recovery_processes(config, namespace_paths(config, Path(root)), Path(root), idle_cgroups=allowed)
+
+
+def _legacy_workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_units=None):
     names = [config['consumer']['runtimeUser'], config['environment']['runner']['user'],
              config['environment']['generalRunner']['user']]
     names += [slot[key] for slot in config['consumer'].get('executionSlots', [])[1:]
@@ -494,7 +515,7 @@ def operation_lock(path, root, owner_uid):
 
 
 def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
-                 runner=subprocess.run, user_ids=None):
+                 runner=subprocess.run, user_ids=None, operation_id=None, admission_probe=None):
     """Retire runtime under an already-held public host deployment mutex."""
     root = Path(root)
     require(re.fullmatch('[0-9a-f]{40}', revision or ''), 'TARGET_INVALID')
@@ -529,6 +550,9 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
             and isinstance(manifest.get('gitTree'), str) and re.fullmatch('[0-9a-f]{40}', manifest['gitTree'])
             and identity.get('tree') == manifest['gitTree'], 'INSTALLED_IDENTITY_UNPROVEN')
     require(release.name != revision, 'CURRENT_INSTALLATION_USE_APPLY')
+    if 'generalRunnerPool' in config['consumer']:
+        pool_admission_status(config, release, revision, operation_id, {'applying'},
+                              root=root, owner_uid=owner_uid, probe=admission_probe)
     archive = paths['install'].parent / ('.' + paths['install'].name + '-retired-' + release.name + '-' + revision)
     require(not present(archive), 'RECOVERY_ARCHIVE_EXISTS')
     # Runner roots are retained as complete trees. Relative registration paths,
@@ -560,12 +584,17 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
                'configurationSha256': hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
                'archive': '/' + str(archive.relative_to(root)), 'runners': runners,
                'activationMarkers': markers, 'units': units}
+    if 'generalRunnerPool' in config['consumer']:
+        journal['lifecycleOperation'] = operation_id
     with operation_lock(paths['lock'], root, owner_uid):
         require(not present(paths['operation']) and not present(paths['journal']), 'RECOVERY_REQUIRED')
         listeners = {}
         require(inspect_units(config, paths, root, owner_uid, runner, listeners=listeners, warnings=warnings) == units,
                 'UNIT_STATE_CHANGED')
         workers_quiescent(config, root, user_ids, listeners=listeners)
+        if 'generalRunnerPool' in config['consumer']:
+            pool_admission_status(config, release, revision, operation_id, {'applying'},
+                                  root=root, owner_uid=owner_uid, probe=admission_probe)
         # Any interruption from this point leaves a durable reservation. Neither
         # this helper nor public reinstall automatically resets or replays it.
         write_new(paths['journal'], journal)
@@ -609,7 +638,7 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
             'recoveryPath': '/' + str(paths['journal'].relative_to(root)), 'journalSha256': journal_digest}
 
 
-def _complete(config, revision, *, root=Path('/'), owner_uid=0):
+def _complete(config, revision, *, root=Path('/'), owner_uid=0, operation_id=None, admission_probe=None):
     """Archive recovery evidence only after caller's clean apply/post-check proof."""
     root = Path(root)
     paths = namespace_paths(config, root)
@@ -627,6 +656,10 @@ def _complete(config, revision, *, root=Path('/'), owner_uid=0):
     manifest = json.loads((release / 'artifact-manifest.json').read_text())
     require(all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision']),
             'FINAL_IDENTITY_UNPROVEN')
+    if 'generalRunnerPool' in config['consumer']:
+        require(journal.get('lifecycleOperation') == operation_id, 'LIFECYCLE_OPERATION_MISMATCH')
+        pool_admission_status(config, release, revision, operation_id, {'verified'},
+                              root=root, owner_uid=owner_uid, probe=admission_probe)
     expected_archive = paths['install'].parent / ('.' + paths['install'].name + '-retired-' + journal['sourceRevision'] + '-' + revision)
     require(journal['archive'] == '/' + str(expected_archive.relative_to(root)), 'ARCHIVE_BINDING_CHANGED')
     protected(expected_archive, root, owner_uid, directory=True)
@@ -638,10 +671,11 @@ def _complete(config, revision, *, root=Path('/'), owner_uid=0):
     return {'state': 'COMPLETE', 'installedRevision': revision, 'archive': journal['archive']}
 
 
-def complete(config, revision, *, root=Path('/'), owner_uid=0):
+def complete(config, revision, *, root=Path('/'), owner_uid=0, operation_id=None, admission_probe=None):
     paths = namespace_paths(config, Path(root))
     with operation_lock(paths['lock'], Path(root), owner_uid):
-        return _complete(config, revision, root=root, owner_uid=owner_uid)
+        return _complete(config, revision, root=root, owner_uid=owner_uid,
+                         operation_id=operation_id, admission_probe=admission_probe)
 
 
 RECOVERY_LIMIT = 65536
@@ -689,7 +723,125 @@ def _recovery_identity(release, revision, root, owner_uid, owner_gid):
     return manifest
 
 
-def _recovery_processes(config, paths, root):
+def pool_admission_status(config, release, revision, operation_id, phases, *, root=Path('/'), owner_uid=0, probe=None):
+    """Observe the existing protected namespace gate, never the shared pool gate."""
+    require('generalRunnerPool' in config['consumer'] and isinstance(operation_id, str)
+            and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation_id), 'LIFECYCLE_OPERATION_MISMATCH')
+    require(probe is not None, 'LIFECYCLE_ADMISSION_PROBE_REQUIRED')
+    state = probe(release, 'status', {'operationId': operation_id})
+    require(isinstance(state, dict) and state.get('operationId') == operation_id and state.get('target') == revision
+            and state.get('phase') in phases and state.get('active') == [] and state.get('unknown') == [],
+            'LIFECYCLE_ADMISSION_NOT_DRAINED')
+    if state['phase'] == 'verified':
+        require(state.get('verifiedRevision') == revision, 'LIFECYCLE_VERIFICATION_MISMATCH')
+    return state
+
+
+def continuation(config, revision, operation_id, *, root=Path('/'), owner_uid=0, owner_gid=0, admission_probe=None):
+    """Read-only exact pool reinstall continuation, including a failed final resume.
+
+    The original journal and namespace admission UUID, config and target are
+    mandatory. This does not retire runtime, rewrite records or reopen admission.
+    """
+    require('generalRunnerPool' in config['consumer'], 'POOL_CONTINUATION_ONLY')
+    require(re.fullmatch('[0-9a-f]{40}', revision or ''), 'TARGET_INVALID')
+    root = Path(root)
+    paths = namespace_paths(config, root)
+    for key in ['install', 'config', 'state']:
+        protected(paths[key], root, owner_uid, directory=True)
+    require(not present(paths['journal'].with_name(paths['journal'].name + '.next')), 'RECOVERY_JOURNAL_INTERRUPTED')
+    completed = not present(paths['journal'])
+    if completed:
+        pattern = '.' + paths['install'].name + '-retired-*-'+ revision
+        candidates = [path / 'decommission.json' for path in paths['install'].parent.glob(pattern)
+                      if present(path / 'decommission.json')]
+        matches = []
+        for candidate in candidates:
+            raw = _recovery_bytes(candidate, root, owner_uid, owner_gid, private=True)
+            value = _recovery_json(raw)
+            if value.get('lifecycleOperation') == operation_id:
+                matches.append((candidate, raw, value))
+        require(len(matches) == 1, 'CONTINUATION_JOURNAL_MISSING_OR_AMBIGUOUS')
+        journal_path, journal_raw, journal = matches[0]
+    else:
+        journal_path = paths['journal']
+        journal_raw = _recovery_bytes(journal_path, root, owner_uid, owner_gid, private=True)
+        journal = _recovery_json(journal_raw)
+    expected_keys = {'schemaVersion', 'stage', 'sourceRevision', 'targetRevision', 'previousEnvironmentComparison',
+                     'configurationSha256', 'archive', 'runners', 'activationMarkers', 'units', 'lifecycleOperation'}
+    require(journal.keys() == expected_keys and journal.get('schemaVersion') == 1
+            and journal.get('stage') == ('COMPLETE' if completed else 'DECOMMISSIONED')
+            and journal.get('targetRevision') == revision and journal.get('lifecycleOperation') == operation_id
+            and re.fullmatch('[0-9a-f]{40}', journal.get('sourceRevision', ''))
+            and journal['sourceRevision'] != revision
+            and journal.get('configurationSha256') == hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
+            'CONTINUATION_BINDING_CHANGED')
+    archive = paths['install'].parent / ('.' + paths['install'].name + '-retired-' + journal['sourceRevision'] + '-' + revision)
+    require(journal['archive'] == '/' + str(archive.relative_to(root))
+            and (not completed or journal_path == archive / 'decommission.json'), 'ARCHIVE_BINDING_CHANGED')
+    protected(archive, root, owner_uid, directory=True)
+    source_release = archive / 'runtime/releases' / journal['sourceRevision']
+    _recovery_identity(source_release, journal['sourceRevision'], root, owner_uid, owner_gid)
+    source_current = archive / 'runtime/current'
+    require(source_current.is_symlink() and source_current.lstat().st_uid == owner_uid
+            and os.readlink(source_current) in [str(paths['install'] / 'releases' / journal['sourceRevision']),
+                                               'releases/' + journal['sourceRevision']], 'ARCHIVE_BINDING_CHANGED')
+    require(set(journal['runners']) <= {name for name, _, _ in runner_specs(config)}
+            and all(managed_unit(config, name) for name in journal['units']), 'CONTINUATION_BINDING_CHANGED')
+    actual_consumer = _recovery_json(_recovery_bytes(paths['config'] / 'consumer.json', root, owner_uid, owner_gid))
+    wanted_consumer = json.loads(json.dumps(config['consumer']))
+    for consumer in [actual_consumer, wanted_consumer]:
+        if 'defaultProfile' in consumer:
+            consumer['defaultProfile'].setdefault('effort', 'xhigh')
+    require(actual_consumer == wanted_consumer, 'RECOVERY_CONFIGURATION_CHANGED')
+    allowed = []
+    if not completed:
+        allowed.append('clean-reinstall-recovery-present;inspect-before-retry')
+    if present(paths['operation']):
+        operation = _recovery_json(_recovery_bytes(paths['operation'], root, owner_uid, owner_gid, private=True))
+        require(not completed and operation == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                'phase': 'apply', 'target_head': revision}, 'RECOVERY_OPERATION_MISMATCH')
+        allowed.append('production-operation-recovery-present;inspect-before-retry')
+    runtime_layout(paths['install'], root, owner_uid, config)
+    current = paths['install'] / 'current'
+    if present(current):
+        require(current.is_symlink() and current.lstat().st_uid == owner_uid
+                and current.resolve(strict=True) == paths['install'] / 'releases' / revision, 'FINAL_IDENTITY_UNPROVEN')
+        _recovery_identity(current.resolve(strict=True), revision, root, owner_uid, owner_gid)
+    else:
+        require(not completed, 'FINAL_IDENTITY_UNPROVEN')
+        releases = paths['install'] / 'releases'
+        if present(releases):
+            protected(releases, root, owner_uid, directory=True)
+            require(all(path.name == revision for path in releases.iterdir()), 'UNRELATED_RUNTIME_PRESENT')
+        allowed.append('installed-identity-invalid')
+    # Admission's receipt classifier and live process containment are separate
+    # proofs. An unchanged managed Reviewer may remain live during idempotent
+    # apply, but a surviving target model/helper cannot be inferred away from
+    # terminal records. Other namespaces and shared pool listeners are outside
+    # this namespace's retirement authority.
+    _recovery_processes(config, paths, root, idle_cgroups={'/system.slice/' + unit_names(config)[2]})
+    pool_admission_status(config, source_release, revision, operation_id, {'applying', 'recovery-required', 'verified'},
+                          root=root, owner_uid=owner_uid, probe=admission_probe)
+    require(_recovery_bytes(journal_path, root, owner_uid, owner_gid, private=True) == journal_raw, 'RECOVERY_EVIDENCE_CHANGED')
+    return {'state': 'CONTINUATION_READY', 'sourceRevision': journal['sourceRevision'], 'targetRevision': revision,
+            'lifecycleOperation': operation_id, 'completed': completed,
+            'journalSha256': '' if completed else hashlib.sha256(journal_raw).hexdigest(),
+            'allowedInventoryBlockers': allowed}
+
+
+def continuation_inventory(report, proof):
+    """Filter only the exact root-validated retained records, never foreign errors."""
+    require(isinstance(proof, dict) and proof.get('state') == 'CONTINUATION_READY', 'CONTINUATION_PROOF_REQUIRED')
+    allowed = set(proof['allowedInventoryBlockers'])
+    require(allowed <= {'clean-reinstall-recovery-present;inspect-before-retry',
+                        'production-operation-recovery-present;inspect-before-retry', 'installed-identity-invalid'}, 'CONTINUATION_PROOF_INVALID')
+    result = {**report, 'blockers': [code for code in report['blockers'] if code not in allowed]}
+    result['status'] = 'blocked' if result['blockers'] else 'observed'
+    return result
+
+
+def _recovery_processes(config, paths, root, *, idle_cgroups=None):
     """Reject a namespace backend outside the governed service cgroups."""
     references = [str(path.relative_to(root)) for key, path in paths.items()
                   if key in ['install', 'config', 'state', 'operation', 'journal']]
@@ -700,6 +852,14 @@ def _recovery_processes(config, paths, root):
         if not path.name.isdecimal() or (root == Path('/') and int(path.name) == os.getpid()):
             continue
         try:
+            if 'generalRunnerPool' in config['consumer']:
+                groups = [line.split(':', 2)[2] for line in (path / 'cgroup').read_text().splitlines()]
+                # Only the idle Production Runner chain already fully proved
+                # above can refer to the target runtime before it is stopped.
+                if idle_cgroups and any(group in idle_cgroups for group in groups):
+                    continue
+                require(not any(group == '/system.slice/' + unit or group.startswith('/system.slice/' + unit + '/')
+                                for group in groups for unit in unit_names(config)), 'RECOVERY_NAMESPACE_PROCESS_PRESENT')
             raw = (path / 'cmdline').read_bytes()
             require(len(raw) <= 1048576, 'RECOVERY_PROCESS_OBSERVATION_UNAVAILABLE')
             arguments = raw.rstrip(b'\0').decode().split('\0')
@@ -746,9 +906,12 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
         operation_raw = _recovery_bytes(paths['operation'], root, owner_uid, owner_gid, private=True)
         journal = _recovery_json(journal_raw)
         operation = _recovery_json(operation_raw)
-        require(journal.keys() == {'schemaVersion', 'stage', 'sourceRevision', 'targetRevision',
+        journal_fields = {'schemaVersion', 'stage', 'sourceRevision', 'targetRevision',
                 'previousEnvironmentComparison', 'configurationSha256', 'archive', 'runners',
-                'activationMarkers', 'units'} and type(journal['schemaVersion']) is int
+                'activationMarkers', 'units'}
+        if 'generalRunnerPool' in config['consumer']:
+            journal_fields.add('lifecycleOperation')
+        require(journal.keys() == journal_fields and type(journal['schemaVersion']) is int
                 and journal['schemaVersion'] == 1 and journal['stage'] == 'DECOMMISSIONED'
                 and journal['targetRevision'] == revision
                 and isinstance(journal['sourceRevision'], str)
@@ -828,6 +991,9 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
                 status = _recovery_json(result.stdout)
             require(isinstance(status, dict) and status.get('phase') in ['open', 'quiesced', 'drained', 'recovery-required']
                     and status.get('active') == [] and status.get('unknown') == [], 'ADMISSION_NOT_CONTAINED')
+            if 'generalRunnerPool' in config['consumer']:
+                require(status.get('phase') != 'open' and status.get('operationId') == journal['lifecycleOperation']
+                        and status.get('target') == revision, 'LIFECYCLE_OPERATION_MISMATCH')
         warnings = set()
         units = inspect_units(config, paths, root, owner_uid, runner, warnings=warnings)
         require(set(units) == set(journal['units']) and all(value in ['inactive', 'failed']
@@ -871,7 +1037,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
             'activationMarkers': journal['activationMarkers'], 'runners': journal['runners']}
 
 
-def validate_remote_result(result, config, revision, report, action):
+def validate_remote_result(result, config, revision, report, action, operation_id=None):
     require(isinstance(result, dict), 'REMOTE_RESULT_INVALID')
     namespace = config['environment']['namespace']
     if action == 'decommission':
@@ -883,6 +1049,17 @@ def validate_remote_result(result, config, revision, report, action):
                 and re.fullmatch('[0-9a-f]{64}', result['journalSha256'])
                 and result['recoveryPath'] == '/var/lib/' + namespace + '-clean-reinstall.json',
                 'REMOTE_RESULT_INVALID')
+    elif action in ['continuation', 'continue']:
+        require(result.keys() == {'state', 'sourceRevision', 'targetRevision', 'lifecycleOperation', 'completed',
+                                  'journalSha256', 'allowedInventoryBlockers'}
+                and result['state'] == 'CONTINUATION_READY' and result['targetRevision'] == revision
+                and result['lifecycleOperation'] == operation_id
+                and isinstance(operation_id, str) and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation_id)
+                and type(result['completed']) is bool and re.fullmatch('[0-9a-f]{40}', result['sourceRevision'])
+                and result['sourceRevision'] != revision
+                and (result['journalSha256'] == '' if result['completed'] else bool(re.fullmatch('[0-9a-f]{64}', result['journalSha256'])))
+                and isinstance(result['allowedInventoryBlockers'], list), 'REMOTE_RESULT_INVALID')
+        continuation_inventory({'blockers': []}, result)
     elif action == 'recover':
         require(result.keys() == {'state', 'sourceRevision', 'targetRevision', 'archive', 'journalSha256',
                                   'operationSha256', 'units', 'activationMarkers', 'runners'}
@@ -992,7 +1169,7 @@ def forward_remote_diagnostics(error, returncode):
         raise ValueError(diagnostic)
 
 
-def recovery_admission_program(config):
+def recovery_admission_program(config, *, source_base=None):
     """Use the selected controller's classifier on protected existing receipts.
 
     Recovery can precede installation of a compatibility correction. Reuse the
@@ -1001,7 +1178,7 @@ def recovery_admission_program(config):
     """
     namespace = config['environment']['namespace']
     require(re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace), 'NAMESPACE')
-    base = '/opt/' + namespace + '/current/reviewed-source/'
+    base = source_base or '/opt/' + namespace + '/current/reviewed-source/'
     source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
                                ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
@@ -1020,18 +1197,44 @@ def recovery_admission_program(config):
     return source
 
 
-def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None):
+def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None, operation_id=None):
     """Transport config references only; helper never receives token material."""
-    require(action in ['decommission', 'complete', 'recover'], 'ACTION_INVALID')
+    require(action in ['decommission', 'complete', 'recover', 'continuation', 'continue'], 'ACTION_INVALID')
     source = Path(__file__).read_text()
     inventory_source = Path(__file__).with_name('inventory.py').read_text()
     program = source + '\nimport sys\ntry:\n'
     program += '    value = json.load(sys.stdin)\n'
+    if 'generalRunnerPool' in config.get('consumer', {}):
+        adapter = recovery_admission_program(config, source_base='__REINSTALL_SOURCE_BASE__/')
+        adapter = adapter.rsplit("process.stdout.write(JSON.stringify(await admission.status())", 1)[0]
+        program += '    def pool_admission_probe(release, method, options):\n'
+        program += '        require(method in ["status", "phase", "recoveryTarget", "resume"], "LIFECYCLE_ARGUMENTS_INVALID")\n'
+        program += '        base = "/" + str(release.relative_to(Path("/"))) + "/reviewed-source/"\n'
+        program += '        source = ' + repr(adapter) + '.replace("__REINSTALL_SOURCE_BASE__/", base)\n'
+        program += '        source += "process.stdout.write(JSON.stringify(await admission[" + json.dumps(method) + "](" + json.dumps(options) + ")));"\n'
+        program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
+        program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
+        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", source], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
+        program += '        require(result.returncode == 0, "LIFECYCLE_ADMISSION_UNAVAILABLE")\n'
+        program += '        return _recovery_json(result.stdout)\n'
+        pool_arguments = ', operation_id=value["operation_id"], admission_probe=pool_admission_probe'
+    else:
+        pool_arguments = ''
     if action == 'decommission':
         program += '    probe = {"__name__": "relay_inventory"}\n'
         program += '    exec(' + repr(inventory_source) + ', probe)\n'
         program += '    current_report = probe["inspect"](value["config"])\n'
-        program += '    result = decommission(value["config"], value["revision"], current_report)\n'
+        program += '    result = decommission(value["config"], value["revision"], current_report' + pool_arguments + ')\n'
+    elif action in ['continuation', 'continue']:
+        require('generalRunnerPool' in config['consumer'], 'POOL_CONTINUATION_ONLY')
+        program += '    result = continuation(value["config"], value["revision"], value["operation_id"], admission_probe=pool_admission_probe)\n'
+        if action == 'continue':
+            program += '    ns = value["config"]["environment"]["namespace"]\n'
+            program += '    release = Path("/opt") / ("." + ns + "-retired-" + result["sourceRevision"] + "-" + value["revision"]) / "runtime/releases" / result["sourceRevision"]\n'
+            program += '    operation = value["operation_id"]\n'
+            program += '    pool_admission_probe(release, "phase", {"operationId": operation, "phase": "recovery-required"})\n'
+            program += '    pool_admission_probe(release, "recoveryTarget", {"operationId": operation, "target": value["revision"]})\n'
+            program += '    pool_admission_probe(release, "phase", {"operationId": operation, "phase": "applying"})\n'
     elif action == 'recover':
         admission_source = recovery_admission_program(config)
         program += '    def candidate_admission_probe():\n'
@@ -1042,7 +1245,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '        return _recovery_json(result.stdout)\n'
         program += '    result = recover(value["config"], value["revision"], admission_probe=candidate_admission_probe)\n'
     else:
-        program += '    result = complete(value["config"], value["revision"])\n'
+        program += '    result = complete(value["config"], value["revision"]' + pool_arguments + ')\n'
     program += '    print(json.dumps(result, sort_keys=True))\n'
     program += ('except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:\n'
                 '    diagnostic = safe_reinstall_diagnostic(str(error)) or safe_reinstall_diagnostic("REINSTALL_BLOCKED")\n'
@@ -1053,7 +1256,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
                shlex.join(['/usr/bin/python3', '-I', '-c', program])]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
-    payload = json.dumps({'config': config, 'revision': revision, 'report': report})
+    payload = json.dumps({'config': config, 'revision': revision, 'report': report, 'operation_id': operation_id})
     try:
         while True:
             if guard is not None and guard.poll() is not None:
@@ -1065,7 +1268,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
                 payload = None
         forward_remote_diagnostics(error, process.returncode)
         require(guard is None or guard.poll() is None, 'HOST_LOCK_LOST;inspect-before-retry')
-        return validate_remote_result(json.loads(output), config, revision, report, action)
+        return validate_remote_result(json.loads(output), config, revision, report, action, operation_id)
     finally:
         if process.poll() is None:
             process.terminate()

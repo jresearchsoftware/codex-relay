@@ -171,7 +171,7 @@ def test_parallel_runtime_reconciliation_keeps_production_out_of_the_automatic_w
     assert not enabled(legacy)
     isolated = next(task for task in tasks if task['name'] == 'Reconcile only the primary runtime work membership for an isolated pool')
     assert enabled(isolated)
-    assert isolated['ansible.builtin.user']['append'] is False
+    assert templar.template(isolated['ansible.builtin.user'])['append'] is False
     production = next(task for task in tasks if task['name'] == 'Remove only automatic work access from the separate production runner')
     assert enabled(production)
     groups = templar.template(production['ansible.builtin.user']['groups'])

@@ -171,7 +171,7 @@ def remote_admission(target, key, namespace, *arguments):
     return json.loads(result.stdout)
 
 
-def run_backend(argv, cwd, env, log, guard=None):
+def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
     started = time.monotonic()
     next_progress = started + 30
@@ -180,13 +180,13 @@ def run_backend(argv, cwd, env, log, guard=None):
             if time.monotonic() >= next_progress:
                 print(f'RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds={int(time.monotonic()-started)}', flush=True)
                 next_progress = time.monotonic() + 30
-            if guard is not None and guard.poll() is not None:
+            if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
                 raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
             try:
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 pass
-        if guard is not None and guard.poll() is not None:
+        if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
             raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
         return process.returncode
     finally:
@@ -279,7 +279,7 @@ def run(args):
     require(args.local_lifecycle or (args.lifecycle_operation is None and args.lifecycle_lock_fd is None),
             'lifecycle-internal-options')
     require(args.authorize_lifecycle_recovery == bool(args.lifecycle_recovery_operation)
-            and (not args.authorize_lifecycle_recovery or (args.phase == 'upgrade' and not args.local_lifecycle
+            and (not args.authorize_lifecycle_recovery or (args.phase in ['upgrade', 'reinstall'] and not args.local_lifecycle
                  and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', args.lifecycle_recovery_operation))),
             'explicit-lifecycle-recovery')
     require((bool(re.fullmatch('[0-9a-f]{40}', args.workflow_consumer_revision or ''))
@@ -295,6 +295,9 @@ def run(args):
         config, installed_digest, installed_consumer_revision = verify(ROOT, args.expected_installed_head)
     else:
         config = load(config_path, ROOT)
+    pool_reinstall = args.phase == 'reinstall' and 'generalRunnerPool' in config['consumer']
+    require(not (args.phase == 'reinstall' and args.authorize_lifecycle_recovery) or pool_reinstall,
+            'pool-reinstall-recovery-only')
     values = compile_inputs(config)
     require(args.execution_slot == 'primary' or args.phase in ['general-runner-register', 'general-runner-enable'],
             'execution-slot-phase')
@@ -413,6 +416,7 @@ def run(args):
         command(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
                  '-i', key, target['user'] + '@' + target['host'], 'true'])
     install_flow = args.phase in ['bootstrap', 'reinstall']
+    pool_reinstall_proof = None
     if args.phase == 'inventory' or install_flow:
         from inventory import remote_inventory
         observed = remote_inventory(target, key, config)
@@ -420,6 +424,11 @@ def run(args):
         if args.phase == 'inventory':
             print('RELAY_DEPLOYMENT_RESULT=PASS;phase=inventory;authority=read-only', flush=True)
             return
+        if pool_reinstall and args.authorize_lifecycle_recovery:
+            from clean_reinstall import remote_action, continuation_inventory
+            pool_reinstall_proof = remote_action(target, key, config, revision, action='continuation',
+                                                operation_id=args.lifecycle_recovery_operation)
+            observed = continuation_inventory(observed, pool_reinstall_proof)
         require(not observed['blockers'], 'inventory-blocked;inspect-reported-prerequisites')
         from workflow_projection import prepare, render
         proposal_key = hashlib.sha256(b''.join(path.encode() + b'\0' + content
@@ -436,7 +445,7 @@ def run(args):
             print('RELAY_DEPLOYMENT_PENDING=INSTALL_AUTHORIZATION_REQUIRED;flag=--authorize-bootstrap;target_unchanged=true')
             return
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
-        (args.lifecycle_recovery_operation or str(uuid.uuid4()) if args.phase == 'upgrade' else ''))
+        (args.lifecycle_recovery_operation or str(uuid.uuid4()) if args.phase == 'upgrade' or pool_reinstall else ''))
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
@@ -565,6 +574,7 @@ def run(args):
             log.flush()
             with ExitStack() as host_locks:
                 guard = None
+                pool_guard = None
                 if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
                     if args.local_lifecycle:
                         pass  # inherited, validated host lock covers the complete lifecycle
@@ -575,8 +585,22 @@ def run(args):
                         guard = apply_guard(target, key, values['relay_namespace'])
                 elif args.phase == 'ingress':
                     guard = ingress_guard(target, key, values, revision)
+                if ('generalRunnerPool' in config['consumer']
+                        and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
+                    pool_lock_namespace = 'codex-relay-pool-' + config['environment']['generalRunner']['name']
+                    if args.local_reconcile or args.local_lifecycle:
+                        from deployment_lock import acquire
+                        host_locks.enter_context(acquire('/var/lib/' + pool_lock_namespace + '-deployment.lock'))
+                    else:
+                        pool_guard = apply_guard(target, key, pool_lock_namespace)
+                        def release_pool_guard():
+                            pool_guard.stdin.close()
+                            require(pool_guard.wait(timeout=30) == 0, 'pool-host-lock-final-check;inspect-before-retry')
+                        host_locks.callback(release_pool_guard)
                 try:
                     lifecycle_operation = None
+                    completed_pool_reinstall = False
+                    retirement_report = None
                     if args.phase == 'upgrade' and not args.local_lifecycle:
                         from lifecycle import progress
                         lifecycle_operation = admission_operation_id
@@ -598,20 +622,56 @@ def run(args):
                         remote_admission(target, key, values['relay_namespace'], 'phase',
                                          '--operation', lifecycle_operation, '--phase', 'applying')
                         progress('APPLY', revision)
+                    elif pool_reinstall:
+                        from lifecycle import progress
+                        from clean_reinstall import remote_action, continuation_inventory
+                        lifecycle_operation = admission_operation_id
+                        if args.authorize_lifecycle_recovery:
+                            pool_reinstall_proof = remote_action(target, key, config, revision, action='continue',
+                                guard=guard, operation_id=lifecycle_operation)
+                            completed_pool_reinstall = pool_reinstall_proof['completed']
+                            values['relay_clean_reinstall_journal_sha256'] = pool_reinstall_proof['journalSha256']
+                        else:
+                            progress('QUIESCE', revision)
+                            remote_admission(target, key, values['relay_namespace'], 'quiesce',
+                                             '--operation', lifecycle_operation, '--target', revision)
+                            progress('DRAIN', revision)
+                            remote_admission(target, key, values['relay_namespace'], 'drain',
+                                             '--operation', lifecycle_operation, '--timeout', '1800')
+                            remote_admission(target, key, values['relay_namespace'], 'phase',
+                                             '--operation', lifecycle_operation, '--phase', 'applying')
+                        progress('APPLY' if not completed_pool_reinstall else 'VERIFY-RETAINED-REINSTALL', revision)
                     if install_flow:
                         # Re-observe under the host mutex; a read-only report is
                         # never itself a destructive or installation capability.
                         observed = remote_inventory(target, key, config)
+                        if pool_reinstall_proof is not None:
+                            observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
                         if args.phase == 'reinstall':
                             from clean_reinstall import remote_action
-                            retired = remote_action(target, key, config, revision, observed,
-                                                    action='decommission', guard=guard)
-                            values['relay_clean_reinstall_journal_sha256'] = retired['journalSha256']
+                            if pool_reinstall_proof is None:
+                                retired = remote_action(target, key, config, revision, observed,
+                                    action='decommission', guard=guard,
+                                    **({'operation_id': lifecycle_operation} if pool_reinstall else {}))
+                                values['relay_clean_reinstall_journal_sha256'] = retired['journalSha256']
+                                retirement_report = observed
+                            else:
+                                retirement_report = {**observed, 'installed': {'status': 'present',
+                                    'revision': pool_reinstall_proof['sourceRevision']}}
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
-                    returncode = run_backend(argv, BACKEND, env, log, guard)
-                    if args.phase == 'upgrade' or install_flow:
+                    returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard, pool_guard)
+                    if (returncode == 0 and 'generalRunnerPool' in config['consumer']
+                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not completed_pool_reinstall):
+                        from managed_pool_transport import reconcile_pool
+                        proof = reconcile_pool(target, key, config, revision, guard,
+                                               local=args.local_reconcile or args.local_lifecycle,
+                                               extra_guard=pool_guard)
+                        log.write(proof + '\n')
+                        log.flush()
+                        print(proof, flush=True)
+                    if (args.phase == 'upgrade' or install_flow) and not completed_pool_reinstall:
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
@@ -633,8 +693,8 @@ def run(args):
                         values['relay_upgrade_requested'] = False
                         inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                         (work / 'inventory.json').write_text(json.dumps(inventory))
-                        offset = len(apply_evidence)
-                        returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard)
+                        offset = len(Path(log_name).read_text())
+                        returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard, pool_guard)
                         log.flush()
                         checked = Path(log_name).read_text()[offset:]
                         require(returncode == 0 and 'failed=0' in checked,
@@ -642,7 +702,7 @@ def run(args):
                         require(not re.search(r'changed=[1-9][0-9]*', checked), args.phase + '-post-check-drift')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in checked,
                                 args.phase + '-post-check-installed-identity-proof')
-                        if args.phase == 'reinstall':
+                        if args.phase == 'reinstall' and not pool_reinstall:
                             remote_action(target, key, config, revision, observed, action='complete', guard=guard)
                     if args.local_lifecycle and args.phase in ['apply', 'upgrade']:
                         log.flush()
@@ -654,6 +714,9 @@ def run(args):
                         progress('ACTIVATE/VERIFY', revision)
                         remote_admission(target, key, values['relay_namespace'], 'phase',
                                          '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
+                        if pool_reinstall and not completed_pool_reinstall:
+                            remote_action(target, key, config, revision, retirement_report, action='complete',
+                                          guard=guard, operation_id=lifecycle_operation)
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
                         progress('OPEN', revision)

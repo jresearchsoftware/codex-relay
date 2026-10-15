@@ -1,0 +1,69 @@
+---
+- name: Inspect member roots before package ownership reconciliation
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop: ['{{ relay_pool_member.root }}', '{{ relay_pool_member.state }}']
+  register: relay_pool_member_paths
+
+- name: Reject non-directory pool roots
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+    fail_msg: MANAGED_POOL_MEMBER_ROOT_UNSAFE
+  loop: '{{ relay_pool_member_paths.results }}'
+
+- name: Create only missing private runner instance roots
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: '{{ relay_general_runner_pool.runnerUser }}'
+    group: '{{ relay_general_runner_pool.runnerUser }}'
+    mode: '0750'
+    follow: false
+  loop: '{{ relay_pool_install_plan.members[relay_pool_member.id].createDirectories }}'
+
+- name: Install the same pinned verified runner package for this physical instance
+  ansible.builtin.unarchive:
+    src: '{{ relay_runner_package_archive }}'
+    dest: '{{ relay_pool_member.root }}'
+    remote_src: true
+    owner: '{{ relay_general_runner_pool.runnerUser }}'
+    group: '{{ relay_general_runner_pool.runnerUser }}'
+    creates: '{{ relay_pool_member.root }}/bin/Runner.Listener'
+  become_user: '{{ relay_general_runner_pool.runnerUser }}'
+  when: relay_pool_install_plan.members[relay_pool_member.id].installPackage
+
+- name: Inspect the installed physical runner executable paths
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop: ['{{ relay_pool_member.root }}/config.sh', '{{ relay_pool_member.root }}/run.sh', '{{ relay_pool_member.root }}/bin/Runner.Listener']
+  register: relay_pool_entrypoints
+
+- name: Require regular executable runner entrypoints
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists and item.stat.isreg and not item.stat.islnk and item.stat.executable
+      - item.stat.pw_name == relay_general_runner_pool.runnerUser
+    fail_msg: MANAGED_POOL_PACKAGE_UNPROVEN
+  loop: '{{ relay_pool_entrypoints.results }}'
+  when: not ansible_check_mode | bool
+
+- name: Verify the exact pinned physical runner version as its own identity
+  ansible.builtin.command:
+    argv: ['/bin/sh', -c, 'umask 077; exec "$@"', relay-pool-version, '{{ relay_pool_member.root }}/bin/Runner.Listener', --version]
+  become_user: '{{ relay_general_runner_pool.runnerUser }}'
+  register: relay_pool_version
+  changed_when: false
+  failed_when: relay_pool_version.stdout | trim != relay_runner_package_version
+  when: not ansible_check_mode | bool
+
+- name: Install a distinct shared-pool service without activation
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runner/templates/relay-managed-pool.service.j2'
+    dest: '/etc/systemd/system/{{ relay_pool_member.service }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: relay_pool_install_plan.members[relay_pool_member.id].installUnit

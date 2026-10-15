@@ -14,10 +14,14 @@ import { installedAdmissionControl } from './admission-cli.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 
-export function callerExecutionSlot({ uid, uidForUser = unixUserId } = {}) {
+export function callerExecutionSlot({ uid, slotId, uidForUser = unixUserId } = {}) {
   if (!CONSUMER.executionSlots) return undefined;
   if (!Number.isSafeInteger(uid) || uid < 1) fail('EXECUTION_SLOT_IDENTITY_INVALID');
-  const matches = CONSUMER.executionSlots.filter(slot => uidForUser(slot.runnerUser) === uid);
+  // A shared trusted runner UID can own several managed instances. The bounded
+  // slot identifies a configured resource, not a new worker/Writer identity.
+  // Historical callers without a slot still need an unambiguous UID match.
+  const matches = CONSUMER.executionSlots.filter(slot => (slotId === undefined || slot.id === slotId)
+    && uidForUser(slot.runnerUser) === uid);
   if (matches.length !== 1) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   return matches[0].id;
 }
@@ -28,7 +32,7 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
     return;
   }
   if (!/^[1-9][0-9]{0,9}$/.test(callerUid ?? '')) fail('EXECUTION_SLOT_IDENTITY_INVALID');
-  const slot = resolveSlot({ uid: Number(callerUid) });
+  const slot = resolveSlot({ uid: Number(callerUid), slotId: request.executionSlot });
   if (request.executionSlot !== slot) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   if (request.operation === 'admit') return;
   const record = await store.get(request.runId);
@@ -37,7 +41,16 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   // Ordinary runner-owned publication recovery still uses its original private
   // journal/collector identity, even with a fresh owner authorization.
   const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
-  if (!recovery && (record.envelope.executionSlot ?? 'primary') !== slot) fail('EXECUTION_SLOT_BINDING_CHANGED');
+  const originalSlot = record.envelope.executionSlot ?? 'primary';
+  const poolRecovery = CONSUMER.generalRunnerPool && (['recover-publication', 'complete-handoff'].includes(request.operation)
+    || (request.operation === 'finish' && request.recoveryAuthorizationId !== undefined));
+  const original = CONSUMER.executionSlots.find(value => value.id === originalSlot);
+  const current = CONSUMER.executionSlots.find(value => value.id === slot);
+  // Managed runner retirement does not retire its attempt evidence. A current
+  // member with the same trusted UID can finish explicitly authorized recovery;
+  // the Writer still derives original paths from its protected envelope.
+  if (!recovery && originalSlot !== slot && !(poolRecovery && original && current
+    && original.runnerUser === current.runnerUser)) fail('EXECUTION_SLOT_BINDING_CHANGED');
 }
 
 export function resolveWriterDeploymentContract(env = process.env) {

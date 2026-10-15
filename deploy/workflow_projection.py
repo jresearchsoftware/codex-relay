@@ -13,7 +13,7 @@ import shlex
 import stat
 import tempfile
 
-from config import require, unique_object, execution_slot_label
+from config import require, unique_object, execution_slot_label, general_pool_label
 
 
 MANIFEST = '.github/relay-workflows.json'
@@ -85,9 +85,12 @@ def render(config, revision, source_root):
     consumer, environment = config['consumer'], config['environment']
     general, production = environment['generalRunner'], environment['runner']
     slots = consumer.get('executionSlots')
+    managed_pool = consumer.get('generalRunnerPool')
     labels = ['self-hosted', 'Linux', 'X64', *production['labels']]
-    general_runs_on = ({'group': general['group'], 'labels': labels}
-                       if general.get('scope', 'repository') == 'organization' else labels)
+    general_labels = (['self-hosted', 'Linux', 'X64', general_pool_label(config)]
+                      if managed_pool else labels)
+    general_runs_on = ({'group': general['group'], 'labels': general_labels}
+                       if general.get('scope', 'repository') == 'organization' else general_labels)
     values = {
         'WORKFLOW_CONTRACT': contract(source_root, bool(slots)),
         'REPOSITORY': consumer['repository'], 'OWNER': consumer['owner'],
@@ -146,6 +149,14 @@ def render(config, revision, source_root):
                      + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
         lines.extend(['            *) echo RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
         values['RECOVERY_RUNNER_GUARD'] = '\n'.join(lines)
+        if managed_pool:
+            # Capacity contraction may retire the original physical runner.
+            # Any active pool member can transport recovery; trusted Writer
+            # resolves the immutable original execution slot from its claim.
+            values['RECOVERY_RUNS_ON_YAML'] = json.dumps(general_runs_on)
+            values['RECOVERY_SLOT_INPUT'] = ''
+            values['RECOVERY_SLOT_ENV'] = ''
+            values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
     if environment['localApply'].get('source') == 'installed':
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],

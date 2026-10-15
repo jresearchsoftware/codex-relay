@@ -54,8 +54,10 @@ using the suffixes `-reviewer`, `-reviewer-recovery`, `-runner`, `-general-runne
 `-controller` and `-openai-mtls-proxy`. Configuration, state, credentials and
 runtime paths stay in that namespace. All consumer paths must be under its
 `/opt`, `/etc` or `/var/lib`
-roots. Supply distinct Unix users, groups, runner identities and ingress for
-each consumer; do not reuse an existing consumer's namespace or credentials
+roots. Supply distinct protected Writer/Reviewer identities and ingress for
+each consumer; the managed General Runner pool may reuse its runner account,
+and protected configuration selects each consumer's runtime account.
+Do not reuse an existing consumer's namespace or credentials
 directory. Preflight rejects existing units bound to another installation or
 an installed Reviewer configuration with targets outside the requested Reviewer
 repository set. Preflight accepts either singleton `repository` or plural
@@ -63,7 +65,100 @@ repository set. Preflight accepts either singleton `repository` or plural
 adding targets to the same instance while retaining its installed targets; the
 existing service, Unix identity and namespace collision checks still apply.
 
-### Bounded automatic execution slots
+### Shared managed General Runner pool
+
+Set `consumer.generalRunnerPool.desiredCapacity` to the desired number of
+General Runners (1–32). This is one fixed-size pool across its eligible
+repositories, not a capacity allocation per repository or Codex user.
+`environment.generalRunner.name` identifies the physical pool independently of
+the consumer namespace. Repositories sharing that pool use the same pool name,
+runner account and runner-group restrictions. The protected Production Runner
+remains separate.
+
+Each physical runner has a unique GitHub registration, service and private
+instance state. Pool members may share the General Runner Unix account.
+Concurrent Codex attempts use the consumer's one non-root `runtimeUser` by
+default, with separate checkout, HOME, CODEX_HOME, XDG/cache/tmp, diagnostics,
+journal and process lifecycle. A separately configured repository can select a
+different protected `runtimeUser` while using the same physical pool. Task and
+PR content cannot choose that identity. Group overrides are not required.
+This preserves the existing one-consumer-per-Writer contract; it does not add
+generalized multi-repository Writer selection or final organization settings.
+
+The installer derives a stable internal resource layout of at most 32 slots;
+these are paths and fixed helper bindings, not 32 registered runners. Only the
+desired physical members run. Capacity changes preserve original attempt
+identity and retained evidence; changes to users, paths or pool identity do not
+acquire that exception. Managed recovery runs on any available member and
+selects the original evidence through the protected attempt envelope. It does
+not require the owner to retain a retired physical runner or choose its slot.
+
+The owner-controlled Apply reconciles registrations and services using an
+installation GitHub App with the required organization Self-hosted runners
+permission. Registration and removal tokens are derived on demand and stay
+outside worker jobs. Pool state is protected under
+`/var/lib/codex-relay-pools/<pool-name>` and runtime files under
+`/opt/codex-relay-pools/<pool-name>`. Reconciliation inspects an uncertain
+mutation before continuing, retains busy members during contraction, and
+preserves original-attempt publication/recovery. Actual Apply and external
+runner-group access remain explicit owner operations within the authorized
+target boundary. Source support grants no production mutation permission.
+
+Unconfigured consumers keep the existing one-runner SERIAL behavior. Existing
+explicit execution-slot installations retain their compatibility path below;
+new scale-up does not require per-runner names, Unix users or copied tokens.
+Installed pool, permissions, model overlap and lifecycle claims require actual
+qualification evidence.
+
+For example, merge these synthetic fields into the existing owner configuration:
+
+```json
+{
+  "consumer": {"generalRunnerPool": {"desiredCapacity": 4}},
+  "environment": {
+    "generalRunner": {
+      "name": "shared-general", "user": "relay-general",
+      "scope": "organization", "group": "trusted-general",
+      "poolApp": {
+        "appId": "123", "installationId": "456",
+        "privateKeyFile": "/owner-private/runner-app.pem"
+      }
+    }
+  }
+}
+```
+
+The PEM path belongs to the owner machine running the deployment command. It
+is never copied to the runner host. Apply verifies App/installation identity and
+the actual `organization_self_hosted_runners: write` permission, then transports
+only a short-lived installation token through protected SSH stdin. The installed
+root-only helper derives runner tokens and emits a bounded public receipt.
+The group must already be restricted to selected eligible repositories and their
+exact trusted routing/recovery workflow refs. Apply verifies those restrictions;
+it does not grant App permissions or widen group access.
+
+Namespace upgrade, stop and reinstall retain shared physical services and
+registrations. Pool contraction owns their retirement. Reinstall closes and
+drains the target namespace's existing admission gate before retiring its
+runtime; unrelated repository work and the pool remain available. Its original
+lifecycle UUID stays in the existing reinstall journal. After successful
+post-check, the same operation verifies, completes the journal and resumes
+admission. A failure leaves admission closed and preserves that evidence.
+
+For an interrupted managed-pool reinstall, rerun the same exact configuration
+and target with the existing `--phase reinstall --authorize-reinstall` options
+plus `--authorize-lifecycle-recovery --lifecycle-recovery-operation <original-UUID>`.
+The root helper validates the original journal, configuration, target and gate
+before continuing. Other inventory blockers remain binding. A completed install
+whose final resume failed receives post-check and same-operation resume without
+another retirement or apply. These options do not retry a Codex attempt.
+
+The App key must be available on the owner execution host performing Apply.
+A workstation-only key reference does not qualify an installed GitHub lifecycle
+job on another host; that path needs its own owner-provided protected credential
+binding. The installer never copies the key or silently omits reconciliation.
+
+### Retained explicit execution slots
 
 The optional `consumer.executionSlots` array describes one finite installation
 topology, including a `primary` slot and additional independent automatic
@@ -75,7 +170,7 @@ and repository. A slot is pinned at admission from the qualified native runner
 name and Unix identity; a worker cannot select another slot or supply paths.
 
 The primary entry must retain the existing top-level runtime user/paths and
-match `environment.generalRunner` and `environment.codexWorkGroup`. Slots use
+match `environment.generalRunner` and `environment.codexWorkGroup`. Retained slots use
 distinct runner/runtime users and work groups. Additional paths are fixed under
 `/opt/<namespace>/slots/<id>`, `/etc/<namespace>/slots/<id>` and
 `/var/lib/<namespace>/slots/<id>`; they cannot point into another installation.
@@ -150,7 +245,10 @@ configuration, identity and ingress qualification. This sets
 `REVIEWER_RELAY_ENABLED=false`; the valid runtime config still admits read-only
 target checks. Enabling publication is a separate owner-authorized config
 change after qualification. Service activation still requires the existing
-explicit activation gate. Ordinary apply does not register or activate runners.
+explicit activation gate. Unconfigured legacy Apply does not register or
+activate runners. Opting into the managed General Runner pool explicitly uses
+its owner Apply reconciliation contract above; Production Runner activation
+remains separate.
 This setting does not authorize a native verdict or manage shared ingress/TLS.
 
 ### Manual Outcome capability and authority compatibility
@@ -968,11 +1066,12 @@ organization registration with a dedicated group, for example:
 The group must differ from the production runner's group. Repository scope does
 not accept an organization group. Registration scope changes neither the general
 runner's Unix identity, isolated filesystem namespaces nor fixed sudo boundary.
-The owner must separately restrict the general group to the one consumer
-repository and its exact trusted routing/recovery workflow refs, excluding
+The owner must separately restrict the general group to its eligible consumer
+repositories and their exact trusted routing/recovery workflow refs, excluding
 candidate validation. Production requires its own independently admitted
 workflow/ref allowlist. Selecting a group does not create it or prove its ACL.
-Apply does not register, migrate or re-register either runner; an existing
+Legacy Apply does not register, migrate or re-register either runner; managed
+General Runner Apply follows the pool contract above. An existing
 registration that disagrees with the selected scope remains blocked. Changing
 an admitted consumer's scope requires explicit owner acceptance and external
 qualification before registration or enablement.

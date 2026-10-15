@@ -36,12 +36,13 @@
     - name: Install or reconcile the unregistered or registered general instance
       ansible.builtin.include_role:
         name: relay_runner
+      when: relay_general_runner_pool is not defined
 
     - name: Prove the installed general and production privilege separation
       ansible.builtin.include_role:
         name: relay_runner
         tasks_from: general-validation.yml
-      when: not ansible_check_mode | bool
+      when: not ansible_check_mode | bool and relay_general_runner_pool is not defined
 
     - name: Record the credential-free general runner reconciliation
       ansible.builtin.debug:

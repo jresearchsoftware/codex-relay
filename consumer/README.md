@@ -17,7 +17,8 @@ their paths and IDs do not authorize access to any deployed system.
 | `defaultProfile` | Required consumer-owned model; optional effort override for omitted authoring fields |
 | `paths`, `runtimeUser` | Installed helpers, state/credential locations and non-root worker identity |
 | Optional `validationNames` | Up to 32 unique bounded consumer check IDs; declare the same list in Reviewer config |
-| Optional `executionSlots` | A finite installation pool of independent runner/runtime users, work groups, checkout/journal/diagnostic roots and fixed helpers |
+| Optional `executionSlots` | Bounded resource slots with checkout/journal/diagnostic roots and fixed helper bindings; explicit legacy slots keep independent identities |
+| Optional `generalRunnerPool` | Managed physical `desiredCapacity` (1–32), with derived stable slots and shared trusted runner/default non-root runtime identity |
 
 The configuration is loaded once, validated and frozen. Its digest accompanies
 every admitted attempt. A different or missing digest cannot resume publication,
@@ -25,16 +26,23 @@ including blocked-admission replay. Existing pre-configuration attempts must be
 reconciled under their original reviewed release before cutover; do not invent
 a digest or discard publication reservations. An admitted worker executes its
 resolved explicit model/effort. Relay never reads a moving Model Landscape.
+For a managed pool only, changing `generalRunnerPool.desiredCapacity` preserves
+the execution digest. All repository, identity, path and security fields remain
+bound. Its internal slot layout remains fixed across capacity changes.
 
 `executionSlots`, when present, contains 1–32 entries with `id`, `runnerName`,
 `runnerUser`, `runtimeUser`, `workGroup` and `paths`. Slot paths contain exactly
 `workRoot`, `attemptRoot`, `dispatch`, `launcher`, `diagnosticsConfig`,
 `diagnosticsStore` and `diagnosticsRoot`. The `primary` entry preserves the
-existing top-level paths and runtime user. Each additional slot has distinct
-Unix identities, group and non-overlapping roots/helpers. Writer credentials,
+existing top-level paths and runtime user. Each additional legacy explicit slot
+has distinct Unix identities and group; all slots keep non-overlapping
+roots/helpers. Managed slots may share runner/runtime users and work group.
+Writer credentials,
 the root publication lock and `claimRoot` belong to the installation and remain
 outside every worker-writable root. Separate repository installations require
-separate namespaces, identities, credentials and state; a slot is not another
+separate namespaces, protected Writer/Reviewer identities, credentials and state;
+managed pool members may share the General Runner identity, and separately
+configured consumers select their own runtime user. A slot is not another
 consumer or a multi-repository Writer target.
 
 The complete installation configuration has one digest, independent of which
@@ -46,7 +54,7 @@ never caller paths. Omitted historical slot bindings use the preserved primary
 locations. An active or unresolved slot cannot admit another worker. Per-Task
 conflict checks and the global lifecycle drain cover the entire installation.
 The public canonical authority schema and resolved Task profile remain unchanged.
-Ordinary runner-side publication recovery uses the original execution slot;
+For retained explicit slots, ordinary runner-side publication recovery uses the original execution slot;
 a workflow arriving on another slot stops with `EXECUTION_SLOT_BINDING_CHANGED`
 before reading or mutating its journal. Root-owned prepublication recovery can
 read the original immutable slot through its separately authorized fixed path.
@@ -57,6 +65,15 @@ that the selected slot, runner name and UID agree. Protected inspection reports
 the retained slot without accepting a caller-selected journal or checkout path.
 Actual native targeting and installed identities require TEST qualification;
 source projection and deterministic tests alone do not establish that evidence.
+
+Managed recovery uses any active physical pool member with the configured shared
+runner identity. Trusted Writer supplies the original slot through the retained
+claim before journal lookup; the caller cannot supply a journal path. Native
+recovery authorization and reserve-before-publication remain binding. This
+preserves recovery after a physical runner is retired and removes the managed
+workflow's per-slot recovery choice. Pool names/labels and desired capacity are
+shared across eligible repository configurations; capacity is never multiplied
+by repository or runtime user. See the [Apply contract](../deploy/README.md#shared-managed-general-runner-pool).
 
 With no explicit consumer effort override, the shared execution resolver uses
 the schema representation of [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal).

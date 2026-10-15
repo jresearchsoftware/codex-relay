@@ -221,11 +221,18 @@ def _runner(probe, config, general, slot=None):
                   'group': env['generalRunner'].get('group')}
         runner_root = install + '/slots/' + slot['id'] + '/runner'
         work_root = state + '/slots/' + slot['id'] + '/runner/work'
+    managed = general and 'generalRunnerPool' in config['consumer']
+    if managed:
+        slot = slot or config['consumer']['executionSlots'][0]
+        runner = {**runner, 'name': slot['runnerName'], 'user': slot['runnerUser']}
+        base = env['generalRunner']['name'] + '/runners/' + slot['id']
+        runner_root = '/opt/codex-relay-pools/' + base
+        work_root = '/var/lib/codex-relay-pools/' + base + '/work'
     scope = runner.get('scope', 'repository')
     result = {'status': 'invalid', 'freshTokenRequired': False}
     try:
         pending = state + '/runner-registration-' + runner['name'] + '.pending'
-        if probe.present(pending):
+        if not managed and probe.present(pending):
             return {**result, 'reason': 'registration-pending',
                     'next': 'reconcile proven registration with runner-register or inspect unknown attempt'}
         # Missing runner package/Unix identity on a fresh target is normal.
@@ -259,10 +266,76 @@ def _runner(probe, config, general, slot=None):
                 or scope == 'organization' and marker.get('poolName') != runner['group']):
             raise ValueError('runner-binding')
         return {'status': 'reusable', 'freshTokenRequired': False,
+                **({'runnerId': marker['agentId']} if managed else {}),
                 'proof': 'local-registration-identity-and-protected-credential-metadata',
                 'next': 'owner verifies live GitHub registration and runner-group policy before enablement'}
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return {**result, 'reason': 'registration-state-ambiguous', 'next': 'inspect intended runner before registration'}
+
+
+def _managed_pool(probe, config):
+    """One physical pool observation; internal resource slots are not runners."""
+    general = config['environment']['generalRunner']
+    capacity = config['consumer']['generalRunnerPool']['desiredCapacity']
+    result = {'status': 'invalid', 'freshTokenRequired': False,
+              'desiredCapacity': capacity, 'members': [],
+              'next': 'inspect shared pool state before owner Apply; no copied runner token is required'}
+    try:
+        path = '/var/lib/codex-relay-pools/' + general['name'] + '/pool.json'
+        try:
+            state = _json(probe.read(path, modes={0o600}))
+        except FileNotFoundError:
+            state = None
+        if state is not None:
+            binding = state['binding']
+            expected = {'version': 1, 'name': general['name'], 'runnerUser': general['user'],
+                        'organization': config['consumer']['repository'].split('/')[0],
+                        'group': general['group'], 'appId': general['poolApp']['appId'],
+                        'installationId': general['poolApp']['installationId']}
+            if any(binding.get(key) != value for key, value in expected.items()):
+                raise ValueError('pool-binding')
+            pool_label = 'relay-pool-' + hashlib.sha256(general['name'].encode()).hexdigest()[:24]
+            members = [
+                {'id': slot['id'], 'name': slot['runnerName'],
+                 'label': 'relay-slot-' + hashlib.sha256((general['name'] + ':' + slot['id']).encode()).hexdigest()[:24],
+                 'root': '/opt/codex-relay-pools/' + general['name'] + '/runners/' + slot['id'],
+                 'state': '/var/lib/codex-relay-pools/' + general['name'] + '/runners/' + slot['id'],
+                 'service': general['name'] + f'-pool-{number}.service'}
+                for number, slot in enumerate(config['consumer']['executionSlots'], 1)]
+            if binding.get('label') != pool_label or binding.get('members') != members:
+                raise ValueError('pool-member-binding')
+            records = state['members']
+            if not isinstance(records, dict) or not set(records) <= {
+                    slot['id'] for slot in config['consumer']['executionSlots']}:
+                raise ValueError('pool-members')
+        else:
+            records = {}
+        statuses = []
+        for number, slot in enumerate(config['consumer']['executionSlots'], 1):
+            if number > capacity and slot['id'] not in records:
+                continue
+            observed = _runner(probe, config, True, slot)
+            record = records.get(slot['id'])
+            phase = record.get('phase') if isinstance(record, dict) else None
+            if record is None and observed['status'] == 'reusable':
+                raise ValueError('pool-unowned-registration')
+            if phase is not None and phase not in ['ready', 'draining']:
+                raise ValueError('pool-pending-mutation')
+            if record is not None and observed['status'] != 'reusable':
+                raise ValueError('pool-registration-unproven')
+            if record is not None and record.get('runnerId') != observed.get('runnerId'):
+                raise ValueError('pool-registration-changed')
+            statuses.append(observed['status'])
+            result['members'].append({'id': slot['id'], 'name': slot['runnerName'],
+                                      'status': observed['status'], 'phase': phase,
+                                      'desired': number <= capacity})
+        result['status'] = ('invalid' if 'invalid' in statuses else
+                            'missing' if state is None or 'missing' in statuses else 'reusable')
+        result['next'] = ('owner Apply reconciles the shared pool using App-derived tokens; '
+                          'local metadata does not prove live GitHub access or capacity')
+        return result
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return {**result, 'reason': 'managed-pool-state-ambiguous'}
 
 
 def _protected_state(probe, config):
@@ -357,9 +430,12 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
         raise ValueError('inventory-namespace')
     installed, release, manifest = _installation(probe, '/opt/' + namespace)
     configuration = _configuration(probe, config, release, manifest)
-    runners = {'production': _runner(probe, config, False), 'general': _runner(probe, config, True)}
-    runners.update({'slot-' + slot['id']: _runner(probe, config, True, slot)
-                    for slot in config['consumer'].get('executionSlots', [])[1:]})
+    managed = 'generalRunnerPool' in config['consumer']
+    runners = {'production': _runner(probe, config, False),
+               'general': _managed_pool(probe, config) if managed else _runner(probe, config, True)}
+    if not managed:
+        runners.update({'slot-' + slot['id']: _runner(probe, config, True, slot)
+                        for slot in config['consumer'].get('executionSlots', [])[1:]})
     protected = _protected_state(probe, config)
     blockers = []
     for label, path in [('clean-reinstall-recovery', '/var/lib/' + namespace + '-clean-reinstall.json'),
@@ -429,13 +505,14 @@ def _validate_report(report, config=None):
             or configuration['deployment'] not in ['equivalent', 'different', 'unavailable', 'invalid']):
         raise ValueError('inventory-config-proof')
     runners = report['runners']
-    expected_runners = {'production', 'general'} | {
-        'slot-' + slot['id'] for slot in (config or {}).get('consumer', {}).get('executionSlots', [])[1:]}
+    managed = 'generalRunnerPool' in (config or {}).get('consumer', {})
+    expected_runners = {'production', 'general'} | (set() if managed else {
+        'slot-' + slot['id'] for slot in (config or {}).get('consumer', {}).get('executionSlots', [])[1:]})
     if not isinstance(runners, dict) or runners.keys() != expected_runners:
         raise ValueError('inventory-runners-proof')
-    for runner in runners.values():
+    for name, runner in runners.items():
         if (not isinstance(runner, dict) or runner.get('status') not in ['reusable', 'missing', 'invalid']
-                or runner.get('freshTokenRequired') is not (runner['status'] == 'missing')):
+                or runner.get('freshTokenRequired') is not (runner['status'] == 'missing' and not (managed and name == 'general'))):
             raise ValueError('inventory-runner-proof')
     protected = report['protectedState']
     if (not isinstance(protected, list) or len(protected) > 47

@@ -211,6 +211,24 @@ Configuration is validated once and frozen. A digest accompanies admission;
 another configuration cannot resume the same attempt. Configuration/state
 migrations require reconciliation under the original qualified revision.
 
+An optional managed General Runner pool has one owner-controlled physical
+capacity shared across eligible repository installations. Its registrations,
+services and instance state are separate from repository-specific execution
+resources. General Runner and non-root Codex identities may be reused across
+attempts; checkout, environment, diagnostics, journal and process lifecycles
+remain attempt-specific. Protected consumer configuration supplies each
+repository's runtime identity; Task/PR content cannot select it. Writer and
+Reviewer remain separate and one consumer is served per Writer process.
+
+Managed capacity is an operational setting: changing only desired capacity
+preserves the execution digest and fixed internal resource-slot layout.
+Identity/path/security changes retain the ordinary mismatch rule. Pool Apply
+uses its protected binding and mutation intents to reconcile App-derived
+registration/removal and idle retirement without terminating busy attempts.
+Retained recovery chooses the original evidence slot from its immutable claim
+and can run through another active pool member after physical retirement.
+See the [pool contract](../deploy/README.md#shared-managed-general-runner-pool).
+
 The automatic gate and admission reservation share the root Writer lock.
 Quiesce prevents new automatic Issue/CR execution while admitted controllers
 finish through containment, collection, publication and durable terminal
