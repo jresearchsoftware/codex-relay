@@ -628,6 +628,10 @@ exact `candidate_head`; select `inspect-prepublication`. The read-only inspectio
 returns the exact authorization body after checking the protected original
 journal, live authority, completed original owner run and native Writer BLOCKED
 Outcome. Post that body as a new unedited owner comment on the original Issue.
+Schema-v4 inspection verifies the exact protected native body digest. New terminal
+Outcomes retain it directly; older four-field Outcomes use only the original
+`commentBodies.outcome` seal bound to that Issue. Missing or changed proof stops
+inspection; the historical Outcome and journal are never backfilled.
 Then select `recover-prepublication` with the same candidate and the new
 `authorization_id`. The direct entrypoint's bounded stdin forms are:
 

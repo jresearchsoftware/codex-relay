@@ -36,6 +36,7 @@ async function terminalFixture(t, options = {}) {
   const nativeComments = new Map();
   const f = await fixture(t, {
     continuation: options.continuation === true, continuationPr: false,
+    labelLaunch: options.snapshot === true, streamlinedAdmission: options.snapshot === true,
     createAdmission: async ({ root, store, journal }) => {
       await mkdir(join(root, 'gate'));
       const admission = createAdmissionControl({ root: join(root, 'gate'), consumerDigest: CONSUMER_DIGEST,
@@ -52,7 +53,7 @@ async function terminalFixture(t, options = {}) {
         boundaries: ['No deployment, merge, release or Issue closure.'], decisions: [], context: [], supersedes: null,
         branch: `${CONSUMER.taskBranchPrefix}test-42`, base_sha: base, starting_head: continuationHead ?? base, existing_pr: null,
         issue_closure_policy: 'keep-open' };
-      requestComment = { id: 901, user: reviewer, body: renderAuthorityRecord(request),
+      requestComment = options.snapshot ? null : { id: 901, user: reviewer, body: renderAuthorityRecord(request),
         issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42` };
       const list = api.list.bind(api); const get = api.get.bind(api); const post = api.post.bind(api);
       const patch = api.patch.bind(api);
@@ -61,7 +62,7 @@ async function terminalFixture(t, options = {}) {
         assert.ok(user, `Unexpected identity ${login}`); return structuredClone(user);
       };
       api.get = async path => {
-        if (path === '/issues/comments/901') return structuredClone(requestComment);
+        if (path === '/issues/comments/901' && requestComment) return structuredClone(requestComment);
         const id = Number(/^\/issues\/comments\/(\d+)$/.exec(path)?.[1]);
         if (path === '/pulls/43' && createdPrUser) return { ...await get(path), user: structuredClone(createdPrUser) };
         return nativeComments.has(id) ? structuredClone(nativeComments.get(id)) : get(path);
@@ -72,7 +73,7 @@ async function terminalFixture(t, options = {}) {
         if (!path.endsWith('/comments')) return rows;
         const target = `https://api.github.com/repos/${REPOSITORY}${path.slice(0, -'/comments'.length)}`;
         const relevant = rows.filter(comment => comment.issue_url === target);
-        return path === '/issues/42/comments' ? [structuredClone(requestComment), ...relevant] : relevant;
+        return path === '/issues/42/comments' && requestComment ? [structuredClone(requestComment), ...relevant] : relevant;
       };
       api.post = async (path, body) => {
         const result = await post(path, body);
@@ -92,12 +93,21 @@ async function terminalFixture(t, options = {}) {
       };
     }
   });
-  let head;
+  let head; let executions = 0;
   await assert.rejects(runAttempt({ ...f, execute: async e => {
+    executions++;
     head = options.commit ? await options.commit(f) : await f.commit();
     return returned(e);
   }, collect: async () => { throw collectedFailure(); } }), { code: 'TRUSTED_GIT_FAILED' });
   await f.admissionControl.complete({ runId: 99, attemptId: f.envelope.attemptId });
+  if (options.retainedOutcomeShape) {
+    // Reproduce the retained terminal ABI without seeding any body hash.
+    // The native body and commentBodies seal came from the real broker above.
+    for (const store of [f.store, f.journal]) {
+      const record = await store.get(99); delete record.outcome.bodySha256;
+      await store.put(99, record);
+    }
+  }
   f.run.status = 'completed'; f.run.updated_at = completedAt;
   let collections = 0;
   let collectRetained = e => f.collect(e);
@@ -118,7 +128,7 @@ async function terminalFixture(t, options = {}) {
     return { comment, binding: state.binding, request: { ...operation, authorizationId: comment.id } };
   };
   return { ...f, broker, head, operation, original, requestComment, nativeComments, authorize, makeBroker,
-    collections: () => collections, setCollect: value => { collectRetained = value; } };
+    collections: () => collections, executions: () => executions, setCollect: value => { collectRetained = value; } };
 }
 
 async function assertHistorical(f) {
@@ -127,6 +137,7 @@ async function assertHistorical(f) {
   for (const field of ['outcome', 'publicationIntent', 'publishedHead', 'finalHead', 'controllerLifecycle']) {
     assert.deepEqual(record[field], f.original.writer[field], `Historical ${field} changed`);
   }
+  assert.deepEqual(record.commentBodies.outcome, f.original.writer.commentBodies.outcome);
   assert.deepEqual(await f.api.get(`/issues/comments/${f.original.comment.id}`), f.original.comment);
 }
 
@@ -168,6 +179,42 @@ test('terminal prepublication continuation binds and fast-forwards its exact ori
   assert.equal(result.head, f.head); assert.equal(f.pushes(), 1);
   assert.equal(await f.remoteHead(), f.head); await assertHistorical(f);
 });
+
+for (const retainedOutcomeShape of [false, true]) {
+  test(`real broker v4 terminal ${retainedOutcomeShape ? 'retained four-field' : 'current hashed'} outcome inspects and recovers without rewriting history`, async t => {
+    const f = await terminalFixture(t, { snapshot: true, retainedOutcomeShape });
+    const original = f.original.writer;
+    assert.equal(f.envelope.request.kind, 'admission');
+    assert.equal(extractAuthorityRecord(f.original.comment.body).schema_version, '4.0');
+    assert.equal(original.commentBodies.outcome.number, f.envelope.issueNumber);
+    assert.equal(original.commentBodies.outcome.sha256, sha256Body(f.original.comment.body));
+    assert.equal(Object.hasOwn(original.outcome, 'bodySha256'), !retainedOutcomeShape);
+    if (!retainedOutcomeShape) assert.equal(original.outcome.bodySha256, original.commentBodies.outcome.sha256);
+    else assert.deepEqual(Object.keys(original.outcome).sort(), ['head', 'outcomeId', 'prNumber', 'status']);
+    const { request, binding } = await f.authorize();
+    assert.deepEqual(binding.terminal.outcome, original.outcome);
+    assert.equal(binding.terminal.bodySha256, original.commentBodies.outcome.sha256);
+    assert.deepEqual(await f.store.get(99), original);
+    assert.equal(f.collections(), 0); assert.equal(f.pushes(), 0); assert.equal(f.executions(), 1);
+    await assertHistorical(f);
+    const result = await f.broker.invoke(request);
+    assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(result.head, f.head); assert.equal(result.prNumber, 43); assert.equal(result.draft, false);
+    assert.equal(f.pushes(), 1); assert.equal(await f.remoteHead(), f.head);
+    const typed = extractAuthorityRecord((await f.api.get(`/issues/comments/${result.outcomeId}`)).body);
+    assert.equal(typed.schema_version, '4.0'); assert.equal(typed.status, 'implemented');
+    assert.deepEqual(typed.authority, f.envelope.request.authority);
+    assert.deepEqual(typed.admission, extractAuthorityRecord(f.original.comment.body).admission);
+    const collections = f.collections(); const comments = f.comments.length;
+    f.setCollect(() => assert.fail('Completed recovery replay recollected'));
+    assert.deepEqual(await f.broker.invoke(request), result);
+    await assert.rejects(runAttempt({ ...f, execute: () => assert.fail('Recovery repeated inference'),
+      collect: () => assert.fail('Terminal replay recollected') }), { code: 'TRUSTED_GIT_FAILED' });
+    assert.equal(f.executions(), 1); assert.equal(f.collections(), collections);
+    assert.equal(f.pushes(), 1); assert.equal(f.comments.length, comments);
+    await assertHistorical(f);
+  });
+}
 
 test('a later Actions rerun cannot stand in for the original sealed first attempt', async t => {
   const f = await terminalFixture(t); const { request } = await f.authorize();

@@ -264,7 +264,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       { pr, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
     const outcome = await commentOnce(r, 'outcome', number, body);
     r.outcome = { status: 'BLOCKED', head: exactSha(publishedHead ?? r.publishedHead) ? (publishedHead ?? r.publishedHead) : null,
-      prNumber: pr?.number ?? null, outcomeId: outcome.id };
+      prNumber: pr?.number ?? null, outcomeId: outcome.id, bodySha256: sha256Body(outcome.body) };
     await store.put(e.runId, r);
     return r.outcome;
   }
