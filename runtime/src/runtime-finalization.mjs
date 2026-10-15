@@ -7,8 +7,9 @@ import { WriterBlockedError } from './contracts.mjs';
 
 const safeCode = (error, fallback) => /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : fallback;
 
-// The caller owns and has reaped the dispatcher process group. Runtime code
-// inside that group only prepares diagnostics; it cannot declare containment.
+// The caller combines the native model-UID launcher's inner-group receipt with
+// its own outer dispatcher-group check. Runtime parsing alone cannot declare
+// whole-execution containment or authorize this cleanup.
 export async function finalizeRuntimeArtifacts({ executionId, containment, fallbackStore,
   failure, cleanupSandbox = cleanupCodexSandbox, diagnosticStore = persistExecutionDiagnostic,
   workRoot = CONSUMER.paths.workRoot } = {}) {

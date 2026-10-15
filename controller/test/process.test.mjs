@@ -31,14 +31,14 @@ function fixture(options = {}) {
     ...options });
 }
 test('real bounded dispatcher process returns the same attempt envelope without publication credentials', async () => {
-  const dispatcher = fixture({ spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',result:{status:'blocked'}}));`) });
+  const dispatcher = fixture({ spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',containment:'reaped',result:{status:'blocked'}}));`) });
   const value = await dispatcher.dispatch(envelope);
   assert.equal(value.attemptId, envelope.attemptId); assert.equal(value.containment, 'reaped');
 });
 test('a failed process with unparseable stderr retains unknown child evidence', async () => {
   const dispatcher = fixture({ spawnImpl: launch("process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, 'non-diagnostic failure');process.exitCode=1;});") });
   await assert.rejects(dispatcher.dispatch(envelope), error => {
-    assert.equal(error.details.childState, 'unknown'); assert.equal(error.details.containment, 'reaped'); return true;
+    assert.equal(error.details.childState, 'unknown'); assert.equal(error.details.containment, 'unknown'); return true;
   });
 });
 test('native process timeout is bounded and cannot be relabeled not_started', async () => {
@@ -46,12 +46,12 @@ test('native process timeout is bounded and cannot be relabeled not_started', as
   const dispatcher = fixture({ timeoutMs: 100, spawnImpl: launch('process.stdin.resume(); setInterval(()=>{},1000);'),
     finalizeArtifacts: async value => { finalized = value; return { cleanup: 'retained', retention: 'retained' }; } });
   await assert.rejects(dispatcher.dispatch(envelope), error => {
-    assert.equal(error.code, 'EXECUTION_TIMEOUT'); assert.equal(error.details.childState, 'unknown'); return true;
+    assert.equal(error.code, 'CONTAINMENT_NOT_PROVEN'); assert.equal(error.details.childState, 'unknown'); return true;
   });
-  assert.equal(finalized.failure.code, 'EXECUTION_TIMEOUT'); assert.equal(finalized.containment, 'reaped');
+  assert.equal(finalized.failure.code, 'CONTAINMENT_NOT_PROVEN'); assert.equal(finalized.containment, 'unknown');
 });
 
-test('cancellation reaps the dispatcher before durable finalization', async () => {
+test('cancellation without model-UID acknowledgement retains unknown containment', async () => {
   let finalized;
   const start = launch('process.stdin.resume(); setInterval(()=>{},1000);');
   const dispatcher = fixture({ spawnImpl: (...args) => {
@@ -59,13 +59,42 @@ test('cancellation reaps the dispatcher before durable finalization', async () =
     child.once('spawn', () => setImmediate(() => process.emit('SIGTERM')));
     return child;
   }, finalizeArtifacts: async value => { finalized = value; return { cleanup: 'retained', retention: 'retained' }; } });
-  await assert.rejects(dispatcher.dispatch(envelope), { code: 'EXECUTION_CANCELLED' });
-  assert.equal(finalized.failure.code, 'EXECUTION_CANCELLED'); assert.equal(finalized.containment, 'reaped');
+  await assert.rejects(dispatcher.dispatch(envelope), { code: 'CONTAINMENT_NOT_PROVEN' });
+  assert.equal(finalized.failure.code, 'CONTAINMENT_NOT_PROVEN'); assert.equal(finalized.containment, 'unknown');
   assert.equal(finalized.failure.childState, 'unknown');
 });
 test('an unsupported required validation stops before the process boundary', async () => {
   const dispatcher = fixture({ spawnImpl: () => assert.fail('must not start') });
   await assert.rejects(dispatcher.dispatch({ ...envelope, validation: ['custom-unknown-check'] }), { code: 'REQUIRED_VALIDATION_UNSUPPORTED' });
+});
+test('cooperative cancellation requires the inner receipt before durable finalization', async () => {
+  let finalized;
+  const start = launch(`
+    process.stdin.resume(); const hold=setInterval(()=>{},1000);
+    process.on('SIGTERM',()=>{
+      writeSync(2,JSON.stringify({version:2,status:'blocked',code:'EXECUTION_CANCELLED',
+        diagnostic:{containment:'reaped',observed:{child:'started'}}}));
+      clearInterval(hold);process.stdin.destroy();process.exitCode=1;
+    });writeSync(1,'READY');`);
+  const dispatcher = fixture({ spawnImpl: (...args) => {
+    const child = start(...args); child.stdout.once('data', () => process.emit('SIGINT')); return child;
+  }, finalizeArtifacts: async value => { finalized = value; return { cleanup: 'retained', retention: 'retained' }; } });
+  await assert.rejects(dispatcher.dispatch(envelope), { code: 'EXECUTION_CANCELLED' });
+  assert.equal(finalized.containment, 'reaped'); assert.equal(finalized.failure.childState, 'started');
+});
+test('an already cancelled controller never launches another dispatcher', async () => {
+  const cancellation = new AbortController(); cancellation.abort();
+  const dispatcher = fixture({ signal: cancellation.signal, spawnImpl: () => assert.fail('must not launch') });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'EXECUTION_CANCELLED'); assert.equal(error.details.containment, 'not_required');
+    assert.equal(error.details.childState, 'not_started'); return true;
+  });
+});
+test('exit zero cannot replace an absent inner containment receipt', async () => {
+  const dispatcher = fixture({ spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1,JSON.stringify({version:2,attemptId:e.attemptId,child:'started',result:{status:'success'}}));`) });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'CONTAINMENT_NOT_PROVEN'); assert.equal(error.details.containment, 'unknown'); return true;
+  });
 });
 test('dispatcher refuses unresolved permission rather than supplying another default', async () => {
   const dispatcher = fixture({ spawnImpl: () => assert.fail('must not start') });
@@ -74,7 +103,7 @@ test('dispatcher refuses unresolved permission rather than supplying another def
   }
 });
 test('specific safe worker failure and known cause survive the dispatcher', async () => {
-  const dispatcher = fixture({ spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}}));process.exitCode=1;});`) });
+  const dispatcher = fixture({ spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{containment:'reaped',observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}}));process.exitCode=1;});`) });
   await assert.rejects(dispatcher.dispatch(envelope), error => {
     assert.equal(error.code, 'CODEX_RESULT_MISSING'); assert.equal(error.details.primaryCause, 'CODEX_RESULT_MISSING');
     assert.equal(error.details.childState, 'started'); assert.equal(error.details.containment, 'reaped'); return true;
@@ -114,7 +143,7 @@ test('synchronous spawn failure reaches finalization with safe OS evidence and n
 
 test('successful process cannot hide a cleanup failure', async () => {
   const dispatcher = fixture({
-    spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',result:{status:'success'}}));`),
+    spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',containment:'reaped',result:{status:'success'}}));`),
     finalizeArtifacts: async ({ containment, failure }) => {
       assert.equal(containment, 'reaped'); assert.equal(failure, undefined);
       throw Object.assign(new Error('cleanup failed'), { code: 'SANDBOX_CLEANUP_FAILED', details: {
@@ -130,7 +159,7 @@ test('successful process cannot hide a cleanup failure', async () => {
 test('worker cause survives a later cleanup failure and both retain durable references', async () => {
   const reference = { status: 'stored', executionId: envelope.attemptId, slot: 1 };
   const dispatcher = fixture({
-    spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}}));process.exitCode=1;});`),
+    spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{containment:'reaped',observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}}));process.exitCode=1;});`),
     finalizeArtifacts: async ({ failure, containment }) => {
       assert.equal(containment, 'reaped'); assert.equal(failure.code, 'CODEX_RESULT_MISSING');
       throw Object.assign(new Error('cleanup failed'), { code: 'SANDBOX_CLEANUP_FAILED', details: {
@@ -153,13 +182,13 @@ test('dispatcher process crash leaves an independently readable durable capsule'
     spawnImpl: launch('process.stdin.resume(); process.stdin.on("end",()=>process.exit(9));'),
     finalizeArtifacts: value => finalizeRuntimeArtifacts({ ...value,
       cleanupSandbox: () => assert.fail('unknown runtime state must retain artifacts') }) });
-  await assert.rejects(dispatcher.dispatch(envelope), { code: 'EXECUTION_FAILED' });
+  await assert.rejects(dispatcher.dispatch(envelope), { code: 'CONTAINMENT_NOT_PROVEN' });
   const reopened = await openRuntimeDiagnostic({ executionId: envelope.attemptId, root });
   const capsule = await reopened.read();
-  assert.equal(capsule.failureDiagnostic.code, 'EXECUTION_FAILED');
+  assert.equal(capsule.failureDiagnostic.code, 'CONTAINMENT_NOT_PROVEN');
   assert.equal(capsule.failureDiagnostic.dispatcherExitCode, 9);
   assert.equal(capsule.failureDiagnostic.childExitCode, undefined);
-  assert.equal(capsule.containment, 'reaped'); assert.equal(capsule.retention, 'retained');
+  assert.equal(capsule.containment, 'unknown'); assert.equal(capsule.retention, 'retained');
   assert.equal(capsule.cleanup, 'retained');
   const saved = await readFile(join(root, String(reopened.reference.slot), `${envelope.attemptId}.json`), 'utf8');
   assert.ok(Buffer.byteLength(saved) < 16 * 1024);

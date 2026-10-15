@@ -91,6 +91,39 @@ async function terminalReplay(f, journal, args, { retainCheckout = false } = {})
     } } };
 }
 
+for (const mode of ['cancel-term', 'cancel-ignoreterm']) {
+  test(`installed ${mode} crosses sudo and durably terminalizes the original attempt once`, async t => {
+    const f = await fixture(t, { installed: true, instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+    const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
+    const args = { ...f, execute: e => { calls++; return dispatcher.dispatch(e); } };
+    const operation = runAttempt(args).then(value => ({ value }), error => ({ error }));
+    const marker = `${f.cwd}/.codex-sandbox/cancel-process.json`;
+    const deadline = Date.now() + 15000; let worker;
+    while (Date.now() < deadline && !worker) {
+      try { worker = JSON.parse(await readFile(marker, 'utf8')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; await new Promise(resolve => setTimeout(resolve, 10)); }
+    }
+    assert.ok(worker, 'the model UID must actually start before cancellation');
+    assert.equal(worker.uid, 24002); assert.equal((await stat(marker)).uid, 24002);
+    // A real OS signal reaches the runner UID while the model runs under a
+    // different UID. The launcher must perform its own TERM/KILL cleanup.
+    const cancelledAt = Date.now(); process.kill(process.pid, 'SIGINT');
+    const { error } = await operation;
+    assert.ok(Date.now() - cancelledAt < 5000, 'leave native Actions grace for Writer');
+    assert.equal(error?.code, 'EXECUTION_CANCELLED');
+    const saved = await f.journal.get(f.envelope.runId);
+    assert.equal(saved.execution.returned, true); assert.equal(saved.execution.child, 'started');
+    assert.equal(saved.execution.containment, 'reaped'); assert.equal(saved.execution.errorCode, 'EXECUTION_CANCELLED');
+    assert.equal(saved.outcome.status, 'BLOCKED'); assert.equal(saved.diagnostic.containment, 'reaped');
+    assert.throws(() => process.kill(worker.pid, 0), { code: 'ESRCH' });
+    assert.equal(calls, 1); assert.equal(f.pushes(), 0); assert.equal(f.comments.length, 1);
+    await assert.rejects(runAttempt(await terminalReplay(f, f.journal, args)), { code: 'EXECUTION_CANCELLED' });
+    assert.deepEqual(await f.journal.get(f.envelope.runId), saved);
+    assert.equal(calls, 1); assert.equal(f.comments.length, 1);
+    await retireVerifiedFixtureCapsule(f);
+  });
+}
+
 const explicitProfiles = [
   ['gpt-5.6-luna', 'high'], ['gpt-5.6-terra', 'high'], ['gpt-5.6-sol', 'high'],
   ...['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ['gpt-6-astra', effort]),
@@ -227,7 +260,7 @@ for (const [mode, code, state] of [
   ['child-failure', 'CODEX_NONZERO_EXIT', 'confirmed'],
   ['missing-token', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
   ['missing-binary', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
-  ['missing-import', 'CODEX_NONZERO_EXIT', 'uncertain'],
+  ['missing-import', 'CONTAINMENT_NOT_PROVEN', 'uncertain'],
   ['package-eacces', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
 ]) {
   test(`installed ${mode} preserves cause, correlation, progress and no duplicate`, async t => {
@@ -258,8 +291,7 @@ for (const [mode, code, state] of [
     const saved = await journal.get(f.envelope.runId); const d = saved.diagnostic;
     assert.equal(d.executionState, state); assert.equal(d.executionId, f.envelope.attemptId);
     assert.equal(d.durable.diagnosticStore.status, 'stored');
-    assert.equal(d.durable.diagnosticStore.executionId,
-      retainCheckout ? `${f.envelope.attemptId}-cleanup` : f.envelope.attemptId);
+    assert.equal(d.durable.diagnosticStore.executionId, f.envelope.attemptId);
     assert.ok(d.lastSuccessfulBoundary); assert.ok(d.failureBoundary);
     if (mode === 'invalid-result') assert.equal(d.primaryCause, 'CODEX_RESULT_MISSING');
     if (mode === 'missing-token') assert.equal(d.primaryCause, 'CODEX_LAUNCHER_ACCESS_TOKEN_UNAVAILABLE');
@@ -283,17 +315,17 @@ for (const [mode, code, state] of [
     }
     let retainedCapsule, retainedState, retainedSandbox;
     if (retainCheckout) {
-      // The shared import fails before both exec and cleanup. Keep the original
-      // launch error and the independent cleanup diagnostic, without teardown
-      // by the unprivileged fixture or release of an occupied failure slot.
-      assert.equal(d.runtime.cleanup, 'failed');
+      // Without the native launcher acknowledgement containment is unknown.
+      // Cleanup must remain unattempted, retaining the original failure and
+      // sandbox rather than inferring safety from the outer process's exit.
+      assert.equal(d.runtime.cleanup, 'retained');
       assert.equal(d.runtime.retention, 'retained');
-      assert.equal(saved.execution.containment, 'reaped');
+      assert.equal(saved.execution.containment, 'unknown');
       retainedCapsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId });
       assert.ok(retainedCapsule);
       retainedState = await retainedCapsule.read();
       assert.equal(retainedState.executionId, f.envelope.attemptId);
-      assert.equal(retainedState.cleanup, 'failed');
+      assert.equal(retainedState.cleanup, 'retained');
       assert.equal(retainedState.retention, 'retained');
       assert.notEqual(retainedState.released, true);
       await assert.rejects(retainedCapsule.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
@@ -335,7 +367,7 @@ for (const [mode, code, state] of [
       assert.deepEqual(await retainedCapsule.read(), retainedState);
       const after = await lstat(`${f.cwd}/.codex-sandbox`, { bigint: true });
       assert.equal(after.dev, retainedSandbox.dev); assert.equal(after.ino, retainedSandbox.ino);
-      console.log('INSTALLED_IMPORT_AND_CLEANUP_FAILURE_PRESERVED cleanup=failed;retention=retained;release=denied;replay=once');
+      console.log('INSTALLED_IMPORT_FAILURE_PRESERVED containment=unknown;cleanup=retained;release=denied;replay=once');
     } else await retireVerifiedFixtureCapsule(f);
   });
 }

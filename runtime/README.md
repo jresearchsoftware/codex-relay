@@ -59,10 +59,24 @@ unavailable fallback store blocks admission rather than launching without it.
 `runGovernedCodexTask()` never deletes the sandbox. It captures the sandbox's
 device/inode before child launch and prepares diagnostic state. The outer
 dispatcher then reaps its owned process group and invokes
-`finalizeRuntimeArtifacts()`. A launcher exit alone is insufficient containment.
+`finalizeRuntimeArtifacts()`. The model-UID launcher separately reaps its own
+child process group and reports bounded native containment evidence. A launcher
+exit or a successful runner-UID group signal alone is insufficient containment.
 Direct runtime probes must also arrange containment before using the finalizer.
 Existing sandboxes are retained, never adopted or permission-repaired as part
 of a new invocation.
+
+Native cancellation reaches the routing controller directly through the workflow's
+`exec` launch. The controller holds SIGINT/SIGTERM through terminal Writer routing;
+its separate fd3 lifetime pipe aborts a detached dispatcher if that caller dies.
+The runtime keeps launcher stdin open across sudo as a second lifetime pipe;
+the task input still comes from the admitted file. EOF or a cancellation signal
+asks the model-UID launcher to terminate its group, escalating to SIGKILL after
+one second. Only the inner acknowledgement plus disappearance of the outer group
+permits `reaped`. Missing acknowledgement stays `unknown` and retains artifacts.
+Forced controller death can prevent its terminal journal/Writer receipt even
+when these lifetime pipes clean up the model. That original attempt remains
+unresolved; cleanup does not authorize a replay or historical record repair.
 
 The fixed launcher cleanup ABI is
 `cleanup --cwd CHECKOUT --sandbox-identity DEVICE:INODE`. It runs as the same

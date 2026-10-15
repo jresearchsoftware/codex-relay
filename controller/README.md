@@ -94,6 +94,13 @@ installation-wide pending-count limit. Native overflow or owner cancellation
 before admission leaves the ready command unconsumed and visible on its target;
 reconcile the canceled run before issuing a fresh owner command. Cancellation
 after reservation preserves that attempt and cannot trigger new inference.
+The routing workflow uses an `exec` controller launch so native SIGINT reaches
+its cancellation handler. Cooperative cancellation waits for the model-UID
+launcher's group-reaping acknowledgement before durable terminal routing. Caller
+lifetime pipes also request cleanup when the controller or dispatcher dies;
+an abruptly killed controller may leave no terminal receipt, which remains an
+unresolved original attempt even after physical child exit. Neither native
+`cancelled` nor successful group signalling proves containment by itself.
 Native groups coordinate only their GitHub repository; distinct repository
 installations need separate protected paths and qualified host identities.
 The two-minute ready-event check compares

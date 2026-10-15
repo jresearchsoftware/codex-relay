@@ -25,7 +25,7 @@ let observedChildStarted = false;
 
 function fail(code) {
   process.stderr.write(`CODEX_LAUNCHER_${code}\n`);
-  writeChildDiagnostic({ code: `CODEX_LAUNCHER_${code}`, childStarted: observedChildStarted, primaryCause: code === "LAUNCHER_FAILURE" ? null : `CODEX_LAUNCHER_${code}`, debug: diagnosticMode === "debug", stream: process.stderr });
+  writeChildDiagnostic({ code: `CODEX_LAUNCHER_${code}`, childStarted: observedChildStarted, containment: observedChildStarted === false ? 'not_required' : 'unknown', primaryCause: code === "LAUNCHER_FAILURE" ? null : `CODEX_LAUNCHER_${code}`, debug: diagnosticMode === "debug", stream: process.stderr });
   process.exit(64);
 }
 
@@ -151,7 +151,35 @@ async function main() {
     LC_ALL: "C",
     TZ: "UTC"
   };
-  let child;
+  let child, killTimer;
+  let cancelled = false;
+  const groupGone = () => {
+    if (!child?.pid) return true;
+    try { process.kill(-child.pid, 0); return false; }
+    catch (error) { return error.code === 'ESRCH'; }
+  };
+  const signalGroup = signal => {
+    if (!child?.pid) return;
+    try { process.kill(-child.pid, signal); } catch { /* Absence is checked separately. */ }
+  };
+  const stop = () => {
+    if (cancelled) return;
+    cancelled = true;
+    signalGroup('SIGTERM');
+    killTimer = setTimeout(() => signalGroup('SIGKILL'), 1000);
+  };
+  const waitForGroup = async () => {
+    const deadline = Date.now() + 1000;
+    while (!groupGone() && Date.now() < deadline) await new Promise(resolveWait => setTimeout(resolveWait, 10));
+    return groupGone();
+  };
+  // The runner cannot signal model-UID descendants. The fixed launcher's stdin
+  // is a lifetime pipe; the actual task input below comes from its admitted
+  // file. EOF covers both cooperative cancellation and dispatcher death.
+  process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  process.stdin.on('end', stop); process.stdin.on('error', stop); process.stdin.resume();
+  await new Promise(resolveReady => setImmediate(resolveReady));
+  if (cancelled) fail('EXECUTION_CANCELLED');
   try {
     // The relay runner and relay-codex share one governed checkout; keep new Git objects group-writable for the handoff.
     process.umask(0o0007);
@@ -160,7 +188,7 @@ async function main() {
       ? isolatedCodexProcess({ binary: CODEX_BINARY, packageRoot: CODEX_PACKAGE_ROOT, cwd,
         toolchainRoot: TOOLCHAIN_ROOT, args })
       : { command: CODEX_BINARY, args };
-    child = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    child = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
   } catch {
     fail("PROCESS_START_FAILED");
   }
@@ -209,24 +237,41 @@ async function main() {
   child.stdin.end(inputText);
   child.once("error", error => {
     processError = true;
-    writeChildDiagnostic({ code: "PROCESS_START_FAILED", primaryCause: error?.code, stderr: error?.message, stderrBytes, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+    writeChildDiagnostic({ code: "PROCESS_START_FAILED", primaryCause: error?.code, stderr: error?.message, stderrBytes, token, childStarted, containment: 'not_required', debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
     process.exitCode = 1;
   });
-  child.once("close", (code, signal) => {
+  child.once('exit', () => {
+    // A descendant holding inherited output descriptors can delay `close`.
+    // Reap it at the leader's exit rather than waiting for a runtime timeout.
+    signalGroup('SIGTERM');
+    clearTimeout(killTimer); killTimer = setTimeout(() => signalGroup('SIGKILL'), 1000);
+  });
+  child.once("close", async (code, signal) => {
+    clearTimeout(killTimer);
+    // A CLI may leave tools in its process group after its own exit. Reap that
+    // owned group before acknowledging containment; EPERM is never absence.
+    let contained = groupGone();
+    if (!contained) {
+      signalGroup('SIGTERM'); contained = await waitForGroup();
+      if (!contained) { signalGroup('SIGKILL'); contained = await waitForGroup(); }
+    }
+    process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
+    process.stdin.destroy();
+    const containment = contained ? 'reaped' : 'unknown';
     if (stdoutOverflow) {
-      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
       process.exitCode = 64;
       return;
     }
     const rawStdout = decodeUtf8(Buffer.concat(stdoutChunks));
     const safeStdout = stdoutRedactor.push(rawStdout) + stdoutRedactor.flush();
     try { process.stdout.write(assertSecretFreePublication(safeStdout, token)); }
-    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
+    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
     if (!processError) {
       const stderr = decodeUtf8(Buffer.concat(stderrChunks));
-      writeChildDiagnostic({ code: inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+      writeChildDiagnostic({ code: !contained ? 'CONTAINMENT_NOT_PROVEN' : cancelled ? 'EXECUTION_CANCELLED' : inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
     }
-    process.exitCode = Number.isInteger(code) && !signal && !inputError ? code : 1;
+    process.exitCode = contained && !cancelled && Number.isInteger(code) && !signal && !inputError ? code : 1;
   });
 }
 

@@ -12,11 +12,20 @@ import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 
-export async function main({ env = process.env, readEvent = path => readFile(path, 'utf8'),
+export async function main(options = {}) {
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort();
+  // Hold both native cancellation signals through the terminal Writer receipt,
+  // not only until the dispatcher returns. A later force kill remains unknown.
+  process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
+  try { return await runRouting({ ...options, signal: cancellation.signal }); }
+  finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
+}
+async function runRouting({ env = process.env, readEvent = path => readFile(path, 'utf8'),
   createWriter = createLocalWriterAdapter, createDispatcher = createOnDemandDispatchAdapter,
   createJournal = () => createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot),
   resolveSlot = runnerExecutionSlot,
-  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout } = {}) {
+  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout, signal } = {}) {
   const event = JSON.parse(await readEvent(env.GITHUB_EVENT_PATH));
   if (event.repository?.full_name !== REPOSITORY || !['workflow_dispatch', 'issues', 'pull_request_target'].includes(env.GITHUB_EVENT_NAME)
     || event.sender?.login !== OWNER || env.GITHUB_REF !== `refs/heads/${CONSUMER.baseBranch}`) return { status: 'BLOCKED', code: 'OWNER_EVENT_REQUIRED' };
@@ -38,7 +47,7 @@ export async function main({ env = process.env, readEvent = path => readFile(pat
   }
   emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
   if (admitted.status === 'BLOCKED') return admitted;
-  const dispatcher = createDispatcher();
+  const dispatcher = createDispatcher({ signal });
   let failure;
   try {
     return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,

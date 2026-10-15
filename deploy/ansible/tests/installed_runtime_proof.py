@@ -1013,7 +1013,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
              '--test-name-pattern=former production runner', test_path],
             env={**env, 'INSTALLED_RUNNER_UID': '24001', 'INSTALLED_FIXTURE_EVENT_BASE': '950'}, umask=deploy_umask)
         # Distinct invocations keep protected failure setup root-owned.
-        run_installed([*node_command, '--test-name-pattern=publication|profile rejection|checkout-ownership|invalid-result|child-failure', test_path], env={**env, 'INSTALLED_FIXTURE_EVENT_BASE': '1000'}, umask=deploy_umask)
+        run_installed([*node_command, '--test-name-pattern=publication|profile rejection|checkout-ownership|invalid-result|child-failure|installed cancel-', test_path], env={**env, 'INSTALLED_FIXTURE_EVENT_BASE': '1000'}, umask=deploy_umask)
         for offset, (mode, path) in enumerate([('missing-token', token), ('missing-binary', runtime / 'bin/codex'), ('missing-import', runtime / 'relay-codex-diagnostic.mjs')]):
             saved = path.with_suffix('.saved')
             path.rename(saved)

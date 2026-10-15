@@ -225,7 +225,7 @@ specified below. No extra fixture changes deployment/workflows or credentials.
 | 11. Quiesce / drain / resume | Ready two new L holds in one namespace. After both reserve, invoke its fixed root `relay-admission quiesce` with one operation UUID and the actually installed target SHA. Run `drain --timeout 240` while those admitted controllers finish. Once a slot becomes available but the gate remains quiesced, ready new T to observe `ADMISSION_QUIESCED`. Finish drain, run the public installed verification for the unchanged target, then only the same-operation `verified` and `resume` transitions. After T's non-admission is proven, one fresh owner event after resume may execute it. | Gate closes before new reservations; original workers complete/publish while drain releases the Writer lock; rejection has no invented Step/Outcome/inference; drain counts active/unknown and requires matching terminal receipts. Resume requires actual installed/runtime/projection proof, never a caller's fabricated PASS. Known owner work has explicit rejected/fresh-command dispositions. |
 | 12. Interrupted worker / cancellation after reserve (last) | New K: after attributed model execution, signal only that exact verified Codex process using a stable pidfd and TERM, allowing the real controller/containment/diagnostic path to finish. Separately use one new cancel fixture: after a protected real reservation, use native Actions cancel, recording whether a child actually started. Run these after successful drain/recovery probes so uncertain state cannot contaminate their proof. | Real failure signals and starttime/UID/cgroup attribution, primary diagnostic/annotations, returned/reaped or explicit unknown status, original journal/claim/Outcome and retained useful progress. No automatic re-inference. Inspect original recovery capabilities; if unknown/uncontained state has no supported recovery, keep it intact, demonstrate the original Task/slot/drain refusal and report that exact blocker. No repair of protected JSON. |
 
-This sequence intends at most fourteen model invocations and no more than two
+The initial sequence intends at most fourteen model invocations and no more than two
 simultaneously, with other native probes refusing before inference or performing
 publication-only recovery. Preserve complete native waiting/canceled records.
 Finite worker-pool saturation is the live resource probe; external model/API
@@ -236,6 +236,27 @@ overflow itself is required, mark that dimension unqualified and prepare a
 separate explicitly bounded native probe within this same Task instead of
 claiming an observed overflow. Likewise, mocked rate limits, collision fixtures
 and interrupted synthetic roots do not become live evidence.
+
+The fourteenth invocation exposed a concrete cancellation defect at `05cd7a4`:
+[Task30/run38689421768](https://github.com/jresearchsoftware/codex-relay-testbed/actions/runs/38689421768)
+was natively cancelled, but its separately attributed model-UID process remained
+live for at least 117.039 seconds after native job completion. Its original
+journal has no returned execution or terminal Outcome. Preserve that failed
+proof; a later TEST reset or passing correction cannot repair its history.
+
+Within the same admitted Task103 Step3 correction, extend the bounded plan by
+at most three **fresh** fixture executions (seventeen total, still at most two
+simultaneous). First reproduce and correct the cross-UID cancellation path
+without a model. After qualifying the corrected candidate, use normal A in
+testbed (300 seconds, ten foreground 30-second waits) and normal B in testbed-2
+(60 seconds, two waits) for a new complete cross-repository window and two
+independent Outcomes. Only after B is known terminal, admit fresh C in testbed
+with a 180-second hold and cancel it once while A remains attributable. Require
+C's actual contained terminal disposition, A's unaffected completion and idle
+gates. This is new causal verification, never a replay or re-inference of Task30.
+Keep original native history and useful source work intact. Any disposable
+local TEST reset follows TEST Environment Authority, is recorded separately,
+and supplies no original-attempt recovery or production-lifecycle proof.
 
 ### Existing entrypoints and exact operation forms
 

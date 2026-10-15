@@ -75,7 +75,7 @@ jobs:
           NODE_PATH: ''
         run: |
           @@GENERAL_RUNNER_GUARD@@
-          /usr/bin/node --input-type=module <<'NODE'
+          exec /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           const expectedContract = process.env.EXPECTED_WORKFLOW_CONTRACT;
           const release = await realpath('/opt/@@NAMESPACE@@/current');

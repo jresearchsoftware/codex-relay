@@ -74,7 +74,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
       '--model', model, '--effort', effort, '--input-file', input, '--cwd', taskRoot,
       remediation ? '--pull-request' : '--issue', '210'], {
           env: { PATH: '/caller/untrusted/bin', CARGO_HOME: '/protected/build-cache', GITHUB_TOKEN: 'synthetic-should-not-cross' },
-          stdio: ['ignore', output.fd, error.fd]
+          stdio: ['pipe', output.fd, error.fd]
         });
         [code] = await once(launched, 'close');
       } finally { await output.close(); await error.close(); }

@@ -40,6 +40,12 @@ assert.deepEqual(process.argv.slice(2), ['exec', '--json', '--sandbox', 'workspa
   '--output-schema', `${cwd}/.codex-sandbox/codex-result-schema.json`, '--model', model, '-c', `model_reasoning_effort=${effort}`,
   '-c', 'sandbox_workspace_write.network_access=true', '--cd', cwd, '-']);
 assert.equal(JSON.parse(readFileSync(`${cwd}/.codex-sandbox/codex-result-schema.json`)).properties.status.enum[0], 'success');
+if (/fixture-mode=cancel-(?:term|ignoreterm);/.test(input)) {
+  if (input.includes('fixture-mode=cancel-ignoreterm;')) process.on('SIGTERM', () => {});
+  writeFileSync('.codex-sandbox/cancel-process.json', JSON.stringify({ pid: process.pid, uid: process.getuid() }), { mode: 0o640 });
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
+}
 if (input.includes('fixture-mode=rust-development')) {
   try {
     qualifyRustDevelopment(cwd, JSON.parse(readFileSync('/run/managed-rust-proof.json', 'utf8')));
