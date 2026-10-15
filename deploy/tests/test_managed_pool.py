@@ -533,7 +533,7 @@ def install_fixture(tmp_path):
         path = tmp_path / logical.lstrip('/')
         path.mkdir(mode=0o750)
         if os.getuid() != runner_uid:
-            path.chown(runner_uid, -1)
+            os.chown(path, runner_uid, -1)
     return contract, template, arguments, member
 
 
@@ -542,11 +542,11 @@ def fixture_file(tmp_path, logical, value, uid, mode=0o600):
     if not path.parent.exists():
         path.parent.mkdir(mode=0o750)
         if os.getuid() != uid:
-            path.parent.chown(uid, -1)
+            os.chown(path.parent, uid, -1)
     path.write_text(value)
     path.chmod(mode)
     if os.getuid() != uid:
-        path.chown(uid, -1)
+        os.chown(path, uid, -1)
     return path
 
 
@@ -591,7 +591,7 @@ def test_install_preflight_rejects_wrong_owner_or_unsafe_parent_without_chown_ch
     if foreign == 'parent':
         path.chmod(0o777)
     elif os.getuid() == 0:
-        path.chown(arguments['runner_uid'] + 1, -1)
+        os.chown(path, arguments['runner_uid'] + 1, -1)
     else:
         arguments['runner_uid'] += 1
     before = unchanged_tree(tmp_path)
