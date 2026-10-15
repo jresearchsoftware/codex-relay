@@ -713,3 +713,66 @@ def test_ansible_preflight_precedes_first_mutation_and_creates_only_planned_miss
     extraction = next(task for task in member_tasks if 'ansible.builtin.unarchive' in task)
     assert creation['loop'] == '{{ relay_pool_install_plan.members[relay_pool_member.id].createDirectories }}'
     assert extraction['when'] == 'relay_pool_install_plan.members[relay_pool_member.id].installPackage'
+
+
+@pytest.mark.parametrize('backend', ['tar', 'ansible'])
+def test_native_extraction_preserves_private_member_root_and_next_installation_plan(tmp_path, backend):
+    import io
+    import stat
+    import subprocess
+    import tarfile
+    import yaml
+
+    contract, template, arguments, member = install_fixture(tmp_path)
+    destination = tmp_path / member['root'].lstrip('/')
+    before = destination.stat()
+    assert stat.S_IMODE(before.st_mode) == 0o750
+    archive = tmp_path / 'pinned-runner-fixture.tar'
+    with tarfile.open(archive, 'w') as stream:
+        # The published runner archive includes a root entry; extraction must
+        # not replace our independently established private directory mode.
+        for name, directory in [('.', True), ('bin', True), ('config.sh', False),
+                                ('run.sh', False), ('bin/Runner.Listener', False)]:
+            entry = tarfile.TarInfo(name)
+            entry.uid, entry.gid, entry.mode = arguments['runner_uid'], before.st_gid, 0o755
+            if name == '.':
+                entry.uid += 1
+                entry.gid += 1
+            if directory:
+                entry.type = tarfile.DIRTYPE
+                stream.addfile(entry)
+            else:
+                data = b'synthetic pinned runner executable\n'
+                entry.size = len(data)
+                stream.addfile(entry, io.BytesIO(data))
+    tasks = yaml.safe_load((ROOT / 'deploy/ansible/tasks/managed-pool-member.yml').read_text())
+    task = next(value for value in tasks if 'ansible.builtin.unarchive' in value)
+    extraction = task['ansible.builtin.unarchive']
+    assert task['become_user'] == '{{ relay_general_runner_pool.runnerUser }}'
+    assert 'owner' not in extraction and 'group' not in extraction
+    if backend == 'tar':
+        result = subprocess.run(['tar', '--extract', '--file', str(archive), '--directory', str(destination),
+                                 *extraction['extra_opts']], capture_output=True, text=True)
+    else:
+        import shutil
+        if shutil.which('ansible-playbook') is None:
+            pytest.skip('native Ansible extraction qualification requires ansible-playbook')
+        playbook = tmp_path / 'extract.yml'
+        parameters = {**extraction, 'src': str(archive), 'dest': str(destination)}
+        playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
+            'tasks': [{'name': 'Extract only the disposable runner fixture', 'ansible.builtin.unarchive': parameters}]}]))
+        home = tmp_path / 'ansible-home'
+        home.mkdir(mode=0o700)
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local',
+            '-e', 'ansible_python_interpreter=/usr/bin/python3', str(playbook)],
+            env={**os.environ, 'HOME': str(home), 'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible-local'),
+                 'ANSIBLE_REMOTE_TEMP': str(tmp_path / 'ansible-remote'), 'PYTHONDONTWRITEBYTECODE': '1'},
+            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    after = destination.stat()
+    assert (after.st_uid, after.st_gid, stat.S_IMODE(after.st_mode)) == (
+        before.st_uid, before.st_gid, 0o750)
+    assert (destination / 'bin/Runner.Listener').stat().st_uid == arguments['runner_uid']
+    plan = pool.installation_plan(contract, template, **arguments)
+    assert plan['members']['primary']['createDirectories'] == []
+    assert plan['members']['primary']['installPackage'] is False

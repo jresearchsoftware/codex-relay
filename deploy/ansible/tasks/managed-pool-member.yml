@@ -28,8 +28,9 @@
     src: '{{ relay_runner_package_archive }}'
     dest: '{{ relay_pool_member.root }}'
     remote_src: true
-    owner: '{{ relay_general_runner_pool.runnerUser }}'
-    group: '{{ relay_general_runner_pool.runnerUser }}'
+    # The archive contains a '.' entry with public package permissions. Keep
+    # existing private directory metadata; extraction already has runner UID.
+    extra_opts: [--no-overwrite-dir]
   become_user: '{{ relay_general_runner_pool.runnerUser }}'
   when: relay_pool_install_plan.members[relay_pool_member.id].installPackage
 
