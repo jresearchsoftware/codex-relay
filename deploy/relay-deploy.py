@@ -599,6 +599,11 @@ def run(args):
                         host_locks.callback(release_pool_guard)
                 try:
                     lifecycle_operation = None
+                    if ('generalRunnerPool' in config['consumer']
+                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
+                        from managed_pool_transport import preflight_pool
+                        preflight_pool(target, key, config, guard,
+                            local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
                     completed_pool_reinstall = False
                     retirement_report = None
                     if args.phase == 'upgrade' and not args.local_lifecycle:

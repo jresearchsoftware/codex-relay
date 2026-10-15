@@ -134,8 +134,39 @@ the actual `organization_self_hosted_runners: write` permission, then transports
 only a short-lived installation token through protected SSH stdin. The installed
 root-only helper derives runner tokens and emits a bounded public receipt.
 The group must already be restricted to selected eligible repositories and their
-exact trusted routing/recovery workflow refs. Apply verifies those restrictions;
-it does not grant App permissions or widen group access.
+exact trusted routing/recovery workflow refs. Apply qualifies the entire selected
+repository and workflow set against the current prospective owner configuration
+and protected installed peer snapshots with the same pool identity. Peer source,
+manifest and configuration bindings must agree; discovery never executes peer
+code. Every selected workflow must be an exact configured routing/recovery ref
+on that repository's trusted base branch, and both refs must be present for each
+selected repository. Qualification runs under the deployment locks before
+lifecycle or backend mutations and runs again before pool-state or runner
+mutations. It neither writes runner-group ACLs nor grants App permissions.
+
+A selected peer without a qualifying protected installed snapshot fails closed.
+Bootstrap supplies prospective authority only for its own consumer. Keep the
+group selection aligned with that consumer and already installed eligible peers;
+bringing additional consumers into service uses the existing staged installation
+and owner-controlled runner-group administration. Apply does not install missing
+peers or adjust external settings to make qualification pass.
+
+An existing SERIAL installation cannot currently be converted to the managed
+pool through Apply or upgrade. Preflight stops with
+`MANAGED_POOL_SERIAL_TRANSITION_REQUIRED` before lifecycle, backend or pool
+mutations, preserving the original registration, service, paths, journals and
+protected deployment snapshot. Renaming the pool or choosing a new namespace is
+not a supported transition workaround; Apply does not adopt or deregister the
+original runner.
+
+Adding derived slots changes the consumer configuration digest, which also
+binds the existing admission gate and retained Writer publication/recovery
+envelopes. The owner must select and authorize a compatibility design and its
+qualification that preserve those original bindings before this transition can
+be supported. There is no automatic migration or digest rewrite. Conflicting
+existing pool bindings remain blocked rather than being rewritten. Unconfigured
+SERIAL installations keep their existing behavior, and source support does not
+establish live or production qualification.
 
 Namespace upgrade, stop and reinstall retain shared physical services and
 registrations. Pool contraction owns their retirement. Reinstall closes and

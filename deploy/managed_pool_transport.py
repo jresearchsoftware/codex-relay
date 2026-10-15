@@ -11,6 +11,82 @@ import time
 from managed_pool import GitHub, PERMISSION, require
 
 
+OWNER_POOL_SCRIPT = '''import json, os, sys, types
+try:
+    payload = json.loads(sys.stdin.buffer.read(262145))
+    if os.geteuid() != 0:
+        raise ValueError()
+    for name in ['managed_pool', 'pool_eligibility', 'pool_migration']:
+        module = types.ModuleType(name)
+        module.__file__ = '/owner-source/' + name + '.py'
+        sys.modules[name] = module
+        exec(compile(payload['sources'][name], module.__file__, 'exec'), module.__dict__)
+    pool = sys.modules['managed_pool']
+    migration = sys.modules['pool_migration']
+    contract, auth = payload['contract'], payload['authorization']
+    pool.require(all(auth[key] == contract[key] for key in ['organization', 'appId', 'installationId']),
+                 'TOKEN_BINDING_INVALID')
+    github = pool.GitHub(auth['installationToken'], contract['organization'])
+    github.qualify(contract)
+    migration.reject_serial_transition(contract)
+    print('MANAGED_POOL_PREFLIGHT=PASS')
+except Exception as error:
+    # Fixed public error codes only. Never print payload, config or credentials.
+    import re
+    code = str(error)
+    print(code if re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', code) else
+          'MANAGED_POOL_PREFLIGHT_UNPROVEN_INSPECT_BEFORE_RETRY', file=sys.stderr)
+    sys.exit(1)
+'''
+
+
+def preflight_pool(target, key, config, guard=None, *, local=False, extra_guard=None):
+    """Read-only preflight also works before the first installed pool helper.
+
+    Only the owner deploy process can use this SSH/root transport. Sources and
+    private payload travel on stdin; no caller-selected installed executable or
+    worker-accessible privilege entrypoint is introduced.
+    """
+    from managed_pool import pool_contract
+    contract = pool_contract(config)
+    source_root = Path(__file__).parent
+    payload = {'sources': {name: (source_root / (name + '.py')).read_text()
+                          for name in ['managed_pool', 'pool_eligibility', 'pool_migration']},
+               'contract': contract, 'authorization': installation_authorization(config)}
+    pending = json.dumps(payload)
+    require(len(pending.encode()) <= 262144, 'OWNER_PREFLIGHT_INPUT_SIZE')
+    command = ['/usr/bin/python3', '-I', '-c', OWNER_POOL_SCRIPT]
+    argv = command if local else ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(command)]
+    require(local or guard is not None and guard.poll() is None, 'HOST_GUARD_LOST')
+    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    try:
+        while True:
+            require(local or guard.poll() is None, 'HOST_GUARD_LOST_INSPECT_BEFORE_RETRY')
+            require(extra_guard is None or extra_guard.poll() is None, 'POOL_GUARD_LOST_INSPECT_BEFORE_RETRY')
+            try:
+                output, errors = process.communicate(input=pending, timeout=1)
+                break
+            except subprocess.TimeoutExpired:
+                pending = None
+        if process.returncode:
+            import re
+            codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', errors, re.MULTILINE)
+            require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else 'OWNER_PREFLIGHT_UNPROVEN')
+        require(output.strip() == 'MANAGED_POOL_PREFLIGHT=PASS',
+                'OWNER_PREFLIGHT_RESULT_UNPROVEN')
+        return output.strip()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
 def installation_authorization(config, api_factory=GitHub):
     """Private key remains on the owner machine, never copied to a runner host."""
     app = config['environment']['generalRunner']['poolApp']

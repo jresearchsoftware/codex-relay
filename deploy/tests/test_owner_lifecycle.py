@@ -1,5 +1,5 @@
 """Run the protected coordinator over synthetic source and trusted capabilities."""
-from contextlib import nullcontext, redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -43,6 +43,19 @@ class OwnerLifecycleTests(unittest.TestCase):
         self.proof_calls = []
         self.public_reads = []
         self.root_reads = []
+        self.preflights = []
+        self.preflight_failure = None
+        self.preflight_output = 'MANAGED_POOL_PREFLIGHT=PASS\n'
+        self.active_locks = []
+        self.events = []
+
+        @contextmanager
+        def lock(path):
+            self.active_locks.append(path)
+            try:
+                yield 77
+            finally:
+                self.active_locks.remove(path)
 
         def installed(root, expected):
             self.root_reads.append((Path(root), expected))
@@ -67,9 +80,18 @@ class OwnerLifecycleTests(unittest.TestCase):
 
         def backend(argv, **kwargs):
             if argv[0].endswith('/relay-admission'):
+                self.events.append('gate-' + argv[1])
                 value = self.gate(argv[1], *argv[2:])
                 return SimpleNamespace(stdout=json.dumps(value), stderr='', returncode=0)
             self.assertEqual(argv[0], '/usr/bin/python3')
+            if argv[1:3] == ['-I', '-c']:
+                self.events.append('pool-preflight')
+                self.preflights.append((argv, kwargs, self.active_locks[:]))
+                return SimpleNamespace(stdout=self.preflight_output,
+                    stderr=(self.preflight_failure or '') + '\n',
+                    returncode=1 if self.preflight_failure else 0)
+            self.events.append('apply')
+            self.assertFalse(any('/codex-relay-pool-' in path for path in self.active_locks))
             self.primitive.append((argv, kwargs))
             # Main moves after selection; no later observation may retarget.
             self.remote_head = 'd' * 40
@@ -82,7 +104,7 @@ class OwnerLifecycleTests(unittest.TestCase):
 
         for target, value in [('ROOT', self.source), ('installed_config', installed),
                               ('compile_inputs', lambda config: self.values),
-                              ('acquire', lambda path: nullcontext(77)), ('public_main', public_main),
+                              ('acquire', lock), ('public_main', public_main),
                               ('acquire_source', source), ('installed_proof', proof)]:
             patched = patch.object(owner, target, value)
             patched.start()
@@ -105,6 +127,10 @@ class OwnerLifecycleTests(unittest.TestCase):
     def run_owner(self, action='apply', installed=OLD, consumer=HEAD):
         with redirect_stdout(io.StringIO()):
             owner.run(f'{action}:{installed}:{consumer}')
+
+    def configure_pool(self):
+        self.config['consumer']['generalRunnerPool'] = {'desiredCapacity': 2}
+        projection.project(self.config, HEAD, self.source, self.source)
 
     def test_one_public_main_binding_and_one_existing_upgrade_survive_later_main_movement(self):
         self.run_owner()
@@ -132,6 +158,65 @@ class OwnerLifecycleTests(unittest.TestCase):
         for forbidden in ['runner-register', '--runner-registration-token', '--authorize-activate']:
             self.assertNotIn(forbidden, argv)
         self.assertEqual(self.proof_calls, [HEAD])
+
+    def test_pool_preflight_uses_frozen_source_and_private_stdin_before_admission_under_both_locks(self):
+        self.configure_pool()
+        self.run_owner()
+        self.assertEqual(len(self.preflights), 1)
+        argv, options, locks = self.preflights[0]
+        self.assertEqual(argv[:4], ['/usr/bin/python3', '-I', '-c', owner.POOL_PREFLIGHT_SCRIPT])
+        self.assertTrue(argv[4].endswith('/product/deploy'))
+        self.assertEqual(json.loads(options['input']), self.config)
+        self.assertEqual(options['env'], owner.clean_environment())
+        self.assertEqual(options['stderr'], subprocess.PIPE)
+        self.assertFalse(options['check'])
+        self.assertEqual(locks, ['/var/lib/fixture-deployment.lock',
+            '/var/lib/codex-relay-pool-' + self.config['environment']['generalRunner']['name'] + '-deployment.lock'])
+        self.assertEqual(self.events[0], 'pool-preflight')
+        self.assertLess(self.events.index('pool-preflight'), self.events.index('gate-quiesce'))
+        self.assertEqual(self.gate.phase, 'open')
+        self.assertEqual(self.active_locks, [])
+
+    def test_invalid_pool_acl_key_or_api_access_never_mutates_admission_or_launches_apply(self):
+        self.configure_pool()
+        for code in ['MANAGED_POOL_GROUP_ELIGIBLE_REPOSITORIES_UNPROVEN',
+                     'MANAGED_POOL_GROUP_UNTRUSTED_WORKFLOW_REF',
+                     'MANAGED_POOL_OWNER_APP_KEY_UNAVAILABLE_ON_OWNER_EXECUTION_HOST',
+                     'MANAGED_POOL_API_UNPROVEN_INSPECT_BEFORE_RETRY']:
+            with self.subTest(code=code):
+                self.preflight_failure = code
+                with self.assertRaisesRegex(ValueError, '^' + code + '$'):
+                    self.run_owner()
+                self.assertEqual(self.gate.phase, 'open')
+                self.assertEqual(self.gate.calls, [])
+                self.assertEqual(self.primitive, [])
+                self.assertEqual(self.proof_calls, [])
+                self.assertEqual(self.active_locks, [])
+
+    def test_unproven_pool_preflight_result_or_private_error_is_fixed_and_keeps_gate_open(self):
+        self.configure_pool()
+        for failure, output, expected in [
+            ('synthetic private diagnostic', '', 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN'),
+            (None, 'unexpected metadata\n', 'MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN'),
+        ]:
+            with self.subTest(expected=expected):
+                self.preflight_failure, self.preflight_output = failure, output
+                with self.assertRaisesRegex(ValueError, '^' + expected + '$'):
+                    self.run_owner()
+                self.assertEqual(self.gate.calls, [])
+                self.assertEqual(self.primitive, [])
+                self.assertEqual(self.active_locks, [])
+
+    def test_unconfigured_apply_and_pool_stop_or_resume_keep_existing_path(self):
+        self.run_owner()
+        self.assertEqual(self.preflights, [])
+        self.remote_head = HEAD
+        self.configure_pool()
+        self.run_owner(action='stop')
+        self.assertEqual(self.preflights, [])
+        self.gate = Gate('drained', target=HEAD)
+        self.run_owner(action='resume', installed=HEAD)
+        self.assertEqual(self.preflights, [])
 
     def test_projection_mismatch_stops_before_quiesce_or_any_install_mutation(self):
         def changed(directory):
@@ -261,6 +346,36 @@ class PublicMainTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         owner.public_main('example-org/sample-project')
                 connection.close.assert_called_once()
+
+
+class OwnerPoolPreflightProcessTests(unittest.TestCase):
+    def test_selected_source_preflight_process_preserves_private_stdin_and_fixed_errors(self):
+        with tempfile.TemporaryDirectory(prefix='owner-preflight-process-', dir='/tmp') as temporary:
+            source = Path(temporary)
+            module = source / 'managed_pool_transport.py'
+            for error, expected in [
+                (None, None),
+                ('MANAGED_POOL_GROUP_UNTRUSTED_WORKFLOW_REF', 'MANAGED_POOL_GROUP_UNTRUSTED_WORKFLOW_REF'),
+                ('synthetic private diagnostic', 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN'),
+            ]:
+                with self.subTest(error=error):
+                    module.write_text(
+                        'def preflight_pool(target, key, config, *, local):\n'
+                        '    assert target is None and key is None and local is True\n'
+                        '    assert config == {"binding": "selected-source-private-input"}\n'
+                        + (f'    raise ValueError({error!r})\n' if error else '    return "PASS"\n'))
+                    result = subprocess.run([sys.executable, '-I', '-c', owner.POOL_PREFLIGHT_SCRIPT, str(source)],
+                        input=json.dumps({'binding': 'selected-source-private-input'}),
+                        env=owner.clean_environment(), text=True, capture_output=True, timeout=10)
+                    if expected is None:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, 'MANAGED_POOL_PREFLIGHT=PASS\n')
+                        self.assertEqual(result.stderr, '')
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertEqual(result.stdout, '')
+                        self.assertEqual(result.stderr, expected + '\n')
+                    self.assertNotIn('selected-source-private-input', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

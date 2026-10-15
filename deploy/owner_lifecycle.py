@@ -19,6 +19,43 @@ from lifecycle import execute, require
 ROOT = Path(__file__).resolve().parents[1]
 
 
+POOL_PREFLIGHT_SCRIPT = '''import json, re, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+try:
+    raw = sys.stdin.buffer.read(262145)
+    if len(raw) > 262144:
+        raise ValueError()
+    from managed_pool_transport import preflight_pool
+    preflight_pool(None, None, json.loads(raw), local=True)
+    print('MANAGED_POOL_PREFLIGHT=PASS')
+except Exception as error:
+    code = str(error)
+    print(code if re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', code) else
+          'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN', file=sys.stderr)
+    sys.exit(1)
+'''
+
+
+def pool_preflight(source, config):
+    """Use only the frozen protected target source before admission mutation."""
+    if 'generalRunnerPool' not in config['consumer']:
+        return
+    name = config['environment']['generalRunner']['name']
+    # The inner public primitive reacquires this same physical-pool lock. Keep
+    # this read-only proof bounded rather than handing a new lock across APIs.
+    with acquire('/var/lib/codex-relay-pool-' + name + '-deployment.lock'):
+        result = subprocess.run(['/usr/bin/python3', '-I', '-c', POOL_PREFLIGHT_SCRIPT,
+                                 str(source / 'deploy')],
+            input=json.dumps(config), env=clean_environment(), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=180)
+    if result.returncode:
+        codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', result.stderr, re.MULTILINE)
+        raise ValueError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN')
+    require(result.stdout == 'MANAGED_POOL_PREFLIGHT=PASS\n',
+            'MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN')
+
+
 def public_main(repository):
     require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository), 'product-repository')
     connection = http.client.HTTPSConnection('api.github.com', timeout=15,
@@ -132,6 +169,8 @@ def run(request):
             # performs committed projection checks again at its mutation boundary.
             phase = 'post-check' if action == 'resume' else ('apply' if target == installed else 'upgrade')
             operation = state['operationId'] if state else None
+            if action == 'apply':
+                pool_preflight(source, config)
 
             def apply():
                 nonlocal operation
@@ -179,7 +218,7 @@ if __name__ == '__main__':
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
         code = str(error).split(';')[0] if type(error) is ValueError else 'input-or-io'
-        if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED', code):
+        if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED|MANAGED_POOL_[A-Z_]{1,100}', code):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)
         raise SystemExit(1)

@@ -141,7 +141,10 @@ class GitHub:
     def runners(self):
         return self.pages('/orgs/' + self.organization + '/actions/runners', 'runners')
 
-    def qualify(self, contract):
+    def qualify(self, contract, eligible=None):
+        if eligible is None:
+            from pool_eligibility import eligible_workflows
+            eligible = eligible_workflows(contract)
         groups = self.pages('/orgs/' + self.organization + '/actions/runner-groups', 'runner_groups')
         matches = [group for group in groups if group.get('name') == contract['group']]
         require(len(matches) == 1, 'GROUP_UNPROVEN')
@@ -150,14 +153,17 @@ class GitHub:
                 'GROUP_RESTRICTIONS_UNPROVEN')
         repositories = self.pages('/orgs/' + self.organization + '/actions/runner-groups/'
                                  + str(group['id']) + '/repositories', 'repositories')
-        require(contract['repository'] in [repository.get('full_name') for repository in repositories],
+        selected = [repository.get('full_name') for repository in repositories]
+        require(contract['repository'] in selected,
                 'GROUP_REPOSITORY_UNPROVEN')
+        require(all(isinstance(repository, str) and repository in eligible for repository in selected),
+                'GROUP_ELIGIBLE_REPOSITORIES_UNPROVEN')
         workflows = group.get('selected_workflows')
         require(isinstance(workflows, list) and workflows and all(isinstance(value, str) for value in workflows),
                 'GROUP_WORKFLOWS_UNPROVEN')
-        require(set(contract['workflowRefs']) <= set(workflows), 'GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN')
-        require(all(not value.startswith(contract['repository'] + '/') or value in contract['workflowRefs']
-                    for value in workflows), 'GROUP_UNTRUSTED_WORKFLOW_REF')
+        trusted = {ref for repository in selected for ref in eligible[repository]}
+        require(trusted <= set(workflows), 'GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN')
+        require(set(workflows) == trusted, 'GROUP_UNTRUSTED_WORKFLOW_REF')
         return group['id']
 
     def in_group(self, group_id, runner_id):
@@ -474,6 +480,8 @@ def installed_main(revision):
     source = Path(__file__).resolve().parents[1]
     config, _, _ = verify(source, revision, require_local_apply=False)
     contract = pool_contract(config)
+    from pool_migration import reject_serial_transition
+    reject_serial_transition(contract)
     payload = json.loads(sys.stdin.read(16385))
     require(set(payload) == {'installationToken', 'appId', 'installationId', 'organization'}
             and all(payload[key] == contract[key] for key in ['appId', 'installationId', 'organization'])
