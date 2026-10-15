@@ -426,7 +426,7 @@ def test_deployment_contract_uses_one_physical_member_per_capacity_not_internal_
     provision = (ROOT / 'deploy/ansible/tasks/managed-pool.yml').read_text()
     assert 'members[:relay_general_runner_pool.desiredCapacity]' in provision
     source = (ROOT / 'deploy/relay-deploy.py').read_text()
-    assert source.index('pool_guard = apply_guard') < source.index('returncode = run_backend(argv, BACKEND, env, log, guard, pool_guard)')
+    assert source.index('pool_guard = apply_guard') < source.index('run_backend(argv, BACKEND, env, log, guard, pool_guard)')
     assert 'reconcile_pool(target, key, config, revision, guard' in source
 
 
@@ -652,6 +652,36 @@ def test_bound_active_package_is_reused_or_blocked_before_repair(tmp_path, compl
     else:
         with pytest.raises(pool.PoolError, match='INSTALL_ACTIVE_PACKAGE_UNPROVEN'):
             pool.installation_plan(contract, template, **arguments)
+    assert unchanged_tree(tmp_path) == before
+
+
+@pytest.mark.parametrize('missing', ['config.sh', 'run.sh'])
+@pytest.mark.parametrize('active', [False, True])
+def test_listener_present_partial_package_repairs_only_when_inactive(tmp_path, missing, active):
+    import yaml
+    contract, template, arguments, member = install_fixture(tmp_path)
+    fixture_package(tmp_path, member, arguments['runner_uid'])
+    fixture_registration(tmp_path, contract, member, arguments['runner_uid'])
+    fixture_binding(tmp_path, contract)
+    unit_path = '/etc/systemd/system/' + member['service']
+    fixture_file(tmp_path, unit_path, fixture_unit(contract, template, member), os.getuid(), 0o644)
+    arguments['service_probe'] = lambda member: {'LoadState': 'loaded',
+        'ActiveState': 'active' if active else 'inactive', 'MainPID': '50' if active else '0',
+        'ControlPID': '0', 'FragmentPath': unit_path}
+    (tmp_path / (member['root'] + '/' + missing).lstrip('/')).unlink()
+    assert (tmp_path / (member['root'] + '/bin/Runner.Listener').lstrip('/')).is_file()
+    before = unchanged_tree(tmp_path)
+    if active:
+        with pytest.raises(pool.PoolError, match='INSTALL_ACTIVE_PACKAGE_UNPROVEN'):
+            pool.installation_plan(contract, template, **arguments)
+    else:
+        plan = pool.installation_plan(contract, template, **arguments)
+        assert plan['members']['primary']['installPackage'] is True
+        tasks = yaml.safe_load((ROOT / 'deploy/ansible/tasks/managed-pool-member.yml').read_text())
+        extraction = next(task for task in tasks if 'ansible.builtin.unarchive' in task)
+        assert extraction['when'] == 'relay_pool_install_plan.members[relay_pool_member.id].installPackage'
+        assert 'creates' not in extraction['ansible.builtin.unarchive']
+        assert extraction['become_user'] == '{{ relay_general_runner_pool.runnerUser }}'
     assert unchanged_tree(tmp_path) == before
 
 

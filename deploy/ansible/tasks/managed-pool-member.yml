@@ -30,7 +30,6 @@
     remote_src: true
     owner: '{{ relay_general_runner_pool.runnerUser }}'
     group: '{{ relay_general_runner_pool.runnerUser }}'
-    creates: '{{ relay_pool_member.root }}/bin/Runner.Listener'
   become_user: '{{ relay_general_runner_pool.runnerUser }}'
   when: relay_pool_install_plan.members[relay_pool_member.id].installPackage
 
