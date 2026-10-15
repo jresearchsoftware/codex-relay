@@ -611,6 +611,9 @@ export async function runGovernedCodexTask({
       await checkpoint({ cleanup: 'pending', retention: 'unknown' });
       finalizeStreams();
       if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
+      // Timeout rejects before the normal result path. Retain only the native
+      // inner receipt parsed here; child close alone is not containment proof.
+      if (launcherDiagnostic) evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
       const shouldPersist = pendingError || diagnosticMode === 'debug';
       if (shouldPersist) {
         const filesystem = checkoutRoot ? await filesystemSnapshot([

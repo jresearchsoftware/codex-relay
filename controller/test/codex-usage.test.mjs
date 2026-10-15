@@ -72,8 +72,8 @@ test('usage crosses the bounded dispatcher wire and survives a later cleanup fai
   const f = await fixture(t);
   for (const status of ['success', 'failed', 'cleanup-failed']) {
     const payload = status === 'failed'
-      ? { version: 2, status: 'blocked', code: 'CODEX_RESULT_MISSING', diagnostic: { codexUsage: usage, observed: { child: 'started' } } }
-      : { version: 2, attemptId: f.envelope.attemptId, child: 'started', result: { status: 'success' }, codexUsage: usage };
+      ? { version: 2, status: 'blocked', code: 'CODEX_RESULT_MISSING', diagnostic: { containment: 'reaped', codexUsage: usage, observed: { child: 'started' } } }
+      : { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' }, codexUsage: usage };
     const adapter = createOnDemandDispatchAdapter({
       reserveDiagnostic: async () => ({ async write() {} }),
       finalizeArtifacts: async () => {
