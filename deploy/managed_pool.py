@@ -226,7 +226,8 @@ class Host:
         environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8',
                        'HOME': member['state'] + '/home', 'ACTIONS_RUNNER_INPUT_TOKEN': token}
         result = subprocess.run(['/usr/sbin/runuser', '--preserve-environment', '-u',
-            self.contract['runnerUser'], '--', member['root'] + '/config.sh', *arguments],
+            self.contract['runnerUser'], '--', '/bin/sh', '-c', 'umask 077; exec "$@"',
+            'relay-pool-config', member['root'] + '/config.sh', *arguments],
             cwd=member['root'], env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         require(result.returncode == 0, 'RUNNER_MUTATION_UNPROVEN_INSPECT_BEFORE_RETRY')
 

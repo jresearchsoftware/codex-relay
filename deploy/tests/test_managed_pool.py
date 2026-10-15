@@ -430,6 +430,44 @@ def test_deployment_contract_uses_one_physical_member_per_capacity_not_internal_
     assert 'reconcile_pool(target, key, config, revision, guard' in source
 
 
+def test_registration_sets_private_umask_after_identity_transition_without_token_in_argv(tmp_path, monkeypatch):
+    import stat
+    import subprocess
+    contract = pool.pool_contract(inputs(1))
+    member = {**contract['members'][0], 'root': str(tmp_path), 'state': str(tmp_path / 'state')}
+    marker = {'agentName': member['name'], 'agentId': 101,
+              'gitHubUrl': 'https://github.com/' + contract['organization'],
+              'poolName': contract['group'], 'workFolder': member['state'] + '/work'}
+    token = 'synthetic-ephemeral-registration-value'
+    script = tmp_path / 'config.sh'
+    script.write_text('#!/usr/bin/python3\nimport os\nfrom pathlib import Path\n'
+                      f'assert os.environ["ACTIONS_RUNNER_INPUT_TOKEN"] == {token!r}\n'
+                      f'Path(".runner").write_text({json.dumps(marker)!r})\n'
+                      'Path(".credentials").write_text("synthetic fixture metadata")\n')
+    script.chmod(0o750)
+    real_run = subprocess.run
+    calls = []
+
+    def identity_transition(argv, **kwargs):
+        calls.append(argv)
+        assert argv[:5] == ['/usr/sbin/runuser', '--preserve-environment', '-u', contract['runnerUser'], '--']
+        assert argv[5:9] == ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-pool-config']
+        assert token not in json.dumps(argv)
+        assert kwargs['env']['ACTIONS_RUNNER_INPUT_TOKEN'] == token
+        assert kwargs['stdout'] == kwargs['stderr'] == subprocess.DEVNULL
+        # Simulate PAM resetting the inherited mask to a public default before
+        # executing the real final shell/config boundary. No identity changes.
+        return real_run(argv[5:], **kwargs, umask=0o022)
+
+    monkeypatch.setattr(pool.subprocess, 'run', identity_transition)
+    host = object.__new__(pool.Host)
+    host.contract, host.user = contract, SimpleNamespace(pw_uid=os.getuid())
+    host.configure(member, token)
+    assert len(calls) == 1
+    assert all(stat.S_IMODE((tmp_path / name).stat().st_mode) == 0o600 for name in ['.runner', '.credentials'])
+    assert host.registration(member) == 101
+
+
 @pytest.mark.parametrize('bad', ['unrestricted', 'foreign-ref', 'validation-ref', 'missing-recovery'])
 def test_live_group_qualification_rejects_untrusted_current_repository_refs_without_mutating_acl(bad):
     contract = pool.pool_contract(inputs(1))
