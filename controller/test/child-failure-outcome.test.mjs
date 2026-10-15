@@ -40,7 +40,8 @@ for (const example of [
   };
   const launcher = {
     ...buildChildDiagnostic({ code: 'PROCESS_IO_ERROR', childStarted: !example.notStarted, exitCode: example.exit,
-      signal: example.signal, stderr: privateText, stderrBytes: observedBytes }),
+      signal: example.signal, stderr: privateText, stderrBytes: observedBytes,
+      containment: example.notStarted ? 'not_required' : 'reaped' }),
     // Invalid input exercises the runtime's bounded observation checks.
     childExitCode: example.exit, signal: example.signal, primaryCause: example.notStarted ? 'EACCES' : null
   };
@@ -50,8 +51,10 @@ for (const example of [
       const child = processFixture();
       child.stdin.resume();
       child.stdin.on('end', async () => {
+        const evidence = {};
         try {
           await runGovernedCodexTask({ attemptId: f.envelope.attemptId, inputText: privateText, cwd: f.cwd,
+            evidence,
             buildArgs: () => [], env: { PATH: process.env.PATH }, existingFallback: true, openFallback: async () => capsule,
             readDiagnosticConfig: async () => ({ mode: 'normal' }), diagnosticStore,
             spawnImpl: () => {
@@ -68,7 +71,8 @@ for (const example of [
         } catch (error) {
           child.stdout.end();
           child.stderr.end(JSON.stringify({ version: f.envelope.version, status: 'blocked', code: error.code,
-            diagnostic: causalEvidence(error, { child: error.details?.childState, stage: 'execution' }) }));
+            diagnostic: causalEvidence(error, { child: error.details?.childState,
+              containment: evidence.codexContainment, stage: 'execution' }) }));
           child.emit('close', 1, null);
         }
       });
@@ -83,11 +87,13 @@ for (const example of [
   const args = { ...f, journal, execute: envelope => dispatcher.dispatch(envelope),
     // Retained diagnostic artifacts are separate from this fixture's task work.
     ...(example.storeFails ? { collect: async () => ({ head: f.envelope.startHead, clean: true }) } : {}) };
-  if (example.missing || example.storeFails || example.notStarted) await assert.rejects(runAttempt(args), { code: 'CODEX_NONZERO_EXIT' });
+  const terminalCode = example.missing ? 'CONTAINMENT_NOT_PROVEN' : 'CODEX_NONZERO_EXIT';
+  if (example.missing || example.storeFails || example.notStarted) await assert.rejects(runAttempt(args), { code: terminalCode });
   else assert.equal((await runAttempt(args)).status, 'BLOCKED');
   const saved = await journal.get(f.envelope.runId);
   const body = f.comments[0].body;
-  assert.match(body, /Terminal code: CODEX_NONZERO_EXIT/);
+  assert.match(body, new RegExp(`Terminal code: ${terminalCode}`));
+  assert.equal(saved.execution.containment, example.missing ? 'unknown' : 'reaped');
   assert.match(body, new RegExp(`Launcher diagnostic: ${example.missing ? 'UNCLASSIFIED_CHILD_FAILURE' : 'PROCESS_IO_ERROR'}`));
   assert.match(body, new RegExp(`Cause summary: ${example.cause ?? 'UNAVAILABLE'}`));
   assert.match(body, new RegExp(`Codex child: ${example.missing ? 'unknown' : example.notStarted ? 'not_started' : 'started'}; exit code: ${example.exit === 7 ? 7 : 'UNAVAILABLE'}; signal: ${example.signal === 'SIGTERM' ? 'SIGTERM' : 'UNAVAILABLE'}`));
@@ -98,7 +104,7 @@ for (const example of [
   assert.doesNotMatch(JSON.stringify(saved.diagnostic), /private-prompt-fixture|protected\/private-file|synthetic-private-secret/);
   if (!example.storeFails) assert.equal(primary[0].process.exitCode, 64);
   const replay = { ...args, execute: () => assert.fail('replay must not execute'), prepare: () => assert.fail('replay must not prepare'), collect: () => assert.fail('replay must not collect') };
-  if (example.missing || example.storeFails || example.notStarted) await assert.rejects(runAttempt(replay), { code: 'CODEX_NONZERO_EXIT' });
+  if (example.missing || example.storeFails || example.notStarted) await assert.rejects(runAttempt(replay), { code: terminalCode });
   else assert.deepEqual(await runAttempt(replay), saved.outcome);
   assert.equal(launches, 1); assert.equal(f.comments.length, 1); assert.equal(f.comments[0].body, body);
 });

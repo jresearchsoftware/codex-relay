@@ -130,7 +130,7 @@ class ProductionCodexLauncherBindingTests(unittest.TestCase):
             "exec /usr/bin/node --experimental-default-type=module",
             self.launcher_wrapper,
         )
-        self.assertIn("relay-codex.mjs", self.launcher_wrapper)
+        self.assertIn("{{ relay_codex_launcher_path }}.mjs", self.launcher_wrapper)
 
     def test_wrapper_byte_drift_is_rejected_even_when_all_markers_remain(self):
         expected_sha256 = hashlib.sha256(
@@ -146,7 +146,7 @@ class ProductionCodexLauncherBindingTests(unittest.TestCase):
         for marker in (
             "#!/bin/sh",
             "exec /usr/bin/node --experimental-default-type=module",
-            "relay-codex.mjs",
+            "{{ relay_codex_launcher_path }}.mjs",
         ):
             self.assertIn(marker, drifted_wrapper)
         self.assertFalse(artifact_hash_matches(drifted_wrapper, expected_sha256))

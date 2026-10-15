@@ -3,6 +3,7 @@ import { open, lstat, rename } from 'node:fs/promises';
 import { dirname, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION } from './execution-contract.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -10,7 +11,11 @@ const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', '
 const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
 function validServices(value) {
-  const names = ['reviewer', 'production', 'general'];
+  // The primary service keeps the original `general` key. Additional activity
+  // intent is complete only for this immutable installation topology; caller
+  // JSON cannot invent or omit a runner that a lifecycle operation will touch.
+  const names = ['reviewer', 'production', 'general',
+    ...(CONSUMER.executionSlots ?? []).filter(slot => slot.id !== 'primary').map(slot => `slot-${slot.id}`)];
   if (value && Object.hasOwn(value, 'manualOutcome')) names.push('manualOutcome');
   return value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).length === names.length && names.every(name => {
@@ -112,11 +117,12 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       || e.consumerDigest !== consumerDigest) fail('ADMISSION_ATTEMPT_INVALID');
     return e;
   }
-  async function inventory(task = null) {
+  async function inventory(task = null, slot = null) {
     const active = []; const unknown = [];
     for (const record of await store.all()) {
       const e = validRecord(record);
       if (task !== null && e.issueNumber !== task) continue;
+      if (slot !== null && (e.executionSlot ?? 'primary') !== slot) continue;
       if (e.route !== 'auto' || record.admissionBlock) continue;
       const recovery = record.prepublicationRecovery;
       if (recovery) {
@@ -168,6 +174,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
       const pending = await inventory(task);
       if (pending.active.length || pending.unknown.length) fail('PRIOR_EXECUTION_UNRESOLVED');
+    },
+    async assertSlotComplete(slot) {
+      if (!/^[a-z][a-z0-9-]{0,31}$/.test(slot ?? '')) fail('EXECUTION_SLOT_INVALID');
+      const pending = await inventory(null, slot);
+      if (pending.active.length || pending.unknown.length) fail('EXECUTION_SLOT_UNAVAILABLE');
     },
     async reserve() { await this.assertOpen(); return { version: 1, status: 'active' }; },
     async quiesce({ operationId, target }) {

@@ -1,4 +1,7 @@
 #!/bin/sh
 set -eu
 export RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}'
+{% if relay_execution_slots is defined %}
+export RELAY_EXECUTION_SLOT='{{ relay_execution_slot }}'
+{% endif %}
 exec /usr/bin/node '{{ relay_codex_dispatch_release_path }}' "$@"

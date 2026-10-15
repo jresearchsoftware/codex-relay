@@ -10,7 +10,7 @@
       - show
       - '{{ item }}'
       - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
-  loop: ['{{ relay_reviewer_service_name }}', '{{ relay_production_runner_service_name }}', '{{ relay_general_runner_service_name }}', '{{ relay_namespace }}-relay-manual-outcome.socket']
+  loop: '{{ [relay_reviewer_service_name, relay_production_runner_service_name, relay_general_runner_service_name, relay_namespace ~ "-relay-manual-outcome.socket"] + (relay_additional_execution_slots | default([]) | map(attribute="relay_runner_service_name") | list) }}'
   register: relay_upgrade_lifecycle_initial_services
   changed_when: false
   failed_when: false
@@ -65,6 +65,18 @@
     - {name: general, index: 2}
     - {name: manualOutcome, index: 3}
 
+- name: Bind each additional runner activity to its immutable configured slot
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_observed_activity: >-
+      {{ relay_upgrade_lifecycle_observed_activity | combine({"slot-" ~ item.relay_execution_slot: {
+        'active': relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout is search('(?m)^ActiveState=active$'),
+        'enabled': (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$') | first | default('disabled')),
+        'load': (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^LoadState=(loaded|not-found)$') | first)
+      }}) }}
+  loop: '{{ relay_additional_execution_slots | default([]) }}'
+  loop_control:
+    index_var: slot_index
+
 - name: Use the compatible snapshot wire shape only for a proved absent manual socket
   ansible.builtin.set_fact:
     # The installed pre-capability helper accepts exactly the original three
@@ -105,9 +117,9 @@
       - >-
         not relay_upgrade_lifecycle_previous_active[item].active or
         relay_upgrade_lifecycle_observed_activity[item].active or
-        (item != 'general' and relay_admission_recovery_authorized | default(false) | bool)
+        (item not in (['general'] + (relay_additional_execution_slots | default([]) | map(attribute='relay_execution_slot') | map('regex_replace', '^', 'slot-') | list)) and relay_admission_recovery_authorized | default(false) | bool)
     fail_msg: RELAY_UPGRADE_RETAINED_ACTIVITY_RECOVERY_REQUIRED
-  loop: [reviewer, production, general, manualOutcome]
+  loop: '{{ relay_upgrade_lifecycle_observed_activity.keys() | list }}'
 
 - name: Require the active production runner to retain its Reviewer prerequisite
   ansible.builtin.assert:

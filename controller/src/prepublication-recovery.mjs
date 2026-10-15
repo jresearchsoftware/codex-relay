@@ -58,6 +58,12 @@ export async function prepublicationState({ api, journal, record: r, head }) {
   const run = await originalRun(api, e);
   const outcome = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
   const writer = await api.userIdentity(WRITER);
+  // Older terminal writers sealed the native body in commentBodies before
+  // storing their four-field outcome. Read that original proof without
+  // backfilling either historical record or masking a present invalid hash.
+  const terminalBodySha256 = snapshot && !Object.hasOwn(r.outcome, 'bodySha256')
+    && r.commentBodies?.outcome?.number === e.issueNumber
+    ? r.commentBodies.outcome.sha256 : r.outcome.bodySha256;
   if (writer.login !== WRITER || writer.type !== 'Bot' || !positive(writer.id)
     || outcome.id !== r.outcome.outcomeId || outcome.user?.id !== writer.id
     || outcome.user?.login !== WRITER || outcome.user?.type !== 'Bot'
@@ -65,8 +71,8 @@ export async function prepublicationState({ api, journal, record: r, head }) {
     || !(outcome.body?.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
       || outcome.body?.startsWith('## Relay Codex Outcome\n'))
     || !outcome.body.endsWith(`<!-- relay:${e.attemptId}:outcome -->`)
-    || (r.outcome.bodySha256 && sha256Body(outcome.body) !== r.outcome.bodySha256)
-    || (snapshot && !/^[a-f0-9]{64}$/.test(r.outcome.bodySha256 ?? ''))
+    || (terminalBodySha256 && sha256Body(outcome.body) !== terminalBodySha256)
+    || (snapshot && !/^[a-f0-9]{64}$/.test(terminalBodySha256 ?? ''))
     || !Number.isFinite(Date.parse(outcome.created_at)) || !Number.isFinite(Date.parse(outcome.updated_at))) fail('RECOVERY_TERMINAL_OUTCOME_CHANGED');
   const typed = extractAuthorityRecord(outcome.body);
   if (typed?.kind !== 'outcome' || typed.status !== 'blocked' || typed.task !== e.issueNumber

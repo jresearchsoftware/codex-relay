@@ -46,6 +46,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   await writeFile(config, JSON.stringify({ schemaVersion: '1.0', mode: 'normal' }));
   const variables = {
     relay_install_root: root,
+    relay_codex_package_home: join(root, 'package-home'),
     relay_codex_binary_path: child, relay_codex_access_token_file: token,
     relay_dispatch_work_root: work, relay_diagnostics_config_path: config,
     relay_rust_toolchain_root: rust,
@@ -55,6 +56,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   };
   const template = await readFile(new URL('../roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2', import.meta.url), 'utf8');
   const launcher = join(root, 'launcher.mjs');
+  await writeFile(join(root, 'relay-codex-isolation.mjs'), await readFile(new URL('../roles/relay_codex_runtime/files/relay-codex-isolation.mjs', import.meta.url)));
   await writeFile(launcher, template.replace(/{{\s*(\w+)(\s*\|\s*to_json)?\s*}}/g, (_, key, json) => {
     assert.ok(variables[key], key); return json ? JSON.stringify(variables[key]) : variables[key];
   }));
@@ -72,7 +74,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
       '--model', model, '--effort', effort, '--input-file', input, '--cwd', taskRoot,
       remediation ? '--pull-request' : '--issue', '210'], {
           env: { PATH: '/caller/untrusted/bin', CARGO_HOME: '/protected/build-cache', GITHUB_TOKEN: 'synthetic-should-not-cross' },
-          stdio: ['ignore', output.fd, error.fd]
+          stdio: ['pipe', output.fd, error.fd]
         });
         [code] = await once(launched, 'close');
       } finally { await output.close(); await error.close(); }

@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { executionConsumer } from '../../consumer/consumer.mjs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createBoundedUtf8Capture } from './utf8-capture.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
@@ -31,9 +31,9 @@ function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChild
     const deadline = Date.now() + timeoutMs;
     const poll = () => {
       const childGone = isChildClosed() || child.exitCode !== null || child.signalCode !== null;
-      // The fixed helper is the process-group leader. Its real worker must
-      // remain in that same group, so cleanup does not depend on receiving a
-      // best-effort worker PID registration frame before cancellation.
+      // This proves only the runner-owned group. The model UID launcher must
+      // separately acknowledge its inner group; successful kill(-pid) does not
+      // prove that a different UID was signalled.
       const ownerGroupGone = process.platform === "win32" || processGroupGone(child.pid);
       const groupsGone = ownerGroupGone && nestedProcessGroupPids.every(processGroupGone);
       if (childGone && groupsGone) return resolve(true);
@@ -53,10 +53,12 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 
 
 export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs = 100 * 60 * 1000,
-  reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts } = {}) {
+  reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
   return {
     async dispatch(envelope) {
       validateEnvelope(envelope);
+      if (signal?.aborted) throw Object.assign(new Error('EXECUTION_CANCELLED'), { code: 'EXECUTION_CANCELLED',
+        details: { childState: 'not_started', containment: 'not_required', executionId: envelope.attemptId } });
       // Reserve independent durable evidence before the process can create any
       // mutable attempt state. Failure to reserve must never launch a child.
       let fallbackStore;
@@ -72,19 +74,21 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
       let child;
       const stdout = createBoundedUtf8Capture(512 * 1024);
       const stderr = createBoundedUtf8Capture(64 * 1024);
-      let closed = false; let timedOut = false; let cancelled = false; let termination; let spawnFailed = false;
+      let closed = false; let timedOut = false; let cancelled = false; let termination; let spawnFailed = false; let finishWait;
       let value; let pendingError; let exit; let exitSignal; let processError; let runtimeLifecycle;
       let codexUsage = normalizeCodexUsage();
       let containment = 'not_required';
       const reap = () => termination ??= terminateProcessTree(child, [], () => closed);
-      const onSignal = () => { cancelled = true; void reap(); };
+      const onSignal = () => { cancelled = true; void reap().then(() => finishWait?.(null)); };
       try {
         await fallbackStore.write({ stage: 'dispatcher', operation: 'dispatch', childState: 'unknown',
           containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown' });
         try {
-          child = spawnImpl(CONSUMER.paths.dispatch, [], {
+          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, [], {
             env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
-            stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
+            // fd3 is a separate lifetime pipe: envelope stdin still ends after
+            // its unchanged JSON body. Caller death closes fd3 in the helper.
+            stdio: ['pipe', 'pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
         } catch (error) {
           processError = error;
           throw Object.assign(new Error('DISPATCH_NOT_STARTED'), { code: 'DISPATCH_NOT_STARTED',
@@ -92,16 +96,18 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
               syscall: error?.syscall, operation: 'dispatch', boundary: 'dispatcher' } });
         }
         containment = 'unknown';
-        process.once('SIGTERM', onSignal); process.once('SIGINT', onSignal);
+        process.on('SIGTERM', onSignal); process.on('SIGINT', onSignal);
+        signal?.addEventListener('abort', onSignal, { once: true });
         exit = await new Promise(resolve => {
           const timer = setTimeout(async () => { timedOut = true; await reap(); resolve(null); }, timeoutMs);
+          finishWait = code => { clearTimeout(timer); resolve(code); };
           child.stdout?.on('data', c => stdout.push(c)); child.stderr?.on('data', c => stderr.push(c));
           child.once('error', error => { processError = error; spawnFailed = !child.pid; clearTimeout(timer); resolve(null); });
           child.once('close', (code, signal) => { closed = true; exitSignal = signal; clearTimeout(timer); resolve(code); });
           child.stdin?.once('error', () => {}); child.stdin?.end(JSON.stringify(envelope));
+          if (signal?.aborted) onSignal();
         });
-        const contained = await reap();
-        containment = contained ? 'reaped' : 'unknown';
+        const outerContained = await reap();
         const out = stdout.finish(); const err = stderr.finish();
         let diagnostic; let workerCode;
         try { value = JSON.parse(out.value); } catch { /* unknown */ }
@@ -111,6 +117,10 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
             diagnostic = failure.diagnostic; workerCode = failure.code;
           }
         } catch { /* unknown */ }
+        const innerContained = value?.containment === 'reaped' || diagnostic?.containment === 'reaped'
+          || (diagnostic?.containment === 'not_required' && diagnostic?.observed?.child === 'not_started');
+        const contained = outerContained && (spawnFailed || innerContained);
+        containment = contained ? 'reaped' : 'unknown';
         if (!contained || timedOut || cancelled || exit !== 0 || out.truncated || value?.version !== VERSION || value?.attemptId !== envelope.attemptId) {
           const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
           throw Object.assign(new Error(code), { code, details: { causal: diagnostic, executionId: envelope.attemptId,
@@ -123,8 +133,10 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
       } catch (error) { pendingError = error; }
       finally {
         process.removeListener('SIGTERM', onSignal); process.removeListener('SIGINT', onSignal);
+        signal?.removeEventListener('abort', onSignal);
+        child?.stdio?.[3]?.destroy();
         if (child && !termination) {
-          try { containment = await reap() ? 'reaped' : 'unknown'; }
+          try { if (!await reap()) containment = 'unknown'; }
           catch { containment = 'unknown'; }
         }
         const failure = pendingError ? failureDiagnosticFromDetails({ ...pendingError.details,

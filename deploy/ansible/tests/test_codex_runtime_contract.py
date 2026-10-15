@@ -125,7 +125,9 @@ class CodexRuntimeContractTests(unittest.TestCase):
             "relay-codex-diagnostic.mjs",
             "process.umask(0o0007);",
             "let childStarted = false",
-            'child.once("spawn", () => { childStarted = true; observedChildStarted = true; })',
+            'child.once("spawn", () => {',
+            "childStarted = process.env.RELAY_ISOLATED_SLOT === '1' ? null : true",
+            'observedChildStarted = childStarted',
         ):
             self.assertIn(marker, self.launcher)
         self.assertNotIn("const childStarted = true", self.launcher)

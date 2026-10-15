@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, runnerExecutionSlot } from '../../consumer/consumer.mjs';
 import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -7,22 +7,34 @@ import { createOnDemandDispatchAdapter } from './github.mjs';
 import { createAttemptStore } from './attempt-store.mjs';
 import { runAttempt } from './attempt.mjs';
 import { prepareCheckout, collectCheckout } from './attempt-runtime.mjs';
-import { REPOSITORY, OWNER, causalEvidence } from './execution-contract.mjs';
+import { REPOSITORY, OWNER, causalEvidence, fail } from './execution-contract.mjs';
 import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 
-export async function main({ env = process.env, readEvent = path => readFile(path, 'utf8'),
+export async function main(options = {}) {
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort();
+  // Hold both native cancellation signals through the terminal Writer receipt,
+  // not only until the dispatcher returns. A later force kill remains unknown.
+  process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
+  try { return await runRouting({ ...options, signal: cancellation.signal }); }
+  finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
+}
+async function runRouting({ env = process.env, readEvent = path => readFile(path, 'utf8'),
   createWriter = createLocalWriterAdapter, createDispatcher = createOnDemandDispatchAdapter,
-  createJournal = () => createAttemptStore(CONSUMER.paths.attemptRoot),
-  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout } = {}) {
+  createJournal = () => createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot),
+  resolveSlot = runnerExecutionSlot,
+  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout, signal } = {}) {
   const event = JSON.parse(await readEvent(env.GITHUB_EVENT_PATH));
   if (event.repository?.full_name !== REPOSITORY || !['workflow_dispatch', 'issues', 'pull_request_target'].includes(env.GITHUB_EVENT_NAME)
     || event.sender?.login !== OWNER || env.GITHUB_REF !== `refs/heads/${CONSUMER.baseBranch}`) return { status: 'BLOCKED', code: 'OWNER_EVENT_REQUIRED' };
   const launch = env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? parseLaunchInputs(event.inputs)
     : parseLabelLaunch(event, env.GITHUB_EVENT_NAME);
+  const executionSlot = resolveSlot({ runnerName: env.RUNNER_NAME });
+  if (CONSUMER.executionSlots && executionSlot !== EXECUTION_SLOT) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   const local = createWriter();
-  const broker = { invoke: request => local.invoke({ ...request, workflowReadToken: env.GITHUB_TOKEN }) };
+  const broker = { invoke: request => local.invoke({ ...request, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: env.GITHUB_TOKEN }) };
   let admitted;
   try {
     admitted = await broker.invoke({ operation: 'admit', runId: Number(env.GITHUB_RUN_ID), workflowReadToken: env.GITHUB_TOKEN,
@@ -35,7 +47,7 @@ export async function main({ env = process.env, readEvent = path => readFile(pat
   }
   emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
   if (admitted.status === 'BLOCKED') return admitted;
-  const dispatcher = createDispatcher();
+  const dispatcher = createDispatcher({ signal });
   let failure;
   try {
     return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
@@ -43,6 +55,9 @@ export async function main({ env = process.env, readEvent = path => readFile(pat
       prepare, execute: e => dispatcher.dispatch(e), collect });
   } catch (error) {
     failure = error;
+    // The contender never owned this attempt. Its error cannot mutate the
+    // active controller's diagnostics or release its Writer reservation.
+    if (error.code === 'ATTEMPT_CONTROLLER_BUSY') throw error;
     // Includes a failed journal write before/inside the normal catch path.
     // Never rerun the operation just because its normal evidence store failed.
     if (!error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
@@ -52,7 +67,7 @@ export async function main({ env = process.env, readEvent = path => readFile(pat
     }
     throw error;
   } finally {
-    if (admitted.envelope.route === 'auto') {
+    if (admitted.envelope.route === 'auto' && failure?.code !== 'ATTEMPT_CONTROLLER_BUSY') {
       // This is the last trusted controller operation, after containment,
       // collection, publication and the durable terminal runner receipt.
       // Root reads that receipt itself; caller JSON cannot assert completion.

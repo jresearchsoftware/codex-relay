@@ -1,6 +1,6 @@
 import { lstat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { createBoundedUtf8Capture } from '../../controller/src/utf8-capture.mjs';
 
 export async function captureSandboxIdentity(sandboxRoot) {

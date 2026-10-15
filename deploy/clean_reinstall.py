@@ -95,7 +95,19 @@ def unit_names(config):
         names = ['reviewer-mcp-recovery.timer', 'reviewer-mcp-recovery.service', 'reviewer-mcp.service',
                  'relay-runner.service', 'relay-general-runner.service', 'relay-controller.service',
                  'relay-openai-mtls-proxy.service']
-    return names + [namespace + '-relay-manual-outcome.socket', namespace + '-relay-manual-outcome@.service']
+    return names + [namespace + '-slot-' + slot['id'] + '-runner.service'
+                    for slot in config['consumer'].get('executionSlots', [])[1:]] + [
+        namespace + '-relay-manual-outcome.socket', namespace + '-relay-manual-outcome@.service']
+
+
+def runner_specs(config):
+    namespace = config['environment']['namespace']
+    names = unit_names(config)
+    return [('runner', config['environment']['runner']['user'], names[3]),
+            ('general-runner', config['environment']['generalRunner']['user'], names[4])] + [
+        ('slots/' + slot['id'] + '/runner', slot['runnerUser'],
+         namespace + '-slot-' + slot['id'] + '-runner.service')
+        for slot in config['consumer'].get('executionSlots', [])[1:]]
 
 
 def managed_unit(config, name):
@@ -258,8 +270,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         require(binding and fields.get('FragmentPath') == '/etc/systemd/system/' + fragment,
                 'UNIT_IDENTITY_UNPROVEN')
         identities = {names[2]: config['environment']['reviewerUser'],
-                      names[3]: config['environment']['runner']['user'],
-                      names[4]: config['environment']['generalRunner']['user']}
+                      **{unit: identity for _, identity, unit in runner_specs(config)}}
         if name in identities:
             require('User=' + identities[name] in lines, 'UNIT_IDENTITY_UNPROVEN')
         # The sole supported drop-in belongs to the fixed production-apply
@@ -287,9 +298,9 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
             require(fields.get('ActiveState') in ['inactive', 'failed']
                     and (activation_unit or fields.get('MainPID') == '0'),
                     'WORKERS_NOT_QUIESCENT')
-        elif name in names[3:5] and fields['ActiveState'] == 'active':
-            runner_root = '/opt/' + config['environment']['namespace'] + '/' + (
-                'runner' if name == names[3] else 'general-runner')
+        elif name in {unit for _, _, unit in runner_specs(config)} and fields['ActiveState'] == 'active':
+            runner_root = '/opt/' + config['environment']['namespace'] + '/' + next(
+                relative for relative, _, unit in runner_specs(config) if unit == name)
             require('ExecStart=' + runner_root + '/run.sh' in lines
                     and fields['MainPID'] != '0'
                     and fields.get('ControlGroup') == '/system.slice/' + name,
@@ -297,7 +308,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
             if listeners is not None:
                 listeners[name] = {'pid': fields['MainPID'], 'root': runner_root,
                                    'user': identities[name], 'cgroup': fields['ControlGroup']}
-        elif name in names[3:5]:
+        elif name in {unit for _, _, unit in runner_specs(config)}:
             require(fields['MainPID'] == '0', 'WORKERS_NOT_QUIESCENT')
         elif not activation_unit and name in [names[1], *names[5:]]:
             require(fields['ActiveState'] in ['inactive', 'failed'] and fields['MainPID'] == '0',
@@ -309,6 +320,8 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
 def workers_quiescent(config, root, user_ids=None, *, listeners=None, stopped_units=None):
     names = [config['consumer']['runtimeUser'], config['environment']['runner']['user'],
              config['environment']['generalRunner']['user']]
+    names += [slot[key] for slot in config['consumer'].get('executionSlots', [])[1:]
+              for key in ['runnerUser', 'runtimeUser']]
     ids = {}
     for name in names:
         try:
@@ -433,9 +446,11 @@ def retained_paths_outside_runtime(config, install):
                 'PROTECTED_STATE_OVERLAPS_RUNTIME')
 
 
-def runtime_layout(install, root, owner_uid):
+def runtime_layout(install, root, owner_uid, config=None):
     """Unknown namespace contents need owner diagnosis; never silently absorb them."""
     directories = {'releases', 'codex-runtime', 'runner', 'general-runner'}
+    if (config or {}).get('consumer', {}).get('executionSlots'):
+        directories.add('slots')
     for path in install.iterdir():
         if path.name == 'current' or path.name in ['runner', 'general-runner']:
             continue
@@ -444,6 +459,16 @@ def runtime_layout(install, root, owner_uid):
         else:
             require(path.name.startswith('relay-'), 'UNSUPPORTED_RUNTIME_ENTRY')
             protected(path, root, owner_uid)
+    if 'slots' in directories and present(install / 'slots'):
+        slots = {slot['id'] for slot in config['consumer']['executionSlots'][1:]}
+        for path in (install / 'slots').iterdir():
+            require(path.name in slots, 'UNSUPPORTED_RUNTIME_SLOT')
+            protected(path, root, owner_uid, directory=True)
+            for child in path.iterdir():
+                if child.name == 'runner':
+                    continue
+                require(child.name.startswith('relay-'), 'UNSUPPORTED_RUNTIME_SLOT_ENTRY')
+                protected(child, root, owner_uid)
 
 
 @contextmanager
@@ -483,7 +508,7 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
     require(not present(paths['journal']) and not present(paths['journal'].with_name(paths['journal'].name + '.next'))
             and not present(paths['operation']), 'RECOVERY_REQUIRED')
     retained_paths_outside_runtime(config, paths['install'])
-    runtime_layout(paths['install'], root, owner_uid)
+    runtime_layout(paths['install'], root, owner_uid, config)
     current = paths['install'] / 'current'
     info = current.lstat()
     require(stat.S_ISLNK(info.st_mode) and info.st_uid == owner_uid, 'INSTALLED_IDENTITY_UNPROVEN')
@@ -509,8 +534,7 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
     # Runner roots are retained as complete trees. Relative registration paths,
     # credential material and runner package identity therefore remain intact.
     runners = []
-    for name, identity in [('runner', config['environment']['runner']['user']),
-                           ('general-runner', config['environment']['generalRunner']['user'])]:
+    for name, identity, _ in runner_specs(config):
         path = paths['install'] / name
         if present(path):
             metadata = path.lstat()
@@ -571,6 +595,10 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
         paths['install'].mkdir(mode=stat.S_IMODE(metadata.st_mode))
         os.chown(paths['install'], metadata.st_uid, metadata.st_gid)
         for name in runners:
+            parent = (paths['install'] / name).parent
+            if parent != paths['install']:
+                parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+                os.chown(parent, owner_uid, paths['install'].stat().st_gid)
             os.rename(archive / 'runtime' / name, paths['install'] / name)
             fsync_dir(archive / 'runtime')
             fsync_dir(paths['install'])
@@ -732,7 +760,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
         require(operation == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
                               'phase': 'apply', 'target_head': revision}, 'RECOVERY_OPERATION_MISMATCH')
         require(isinstance(journal['runners'], list) and len(journal['runners']) == len(set(journal['runners']))
-                and set(journal['runners']) <= {'runner', 'general-runner'}
+                and set(journal['runners']) <= {name for name, _, _ in runner_specs(config)}
                 and isinstance(journal['activationMarkers'], list)
                 and len(journal['activationMarkers']) == len(set(journal['activationMarkers']))
                 and set(journal['activationMarkers']) <= {'reviewer-activation-authorized', 'reviewer-recovery-requires-activation'}
@@ -754,7 +782,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
             if marker in journal['activationMarkers']:
                 _recovery_bytes(archive / marker, root, owner_uid, owner_gid, private=True)
         old_runtime = archive / 'runtime'
-        runtime_layout(old_runtime, root, owner_uid)
+        runtime_layout(old_runtime, root, owner_uid, config)
         old_current = old_runtime / 'current'
         require(old_current.is_symlink() and old_current.lstat().st_uid == owner_uid
                 and os.readlink(old_current) in [str(paths['install'] / 'releases' / journal['sourceRevision']),
@@ -762,7 +790,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
                 'RECOVERY_ARCHIVE_IDENTITY_UNPROVEN')
         _recovery_identity(old_runtime / 'releases' / journal['sourceRevision'], journal['sourceRevision'],
                            root, owner_uid, owner_gid)
-        runtime_layout(paths['install'], root, owner_uid)
+        runtime_layout(paths['install'], root, owner_uid, config)
         current = paths['install'] / 'current'
         require(current.is_symlink() and current.lstat().st_uid == owner_uid
                 and current.resolve(strict=True) == paths['install'] / 'releases' / revision,
@@ -780,8 +808,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
             value['defaultProfile'].setdefault('effort', 'xhigh')
         require(consumer == expected_consumer, 'RECOVERY_CONFIGURATION_CHANGED')
         retained_paths_outside_runtime(config, paths['install'])
-        for name, identity in [('runner', config['environment']['runner']['user']),
-                               ('general-runner', config['environment']['generalRunner']['user'])]:
+        for name, identity, _ in runner_specs(config):
             path = paths['install'] / name
             require(present(path) == (name in journal['runners']) and not present(old_runtime / name),
                     'RECOVERY_RUNNER_BINDING_CHANGED')
@@ -871,7 +898,7 @@ def validate_remote_result(result, config, revision, report, action):
                 and len(result['activationMarkers']) == len(set(result['activationMarkers']))
                 and set(result['activationMarkers']) <= {'reviewer-activation-authorized', 'reviewer-recovery-requires-activation'}
                 and isinstance(result['runners'], list) and len(result['runners']) == len(set(result['runners']))
-                and set(result['runners']) <= {'runner', 'general-runner'}, 'REMOTE_RESULT_INVALID')
+                and set(result['runners']) <= {name for name, _, _ in runner_specs(config)}, 'REMOTE_RESULT_INVALID')
     else:
         require(result.keys() == {'state', 'installedRevision', 'archive'}
                 and result['state'] == 'COMPLETE' and result['installedRevision'] == revision
@@ -977,14 +1004,18 @@ def recovery_admission_program(config):
     base = '/opt/' + namespace + '/current/reviewed-source/'
     source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
+                               ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
                                ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs')]:
         require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
         source = source.replace("'" + relative + "'", json.dumps(absolute))
-    source += '\nimport { CONSUMER, CONSUMER_DIGEST } from ' + json.dumps(base + 'consumer/consumer.mjs') + ';\n'
+    require(source.count('import { CONSUMER } from ') == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
+    source = source.replace('import { CONSUMER } from ', 'import { CONSUMER, CONSUMER_DIGEST } from ')
     source += 'import { assertRootConsumer } from ' + json.dumps(base + 'consumer/consumer-config.mjs') + ';\n'
     source += 'import { createAttemptStore } from ' + json.dumps(base + 'controller/src/attempt-store.mjs') + ';\n'
     source += "assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n"
-    source += "const admission = createAdmissionControl({root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST, store: createAttemptStore(CONSUMER.paths.claimRoot + '/publication-v2'), journal: createAttemptStore(CONSUMER.paths.attemptRoot)});\n"
+    source += "const store = createAttemptStore(CONSUMER.paths.claimRoot + '/publication-v2');\n"
+    source += "const journal = {async get(runId) {const record = await store.get(runId); if (!record?.envelope) return null; const id = record.envelope.executionSlot ?? 'primary'; const slot = CONSUMER.executionSlots?.find(slot => slot.id === id); if ((CONSUMER.executionSlots && !slot) || (!CONSUMER.executionSlots && id !== 'primary')) fail('EXECUTION_SLOT_INVALID'); return createAttemptStore(slot?.paths.attemptRoot ?? CONSUMER.paths.attemptRoot).get(runId);}};\n"
+    source += "const admission = createAdmissionControl({root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST, store, journal});\n"
     source += "process.stdout.write(JSON.stringify(await admission.status()) + '\\n');\n"
     return source
 

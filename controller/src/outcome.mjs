@@ -32,7 +32,7 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
     summary: status === 'implemented' ? 'The admitted execution completed; independent review remains required.' : 'The admitted execution stopped; useful durable work and its boundary are recorded above.' };
   const source = snapshot ? `Authority source native ID: ${e.requestReference.id}\nAuthority digest: ${e.request.authority.sha256}\nAdmission digest: ${record.admission.sha256}`
     : `Execution request native ID: ${e.requestReference.id}\nExecution request digest: ${e.requestReference.sha256}`;
-  return `${body}\n\n${source}\n\n${renderAuthorityRecord(record)}`;
+  return `${body}\n\n${e.executionSlot ? `Execution slot: ${e.executionSlot}\n\n` : ''}${source}\n\n${renderAuthorityRecord(record)}`;
 }
 
 // These are controller observations, separate from worker validation claims and

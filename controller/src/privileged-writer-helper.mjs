@@ -1,5 +1,5 @@
 import { assertRootConsumer } from '../../consumer/consumer-config.mjs';
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, unixUserId } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createPublicationBroker } from './publication-broker.mjs';
@@ -12,6 +12,33 @@ import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
+import { createSlotJournal } from './slot-journal.mjs';
+
+export function callerExecutionSlot({ uid, uidForUser = unixUserId } = {}) {
+  if (!CONSUMER.executionSlots) return undefined;
+  if (!Number.isSafeInteger(uid) || uid < 1) fail('EXECUTION_SLOT_IDENTITY_INVALID');
+  const matches = CONSUMER.executionSlots.filter(slot => uidForUser(slot.runnerUser) === uid);
+  if (matches.length !== 1) fail('EXECUTION_SLOT_IDENTITY_INVALID');
+  return matches[0].id;
+}
+export async function assertWriterSlot(request, { callerUid = process.env.RELAY_CALLER_UID,
+  store = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`), resolveSlot = callerExecutionSlot } = {}) {
+  if (!CONSUMER.executionSlots) {
+    if (Object.hasOwn(request ?? {}, 'executionSlot')) fail('EXECUTION_SLOT_INVALID');
+    return;
+  }
+  if (!/^[1-9][0-9]{0,9}$/.test(callerUid ?? '')) fail('EXECUTION_SLOT_IDENTITY_INVALID');
+  const slot = resolveSlot({ uid: Number(callerUid) });
+  if (request.executionSlot !== slot) fail('EXECUTION_SLOT_IDENTITY_INVALID');
+  if (request.operation === 'admit') return;
+  const record = await store.get(request.runId);
+  if (!record) fail('ATTEMPT_NOT_ADMITTED');
+  // Inspection and root-owned retained collection can read the stored slot.
+  // Ordinary runner-owned publication recovery still uses its original private
+  // journal/collector identity, even with a fresh owner authorization.
+  const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
+  if (!recovery && (record.envelope.executionSlot ?? 'primary') !== slot) fail('EXECUTION_SLOT_BINDING_CHANGED');
+}
 
 export function resolveWriterDeploymentContract(env = process.env) {
   const profile = { credentialEnv: CONSUMER.paths.credentialEnv, credentialKeyFile: CONSUMER.paths.credentialKeyFile, claimRoot: CONSUMER.paths.claimRoot };
@@ -28,6 +55,7 @@ export async function main() {
   for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
   let request; try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
   if (request?.operation === 'manual-outcome-direct') fail('MANUAL_CAPABILITY_REQUIRED');
+  await assertWriterSlot(request);
   const admission = installedAdmissionControl();
   if (request?.operation === 'complete-execution') {
     return { version: VERSION, repository: REPOSITORY, ...await admission.complete(request) };
@@ -37,10 +65,11 @@ export async function main() {
 export async function protectedWriterBroker({ deployment = resolveWriterDeploymentContract(), runToken, admission = installedAdmissionControl(), allowManualOutcome = false } = {}) {
   if (process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
   const value = await token();
+  const store = createAttemptStore(`${deployment.claimRoot}/publication-v2`);
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
-    store: createAttemptStore(`${deployment.claimRoot}/publication-v2`),
+    store,
     lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
-    journal: createAttemptStore(CONSUMER.paths.attemptRoot),
+    journal: createSlotJournal(store),
     publisher: createGitPublisher({ token: value, root: deployment.claimRoot }),
     // Fixed root helper, exact admitted attempt, original contained journal.
     // No caller path, permission repair or worker Git metadata is accepted.

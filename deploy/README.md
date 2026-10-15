@@ -63,6 +63,70 @@ repository set. Preflight accepts either singleton `repository` or plural
 adding targets to the same instance while retaining its installed targets; the
 existing service, Unix identity and namespace collision checks still apply.
 
+### Bounded automatic execution slots
+
+The optional `consumer.executionSlots` array describes one finite installation
+topology, including a `primary` slot and additional independent automatic
+workers. Every slot supplies `id`, `runnerName`, `runnerUser`, `runtimeUser`,
+`workGroup` and `paths` with `workRoot`, `attemptRoot`, `dispatch`, `launcher`,
+`diagnosticsConfig`, `diagnosticsStore` and `diagnosticsRoot`. There is one
+installation-wide consumer digest, Writer identity, credential/claim namespace
+and repository. A slot is pinned at admission from the qualified native runner
+name and Unix identity; a worker cannot select another slot or supply paths.
+
+The primary entry must retain the existing top-level runtime user/paths and
+match `environment.generalRunner` and `environment.codexWorkGroup`. Slots use
+distinct runner/runtime users and work groups. Additional paths are fixed under
+`/opt/<namespace>/slots/<id>`, `/etc/<namespace>/slots/<id>` and
+`/var/lib/<namespace>/slots/<id>`; they cannot point into another installation.
+The array is bounded to 32 entries. `environment.instance` is required, and
+every slot inherits the existing general runner registration scope/group and
+consumer labels. The production runner remains outside this pool.
+
+The source installer prepares private slot roots, runtime identities, fixed
+sudo/dispatch/diagnostic/launcher bindings and runner services. It preserves
+registration and activity; it does not mint registration permission or activate
+a new slot. Optional parallel workers additionally require qualified bubblewrap
+user/PID namespaces under each actual runtime UID. Shared-host qualification must
+prove distinct installed namespaces, Unix identities, work access, process
+visibility, credentials, services and finite resource capacity across consumers.
+Separate repository installations retain separate Writer locks and claim roots;
+this does not introduce a multi-repository Writer.
+
+Use the existing `general-runner-register` and `general-runner-enable` phases
+with `--execution-slot <id>` for an additional configured slot; omission selects
+`primary`. The same registration token transport and explicit phase authority
+apply. Inventory lists every slot, upgrade preserves its original service
+activity, and clean reinstall retains its registration tree while retiring the
+managed runtime. Installed numeric identities, group access and namespace paths
+are checked before activation. Global admission drain still accounts for all
+retained attempts through their original protected slot bindings.
+
+Source support does not qualify a particular host or prove real automatic
+model overlap. Configurations omitting the array retain their existing
+deployment/lifecycle paths and SERIAL scheduling. Parallel installation and
+operational claims require the actual TEST or consumer evidence described below.
+
+Opt-in projections use `relay-workflows-v4`, retaining native `queue: max` and
+`cancel-in-progress: false` for distinct Issue/PR subject groups. Recovery has
+its original-run group and an allowlisted `execution_slot` choice matching the
+retained attempt; historical attempts default to `primary`. `inspect` and the
+Outcome expose the original slot. Ordinary publication recovery must use its
+original runner identity. The finite qualified runner pool bounds active work;
+Writer still serializes admission, Task conflicts, publication/recovery and
+lifecycle critical sections. A projection requires an installed v4 capability;
+it cannot silently select a SERIAL v3 runtime. V3 remains the unchanged default
+ABI for consumers without slots. Source tests and generated fixtures do not
+qualify native overlap or update any installed consumer projection. See the
+[scheduling audit](../docs/concurrency-scheduling.md).
+
+The automatic root Writer wrapper now waits at most 300 seconds for its existing
+per-installation publication lock; its caller's 450-second invocation budget
+includes that wait and the bounded 120-second Git operation. Timeout leaves the
+original attempt for supported recovery and does not authorize another inference.
+The independent manual Outcome socket retains its existing 60-second contract
+and original uncertain-publication/recovery behavior.
+
 To serve two repositories with one Reviewer, add the following under
 `environment` in the owner-controlled deployment input:
 
@@ -782,8 +846,10 @@ Source installation and retained-release reconciliation normalize the fixed
 owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`, `config.py`,
 `installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
 parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
-and its release parents, retaining their assigned groups and modes. Other
-archived source modes remain unchanged. The fixed bootstrap still rejects
+and its release parents, retaining their assigned groups and modes. The complete
+archived source loses group/world write permissions while retaining its bytes,
+assigned groups and read/search/execute bits. Artifact links update their own
+metadata without changing target ownership. The fixed bootstrap still rejects
 writable, non-root-owned or aliased code and unsafe substitution parents before
 executing root Python. This requires no additional owner action. An older
 installed helper that already fails this bootstrap cannot apply its own repair;
@@ -912,6 +978,19 @@ an admitted consumer's scope requires explicit owner acceptance and external
 qualification before registration or enablement.
 
 ### Ephemeral runner registration
+
+Dedicated TEST runner and runner-group administration follows
+[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority)
+and the concrete admitted owner scope. For the direct local manual path, sign
+a short-lived App JWT from the owner's private local PEM, verify the App and
+organization installation, obtain an installation token with the actual runner
+permission, and probe runner/group reads before changing exact TEST targets.
+Use an explicit Authorization header, or account for `GH_TOKEN` taking
+precedence over `GITHUB_TOKEN` when invoking `gh`; a default user token is not
+proof of App authentication. An organization runner token is not technically
+TEST-scoped. Preserve the selected TEST repository allowlist, restricted trusted
+workflow/ref policy and secret boundary during every operation. This authority
+does not permit production or shared-resource administration.
 
 Use the public registration phase after installing the exact accepted product:
 
@@ -1072,6 +1151,19 @@ service. It verifies JSONL events, native thread IDs and usage counters,
 stdin task bytes, strict schema delivery and Relay semantic-result extraction,
 non-zero provider failure, isolated homes, and effective workspace/network
 policy. No model call, login or production installation occurs.
+
+Installation keeps the complete official distribution under the root-owned
+`codex-runtime/package-home/packages`, outside every private worker home.
+The stable `codex-runtime/bin/codex` entrypoint links to that immutable payload;
+isolated slots mount the complete payload read-only, including auxiliary
+resources. Runtime homes and tokens retain their private ownership and modes.
+Temporary-root reconciliation processes `tmp` before `tmp/arg0` and rejects
+existing root symlinks before processing a child path. Recursive ownership
+changes do not follow descendant links, preserving shared payloads and other
+private homes when the CLI creates native arg0 aliases.
+An upgrade from the old private-home layout installs the pinned distribution
+afresh without executing or copying the old model-owned binary. Package metadata
+is checked before any root version probe; check mode does not execute that binary.
 
 The probe also preserves native limitations: missing backend usage becomes
 native zero counters; the CLI requests the output schema but Relay must still

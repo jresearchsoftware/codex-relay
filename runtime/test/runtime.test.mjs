@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { mkdtemp, mkdir, rm, symlink } from 'node:fs/promises';
@@ -10,6 +11,34 @@ import { join } from 'node:path';
 import { parseLauncherDiagnostic, parseCodexJsonLines, buildCodexProcessSpec, runGovernedCodexTask, preflightCodexWorkspace, buildCodexEnvironment } from '../src/codex-runtime.mjs';
 import { causalEvidence } from '../../controller/src/execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from '../../controller/src/diagnostic-fallback.mjs';
+
+for (const receipt of ['reaped', 'missing', 'invalid']) {
+  test(`native timeout preserves ${receipt} inner containment evidence`, async t => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-timeout-receipt-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const evidence = {};
+    const frame = receipt === 'missing' ? 'no native receipt' : JSON.stringify({ source: 'relay-codex-launcher',
+      schemaVersion: 1, code: 'EXECUTION_CANCELLED', bytes: 0, preview: '', childStarted: true,
+      containment: receipt === 'reaped' ? 'reaped' : 'success' });
+    let child;
+    await assert.rejects(runGovernedCodexTask({ inputText: 'bounded timeout fixture', cwd: root,
+      evidence, env: { PATH: process.env.PATH, CODEX_RUNTIME_TIMEOUT_MS: '1000' }, buildArgs: () => [],
+      fallbackStore: options => reserveRuntimeDiagnostic({ ...options, root: join(root, 'fallback') }),
+      diagnosticStore: async () => undefined, spawnImpl(_command, _args, options) {
+        child = spawn(process.execPath, ['-e', `
+          const fs=require('node:fs');process.stdin.resume();let stopped=false;
+          const hold=setInterval(()=>{},1000);
+          const stop=()=>{if(stopped)return;stopped=true;fs.writeSync(2,${JSON.stringify(frame)});clearInterval(hold);process.stdin.destroy();process.exitCode=1;};
+          process.on('SIGTERM',stop);process.stdin.on('end',stop);
+        `], options);
+        return child;
+      }
+    }), { code: 'CODEX_RUNTIME_TIMEOUT' });
+    assert.equal(evidence.codexTerminationConfirmed, true);
+    assert.equal(evidence.codexContainment, receipt === 'reaped' ? 'reaped' : 'unknown');
+    assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+  });
+}
 
 test('worker arguments resolve absent profiles and preserve explicit unknown identifiers', async t => {
   const root = await mkdtemp(join(tmpdir(), 'codex-profile-runtime-test-'));

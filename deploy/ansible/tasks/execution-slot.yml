@@ -1,0 +1,195 @@
+---
+# Only fixed values derived from the validated consumer slot list enter this
+# include. Installation preserves registration/activity; it grants no GitHub
+# registration token or permission to activate a runner.
+- name: Install the fixed additional execution slot
+  vars:
+    relay_execution_slot: '{{ relay_slot_inputs.relay_execution_slot }}'
+    relay_execution_slot_install_root: '{{ relay_slot_inputs.relay_execution_slot_install_root }}'
+    relay_execution_slot_isolation: true
+    relay_runner_name: '{{ relay_slot_inputs.relay_runner_name }}'
+    relay_runner_user: '{{ relay_slot_inputs.relay_runner_user }}'
+    relay_runner_group: '{{ relay_slot_inputs.relay_runner_group }}'
+    relay_runner_root: '{{ relay_slot_inputs.relay_runner_root }}'
+    relay_runner_work_root: '{{ relay_slot_inputs.relay_runner_work_root }}'
+    relay_runner_home: '{{ relay_slot_inputs.relay_runner_home }}'
+    relay_runner_service_name: '{{ relay_slot_inputs.relay_runner_service_name }}'
+    relay_runner_labels: '{{ relay_slot_inputs.relay_runner_labels }}'
+    relay_runner_registration_helper_path: '{{ relay_slot_inputs.relay_runner_registration_helper_path }}'
+    relay_runner_registration_scope: '{{ relay_slot_inputs.relay_runner_registration_scope }}'
+    relay_runner_registration_group: '{{ relay_slot_inputs.relay_runner_registration_group }}'
+    relay_dispatch_user: '{{ relay_slot_inputs.relay_dispatch_user }}'
+    relay_dispatch_group: '{{ relay_slot_inputs.relay_dispatch_group }}'
+    relay_codex_user: '{{ relay_slot_inputs.relay_codex_user }}'
+    relay_codex_group: '{{ relay_slot_inputs.relay_codex_group }}'
+    relay_codex_work_group: '{{ relay_slot_inputs.relay_codex_work_group }}'
+    relay_codex_home: '{{ relay_slot_inputs.relay_codex_home }}'
+    relay_codex_access_token_root: '{{ relay_slot_inputs.relay_codex_access_token_root }}'
+    relay_codex_access_token_file: '{{ relay_slot_inputs.relay_codex_access_token_file }}'
+    relay_dispatch_state_root: '{{ relay_slot_inputs.relay_dispatch_state_root }}'
+    relay_dispatch_home: '{{ relay_slot_inputs.relay_dispatch_home }}'
+    relay_dispatch_evidence_root: '{{ relay_slot_inputs.relay_dispatch_evidence_root }}'
+    relay_dispatch_remediation_root: '{{ relay_slot_inputs.relay_dispatch_remediation_root }}'
+    relay_dispatch_work_root: '{{ relay_slot_inputs.relay_dispatch_work_root }}'
+    relay_codex_dispatch_path: '{{ relay_slot_inputs.relay_codex_dispatch_path }}'
+    relay_codex_launcher_path: '{{ relay_slot_inputs.relay_codex_launcher_path }}'
+    relay_diagnostics_config_path: '{{ relay_slot_inputs.relay_diagnostics_config_path }}'
+    relay_diagnostics_store_path: '{{ relay_slot_inputs.relay_diagnostics_store_path }}'
+    relay_diagnostics_root: '{{ relay_slot_inputs.relay_diagnostics_root }}'
+    relay_runner_service_state_management: preserve
+    relay_runner_service_enabled: false
+    relay_runner_registration_enabled: false
+    relay_runner_registration_authorized: false
+    relay_runner_registration_completed: false
+    relay_upgrade_lifecycle_general_was_active: '{{ (relay_upgrade_lifecycle_previous_active | default({})).get("slot-" ~ relay_slot_inputs.relay_execution_slot, {}).get("active", false) }}'
+  block:
+    - name: Install the required optional parallel process namespace primitive
+      ansible.builtin.apt:
+        name: bubblewrap
+        state: present
+      when: relay_manage_base_packages | bool
+
+    - name: Create the private slot identities and work group
+      ansible.builtin.group:
+        name: '{{ item }}'
+        system: true
+      loop: ['{{ relay_runner_group }}', '{{ relay_codex_group }}', '{{ relay_codex_work_group }}']
+
+    - name: Create the isolated slot runtime identity with only its work membership
+      ansible.builtin.user:
+        name: '{{ relay_codex_user }}'
+        group: '{{ relay_codex_group }}'
+        groups: ['{{ relay_codex_work_group }}']
+        append: false
+        system: true
+        create_home: false
+        home: '{{ relay_codex_home }}'
+        shell: /usr/sbin/nologin
+
+    - name: Create root-owned slot namespace parents
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - '{{ relay_install_root }}/slots'
+        - '{{ relay_config_root }}/slots'
+        - '{{ relay_state_root }}/slots'
+        - '{{ relay_execution_slot_install_root }}'
+        - '{{ relay_diagnostics_config_path | dirname }}'
+        - '{{ relay_state_root }}/slots/{{ relay_execution_slot }}'
+
+    - name: Create private runtime credential and diagnostic destinations
+      ansible.builtin.file:
+        path: '{{ item.path }}'
+        state: directory
+        owner: '{{ item.owner }}'
+        group: '{{ item.group }}'
+        mode: '0700'
+      loop:
+        - {path: '{{ relay_codex_home }}', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}'}
+        - {path: '{{ relay_codex_access_token_root }}', owner: '{{ relay_codex_user }}', group: '{{ relay_codex_group }}'}
+        - {path: '{{ relay_diagnostics_root }}', owner: root, group: root}
+
+    - name: Inspect the established primary credential metadata without its bytes
+      ansible.builtin.stat:
+        path: '{{ relay_config_root }}/codex-credentials/access-token'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: relay_slot_primary_token
+
+    - name: Require bounded regular primary token before creating an isolated slot copy
+      ansible.builtin.assert:
+        that:
+          - relay_slot_primary_token.stat.isreg
+          - not relay_slot_primary_token.stat.islnk
+          - relay_slot_primary_token.stat.nlink == 1
+          - relay_slot_primary_token.stat.mode == '0600'
+          - relay_slot_primary_token.stat.pw_name == relay_execution_slots[0].runtimeUser
+          - relay_slot_primary_token.stat.gr_name == relay_execution_slots[0].runtimeUser
+          - relay_slot_primary_token.stat.size > 0
+          - relay_slot_primary_token.stat.size <= 16384
+      when: relay_slot_primary_token.stat.exists
+
+    - name: Preserve the same consumer credential inside the isolated runtime identity
+      ansible.builtin.copy:
+        src: '{{ relay_config_root }}/codex-credentials/access-token'
+        dest: '{{ relay_codex_access_token_file }}'
+        remote_src: true
+        owner: '{{ relay_codex_user }}'
+        group: '{{ relay_codex_group }}'
+        mode: '0600'
+      no_log: true
+      when: relay_slot_primary_token.stat.exists and not ansible_check_mode | bool
+
+    - name: Initialize the same non-secret diagnostic policy in this slot
+      ansible.builtin.copy:
+        content: "{{ {'schemaVersion': '1.0', 'mode': relay_diagnostics_mode, 'retentionCount': relay_diagnostics_retention_count | int} | to_nice_json }}\n"
+        dest: '{{ relay_diagnostics_config_path }}'
+        owner: root
+        group: root
+        mode: '0644'
+        force: false
+
+    - name: Create runner-owned slot journals before ownership reconciliation
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop: ['{{ relay_dispatch_state_root }}', '{{ relay_dispatch_home }}', '{{ relay_dispatch_evidence_root }}']
+
+    - name: Reconcile only this runner identity and fixed sudo capabilities
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: general-runtime.yml
+
+    - name: Install this slot launcher and bounded cleanup module
+      ansible.builtin.include_role:
+        name: relay_codex_runtime
+        tasks_from: launcher.yml
+
+    - name: Install fixed credential-free slot dispatcher and diagnostic wrappers
+      ansible.builtin.template:
+        src: '{{ item.src }}'
+        dest: '{{ item.dest }}'
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - {src: '{{ playbook_dir }}/roles/relay_controller/templates/relay-codex-dispatch.j2', dest: '{{ relay_codex_dispatch_path }}'}
+        - {src: '{{ playbook_dir }}/roles/relay_controller/templates/relay-diagnostics-store.j2', dest: '{{ relay_diagnostics_store_path }}'}
+
+    - name: Preserve the same fixed owner lifecycle capability for this automatic slot
+      ansible.builtin.template:
+        src: '{{ playbook_dir }}/roles/relay_runner/templates/relay-owner-lifecycle.sudoers.j2'
+        dest: '/etc/sudoers.d/{{ relay_namespace }}-slot-{{ relay_execution_slot }}-owner-lifecycle'
+        owner: root
+        group: root
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+      vars:
+        relay_general_runner_user: '{{ relay_runner_user }}'
+
+    - name: Install or reconcile the slot runner while preserving owner activity
+      ansible.builtin.include_role:
+        name: relay_runner
+
+    - name: Prove that the optional runtime can enter its private process namespace
+      ansible.builtin.command:
+        argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', /usr/bin/bwrap,
+               --unshare-user, --unshare-pid, --unshare-ipc, --unshare-uts,
+               --die-with-parent, --new-session, --ro-bind, /usr, /usr,
+               --ro-bind, /bin, /bin, --ro-bind, /lib, /lib,
+               --ro-bind, /lib64, /lib64, --proc, /proc, --dev, /dev,
+               /usr/bin/true]
+      changed_when: false
+      when: not ansible_check_mode | bool
+
+    - name: Record the finite isolated installed slot without activation
+      ansible.builtin.debug:
+        msg: 'EXECUTION_SLOT_INSTALLED={{ relay_execution_slot }};runner={{ relay_runner_name }};runtime={{ relay_codex_user }};registration=preserved;activity=preserved'

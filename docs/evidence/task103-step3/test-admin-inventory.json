@@ -1,0 +1,117 @@
+{
+  "inventory": {
+    "total_groups": 6,
+    "test_groups": [
+      {
+        "name": "codex-relay-test-general-runner",
+        "id": 6,
+        "restricted_to_workflows": true,
+        "selected_workflows": [
+          "jresearchsoftware/codex-relay-testbed/.github/workflows/codex-relay-routing.yml@refs/heads/main",
+          "jresearchsoftware/codex-relay-testbed/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/main"
+        ],
+        "runners": [
+          {
+            "id": 57,
+            "name": "relay-test-general",
+            "status": "online",
+            "busy": false,
+            "labels": [
+              {
+                "id": 0,
+                "name": "self-hosted",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "Linux",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "X64",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "codex-relay-test",
+                "type": "custom"
+              }
+            ]
+          }
+        ],
+        "repositories": [
+          {
+            "id": 1407614568,
+            "full_name": "jresearchsoftware/codex-relay-testbed"
+          }
+        ],
+        "visibility": "selected",
+        "allows_public_repositories": false
+      },
+      {
+        "name": "codex-relay-test-runner",
+        "id": 7,
+        "restricted_to_workflows": true,
+        "selected_workflows": [],
+        "runners": [
+          {
+            "id": 58,
+            "name": "relay-test",
+            "status": "online",
+            "busy": false,
+            "labels": [
+              {
+                "id": 0,
+                "name": "self-hosted",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "Linux",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "X64",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "codex-relay-test",
+                "type": "custom"
+              }
+            ]
+          }
+        ],
+        "repositories": [
+          {
+            "id": 1407614568,
+            "full_name": "jresearchsoftware/codex-relay-testbed"
+          }
+        ],
+        "visibility": "selected",
+        "allows_public_repositories": false
+      }
+    ],
+    "total_runners": 5
+  },
+  "app": {
+    "id": 5318356,
+    "owner": "jresearchsoftware",
+    "slug": "jresearch-relay-test-admin"
+  },
+  "token": {
+    "expires_at": "2026-10-14T18:40:03Z",
+    "permissions": {
+      "organization_self_hosted_runners": "write"
+    }
+  },
+  "recorded_at": "2026-10-14T17:40:05.7840282+00:00",
+  "installation": {
+    "id": 171431132,
+    "permissions": {
+      "organization_self_hosted_runners": "write"
+    }
+  }
+}

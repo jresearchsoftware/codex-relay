@@ -37,6 +37,8 @@ def instance(general=False, scope='repository'):
                     values[key] = ENV.from_string(value).render(values)
                 except UndefinedError:
                     pass
+    if isinstance(values['relay_runner_labels'], str):
+        values['relay_runner_labels'] = yaml.safe_load(values['relay_runner_labels'])
     return values
 
 

@@ -168,11 +168,13 @@ class SandboxCleanupTests(unittest.TestCase):
         self.helper.rename(self.base / 'relay-codex-cleanup.py')
         diagnostic = self.base / 'diagnostic.mjs'
         shutil.copyfile(ROOT / 'roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs', diagnostic)
+        shutil.copyfile(ROOT / 'roles/relay_codex_runtime/files/relay-codex-isolation.mjs', self.base / 'relay-codex-isolation.mjs')
         values = {
             'relay_install_root': str(self.base), 'relay_dispatch_work_root': str(self.work),
             'relay_codex_diagnostic_path': str(diagnostic),
             'relay_codex_access_token_file': str(self.base / 'missing-token'),
             'relay_codex_binary_path': str(self.base / 'missing-binary'),
+            'relay_codex_package_home': str(self.base / 'package-home'),
             'relay_diagnostics_config_path': str(self.base / 'missing-diagnostics'),
             'relay_rust_toolchain_root': '/missing-rust',
             'relay_writer_commit_name': 'fixture', 'relay_writer_commit_email': 'fixture@example.invalid',

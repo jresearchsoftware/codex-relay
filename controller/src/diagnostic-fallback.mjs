@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, unlink, rmdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

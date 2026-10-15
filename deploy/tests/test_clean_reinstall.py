@@ -129,6 +129,67 @@ def run(value):
                                  owner_uid=os.getuid(), user_ids=value.user_ids, runner=value.systemd)
 
 
+def add_execution_slot(value):
+    from test_execution_slots import inputs
+    old_names = reinstall.unit_names(value.config)
+    topology = inputs()
+    value.config['environment']['instance'] = topology['environment']['instance']
+    value.config['consumer']['executionSlots'] = topology['consumer']['executionSlots']
+    new_names = reinstall.unit_names(value.config)
+    for old, new in zip(old_names[:7] + old_names[-2:], new_names[:7] + new_names[-2:]):
+        if old != new:
+            (value.root / 'etc/systemd/system' / old).rename(value.root / 'etc/systemd/system' / new)
+            value.systemd.units[new] = value.systemd.units.pop(old)
+    for unit_file in (value.root / 'etc/systemd/system').iterdir():
+        content = unit_file.read_text()
+        for old, new in zip(old_names[:7], new_names[:7]):
+            content = content.replace(old, new)
+        unit_file.write_text(content)
+    slot = topology['consumer']['executionSlots'][1]
+    relative, identity, unit = reinstall.runner_specs(value.config)[-1]
+    runner = value.paths['install'] / relative
+    runner.mkdir(parents=True)
+    (runner / '.runner').write_text('preserved exact slot registration')
+    (runner / '.credentials').write_text('protected slot credential fixture')
+    uid = next(iter(value.user_ids.values()))
+    os.chown(runner, uid, uid)
+    for name in [slot['runnerUser'], slot['runtimeUser']]:
+        value.user_ids[name] = uid
+    (value.root / 'etc/systemd/system' / unit).write_text(
+        'ExecStart=/opt/codex-relay/' + relative + '/run.sh\nUser=' + identity + '\n')
+    value.systemd.units[unit] = 'inactive'
+    return runner, unit, slot
+
+
+def test_parallel_reinstall_stops_every_slot_and_preserves_each_exact_registration(installation):
+    value = installation
+    runner, unit, slot = add_execution_slot(value)
+    inode = runner.stat().st_ino
+    credential = (runner / '.credentials').read_bytes()
+    result = run(value)
+    assert result['state'] == 'DECOMMISSIONED'
+    journal = json.loads(value.paths['journal'].read_text())
+    assert 'slots/second/runner' in journal['runners']
+    assert unit in journal['units']
+    assert ('stop', unit) in value.systemd.calls and ('disable', unit) in value.systemd.calls
+    assert runner.stat().st_ino == inode
+    assert (runner / '.credentials').read_bytes() == credential
+
+
+def test_parallel_reinstall_refuses_an_uncontained_additional_runtime(installation):
+    value = installation
+    runner, unit, slot = add_execution_slot(value)
+    process = value.root / 'proc/8123'
+    process.mkdir()
+    uid = value.user_ids[slot['runtimeUser']]
+    (process / 'status').write_text('Name:\tcodex\nUid:\t' + '\t'.join([str(uid)] * 4) + '\n')
+    (process / 'cgroup').write_text('0::/foreign-worker\n')
+    with pytest.raises(ValueError, match='WORKERS_NOT_QUIESCENT'):
+        run(value)
+    assert not value.paths['journal'].exists()
+    assert runner.exists()
+
+
 @pytest.mark.parametrize('active,substate', [('active', 'waiting'), ('active', 'elapsed'),
                                           ('inactive', 'dead'), ('failed', 'failed')])
 def test_real_timer_properties_without_service_pids_complete_retirement(installation, active, substate):

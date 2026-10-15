@@ -93,7 +93,7 @@ export function classifyChildStderr(value) {
   return "CHILD_STDERR";
 }
 
-export function buildChildDiagnostic({ code, stderr = "", stderrBytes, token = "", exitCode = null, signal = null, debug = false, pid = null, ppid = process.ppid, childStarted = null, primaryCause = null } = {}) {
+export function buildChildDiagnostic({ code, stderr = "", stderrBytes, token = "", exitCode = null, signal = null, debug = false, pid = null, ppid = process.ppid, childStarted = null, primaryCause = null, containment = 'unknown' } = {}) {
   const safeCode = /^[A-Z0-9_]+$/.test(String(code ?? "")) ? String(code) : "CHILD_STDERR";
   const bytes = Number.isInteger(stderrBytes) && stderrBytes >= 0 ? stderrBytes : Buffer.byteLength(String(stderr), "utf8");
   const safeSignal = typeof signal === "string" && /^SIG[A-Z0-9]+$/.test(signal) ? signal : null;
@@ -104,6 +104,7 @@ export function buildChildDiagnostic({ code, stderr = "", stderrBytes, token = "
     childExitCode: Number.isInteger(exitCode) ? exitCode : null,
     signal: safeSignal,
     childStarted: typeof childStarted === "boolean" ? childStarted : null,
+    containment: ['reaped', 'not_required'].includes(containment) ? containment : 'unknown',
     childState: typeof childStarted === "boolean" ? (childStarted ? "started" : "not_started") : "unknown",
     primaryCause: /^[A-Z][A-Z0-9_]{0,79}$/.test(primaryCause ?? "") ? primaryCause : null,
     bytes,
@@ -113,8 +114,8 @@ export function buildChildDiagnostic({ code, stderr = "", stderrBytes, token = "
   };
 }
 
-export function writeChildDiagnostic({ code, stderr = "", stderrBytes, token = "", exitCode = null, signal = null, debug = false, pid = null, childStarted = null, primaryCause = null, stream = process.stderr } = {}) {
-  const diagnostic = buildChildDiagnostic({ code, stderr, stderrBytes, token, exitCode, signal, debug, pid, childStarted, primaryCause });
+export function writeChildDiagnostic({ code, stderr = "", stderrBytes, token = "", exitCode = null, signal = null, debug = false, pid = null, childStarted = null, primaryCause = null, containment = 'unknown', stream = process.stderr } = {}) {
+  const diagnostic = buildChildDiagnostic({ code, stderr, stderrBytes, token, exitCode, signal, debug, pid, childStarted, primaryCause, containment });
   const output = JSON.stringify(diagnostic);
   assertSecretFreePublication(output, token);
   stream.write(output + "\n");

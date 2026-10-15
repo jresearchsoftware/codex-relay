@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
-import { CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
+import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { parseAdmissionArguments, drainAdmission, readAdmissionSnapshot } from '../src/admission-cli.mjs';
@@ -23,7 +23,9 @@ const exec = promisify(execFile);
 const serviceIntent = () => ({
   reviewer: { active: true, enabled: 'disabled', load: 'loaded' },
   production: { active: true, enabled: 'enabled', load: 'loaded' },
-  general: { active: true, enabled: 'enabled-runtime', load: 'loaded' }
+  general: { active: true, enabled: 'enabled-runtime', load: 'loaded' },
+  ...Object.fromEntries((CONSUMER.executionSlots ?? []).filter(slot => slot.id !== 'primary')
+    .map(slot => [`slot-${slot.id}`, { active: true, enabled: 'enabled', load: 'loaded' }]))
 });
 async function control(t, { store = memoryStore(), journal = memoryStore() } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-admission-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -108,7 +110,8 @@ test('service snapshot rejects incomplete, unknown or inconsistent states and bo
   const unknown = serviceIntent(); unknown.reviewer.enabled = 'unknown';
   const inconsistent = serviceIntent(); inconsistent.production.load = 'not-found';
   const extra = serviceIntent(); extra.general.secret = 'forbidden';
-  for (const services of [incomplete, unknown, inconsistent, extra]) {
+  const foreignSlot = serviceIntent(); foreignSlot['slot-other'] = { active: true, enabled: 'enabled', load: 'loaded' };
+  for (const services of [incomplete, unknown, inconsistent, extra, foreignSlot]) {
     await assert.rejects(admission.snapshot({ operationId, services }), { code: 'ADMISSION_SNAPSHOT_INVALID' });
     assert.equal((await admission.read()).previousActive, null);
   }
@@ -398,7 +401,7 @@ if (process.argv[2] === 'reserve') {
   const controllerLifecycle = await gate.reserve();
   await writeFile(root + '/reserved-lock-held', 'yes');
   while (!await access(root + '/release-reservation').then(() => true, () => false)) await setTimeout(10);
-  await store.put(99, { envelope: { version: 2, runId: 99, attemptId: 'run-99', consumerDigest: ${JSON.stringify(CONSUMER_DIGEST)}, route: 'auto' }, controllerLifecycle });
+  await store.put(99, { envelope: { version: 2, repository: ${JSON.stringify(CONSUMER.repository)}, runId: 99, attemptId: 'run-99', consumerDigest: ${JSON.stringify(CONSUMER_DIGEST)}, route: 'auto' }, controllerLifecycle });
 } else if (process.argv[2] === 'quiesce') {
   await gate.quiesce({ operationId: ${JSON.stringify(operationId)}, target: ${JSON.stringify(target)} });
 } else {

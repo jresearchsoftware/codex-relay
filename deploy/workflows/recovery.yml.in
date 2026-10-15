@@ -29,6 +29,7 @@ on:
         required: false
         default: ''
         type: string
+@@RECOVERY_SLOT_INPUT@@
 
 permissions:
   actions: read
@@ -37,7 +38,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: @@CONTROL_GROUP_YAML@@
+  group: @@RECOVERY_GROUP_YAML@@
   cancel-in-progress: false
   queue: max
 
@@ -48,7 +49,7 @@ jobs:
           github.actor == '@@OWNER@@' && github.triggering_actor == '@@OWNER@@' &&
           github.ref == 'refs/heads/@@BASE_BRANCH@@' }}
     # External scheduling restrictions remain required; see the workflow contract.
-    runs-on: @@GENERAL_RUNS_ON_YAML@@
+    runs-on: @@RECOVERY_RUNS_ON_YAML@@
     timeout-minutes: 15
     steps:
       - name: Recover through the accepted installed Writer boundary
@@ -62,11 +63,11 @@ jobs:
           RECOVERY_ATTEMPT_ID: ${{ inputs.attempt_id }}
           RECOVERY_AUTHORIZATION_ID: ${{ inputs.authorization_id }}
           RECOVERY_HEAD: ${{ inputs.candidate_head }}
+@@RECOVERY_SLOT_ENV@@
           NODE_OPTIONS: ''
           NODE_PATH: ''
         run: |
-          test "$RUNNER_NAME" = @@GENERAL_RUNNER_NAME@@
-          test "$(/usr/bin/id -un)" = @@GENERAL_RUNNER_USER@@
+          @@RECOVERY_RUNNER_GUARD@@
           /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           import { spawn } from 'node:child_process';
@@ -76,7 +77,7 @@ jobs:
           const head = identity.revision;
           const compatibility = JSON.parse(await readFile(`${release}/reviewed-source/deploy/workflows/contract.json`, 'utf8'));
           if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/@@NAMESPACE@@/releases/${head}` ||
-              compatibility.workflowContract !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+              compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
             throw new Error('INSTALLED_RELAY_IDENTITY_MISMATCH');
           }
           console.log(JSON.stringify({ installedRelayHead: head, workflowHead: process.env.GITHUB_SHA }));

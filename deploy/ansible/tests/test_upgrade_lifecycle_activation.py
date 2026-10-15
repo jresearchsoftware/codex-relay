@@ -46,7 +46,7 @@ class UpgradeActivationTests(unittest.TestCase):
         return subprocess.run(['ansible-playbook', '-i', 'localhost,', str(play)],
                               env=env, text=True, capture_output=True, timeout=75)
 
-    def fixture(self, root, initial, final, *, legacy_snapshot=False):
+    def fixture(self, root, initial, final, *, legacy_snapshot=False, execution_slots=False):
         initial = {**initial, 'codex-relay-relay-manual-outcome.socket': initial.get(
             'codex-relay-relay-manual-outcome.socket', socket_state())}
         final = {**final, 'codex-relay-relay-manual-outcome.socket': final.get(
@@ -96,6 +96,12 @@ class UpgradeActivationTests(unittest.TestCase):
         gate_helper = root / 'relay-admission'
         consumer_fixture = root / 'consumer.json'
         shutil.copyfile(ROOT.parents[1] / 'consumer/fixtures/example.json', consumer_fixture)
+        if execution_slots:
+            import sys
+            sys.path.insert(0, str(ROOT.parents[1] / 'deploy/tests'))
+            from test_execution_slots import inputs
+            consumer = inputs()['consumer']
+            consumer_fixture.write_text(json.dumps(consumer))
         consumer_fixture.chmod(0o600)
         gate_helper.write_text('#!/bin/sh\nexport RELAY_CONSUMER_CONFIG=' + shlex.quote(str(
             consumer_fixture)) + '\nexec ' + shlex.quote(shutil.which('node')) + ' '
@@ -126,7 +132,38 @@ class UpgradeActivationTests(unittest.TestCase):
             'relay_production_operation_target_head': HEAD,
             'relay_install_root': str(root), 'relay_admission_operation_id': OPERATION,
         }
+        if execution_slots:
+            values['relay_additional_execution_slots'] = [{
+                'relay_execution_slot': 'second',
+                'relay_runner_service_name': 'codex-relay-slot-second-runner.service'}]
         return tasks, values, trace
+
+    def test_extra_slot_activity_and_live_transport_are_retained_in_the_same_operation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                       'production.service': service(), 'general.service': service(),
+                       'codex-relay-slot-second-runner.service': service(44, active=True, enabled='enabled')}
+            final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled')}
+            tasks, values, _ = self.fixture(root, initial, final, execution_slots=True)
+            result = self.run_play(root, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
+            self.assertEqual(saved['slot-second'], {'active': True, 'enabled': 'enabled', 'load': 'loaded'})
+
+    def test_replaced_extra_runner_transport_blocks_upgrade_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                       'production.service': service(), 'general.service': service(),
+                       'codex-relay-slot-second-runner.service': service(44, active=True, enabled='enabled')}
+            final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                     'codex-relay-slot-second-runner.service': service(54, active=True, enabled='enabled')}
+            tasks, values, _ = self.fixture(root, initial, final, execution_slots=True)
+            result = self.run_play(root, tasks, values)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('RELAY_UPGRADE_SLOT_TRANSPORT_CHANGED', result.stdout)
+            self.assertNotIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=', result.stdout)
 
     def test_active_reviewer_adopts_target_and_preserves_general_transport(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { resolveCodexProfile } from './codex-profile.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from './execution-policy.mjs';
 import { access, chmod, lstat, mkdir, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
@@ -207,6 +207,7 @@ export function parseLauncherDiagnostic(stderr, { truncated = false } = {}) {
         preview: value.preview,
         childState: value.childState ?? (typeof value.childStarted === "boolean" ? (value.childStarted ? "started" : "not_started") : "unknown"),
         childStarted: typeof value.childStarted === "boolean" ? value.childStarted : null,
+        containment: ['reaped', 'not_required'].includes(value.containment) ? value.containment : 'unknown',
         // These describe the inner Codex child; process.exitCode/signal in the
         // persisted bundle describe the outer governed launcher process.
         childExitCode: Number.isInteger(value.childExitCode) && value.childExitCode >= 0 && value.childExitCode <= 255 ? value.childExitCode : null,
@@ -383,10 +384,12 @@ export async function runGovernedCodexTask({
   openFallback = openRuntimeDiagnostic,
   createDiagnostic = createExecutionDiagnostic,
   readDiagnosticConfig = readDiagnosticsConfig,
-  resultSchema = CODEX_RESULT_SCHEMA
+  resultSchema = CODEX_RESULT_SCHEMA,
+  signal
 }) {
   const executionId = attemptId ?? `codex-${randomUUID()}`;
   evidence.codexUsage = normalizeCodexUsage();
+  evidence.codexContainment = 'not_required';
   // Reservation precedes workspace mutation and execution. A full or failed
   // independent store prevents another attempt from consuming evidence space.
   const capsule = await (existingFallback ? openFallback : fallbackStore)({ executionId });
@@ -437,6 +440,7 @@ export async function runGovernedCodexTask({
 
   try {
     await checkpoint({});
+    if (signal?.aborted) throw new WriterBlockedError('EXECUTION_CANCELLED', 'Governed execution was cancelled before launch');
     profile = resolveCodexProfile(profile);
     if (typeof inputText !== 'string' || inputText.length === 0) throw new WriterBlockedError('CODEX_INPUT_MISSING', 'Codex requires the exact admitted task input');
     if (typeof buildArgs !== 'function') throw new WriterBlockedError('CODEX_ARGUMENTS_MISSING', 'Codex runtime requires a typed argument builder');
@@ -479,13 +483,17 @@ export async function runGovernedCodexTask({
     finalProcessSpec = buildCodexProcessSpec({ args, executable });
     evidence.codexCommand = [finalProcessSpec.command, ...finalProcessSpec.args.map(value => value === inputPath ? "[INPUT_PATH]" : value === schemaPath ? "[OUTPUT_SCHEMA]" : value)];
     await checkpoint({ stage: 'launcher', boundary: 'launcher', operation: 'launcher-spawn', childState: 'unknown' });
-    // The on-demand dispatcher owns the outer process group. Both automatic
-    // entry paths use this same bounded child lifecycle and termination path.
+    if (signal?.aborted) throw new WriterBlockedError('EXECUTION_CANCELLED', 'Governed execution was cancelled before launch');
+    evidence.codexContainment = 'unknown';
+    // Stdin belongs to the fixed launcher, not Codex (whose input is the
+    // admitted file). Keeping this pipe open binds the model UID's lifetime
+    // to this dispatcher, including abrupt dispatcher death across sudo.
     try {
-      child = spawnImpl(finalProcessSpec.command, finalProcessSpec.args, { cwd: checkoutRoot, env: childEnv, stdio: ["ignore", "pipe", "pipe"], detached: false, windowsHide: true });
+      child = spawnImpl(finalProcessSpec.command, finalProcessSpec.args, { cwd: checkoutRoot, env: childEnv, stdio: ["pipe", "pipe", "pipe"], detached: false, windowsHide: true });
     } catch (error) {
       childLaunchError = true;
       evidence.codexChildStarted = false;
+      evidence.codexContainment = 'not_required';
       throw Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher could not be started", { childStarted: false, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error });
     }
     evidence.codexChildStarted = null;
@@ -495,14 +503,19 @@ export async function runGovernedCodexTask({
     });
     child.stdout.on("data", chunk => stdoutCapture.push(chunk));
     child.stderr.on("data", chunk => stderrCapture.push(chunk));
+    child.stdin?.on('error', () => {});
     const timeoutMs = timeoutFrom(env);
     const exit = await new Promise((resolveExit, rejectExit) => {
       let settled = false;
+      const cancel = () => { evidence.codexTerminationRequested = true; child.stdin?.end(); };
+      signal?.addEventListener('abort', cancel, { once: true });
+      const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', cancel); child.stdin?.destroy(); };
       const timer = setTimeout(async () => {
         if (settled) return;
         evidence.codexTimeoutMs = timeoutMs;
         evidence.codexTerminationRequested = true;
         settled = true;
+        finish();
         const terminated = await terminateCodexChild(child);
         evidence.codexTerminationConfirmed = terminated;
         if (!terminated) {
@@ -515,11 +528,12 @@ export async function runGovernedCodexTask({
       child.on("error", error => {
         childLaunchError = true;
         if (!child.pid) evidence.codexChildStarted = false;
-        if (!settled) { settled = true; clearTimeout(timer); rejectExit(Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher failed before completing", { childStarted: evidence.codexChildStarted, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error })); }
+        if (!settled) { settled = true; finish(); rejectExit(Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher failed before completing", { childStarted: evidence.codexChildStarted, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error })); }
       });
       child.on("close", (code, signal) => {
-        if (!settled) { settled = true; clearTimeout(timer); resolveExit({ code, signal }); }
+        if (!settled) { settled = true; finish(); resolveExit({ code, signal }); }
       });
+      if (signal?.aborted) cancel();
     });
     finalizeStreams();
     childExitCode = exit.code;
@@ -532,6 +546,12 @@ export async function runGovernedCodexTask({
     evidence.codexStdoutCapturedBytes = stdoutCapturedBytes;
     evidence.codexStdoutTruncated = stdoutTruncated;
     evidence.codexUsage = usageFromCodexJsonLines(stdout, { truncated: stdoutTruncated });
+    launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
+    evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
+    if (signal?.aborted) {
+      evidence.codexChildStarted = launcherDiagnostic.childStarted;
+      throw new WriterBlockedError('EXECUTION_CANCELLED', 'Governed execution was cancelled', { childStarted: evidence.codexChildStarted });
+    }
     if (childExitCode !== 0 || childSignal) {
       launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
       evidence.codexChildStarted = launcherDiagnostic.childStarted;
@@ -591,6 +611,9 @@ export async function runGovernedCodexTask({
       await checkpoint({ cleanup: 'pending', retention: 'unknown' });
       finalizeStreams();
       if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
+      // Timeout rejects before the normal result path. Retain only the native
+      // inner receipt parsed here; child close alone is not containment proof.
+      if (launcherDiagnostic) evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
       const shouldPersist = pendingError || diagnosticMode === 'debug';
       if (shouldPersist) {
         const filesystem = checkoutRoot ? await filesystemSnapshot([

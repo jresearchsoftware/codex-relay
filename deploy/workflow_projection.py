@@ -13,7 +13,7 @@ import shlex
 import stat
 import tempfile
 
-from config import require, unique_object
+from config import require, unique_object, execution_slot_label
 
 
 MANIFEST = '.github/relay-workflows.json'
@@ -24,14 +24,16 @@ DIGEST = re.compile(r'[0-9a-f]{64}')
 MAX_BYTES = 65536
 
 
-def contract(source_root):
+def contract(source_root, parallel=False):
     value = json.loads(_read(Path(source_root) / 'deploy/workflows/contract.json'),
                        object_pairs_hook=unique_object)
-    require(isinstance(value, dict) and set(value) == {'workflowContract'}
-            and isinstance(value['workflowContract'], str)
-            and re.fullmatch(r'relay-workflows-v[1-9][0-9]*', value['workflowContract']),
+    require(isinstance(value, dict) and set(value) in [{'workflowContract'}, {'workflowContract', 'parallelWorkflowContract'}]
+            and all(isinstance(item, str) and re.fullmatch(r'relay-workflows-v[1-9][0-9]*', item)
+                    for item in value.values()),
             'workflow-contract')
-    return value['workflowContract']
+    key = 'parallelWorkflowContract' if parallel else 'workflowContract'
+    require(key in value, 'parallel-workflow-contract-required')
+    return value[key]
 
 
 def sha256(data):
@@ -82,24 +84,68 @@ def render(config, revision, source_root):
     source_root = Path(source_root)
     consumer, environment = config['consumer'], config['environment']
     general, production = environment['generalRunner'], environment['runner']
+    slots = consumer.get('executionSlots')
     labels = ['self-hosted', 'Linux', 'X64', *production['labels']]
     general_runs_on = ({'group': general['group'], 'labels': labels}
                        if general.get('scope', 'repository') == 'organization' else labels)
     values = {
-        'WORKFLOW_CONTRACT': contract(source_root),
+        'WORKFLOW_CONTRACT': contract(source_root, bool(slots)),
         'REPOSITORY': consumer['repository'], 'OWNER': consumer['owner'],
         'BASE_BRANCH': consumer['baseBranch'],
         'BASE_BRANCH_YAML': json.dumps(consumer['baseBranch']),
         'NAMESPACE': environment['namespace'],
         'CONTROL_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
+        'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
+        'RECOVERY_RUNS_ON_YAML': json.dumps(general_runs_on),
+        'RECOVERY_SLOT_INPUT': '',
+        'RECOVERY_SLOT_ENV': '',
         'PRODUCTION_RUNS_ON_YAML': json.dumps({'group': production['group'], 'labels': labels}),
         'GENERAL_RUNNER_NAME': shlex.quote(general['name']),
         'GENERAL_RUNNER_USER': shlex.quote(general['user']),
+        'GENERAL_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
+                                '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
+        'RECOVERY_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
+                                 '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
         'PRODUCTION_RUNNER_NAME': shlex.quote(production['name']),
         'PRODUCTION_RUNNER_USER': shlex.quote(production['user']),
     }
+    if slots:
+        # Native groups are repository-local. The configured finite runner pool
+        # bounds active controllers; protected admission still serializes Task
+        # conflicts that cannot be resolved from an untrusted PR body here.
+        subject = "${{ github.event_name == 'workflow_dispatch' && format('issue-{0}', inputs.task) || github.event_name == 'issues' && format('issue-{0}', github.event.issue.number) || format('pull-{0}', github.event.pull_request.number) }}"
+        values['CONTROL_GROUP_YAML'] = json.dumps(environment['namespace'] + '-control-' + subject)
+        values['RECOVERY_GROUP_YAML'] = json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}')
+        lines = ['case "$RUNNER_NAME:$(/usr/bin/id -un)" in']
+        lines.extend('            ' + shlex.quote(slot['runnerName'] + ':' + slot['runnerUser'])
+                     + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
+        lines.extend(['            *) echo RELAY_RUNNER_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
+        values['GENERAL_RUNNER_GUARD'] = '\n'.join(lines)
+        # The ordinary collector must run on the original immutable slot. A
+        # general pool label could place recovery on a different runner, where
+        # the original private journal and checkout are deliberately unreadable.
+        recovery_targets = {}
+        for slot in slots:
+            slot_labels = [*labels, execution_slot_label(config, slot)]
+            recovery_targets[slot['id']] = ({'group': general['group'], 'labels': slot_labels}
+                                            if general.get('scope', 'repository') == 'organization'
+                                            else slot_labels)
+        targets = json.dumps(recovery_targets, separators=(',', ':'))
+        values['RECOVERY_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + targets + "')[inputs.execution_slot || 'primary'] }}")
+        values['RECOVERY_SLOT_INPUT'] = '\n'.join([
+            '      execution_slot:',
+            '        description: Original execution slot from the retained attempt; primary for historical attempts',
+            '        required: false', '        default: primary', '        type: choice',
+            '        options: ' + json.dumps([slot['id'] for slot in slots]),
+        ])
+        values['RECOVERY_SLOT_ENV'] = '          RECOVERY_SLOT: ${{ inputs.execution_slot || \'primary\' }}'
+        lines = ['case "$RECOVERY_SLOT:$RUNNER_NAME:$(/usr/bin/id -un)" in']
+        lines.extend('            ' + shlex.quote(':'.join([slot['id'], slot['runnerName'], slot['runnerUser']]))
+                     + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
+        lines.extend(['            *) echo RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
+        values['RECOVERY_RUNNER_GUARD'] = '\n'.join(lines)
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
     if environment['localApply'].get('source') == 'installed':
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],
@@ -121,7 +167,7 @@ def render(config, revision, source_root):
 def _manifest(config, source_root, rendered):
     # Digests retain an independent purpose: refuse edits to the previous
     # managed baseline before writing a new proposal. No product SHA pin.
-    return {'schemaVersion': 2, 'workflowContract': contract(source_root),
+    return {'schemaVersion': 2, 'workflowContract': contract(source_root, bool(config['consumer'].get('executionSlots'))),
             'sourceRepository': config['source']['repository'],
             'consumerRepository': config['consumer']['repository'],
             'files': {path: sha256(data) for path, data in sorted(rendered.items())}}

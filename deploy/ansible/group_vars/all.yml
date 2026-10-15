@@ -217,6 +217,8 @@ relay_codex_group: relay-codex
 relay_codex_work_group: relay-codex-work
 relay_codex_runtime_root: '{{ relay_install_root }}/codex-runtime'
 relay_codex_install_dir: '{{ relay_codex_runtime_root }}/bin'
+relay_codex_package_home: '{{ relay_codex_runtime_root }}/package-home'
+relay_codex_package_install_dir: '{{ relay_codex_runtime_root }}/package-bin'
 relay_codex_home: '{{ relay_state_root }}/codex-home'
 relay_codex_cli_version: '0.160.0'
 relay_codex_installer_url: https://chatgpt.com/codex/install.sh
@@ -268,6 +270,7 @@ relay_production_local_apply_checkout_root: "{{ relay_runner_work_root }}/{{ rel
 relay_production_local_apply_stage_root: '{{ relay_state_root }}/production-apply'
 relay_runner_name: "{{ relay_production_runner_name if relay_deployment_profile == 'production' else 'relay-general' }}"
 relay_runner_labels: [codex-relay]
+relay_general_runner_labels: [codex-relay]
 # Registration is an explicitly authorized later transition. Qualification is
 # repository-scoped; production requires the restricted organization runner group
 # documented in README.md, with access only to this repository's main deploy.

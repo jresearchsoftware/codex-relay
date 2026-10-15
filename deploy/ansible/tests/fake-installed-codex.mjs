@@ -40,6 +40,12 @@ assert.deepEqual(process.argv.slice(2), ['exec', '--json', '--sandbox', 'workspa
   '--output-schema', `${cwd}/.codex-sandbox/codex-result-schema.json`, '--model', model, '-c', `model_reasoning_effort=${effort}`,
   '-c', 'sandbox_workspace_write.network_access=true', '--cd', cwd, '-']);
 assert.equal(JSON.parse(readFileSync(`${cwd}/.codex-sandbox/codex-result-schema.json`)).properties.status.enum[0], 'success');
+if (/fixture-mode=cancel-(?:term|ignoreterm);/.test(input)) {
+  if (input.includes('fixture-mode=cancel-ignoreterm;')) process.on('SIGTERM', () => {});
+  writeFileSync('.codex-sandbox/cancel-process.json', JSON.stringify({ pid: process.pid, uid: process.getuid() }), { mode: 0o640 });
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
+}
 if (input.includes('fixture-mode=rust-development')) {
   try {
     qualifyRustDevelopment(cwd, JSON.parse(readFileSync('/run/managed-rust-proof.json', 'utf8')));
@@ -71,10 +77,9 @@ writeFileSync('docs/work.md', JSON.stringify({ uid: process.getuid(), input: tru
 execFileSync('git', ['add', 'docs/work.md']);
 execFileSync('git', ['commit', '-m', 'installed child task progress']);
 if (input.includes('fixture-mode=generated-residue')) {
-  // A generated regular file can be visible to the collector even when only
-  // the worker can read it. Collection records its presence without adopting,
-  // deleting or publishing its bytes.
-  writeFileSync('validation-output.tmp', 'repeatable generated fixture output\n', { mode: 0o600 });
+  // Shared-group readability lets the strict Reader observe generated residue
+  // while retaining worker ownership and an uncommitted-work warning.
+  writeFileSync('validation-output.tmp', 'repeatable generated fixture output\n', { mode: 0o640 });
 } else if (input.includes('fixture-mode=unreadable-task-work')) {
   // Replace the runner-owned baseline as a worker editor would; the worker
   // cannot chmod another identity's file merely because it can write it.

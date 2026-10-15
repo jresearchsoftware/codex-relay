@@ -262,7 +262,8 @@ class ProductionDiagnosticTests(unittest.TestCase):
             )
             legacy_launcher.chmod(0o755)
             wrapper.write_text(
-                wrapper_template.replace("{{ relay_install_root }}", str(root)),
+                wrapper_template.replace("{{ relay_codex_launcher_path }}", str(wrapper))
+                .replace('{{ relay_execution_slot_isolation | default(false) | ternary("1", "0") }}', "0"),
                 encoding="utf-8",
             )
             wrapper.chmod(0o755)

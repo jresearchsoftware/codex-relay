@@ -24,6 +24,19 @@ Every governed invocation receives the shared
 corrections within the admitted goal without a fixed correction count. This
 never authorizes a duplicate execution or broadens publication/credential scope.
 
+When the consumer enables execution slots, each fixed launcher runs its Codex
+child through Bubblewrap with private user/PID/IPC/UTS namespaces, private
+`/proc`, `/dev`, `/tmp` and `/run`, read-only operating-system/managed toolchain
+and pinned CLI files, and one writable admitted checkout. Network access remains
+available for the model and task dependency downloads. Host credential directories,
+other checkout roots and host sockets are not mounted. Each slot also has a
+distinct host runner UID, runtime UID and work group; runner journals and primary
+diagnostics live outside its worker checkout. The launcher marks an inner child
+as unknown when Bubblewrap started but Codex execution has not been observed.
+Legacy configurations retain their existing launcher behavior. Installed UID,
+sudo, namespace, process containment and concurrent isolation require separate
+host qualification; local source tests alone do not prove those properties.
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching
@@ -46,10 +59,24 @@ unavailable fallback store blocks admission rather than launching without it.
 `runGovernedCodexTask()` never deletes the sandbox. It captures the sandbox's
 device/inode before child launch and prepares diagnostic state. The outer
 dispatcher then reaps its owned process group and invokes
-`finalizeRuntimeArtifacts()`. A launcher exit alone is insufficient containment.
+`finalizeRuntimeArtifacts()`. The model-UID launcher separately reaps its own
+child process group and reports bounded native containment evidence. A launcher
+exit or a successful runner-UID group signal alone is insufficient containment.
 Direct runtime probes must also arrange containment before using the finalizer.
 Existing sandboxes are retained, never adopted or permission-repaired as part
 of a new invocation.
+
+Native cancellation reaches the routing controller directly through the workflow's
+`exec` launch. The controller holds SIGINT/SIGTERM through terminal Writer routing;
+its separate fd3 lifetime pipe aborts a detached dispatcher if that caller dies.
+The runtime keeps launcher stdin open across sudo as a second lifetime pipe;
+the task input still comes from the admitted file. EOF or a cancellation signal
+asks the model-UID launcher to terminate its group, escalating to SIGKILL after
+one second. Only the inner acknowledgement plus disappearance of the outer group
+permits `reaped`. Missing acknowledgement stays `unknown` and retains artifacts.
+Forced controller death can prevent its terminal journal/Writer receipt even
+when these lifetime pipes clean up the model. That original attempt remains
+unresolved; cleanup does not authorize a replay or historical record repair.
 
 The fixed launcher cleanup ABI is
 `cleanup --cwd CHECKOUT --sandbox-identity DEVICE:INODE`. It runs as the same

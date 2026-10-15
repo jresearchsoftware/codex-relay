@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, EXECUTION_CONSUMER, executionConsumer } from '../../consumer/consumer.mjs';
 import { mkdir, lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { git, collectProgress, REMOTE } from './trusted-git.mjs';
@@ -7,16 +7,17 @@ import { establishCanonicalCheckout } from './canonical-checkout.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { grantSharedCheckoutAccess, runGovernedCodexTask, CODEX_WRITER_IDENTITY, CODEX_REMEDIATION_IDENTITY } from '../../runtime/src/codex-runtime.mjs';
 
-export const WORK_ROOT = CONSUMER.paths.workRoot;
-export const checkoutPath = (e, root = WORK_ROOT) => join(root, validateEnvelope(e).attemptId);
-export async function prepareCheckout(e, { root = WORK_ROOT, remote = REMOTE, token = process.env.GITHUB_TOKEN } = {}) {
+export const WORK_ROOT = EXECUTION_CONSUMER.paths.workRoot;
+export const checkoutPath = (e, root) => join(root ?? executionConsumer(e.executionSlot).paths.workRoot, validateEnvelope(e).attemptId);
+export async function prepareCheckout(e, { root, remote = REMOTE, token = process.env.GITHUB_TOKEN } = {}) {
   const cwd = checkoutPath(e, root);
   // Existing work is evidence, not disposable scratch. Preparation failure is
   // visible and needs inspection instead of an automatic destructive retry.
   if (await lstat(cwd).catch(() => null)) fail('CHECKOUT_ALREADY_EXISTS');
   await mkdir(cwd, { recursive: true, mode: 0o2770 });
   await git(cwd, ['init']);
-  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation }, { remote, token });
+  await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation,
+    allowBaseAdvance: e.request?.kind === 'admission' }, { remote, token });
   if (e.target === 'pull_request') {
     await git(cwd, ['fetch', '--no-tags', remote, `refs/heads/${CONSUMER.baseBranch}:refs/remotes/main`], { token });
     if ((await git(cwd, ['rev-parse', 'refs/remotes/main'])).trim() !== e.targetBase) fail('STARTING_STATE_MISMATCH');
@@ -28,7 +29,7 @@ export async function prepareCheckout(e, { root = WORK_ROOT, remote = REMOTE, to
   await grantSharedCheckoutAccess(cwd);
   return cwd;
 }
-export async function executeCodex(e, { runTask = runGovernedCodexTask } = {}) {
+export async function executeCodex(e, { runTask = runGovernedCodexTask, signal } = {}) {
   const remediation = e.target === 'pull_request';
   const evidence = { codexChildStarted: false };
   try {
@@ -39,16 +40,16 @@ export async function executeCodex(e, { runTask = runGovernedCodexTask } = {}) {
     operation: remediation ? 'review-remediation' : 'issue-implementation', profile: e.profile,
     cwd: checkoutPath(e), targetNumber: e.number,
     taskTitle: e.thread, evidence, attemptId: e.attemptId,
-    existingFallback: true,
+    existingFallback: true, signal,
     gitIdentity: remediation ? CODEX_REMEDIATION_IDENTITY : CODEX_WRITER_IDENTITY,
     inputText: `${e.input}${launchMetadata}\n\nTrusted execution boundary:\nWork only in the governed repository checkout and task branch. The admitted goal permits changes to any repository file necessary to complete it. Preserve repository, security, and authority boundaries. Make ordinary task-owned commits. Do not push, publish, merge PRs, close Issues, invoke a Reviewer, or use GitHub credentials. The local Git metadata is untrusted and will be imported as object bytes only. Do not modify hooks/config/remotes. Preserve useful commits even when blocked.${integration}\nCapability-owned validation: run applicable unprivileged local checks and report checks you cannot execute. Root/sudo-only installed-runtime proof belongs to native Exact-head CI after Writer publication; do not attempt privilege escalation or claim that proof passed. Pending native proof alone does not block an otherwise completed local implementation.\nSubagents: ${e.subagentsAllowed === true ? 'On, within the resolved execution permission; use is discretionary and evidence-driven' : 'Off'}\nReturn only JSON with status (success or blocked), summary, validation (array of claims), and blockedReason. Do not reconstruct Git/publication metadata.`,
     buildArgs: ({ inputPath, cwd, profile }) => remediation
       ? ['exec', '--operation', 'review-remediation', '--json', '--model', profile.cliModelId, '--effort', profile.effort, '--input-file', inputPath, '--cwd', cwd, '--pull-request', String(e.number)]
       : ['exec', '--json', '--model', profile.cliModelId, '--effort', profile.effort, '--input-file', inputPath, '--cwd', cwd, '--issue', String(e.number)]
   });
-    return { version: e.version, attemptId: e.attemptId, result, child: 'started', codexUsage: normalizeCodexUsage(evidence.codexUsage) };
+    return { version: e.version, attemptId: e.attemptId, result, child: 'started', containment: evidence.codexContainment ?? 'unknown', codexUsage: normalizeCodexUsage(evidence.codexUsage) };
   } catch (error) {
-    error.details = { ...error.details, executionId: e.attemptId, codexUsage: normalizeCodexUsage(evidence.codexUsage),
+    error.details = { ...error.details, executionId: e.attemptId, containment: evidence.codexContainment ?? 'unknown', codexUsage: normalizeCodexUsage(evidence.codexUsage),
       childState: error.details?.childState ?? (evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : 'unknown'),
       lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? (evidence.codexChildStarted === true ? 'codex-child'
         : evidence.codexFailureClass && evidence.codexFailureClass !== 'UNCLASSIFIED_CHILD_FAILURE' ? 'launcher'

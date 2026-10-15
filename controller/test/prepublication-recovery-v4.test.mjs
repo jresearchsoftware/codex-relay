@@ -83,6 +83,28 @@ test('human renderer header cannot bypass terminal digest, Writer identity or ca
   }
 });
 
+test('retained v4 terminal hashes require the original Issue-bound seal and cannot mask an existing invalid outcome hash', async () => {
+  for (const mutate of [
+    f => { delete f.r.commentBodies; },
+    f => { f.r.commentBodies.outcome.number++; },
+    f => { f.r.commentBodies.outcome.sha256 = 'not-a-digest'; },
+    f => { f.r.commentBodies.outcome.sha256 = '0'.repeat(64); },
+    f => { f.r.outcome.bodySha256 = null; },
+    f => { f.r.outcome.bodySha256 = ''; },
+    f => { f.r.outcome.bodySha256 = '0'.repeat(64); },
+    f => { f.outcome.body = f.outcome.body.replace('Collection stopped', 'Collection allegedly passed'); }
+  ]) {
+    const f = await fixture();
+    f.r.commentBodies = { outcome: { number: 42, sha256: f.r.outcome.bodySha256, rendererVersion: 'human-v1' } };
+    delete f.r.outcome.bodySha256; delete f.saved.outcome.bodySha256;
+    mutate(f);
+    const before = copy({ r: f.r, saved: f.saved });
+    await assert.rejects(f.state(), { code: 'RECOVERY_TERMINAL_OUTCOME_CHANGED' });
+    assert.deepEqual({ r: f.r, saved: f.saved }, before);
+    assert.equal(f.r.prepublicationRecovery, undefined);
+  }
+});
+
 test('even a body with matching protected digest must bind the admitted v4 Step, attempt and authority', async () => {
   for (const mutate of [
     value => { value.authority.charter.id = 43; value.authority.sha256 = authoritySourceDigest(value.authority); },

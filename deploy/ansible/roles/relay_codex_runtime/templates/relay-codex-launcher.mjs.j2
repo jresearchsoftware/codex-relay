@@ -2,13 +2,17 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { isolatedCodexProcess } from "./relay-codex-isolation.mjs";
 // The root-owned relay-codex-diagnostic.mjs is installed by the governed role.
 import { assertSecretFreePublication, classifyChildStderr, createStatefulSecretRedactor, decodeUtf8, MAX_DEBUG_CAPTURE_BYTES, MAX_DIAGNOSTIC_CAPTURE_BYTES, writeChildDiagnostic } from "{{ relay_codex_diagnostic_path }}";
 
 const CODEX_BINARY = "{{ relay_codex_binary_path }}";
+const CODEX_PACKAGE_ROOT = "{{ relay_codex_package_home }}/packages";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
-const CLEANUP_HELPER = "{{ relay_install_root }}/relay-codex-cleanup.py";
+const CLEANUP_HELPER = fileURLToPath(new URL('./relay-codex-cleanup.py', import.meta.url));
+const TOOLCHAIN_ROOT = "{{ relay_rust_toolchain_root }}";
 const MAX_TOKEN_BYTES = 16 * 1024;
 const MAX_INPUT_BYTES = 256 * 1024;
 const DIAGNOSTICS_CONFIG_PATH = "{{ relay_diagnostics_config_path }}";
@@ -21,7 +25,7 @@ let observedChildStarted = false;
 
 function fail(code) {
   process.stderr.write(`CODEX_LAUNCHER_${code}\n`);
-  writeChildDiagnostic({ code: `CODEX_LAUNCHER_${code}`, childStarted: observedChildStarted, primaryCause: code === "LAUNCHER_FAILURE" ? null : `CODEX_LAUNCHER_${code}`, debug: diagnosticMode === "debug", stream: process.stderr });
+  writeChildDiagnostic({ code: `CODEX_LAUNCHER_${code}`, childStarted: observedChildStarted, containment: observedChildStarted === false ? 'not_required' : 'unknown', primaryCause: code === "LAUNCHER_FAILURE" ? null : `CODEX_LAUNCHER_${code}`, debug: diagnosticMode === "debug", stream: process.stderr });
   process.exit(64);
 }
 
@@ -147,16 +151,53 @@ async function main() {
     LC_ALL: "C",
     TZ: "UTC"
   };
-  let child;
+  let child, killTimer;
+  let cancelled = false;
+  const groupGone = () => {
+    if (!child?.pid) return true;
+    try { process.kill(-child.pid, 0); return false; }
+    catch (error) { return error.code === 'ESRCH'; }
+  };
+  const signalGroup = signal => {
+    if (!child?.pid) return;
+    try { process.kill(-child.pid, signal); } catch { /* Absence is checked separately. */ }
+  };
+  const stop = () => {
+    if (cancelled) return;
+    cancelled = true;
+    signalGroup('SIGTERM');
+    killTimer = setTimeout(() => signalGroup('SIGKILL'), 1000);
+  };
+  const waitForGroup = async () => {
+    const deadline = Date.now() + 1000;
+    while (!groupGone() && Date.now() < deadline) await new Promise(resolveWait => setTimeout(resolveWait, 10));
+    return groupGone();
+  };
+  // The runner cannot signal model-UID descendants. The fixed launcher's stdin
+  // is a lifetime pipe; the actual task input below comes from its admitted
+  // file. EOF covers both cooperative cancellation and dispatcher death.
+  process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  process.stdin.on('end', stop); process.stdin.on('error', stop); process.stdin.resume();
+  await new Promise(resolveReady => setImmediate(resolveReady));
+  if (cancelled) fail('EXECUTION_CANCELLED');
   try {
     // The relay runner and relay-codex share one governed checkout; keep new Git objects group-writable for the handoff.
     process.umask(0o0007);
-    child = spawn(CODEX_BINARY, ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const args = ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"];
+    const spec = process.env.RELAY_ISOLATED_SLOT === '1'
+      ? isolatedCodexProcess({ binary: CODEX_BINARY, packageRoot: CODEX_PACKAGE_ROOT, cwd,
+        toolchainRoot: TOOLCHAIN_ROOT, args })
+      : { command: CODEX_BINARY, args };
+    child = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
   } catch {
     fail("PROCESS_START_FAILED");
   }
   let childStarted = false;
-  child.once("spawn", () => { childStarted = true; observedChildStarted = true; });
+  child.once("spawn", () => {
+    // Bubblewrap starting does not prove that its inner Codex exec succeeded.
+    childStarted = process.env.RELAY_ISOLATED_SLOT === '1' ? null : true;
+    observedChildStarted = childStarted;
+  });
   const stdoutRedactor = createStatefulSecretRedactor(token);
   const stdoutChunks = [];
   let stdoutBytes = 0;
@@ -170,6 +211,7 @@ async function main() {
   // the worker still receives the structured result, but a leaked credential
   // cannot enter the detached diagnostic bundle.
   child.stdout.on("data", chunk => {
+    childStarted = true; observedChildStarted = true;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     stdoutBytes += bytes.length;
     const previousBytes = stdoutBytes - bytes.length;
@@ -195,24 +237,41 @@ async function main() {
   child.stdin.end(inputText);
   child.once("error", error => {
     processError = true;
-    writeChildDiagnostic({ code: "PROCESS_START_FAILED", primaryCause: error?.code, stderr: error?.message, stderrBytes, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+    writeChildDiagnostic({ code: "PROCESS_START_FAILED", primaryCause: error?.code, stderr: error?.message, stderrBytes, token, childStarted, containment: 'not_required', debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
     process.exitCode = 1;
   });
-  child.once("close", (code, signal) => {
+  child.once('exit', () => {
+    // A descendant holding inherited output descriptors can delay `close`.
+    // Reap it at the leader's exit rather than waiting for a runtime timeout.
+    signalGroup('SIGTERM');
+    clearTimeout(killTimer); killTimer = setTimeout(() => signalGroup('SIGKILL'), 1000);
+  });
+  child.once("close", async (code, signal) => {
+    clearTimeout(killTimer);
+    // A CLI may leave tools in its process group after its own exit. Reap that
+    // owned group before acknowledging containment; EPERM is never absence.
+    let contained = groupGone();
+    if (!contained) {
+      signalGroup('SIGTERM'); contained = await waitForGroup();
+      if (!contained) { signalGroup('SIGKILL'); contained = await waitForGroup(); }
+    }
+    process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
+    process.stdin.destroy();
+    const containment = contained ? 'reaped' : 'unknown';
     if (stdoutOverflow) {
-      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
       process.exitCode = 64;
       return;
     }
     const rawStdout = decodeUtf8(Buffer.concat(stdoutChunks));
     const safeStdout = stdoutRedactor.push(rawStdout) + stdoutRedactor.flush();
     try { process.stdout.write(assertSecretFreePublication(safeStdout, token)); }
-    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
+    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
     if (!processError) {
       const stderr = decodeUtf8(Buffer.concat(stderrChunks));
-      writeChildDiagnostic({ code: inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+      writeChildDiagnostic({ code: !contained ? 'CONTAINMENT_NOT_PROVEN' : cancelled ? 'EXECUTION_CANCELLED' : inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
     }
-    process.exitCode = Number.isInteger(code) && !signal && !inputError ? code : 1;
+    process.exitCode = contained && !cancelled && Number.isInteger(code) && !signal && !inputError ? code : 1;
   });
 }
 

@@ -1,5 +1,6 @@
 """Exercise registration through the public CLI with synthetic SSH responses."""
 import unittest
+import json
 
 import test_deployment as deployment_tests
 
@@ -18,6 +19,8 @@ elif '--expect-binding' in sys.argv[-1]:
     sys.stdin.read()
     print('RUNNER_REGISTRATION_PASS ' + binding.replace(' group=', ' version=2.336.0 state=reused group=', 1))
 ''')
+        backend = cls.bin / 'ansible-playbook'
+        backend.write_text(backend.read_text() + "\nprint('GENERAL_RUNNER_VALIDATED='+head+';phase=general-runner-enable;production=preserved')\n")
 
     @classmethod
     def tearDownClass(cls):
@@ -29,12 +32,13 @@ elif '--expect-binding' in sys.argv[-1]:
             for token_arguments in [[], [flag, 'synthetic-ephemeral-input']]:
                 with self.subTest(phase=phase, supplied=bool(token_arguments)):
                     before = self.config.read_bytes()
+                    logs_existed = (self.base / 'logs').exists()
                     result = self.invoke('--phase', phase, '--authorize-' + phase, *token_arguments)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('state=reused', result.stdout)
                     self.assertNotIn('synthetic-ephemeral-input', result.stdout + result.stderr)
                     self.assertFalse(self.capture.exists(), 'registration does not serialize an Ansible inventory')
-                    self.assertFalse((self.base / 'logs').exists(), 'registration does not create normal deployment logs')
+                    self.assertEqual((self.base / 'logs').exists(), logs_existed, 'registration does not create normal deployment logs')
                     self.assertEqual(self.config.read_bytes(), before)
 
     def test_registration_requires_matching_authority_and_token_phase(self):
@@ -59,3 +63,33 @@ elif '--expect-binding' in sys.argv[-1]:
             self.assertNotIn('RELAY_DEPLOYMENT_RESULT=PASS', result.stdout)
         finally:
             marker.unlink()
+
+    def test_extra_slot_registration_and_enablement_use_existing_public_phases(self):
+        from test_execution_slots import inputs
+        before = self.config.read_bytes()
+        value = json.loads(before)
+        topology = inputs()
+        value['environment']['instance'] = topology['environment']['instance']
+        value['consumer']['executionSlots'] = topology['consumer']['executionSlots']
+        try:
+            self.config.write_text(json.dumps(value))
+            deployment_tests.commit(self.consumer)
+            registered = self.invoke('--phase', 'general-runner-register',
+                '--authorize-general-runner-register', '--execution-slot', 'second')
+            self.assertEqual(registered.returncode, 0, registered.stderr)
+            self.assertIn('name=sample-second ', registered.stdout)
+            self.assertIn('work=/var/lib/codex-relay/slots/second/runner/work', registered.stdout)
+            self.assertIn('relay-slot-', registered.stdout)
+            self.assertFalse(self.capture.exists())
+            enabled = self.invoke('--phase', 'general-runner-enable',
+                '--authorize-general-runner-enable', '--execution-slot', 'second')
+            self.assertEqual(enabled.returncode, 0, enabled.stderr)
+            captured = json.loads(self.capture.read_text())
+            self.assertEqual(captured['relay_runner_user'], 'sample-second-runner')
+            self.assertEqual(captured['relay_runner_service_name'], 'codex-relay-slot-second-runner.service')
+            self.assertEqual(captured['relay_codex_user'], 'sample-second-codex')
+            self.assertFalse(captured['relay_runner_service_enabled'])
+            self.assertFalse(captured['relay_service_activation_authorized'])
+        finally:
+            self.config.write_bytes(before)
+            deployment_tests.commit(self.consumer)

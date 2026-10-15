@@ -208,12 +208,19 @@ def _configuration(probe, config, release, manifest):
     return result
 
 
-def _runner(probe, config, general):
+def _runner(probe, config, general, slot=None):
     env = config['environment']
     runner = env['generalRunner' if general else 'runner']
     suffix = 'general-runner' if general else 'runner'
     install, state = '/opt/' + env['namespace'], '/var/lib/' + env['namespace']
     runner_root = install + '/' + suffix
+    work_root = state + '/' + suffix + '/work'
+    if slot is not None:
+        runner = {'user': slot['runnerUser'], 'name': slot['runnerName'],
+                  'scope': env['generalRunner'].get('scope', 'repository'),
+                  'group': env['generalRunner'].get('group')}
+        runner_root = install + '/slots/' + slot['id'] + '/runner'
+        work_root = state + '/slots/' + slot['id'] + '/runner/work'
     scope = runner.get('scope', 'repository')
     result = {'status': 'invalid', 'freshTokenRequired': False}
     try:
@@ -247,7 +254,7 @@ def _runner(probe, config, general):
         repository = config['consumer']['repository']
         url = 'https://github.com/' + (repository.split('/')[0] if scope == 'organization' else repository)
         if (marker.get('gitHubUrl') != url or marker.get('agentName') != runner['name']
-                or marker.get('workFolder') != state + '/' + suffix + '/work'
+                or marker.get('workFolder') != work_root
                 or type(marker.get('agentId')) is not int or marker['agentId'] < 1
                 or scope == 'organization' and marker.get('poolName') != runner['group']):
             raise ValueError('runner-binding')
@@ -282,6 +289,14 @@ def _protected_state(probe, config):
         uid = -1
     specifications.append(('codex-installed-token', config_root + '/codex-credentials/access-token', {0o600},
                            uid, uid, 'protected-retained', 'codex-credentials'))
+    for slot in config['consumer'].get('executionSlots', [])[1:]:
+        try:
+            slot_uid, slot_gid = probe.identity(slot['runtimeUser'])
+        except (KeyError, OSError):
+            slot_uid = slot_gid = -1
+        specifications.append(('slot-' + slot['id'] + '-codex-token',
+                               config_root + '/slots/' + slot['id'] + '/codex-credentials/access-token',
+                               {0o600}, slot_uid, slot_uid, 'protected-retained', 'codex-credentials / apply'))
     tls = env.get('tls')
     pair = ((tls or {}).get('source') or
             ({'certificateFile': config_root + '/certs/server-fullchain.pem',
@@ -316,6 +331,10 @@ def _protected_state(probe, config):
                 _, group = probe.identity(env['reviewerUser'])
             elif label == 'codex-installed-token':
                 _, group = probe.identity(config['consumer']['runtimeUser'])
+            elif label.startswith('slot-') and label.endswith('-codex-token'):
+                slot = next(slot for slot in config['consumer']['executionSlots']
+                            if label == 'slot-' + slot['id'] + '-codex-token')
+                _, group = probe.identity(slot['runtimeUser'])
             probe.metadata(path, uid=uid, gid=group, modes=modes, leaf_parent_uid=parent_uid)
             item['status'] = 'reusable-metadata'
         except FileNotFoundError:
@@ -339,6 +358,8 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
     installed, release, manifest = _installation(probe, '/opt/' + namespace)
     configuration = _configuration(probe, config, release, manifest)
     runners = {'production': _runner(probe, config, False), 'general': _runner(probe, config, True)}
+    runners.update({'slot-' + slot['id']: _runner(probe, config, True, slot)
+                    for slot in config['consumer'].get('executionSlots', [])[1:]})
     protected = _protected_state(probe, config)
     blockers = []
     for label, path in [('clean-reinstall-recovery', '/var/lib/' + namespace + '-clean-reinstall.json'),
@@ -389,7 +410,7 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
                   if installed['status'] == 'present' and configuration['deployment'] == 'unavailable' else [])}
 
 
-def _validate_report(report):
+def _validate_report(report, config=None):
     """Reject partial transport evidence before callers use its status fields."""
     expected = {'schemaVersion', 'readOnly', 'mutationAuthorized', 'status', 'installed',
                 'configuration', 'runners', 'protectedState', 'blockers', 'ownerAdmin'}
@@ -408,21 +429,23 @@ def _validate_report(report):
             or configuration['deployment'] not in ['equivalent', 'different', 'unavailable', 'invalid']):
         raise ValueError('inventory-config-proof')
     runners = report['runners']
-    if not isinstance(runners, dict) or runners.keys() != {'production', 'general'}:
+    expected_runners = {'production', 'general'} | {
+        'slot-' + slot['id'] for slot in (config or {}).get('consumer', {}).get('executionSlots', [])[1:]}
+    if not isinstance(runners, dict) or runners.keys() != expected_runners:
         raise ValueError('inventory-runners-proof')
     for runner in runners.values():
         if (not isinstance(runner, dict) or runner.get('status') not in ['reusable', 'missing', 'invalid']
                 or runner.get('freshTokenRequired') is not (runner['status'] == 'missing')):
             raise ValueError('inventory-runner-proof')
     protected = report['protectedState']
-    if (not isinstance(protected, list) or len(protected) > 16
+    if (not isinstance(protected, list) or len(protected) > 47
             or any(not isinstance(row, dict) or not isinstance(row.get('name'), str)
                    or row.get('status') not in ['reusable-metadata', 'missing', 'invalid']
                    or row.get('validation') != 'metadata-only' for row in protected)):
         raise ValueError('inventory-protected-proof')
     blockers = report['blockers']
-    if (not isinstance(blockers, list) or len(blockers) > 32
-            or any(not isinstance(code, str) or not re.fullmatch('[a-zA-Z;-]{1,160}', code) for code in blockers)
+    if (not isinstance(blockers, list) or len(blockers) > 128
+            or any(not isinstance(code, str) or not re.fullmatch('[a-zA-Z0-9_;-]{1,160}', code) for code in blockers)
             or bool(blockers) != (report['status'] == 'blocked')):
         raise ValueError('inventory-blockers-proof')
     admin = report['ownerAdmin']
@@ -443,7 +466,7 @@ def remote_inventory(target, key, config):
         result = subprocess.run(argv, input=json.dumps(config), text=True, capture_output=True, timeout=45)
         if result.returncode or len(result.stdout) > LIMIT:
             raise ValueError('inventory-transport')
-        return _validate_report(_json(result.stdout))
+        return _validate_report(_json(result.stdout), config)
     except (OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired):
         raise RuntimeError('RELAY_INVENTORY_UNAVAILABLE;inspect-target-access-and-protected-prerequisites') from None
 

@@ -7,21 +7,22 @@
       - relay_runner_package_url == 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
       - relay_runner_package_sha256 == '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
       - relay_runner_repository == relay_github_repository
-      - relay_runner_name in [relay_general_runner_name, relay_production_runner_name]
+      - relay_runner_name in ([relay_general_runner_name, relay_production_runner_name] + (relay_execution_slots | default([]) | map(attribute='runnerName') | list))
       - >-
         (relay_runner_registration_scope == 'organization' and
          relay_deployment_profile == 'production' and
          relay_runner_name == relay_production_runner_name and
          relay_runner_registration_group == relay_production_runner_registration_group) or
-        (relay_runner_name == relay_general_runner_name and
+        (relay_runner_name in ([relay_general_runner_name] + (relay_execution_slots | default([]) | map(attribute='runnerName') | list)) and
          relay_runner_registration_scope == relay_general_runner_registration_scope and
          relay_runner_registration_scope in ['repository', 'organization'] and
          (relay_runner_registration_scope == 'repository' or
           (relay_runner_registration_group == relay_general_runner_registration_group and
            relay_runner_registration_group is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$') and
            relay_runner_registration_group | lower != relay_production_runner_registration_group | lower)))
-      - relay_runner_labels | length == 1
-      - relay_runner_labels[0] is match('^[A-Za-z0-9_.-]+$')
+      - relay_runner_labels | length in [1, 2]
+      - relay_runner_labels | select('match', '^[A-Za-z0-9_.-]+$') | list | length == relay_runner_labels | length
+      - relay_runner_labels | unique | list | length == relay_runner_labels | length
     fail_msg: 'RUNNER_PINNED_PACKAGE_OR_IDENTITY_CONTRACT_INVALID'
 
 - name: Require isolated namespaces for the general instance on a production host
@@ -38,6 +39,19 @@
   when:
     - relay_deployment_profile == 'production'
     - relay_runner_name == relay_general_runner_name
+
+- name: Require fixed isolated namespaces for an additional automatic slot
+  ansible.builtin.assert:
+    that:
+      - relay_execution_slot in (relay_execution_slots | map(attribute='id') | list)
+      - relay_execution_slot != 'primary'
+      - relay_runner_root == (relay_install_root ~ '/slots/' ~ relay_execution_slot ~ '/runner')
+      - relay_runner_work_root == (relay_state_root ~ '/slots/' ~ relay_execution_slot ~ '/runner/work')
+      - relay_runner_home == (relay_state_root ~ '/slots/' ~ relay_execution_slot ~ '/runner/home')
+      - relay_runner_service_name == (relay_namespace ~ '-slot-' ~ relay_execution_slot ~ '-runner.service')
+      - relay_runner_registration_helper_path == (relay_install_root ~ '/slots/' ~ relay_execution_slot ~ '/relay-runner-registration')
+    fail_msg: RUNNER_EXECUTION_SLOT_NAMESPACE_COLLISION
+  when: relay_execution_slot | default('primary') != 'primary'
 
 - name: Inspect instance namespaces before changing their ownership
   ansible.builtin.stat:
@@ -512,7 +526,7 @@
   register: relay_upgrade_lifecycle_general_unit
   when:
     - relay_upgrade_lifecycle_managed | default(false) | bool
-    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_runner_name != relay_production_runner_name
     - relay_upgrade_lifecycle_general_was_active | default(false) | bool
     - not ansible_check_mode | bool
 
@@ -527,7 +541,7 @@
     fail_msg: RELAY_UPGRADE_GENERAL_TRANSPORT_RESTART_REQUIRED
   when:
     - relay_upgrade_lifecycle_managed | default(false) | bool
-    - relay_runner_service_name == relay_general_runner_service_name
+    - relay_runner_name != relay_production_runner_name
     - relay_upgrade_lifecycle_general_was_active | default(false) | bool
     - not ansible_check_mode | bool
 

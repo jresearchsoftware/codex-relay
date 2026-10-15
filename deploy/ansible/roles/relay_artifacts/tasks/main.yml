@@ -49,6 +49,7 @@
     force: true
     owner: root
     group: '{{ relay_runner_group }}'
+    follow: false
   when: not ansible_check_mode | bool
 
 - name: Stage the exact reviewed diagnostics store artifact
@@ -59,6 +60,7 @@
     force: true
     owner: root
     group: root
+    follow: false
   when: not ansible_check_mode | bool
 
 - name: Stage reviewed Rust Reviewer source and lockfile
@@ -210,6 +212,7 @@
     state: link
     owner: root
     group: '{{ relay_group }}'
+    follow: false
   register: relay_release_activation
   notify: Try-restart Reviewer after release transition
   when: not ansible_check_mode | bool

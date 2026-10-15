@@ -1,2 +1,3 @@
 #!/bin/sh
-exec /usr/bin/node --experimental-default-type=module '{{ relay_install_root }}/relay-codex.mjs' "$@"
+export RELAY_ISOLATED_SLOT='{{ relay_execution_slot_isolation | default(false) | ternary("1", "0") }}'
+exec /usr/bin/node --experimental-default-type=module '{{ relay_codex_launcher_path }}.mjs' "$@"

@@ -6,6 +6,13 @@ import { normalizeCodexUsage } from './codex-usage.mjs';
 // One runner-owned journal records whether the potentially paid call happened.
 // Publication may be resumed; a reserved/unknown child is never relaunched.
 export async function runAttempt(options) {
+  if (options.envelope.route === 'auto' && options.journal.withLock) {
+    return options.journal.withLock(options.envelope.runId, () => runLockedAttempt(options));
+  }
+  return runLockedAttempt(options);
+}
+
+async function runLockedAttempt(options) {
   const outcome = await runContainedAttempt(options);
   if (options.envelope.route !== 'auto' || outcome.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW') return outcome;
   // Outside the execution catch: a failed/uncertain Ready transition retains
@@ -41,8 +48,12 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     }
     return record.outcome;
   }
-  record ??= { version: VERSION, envelope: e, execution: null, progress: null, outcome: null, diagnostic: null };
-  await journal.put(e.runId, record);
+  if (!record) {
+    record = { version: VERSION, envelope: e, execution: null, progress: null, outcome: null, diagnostic: null };
+    if (journal.reserve) {
+      if (!await journal.reserve(e.runId, record)) fail('EXECUTION_UNKNOWN_NO_RETRY');
+    } else await journal.put(e.runId, record);
+  }
   let stage = 'preflight';
   let lastSuccessfulBoundary = 'admission';
   try {

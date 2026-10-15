@@ -4,6 +4,11 @@
   become: true
   gather_facts: true
   pre_tasks:
+    - name: Verify existing slot UID and GID aliases before account reconciliation
+      ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
+      vars:
+        relay_slot_topology_preflight: true
+
     - name: Establish or inspect the durable production operation state
       ansible.builtin.include_tasks: tasks/production-operation-state.yml
 
@@ -94,6 +99,30 @@
     - role: relay_controller
 
   post_tasks:
+    - name: Install the optional qualified parallel namespace primitive
+      ansible.builtin.apt:
+        name: bubblewrap
+        state: present
+      when: relay_execution_slots is defined and relay_manage_base_packages | bool
+
+    - name: Prove the primary runtime can enter its private process namespace
+      ansible.builtin.command:
+        argv: ['/usr/sbin/runuser', '-u', '{{ relay_codex_user }}', '--', /usr/bin/bwrap,
+               --unshare-user, --unshare-pid, --unshare-ipc, --unshare-uts,
+               --die-with-parent, --new-session, --ro-bind, /usr, /usr,
+               --ro-bind, /bin, /bin, --ro-bind, /lib, /lib,
+               --ro-bind, /lib64, /lib64, --proc, /proc, --dev, /dev,
+               /usr/bin/true]
+      changed_when: false
+      when: relay_execution_slots is defined and not ansible_check_mode | bool
+
+    - name: Reconcile finite additional automatic execution slots without activation
+      ansible.builtin.include_tasks: tasks/execution-slot.yml
+      loop: '{{ relay_additional_execution_slots | default([]) }}'
+      loop_control:
+        loop_var: relay_slot_inputs
+        label: '{{ relay_slot_inputs.relay_execution_slot }}'
+
     - name: Reconcile the separate general runner as ordinary installed state
       ansible.builtin.include_tasks: tasks/production-general-runner.yml
       when: relay_deployment_profile == 'production'
@@ -104,6 +133,9 @@
     - name: Reconcile the primary runner software and preserve authorized state
       ansible.builtin.include_role:
         name: relay_runner
+
+    - name: Verify the complete installed execution pool before lifecycle activation
+      ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
 
     # Keep address-bound artifact refresh in the check path as well.  The copy
     # tasks are check-mode safe, so their changed count is the ordinary apply

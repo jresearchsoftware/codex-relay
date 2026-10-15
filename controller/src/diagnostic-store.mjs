@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EXECUTION_CONSUMER } from '../../consumer/consumer.mjs';
 import { chmod, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { constants, realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { DIAGNOSTICS_CONFIG_PATH } from "./diagnostics.mjs";
+import { withStoreLock } from './store-lock.mjs';
 
-const STORE_ROOT = CONSUMER.paths.diagnosticsRoot;
+const STORE_ROOT = EXECUTION_CONSUMER.paths.diagnosticsRoot;
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const RETENTION_COUNT = 8;
 
@@ -29,6 +30,11 @@ export async function writeDiagnosticBundle(value, { root = STORE_ROOT, retentio
   if (!Number.isSafeInteger(retentionCount) || retentionCount < 1 || retentionCount > 128) fail('DIAGNOSTIC_RETENTION_INVALID', 'Diagnostic retention count must preserve a bounded nonempty store');
   await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
+  return withStoreLock(join(root, '.retention-lock'), () => writeLockedDiagnosticBundle(safe, { root, retentionCount }),
+    { waitSeconds: 30, busyCode: 'DIAGNOSTIC_STORE_BUSY' });
+}
+
+async function writeLockedDiagnosticBundle(safe, { root, retentionCount }) {
   const output = JSON.stringify(safe, null, 2) + "\n";
   const path = join(root, `${safe.executionId}.json`);
   const temporary = `${path}.tmp-${randomUUID()}`;

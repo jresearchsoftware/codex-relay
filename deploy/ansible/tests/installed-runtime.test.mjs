@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, lstat, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { fixture } from './fixture.mjs';
+import { fixture as controllerFixture } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
@@ -19,8 +19,13 @@ const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'
 // runtime imports resolve inside the staged release, including the fixture's
 // real admission/publication core. GitHub transport is a local fake; Git is real.
 assert.equal(process.getuid(), Number(process.env.INSTALLED_RUNNER_UID ?? 24001));
-const attemptStore = f => createAttemptStore(process.getuid() === 24003
-  ? `/var/lib/codex-relay/dispatch/attempts-v2/${f.envelope.attemptId}` : `${f.root}/journal`);
+async function fixture(t, options) {
+  const f = await controllerFixture(t, { ...options,
+    createJournal: (root, { runId }) => createAttemptStore(process.getuid() === 24003
+      ? `/var/lib/codex-relay/dispatch/attempts-v2/run-${runId}` : `${root}/journal`) });
+  assert.equal(f.envelope.attemptId, `run-${f.envelope.runId}`);
+  return f;
+}
 
 async function retireVerifiedFixtureCapsule(f) {
   // Test-owned synthetic teardown after assertions; product failure retention
@@ -75,10 +80,48 @@ async function terminalReplay(f, journal, args, { retainCheckout = false } = {})
     await assert.rejects(access(f.cwd), { code: 'ENOENT' });
   }
   const forbidden = boundary => () => assert.fail(`terminal replay invoked ${boundary}`);
+  let handoffs = 0;
   return { ...args, admissionResumed: true,
-    journal: { get: journal.get, put: forbidden('journal mutation') },
+    journal: { get: journal.get, put: forbidden('journal mutation'), reserve: forbidden('journal reservation') },
     prepare: forbidden('prepare'), execute: forbidden('execute'), collect: forbidden('collect'),
-    broker: { invoke: forbidden('broker') } };
+    broker: { invoke: request => {
+      assert.deepEqual(request, { operation: 'complete-handoff', runId: f.envelope.runId, attemptId: f.envelope.attemptId });
+      assert.equal(++handoffs, 1);
+      return args.broker.invoke(request);
+    } } };
+}
+
+for (const mode of ['cancel-term', 'cancel-ignoreterm']) {
+  test(`installed ${mode} crosses sudo and durably terminalizes the original attempt once`, async t => {
+    const f = await fixture(t, { installed: true, instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+    const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
+    const args = { ...f, execute: e => { calls++; return dispatcher.dispatch(e); } };
+    const operation = runAttempt(args).then(value => ({ value }), error => ({ error }));
+    const marker = `${f.cwd}/.codex-sandbox/cancel-process.json`;
+    const deadline = Date.now() + 15000; let worker;
+    while (Date.now() < deadline && !worker) {
+      try { worker = JSON.parse(await readFile(marker, 'utf8')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; await new Promise(resolve => setTimeout(resolve, 10)); }
+    }
+    assert.ok(worker, 'the model UID must actually start before cancellation');
+    assert.equal(worker.uid, 24002); assert.equal((await stat(marker)).uid, 24002);
+    // A real OS signal reaches the runner UID while the model runs under a
+    // different UID. The launcher must perform its own TERM/KILL cleanup.
+    const cancelledAt = Date.now(); process.kill(process.pid, 'SIGINT');
+    const { error } = await operation;
+    assert.ok(Date.now() - cancelledAt < 5000, 'leave native Actions grace for Writer');
+    assert.equal(error?.code, 'EXECUTION_CANCELLED');
+    const saved = await f.journal.get(f.envelope.runId);
+    assert.equal(saved.execution.returned, true); assert.equal(saved.execution.child, 'started');
+    assert.equal(saved.execution.containment, 'reaped'); assert.equal(saved.execution.errorCode, 'EXECUTION_CANCELLED');
+    assert.equal(saved.outcome.status, 'BLOCKED'); assert.equal(saved.diagnostic.containment, 'reaped');
+    assert.throws(() => process.kill(worker.pid, 0), { code: 'ESRCH' });
+    assert.equal(calls, 1); assert.equal(f.pushes(), 0); assert.equal(f.comments.length, 1);
+    await assert.rejects(runAttempt(await terminalReplay(f, f.journal, args)), { code: 'EXECUTION_CANCELLED' });
+    assert.deepEqual(await f.journal.get(f.envelope.runId), saved);
+    assert.equal(calls, 1); assert.equal(f.comments.length, 1);
+    await retireVerifiedFixtureCapsule(f);
+  });
 }
 
 const explicitProfiles = [
@@ -92,7 +135,7 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     const f = await fixture(t, { remediation, installed: true, profile: { cliModelId, effort },
       instruction: `fixture-mode=success; fixture-profile=${cliModelId}/${effort}; Маркер UTF-8` });
     assert.deepEqual(f.envelope.profile, { cliModelId, effort });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
     const result = await runAttempt(args);
@@ -106,8 +149,10 @@ for (const remediation of [false, true]) for (const [cliModelId, effort] of expl
     await assert.rejects(access(`${f.cwd}/.codex-sandbox`), { code: 'ENOENT' });
     assert.equal(artifact.model, cliModelId); assert.equal(artifact.effort, effort);
     assert.equal(artifact.identity, remediation ? 'example-remediation' : 'example-writer');
+    const commentsBeforeReplay = structuredClone(f.comments);
     assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args)), result);
     assert.deepEqual(await journal.get(f.envelope.runId), saved);
+    assert.deepEqual(f.comments, commentsBeforeReplay);
     assert.equal(calls, 1); assert.equal(f.pushes(), 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
   });
@@ -142,7 +187,7 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
   test(`installed ${mode} publication observes worker ownership and collector permissions`, async t => {
     const f = await fixture(t, { installed: true, remediation: true,
       instruction: `fixture-mode=${mode}; Маркер UTF-8` });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
     if (mode === 'generated-residue') {
@@ -153,7 +198,10 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
       assert.equal(saved.progress.head, await f.remoteHead());
       assert.equal(f.pushes(), 1);
       assert.match(f.comments[0].body, /UNCOMMITTED_WORK_REMAINS/);
-      assert.deepEqual(await runAttempt(args), result);
+      const commentsBeforeReplay = structuredClone(f.comments);
+      assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args, { retainCheckout: true })), result);
+      assert.deepEqual(await journal.get(f.envelope.runId), saved);
+      assert.deepEqual(f.comments, commentsBeforeReplay);
     } else {
       await assert.rejects(runAttempt(args), error => {
         assert.equal(error.code, 'TRUSTED_GIT_FAILED');
@@ -169,8 +217,18 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
     const metadata = await stat(remaining);
     assert.equal(metadata.uid, 24002);
     assert.notEqual(metadata.uid, process.getuid());
-    assert.equal(metadata.mode & 0o777, 0o600);
-    await assert.rejects(access(remaining, constants.R_OK), { code: 'EACCES' });
+    if (mode === 'generated-residue') {
+      const group = (await exec('/usr/bin/getent', ['group', 'relay-codex-work'])).stdout.trim().split(':');
+      assert.equal(group[0], 'relay-codex-work');
+      assert.match(group[2], /^[1-9][0-9]*$/);
+      assert.equal(metadata.gid, Number(group[2]));
+      assert.equal(metadata.gid, (await stat('/var/lib/codex-relay/dispatch-work')).gid);
+      assert.equal(metadata.mode & 0o777, 0o640);
+      await access(remaining, constants.R_OK);
+    } else {
+      assert.equal(metadata.mode & 0o777, 0o600);
+      await assert.rejects(access(remaining, constants.R_OK), { code: 'EACCES' });
+    }
     assert.equal(calls, 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
     await retireVerifiedFixtureCapsule(f);
@@ -202,14 +260,14 @@ for (const [mode, code, state] of [
   ['child-failure', 'CODEX_NONZERO_EXIT', 'confirmed'],
   ['missing-token', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
   ['missing-binary', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
-  ['missing-import', 'CODEX_NONZERO_EXIT', 'uncertain'],
+  ['missing-import', 'CONTAINMENT_NOT_PROVEN', 'uncertain'],
   ['package-eacces', 'CODEX_NONZERO_EXIT', 'known-not-executed'],
 ]) {
   test(`installed ${mode} preserves cause, correlation, progress and no duplicate`, async t => {
     const retainCheckout = mode === 'missing-import';
     const f = await fixture(t, { installed: true, remediation: true, retainCheckout,
       instruction: `fixture-mode=${mode}; Маркер UTF-8` });
-    const journal = attemptStore(f);
+    const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
     const path = mode === 'missing-token' ? '/etc/codex-relay/codex-credentials/access-token'
       : mode === 'missing-binary' ? '/opt/codex-relay/codex-runtime/bin/codex'
@@ -233,8 +291,7 @@ for (const [mode, code, state] of [
     const saved = await journal.get(f.envelope.runId); const d = saved.diagnostic;
     assert.equal(d.executionState, state); assert.equal(d.executionId, f.envelope.attemptId);
     assert.equal(d.durable.diagnosticStore.status, 'stored');
-    assert.equal(d.durable.diagnosticStore.executionId,
-      retainCheckout ? `${f.envelope.attemptId}-cleanup` : f.envelope.attemptId);
+    assert.equal(d.durable.diagnosticStore.executionId, f.envelope.attemptId);
     assert.ok(d.lastSuccessfulBoundary); assert.ok(d.failureBoundary);
     if (mode === 'invalid-result') assert.equal(d.primaryCause, 'CODEX_RESULT_MISSING');
     if (mode === 'missing-token') assert.equal(d.primaryCause, 'CODEX_LAUNCHER_ACCESS_TOKEN_UNAVAILABLE');
@@ -258,17 +315,17 @@ for (const [mode, code, state] of [
     }
     let retainedCapsule, retainedState, retainedSandbox;
     if (retainCheckout) {
-      // The shared import fails before both exec and cleanup. Keep the original
-      // launch error and the independent cleanup diagnostic, without teardown
-      // by the unprivileged fixture or release of an occupied failure slot.
-      assert.equal(d.runtime.cleanup, 'failed');
+      // Without the native launcher acknowledgement containment is unknown.
+      // Cleanup must remain unattempted, retaining the original failure and
+      // sandbox rather than inferring safety from the outer process's exit.
+      assert.equal(d.runtime.cleanup, 'retained');
       assert.equal(d.runtime.retention, 'retained');
-      assert.equal(saved.execution.containment, 'reaped');
+      assert.equal(saved.execution.containment, 'unknown');
       retainedCapsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId });
       assert.ok(retainedCapsule);
       retainedState = await retainedCapsule.read();
       assert.equal(retainedState.executionId, f.envelope.attemptId);
-      assert.equal(retainedState.cleanup, 'failed');
+      assert.equal(retainedState.cleanup, 'retained');
       assert.equal(retainedState.retention, 'retained');
       assert.notEqual(retainedState.released, true);
       await assert.rejects(retainedCapsule.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
@@ -310,14 +367,14 @@ for (const [mode, code, state] of [
       assert.deepEqual(await retainedCapsule.read(), retainedState);
       const after = await lstat(`${f.cwd}/.codex-sandbox`, { bigint: true });
       assert.equal(after.dev, retainedSandbox.dev); assert.equal(after.ino, retainedSandbox.ino);
-      console.log('INSTALLED_IMPORT_AND_CLEANUP_FAILURE_PRESERVED cleanup=failed;retention=retained;release=denied;replay=once');
+      console.log('INSTALLED_IMPORT_FAILURE_PRESERVED containment=unknown;cleanup=retained;release=denied;replay=once');
     } else await retireVerifiedFixtureCapsule(f);
   });
 }
 
 test('installed first collection ENOENT remains a failure before progress publication', async t => {
   const f = await fixture(t, { installed: true, remediation: true });
-  const journal = attemptStore(f);
+  const journal = f.journal;
   const missing = Object.assign(new Error('first required collection unavailable'), { code: 'ENOENT' });
   let collections = 0;
   await assert.rejects(runAttempt({ ...f, journal,

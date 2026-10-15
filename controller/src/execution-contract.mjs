@@ -118,6 +118,7 @@ export function validateEnvelope(e) {
   const manualNoSource = e?.route === 'manual' && ['task-request', 'admission'].includes(e?.request?.kind)
     && e.branch === null && e.startHead === null && e.historicalBase === null;
   if (!e || e.version !== VERSION || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
+    || (Object.hasOwn(e, 'executionSlot') && (!CONSUMER.executionSlots || !CONSUMER.executionSlots.some(slot => slot.id === e.executionSlot)))
     || !safeModel(e.profile?.cliModelId) || !safeEffort(e.profile?.effort)
     || !positive(e.runId) || (!nativeDispatch && !legacyEvent)
     || !['issue', 'pull_request'].includes(e.target) || !positive(e.number) || !positive(e.issueNumber)

@@ -224,6 +224,43 @@ test('valid recovery reserves once, pushes the exact candidate once, reconciles 
   assert.deepEqual(f.publicationOperations, ['push', 'observe', 'observe', 'push', 'observe']);
 });
 
+test('explicit recovery excludes a simultaneous controller or recovery before reading the private journal', async t => {
+  const f = await fixture(t, { createJournal: root => createAttemptStore(join(root, 'journals')) });
+  let executions = 0;
+  f.failPush(true);
+  await assert.rejects(runAttempt({ ...f, execute: async () => {
+    executions++; await f.commit();
+    return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
+      result: { status: 'success', summary: 'Recover one retained worker result.', validation: [] } };
+  } }), { code: 'PUBLICATION_UNCERTAIN' });
+  ownerSurface(f); f.progress = await f.collect(f.envelope);
+  const { request } = await f.authorize(); f.failPush(false);
+  const journalBefore = await f.journal.get(99);
+  let entered; let release;
+  const started = new Promise(resolve => { entered = resolve; });
+  const pending = new Promise(resolve => { release = resolve; });
+  const broker = { invoke: async value => {
+    if (value.operation === 'publication-state') { entered(); await pending; }
+    return f.broker.invoke(value);
+  } };
+  const args = { ...request, broker, journal: f.journal, collect: f.collect };
+  const first = recoverAttemptPublication(args);
+  await started;
+  try {
+    await assert.rejects(recoverAttemptPublication({ ...args,
+      broker: { invoke: () => assert.fail('contending recovery reached Writer') },
+      collect: () => assert.fail('contending recovery collected') }), { code: 'ATTEMPT_CONTROLLER_BUSY' });
+    await assert.rejects(runAttempt({ ...f, admissionResumed: true,
+      execute: () => assert.fail('contending replay inferred') }), { code: 'ATTEMPT_CONTROLLER_BUSY' });
+    assert.deepEqual(await f.journal.get(99), journalBefore);
+  } finally { release(); }
+  const outcome = await first;
+  assert.equal(outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.equal(executions, 1); assert.equal(f.pushes(), 2);
+  assert.deepEqual(await recoverAttemptPublication({ ...args,
+    collect: () => assert.fail('completed recovery recollected') }), outcome);
+});
+
 test('recovery does not push when the last authority/comment/ref observation changes or the reservation cannot be written', async t => {
   const f = await uncertain(t); const { request, comment } = await f.authorize();
   const wrap = modify => createPublicationBroker({ api: f.api, store: f.store,
