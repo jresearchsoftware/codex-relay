@@ -18,8 +18,16 @@ test('routing holds a real late termination signal through the terminal Writer r
       if (request.operation === 'admit') return { envelope: f.envelope };
       if (request.operation === 'complete-execution') {
         assert.equal((await f.journal.get(f.envelope.runId)).outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+        const aborted = new Promise((resolve, reject) => {
+          const onAbort = () => { clearTimeout(timer); resolve(); };
+          const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            reject(new Error('The routing controller did not receive native SIGTERM'));
+          }, 1000);
+          signal?.addEventListener('abort', onAbort, { once: true });
+        });
         process.kill(process.pid, 'SIGTERM');
-        await new Promise(resolve => setImmediate(resolve));
+        await aborted;
         assert.equal(signal.aborted, true); completed++;
         return { status: 'COMPLETED' };
       }
