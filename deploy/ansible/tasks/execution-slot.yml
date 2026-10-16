@@ -22,6 +22,8 @@
     relay_dispatch_group: '{{ relay_slot_inputs.relay_dispatch_group }}'
     relay_codex_user: '{{ relay_slot_inputs.relay_codex_user }}'
     relay_codex_group: '{{ relay_slot_inputs.relay_codex_group }}'
+    relay_repository_runtime_users: '{{ relay_slot_inputs.relay_repository_runtime_users }}'
+    relay_additional_runtime_users: '{{ relay_slot_inputs.relay_additional_runtime_users }}'
     relay_codex_work_group: '{{ relay_slot_inputs.relay_codex_work_group }}'
     relay_codex_home: '{{ relay_slot_inputs.relay_codex_home }}'
     relay_codex_access_token_root: '{{ relay_slot_inputs.relay_codex_access_token_root }}'

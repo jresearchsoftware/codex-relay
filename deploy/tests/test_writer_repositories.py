@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -18,6 +19,7 @@ import managed_pool
 import pool_eligibility
 import workflow_projection
 from test_managed_pool import inputs, MemoryState, Remote, Host
+from test_execution_slots import inputs as explicit_inputs
 
 
 def shared():
@@ -104,6 +106,80 @@ def test_pool_registers_all_writer_targets_with_one_capacity_and_trusted_refs(tm
     assert set(store.value['consumers']) == set(expected)
     assert len(remote.values) == 2
     assert len({json.dumps(binding, sort_keys=True) for binding in store.value['consumers'].values()}) == 1
+
+
+@pytest.mark.parametrize('topology', ['default', 'managed', 'independent'])
+def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_identity(topology):
+    value = shared()
+    if topology == 'independent':
+        value = explicit_inputs()
+        del value['consumer']['repository']
+        value['consumer']['repositories'] = ['example-org/first', 'example-org/second']
+        value['environment']['repository'] = 'example-org/first'
+    value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': 'second-runtime'}
+    config.validate(value, ROOT)
+    compiled = config.compile_inputs(value)
+    variables = {**yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text()), **compiled}
+    if topology != 'default':
+        slot = compiled['relay_additional_execution_slots'][0]
+        include, = yaml.safe_load((ROOT / 'deploy/ansible/tasks/execution-slot.yml').read_text())
+        variables['relay_slot_inputs'] = slot
+        variables.update(Templar(loader=DataLoader(), variables=variables).template(include['vars']))
+        expected_map = {} if topology == 'independent' else value['consumer']['repositoryRuntimeUsers']
+        assert variables['relay_repository_runtime_users'] == expected_map
+        assert variables['relay_additional_runtime_users'] == ([] if topology == 'independent' else ['second-runtime'])
+    template = (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2').read_text()
+    templar = Templar(loader=DataLoader(), variables=variables)
+    launcher = templar.template(template, convert_data=False)
+    profiles = re.search(r'const REPOSITORY_PROFILES = (\[[\s\S]*?\n\]);', launcher).group(1)
+    rendered = json.loads(subprocess.check_output(
+        ['node', '-e', 'const profiles=' + profiles + ';process.stdout.write(JSON.stringify(profiles));'], text=True))
+    runtime = variables['relay_codex_user']
+    assert {profile['repository']: profile['user'] for profile in rendered} == {
+        'example-org/first': runtime,
+        'example-org/second': runtime if topology == 'independent' else 'second-runtime',
+    }
+    assert {profile['root'] for profile in rendered} == {
+        variables['relay_dispatch_work_root'] + '/repositories/' + repository
+        for repository in value['consumer']['repositories']}
+    sudoers = templar.template(
+        (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex.sudoers.j2').read_text(),
+        convert_data=False)
+    if topology == 'independent':
+        assert f'ALL=({runtime})' in sudoers
+        assert 'second-runtime' not in sudoers
+        assert 'const TOKEN_FILE = "' + variables['relay_codex_access_token_file'] + '";' in launcher
+    else:
+        assert f'ALL=({runtime},second-runtime)' in sudoers
+
+
+def test_repository_runtime_users_keep_all_explicit_slot_work_groups_separate():
+    value = explicit_inputs()
+    del value['consumer']['repository']
+    value['consumer']['repositories'] = ['example-org/first', 'example-org/second']
+    value['environment']['repository'] = 'example-org/first'
+    value['consumer']['repositoryRuntimeUsers'] = {
+        'example-org/second': value['consumer']['executionSlots'][1]['workGroup']}
+    with pytest.raises(config.InvalidConfig, match='executionSlots.isolated-work-groups'):
+        config.validate(value, ROOT)
+
+
+@pytest.mark.parametrize('exists', [False, True])
+def test_optional_repository_runtime_account_preserves_existing_owner_settings(exists):
+    source = ROOT / 'deploy/ansible/roles/relay_codex_runtime/tasks/repository-runtime-user.yml'
+    task = next(task for task in yaml.safe_load(source.read_text()) if task['name'] ==
+                'Create the configured non-login runtime account with shared work access')
+    account = {'second-runtime': ['x', 1201, 1301, 'owner account', '/owner/home', '/bin/bash']} if exists else {}
+    variables = {'relay_repository_runtime_user': 'second-runtime', 'relay_state_root': '/var/lib/example',
+                 'relay_codex_work_group': 'shared-work', 'omit': '__omit__',
+                 'relay_repository_runtime_account': {'ansible_facts': {'getent_passwd': account}}}
+    rendered = Templar(loader=DataLoader(), variables=variables).template(task['ansible.builtin.user'])
+    assert rendered['append'] is True
+    assert rendered['groups'] == ['shared-work']
+    assert rendered['create_home'] is False
+    assert {key: rendered[key] for key in ['group', 'home', 'shell']} == (
+        {'group': '__omit__', 'home': '__omit__', 'shell': '__omit__'} if exists else
+        {'group': 'second-runtime', 'home': '/var/lib/example/runtime-users/second-runtime', 'shell': '/usr/sbin/nologin'})
 
 
 @pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() == 0, reason='non-root native Linux runtime identity')

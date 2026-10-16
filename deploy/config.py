@@ -186,7 +186,8 @@ def validate(c, product_root):
         if pool is None:
             require(len(set(slot_users)) == len(slot_users), 'executionSlots.isolated-users')
         groups = [slot['workGroup'] for slot in slots]
-        require((pool is not None or len(set(groups)) == len(groups)) and not set(groups) & set(slot_users + protected_users),
+        require((pool is not None or len(set(groups)) == len(groups))
+                and not set(groups) & set(slot_users + protected_users + list(runtime_users.values())),
                 'executionSlots.isolated-work-groups')
         require(r['name'] not in [slot['runnerName'] for slot in slots], 'executionSlots.production-runner')
         for slot in slots[1:]:
@@ -295,6 +296,10 @@ def execution_slot_inputs(c, slot):
     e = c['environment']
     ns, slot_id = e['namespace'], slot['id']
     install, config, state = '/opt/' + ns + '/slots/' + slot_id, '/etc/' + ns + '/slots/' + slot_id, '/var/lib/' + ns + '/slots/' + slot_id
+    # Repository overrides follow the installation default runtime identity.
+    # An explicitly independent slot retains its own account and credential.
+    runtime_users = (c['consumer'].get('repositoryRuntimeUsers', {})
+                     if slot['runtimeUser'] == c['consumer']['runtimeUser'] else {})
     result = {
         'relay_execution_slot': slot_id, 'relay_execution_slot_install_root': install,
         'relay_execution_slot_isolation': True,
@@ -309,6 +314,8 @@ def execution_slot_inputs(c, slot):
         'relay_runner_registration_group': e['generalRunner'].get('group', ''),
         'relay_dispatch_user': slot['runnerUser'], 'relay_dispatch_group': slot['runnerUser'],
         'relay_codex_user': slot['runtimeUser'], 'relay_codex_group': slot['runtimeUser'],
+        'relay_repository_runtime_users': runtime_users,
+        'relay_additional_runtime_users': sorted(set(runtime_users.values()) - {slot['runtimeUser']}),
         'relay_codex_work_group': slot['workGroup'], 'relay_codex_home': state + '/codex-home',
         'relay_codex_access_token_root': config + '/codex-credentials',
         'relay_codex_access_token_file': config + '/codex-credentials/access-token',
