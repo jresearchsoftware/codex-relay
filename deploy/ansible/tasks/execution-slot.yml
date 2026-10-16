@@ -135,15 +135,6 @@
         mode: '0644'
         force: false
 
-    - name: Create runner-owned slot journals before ownership reconciliation
-      ansible.builtin.file:
-        path: '{{ item }}'
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-      loop: ['{{ relay_dispatch_state_root }}', '{{ relay_dispatch_home }}', '{{ relay_dispatch_evidence_root }}']
-
     - name: Reconcile only this runner identity and fixed sudo capabilities
       ansible.builtin.include_role:
         name: relay_runner

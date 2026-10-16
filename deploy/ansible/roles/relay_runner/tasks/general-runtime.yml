@@ -56,15 +56,6 @@
 # These are the existing generic routing namespaces, not production runner
 # state. Preserve journal bytes and old attempts; never transfer worker-owned
 # checkout contents or broaden relay-codex access to the runner journal.
-- name: Assign existing generic dispatch journals to the general runner
-  ansible.builtin.file:
-    path: '{{ relay_dispatch_state_root }}'
-    state: directory
-    owner: '{{ relay_runner_user }}'
-    group: '{{ relay_runner_group }}'
-    recurse: true
-    follow: false
-
 - name: Preserve the private routing and shared Codex work boundaries
   ansible.builtin.file:
     path: '{{ item.path }}'
@@ -77,6 +68,15 @@
     - {path: '{{ relay_dispatch_home }}', group: '{{ relay_runner_group }}', mode: '0700'}
     - {path: '{{ relay_dispatch_evidence_root }}', group: '{{ relay_runner_group }}', mode: '0700'}
     - {path: '{{ relay_dispatch_work_root }}', group: '{{ relay_codex_work_group }}', mode: '2770'}
+
+- name: Assign existing generic dispatch journals to the general runner
+  ansible.builtin.file:
+    path: '{{ relay_dispatch_state_root }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    recurse: true
+    follow: false
 
 # Reuse the existing typed helpers. Separate files keep production-user and
 # general-user grants distinct on every apply, without general local apply.
