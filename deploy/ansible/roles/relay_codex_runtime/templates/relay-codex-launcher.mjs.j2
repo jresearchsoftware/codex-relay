@@ -11,6 +11,14 @@ const CODEX_BINARY = "{{ relay_codex_binary_path }}";
 const CODEX_PACKAGE_ROOT = "{{ relay_codex_package_home }}/packages";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
+{% if relay_github_repositories is defined %}
+// Only protected installation settings select runtime users and repository roots.
+const REPOSITORY_PROFILES = [
+{% for repository in relay_github_repositories %}
+  {repository: {{ repository | to_json }}, user: {{ (relay_repository_runtime_users | default({})).get(repository, relay_codex_user) | to_json }}, root: {{ (relay_dispatch_work_root ~ '/repositories/' ~ repository) | to_json }}},
+{% endfor %}
+];
+{% endif %}
 const CLEANUP_HELPER = fileURLToPath(new URL('./relay-codex-cleanup.py', import.meta.url));
 const TOOLCHAIN_ROOT = "{{ relay_rust_toolchain_root }}";
 const MAX_TOKEN_BYTES = 16 * 1024;
@@ -84,7 +92,22 @@ async function main() {
   const targetNumber = argv[remediationMode ? 13 : 11];
   if (!safeModel(model) || !safeEffort(effort) || !/^[1-9][0-9]*$/.test(targetNumber)) fail("ARGUMENT_VALUE_INVALID");
 
-  const cwd = await resolveBoundedPath(cwdArg, WORK_ROOT);
+  let workRoot = WORK_ROOT;
+  let tokenFile = TOKEN_FILE;
+{% if relay_github_repositories is defined %}
+  const identity = spawnSync('/usr/bin/id', ['-un'], {
+    env: {PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C'}, encoding: 'utf8', timeout: 5000
+  });
+  if (identity.status !== 0) fail('RUNTIME_IDENTITY_UNAVAILABLE');
+  const runtimeUser = identity.stdout.trim();
+  const profile = REPOSITORY_PROFILES.find(value => value.user === runtimeUser && inside(resolve(cwdArg), value.root));
+  if (!profile) fail('REPOSITORY_RUNTIME_BINDING_INVALID');
+  workRoot = profile.root;
+  if (runtimeUser !== {{ relay_codex_user | to_json }}) {
+    tokenFile = {{ (relay_config_root ~ '/runtime-users/') | to_json }} + runtimeUser + '/codex-credentials/access-token';
+  }
+{% endif %}
+  const cwd = await resolveBoundedPath(cwdArg, workRoot);
   const input = await resolveBoundedPath(inputArg, cwd);
   const sandbox = ".codex-sandbox";
   const inputName = "task-input.md";
@@ -104,7 +127,7 @@ async function main() {
   const inputText = await readFile(input, "utf8").catch(() => fail("INPUT_FILE_UNREADABLE"));
   if (Buffer.byteLength(inputText, "utf8") > MAX_INPUT_BYTES) fail("INPUT_TOO_LARGE");
 
-  const tokenFileValue = await readFile(TOKEN_FILE, "utf8").catch(() => fail("ACCESS_TOKEN_UNAVAILABLE"));
+  const tokenFileValue = await readFile(tokenFile, "utf8").catch(() => fail("ACCESS_TOKEN_UNAVAILABLE"));
   const token = tokenFileValue.trim();
   if (Buffer.byteLength(tokenFileValue, "utf8") === 0 || Buffer.byteLength(tokenFileValue, "utf8") > MAX_TOKEN_BYTES || token.length === 0) fail("ACCESS_TOKEN_INVALID");
 

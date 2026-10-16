@@ -112,7 +112,7 @@ def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=
                 or receipt.get('original', {}).get('consumerSha256') != hashlib.sha256(consumer_path.read_bytes()).hexdigest()
                 or receipt.get('operationId') != state.get('operationId')
                 or receipt.get('namespace') != installed_config['environment']['namespace']
-                or receipt.get('repository') != expected_config['consumer']['repository']):
+                or receipt.get('repository') != expected_config['environment'].get('repository', expected_config['consumer'].get('repository'))):
             raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
     return release.name
 

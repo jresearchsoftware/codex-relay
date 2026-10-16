@@ -176,7 +176,7 @@
         - '{{ relay_reviewer_activation_marker }}'
         - '{{ relay_reviewer_recovery_off_marker }}'
         - '{{ relay_writer_helper_path }}'
-        - '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs'
+        - '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'
         - '{{ relay_codex_launcher_path }}'
         - '{{ relay_production_local_apply_helper_path }}'
         - '{{ relay_production_local_apply_sudoers_file }}'

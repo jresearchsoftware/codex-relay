@@ -30,20 +30,26 @@ def require(value, code):
 
 
 def pool_contract(config):
-    from config import execution_slot_label, general_pool_label
+    from config import execution_slot_label, general_pool_label, deployment_repository, configured_repositories
     consumer, environment = config['consumer'], config['environment']
     general = environment['generalRunner']
     name = general['name']
+    repository = deployment_repository(config)
+    repositories = configured_repositories(config)
     return {'version': 1, 'name': name, 'runnerUser': general['user'],
-            'organization': consumer['repository'].split('/')[0], 'group': general['group'],
+            'organization': repository.split('/')[0], 'group': general['group'],
             'appId': general['poolApp']['appId'], 'installationId': general['poolApp']['installationId'],
             'desiredCapacity': consumer['generalRunnerPool']['desiredCapacity'],
-            'repository': consumer['repository'], 'namespace': environment['namespace'],
+            'repository': repository, 'repositories': repositories, 'namespace': environment['namespace'],
             'admission': '/opt/' + environment['namespace'] + '/relay-admission',
             'readiness': '/opt/' + environment['namespace'] + '/relay-reviewer-readiness',
-            'workflowRefs': [consumer['repository'] + '/' + consumer[key]
+            'workflowRefs': [repository + '/' + consumer[key]
                              + '@refs/heads/' + consumer['baseBranch']
                              for key in ['routingWorkflow', 'recoveryWorkflow']],
+            'workflowRefsByRepository': {target: [target + '/' + consumer[key]
+                                                + '@refs/heads/' + consumer['baseBranch']
+                                                for key in ['routingWorkflow', 'recoveryWorkflow']]
+                                         for target in repositories},
             'label': general_pool_label(config),
             'members': [{'id': slot['id'], 'name': slot['runnerName'],
                          'label': execution_slot_label(config, slot),
@@ -154,7 +160,7 @@ class GitHub:
         repositories = self.pages('/orgs/' + self.organization + '/actions/runner-groups/'
                                  + str(group['id']) + '/repositories', 'repositories')
         selected = [repository.get('full_name') for repository in repositories]
-        require(contract['repository'] in selected,
+        require(set(contract.get('repositories', [contract['repository']])) <= set(selected),
                 'GROUP_REPOSITORY_UNPROVEN')
         require(all(isinstance(repository, str) and repository in eligible for repository in selected),
                 'GROUP_ELIGIBLE_REPOSITORIES_UNPROVEN')
@@ -378,9 +384,10 @@ def reconcile(contract, state_store, github, host):
             or state['desiredCapacity'] == contract['desiredCapacity'], 'DESIRED_CAPACITY_CONFLICT')
     group_id = github.qualify(contract)
     consumer_binding = {'namespace': contract['namespace'], 'admission': contract['admission']}
-    require(state['consumers'].get(contract['repository'], consumer_binding) == consumer_binding,
-            'CONSUMER_NAMESPACE_CONFLICT')
-    state['consumers'][contract['repository']] = consumer_binding
+    for repository in contract.get('repositories', [contract['repository']]):
+        require(state['consumers'].get(repository, consumer_binding) == consumer_binding,
+                'CONSUMER_NAMESPACE_CONFLICT')
+        state['consumers'][repository] = consumer_binding
     state['desiredCapacity'] = contract['desiredCapacity']
     state_store.write(state)
 

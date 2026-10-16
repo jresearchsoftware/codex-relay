@@ -27,7 +27,7 @@
       "store": "{{ relay_diagnostics_store_path }}",
       "stateOwner": "trusted-production-operator"
     },
-    "workerEntrypoint": "{{ relay_install_root }}/current/reviewed-source/controller/src/codex-dispatch.mjs",
+    "workerEntrypoint": "{{ relay_install_root }}/current/reviewed-source/controller/src/codex-dispatch-entrypoint.mjs",
     "writerCredentialBoundary": "root-only-github-app-private-key-short-lived-installation-tokens",
     "reviewerCredentialBoundary": "separate-reviewer-service-identity",
     "credentialValues": "never-rendered-by-ansible",

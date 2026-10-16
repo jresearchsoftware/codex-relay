@@ -4,7 +4,11 @@
   "validationNames": {{ relay_validation_names | to_json }},
 {% endif %}
   "validationWorkflow": {{ relay_validation_workflow | to_json }},
+{% if relay_github_repositories is defined %}
+  "repositories": {{ relay_github_repositories | to_json }},
+{% else %}
   "repository": {{ (relay_github_repository) | to_json }},
+{% endif %}
   "owner": {{ (relay_owner_actor) | to_json }},
   "baseBranch": {{ (relay_github_base_branch) | to_json }},
   "taskBranchPrefix": {{ (relay_task_branch_prefix) | to_json }},
@@ -36,6 +40,9 @@
 {% endif %}
   },
   "runtimeUser": {{ (relay_codex_user) | to_json }},
+{% if relay_repository_runtime_users is defined %}
+  "repositoryRuntimeUsers": {{ relay_repository_runtime_users | to_json }},
+{% endif %}
 {% if relay_general_runner_pool is defined %}
   "generalRunnerPool": {"desiredCapacity": {{ relay_general_runner_pool.desiredCapacity }}},
 {% endif %}

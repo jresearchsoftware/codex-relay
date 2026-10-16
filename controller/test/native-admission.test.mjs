@@ -35,7 +35,7 @@ test('a new native manual admission derives its next Step from prior Writer admi
   const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true,
     beforeAdmission: async ({ issue, run, store, api }) => {
       issue.labels = [{ name: 'step-900' }, { name: 'codex-ready-manual' }];
-      const prior = { version: 2, issueNumber: 42, target: 'issue', number: 42, route: 'manual', step: 4, runId: 98, attemptId: 'run-98' };
+      const prior = { version: 2, repository: run.repository.full_name, issueNumber: 42, target: 'issue', number: 42, route: 'manual', step: 4, runId: 98, attemptId: 'run-98' };
       await store.put(98, { envelope: prior, outcome: { status: 'BLOCKED' } });
       // Prior command completion is independently read through the existing run adapter.
       api.getRun = async id => structuredClone(id === 98 ? { ...run, id, status: 'completed', updated_at: '2026-09-04T11:59:00Z' } : run);

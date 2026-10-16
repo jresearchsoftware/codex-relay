@@ -258,7 +258,7 @@ def _runner(probe, config, general, slot=None):
             raise ValueError('partial-registration')
         probe.metadata(runner_root + '/.credentials', uid=uid, gid=gid, modes={0o600}, leaf_parent_uid=uid)
         marker = _json(raw.decode('utf-8-sig'))
-        repository = config['consumer']['repository']
+        repository = config['environment'].get('repository', config['consumer'].get('repository'))
         url = 'https://github.com/' + (repository.split('/')[0] if scope == 'organization' else repository)
         if (marker.get('gitHubUrl') != url or marker.get('agentName') != runner['name']
                 or marker.get('workFolder') != work_root
@@ -289,7 +289,7 @@ def _managed_pool(probe, config):
         if state is not None:
             binding = state['binding']
             expected = {'version': 1, 'name': general['name'], 'runnerUser': general['user'],
-                        'organization': config['consumer']['repository'].split('/')[0],
+                        'organization': config['environment'].get('repository', config['consumer'].get('repository')).split('/')[0],
                         'group': general['group'], 'appId': general['poolApp']['appId'],
                         'installationId': general['poolApp']['installationId']}
             if any(binding.get(key) != value for key, value in expected.items()):
@@ -454,7 +454,8 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
     blockers.extend('runner-' + name + '-ambiguous' for name, row in runners.items() if row['status'] == 'invalid')
     blockers.extend('protected-state-' + row['name'] + '-invalid' for row in protected if row['status'] == 'invalid')
     consumer = config['consumer']
-    repository, organization = consumer['repository'], consumer['repository'].split('/')[0]
+    repository = config['environment'].get('repository', consumer.get('repository'))
+    organization = repository.split('/')[0]
     workflow_ref = '@refs/heads/' + consumer['baseBranch']
     production_workflow = repository + '/.github/workflows/manual-main-production-deploy.yml' + workflow_ref
     general_workflows = [repository + '/' + consumer[field] + workflow_ref

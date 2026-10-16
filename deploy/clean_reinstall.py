@@ -1179,6 +1179,16 @@ def recovery_admission_program(config, *, source_base=None):
     namespace = config['environment']['namespace']
     require(re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace), 'NAMESPACE')
     base = source_base or '/opt/' + namespace + '/current/reviewed-source/'
+    if 'repositories' in config.get('consumer', {}):
+        # Current plural installations own one aggregate lifecycle gate. Their
+        # qualified installed graph resolves every repository's publication and
+        # journal roots; reconstructing a selected-repository store would miss
+        # another repository's unresolved attempt.
+        return ('import {assertRootConsumer} from ' + json.dumps(base + 'consumer/consumer-config.mjs') + ';\n'
+                + 'import {installedAdmissionControl} from ' + json.dumps(base + 'controller/src/admission-cli.mjs') + ';\n'
+                + 'assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n'
+                + 'const admission = installedAdmissionControl();\n'
+                + "process.stdout.write(JSON.stringify(await admission.status()) + '\\n');\n")
     source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
                                ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
@@ -1218,7 +1228,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '        source += "process.stdout.write(JSON.stringify(await admission[" + json.dumps(method) + "](" + json.dumps(options) + ")));"\n'
         program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
         program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
-        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", source], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
+        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", source], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "RELAY_REPOSITORY": value["config"]["environment"].get("repository", value["config"]["consumer"].get("repository")), "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
         program += '        require(result.returncode == 0, "LIFECYCLE_ADMISSION_UNAVAILABLE")\n'
         program += '        return _recovery_json(result.stdout)\n'
         pool_arguments = ', operation_id=value["operation_id"], admission_probe=pool_admission_probe'
@@ -1244,7 +1254,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '    def candidate_admission_probe():\n'
         program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
         program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
-        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", ' + repr(admission_source) + '], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
+        program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", ' + repr(admission_source) + '], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "RELAY_REPOSITORY": value["config"]["environment"].get("repository", value["config"]["consumer"].get("repository")), "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
         program += '        require(result.returncode == 0, "RECOVERY_ADMISSION_UNAVAILABLE")\n'
         program += '        return _recovery_json(result.stdout)\n'
         program += '    result = recover(value["config"], value["revision"], admission_probe=candidate_admission_probe)\n'

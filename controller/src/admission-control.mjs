@@ -4,7 +4,7 @@ import { dirname, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { digest, exactSha, fail, positive, VERSION } from './execution-contract.mjs';
+import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
 const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', 'recovery-required']);
@@ -109,7 +109,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
   }
   async function contained(record) {
     const e = record.envelope;
-    const saved = await journal.get(e.runId);
+    const saved = await journal.get(e.runId, e.repository);
     if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)) return null;
     if (!terminalMatches(record, saved) || record.publicationIntent || !prCreationResolved(record) || record.commentIntent) return null;
     if (saved.execution === null) return { child: 'not_started', containment: 'not_required' };
@@ -128,12 +128,12 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     const active = []; const unknown = [];
     for (const record of await store.all()) {
       const e = validRecord(record);
-      if (task !== null && e.issueNumber !== task) continue;
+      if (task !== null && (e.issueNumber !== task || (e.repository !== undefined && e.repository !== REPOSITORY))) continue;
       if (slot !== null && (e.executionSlot ?? 'primary') !== slot) continue;
       if (e.route !== 'auto' || record.admissionBlock) continue;
       const recovery = record.prepublicationRecovery;
       if (recovery) {
-        const saved = await journal.get(e.runId);
+        const saved = await journal.get(e.runId, e.repository);
         // The historic BLOCKED controller receipt cannot hide a pending or
         // uncertain new publication. Completion has its own exact evidence.
         if (recovery.complete !== true || recovery.handoffProven !== true

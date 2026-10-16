@@ -58,13 +58,13 @@ async function readBoundedStdin() {
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { fail("DIAGNOSTIC_REQUEST_INVALID", "Diagnostic request is not valid JSON"); }
 }
 
-async function main() {
+export async function main(selectedRequest) {
   if (process.argv.length === 3 && process.argv[2] === '--check-runtime') {
     process.stdout.write('DIAGNOSTICS_RUNTIME_READY\n'); return;
   }
   const config = JSON.parse(await readFile(DIAGNOSTICS_CONFIG_PATH, "utf8"));
   if (config.schemaVersion !== "1.0" || !["normal", "debug"].includes(config.mode)) fail("DIAGNOSTICS_CONFIG_INVALID", "Diagnostics configuration is invalid");
-  const result = await writeDiagnosticBundle(await readBoundedStdin(), { root: STORE_ROOT, retentionCount: Number(config.retentionCount) || RETENTION_COUNT, mode: config.mode });
+  const result = await writeDiagnosticBundle(selectedRequest ?? await readBoundedStdin(), { root: STORE_ROOT, retentionCount: Number(config.retentionCount) || RETENTION_COUNT, mode: config.mode });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

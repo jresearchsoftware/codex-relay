@@ -209,7 +209,7 @@ relay_writer_helper_path: '{{ relay_install_root }}/relay-writer-controller'
 # The fixed root-owned wrapper follows the root-owned current release. This
 # keeps a release transition atomic for Writer without embedding an older
 # concrete release path in the wrapper.
-relay_writer_helper_release_path: '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs'
+relay_writer_helper_release_path: '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'
 relay_codex_dispatch_path: '{{ relay_install_root }}/relay-codex-dispatch'
 relay_codex_dispatch_release_path: '{{ relay_install_root }}/current/bin/relay-codex-dispatch.mjs'
 relay_codex_user: relay-codex

@@ -111,12 +111,16 @@ def _peer_refs(config, namespace, contract):
             and isinstance(pool, dict) and set(pool) == {'desiredCapacity'}
             and type(pool['desiredCapacity']) is int and 1 <= pool['desiredCapacity'] <= 32
             and isinstance(app, dict), 'ELIGIBILITY_PROFILE_UNPROVEN')
-    repository = consumer.get('repository')
-    require(_repository(repository), 'ELIGIBILITY_REPOSITORY_UNPROVEN')
+    repositories = consumer.get('repositories', [consumer.get('repository')])
+    require(isinstance(repositories, list) and bool(repositories)
+            and all(_repository(value) for value in repositories)
+            and len(set(repositories)) == len(repositories)
+            and not ('repository' in consumer and 'repositories' in consumer),
+            'ELIGIBILITY_REPOSITORY_UNPROVEN')
     require(general.get('scope') == 'organization'
             and general.get('user') == contract['runnerUser']
             and general.get('group') == contract['group']
-            and repository.split('/')[0] == contract['organization']
+            and all(repository.split('/')[0] == contract['organization'] for repository in repositories)
             and app.get('appId') == contract['appId']
             and app.get('installationId') == contract['installationId'],
             'ELIGIBILITY_PROFILE_CONFLICT')
@@ -126,8 +130,8 @@ def _peer_refs(config, namespace, contract):
     require(_branch(branch) and all(isinstance(value, str) and WORKFLOW.fullmatch(value)
                                    for value in workflows)
             and len(set(workflows)) == 3, 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
-    return repository, [repository + '/' + workflow + '@refs/heads/' + branch
-                        for workflow in workflows[:2]]
+    return {repository: [repository + '/' + workflow + '@refs/heads/' + branch
+                         for workflow in workflows[:2]] for repository in repositories}
 
 
 def _peer(opt, namespace, contract, owner_uid):
@@ -200,20 +204,25 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
     """
     require(NAMESPACE.fullmatch(contract['namespace']) is not None
             and _repository(contract['repository']), 'ELIGIBILITY_CONTRACT_INVALID')
-    refs = contract['workflowRefs']
-    require(isinstance(refs, list) and len(refs) == 2
-            and all(isinstance(value, str) for value in refs) and len(set(refs)) == 2,
-            'ELIGIBILITY_CONTRACT_INVALID')
-    branches = []
-    for value in refs:
-        prefix = contract['repository'] + '/'
-        require(value.startswith(prefix) and '@refs/heads/' in value,
+    targets = contract.get('repositories', [contract['repository']])
+    result = contract.get('workflowRefsByRepository', {contract['repository']: contract['workflowRefs']})
+    require(isinstance(targets, list) and targets and set(result) == set(targets)
+            and contract['repository'] in result, 'ELIGIBILITY_CONTRACT_INVALID')
+    for repository, refs in result.items():
+        require(_repository(repository) and repository.split('/')[0] == contract['organization']
+                and isinstance(refs, list) and len(refs) == 2
+                and all(isinstance(value, str) for value in refs) and len(set(refs)) == 2,
                 'ELIGIBILITY_CONTRACT_INVALID')
-        workflow, branch = value[len(prefix):].rsplit('@refs/heads/', 1)
-        require(WORKFLOW.fullmatch(workflow) and _branch(branch), 'ELIGIBILITY_CONTRACT_INVALID')
-        branches.append(branch)
-    require(len(set(branches)) == 1, 'ELIGIBILITY_CONTRACT_INVALID')
-    result = {contract['repository']: refs[:]}
+        branches = []
+        for value in refs:
+            prefix = repository + '/'
+            require(value.startswith(prefix) and '@refs/heads/' in value,
+                    'ELIGIBILITY_CONTRACT_INVALID')
+            workflow, branch = value[len(prefix):].rsplit('@refs/heads/', 1)
+            require(WORKFLOW.fullmatch(workflow) and _branch(branch), 'ELIGIBILITY_CONTRACT_INVALID')
+            branches.append(branch)
+        require(len(set(branches)) == 1, 'ELIGIBILITY_CONTRACT_INVALID')
+    result = {repository: refs[:] for repository, refs in result.items()}
     with ExitStack() as stack:
         descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         stack.callback(os.close, descriptor)
@@ -235,8 +244,8 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             peer = _peer(opt, namespace, contract, owner_uid)
             if peer is None:
                 continue
-            repository, workflows = peer
-            require(repository not in result or set(result[repository]) == set(workflows),
-                    'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
-            result[repository] = workflows
+            for repository, workflows in peer.items():
+                require(repository not in result or set(result[repository]) == set(workflows),
+                        'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
+                result[repository] = workflows
     return result

@@ -14,15 +14,19 @@ import stat
 import subprocess
 
 from managed_pool import Host, State, binding, pool_contract, require
+from config import deployment_repository
 from serial_pool_host import SerialPoolHost, SerialPoolGitHub
 from serial_pool_transition import ProtectedFiles, encoded, inspect, prepare, advance, write_new_gate
 
 
-def _node(source, consumer_path, code, payload=None):
+def _node(source, consumer_path, code, payload=None, repository=None):
+    environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
+                   'RELAY_CONSUMER_CONFIG': consumer_path}
+    if repository is not None:
+        environment['RELAY_REPOSITORY'] = repository
     result = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', code],
         input=None if payload is None else json.dumps(payload), text=True,
-        env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
-             'RELAY_CONSUMER_CONFIG': consumer_path}, cwd=source,
+        env=environment, cwd=source,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
     require(result.returncode == 0, 'SERIAL_TRANSITION_ORIGINAL_READER_UNPROVEN')
     try:
@@ -48,7 +52,7 @@ def current_consumer_digest(config, source):
     ProtectedFiles().read(consumer_path, modes={0o644})
     return _node(source, consumer_path,
         'import {CONSUMER_DIGEST} from "./consumer/consumer.mjs";'
-        'console.log(JSON.stringify(CONSUMER_DIGEST));')
+        'console.log(JSON.stringify(CONSUMER_DIGEST));', repository=deployment_repository(config))
 
 
 def original_installation(target):
@@ -72,7 +76,7 @@ def original_installation(target):
         release = '/opt/' + namespace + '/releases/' + revision
     else:
         receipt = json.loads(receipt_raw)
-        require(receipt.get('namespace') == namespace and receipt.get('repository') == target['consumer']['repository'],
+        require(receipt.get('namespace') == namespace and receipt.get('repository') == deployment_repository(target),
                 'SERIAL_TRANSITION_RECEIPT_BINDING_INVALID')
         revision = receipt['original']['revision']
         require(re.fullmatch('[0-9a-f]{40}', revision), 'SERIAL_TRANSITION_CURRENT_UNPROVEN')
@@ -93,7 +97,7 @@ def original_installation(target):
     manifest = json.loads(manifest_raw)
     identity = json.loads(files.read(release + '/reviewed-source/.relay-source.json', modes={0o600, 0o640, 0o644}))
     require(original['environment']['namespace'] == namespace
-            and original['consumer']['repository'] == target['consumer']['repository']
+            and deployment_repository(original) == deployment_repository(target)
             and manifest.get('deploymentConfigSha256') == hashlib.sha256(raw).hexdigest()
             and all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision'])
             and identity.get('revision') == revision and identity.get('tree') == manifest.get('gitTree')
@@ -135,7 +139,8 @@ def original_installation(target):
         'if(r.envelope.consumerDigest!==CONSUMER_DIGEST)throw Error();}'
         'console.log(JSON.stringify({consumerDigest:CONSUMER_DIGEST,'
         'runs:records.map(r=>({runId:r.envelope.runId,attemptId:r.envelope.attemptId,'
-        'envelopeSha256:digest(r.envelope)})).sort((a,b)=>a.runId-b.runId)}));')
+        'envelopeSha256:digest(r.envelope)})).sort((a,b)=>a.runId-b.runId)}));',
+        repository=deployment_repository(original))
     evidence.update(revision=revision, consumerPath=consumer_path, sourceRoot=source,
         manifestPath=manifest_path, configPath=config_path,
         runnerUid=pwd.getpwnam(original['environment']['generalRunner']['user']).pw_uid)
@@ -233,7 +238,7 @@ def current_source(config):
     source = release + '/reviewed-source'
     identity = json.loads(files.read(source + '/.relay-source.json', modes={0o600, 0o640, 0o644}))
     require(installed['environment']['namespace'] == namespace
-            and installed['consumer']['repository'] == config['consumer']['repository']
+            and deployment_repository(installed) == deployment_repository(config)
             and manifest.get('deploymentConfigSha256') == hashlib.sha256(raw).hexdigest()
             and all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision'])
             and identity.get('revision') == revision and identity.get('tree') == manifest.get('gitTree')
@@ -272,7 +277,8 @@ def target_installed(config, revision, target_digest):
     observed = _node(expected + '/reviewed-source', '/etc/' + namespace + '/consumer.json',
         'import {CONSUMER_DIGEST} from "./consumer/consumer.mjs";'
         'import {installedAdmissionControl} from "./controller/src/admission-cli.mjs";'
-        'console.log(JSON.stringify({digest:CONSUMER_DIGEST,gate:await installedAdmissionControl().read()}));')
+        'console.log(JSON.stringify({digest:CONSUMER_DIGEST,gate:await installedAdmissionControl().read()}));',
+        repository=deployment_repository(config))
     require(observed['digest'] == target_digest, 'SERIAL_TRANSITION_TARGET_INSTALLATION_UNPROVEN')
     return True
 
@@ -323,7 +329,8 @@ def preflight(config, github, target_digest):
             installed_source = current_source(config)
             validated_gate = _node(installed_source, '/etc/' + namespace + '/consumer.json',
                 'import {installedAdmissionControl} from "./controller/src/admission-cli.mjs";'
-                'console.log(JSON.stringify(await installedAdmissionControl().read()));')
+                'console.log(JSON.stringify(await installedAdmissionControl().read()));',
+                repository=deployment_repository(config))
             require(validated_gate == new_gate and new_gate.get('consumerDigest') == target_digest,
                     'SERIAL_TRANSITION_NEW_GATE_UNPROVEN')
             # Later qualified lifecycle operations have their own UUID/target.

@@ -70,9 +70,11 @@ for (const remediation of [false, true]) test(`manual ready label makes a copyab
   assert.ok(f.comments[0].body.includes(`Codex effort: ${f.envelope.profile.effort}`));
   assert.ok(f.comments[0].body.includes(`Subagents: ${remediation ? 'Off' : 'On'}`));
   assert.match(f.comments[0].body, /Task 42 — Step 5/);
-  assert.match(f.comments[0].body, /```text[\s\S]*Progress-bounded execution[\s\S]*```/);
-  assert.match(f.comments[0].body, /does not authorize blind Relay retries/);
-  assert.match(f.comments[0].body, /Subagent use is discretionary and evidence-driven within the resolved Subagents permission/);
+  const prompt = /```text\n([\s\S]*?)\n```/.exec(f.comments[0].body)[1];
+  assert.ok(prompt.split('\n').length <= 15);
+  assert.match(prompt, /Read AGENTS.md, the current canonical authority/);
+  assert.match(prompt, /Required starting head:/);
+  assert.doesNotMatch(prompt, /Progress-bounded execution|SHA-256|Selected trusted Decisions/);
   assert.equal(currentStep(f.issue.labels), 5);
 });
 

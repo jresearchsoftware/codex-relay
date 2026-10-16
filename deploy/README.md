@@ -24,6 +24,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `target` | Host, root SSH transport, existing key reference and known host/key fingerprints |
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
+| `environment.repository` | Required lifecycle/Production Runner anchor for plural `consumer.repositories`; must be a configured target. Singleton inputs keep their existing repository |
 | `environment.generalRunner.scope`, `environment.generalRunner.group` | Optional general-runner registration scope and its dedicated organization runner group; omitted scope preserves repository registration |
 | `environment.localApply` | Either `{ "configPath": "deploy/relay.json" }` for a versioned consumer checkout, or `{ "source": "installed" }` for protected self-dogfood configuration |
 | `environment.compatibilityLinks` | Optional old invocation paths retained during a consumer's workflow migration |
@@ -31,7 +32,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
 | `environment.tls.acme` | Optional contact and HTTP-01 webroot for the admitted shared Docker ingress |
 | `environment.reviewerCredential.sourceKeyFile` | Optional existing owner-provisioned Reviewer App private-key reference |
-| `environment.reviewerRepositories` | Optional nonempty Reviewer target list; omitted means only `consumer.repository`. Writer and runner bindings remain `consumer.repository` |
+| `environment.reviewerRepositories` | Optional nonempty Reviewer target list; omitted means the complete configured Writer target list |
 | `environment.writerCredential.sourceKeyFile` | Optional existing owner-provisioned Writer App private-key reference |
 | `environment.codexCredential.sourceTokenFile` | Optional existing owner-provisioned Codex access-token reference |
 
@@ -82,8 +83,30 @@ default, with separate checkout, HOME, CODEX_HOME, XDG/cache/tmp, diagnostics,
 journal and process lifecycle. A separately configured repository can select a
 different protected `runtimeUser` while using the same physical pool. Task and
 PR content cannot choose that identity. Group overrides are not required.
-This preserves the existing one-consumer-per-Writer contract; it does not add
-generalized multi-repository Writer selection or final organization settings.
+One Writer installation can instead configure `consumer.repositories` as a
+nonempty list of repository names, mutually exclusive with `consumer.repository`.
+Its App/installation, owner, controller settings, credentials, protected state
+and managed pool remain shared. `environment.repository` explicitly selects
+the existing lifecycle workflow and Production Runner provenance anchor; it
+does not select a worker target. The trusted routing/recovery workflow sets
+`RELAY_REPOSITORY` to its own configured repository. Every target uses that
+repository's Task/PR authority and separate work, attempt and diagnostics roots.
+
+Optional `consumer.repositoryRuntimeUsers` maps configured repository names to
+trusted non-root runtime users; omitted entries retain `consumer.runtimeUser`.
+Installation provisions the configured identities and private copies of the
+same established Codex token using the existing credential staging contract.
+The fixed launcher verifies its actual Unix user against the repository work
+root. Task/PR content cannot choose users or credential paths. This does not
+allocate extra runner capacity or create per-repository Apps or policy.
+
+Project each target's routing/recovery workflows with the ordinary
+`workflow-project` or `workflow-verify` command and an explicit
+`--repository owner/repository`. Omitting this option retains the protected
+`environment.repository` anchor. Projection manifests bind the selected target;
+the installed consumer JSON and digest retain the complete shared configuration.
+These source interfaces do not deploy, change GitHub App permissions or runner
+ACLs, publish workflows, or establish native multi-repository qualification.
 
 The installer derives a stable internal resource layout of at most 32 slots;
 these are paths and fixed helper bindings, not 32 registered runners. Only the
@@ -220,8 +243,9 @@ a new slot. Optional parallel workers additionally require qualified bubblewrap
 user/PID namespaces under each actual runtime UID. Shared-host qualification must
 prove distinct installed namespaces, Unix identities, work access, process
 visibility, credentials, services and finite resource capacity across consumers.
-Separate repository installations retain separate Writer locks and claim roots;
-this does not introduce a multi-repository Writer.
+Separate installations retain separate Writer locks and claim roots. Targets
+within one plural Writer configuration share its installation lock and claim
+root; repository-specific publication records preserve their own authority.
 
 Use the existing `general-runner-register` and `general-runner-enable` phases
 with `--execution-slot <id>` for an additional configured slot; omission selects
@@ -330,7 +354,7 @@ rejects this capability-specific operation.
 
 Reviewer retains its own App credential boundary. Only the root service reads
 the separate Writer credentials and protected attempt store. Multi-repository
-Reviewer configuration does not expand Writer beyond `consumer.repository`.
+Reviewer configuration does not expand the explicit Writer repository allowlist.
 The public MCP envelope is `{repository, task, run_id, result}` with positive
 integer Task/run IDs and a complete canonical Outcome. Reviewer bounds serialized
 arguments to 60,000 bytes within its existing 62,000-byte JSON-RPC request limit;

@@ -193,7 +193,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 '#!/usr/bin/env bash\n'
                 'test "$#" -eq 0\n'
                 '/usr/bin/env -i RELAY_WRITER_CLAIM_ROOT=/var/lib/claims \\\n'
-                f'  {install_root.as_posix()}/current/reviewed-source/controller/src/privileged-writer-helper.mjs\n'
+                f'  {install_root.as_posix()}/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs\n'
             )
             writer_path = fixture_root / "writer-helper"
             launcher_path = fixture_root / "codex-launcher"
@@ -226,7 +226,7 @@ class DeploymentCheckTests(unittest.TestCase):
                 "{{ relay_reviewer_activation_marker }}": {"exists": False},
                 "{{ relay_reviewer_recovery_off_marker }}": {"exists": False},
                 "{{ relay_writer_helper_path }}": regular("0750"),
-                "{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs": regular("0750"),
+                "{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs": regular("0750"),
                 "{{ relay_codex_launcher_path }}": regular("0755"),
                 "{{ relay_production_local_apply_helper_path }}": regular("0750"),
                 "{{ relay_production_local_apply_sudoers_file }}": regular("0440"),

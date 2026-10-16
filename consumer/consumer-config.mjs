@@ -10,25 +10,37 @@ export const safeBranch = v => text(v, /^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$/)
   && v.split('/').every(p => p && !p.startsWith('.') && !p.endsWith('.lock')) && !v.includes('..') && !v.endsWith('.');
 const path = v => text(v, /^\/[A-Za-z0-9_./-]+$/) && v.split('/').slice(1).every(p => p && p !== '.' && p !== '..');
 const unixIdentity = v => text(v, /^[a-z_][a-z0-9_-]{0,31}$/) && v !== 'root';
+const repositoryName = value => {
+  const parts = typeof value === 'string' ? value.split('/') : [];
+  return parts.length === 2 && login(parts[0]) && text(parts[1], /^[A-Za-z0-9_.-]{1,100}$/)
+    && !['.', '..'].includes(parts[1]);
+};
 export const EXECUTION_PATH_NAMES = Object.freeze(['workRoot', 'attemptRoot', 'dispatch', 'launcher', 'diagnosticsConfig', 'diagnosticsStore', 'diagnosticsRoot']);
+const REPOSITORY_PATH_NAMES = Object.freeze(['workRoot', 'attemptRoot', 'diagnosticsRoot']);
 const overlaps = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).length === names.length && names.every(k => Object.hasOwn(v, k));
 function freeze(v) { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; }
 
 export function validateConsumer(c) {
-  const { validationNames, executionSlots, generalRunnerPool, ...required } = c ?? {};
-  if (!keys(required, ['version', 'repository', 'owner', 'baseBranch', 'taskBranchPrefix', 'routingWorkflow', 'recoveryWorkflow', 'validationWorkflow',
+  const { validationNames, executionSlots, generalRunnerPool, repositories, repositoryRuntimeUsers, ...required } = c ?? {};
+  const multiple = Object.hasOwn(c ?? {}, 'repositories');
+  if (!keys(required, ['version', ...(multiple ? [] : ['repository']), 'owner', 'baseBranch', 'taskBranchPrefix', 'routingWorkflow', 'recoveryWorkflow', 'validationWorkflow',
     'writerApp', 'reviewerApp', 'writerIdentity', 'remediationIdentity', 'defaultProfile', 'paths', 'runtimeUser'])) reject();
+  if (multiple && (!Array.isArray(repositories) || repositories.length === 0
+    || repositories.some(value => !repositoryName(value))
+    || new Set(repositories.map(value => value.toLowerCase())).size !== repositories.length)) reject();
+  if (!multiple && !repositoryName(c.repository)) reject();
+  if (Object.hasOwn(c, 'repositoryRuntimeUsers') && (!multiple || !repositoryRuntimeUsers
+    || typeof repositoryRuntimeUsers !== 'object' || Array.isArray(repositoryRuntimeUsers)
+    || Object.entries(repositoryRuntimeUsers).some(([repository, user]) => !repositories.includes(repository) || !unixIdentity(user)))) reject();
   if (Object.hasOwn(c, 'validationNames') && (!Array.isArray(validationNames) || validationNames.length > 32
     || new Set(validationNames).size !== validationNames.length
     || validationNames.some(name => !text(name, /^[a-z][a-z0-9-]{0,63}$/)))) reject();
   if (Object.hasOwn(c, 'generalRunnerPool') && (!keys(generalRunnerPool, ['desiredCapacity'])
     || !Number.isInteger(generalRunnerPool.desiredCapacity) || generalRunnerPool.desiredCapacity < 1
     || generalRunnerPool.desiredCapacity > 32 || !Object.hasOwn(c, 'executionSlots'))) reject();
-  const repo = typeof c.repository === 'string' ? c.repository.split('/') : [];
-  if (c.version !== 1 || repo.length !== 2 || !login(repo[0]) || !text(repo[1], /^[A-Za-z0-9_.-]{1,100}$/)
-    || ['.', '..'].includes(repo[1]) || !login(c.owner) || !safeBranch(c.baseBranch)
+  if (c.version !== 1 || !login(c.owner) || !safeBranch(c.baseBranch)
     || !text(c.taskBranchPrefix, /^[A-Za-z0-9][A-Za-z0-9_/-]*\/$/) || !safeBranch(c.taskBranchPrefix + 'task-1')
     || c.baseBranch.startsWith(c.taskBranchPrefix) || (!text(c.runtimeUser, /^[a-z_][a-z0-9_-]{0,31}$/) || c.runtimeUser === 'root')) reject();
   for (const workflow of [c.routingWorkflow, c.recoveryWorkflow, c.validationWorkflow]) {
@@ -54,7 +66,7 @@ export function validateConsumer(c) {
     'diagnosticsStore', 'diagnosticsRoot', 'credentialEnv', 'credentialKeyFile', 'claimRoot'])
     || Object.values(c.paths).some(v => !path(v)) || new Set(Object.values(c.paths)).size !== Object.keys(c.paths).length) reject();
   if (Object.hasOwn(c, 'executionSlots')) {
-    // One repository snapshot with bounded resources and separate attempt roots.
+    // One installation snapshot with bounded resources and separate attempt roots.
     // Managed pool instances may share trusted runner and non-root worker UIDs.
     // The primary slot retains all legacy locations for old attempt recovery.
     if (!Array.isArray(executionSlots) || executionSlots.length < 1 || executionSlots.length > 32) reject();
@@ -97,6 +109,7 @@ export function validateConsumer(c) {
   if (/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}|PRIVATE KEY/.test(JSON.stringify(c))) reject();
   const resolved = structuredClone(c);
   resolved.defaultProfile.effort = resolveExecutionDefaults(profile).effort;
+  if (multiple) for (const repository of repositories) validateConsumer(selectRepositoryConsumer(resolved, repository));
   return freeze(resolved);
 }
 
@@ -144,6 +157,28 @@ export function assertRootConsumer(pathname) {
 // Every runtime identity, helper, path and repository binding remains hashed.
 export const consumerDigest = c => createHash('sha256').update(JSON.stringify(c.generalRunnerPool
   ? { ...c, generalRunnerPool: {} } : c)).digest('hex');
+
+export const configuredRepositories = c => c.repositories ?? [c.repository];
+
+// Repository selection changes only the process-local resource view. The
+// complete installation remains the immutable digest and shared lock boundary.
+export function selectRepositoryConsumer(c, repository) {
+  if (!c.repositories) {
+    if (repository !== undefined && repository !== c.repository) reject();
+    return c;
+  }
+  if (!c.repositories.includes(repository)) reject();
+  const { repositories, repositoryRuntimeUsers, ...shared } = c;
+  const runtimeUser = repositoryRuntimeUsers?.[repository] ?? c.runtimeUser;
+  const pathsForRepository = paths => ({ ...paths, ...Object.fromEntries(REPOSITORY_PATH_NAMES
+    .map(name => [name, `${paths[name]}/repositories/${repository}`])) });
+  const selected = { ...shared, repository, runtimeUser, paths: pathsForRepository(c.paths) };
+  if (c.executionSlots) selected.executionSlots = c.executionSlots.map(slot => ({ ...slot,
+    runtimeUser: repositoryRuntimeUsers?.[repository] !== undefined && slot.runtimeUser === c.runtimeUser
+      ? runtimeUser : slot.runtimeUser,
+    paths: pathsForRepository(slot.paths) }));
+  return freeze(selected);
+}
 
 export function resolveExecutionConsumer(c, slotId) {
   if (!c.executionSlots) {

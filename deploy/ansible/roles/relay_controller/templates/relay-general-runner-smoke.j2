@@ -22,6 +22,6 @@ except Exception:
 PY
 umask 0077
 cd '{{ relay_install_root }}'
-exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' RELAY_REPOSITORY='{{ relay_github_repository }}' PATH=/usr/bin:/bin LANG=C LC_ALL=C \
   /usr/sbin/runuser -u '{{ relay_general_runner_user }}' -- /usr/bin/node \
   '{{ relay_release_root }}'/"$head"/reviewed-source/consumer-general-runner-smoke.mjs --approved-head "$head"

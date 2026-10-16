@@ -12,6 +12,7 @@ import tempfile
 import time
 
 from managed_pool import GitHub, PERMISSION, require
+from config import deployment_repository
 
 
 OWNER_POOL_SOURCES = ['managed_pool', 'pool_eligibility', 'config', 'pool_migration',
@@ -259,7 +260,7 @@ def installation_authorization(config, api_factory=GitHub):
     signature = subprocess.run(['openssl', 'dgst', '-sha256', '-sign', str(key)], input=message,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
     require(signature.returncode == 0, 'OWNER_APP_SIGNING_FAILED')
-    organization = config['consumer']['repository'].split('/')[0]
+    organization = deployment_repository(config).split('/')[0]
     api = api_factory(message.decode() + '.' + encode(signature.stdout), organization)
     identity = api.request('GET', '/app')
     require(str(identity.get('id')) == app['appId'], 'OWNER_APP_IDENTITY_UNPROVEN')

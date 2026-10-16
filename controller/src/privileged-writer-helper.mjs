@@ -3,7 +3,7 @@ import { CONSUMER, unixUserId } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createPublicationBroker } from './publication-broker.mjs';
-import { createAttemptStore } from './attempt-store.mjs';
+import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
 import { createGithubApi } from './github-api.mjs';
 import { createGitPublisher, collectProgress } from './trusted-git.mjs';
 import { checkoutPath } from './attempt-runtime.mjs';
@@ -39,7 +39,7 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   if (request.operation === 'admit') return;
   if (!store) {
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
-    store = createAttemptStore(compatibility?.current.storeRoot ?? `${CONSUMER.paths.claimRoot}/publication-v2`);
+    store = createPublicationStore(compatibility?.current.storeRoot ?? `${CONSUMER.paths.claimRoot}/publication-v2`);
   }
   const record = await store.get(request.runId);
   if (!record) fail('ATTEMPT_NOT_ADMITTED');
@@ -66,13 +66,19 @@ export function resolveWriterDeploymentContract(env = process.env) {
   }
   return profile;
 }
-export async function main() {
+export async function main(selectedRequest) {
   if (process.argv.length !== 2 || process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
   assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);
   const deployment = resolveWriterDeploymentContract();
-  let size = 0; const chunks = [];
-  for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
-  let request; try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
+  let request = selectedRequest;
+  if (request === undefined) {
+    let size = 0; const chunks = [];
+    for await (const chunk of process.stdin) { size += chunk.length; if (size > 145 * 1024 * 1024) fail('REQUEST_TOO_LARGE'); chunks.push(chunk); }
+    try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('REQUEST_INVALID'); }
+  }
+  if (request.repository !== undefined && request.repository !== REPOSITORY) fail('ATTEMPT_REPOSITORY_MISMATCH');
+  const { repository: selectedRepository, ...operationRequest } = request;
+  request = operationRequest;
   if (request?.operation === 'manual-outcome-direct') fail('MANUAL_CAPABILITY_REQUIRED');
   const historical = await historicalProgram({ kind: 'writer', request, consumer: CONSUMER,
     consumerPath: process.env.RELAY_CONSUMER_CONFIG });
@@ -89,13 +95,13 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
   const value = await token();
   const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
   const store = compatibility ? createCompatibilityStore({ compatibility,
-    currentStore: createAttemptStore(compatibility.current.storeRoot),
+    currentStore: createPublicationStore(compatibility.current.storeRoot),
     originalStore: createAttemptStore(compatibility.original.storeRoot) })
-    : createAttemptStore(`${deployment.claimRoot}/publication-v2`);
+    : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store,
-    lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
-    admissionLifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-admission-v1`),
+    lifecycleStore: createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
+    admissionLifecycleStore: createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-admission-v1`),
     journal: createSlotJournal(store),
     publisher: createGitPublisher({ token: value, root: deployment.claimRoot }),
     // Fixed root helper, exact admitted attempt, original contained journal.

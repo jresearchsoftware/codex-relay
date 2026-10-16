@@ -18,7 +18,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL_ROOT = "/opt/codex-relay"
-HELPER_SUFFIX = "/reviewed-source/controller/src/privileged-writer-helper.mjs"
+HELPER_SUFFIX = "/reviewed-source/controller/src/privileged-writer-entrypoint.mjs"
 WRITER_BINDING_VALIDATION = ROOT / "tasks" / "production-writer-binding-validation.yml"
 
 
@@ -193,7 +193,7 @@ class ProductionWriterReleaseBindingTests(unittest.TestCase):
         self.assertIn("relay_release_root | regex_escape", self.writer_binding_validation)
         self.assertIn("relay_production_final_paths.results[8]", self.writer_binding_validation)
         self.assertIn("relay_production_final_paths.results[9]", self.writer_binding_validation)
-        self.assertIn("current/reviewed-source/controller/src/privileged-writer-helper.mjs", self.site)
+        self.assertIn("current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs", self.site)
 
     def test_post_check_uses_shared_writer_validation_without_check_mode_blocker(self):
         plays = yaml.safe_load(self.site)

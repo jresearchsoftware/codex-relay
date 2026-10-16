@@ -9,7 +9,7 @@ import ssl
 import stat
 import sys
 
-from config import loads
+from config import loads, deployment_repository
 
 
 def require(condition, code):
@@ -121,7 +121,7 @@ def verify(product_root, expected_head, expected_digest=None,
     if check_main:
         # The dispatch commit is consumer authority, independent of both the
         # pinned product and the configuration's original consumer provenance.
-        check_public_main(config['consumer']['repository'], workflow_consumer_revision)
+        check_public_main(deployment_repository(config), workflow_consumer_revision)
     protected_parents(current)
     require(stamp(current.lstat()) == stamp(binding), 'installed-current-changed')
     for path, expected in zip(paths, [source_stamp, manifest_stamp, config_stamp]):

@@ -57,6 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELAY_CONSUMER_CONFIG: /etc/@@NAMESPACE@@/consumer.json
+          RELAY_REPOSITORY: @@REPOSITORY@@
           EXPECTED_WORKFLOW_CONTRACT: "@@WORKFLOW_CONTRACT@@"
           RECOVERY_OPERATION: ${{ inputs.operation }}
           RECOVERY_RUN_ID: ${{ inputs.run_id }}

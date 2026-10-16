@@ -282,6 +282,18 @@ typed Outcome is the completion signal: automation verifies Writer identity,
 authority/admission or compatibility Request, attempt and immutable result before acting. No additional label,
 receipt comment, Check or parallel completion ledger is needed.
 
+A newly generated manual handoff keeps its copyable prompt to approximately
+10–15 lines: Task/Step, repository, canonical authority, exact thread and requested
+profile, admitted branch and required starting head when present, and the minimal
+instruction to read `AGENTS.md`, current authority and referenced accepted
+governance. It directs safe checkout normalization before the head gate, stops at
+a real mismatch or protected boundary, and requires one canonical Writer Outcome.
+Selected Decision links, integrity digests, scope/policy prose and the full
+progress-bounded policy stay outside that prompt; protected admission and native
+Outcome bindings retain their exact values. Retained v3 prompts still identify
+their exact selected Request. Existing reserved or published historical handoff
+bytes and rendering reservations remain immutable.
+
 A manual non-source admission may omit branch/base/head and receives the same
 minimal handoff. After an owner-admitted manual session, the owner-managed OpenAI
 MCP tool `submit_manual_outcome` submits only `{repository, task, run_id, result}`;

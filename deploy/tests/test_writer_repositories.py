@@ -1,0 +1,138 @@
+"""Source-only multi-repository installation and projection contracts."""
+import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+import yaml
+from ansible.parsing.dataloader import DataLoader
+from ansible.template import Templar
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'deploy'))
+import config
+import managed_pool
+import pool_eligibility
+import workflow_projection
+from test_managed_pool import inputs, MemoryState, Remote, Host
+
+
+def shared():
+    value = inputs(repository='example-org/first')
+    del value['consumer']['repository']
+    value['consumer']['repositories'] = ['example-org/first', 'example-org/second']
+    value['environment']['repository'] = 'example-org/first'
+    return value
+
+
+def test_explicit_installation_anchor_and_shared_rendered_consumer():
+    value = shared()
+    value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': 'second-runtime'}
+    config.validate(value, ROOT)
+    compiled = config.compile_inputs(value)
+    assert compiled['relay_github_repository'] == 'example-org/first'
+    assert compiled['relay_reviewer_repositories'] == value['consumer']['repositories']
+    assert compiled['relay_additional_runtime_users'] == ['second-runtime']
+    source = (ROOT / 'deploy/ansible/roles/relay_controller/templates/consumer.json.j2').read_text()
+    rendered = Templar(loader=DataLoader(), variables=compiled).template(source, convert_data=False)
+    assert json.loads(rendered) == value['consumer']
+    assert compiled['relay_general_runner_pool']['desiredCapacity'] == 2
+    assert len(compiled['relay_general_runner_pool']['members']) == 32
+    for anchor in [None, 'foreign/repository']:
+        broken = copy.deepcopy(value)
+        if anchor is None:
+            del broken['environment']['repository']
+        else:
+            broken['environment']['repository'] = anchor
+        with pytest.raises(config.InvalidConfig, match='environment.repository'):
+            config.validate(broken, ROOT)
+
+
+def test_workflow_projection_selects_each_explicit_target_and_rejects_foreign(tmp_path):
+    value = shared()
+    head = 'a' * 40
+    for repository in value['consumer']['repositories']:
+        destination = tmp_path / repository.split('/')[1]
+        destination.mkdir()
+        manifest = workflow_projection.project(value, head, ROOT, destination, repository)
+        assert manifest['consumerRepository'] == repository
+        assert workflow_projection.verify(value, head, ROOT, destination, repository) == manifest
+        routing = yaml.safe_load((destination / value['consumer']['routingWorkflow']).read_text())
+        job = routing['jobs']['route']
+        assert repository in job['if']
+        assert job['steps'][0]['env']['RELAY_REPOSITORY'] == repository
+        assert job['runs-on']['labels'][-1] == config.general_pool_label(value)
+    with pytest.raises(config.InvalidConfig, match='environment.repository'):
+        workflow_projection.render(value, head, ROOT, 'foreign/repository')
+    with pytest.raises(config.InvalidConfig, match='workflow-projection-target-mismatch'):
+        workflow_projection.verify(value, head, ROOT, tmp_path / 'first', 'example-org/second')
+
+
+def test_reviewer_targets_are_independent_of_the_writer_pool_organization():
+    value = shared()
+    value['environment']['reviewerRepositories'] = ['another-org/review-only']
+    config.validate(value, ROOT)
+    assert config.compile_inputs(value)['relay_reviewer_repositories'] == ['another-org/review-only']
+    assert config.compile_inputs(value)['relay_general_runner_pool']['repositories'] == value['consumer']['repositories']
+
+
+def test_peer_repository_count_does_not_allocate_or_limit_pool_capacity():
+    value = shared()
+    value['consumer']['repositories'] = ['example-org/repository-' + str(index) for index in range(33)]
+    value['environment']['repository'] = value['consumer']['repositories'][0]
+    config.validate(value, ROOT)
+    contract = managed_pool.pool_contract(value)
+    workflows = pool_eligibility._peer_refs(value, value['environment']['namespace'], contract)
+    assert set(workflows) == set(value['consumer']['repositories'])
+    assert contract['desiredCapacity'] == 2
+
+
+def test_pool_registers_all_writer_targets_with_one_capacity_and_trusted_refs(tmp_path):
+    value = shared()
+    contract = managed_pool.pool_contract(value)
+    expected = {repository: [repository + '/' + value['consumer'][key] + '@refs/heads/main'
+                             for key in ['routingWorkflow', 'recoveryWorkflow']]
+                for repository in value['consumer']['repositories']}
+    assert pool_eligibility.eligible_workflows(contract, root=tmp_path, owner_uid=tmp_path.stat().st_uid) == expected
+    store, remote = MemoryState(), Remote()
+    local = Host(remote, store)
+    report = managed_pool.reconcile(contract, store, remote, local)
+    assert report['capacity'] == 2
+    assert set(store.value['consumers']) == set(expected)
+    assert len(remote.values) == 2
+    assert len({json.dumps(binding, sort_keys=True) for binding in store.value['consumers'].values()}) == 1
+
+
+@pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() == 0, reason='non-root native Linux runtime identity')
+def test_installed_launcher_binds_actual_user_to_repository_before_credential_access(tmp_path):
+    value = shared()
+    actual_user = subprocess.check_output(['/usr/bin/id', '-un'], text=True).strip()
+    value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': actual_user}
+    compiled = yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text())
+    compiled.update(config.compile_inputs(value))
+    compiled.update(relay_dispatch_work_root=str(tmp_path / 'work'), relay_config_root=str(tmp_path / 'config'),
+                    relay_diagnostics_config_path=str(tmp_path / 'diagnostics.json'),
+                    relay_codex_diagnostic_path=str(ROOT / 'deploy/ansible/roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs'))
+    (tmp_path / 'diagnostics.json').write_text('{"schemaVersion":"1.0","mode":"normal"}')
+    source = (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2').read_text()
+    rendered = Templar(loader=DataLoader(), variables=compiled).template(source, convert_data=False)
+    launcher = tmp_path / 'launcher.mjs'
+    launcher.write_text(rendered)
+    (tmp_path / 'relay-codex-isolation.mjs').write_text(
+        (ROOT / 'deploy/ansible/roles/relay_codex_runtime/files/relay-codex-isolation.mjs').read_text())
+    for repository, expected in [('example-org/first', 'REPOSITORY_RUNTIME_BINDING_INVALID'),
+                                 ('example-org/second', 'ACCESS_TOKEN_UNAVAILABLE')]:
+        cwd = tmp_path / 'work/repositories' / repository / 'task'
+        sandbox = cwd / '.codex-sandbox'
+        sandbox.mkdir(parents=True)
+        (cwd / '.git').mkdir()
+        (sandbox / 'task-input.md').write_text('synthetic input')
+        (sandbox / 'codex-result-schema.json').write_text('{"type":"object"}')
+        result = subprocess.run(['node', str(launcher), 'exec', '--json', '--model', 'synthetic',
+                                 '--effort', 'low', '--input-file', str(sandbox / 'task-input.md'),
+                                 '--cwd', str(cwd), '--issue', '1'], capture_output=True, text=True)
+        assert result.returncode == 64
+        assert 'CODEX_LAUNCHER_' + expected in result.stderr
