@@ -673,6 +673,10 @@ def run(args):
                             print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};verification=same-operation;log={log_name}')
                             return
                         values.update(relay_serial_pool_transition=True,
+                            # Keep the reserved target's object order for the
+                            # preflight hash; the installed snapshot stays canonical.
+                            relay_serial_pool_target_config=json.dumps(config, ensure_ascii=False,
+                                separators=(',', ':'), allow_nan=False),
                             relay_upgrade_lifecycle_managed=True,
                             relay_admission_operation_id=lifecycle_operation)
                         inventory['all']['children']['relay']['hosts'][target['host']].update(values)

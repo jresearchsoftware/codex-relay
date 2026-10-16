@@ -5,7 +5,7 @@
       {{ ['/usr/bin/python3', '-c', lookup('file', playbook_dir + '/scripts/verify_upgrade.py'),
           relay_install_root, relay_config_root] +
          ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else []) }}
-    stdin: '{{ relay_installed_deployment_config | string }}'
+    stdin: '{{ (relay_serial_pool_target_config if relay_serial_pool_transition | default(false) | bool else relay_installed_deployment_config) | string }}'
     stdin_add_newline: false
   changed_when: false
   check_mode: false
