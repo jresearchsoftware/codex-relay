@@ -48,7 +48,9 @@ def named_task(name):
 
 
 def assertions_pass(task, values):
-    return all(ENV.compile_expression(expression)(**values)
+    # Ansible evaluates each assertion as an if-block, whose grammar differs
+    # from compile_expression for an unparenthesized conditional expression.
+    return all(ENV.from_string('{% if ' + expression + ' %}true{% else %}false{% endif %}').render(values) == 'true'
                for expression in task['ansible.builtin.assert']['that'])
 
 
@@ -142,6 +144,37 @@ class GeneralRunnerTests(unittest.TestCase):
             ]:
                 with self.subTest(contract=contract['name'], changes=changes):
                     self.assertFalse(assertions_pass(contract, {**values, **changes}))
+
+    def test_general_enable_if_block_assertions_bind_primary_and_extra_slot_identity(self):
+        contract = yaml.safe_load((ROOT / 'relay-general-runner.yml').read_text())[0]['tasks'][0]
+        for slot in (None, 'extra'):
+            with self.subTest(slot=slot):
+                values = instance(True)
+                values.update(relay_general_runner_authorized=True,
+                              inventory_hostname=values['relay_production_host'],
+                              ansible_facts={'distribution': 'Debian', 'distribution_major_version': '12'},
+                              relay_production_operation_phase='general-runner-enable',
+                              relay_production_exact_head='a' * 40)
+                if slot:
+                    service = values['relay_namespace'] + '-slot-' + slot + '-runner.service'
+                    values.update(relay_execution_slot=slot,
+                                  relay_execution_slots=[{'id': slot, 'runnerName': 'relay-extra',
+                                                          'runnerUser': 'relay-extra-runner'}],
+                                  relay_runner_name='relay-extra',
+                                  relay_runner_user='relay-extra-runner',
+                                  relay_runner_group='relay-extra-runner',
+                                  relay_runner_root=values['relay_install_root'] + '/slots/' + slot + '/runner',
+                                  relay_runner_work_root=values['relay_state_root'] + '/slots/' + slot + '/runner/work',
+                                  relay_runner_home=values['relay_state_root'] + '/slots/' + slot + '/runner/home',
+                                  relay_runner_service_name=service,
+                                  relay_runner_service_unit_path='/etc/systemd/system/' + service,
+                                  relay_runner_registration_helper_path=values['relay_install_root'] + '/slots/' + slot + '/relay-runner-registration')
+                self.assertTrue(assertions_pass(contract, values))
+                self.assertFalse(assertions_pass(contract, {**values, 'relay_runner_name': 'wrong-runner'}))
+                # Keep the group/user equality valid so only the selected slot
+                # user assertion rejects this otherwise coherent identity.
+                self.assertFalse(assertions_pass(contract, {**values, 'relay_runner_user': 'wrong-user',
+                                                            'relay_runner_group': 'wrong-user'}))
 
 
     def test_registration_binding_rejects_wrong_scope_name_and_work(self):
