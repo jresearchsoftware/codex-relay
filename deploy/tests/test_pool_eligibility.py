@@ -92,6 +92,16 @@ def refs(config):
             for key in ['routingWorkflow', 'recoveryWorkflow']]
 
 
+def installed_lifecycle(config, repository):
+    config['source'] = {'repository': 'https://github.com/' + repository + '.git', 'revision': 'main'}
+    config['environment']['localApply'] = {'source': 'installed'}
+    config['consumer']['baseBranch'] = 'main'
+
+
+def lifecycle_ref(repository, branch='main'):
+    return repository + '/.github/workflows/manual-main-production-deploy.yml@refs/heads/' + branch
+
+
 def test_two_protected_peers_supply_exact_refs_without_schema_or_source_execution(tmp_path, contract):
     first = peer(tmp_path, contract)
     second = peer(tmp_path, contract, 'second-relay', 'example-org/second')
@@ -112,6 +122,83 @@ def test_two_protected_peers_supply_exact_refs_without_schema_or_source_executio
 
 def test_fresh_host_needs_only_prospective_configuration(tmp_path, contract):
     assert observe(tmp_path, contract) == {contract['repository']: contract['workflowRefs']}
+
+
+@pytest.mark.parametrize('bad', ['path', 'branch', 'tag', 'repository', 'non-anchor', 'fourth'])
+def test_optional_lifecycle_contract_is_fixed_to_the_installation_anchor(tmp_path, contract, bad):
+    repository = contract['repository']
+    lifecycle = repository + '/.github/workflows/manual-main-production-deploy.yml@refs/heads/main'
+    contract['workflowRefs'].append(lifecycle)
+    assert observe(tmp_path, contract)[repository] == contract['workflowRefs']
+    if bad == 'path':
+        contract['workflowRefs'][2] = lifecycle.replace('manual-main-production-deploy', 'unknown')
+    elif bad == 'branch':
+        contract['workflowRefs'][2] = lifecycle.replace('/main', '/candidate')
+    elif bad == 'tag':
+        contract['workflowRefs'][2] = lifecycle.replace('refs/heads/', 'refs/tags/')
+    elif bad == 'repository':
+        contract['workflowRefs'][2] = lifecycle.replace(repository, 'example-org/foreign')
+    elif bad == 'non-anchor':
+        other = 'example-org/other'
+        contract['repositories'] = [repository, other]
+        contract['workflowRefsByRepository'] = {
+            repository: contract['workflowRefs'][:2],
+            other: [value.replace(repository, other) for value in contract['workflowRefs']]}
+    else:
+        contract['workflowRefs'].append(repository + '/.github/workflows/extra.yml@refs/heads/main')
+    with pytest.raises(PoolError, match='ELIGIBILITY_CONTRACT_INVALID'):
+        observe(tmp_path, contract)
+
+
+@pytest.mark.parametrize('anchor', [None, 'example-org/foreign', '../invalid'])
+def test_protected_multi_repository_peer_requires_its_own_valid_lifecycle_anchor(tmp_path, contract, anchor):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer'].pop('repository')
+    installed_lifecycle(fixture.config, repository)
+    fixture.config['consumer']['repositories'] = [repository, 'example-org/another']
+    if anchor is not None:
+        fixture.config['environment']['repository'] = anchor
+    save(fixture)
+    with pytest.raises(PoolError, match='ELIGIBILITY_REPOSITORY_UNPROVEN'):
+        observe(tmp_path, contract)
+
+
+def test_protected_peer_lifecycle_is_only_for_its_anchor_and_keeps_snapshot_provenance(tmp_path, contract):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer'].pop('repository')
+    another = 'example-org/another'
+    fixture.config['consumer']['repositories'] = [repository, another]
+    fixture.config['environment']['repository'] = another
+    installed_lifecycle(fixture.config, another)
+    save(fixture)
+    observed = observe(tmp_path, contract)
+    assert len(observed[repository]) == 2
+    assert observed[another][-1] == lifecycle_ref(another)
+    fixture.config['consumer']['generalRunnerPool']['desiredCapacity'] = 3
+    write_json(fixture.snapshot, fixture.config, 0o600)  # No matching protected digest.
+    with pytest.raises(PoolError, match='ELIGIBILITY_SNAPSHOT_BINDING_UNPROVEN'):
+        observe(tmp_path, contract)
+
+
+@pytest.mark.parametrize('bad', ['source-repository', 'source-revision', 'base-branch',
+                               'routing-path', 'recovery-path', 'validation-path'])
+def test_protected_lifecycle_requires_self_source_and_distinct_fixed_workflow(tmp_path, contract, bad):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer']['repository']
+    installed_lifecycle(fixture.config, repository)
+    if bad == 'source-repository':
+        fixture.config['source']['repository'] = 'https://github.com/example-org/foreign.git'
+    elif bad == 'source-revision':
+        fixture.config['source']['revision'] = 'candidate'
+    elif bad == 'base-branch':
+        fixture.config['consumer']['baseBranch'] = 'candidate'
+    else:
+        key = {'routing-path': 'routingWorkflow', 'recovery-path': 'recoveryWorkflow',
+               'validation-path': 'validationWorkflow'}[bad]
+        fixture.config['consumer'][key] = '.github/workflows/manual-main-production-deploy.yml'
+    save(fixture)
+    with pytest.raises(PoolError, match='ELIGIBILITY_'):
+        observe(tmp_path, contract)
 
 
 def test_prospective_current_namespace_overrides_old_or_broken_installed_snapshot(tmp_path, contract):
@@ -244,6 +331,21 @@ def test_consistent_duplicate_repository_does_not_need_another_registry(tmp_path
     assert observe(tmp_path, contract)[first.config['consumer']['repository']] == refs(first.config)
 
 
+@pytest.mark.parametrize('anchor_first', [True, False])
+def test_duplicate_peer_pair_preserves_proven_optional_lifecycle_in_either_discovery_order(
+        tmp_path, contract, anchor_first):
+    first = peer(tmp_path, contract, 'a-peer' if anchor_first else 'z-peer')
+    installed_lifecycle(first.config, first.config['consumer']['repository'])
+    save(first)
+    second = peer(tmp_path, contract, 'z-peer' if anchor_first else 'a-peer')
+    second.config['consumer']['baseBranch'] = 'main'
+    repository = second.config['consumer'].pop('repository')
+    second.config['consumer']['repositories'] = [repository, 'example-org/other']
+    second.config['environment']['repository'] = 'example-org/other'
+    save(second)
+    assert observe(tmp_path, contract)[repository] == refs(first.config) + [lifecycle_ref(repository)]
+
+
 def test_peer_namespace_cannot_replace_prospective_repository_refs(tmp_path, contract):
     peer(tmp_path, contract, repository=contract['repository'])
     with pytest.raises(PoolError, match='ELIGIBILITY_REPOSITORY_AMBIGUOUS'):
@@ -360,8 +462,65 @@ def test_native_protected_two_repository_map_qualifies_without_acl_mutation(tmp_
     assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
 
 
+@pytest.mark.parametrize('active_count', [1, 2])
+@pytest.mark.parametrize('select_inactive', [False, True])
+def test_configured_repositories_need_not_be_active_or_have_workflow_files(
+        tmp_path, contract, active_count, select_inactive):
+    repository = contract['repository']
+    targets = [repository, 'example-org/configured', 'example-org/inactive']
+    contract['repositories'] = targets
+    contract['workflowRefsByRepository'] = {
+        target: [ref.replace(repository, target) for ref in contract['workflowRefs']]
+        for target in targets}
+    fixture = native_group(tmp_path, contract)
+    fixture.selected[:] = targets[:active_count] + (targets[active_count:] if select_inactive else [])
+    fixture.group['selected_workflows'] = [
+        ref for target in targets[:active_count] for ref in fixture.eligible[target]]
+    assert not list(tmp_path.rglob('*.yml')) and not list(tmp_path.rglob('*.yaml'))
+    assert fixture.github.qualify(contract, fixture.eligible) == 7
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
+@pytest.mark.parametrize('active', ['lifecycle-only', 'automatic-only', 'both'])
+def test_native_lifecycle_is_optional_and_does_not_require_automatic_adoption(tmp_path, contract, active):
+    lifecycle = (contract['repository']
+        + '/.github/workflows/manual-main-production-deploy.yml@refs/heads/main')
+    contract['workflowRefs'].append(lifecycle)
+    fixture = native_group(tmp_path, contract)
+    fixture.group['selected_workflows'] = ([lifecycle] if active == 'lifecycle-only' else
+                                           contract['workflowRefs'][:2] if active == 'automatic-only' else
+                                           contract['workflowRefs'][:])
+    assert fixture.github.qualify(contract, fixture.eligible) == 7
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
+@pytest.mark.parametrize('bad', ['candidate', 'tag', 'repository', 'path', 'unselected'])
+def test_native_lifecycle_denies_every_ref_outside_the_trusted_selected_anchor(tmp_path, contract, bad):
+    repository = contract['repository']
+    lifecycle = lifecycle_ref(repository)
+    contract['workflowRefs'].append(lifecycle)
+    fixture = native_group(tmp_path, contract)
+    if bad == 'candidate':
+        lifecycle = lifecycle.replace('@refs/heads/main', '@refs/heads/candidate')
+    elif bad == 'tag':
+        lifecycle = lifecycle.replace('@refs/heads/', '@refs/tags/')
+    elif bad == 'repository':
+        lifecycle = lifecycle.replace(repository, fixture.first.config['consumer']['repository'])
+    elif bad == 'path':
+        lifecycle = lifecycle.replace('manual-main-production-deploy', 'unknown')
+    else:
+        fixture.selected.remove(repository)
+    fixture.group['selected_workflows'] = [lifecycle]
+    with pytest.raises(PoolError, match='GROUP_'):
+        fixture.github.qualify(contract, fixture.eligible)
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
 @pytest.mark.parametrize('bad', ['unknown-repository', 'foreign-candidate', 'foreign-tag',
-                               'foreign-validation', 'unselected-repository-workflow', 'missing-recovery'])
+                               'foreign-validation', 'unselected-repository-workflow', 'missing-recovery',
+                               'missing-routing', 'empty-workflows', 'empty-repositories',
+                               'organization-wide', 'default-group', 'unrestricted',
+                               'unknown-third', 'non-anchor-lifecycle'])
 def test_native_group_rejects_every_untrusted_repository_or_workflow_without_acl_mutation(tmp_path, contract, bad):
     fixture = native_group(tmp_path, contract)
     workflows = fixture.group['selected_workflows']
@@ -376,9 +535,26 @@ def test_native_group_rejects_every_untrusted_repository_or_workflow_without_acl
         workflows.append(first_refs[0].replace('peer-routing.yaml', 'validation.yaml'))
     elif bad == 'unselected-repository-workflow':
         workflows.append(refs(fixture.second.config)[0])
-    else:
+    elif bad == 'missing-recovery':
         workflows.remove(first_refs[1])
+    elif bad == 'missing-routing':
+        workflows.remove(first_refs[0])
+    elif bad == 'empty-workflows':
+        workflows.clear()
+    elif bad == 'empty-repositories':
+        fixture.selected.clear()
+    elif bad == 'organization-wide':
+        fixture.group['visibility'] = 'all'
+    elif bad == 'default-group':
+        fixture.group['name'] = 'Default'
+    elif bad == 'unrestricted':
+        fixture.group['restricted_to_workflows'] = False
+    elif bad == 'unknown-third':
+        workflows.append(first_refs[0].replace('peer-routing.yaml', 'unknown.yaml'))
+    else:
+        workflows.append(contract['repository']
+            + '/.github/workflows/manual-main-production-deploy.yml@refs/heads/main')
     with pytest.raises(PoolError, match='GROUP_'):
         fixture.github.qualify(contract, fixture.eligible)
-    assert len(fixture.calls) == 3
+    assert fixture.calls
     assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
