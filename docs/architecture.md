@@ -79,6 +79,19 @@ CRs carry exact-head findings and bounded overrides; admission projects the
 resulting execution Step/title. The native review body remains CR authority,
 linked to the canonical Issue, without a competing full public Request.
 
+For schema-v4 same-CR continuation after `BLOCKED`, the native CR keeps its
+immutable reviewed head A. A newer trusted Task Decision can resolve the blocker;
+a fresh native owner ready event admits the next Step at exact Writer-proven B.
+Writer joins the prior protected admission/journal and authentic canonical native
+Writer Outcome to the same Task/PR/CR, branch/base and attempt lineage, then
+verifies live refs and ancestry. Automatic provenance requires verified
+`publishedHead`; manual provenance requires protected `manualSubmission` and its
+original admission/claim digest. Neither arbitrary PR movement nor caller JSON
+supplies B. Unknown prior attempts, stale/tampered authority or publication,
+changed branch/base and replayed events fail closed. Original CR, journal and
+Outcome bytes remain unchanged; no new CR is needed solely for the published
+blocked head. This path does not change retained v3/legacy admission semantics.
+
 Retained schema-v3 Request/CRs keep their original Step projection and linear
 Request supersession semantics. Legacy owner new-phase preparation retains its
 separate N+1 procedure. Their review repair/recovery never retroactively acquires
@@ -130,7 +143,9 @@ routing consumes the same action from the verified current native CR during
 admission, before execution reservation or ready-command consumption. Manual
 handoff verifies it again before publication. A failed/uncertain transition
 retains exact-CR/head lifecycle recovery without starting Codex or republishing
-review authority. Remaining uncommitted/non-ignored residue
+review authority. Same-CR BLOCKED continuation uses a separate run-ID-keyed
+admission lifecycle intent at proven B; the public review-ID action remains
+bound to reviewed A. Remaining uncommitted/non-ignored residue
 alone yields a successful handoff with `UNCOMMITTED_WORK_REMAINS`, retained in
 the terminal receipt and Outcome and emitted as a workflow warning. Codex must
 first reconcile task-owned work where safe. The controller never assumes residue
@@ -204,6 +219,7 @@ authorize another review POST or a new Step.
 | Runner | Configured primary or immutable execution-slot `paths.attemptRoot/<run-id>.json` | Execution reservation, returned result, containment and causal diagnostic; repository binding and per-run controller lock |
 | Writer | Configured `paths.claimRoot/publication-v2/<run-id>.json` | Immutable effective-authority/execution snapshot and Step lineage, controller reservation/completion, manual submission binding, frozen publication body/version, verified head and recovery receipts |
 | Writer | Configured `paths.claimRoot/pr-lifecycle-v1/<review-id>.json` | Exact native CR/head Draft intent and reconciliation before an execution run exists; no Task or launch authority |
+| Writer | Configured `paths.claimRoot/pr-lifecycle-admission-v1/<run-id>.json` | Draft intent for a verified same-CR BLOCKED continuation at its Writer-proven starting head; retains the original review-ID receipt |
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
 | Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
 

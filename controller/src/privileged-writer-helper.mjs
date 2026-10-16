@@ -95,6 +95,7 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store,
     lifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
+    admissionLifecycleStore: createAttemptStore(`${deployment.claimRoot}/pr-lifecycle-admission-v1`),
     journal: createSlotJournal(store),
     publisher: createGitPublisher({ token: value, root: deployment.claimRoot }),
     // Fixed root helper, exact admitted attempt, original contained journal.

@@ -516,8 +516,13 @@ export function validateAdmissionSnapshot(snapshot, binding = {}) {
     || snapshot.route === 'auto' && starting.some(value => value === null)
     || snapshot.existing_pr !== null && snapshot.branch === null) fail('AUTHORITY_STARTING_STATE_INVALID');
   if (snapshot.lineage && (snapshot.lineage.step + 1 !== snapshot.step || snapshot.lineage.attempt === snapshot.attempt)) fail('AUTHORITY_ADMISSION_MISMATCH');
+  // A fresh successor can start at the prior Writer result while retaining the
+  // original CR's reviewed head as provenance. Lineage is only a structural
+  // prerequisite here: protected Writer admission verifies the exact prior
+  // attempt, terminal Outcome, current authority and published starting head.
   if (snapshot.authority.change_request && (!snapshot.change_request_id || !snapshot.reviewed_head_sha
-    || snapshot.existing_pr !== snapshot.authority.change_request.parent.number || snapshot.starting_head !== snapshot.reviewed_head_sha)) fail('AUTHORITY_CR_BINDING_INVALID');
+    || snapshot.existing_pr !== snapshot.authority.change_request.parent.number
+    || snapshot.starting_head !== snapshot.reviewed_head_sha && !snapshot.lineage)) fail('AUTHORITY_CR_BINDING_INVALID');
   if (binding.step !== undefined && snapshot.step !== binding.step || binding.route !== undefined && snapshot.route !== binding.route
     || binding.attempt !== undefined && snapshot.attempt !== binding.attempt) fail('AUTHORITY_ADMISSION_MISMATCH');
   if (binding.authority && !equal(snapshot.authority, binding.authority)) fail('AUTHORITY_SOURCE_MISMATCH');

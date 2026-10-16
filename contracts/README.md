@@ -311,6 +311,22 @@ current project defaults, then supported system defaults. CR boundaries are
 additive protection and do not enlarge charter scope. Requested profile values
 do not prove actual runtime model or effort.
 
+The CR's reviewed head A is immutable finding provenance, distinct from a later
+remediation admission's starting head B. After a terminal `BLOCKED` result, a
+trusted Task-scoped Decision newer than the canonical Writer Outcome may resolve
+the blocker and permit a fresh owner ready event to admit the next Step on the
+same PR and CR at exactly Writer-proven B. The preceding protected journal and
+authentic native Writer Outcome must bind the same Task/PR/CR, branch/base and
+attempt lineage. Automatic evidence includes verified `publishedHead`; manual
+evidence includes protected `manualSubmission` and its original admission/claim
+digest. Current refs/ancestry, native Bot identity, source/body digests and prior
+terminal publication must verify. Arbitrary or unpublished movement cannot
+replace the starting head, and unresolved prior attempts, stale CRs, replayed
+events or unsafe route/profile changes cannot admit new work. A new CR merely
+because Writer published B is unnecessary. Original authority, reviewed A and
+old journal/Outcome bytes remain unchanged; retained schema-v3/legacy rules are
+unaffected. See the [controller continuation contract](../controller/README.md#same-cr-continuation-after-a-blocked-result).
+
 `resolveTaskAuthority(records, binding)` returns resolved semantic fields,
 selected contextual evidence, active Decisions and a native authority source
 binding. It requires the exact trusted-API Issue-body identity and separately
@@ -568,6 +584,10 @@ Writer independently re-reads current executable authority and verifies Draft
 for that exact target. A failed/uncertain transition stops continuation and is
 recoverable for the same current CR/head. Reviewer remains the review authority
 publisher; neither its receipt nor Draft state grants execution authority.
+For a verified schema-v4 same-CR BLOCKED continuation, admission instead records
+a bounded Draft intent for Writer-proven B under its new `runId`, separate from
+the original review-ID-keyed lifecycle receipt for A. Public `begin-remediation`
+still accepts only the reviewed A; the old receipt and recovery are preserved.
 Ready subsequently means a durable successful Codex execution handoff, regardless
 of current checks, mergeability or independent review acceptance.
 

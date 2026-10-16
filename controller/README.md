@@ -166,6 +166,45 @@ ordinary progress publication. Exact-attempt publication and terminal
 prepublication recovery retain their original evidence and authorization gates;
 recovery does not acquire an additional current-main ancestry requirement.
 
+## Same-CR continuation after a BLOCKED result
+
+For schema-v4 PR remediation, the native CR's reviewed head **A** remains
+immutable finding provenance. A later starting head **B** can be admitted for
+the same Task, PR and CR only from the preceding protected Writer publication
+lineage: a terminal `BLOCKED` Outcome, verified at its canonical native target,
+must attest that exact result. Automatic attempts require the journal's verified
+`publishedHead`; manual attempts require the protected `manualSubmission`, its
+original admission/claim digest and the canonical Writer Outcome. A worker claim,
+an arbitrary current PR head or a local unpublished commit cannot establish B.
+
+A trusted, active Task-scoped Decision newer than that Outcome must resolve the
+blocker. A genuine new owner ready event then admits the next Step at B; the
+Decision alone neither allocates Step nor launches work. Writer verifies the
+original admission, attempt, Task/PR/CR, branch/base, source digests, configured
+native Reviewer/Writer Bot identities, exact native Outcome/body bindings and
+Git ancestry/ref observations. The live CR must remain current and executable
+with original reviewed head A, while the live PR/ref must match proven B.
+Unresolved or unknown prior execution/publication, moved or foreign heads,
+changed base/branch, stale or missing CR, altered authority/publication evidence,
+replayed ready events and unsafe route/profile changes stop admission. Ordinary
+replay/recovery still keeps the original attempt and cannot run inference again.
+
+Admission verifies Draft at B through a bounded lifecycle intent keyed by the
+new `runId` in `pr-lifecycle-admission-v1`. This is separate from the existing
+review-ID-keyed `pr-lifecycle-v1` receipt for A; original lifecycle, journal and
+Outcome records are retained unchanged. The public `begin-remediation` operation
+continues to accept only the original current CR's reviewed head A. The internal
+continuation intent cannot turn an arbitrary head into review authority.
+
+PR #134 and run `38813244210` exposed the old coupling of reviewed head and
+continuation starting head. The transient Ready/new-current-head-CR bridge used
+under that installed protocol was a temporary workaround. It is obsolete under
+this corrected, qualified protocol: a new CR solely because trusted Writer
+advanced the blocked result head is unnecessary. Historical PR/CR/Writer/review
+evidence remains unchanged. This source contract and its tests do not establish
+installed qualification or authorize deployment; retained schema-v3 and legacy
+admissions keep their original contract.
+
 ## Issue-authorized implementation continuation
 
 The fields in this section describe the retained unmarked legacy contract;
@@ -470,7 +509,10 @@ bounded Writer lifecycle action in `structuredContent.pr_lifecycle`. The normal
 production routing entrypoint consumes the equivalent action from the verified
 current native CR during Writer admission, before reserving automatic execution
 or consuming the ready command. Both label and workflow-dispatch routing follow
-this path, for automatic and manual remediation. The action is bound to the
+this path, for automatic and manual remediation. A verified
+[same-CR BLOCKED continuation](#same-cr-continuation-after-a-blocked-result)
+instead binds the Draft transition to its protected admission and Writer-proven
+starting head. The original review action remains bound to the
 admitted CR's authority digest as well as its native review ID and exact head.
 Manual handoff revalidates the same Draft transition before publication because
 manual routing has no worker preflight.
