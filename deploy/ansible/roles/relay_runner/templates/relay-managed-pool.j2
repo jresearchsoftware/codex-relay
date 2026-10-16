@@ -1,0 +1,7 @@
+#!/bin/sh
+# managed-by: codex-relay; deliberately absent from worker sudo policy.
+set -eu
+test "$(/usr/bin/id -u)" -eq 0 && test "$#" -eq 1 || exit 40
+exec /usr/bin/env -i PATH=/usr/bin:/bin LANG=C.UTF-8 \
+  /usr/bin/python3 '{{ relay_install_root }}/current/reviewed-source/deploy/managed_pool.py' \
+  --installed-revision "$1"

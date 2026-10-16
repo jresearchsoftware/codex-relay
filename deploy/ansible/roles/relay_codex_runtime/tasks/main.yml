@@ -26,14 +26,22 @@
     system: true
   register: relay_codex_work_group_reconciliation
 
+- name: Inspect an existing Codex account before preserving its owner-managed settings
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_codex_user }}'
+    fail_key: false
+  register: relay_codex_existing_account
+  changed_when: false
+
 - name: Create the non-login Codex execution identity
   ansible.builtin.user:
     name: '{{ relay_codex_user }}'
-    group: '{{ relay_codex_group }}'
+    group: '{{ omit if relay_general_runner_pool is defined and (relay_codex_existing_account.ansible_facts.getent_passwd | default({})).get(relay_codex_user) else relay_codex_group }}'
     system: true
     create_home: false
-    home: '{{ relay_codex_home }}'
-    shell: /usr/sbin/nologin
+    home: '{{ omit if relay_general_runner_pool is defined and (relay_codex_existing_account.ansible_facts.getent_passwd | default({})).get(relay_codex_user) else relay_codex_home }}'
+    shell: '{{ omit if relay_general_runner_pool is defined and (relay_codex_existing_account.ansible_facts.getent_passwd | default({})).get(relay_codex_user) else "/usr/sbin/nologin" }}'
   register: relay_codex_user_reconciliation
   when:
     - not ansible_check_mode | bool or not relay_codex_group_reconciliation.changed | bool
@@ -107,7 +115,7 @@
   ansible.builtin.user:
     name: '{{ relay_codex_user }}'
     groups: ['{{ relay_codex_work_group }}']
-    append: false
+    append: '{{ relay_general_runner_pool is defined }}'
   when:
     - relay_execution_slots is defined
     - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool

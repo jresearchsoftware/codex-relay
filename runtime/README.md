@@ -29,9 +29,14 @@ child through Bubblewrap with private user/PID/IPC/UTS namespaces, private
 `/proc`, `/dev`, `/tmp` and `/run`, read-only operating-system/managed toolchain
 and pinned CLI files, and one writable admitted checkout. Network access remains
 available for the model and task dependency downloads. Host credential directories,
-other checkout roots and host sockets are not mounted. Each slot also has a
-distinct host runner UID, runtime UID and work group; runner journals and primary
-diagnostics live outside its worker checkout. The launcher marks an inner child
+other checkout roots and host sockets are not mounted. Managed General Runner
+pool instances may share one trusted runner UID and one non-root runtime UID;
+each attempt still has its own checkout, HOME/CODEX_HOME, XDG directories, cache,
+temporary files, journal, diagnostics and process lifetime. Namespace boundaries
+isolate concurrent workers even when their host UID is the same. Runner journals
+and primary diagnostics live outside the worker checkout. Protected consumer
+configuration binds a repository to its runtime user; Task and PR content cannot
+select that identity or a launcher. The launcher marks an inner child
 as unknown when Bubblewrap started but Codex execution has not been observed.
 Legacy configurations retain their existing launcher behavior. Installed UID,
 sudo, namespace, process containment and concurrent isolation require separate

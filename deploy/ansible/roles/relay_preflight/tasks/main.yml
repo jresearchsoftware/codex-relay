@@ -18,6 +18,11 @@
       - '{{ relay_superseded_proxy_service_name }}'
       - '{{ relay_namespace }}-relay-manual-outcome.socket'
       - '{{ relay_namespace }}-relay-manual-outcome@.service'
+      - --general-pool
+      - >-
+        {{ ({'name': relay_general_runner_pool.name, 'runnerUser': relay_general_runner_pool.runnerUser,
+             'root': relay_general_runner_pool.members[0].root, 'service': relay_general_runner_pool.members[0].service}
+            | to_json if relay_general_runner_pool is defined else 'null') | string }}
   changed_when: false
   check_mode: false
 

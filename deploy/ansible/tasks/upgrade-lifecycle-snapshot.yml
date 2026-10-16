@@ -97,12 +97,108 @@
   register: relay_upgrade_lifecycle_retained_snapshot
   changed_when: false
   check_mode: false
+  when: not relay_serial_pool_transition | default(false) | bool
+
+- name: Read the separately bound target snapshot without invoking the original SERIAL helper
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import hashlib, json, os, re, stat, sys
+        from pathlib import Path
+        try:
+            claim, config, operation, target, namespace, repository = sys.argv[1:]
+            def require(value):
+                if not value:
+                    raise ValueError()
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    require(key not in result)
+                    result[key] = value
+                return result
+            def stamp(info):
+                return tuple(getattr(info, 'st_' + key) for key in
+                    ['dev', 'ino', 'mode', 'uid', 'gid', 'nlink', 'size', 'mtime_ns', 'ctime_ns'])
+            def read(path, mode):
+                path = Path(path)
+                for parent in [path.parent, *path.parent.parents]:
+                    info = parent.lstat()
+                    require(stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
+                            and info.st_uid == os.geteuid() and not info.st_mode & 0o022)
+                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    before = os.fstat(descriptor)
+                    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                            and before.st_uid == os.geteuid() and stat.S_IMODE(before.st_mode) == mode
+                            and before.st_size <= 1024 * 1024)
+                    raw = os.read(descriptor, 1024 * 1024 + 1)
+                    require(len(raw) == before.st_size and stamp(before) == stamp(os.fstat(descriptor))
+                            and stamp(before) == stamp(path.lstat()))
+                    return raw, json.loads(raw, object_pairs_hook=unique)
+                finally:
+                    os.close(descriptor)
+            expected = json.loads(sys.stdin.read(16385), object_pairs_hook=unique)
+            receipt_raw, receipt = read(config + '/serial-pool-compat-v1.json', 0o644)
+            _, transition = read(claim + '/serial-pool-transition-v1.json', 0o600)
+            old_raw, old = read(claim + '/admission-v1.json', 0o600)
+            _, gate = read(claim + '/admission-pool-v1.json', 0o600)
+            digest = receipt['target']['consumerDigest']
+            require(receipt['version'] == 1 and receipt['namespace'] == namespace
+                    and receipt['repository'] == repository and receipt['operationId'] == operation
+                    and re.fullmatch('[0-9a-f]{64}', digest)
+                    and transition['version'] == 1 and transition['operationId'] == operation
+                    and transition['targetRevision'] == target
+                    and transition['phase'] in ['stopped', 'target-ready', 'remove-intent', 'retired']
+                    and transition['receiptSha256'] == hashlib.sha256(receipt_raw).hexdigest()
+                    and transition['plan']['target']['consumerDigest'] == digest
+                    and receipt['original']['gateSha256'] == hashlib.sha256(old_raw).hexdigest()
+                    and old['phase'] == 'applying' and old['operationId'] == operation
+                    and old['target'] == target and old['consumerDigest'] == receipt['original']['consumerDigest']
+                    and gate['version'] == 1 and gate['phase'] == 'applying'
+                    and gate['operationId'] == operation and gate['target'] == target
+                    and gate['consumerDigest'] == digest and gate['verifiedRevision'] is None)
+            services = gate['previousActive']
+            require(isinstance(services, dict))
+            absent = {'active': False, 'enabled': 'disabled', 'load': 'not-found'}
+            normalized = {'manualOutcome': absent, **services}
+            require(set(normalized) == set(expected))
+            for value in normalized.values():
+                require(isinstance(value, dict) and set(value) == {'active', 'enabled', 'load'}
+                        and type(value['active']) is bool
+                        and value['enabled'] in ['enabled', 'enabled-runtime', 'disabled']
+                        and value['load'] in ['loaded', 'not-found']
+                        and (value['load'] != 'not-found' or value == absent))
+            print(json.dumps({'previousActive': services}))
+        except Exception:
+            print('RELAY_UPGRADE_SERIAL_POOL_SNAPSHOT_UNPROVEN', file=sys.stderr)
+            sys.exit(1)
+      - '{{ relay_writer_claim_root }}'
+      - '{{ relay_config_root }}'
+      - '{{ relay_admission_operation_id }}'
+      - '{{ relay_production_operation_target_head }}'
+      - '{{ relay_namespace }}'
+      - '{{ relay_github_repository }}'
+    stdin: '{{ relay_upgrade_lifecycle_observed_activity | to_json }}'
+    stdin_add_newline: false
+  register: relay_upgrade_lifecycle_pool_retained_snapshot
+  changed_when: false
+  check_mode: false
+  when: relay_serial_pool_transition | default(false) | bool
+
+- name: Select the retained snapshot for the admitted execution context
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_retained_state: >-
+      {{ (relay_upgrade_lifecycle_pool_retained_snapshot.stdout | from_json)
+         if relay_serial_pool_transition | default(false) | bool
+         else (relay_upgrade_lifecycle_retained_snapshot.stdout | from_json) }}
 
 - name: Read the original activation intent retained across recovery
   ansible.builtin.set_fact:
     relay_upgrade_lifecycle_previous_active: >-
       {{ {'manualOutcome': {'active': false, 'enabled': 'disabled', 'load': 'not-found'}} |
-         combine((relay_upgrade_lifecycle_retained_snapshot.stdout | from_json).previousActive) }}
+         combine(relay_upgrade_lifecycle_retained_state.previousActive) }}
 
 - name: Retain the previously active components and general transport identity
   ansible.builtin.set_fact:

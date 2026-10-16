@@ -36,6 +36,9 @@
 {% endif %}
   },
   "runtimeUser": {{ (relay_codex_user) | to_json }},
+{% if relay_general_runner_pool is defined %}
+  "generalRunnerPool": {"desiredCapacity": {{ relay_general_runner_pool.desiredCapacity }}},
+{% endif %}
 {% if relay_execution_slots is defined %}
   "executionSlots": {{ relay_execution_slots | to_json }},
 {% endif %}

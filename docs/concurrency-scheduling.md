@@ -19,7 +19,7 @@ and the [May 7, 2026 release notice](https://github.blog/changelog/2026-05-07-gi
 | --- | --- | --- |
 | A: global group with the native default queue | One running and one pending invocation; a new arrival replaces the pending invocation. Model concurrency stays at one, but independent waiting work can be lost. | Historical projection behavior; existing evidence retains its original meaning. |
 | B: global group with `queue: max` | One running invocation and up to 100 waiting invocations; no replacement merely because newer work arrives within that bound. Model concurrency stays at one. | Selected SERIAL source behavior; consumer projection and native TEST evidence establish adoption separately. |
-| C: bounded parallel execution | The optional source topology declares finite isolated execution slots and per-subject native queues, while keeping trusted Writer critical sections serialized. | Source lifecycle support requires installed qualification, real automatic model overlap and separate repository-installation proof. |
+| C: bounded shared pool | One configured desired capacity bounds the physical General Runner pool across eligible repositories; per-subject queues and trusted Writer critical sections remain. | Managed Apply, same-UID isolation, retained recovery and actual model overlap require source and installed qualification. |
 
 For an illustrative batch of three admitted executions taking the same time
 `T`, one qualified slot needs about `3T`, excluding controller overhead and
@@ -29,7 +29,55 @@ Queueing itself starts no model call. Relay does not infer account quota from
 native token counters, automatically choose another profile or retry a model
 failure; the admitted profile and existing failure boundary remain effective.
 
-## Parallel source candidate
+## Shared managed pool
+
+The optional `consumer.generalRunnerPool.desiredCapacity` selects one fixed
+physical capacity (1–32), shared by all eligible repositories and Codex Unix
+identities. The pool is identified by `environment.generalRunner.name`,
+independently of repository namespaces. Each runner retains its unique
+registration, service and instance state; the trusted General Runner account may
+be shared. The separate Production Runner cannot consume this capacity.
+
+One default non-root Codex `runtimeUser` can execute concurrent attempts.
+Attempt paths, HOME/CODEX_HOME/XDG/cache/tmp, journal, diagnostics and process
+lifecycles stay separate. A repository's protected consumer configuration can
+select a different runtime user without allocating another pool. Task/PR data
+does not select identities. This keeps the one-consumer-per-Writer contract
+and leaves generalized Writer selection and final organization settings to
+Tasks 85 and 86.
+
+Owner Apply reconciles the desired physical registrations/services with an
+installation App and short-lived API-derived registration/removal tokens.
+Expansion creates only missing members; contraction removes work eligibility,
+retains busy attempts and retires only safely idle members. Uncertain external
+mutations are inspected before another operation. The shared protected pool
+binding prevents a second repository from silently creating a duplicate pool
+or applying a conflicting capacity.
+
+The internal resource-slot layout stays stable across capacity changes. Only
+the operational desired capacity is excluded from the execution configuration
+digest; identities, protected paths and security configuration remain bound.
+Original journals and claim envelopes survive physical retirement. Any active
+pool member can transport recovery; trusted Writer selects the original slot
+from the retained envelope before opening its evidence. The public managed
+recovery path needs no per-slot owner choice.
+
+Native subject groups retain `queue: max` and cancellation disabled. Shared
+physical registrations bound simultaneous jobs across repositories, whereas
+GitHub concurrency groups remain repository-local. Waiting, cancellation,
+replay, protected admission/publication locks and lifecycle gates retain their
+existing authority. There is no dynamic per-job autoscaling or automatic
+model retry. Unconfigured consumers retain SERIAL v3; managed pool projections
+use the qualified parallel v4 contract.
+
+Source checks, synthetic same-UID process tests and live model observations
+prove different things. Installed qualification must observe the actual shared
+pool, simultaneous automatic model processes, bounded occupancy, attributable
+terminal Outcomes, capacity reconciliation and original-run recovery. Earlier
+distinct-UID TEST evidence does not establish these new properties. See the
+[deployment contract](../deploy/README.md#shared-managed-general-runner-pool).
+
+## Retained explicit-slot topology
 
 The optional `consumer.executionSlots` installation snapshot declares one
 `primary` slot retaining legacy locations and a finite set of additional slots.

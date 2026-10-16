@@ -137,6 +137,10 @@
     - name: Verify the complete installed execution pool before lifecycle activation
       ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
 
+    - name: Install the one shared physical General Runner pool without automatic credentials
+      ansible.builtin.include_tasks: tasks/managed-pool.yml
+      when: relay_general_runner_pool is defined
+
     # Keep address-bound artifact refresh in the check path as well.  The copy
     # tasks are check-mode safe, so their changed count is the ordinary apply
     # plan consumed by the deployment entrypoint; apply-only assertions remain below.

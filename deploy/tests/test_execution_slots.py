@@ -53,6 +53,64 @@ def test_parallel_topology_compiles_fixed_identity_and_retains_one_consumer_dige
     assert installed['runtimeUser'] == public['consumer']['runtimeUser']
 
 
+@pytest.mark.parametrize('topology', ['managed', 'explicit'])
+def test_slot_journal_creation_preserves_final_runner_ownership(topology):
+    from test_managed_pool import inputs as managed_inputs
+
+    public = managed_inputs() if topology == 'managed' else inputs()
+    config.validate(public, ROOT)
+    compiled = config.compile_inputs(public)
+    defaults = yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text())
+    include, = yaml.safe_load((ROOT / 'deploy/ansible/tasks/execution-slot.yml').read_text())
+    runtime = yaml.safe_load((ROOT / 'deploy/ansible/roles/relay_runner/tasks/general-runtime.yml').read_text())
+    reconcile = next(task for task in include['block'] if task.get('ansible.builtin.include_role') ==
+                     {'name': 'relay_runner', 'tasks_from': 'general-runtime.yml'})
+    boundary = next(task for task in runtime if task['name'] ==
+                    'Preserve the private routing and shared Codex work boundaries')
+    identity = next(task for task in runtime if task['name'] ==
+                    'Create the isolated general runner identity with only Codex work membership')
+    ownership = next(task for task in runtime if task['name'] ==
+                     'Assign existing generic dispatch journals to the general runner')
+    assert runtime.index(identity) < runtime.index(boundary) < runtime.index(ownership)
+    assert ownership['ansible.builtin.file']['recurse'] is True
+    assert ownership['ansible.builtin.file']['follow'] is False
+    assert 'mode' not in ownership['ansible.builtin.file']
+    inspect = next(task for task in runtime if task['name'] ==
+                   'Refuse aliased generic runtime roots')
+    assert inspect['ansible.builtin.assert']['that'] == [
+        'not item.stat.exists or (item.stat.isdir and not item.stat.islnk)']
+    groups = next(task for task in include['block'] if task['name'] ==
+                  'Create the private slot identities and work group')
+
+    for slot in compiled['relay_additional_execution_slots']:
+        values = {**defaults, **compiled, 'relay_slot_inputs': slot}
+        templar = Templar(loader=DataLoader(), variables=values)
+        values.update(templar.template(include['vars']))
+        templar = Templar(loader=DataLoader(), variables=values)
+        assert slot['relay_codex_work_group'] in templar.template(groups['loop'])
+        journals = {values[key] for key in
+                    ('relay_dispatch_state_root', 'relay_dispatch_home', 'relay_dispatch_evidence_root')}
+        expected = {'state': 'directory', 'owner': slot['relay_runner_user'],
+                    'group': slot['relay_runner_group'], 'mode': '0700'}
+        assert expected['owner'] != slot['relay_codex_user']
+
+        def rendered_files(task):
+            for item in templar.template(task.get('loop', [None])):
+                yield Templar(loader=DataLoader(), variables={**values, 'item': item}).template(
+                    task['ansible.builtin.file'])
+
+        final = {args['path']: args for args in rendered_files(boundary) if args['path'] in journals}
+        assert set(final) == journals
+        for args in final.values():
+            assert args == {'path': args['path'], **expected}
+        # A fresh explicit slot has no runner account until this role creates it.
+        # Earlier creation must neither require that missing account nor undo the
+        # established ownership on every subsequent check/apply.
+        for task in include['block'][:include['block'].index(reconcile)]:
+            if 'ansible.builtin.file' in task:
+                assert all(args['path'] not in journals for args in rendered_files(task))
+
+
 @pytest.mark.parametrize('mutate', [
     lambda v: v['environment'].pop('instance'),
     lambda v: v['consumer']['executionSlots'][0].update(runnerUser='foreign-runner'),
@@ -171,7 +229,7 @@ def test_parallel_runtime_reconciliation_keeps_production_out_of_the_automatic_w
     assert not enabled(legacy)
     isolated = next(task for task in tasks if task['name'] == 'Reconcile only the primary runtime work membership for an isolated pool')
     assert enabled(isolated)
-    assert isolated['ansible.builtin.user']['append'] is False
+    assert templar.template(isolated['ansible.builtin.user'])['append'] is False
     production = next(task for task in tasks if task['name'] == 'Remove only automatic work access from the separate production runner')
     assert enabled(production)
     groups = templar.template(production['ansible.builtin.user']['groups'])

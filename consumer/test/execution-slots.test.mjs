@@ -11,7 +11,7 @@ import { CONSUMER } from '../consumer.mjs';
 import { main } from '../../controller/src/entrypoint.mjs';
 import { fixture } from '../../controller/test/fixture.mjs';
 
-function pool() {
+function pool({ shared = false } = {}) {
   const c = structuredClone(CONSUMER);
   delete c.executionSlots;
   const paths = Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name, c.paths[name]]));
@@ -20,6 +20,11 @@ function pool() {
     { id: 'second', runnerName: 'sample-second', runnerUser: 'relay-runner-two', runtimeUser: 'relay-worker-two', workGroup: 'relay-work-two',
       paths: Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name, `/var/lib/relay-example-slot-two/${name}`])) }
   ];
+  if (shared) {
+    c.generalRunnerPool = { desiredCapacity: 2 };
+    Object.assign(c.executionSlots[1], { runnerUser: c.executionSlots[0].runnerUser,
+      runtimeUser: c.runtimeUser, workGroup: c.executionSlots[0].workGroup });
+  }
   return c;
 }
 
@@ -46,11 +51,11 @@ test('slot admission requires both configured runner name and actual UID', () =>
   assert.throws(() => selectExecutionSlot(c, { runnerName: 'sample-primary', uid: 0, uidForUser }));
 });
 
-test('slots reject overlapping work/evidence/helper roots and reused Unix identities', () => {
+test('slots reject overlapping roots, root workers and runner/worker identity overlap', () => {
   for (const mutate of [
-    c => { c.executionSlots[1].runnerUser = c.executionSlots[0].runnerUser; },
     c => { c.executionSlots[1].runtimeUser = c.executionSlots[0].runnerUser; },
-    c => { c.executionSlots[1].workGroup = c.executionSlots[0].workGroup; },
+    c => { c.executionSlots[1].runtimeUser = 'root'; },
+    c => { c.executionSlots[1].runnerUser = 'root'; },
     c => { c.executionSlots[1].paths.workRoot = c.paths.workRoot + '/foreign'; },
     c => { c.executionSlots[1].paths.attemptRoot = c.paths.claimRoot; },
     c => { c.executionSlots[1].paths.dispatch = c.executionSlots[1].paths.workRoot + '/dispatch'; },
@@ -60,6 +65,59 @@ test('slots reject overlapping work/evidence/helper roots and reused Unix identi
     c => { c.executionSlots.push(structuredClone(c.executionSlots[1])); },
     c => { c.executionSlots = []; }
   ]) { const c = pool(); mutate(c); assert.throws(() => validateConsumer(c)); }
+});
+
+test('managed instances share runner/runtime identities while repository runtime selection remains protected configuration', () => {
+  const c = validateConsumer(pool({ shared: true }));
+  const uidForUser = user => user === 'relay-runner' ? 1201 : 1301;
+  for (const slot of c.executionSlots) {
+    assert.equal(selectExecutionSlot(c, { runnerName: slot.runnerName, uid: 1201, uidForUser }), slot.id);
+    assert.equal(resolveExecutionConsumer(c, slot.id).runtimeUser, c.runtimeUser);
+  }
+  const other = pool({ shared: true });
+  other.repository = 'synthetic-other/shared-pool';
+  other.runtimeUser = 'other-runtime';
+  for (const slot of other.executionSlots) slot.runtimeUser = other.runtimeUser;
+  const selected = validateConsumer(other);
+  assert.deepEqual(selected.executionSlots.map(slot => slot.runnerName), c.executionSlots.map(slot => slot.runnerName));
+  assert.equal(resolveExecutionConsumer(selected, 'second').runtimeUser, 'other-runtime');
+  assert.equal(resolveExecutionConsumer(c, 'second').runtimeUser, CONSUMER.runtimeUser);
+  assert.notEqual(consumerDigest(selected), consumerDigest(c));
+  for (const value of [null, {}, { desiredCapacity: 0 }, { desiredCapacity: 33 },
+    { desiredCapacity: 1.5 }, { desiredCapacity: '2' }, { desiredCapacity: 2, runtimeUser: 'root' }]) {
+    assert.throws(() => validateConsumer({ ...pool({ shared: true }), generalRunnerPool: value }));
+  }
+});
+
+test('legacy execution slots retain distinct runner/runtime users and work groups', () => {
+  for (const field of ['runnerUser', 'runtimeUser', 'workGroup']) {
+    const legacy = pool(); legacy.executionSlots[1][field] = legacy.executionSlots[0][field];
+    assert.throws(() => validateConsumer(legacy), { code: 'CONSUMER_CONFIG_INVALID' });
+  }
+  const managed = pool({ shared: true });
+  assert.doesNotThrow(() => validateConsumer(managed));
+  delete managed.generalRunnerPool;
+  assert.throws(() => validateConsumer(managed), { code: 'CONSUMER_CONFIG_INVALID' });
+});
+
+test('pool capacity changes preserve admitted identity while runtime and repository bindings remain immutable', () => {
+  const original = validateConsumer(pool({ shared: true }));
+  const resized = structuredClone(original);
+  resized.generalRunnerPool.desiredCapacity = 1;
+  assert.equal(consumerDigest(validateConsumer(resized)), consumerDigest(original));
+  for (const mutate of [
+    c => { c.repository = 'another-owner/shared-pool'; },
+    c => { c.executionSlots[1].paths.workRoot = '/var/lib/different-root/work'; },
+    c => { c.executionSlots[1].runnerName = 'different-pool-member'; },
+    c => { for (const slot of c.executionSlots) slot.runnerUser = 'different-runner'; },
+    c => { c.runtimeUser = 'different-runtime'; for (const slot of c.executionSlots) slot.runtimeUser = c.runtimeUser; }
+  ]) {
+    const changed = structuredClone(original); mutate(changed);
+    assert.notEqual(consumerDigest(validateConsumer(changed)), consumerDigest(original));
+  }
+  const legacy = pool();
+  const resizedLegacy = structuredClone(legacy); resizedLegacy.executionSlots.pop();
+  assert.notEqual(consumerDigest(validateConsumer(resizedLegacy)), consumerDigest(validateConsumer(legacy)));
 });
 
 test('isolated child sees the complete immutable package payload and its admitted checkout', () => {
@@ -113,6 +171,74 @@ test('root journal routing and global admission drain read each immutable stored
     await assertWriterSlot({operation:'publication-state',runId:1,executionSlot:'second'}, {callerUid:'1202',resolveSlot:()=> 'second',store});
   `;
   await exec(process.execPath, ['--input-type=module', '-e', source], { env: { ...process.env, RELAY_CONSUMER_CONFIG: config, RELAY_EXECUTION_SLOT: 'second' } });
+});
+
+test('shared runner UID selects configured slots and recovers the original slot after capacity reduction', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-shared-slots-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const config = join(root, 'consumer.json');
+  const beforeResize = pool({ shared: true });
+  const admittedDigest = consumerDigest(validateConsumer(beforeResize));
+  beforeResize.generalRunnerPool.desiredCapacity = 1;
+  await writeFile(config, JSON.stringify(beforeResize), { mode: 0o644 });
+  const source = `
+    import assert from 'node:assert/strict';
+    import { callerExecutionSlot, assertWriterSlot } from './controller/src/privileged-writer-helper.mjs';
+    import { CONSUMER, CONSUMER_DIGEST } from './consumer/consumer.mjs';
+    import { publicationRecoveryJournal, recoverAttemptPublication } from './controller/src/recover-attempt-publication.mjs';
+    const uidForUser = user => user === 'relay-runner' ? 1201 : 1301;
+    const resolveSlot = options => callerExecutionSlot({ ...options, uidForUser });
+    for (const slotId of ['primary', 'second']) {
+      assert.equal(resolveSlot({ uid: 1201, slotId }), slotId);
+      await assertWriterSlot({ operation: 'admit', executionSlot: slotId }, { callerUid: '1201', resolveSlot });
+    }
+    for (const options of [{ uid: 1201 }, { uid: 1201, slotId: 'foreign' },
+      { uid: 0, slotId: 'primary' }, { uid: 1301, slotId: 'second' }]) {
+      assert.throws(() => resolveSlot(options), { code: 'EXECUTION_SLOT_IDENTITY_INVALID' });
+    }
+    const store = { get: async () => ({ envelope: { executionSlot: 'primary' } }) };
+    await assertWriterSlot({ operation: 'recover-publication', runId: 9, executionSlot: 'second' },
+      { callerUid: '1201', resolveSlot, store });
+    await assertWriterSlot({ operation: 'finish', runId: 9, executionSlot: 'second', recoveryAuthorizationId: 42 },
+      { callerUid: '1201', resolveSlot, store });
+    await assertWriterSlot({ operation: 'complete-handoff', runId: 9, executionSlot: 'second' },
+      { callerUid: '1201', resolveSlot, store });
+    for (const operation of ['preflight', 'finish', 'complete-execution']) {
+      await assert.rejects(assertWriterSlot({ operation, runId: 9, executionSlot: 'second' },
+        { callerUid: '1201', resolveSlot, store }), { code: 'EXECUTION_SLOT_BINDING_CHANGED' });
+    }
+    await assertWriterSlot({ operation: 'recover-publication', runId: 9, executionSlot: 'primary' },
+      { callerUid: '1201', resolveSlot, store });
+    await assertWriterSlot({ operation: 'publication-state', runId: 9, executionSlot: 'second' },
+      { callerUid: '1201', resolveSlot, store });
+    assert.equal(CONSUMER.generalRunnerPool.desiredCapacity,1);
+    assert.equal(CONSUMER_DIGEST,${JSON.stringify(admittedDigest)});
+    const envelope = {version:2,consumerDigest:${JSON.stringify(admittedDigest)},repository:CONSUMER.repository,
+      executionSlot:'second',attemptId:'run-9',runId:9,step:1,target:'issue',number:42,issueNumber:42,
+      route:'auto',branch:CONSUMER.taskBranchPrefix+'task-42',subagentsAllowed:true,
+      startHead:'a'.repeat(40),historicalBase:'a'.repeat(40),targetBase:'b'.repeat(40),
+      authorityDigest:'c'.repeat(64),profile:{cliModelId:'fixture-model',effort:'high'},validation:['diff-check']};
+    const outcome={status:'IMPLEMENTED_PENDING_FRESH_REVIEW',head:'d'.repeat(40)};
+    const record={version:2,envelope,execution:{reserved:true,returned:true,child:'started',containment:'reaped'},outcome};
+    let locked=false; const journal={get:async()=>{assert.ok(locked);return record;},withLock:async(id,fn)=>{
+      assert.equal(id,9);locked=true;try{return await fn();}finally{locked=false;}}};
+    const request={runId:9,attemptId:'run-9',authorizationId:42};
+    const broker={invoke:async value=>{
+      assert.equal(value.runId,9);assert.equal(value.attemptId,'run-9');
+      if(value.operation==='publication-state')return {envelope,recovery:{authorizationId:42}};
+      if(value.operation==='recover-publication')return {publishedHead:outcome.head};
+      if(value.operation==='complete-handoff')return outcome;
+      assert.fail('Unexpected recovery operation');
+    }};
+    const selected=await publicationRecoveryJournal(request,broker,{createStore:root=>{
+      assert.equal(root,CONSUMER.executionSlots[1].paths.attemptRoot);return journal;
+    }});
+    assert.equal(selected,journal);
+    assert.deepEqual(await recoverAttemptPublication({...request,broker,journal:selected,
+      collect:()=>assert.fail('Completed original result must not be recollected')}),outcome);
+  `;
+  await promisify(execFile)(process.execPath, ['--input-type=module', '-e', source],
+    { env: { ...process.env, RELAY_CONSUMER_CONFIG: config, RELAY_EXECUTION_SLOT: 'primary' } });
 });
 
 test('a duplicate controller never persists failure or completes the active owner reservation', async t => {

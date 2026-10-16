@@ -17,12 +17,15 @@ const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v)
 function freeze(v) { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; }
 
 export function validateConsumer(c) {
-  const { validationNames, executionSlots, ...required } = c ?? {};
+  const { validationNames, executionSlots, generalRunnerPool, ...required } = c ?? {};
   if (!keys(required, ['version', 'repository', 'owner', 'baseBranch', 'taskBranchPrefix', 'routingWorkflow', 'recoveryWorkflow', 'validationWorkflow',
     'writerApp', 'reviewerApp', 'writerIdentity', 'remediationIdentity', 'defaultProfile', 'paths', 'runtimeUser'])) reject();
   if (Object.hasOwn(c, 'validationNames') && (!Array.isArray(validationNames) || validationNames.length > 32
     || new Set(validationNames).size !== validationNames.length
     || validationNames.some(name => !text(name, /^[a-z][a-z0-9-]{0,63}$/)))) reject();
+  if (Object.hasOwn(c, 'generalRunnerPool') && (!keys(generalRunnerPool, ['desiredCapacity'])
+    || !Number.isInteger(generalRunnerPool.desiredCapacity) || generalRunnerPool.desiredCapacity < 1
+    || generalRunnerPool.desiredCapacity > 32 || !Object.hasOwn(c, 'executionSlots'))) reject();
   const repo = typeof c.repository === 'string' ? c.repository.split('/') : [];
   if (c.version !== 1 || repo.length !== 2 || !login(repo[0]) || !text(repo[1], /^[A-Za-z0-9_.-]{1,100}$/)
     || ['.', '..'].includes(repo[1]) || !login(c.owner) || !safeBranch(c.baseBranch)
@@ -51,7 +54,8 @@ export function validateConsumer(c) {
     'diagnosticsStore', 'diagnosticsRoot', 'credentialEnv', 'credentialKeyFile', 'claimRoot'])
     || Object.values(c.paths).some(v => !path(v)) || new Set(Object.values(c.paths)).size !== Object.keys(c.paths).length) reject();
   if (Object.hasOwn(c, 'executionSlots')) {
-    // One installation snapshot, with finite independent identities and roots.
+    // One repository snapshot with bounded resources and separate attempt roots.
+    // Managed pool instances may share trusted runner and non-root worker UIDs.
     // The primary slot retains all legacy locations for old attempt recovery.
     if (!Array.isArray(executionSlots) || executionSlots.length < 1 || executionSlots.length > 32) reject();
     for (const slot of executionSlots) {
@@ -63,10 +67,13 @@ export function validateConsumer(c) {
         || Object.values(slot.paths).some(v => !path(v))
         || new Set(Object.values(slot.paths)).size !== EXECUTION_PATH_NAMES.length) reject();
     }
-    for (const field of ['id', 'runnerName', 'runnerUser', 'runtimeUser', 'workGroup']) {
+    const distinctFields = generalRunnerPool ? ['id', 'runnerName']
+      : ['id', 'runnerName', 'runnerUser', 'runtimeUser', 'workGroup'];
+    for (const field of distinctFields) {
       if (new Set(executionSlots.map(slot => slot[field])).size !== executionSlots.length) reject();
     }
-    if (new Set(executionSlots.flatMap(slot => [slot.runnerUser, slot.runtimeUser])).size !== 2 * executionSlots.length) reject();
+    const runnerUsers = new Set(executionSlots.map(slot => slot.runnerUser));
+    if (executionSlots.some(slot => runnerUsers.has(slot.runtimeUser))) reject();
     const primary = executionSlots.find(slot => slot.id === 'primary');
     if (!primary || primary.runtimeUser !== c.runtimeUser || EXECUTION_PATH_NAMES.some(name => primary.paths[name] !== c.paths[name])) reject();
     for (let i = 0; i < executionSlots.length; i++) {
@@ -131,7 +138,12 @@ export function assertRootConsumer(pathname) {
     if (at === '/') break;
   }
 }
-export const consumerDigest = c => createHash('sha256').update(JSON.stringify(c)).digest('hex');
+// Desired pool capacity controls physical runner occupancy, not an admitted
+// attempt's immutable identity. Managed configurations keep all resource-slot
+// bindings stable so changing capacity cannot strand original-run recovery.
+// Every runtime identity, helper, path and repository binding remains hashed.
+export const consumerDigest = c => createHash('sha256').update(JSON.stringify(c.generalRunnerPool
+  ? { ...c, generalRunnerPool: {} } : c)).digest('hex');
 
 export function resolveExecutionConsumer(c, slotId) {
   if (!c.executionSlots) {

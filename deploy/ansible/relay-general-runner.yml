@@ -17,8 +17,8 @@
           - relay_production_operation_phase == 'general-runner-enable'
           - relay_production_exact_head is match('^[0-9a-f]{40}$')
           - >-
-            relay_runner_name == relay_general_runner_name if relay_execution_slot | default('primary') == 'primary'
-            else relay_runner_name == (relay_execution_slots | selectattr('id', 'equalto', relay_execution_slot) | first).runnerName
+            (relay_runner_name == relay_general_runner_name if relay_execution_slot | default('primary') == 'primary'
+            else relay_runner_name == (relay_execution_slots | selectattr('id', 'equalto', relay_execution_slot) | first).runnerName)
           - relay_runner_registration_scope == relay_general_runner_registration_scope
           - relay_runner_registration_scope in ['repository', 'organization']
           - >-
@@ -27,8 +27,8 @@
              relay_runner_registration_group is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$') and
              relay_runner_registration_group | lower != relay_production_runner_registration_group | lower)
           - >-
-            relay_runner_user == relay_general_runner_user if relay_execution_slot | default('primary') == 'primary'
-            else relay_runner_user == (relay_execution_slots | selectattr('id', 'equalto', relay_execution_slot) | first).runnerUser
+            (relay_runner_user == relay_general_runner_user if relay_execution_slot | default('primary') == 'primary'
+            else relay_runner_user == (relay_execution_slots | selectattr('id', 'equalto', relay_execution_slot) | first).runnerUser)
           - relay_runner_group == relay_runner_user
           - relay_runner_root == (relay_install_root ~ ('/general-runner' if relay_execution_slot | default('primary') == 'primary' else '/slots/' ~ relay_execution_slot ~ '/runner'))
           - relay_runner_work_root == (relay_state_root ~ ('/general-runner/work' if relay_execution_slot | default('primary') == 'primary' else '/slots/' ~ relay_execution_slot ~ '/runner/work'))

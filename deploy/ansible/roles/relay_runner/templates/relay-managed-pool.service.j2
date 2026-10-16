@@ -1,0 +1,31 @@
+[Unit]
+Description=Relay managed shared General Runner {{ relay_general_runner_pool.name }}/{{ relay_pool_member.id }}
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ relay_pool_member.root }}/.runner
+
+[Service]
+Type=simple
+User={{ relay_general_runner_pool.runnerUser }}
+Group={{ relay_general_runner_pool.runnerUser }}
+Environment=HOME={{ relay_pool_member.state }}/home
+Environment=RUNNER_ALLOW_RUNASROOT=0
+WorkingDirectory={{ relay_pool_member.root }}
+ExecStart={{ relay_pool_member.root }}/run.sh
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=false
+# Each repository keeps its fixed sudo helpers and Unix ownership boundaries.
+# These writable parents permit joining another eligible namespace without
+# replacing an active shared runner's mount namespace. Root credentials remain
+# inaccessible to the unprivileged runner account.
+ReadWritePaths={{ relay_pool_member.root }} {{ relay_pool_member.state }} /var/lib /var/log
+TimeoutStopSec=infinity
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

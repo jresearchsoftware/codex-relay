@@ -32,9 +32,12 @@ function validServices(value) {
 // The fixed root entrypoints serialize every call with publication-v2.lock.
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
-export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true }) {
-  if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')) fail('ADMISSION_CONFIG_INVALID');
-  const pathname = join(root, 'admission-v1.json');
+export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
+  stateName = 'admission-v1.json', supplementalInventory = null }) {
+  if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
+    || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
+    || (supplementalInventory !== null && typeof supplementalInventory !== 'function')) fail('ADMISSION_CONFIG_INVALID');
+  const pathname = join(root, stateName);
   async function protect() {
     if (!protectedRoot) return;
     for (let at = root; ; at = dirname(at)) {
@@ -55,6 +58,10 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     return value;
   }
   async function read({ missing = false } = {}) {
+    // A migrated gate never makes its old store invisible. Verify both stores
+    // before observing even an open gate; the callback retains the original
+    // configuration/validator rather than accepting its digest here.
+    if (supplementalInventory) await inventory();
     await protect();
     let file;
     try { file = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
@@ -117,7 +124,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       || e.consumerDigest !== consumerDigest) fail('ADMISSION_ATTEMPT_INVALID');
     return e;
   }
-  async function inventory(task = null, slot = null) {
+  async function currentInventory(task = null, slot = null) {
     const active = []; const unknown = [];
     for (const record of await store.all()) {
       const e = validRecord(record);
@@ -162,6 +169,18 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       }
     }
     return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
+  }
+  async function inventory(task = null, slot = null) {
+    if (!supplementalInventory) return currentInventory(task, slot);
+    // Classify the complete current store before a filtered Task/slot check.
+    // Corrupt unrelated records must not be hidden by the requested filter.
+    const complete = await currentInventory();
+    const supplemental = await supplementalInventory({ task, slot });
+    if (!supplemental || !['active', 'unknown'].every(key => Array.isArray(supplemental[key])
+      && supplemental[key].every(positive))) fail('ADMISSION_ATTEMPT_INVALID');
+    const current = task === null && slot === null ? complete : await currentInventory(task, slot);
+    return Object.fromEntries(['active', 'unknown'].map(key =>
+      [key, [...new Set([...current[key], ...supplemental[key]])].sort((a, b) => a - b)]));
   }
   return {
     async initialize() {
@@ -244,6 +263,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       return write({ ...state, phase: 'open', operationId: null, target: null, previousActive: null, verifiedRevision: null });
     },
     async complete({ runId, attemptId }) {
+      if (supplementalInventory) await inventory();
       await protect();
       if (!positive(runId)) fail('RUN_ID_INVALID');
       const record = await store.get(runId); const e = validRecord(record);

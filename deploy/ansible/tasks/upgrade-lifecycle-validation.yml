@@ -1,4 +1,6 @@
 ---
+# Migration retains actual target-pool activity, not the stopped SERIAL unit.
+# The same PID/start-time checks remain binding for any already active peer pool.
 - name: Inspect managed upgrade service activity after exact installed proof
   ansible.builtin.command:
     argv:
@@ -14,7 +16,7 @@
 - name: Require preserved activation intent and healthy previously active components
   ansible.builtin.assert:
     that:
-      - item.stdout is search('(?m)^LoadState=loaded$')
+      - item.stdout is search('(?m)^LoadState=loaded$') or (relay_general_runner_pool is defined and (component == 'general' or component is match('^slot-')) and item.stdout is search('(?m)^LoadState=not-found$'))
       - item.stdout is search('(?m)^NeedDaemonReload=no$')
       - >-
         (
@@ -34,7 +36,8 @@
       - >-
         (
           relay_upgrade_lifecycle_previous_active[component].load == 'not-found' and
-          item.stdout is search('(?m)^UnitFileState=disabled$')
+          (item.stdout is search('(?m)^UnitFileState=disabled$') or
+           (relay_general_runner_pool is defined and item.stdout is search('(?m)^LoadState=not-found$')))
         ) or
         (
           [relay_upgrade_lifecycle_previous_active[component].enabled] ==

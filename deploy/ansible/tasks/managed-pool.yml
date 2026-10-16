@@ -1,0 +1,45 @@
+---
+# Physical membership is independent of repository namespaces and runtime UIDs.
+# The public owner Apply performs registration/activation after verified install.
+- name: Inspect existing pool paths registrations and services before the first mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", playbook_dir + "/../managed_pool.py") }}', --preflight]
+    stdin: '{{ {"contract": relay_general_runner_pool, "unitTemplate": lookup("file", playbook_dir + "/roles/relay_runner/templates/relay-managed-pool.service.j2", rstrip=false)} | to_json }}'
+  register: relay_pool_install_preflight
+  changed_when: false
+  check_mode: false
+
+- name: Retain only the read-only pool installation plan
+  ansible.builtin.set_fact:
+    relay_pool_install_plan: '{{ relay_pool_install_preflight.stdout | from_json }}'
+
+- name: Create only missing protected global pool parents
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+    follow: false
+  loop: '{{ relay_pool_install_plan.createParents }}'
+
+- name: Install only the configured physical pool capacity
+  ansible.builtin.include_tasks: managed-pool-member.yml
+  loop: '{{ relay_general_runner_pool.members[:relay_general_runner_pool.desiredCapacity] }}'
+  loop_control:
+    loop_var: relay_pool_member
+    label: '{{ relay_pool_member.id }}'
+  when: not relay_pool_install_plan.members[relay_pool_member.id].retiring
+
+- name: Install the fixed root-only owner pool entrypoint
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runner/templates/relay-managed-pool.j2'
+    dest: '{{ relay_install_root }}/relay-managed-pool'
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Reload the shared pool unit definitions without stopping running jobs
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode | bool

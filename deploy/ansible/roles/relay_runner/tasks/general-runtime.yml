@@ -20,17 +20,27 @@
     name: '{{ relay_runner_group }}'
     system: true
 
+- name: Inspect the existing shared runner account without changing its login settings
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_runner_user }}'
+    fail_key: false
+  register: relay_general_existing_account
+  changed_when: false
+  when: relay_general_runner_pool is defined and relay_execution_slot | default('primary') == 'primary'
+
 - name: Create the isolated general runner identity with only Codex work membership
   ansible.builtin.user:
     name: '{{ relay_runner_user }}'
-    group: '{{ relay_runner_group }}'
+    group: '{{ omit if relay_general_runner_pool is defined and (relay_general_existing_account.ansible_facts.getent_passwd | default({})).get(relay_runner_user) else relay_runner_group }}'
     groups: ['{{ relay_codex_work_group }}']
-    append: false
+    append: '{{ relay_general_runner_pool is defined }}'
     system: true
     create_home: false
-    home: '{{ relay_runner_home }}'
-    shell: /usr/sbin/nologin
+    home: '{{ omit if relay_general_runner_pool is defined and (relay_general_existing_account.ansible_facts.getent_passwd | default({})).get(relay_runner_user) else relay_runner_home }}'
+    shell: '{{ omit if relay_general_runner_pool is defined and (relay_general_existing_account.ansible_facts.getent_passwd | default({})).get(relay_runner_user) else "/usr/sbin/nologin" }}'
   register: relay_general_runtime_identity
+  when: relay_general_runner_pool is not defined or relay_execution_slot | default('primary') == 'primary'
 
 - name: Refuse stale identity or supplementary groups in the live general transport
   ansible.builtin.assert:
@@ -41,19 +51,11 @@
     - relay_upgrade_lifecycle_managed | default(false) | bool
     - relay_upgrade_lifecycle_general_was_active | default(false) | bool
     - not ansible_check_mode | bool
+    - relay_general_runner_pool is not defined or relay_execution_slot | default('primary') == 'primary'
 
 # These are the existing generic routing namespaces, not production runner
 # state. Preserve journal bytes and old attempts; never transfer worker-owned
 # checkout contents or broaden relay-codex access to the runner journal.
-- name: Assign existing generic dispatch journals to the general runner
-  ansible.builtin.file:
-    path: '{{ relay_dispatch_state_root }}'
-    state: directory
-    owner: '{{ relay_runner_user }}'
-    group: '{{ relay_runner_group }}'
-    recurse: true
-    follow: false
-
 - name: Preserve the private routing and shared Codex work boundaries
   ansible.builtin.file:
     path: '{{ item.path }}'
@@ -66,6 +68,15 @@
     - {path: '{{ relay_dispatch_home }}', group: '{{ relay_runner_group }}', mode: '0700'}
     - {path: '{{ relay_dispatch_evidence_root }}', group: '{{ relay_runner_group }}', mode: '0700'}
     - {path: '{{ relay_dispatch_work_root }}', group: '{{ relay_codex_work_group }}', mode: '2770'}
+
+- name: Assign existing generic dispatch journals to the general runner
+  ansible.builtin.file:
+    path: '{{ relay_dispatch_state_root }}'
+    state: directory
+    owner: '{{ relay_runner_user }}'
+    group: '{{ relay_runner_group }}'
+    recurse: true
+    follow: false
 
 # Reuse the existing typed helpers. Separate files keep production-user and
 # general-user grants distinct on every apply, without general local apply.

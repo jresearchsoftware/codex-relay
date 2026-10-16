@@ -1,4 +1,4 @@
-import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, runnerExecutionSlot } from '../../consumer/consumer.mjs';
+import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, executionConsumer, runnerExecutionSlot } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
@@ -8,6 +8,7 @@ import { reportRoutingResult } from './entrypoint.mjs';
 import { causalEvidence, digest, fail, positive, validateEnvelope } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
+import { historicalProgram } from './serial-pool-program.mjs';
 
 export function parseRecoveryRequest(request) {
   if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
@@ -43,7 +44,11 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId, attemptId, ...value });
   const state = await invoke('publication-state', { authorizationId });
   const e = validateEnvelope(state.envelope);
-  if (CONSUMER.executionSlots && (e.executionSlot ?? 'primary') !== EXECUTION_SLOT) fail('EXECUTION_SLOT_BINDING_CHANGED');
+  if (CONSUMER.executionSlots && (e.executionSlot ?? 'primary') !== EXECUTION_SLOT) {
+    const original = CONSUMER.executionSlots.find(slot => slot.id === (e.executionSlot ?? 'primary'));
+    const current = CONSUMER.executionSlots.find(slot => slot.id === EXECUTION_SLOT);
+    if (!CONSUMER.generalRunnerPool || !original || !current || original.runnerUser !== current.runnerUser) fail('EXECUTION_SLOT_BINDING_CHANGED');
+  }
   const record = await journal.get(runId);
   if (!record || record.version !== e.version || digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
   const execution = record.execution;
@@ -90,6 +95,19 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
   }
 }
 
+export async function publicationRecoveryJournal(request, broker, { createStore = createAttemptStore } = {}) {
+  let journalRoot = EXECUTION_CONSUMER.paths.attemptRoot;
+  if (CONSUMER.generalRunnerPool) {
+    // Current physical runner capacity is independent of retained resource
+    // slots. Obtain the original slot solely from protected Writer state.
+    const state = await broker.invoke({ operation: 'publication-state', runId: request.runId,
+      attemptId: request.attemptId, authorizationId: request.authorizationId });
+    const original = validateEnvelope(state.envelope);
+    journalRoot = executionConsumer(original.executionSlot).paths.attemptRoot;
+  }
+  return createStore(journalRoot);
+}
+
 export async function main() {
   if (process.argv.length !== 2) fail('RECOVERY_REQUEST_INVALID');
   let bytes = 0; const chunks = [];
@@ -99,6 +117,9 @@ export async function main() {
   let request;
   try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('RECOVERY_REQUEST_INVALID'); }
   parseRecoveryRequest(request);
+  const historical = await historicalProgram({ kind: 'publication-recovery', request, consumer: CONSUMER,
+    consumerPath: process.env.RELAY_CONSUMER_CONFIG });
+  if (historical.handled) return historical.value;
   const local = createLocalWriterAdapter();
   const executionSlot = runnerExecutionSlot();
   const broker = { invoke: value => local.invoke({ ...value, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: process.env.GITHUB_TOKEN }) };
@@ -114,7 +135,7 @@ export async function main() {
   }
   if (Object.keys(request).sort().join(',') !== 'attemptId,authorizationId,runId') fail('RECOVERY_REQUEST_INVALID');
   return recoverAttemptPublication({ ...request, broker,
-    journal: createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot), collect: collectCheckout });
+    journal: await publicationRecoveryJournal(request, broker), collect: collectCheckout });
 }
 
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }

@@ -40,14 +40,23 @@
   register: relay_base_dispatch_group
   when: relay_deployment_profile == 'production'
 
+- name: Inspect the owner-selected generic dispatch account before reconciliation
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_dispatch_user }}'
+    fail_key: false
+  register: relay_base_existing_dispatch
+  changed_when: false
+  when: relay_deployment_profile == 'production'
+
 - name: Create the separate generic dispatch identity before runtime installation
   ansible.builtin.user:
     name: '{{ relay_dispatch_user }}'
-    group: '{{ relay_dispatch_group }}'
+    group: '{{ omit if relay_general_runner_pool is defined and (relay_base_existing_dispatch.ansible_facts.getent_passwd | default({})).get(relay_dispatch_user) else relay_dispatch_group }}'
     system: true
     create_home: false
-    home: '{{ relay_state_root }}/general-runner/home'
-    shell: /usr/sbin/nologin
+    home: '{{ omit if relay_general_runner_pool is defined and (relay_base_existing_dispatch.ansible_facts.getent_passwd | default({})).get(relay_dispatch_user) else relay_state_root ~ "/general-runner/home" }}'
+    shell: '{{ omit if relay_general_runner_pool is defined and (relay_base_existing_dispatch.ansible_facts.getent_passwd | default({})).get(relay_dispatch_user) else "/usr/sbin/nologin" }}'
   when:
     - relay_deployment_profile == 'production'
     - not ansible_check_mode | bool or not relay_base_dispatch_group.changed | bool

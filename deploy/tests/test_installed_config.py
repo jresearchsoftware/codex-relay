@@ -105,6 +105,83 @@ def test_valid_snapshot_preserves_exact_consumer_revision_and_bytes(installed, c
     assert capsys.readouterr().out == ''
 
 
+@pytest.fixture
+def external_pool_installed(installed):
+    config = installed['config']
+    config['consumer']['repository'] = 'example/consumer'
+    config['consumer']['generalRunnerPool'] = {'desiredCapacity': 2}
+    config['environment']['localApply'] = {'configPath': 'deploy/relay.json'}
+    config['environment']['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
+    config['environment']['generalRunner'].update(scope='organization', group='example-general', poolApp={
+        'appId': '101', 'installationId': '201', 'privateKeyFile': '/owner-private/app.pem'})
+    save_config(installed)
+    return installed
+
+
+def test_external_pool_snapshot_requires_explicit_owner_helper_verification(external_pool_installed):
+    fixture = external_pool_installed
+    before = installed_config.stamp(fixture['snapshot'].stat())
+    with pytest.raises(ValueError, match='^installed-config-binding$'):
+        installed_config.verify(fixture['source'], HEAD)
+    with patch.object(installed_config, 'check_public_main') as remote:
+        config, digest, consumer = installed_config.verify(fixture['source'], HEAD, require_local_apply=False)
+    assert config['consumer']['repository'] == 'example/consumer'
+    assert config['consumer']['generalRunnerPool'] == {'desiredCapacity': 2}
+    assert config['environment']['localApply'] == {'configPath': 'deploy/relay.json'}
+    assert digest == fixture['manifest']['deploymentConfigSha256']
+    assert consumer == CONSUMER_HEAD
+    assert installed_config.stamp(fixture['snapshot'].stat()) == before
+    remote.assert_not_called()
+
+
+def test_owner_pool_entrypoint_verifies_external_snapshot_before_token_or_state_access(external_pool_installed, monkeypatch):
+    import managed_pool
+    fixture = external_pool_installed
+    monkeypatch.setattr(managed_pool, '__file__', str(fixture['source'] / 'deploy/managed_pool.py'))
+
+    def verified(config):
+        assert config['consumer']['repository'] == 'example/consumer'
+        assert config['environment']['localApply'] == {'configPath': 'deploy/relay.json'}
+        raise RuntimeError('fixture-stopped-before-mutation')
+
+    with patch.object(managed_pool, 'pool_contract', side_effect=verified), \
+            patch.object(managed_pool.sys, 'stdin') as token_input, patch.object(managed_pool, 'State') as state:
+        with pytest.raises(RuntimeError, match='^fixture-stopped-before-mutation$'):
+            managed_pool.installed_main(HEAD)
+    token_input.read.assert_not_called()
+    state.assert_not_called()
+
+
+@pytest.mark.parametrize('mutation', ['namespace', 'source-head', 'manifest-head', 'config-digest',
+                                   'snapshot-mode', 'snapshot-owner', 'manifest-symlink', 'current', 'source-parent'])
+def test_owner_pool_verification_preserves_all_snapshot_boundaries(external_pool_installed, capsys, mutation):
+    fixture = external_pool_installed
+    if mutation == 'namespace':
+        fixture['config']['environment']['namespace'] = 'another-relay'
+        save_config(fixture)
+    elif mutation == 'source-head':
+        write_json(fixture['source_identity'], {'revision': 'c' * 40}, 0o644)
+    elif mutation == 'manifest-head':
+        fixture['manifest']['installedRevision'] = 'c' * 40
+        write_json(fixture['manifest_path'], fixture['manifest'], 0o640)
+    elif mutation == 'config-digest':
+        fixture['snapshot'].write_bytes(fixture['snapshot'].read_bytes() + b'\n')
+    elif mutation == 'snapshot-mode':
+        fixture['snapshot'].chmod(0o640)
+    elif mutation == 'snapshot-owner':
+        os.chown(fixture['snapshot'], 1, 0)
+    elif mutation == 'manifest-symlink':
+        original = fixture['manifest_path'].with_suffix('.original')
+        fixture['manifest_path'].rename(original)
+        fixture['manifest_path'].symlink_to(original)
+    elif mutation == 'current':
+        fixture['current'].unlink()
+        fixture['current'].symlink_to(fixture['release'].with_name('c' * 40))
+    else:
+        fixture['source'].chmod(0o777)
+    assert_rejected(fixture, capsys, require_local_apply=False)
+
+
 def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installed, capsys, monkeypatch):
     import deployment_lock
     spec = importlib.util.spec_from_file_location('installed_cli_fixture', ROOT / 'deploy/relay-deploy.py')
@@ -128,7 +205,8 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
         assert path == '/var/lib/codex-relay-deployment.lock'
         return original_acquire(installed['base'] / 'deployment.lock')
 
-    def backend(argv, cwd, env, log, guard):
+    def backend(argv, cwd, env, log, guard, pool_guard=None):
+        assert pool_guard is None
         values = json.loads(Path(argv[argv.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
         values = next(iter(values.values()))
         assert values['ansible_connection'] == 'local'

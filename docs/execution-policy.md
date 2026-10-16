@@ -82,6 +82,14 @@ general standing policy, not an exception for an individual Task. No new
 per-operation approval, Task, Step or Relay attempt is required for operations
 inside that boundary.
 
+A shared disposable TEST installation has at most one owner Task at a time.
+Establish its allocation before use, return it to normal working TEST state
+and release ownership on handback. Competing Tasks wait or report BLOCKED.
+The owner Task may recreate its dedicated sandbox without preserving its
+preexisting disposable state or requesting permission for each operation;
+preserve evidence required by the qualification being performed. An atomic
+lease or semaphore is unnecessary unless actual concurrent demand warrants it.
+
 Within the sandbox, Codex may choose suitable tools and shells, manage services,
 edit or remove filesystem state, delete and recreate resources, rebuild,
 install, reinstall, upgrade, reset failed TEST state and run qualification.
