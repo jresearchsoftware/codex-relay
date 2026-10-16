@@ -150,6 +150,21 @@ review publication itself is not Step allocation. Preserve the canonical branch,
 PR and starting-head gate. A new candidate needs fresh exact-head review;
 approval of an older head cannot accept it.
 
+If a schema-v4 remediation Step safely publishes head B and reports `BLOCKED`,
+preserve the same CR and its original reviewed head A. Publish a trusted
+Task-scoped Decision resolving the blocker after the canonical Writer Outcome,
+then apply the matching fresh owner ready command to that PR. Writer admits the
+next Step at B only after verifying its protected automatic publication or
+manual submission, authentic native Writer Outcome, exact Task/PR/CR and
+branch/base/attempt lineage, and current refs. A Decision or current PR head alone
+does not launch work or prove B. Unresolved attempts, foreign/moved/unpublished
+heads, stale authority or replayed commands stop admission. No replacement CR or
+new launch form is needed merely because Writer advanced the blocked result.
+The PR #134 new-current-head-CR workaround belongs to the older protocol;
+historical evidence remains unchanged. See the
+[same-CR continuation contract](../controller/README.md#same-cr-continuation-after-a-blocked-result).
+Source tests do not prove that an installation supports this corrected path.
+
 ## Visible evidence, warnings and recovery
 
 Necessary Decisions, CRs/reviews, Outcomes, Task Approvals/findings and retained

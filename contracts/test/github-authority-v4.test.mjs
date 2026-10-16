@@ -193,6 +193,60 @@ test('new execution snapshot binds exact authority, run, attempt, Step and linea
   reject(() => createAdmissionSnapshot(resolved, { step: 1, attempt: '123', branch: null }), 'AUTHORITY_STARTING_STATE_INVALID');
 });
 
+test('same-CR successor snapshot retains the original reviewed head with a distinct Writer starting head and immediate lineage', () => {
+  const change = crNative();
+  const originalReview = structuredClone(change);
+  const resolved = resolve([change], { pullRequest: 42 });
+  const first = admits(resolved);
+  const originalSnapshot = structuredClone(first);
+  const originalDigest = admissionBinding(first).sha256;
+  const lineage = { attempt: first.attempt, step: first.step, sha256: 'd'.repeat(64) };
+  const published = 'c'.repeat(40);
+  const successor = admits(resolved, { step: 2, attempt: '124', runId: '124', lineage, starting_head: published });
+
+  assert.equal(successor.starting_head, published);
+  assert.equal(successor.reviewed_head_sha, head);
+  assert.equal(successor.existing_pr, first.existing_pr);
+  assert.equal(successor.branch, first.branch);
+  assert.equal(successor.base_sha, first.base_sha);
+  assert.equal(successor.change_request_id, first.change_request_id);
+  assert.deepEqual(successor.authority.change_request, nativeReference(change));
+  assert.deepEqual(successor.lineage, lineage);
+  assert.deepEqual(validateAdmissionSnapshot(structuredClone(successor)), successor);
+  assert.notEqual(admissionBinding(successor).sha256, originalDigest);
+  assert.deepEqual(first, originalSnapshot);
+  assert.equal(admissionBinding(first).sha256, originalDigest);
+  assert.deepEqual(change, originalReview);
+  // The shape validator cannot prove Writer publication or authenticate lineage;
+  // the protected admission path must supply that independent evidence.
+  assert.equal(resolve([change], { pullRequest: 42 }).request.starting_head, head);
+});
+
+test('distinct same-CR starting heads keep the existing source, target and immediate-lineage validation gates', () => {
+  const resolved = resolve([crNative()], { pullRequest: 42 });
+  const first = admits(resolved);
+  const starting_head = 'c'.repeat(40);
+  const lineage = { attempt: first.attempt, step: first.step, sha256: 'd'.repeat(64) };
+  const admission = { step: 2, attempt: '124', runId: '124', starting_head, lineage };
+
+  reject(() => admits(resolved, { ...admission, lineage: null }), 'AUTHORITY_CR_BINDING_INVALID');
+  reject(() => admits(resolved, { ...admission, lineage: undefined }), 'AUTHORITY_CR_BINDING_INVALID');
+  reject(() => admits(resolved, { ...admission, lineage: {} }), 'AUTHORITY_ADMISSION_INVALID');
+  reject(() => admits(resolved, { ...admission, lineage: { ...lineage, sha256: 'forged' } }), 'AUTHORITY_ADMISSION_INVALID');
+  reject(() => admits(resolved, { ...admission, step: 3 }), 'AUTHORITY_ADMISSION_MISMATCH');
+  reject(() => admits(resolved, { ...admission, attempt: first.attempt }), 'AUTHORITY_ADMISSION_MISMATCH');
+  reject(() => admits(resolved, { ...admission, existing_pr: 43 }), 'AUTHORITY_CR_BINDING_INVALID');
+  reject(() => admits(resolved, { ...admission, starting_head: null }), 'AUTHORITY_STARTING_STATE_INVALID');
+  const snapshot = admits(resolved, admission);
+  for (const field of ['change_request_id', 'reviewed_head_sha']) {
+    const missing = structuredClone(snapshot);
+    delete missing[field];
+    reject(() => validateAdmissionSnapshot(missing), 'AUTHORITY_CR_BINDING_INVALID');
+  }
+  reject(() => validateAdmissionSnapshot({ ...snapshot, authority: { ...snapshot.authority, sha256: 'f'.repeat(64) } }), 'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => validateAdmissionSnapshot(snapshot, { authority: first.authority, attempt: first.attempt }), 'AUTHORITY_ADMISSION_MISMATCH');
+});
+
 function approvalFixture() {
   const resolved = resolve();
   const admission = admissionBinding(admits(resolved));

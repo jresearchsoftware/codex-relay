@@ -8,6 +8,7 @@ import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { readTaskAuthority } from './task-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
 import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { blockedCrContinuation } from './blocked-cr-continuation.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -89,6 +90,13 @@ export async function readAuthority(api, target, number, { targetBase, step, str
         !== canonicalAuthorityJson(typed.originalAuthority.request[field]))) fail('AUTHORITY_CHANGED');
     if (nativeAdmission && !pr && semantic.kind === 'change-request') fail('AUTHORITY_SOURCE_TARGET_MISMATCH');
     let continuationState;
+    const priorCr = previousRecord?.envelope;
+    const retainedCrProgress = pr && priorCr?.target === 'pull_request' && priorCr.number === pr.number
+      && priorCr.reviewId === typed.reference.id
+      && (previousRecord.publishedHead ?? previousRecord.outcome?.head ?? priorCr.startHead) !== semantic.starting_head;
+    if (nativeAdmission && pr && !snapshot && (pr.head.sha !== semantic.starting_head || retainedCrProgress)) {
+      continuationState = await blockedCrContinuation(api, { typed, pr, step, lineage, previousRecord, targetBase });
+    }
     const priorAuthority = previousRecord?.envelope?.request?.authority;
     const newStartingPin = typed.decisions?.some(item => ['branch', 'base_sha', 'starting_head', 'existing_pr']
       .some(field => Object.hasOwn(item.decision.amendments, field))

@@ -78,9 +78,16 @@ export async function beginRemediation({ api, store, request, authorityDigest, a
   const authority = await read();
   const binding = { repository: REPOSITORY, prNumber: request.prNumber, reviewId: request.reviewId,
     head: request.head, authorityDigest: authority.authorityDigest };
-  const record = await store.get(request.reviewId) ?? { binding };
+  // Only protected Writer can supply a retained admission at a later head.
+  // Its lifecycle namespace is keyed by run, leaving the original review's
+  // exact A/head/authority intent and recovery bytes untouched.
+  const continuing = admittedEnvelope?.request?.kind === 'admission'
+    && admittedEnvelope.startHead !== admittedEnvelope.request.reviewed_head_sha;
+  const key = continuing ? admittedEnvelope.runId : request.reviewId;
+  if (continuing) binding.admission = digest(admittedEnvelope);
+  const record = await store.get(key) ?? { binding };
   if (digest(record.binding) !== digest(binding)) fail('PR_LIFECYCLE_BINDING_CHANGED');
-  const pr = await transitionPr({ api, store, key: request.reviewId, record, head: request.head, draft: true,
+  const pr = await transitionPr({ api, store, key, record, head: request.head, draft: true,
     readPr: async () => {
       const fresh = await read();
       if (fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
