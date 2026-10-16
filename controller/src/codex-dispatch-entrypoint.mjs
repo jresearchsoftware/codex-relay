@@ -2,7 +2,8 @@ import { readRepositoryRequest, entrypointFailure } from './repository-entrypoin
 
 try {
   const request = process.argv.length === 3 && process.argv[2] === '--check-runtime' ? undefined
-    : await readRepositoryRequest({ limit: 512 * 1024 });
+    : await readRepositoryRequest({ limit: 512 * 1024, limitCode: 'ENVELOPE_TOO_LARGE',
+      parseCode: 'EXECUTION_FAILED', targetCode: 'EXECUTION_ENVELOPE_INVALID' });
   const { main, serializeDispatchFailure } = await import('./codex-dispatch.mjs');
   try { process.stdout.write(JSON.stringify(await main(request)) + '\n'); }
   catch (error) { process.stderr.write(JSON.stringify(serializeDispatchFailure(error)) + '\n'); process.exitCode = 1; }

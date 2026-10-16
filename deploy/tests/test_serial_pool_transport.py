@@ -402,10 +402,11 @@ def test_installed_prospective_digest_reads_protected_current_graph_without_chan
     monkeypatch.setattr(installation, 'ProtectedFiles', lambda: files)
     node = installation._node
     calls = []
-    def current_graph(source, consumer_path, code, payload=None):
+    def current_graph(source, consumer_path, code, payload=None, repository=None):
         assert consumer_path == logical
+        assert repository == value['consumer']['repository']
         calls.append(consumer_path)
-        return node(source, str(physical), code, payload)
+        return node(source, str(physical), code, payload, repository=repository)
     monkeypatch.setattr(installation, '_node', current_graph)
     expected = transport.consumer_digest(projected, ROOT)
     assert installation.current_consumer_digest(value, ROOT) == expected

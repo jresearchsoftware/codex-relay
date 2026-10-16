@@ -3,19 +3,26 @@ import { assertRootConsumer, loadConsumer, selectRepositoryConsumer } from '../.
 // Select only a configured target before loading modules with process-local
 // repository constants. Each fixed helper invocation handles one request.
 export async function readRepositoryRequest({ input = process.stdin, limit, protectedConfig = false,
-  env = process.env } = {}) {
-  if (protectedConfig) assertRootConsumer(env.RELAY_CONSUMER_CONFIG);
+  env = process.env, limitCode = 'REQUEST_TOO_LARGE', parseCode = 'REQUEST_INVALID',
+  emptyCode = parseCode, targetCode } = {}) {
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
   const installation = loadConsumer(env.RELAY_CONSUMER_CONFIG);
+  if (protectedConfig) {
+    try { assertRootConsumer(env.RELAY_CONSUMER_CONFIG); } catch { fail('CONSUMER_CONFIG_INVALID'); }
+  }
   let size = 0; const chunks = [];
   for await (const value of input) {
     const chunk = Buffer.from(value); size += chunk.length;
-    if (size > limit) throw Object.assign(new Error('REQUEST_TOO_LARGE'), { code: 'REQUEST_TOO_LARGE' });
+    if (size > limit) fail(limitCode);
     chunks.push(chunk);
   }
   let request;
+  if (size === 0) fail(emptyCode);
   try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch { throw Object.assign(new Error('REQUEST_INVALID'), { code: 'REQUEST_INVALID' }); }
-  const selected = selectRepositoryConsumer(installation, request?.repository);
+  catch { fail(parseCode); }
+  let selected;
+  try { selected = selectRepositoryConsumer(installation, request?.repository); }
+  catch (error) { if (targetCode) fail(targetCode); throw error; }
   env.RELAY_REPOSITORY = selected.repository;
   return request;
 }
