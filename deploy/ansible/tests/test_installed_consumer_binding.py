@@ -69,6 +69,12 @@ class InstalledConsumerBindingTests(unittest.TestCase):
         variables = dict(self.values)
         if config is not None:
             variables['relay_consumer_config_path'] = str(config)
+            try:
+                deployed = json.loads(Path(config).read_text())
+            except (OSError, ValueError):
+                deployed = None
+            if isinstance(deployed, dict) and isinstance(deployed.get('repository'), str):
+                variables['relay_github_repository'] = deployed['repository']
         return Templar(loader=DataLoader(), variables=variables).template(source, convert_data=False)
 
     def run_module(self, args, env, **kwargs):
@@ -131,6 +137,26 @@ class InstalledConsumerBindingTests(unittest.TestCase):
             self.assertFalse((other.parent / f'bundles/{name}.json').exists())
             forbidden = self.run_module([store, '--check-runtime'], env)
             self.assertEqual(forbidden.returncode, 40)
+
+    def test_worker_probe_selects_only_an_explicit_configured_repository(self):
+        config = self.configs['example']
+        installation = json.loads(config.read_text())
+        repositories = [installation.pop('repository'), 'example-org/second']
+        installation['repositories'] = repositories
+        config.write_text(json.dumps(installation))
+        environments = []
+        def as_runner(args, **kwargs):
+            self.assertEqual(args[:4], ['/usr/sbin/runuser', '-u', 'relay-runner', '--'])
+            environments.append(kwargs['env'])
+            return RUN(args[4:], **kwargs)
+        with mock.patch.object(DIAGNOSTIC.subprocess, 'run', side_effect=as_runner):
+            for repository in repositories:
+                result = DIAGNOSTIC.worker_preflight(self.release, consumer_config=config, repository=repository)
+                self.assertEqual(result['status'], 'passed', result)
+                self.assertEqual(environments[-1]['RELAY_REPOSITORY'], repository)
+            for repository in [None, 'foreign/repository']:
+                result = DIAGNOSTIC.worker_preflight(self.release, consumer_config=config, repository=repository)
+                self.assertEqual(result['status'], 'blocked', result)
 
     def test_installed_probes_and_wrappers_fail_closed_on_invalid_deployed_config(self):
         config = self.root / 'invalid.json'

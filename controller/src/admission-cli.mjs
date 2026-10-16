@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
-import { createAttemptStore } from './attempt-store.mjs';
+import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
 import { createAdmissionControl, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { fail } from './execution-contract.mjs';
@@ -47,13 +47,13 @@ export function installedAdmissionControl() {
     const { loadSerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
-    const originalStore = createAttemptStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
+    const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
     if (!compatibility) {
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
         store: originalStore, journal: createSlotJournal(originalStore) });
       return admission[name](...args);
     }
-    const currentStore = createAttemptStore(compatibility.current.storeRoot);
+    const currentStore = createPublicationStore(compatibility.current.storeRoot);
     const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
       stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
@@ -104,7 +104,7 @@ export async function main(args = process.argv.slice(2)) {
       try {
         const result = await exec('/usr/bin/flock', ['-w', '1', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
           '/usr/bin/node', fileURLToPath(import.meta.url), 'drain-check', '--operation', operationId],
-        { env: { RELAY_CONSUMER_CONFIG: process.env.RELAY_CONSUMER_CONFIG, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+        { env: { RELAY_CONSUMER_CONFIG: process.env.RELAY_CONSUMER_CONFIG, RELAY_REPOSITORY: CONSUMER.repository, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
           timeout: Math.min(5000, remaining), maxBuffer: 1024 * 1024 });
         return JSON.parse(result.stdout);
       } catch (error) {

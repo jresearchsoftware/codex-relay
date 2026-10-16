@@ -536,16 +536,20 @@ def classify_worker_probe_output(stdout: str, stderr: str) -> str:
     return "WORKER_PREFLIGHT_FAILED"
 
 
-def worker_preflight(current: Path, *, consumer_config: Path | None = None) -> dict[str, Any]:
+def worker_preflight(current: Path, *, consumer_config: Path | None = None,
+                     repository: str | None = None) -> dict[str, Any]:
     consumer_config = consumer_config or CONFIG_ROOT / "consumer.json"
     worker = current / "bin" / "relay-codex-dispatch.mjs"
     if not worker.is_file():
         return {"status": "blocked", "code": "WORKER_PREFLIGHT_INPUT_MISSING"}
+    environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
+                   "RELAY_CONSUMER_CONFIG": str(consumer_config)}
+    if repository is not None:
+        environment['RELAY_REPOSITORY'] = repository
     try:
         completed = subprocess.run(
             ["/usr/sbin/runuser", "-u", RUNNER_USER, "--", "/usr/bin/node", str(worker), "--check-runtime"],
-            cwd=str(current), env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
-                                   "RELAY_CONSUMER_CONFIG": str(consumer_config)},
+            cwd=str(current), env=environment,
             input="", capture_output=True, text=True, timeout=30, check=False,
         )
     except subprocess.TimeoutExpired:
@@ -844,7 +848,7 @@ def build_diagnostic(request: dict[str, Any], *, claim_root: Path | None = None,
         "attemptController": controller / "attempt.mjs",
         "routingEntrypoint": controller / "entrypoint.mjs",
         "attemptRuntime": controller / "attempt-runtime.mjs",
-        "routingDispatch": controller / "codex-dispatch.mjs",
+        "routingDispatch": controller / "codex-dispatch-entrypoint.mjs",
         "publicationBroker": controller / "publication-broker.mjs",
     }
     result["runtimeLayout"] = {name: "present" if path.is_file() else "absent" for name, path in runtime_paths.items()}
@@ -860,7 +864,8 @@ def build_diagnostic(request: dict[str, Any], *, claim_root: Path | None = None,
             and len(file_binding(dispatch_artifact).get("sha256", "")) == 64
         ),
     }
-    result["workerPreflight"] = worker_preflight(current, consumer_config=config_root / "consumer.json")
+    result["workerPreflight"] = worker_preflight(current, consumer_config=config_root / "consumer.json",
+                                               repository=REPOSITORY)
     result["launcherPreflight"] = launcher_preflight(install_root)
     return result
 

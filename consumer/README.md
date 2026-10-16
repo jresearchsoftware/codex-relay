@@ -1,15 +1,43 @@
 # Relay consumer contract
 
-One Relay artifact serves one explicitly configured consumer per process.
+One Relay artifact serves explicitly configured repositories, with one selected
+repository per process and shared installation settings.
 Set `RELAY_CONSUMER_CONFIG` to an absolute path to a deployment-owned JSON file
 matching [the validator](consumer-config.mjs). There is no repository search or
 implicit consumer fallback. [Example](fixtures/example.json) and
 [isolated canary](fixtures/canary.json) are non-secret qualification inputs;
 their paths and IDs do not authorize access to any deployed system.
 
+Configure exactly one of the existing `repository` string or a nonempty unique
+`repositories` list. All owner, App/installation, controller, profile and managed
+pool settings remain shared. For example, replace the example's `repository`
+field with:
+
+```json
+"repositories": ["example-org/project-a", "example-org/project-b"],
+"repositoryRuntimeUsers": {"example-org/project-b": "relay-project-b"}
+```
+
+The optional `repositoryRuntimeUsers` map accepts only configured repositories
+and valid non-root runtime names. Omitted entries use the shared
+`runtimeUser`. It selects an execution identity without adding an access-control
+model or changing owner, Writer or Reviewer authority. Explicit independent slot
+runtime users remain unchanged; slots using the shared default use the selected
+repository override.
+
+Plural configuration requires an explicit `RELAY_REPOSITORY`; a trusted routing
+process may use `GITHUB_REPOSITORY` when the former is absent. Either selection
+must exactly match a configured target. There is no first-target fallback, even
+for a one-element `repositories` list. Legacy `repository` configuration keeps
+its implicit selection and ignores unrelated `GITHUB_REPOSITORY` values; an
+explicit `RELAY_REPOSITORY` must still match it. Installed lifecycle commands
+use their configured environment repository as an explicit anchor. Root Writer
+checks the request's configured target before importing repository-bound code.
+
 | Consumer input | Used by |
 | --- | --- |
-| `repository`, `owner`, `baseBranch` | API paths, owner admission, PR binding, exact base observation and Git fetch/publication |
+| `repository` or `repositories`, `owner`, `baseBranch` | Selected API paths, owner admission, PR binding, exact base observation and Git fetch/publication |
+| Optional `repositoryRuntimeUsers` | Trusted runtime identity overrides within a plural installation |
 | `taskBranchPrefix` | Task branch admission and omitted-branch derivation |
 | `writerApp`, `reviewerApp` | Separate App slugs, numeric App/installation IDs and expected bot actors |
 | `writerIdentity`, `remediationIdentity` | Worker commit author/committer and trusted object validation |
@@ -20,15 +48,33 @@ their paths and IDs do not authorize access to any deployed system.
 | Optional `executionSlots` | Bounded resource slots with checkout/journal/diagnostic roots and fixed helper bindings; explicit legacy slots keep independent identities |
 | Optional `generalRunnerPool` | Managed physical `desiredCapacity` (1–32), with derived stable slots and shared trusted runner/default non-root runtime identity |
 
-The configuration is loaded once, validated and frozen. Its digest accompanies
-every admitted attempt. A different or missing digest cannot resume publication,
+The complete installation configuration is loaded once, validated and frozen.
+Its digest accompanies every admitted attempt independently of the selected
+repository or slot. The selected process view retains one concrete `repository`.
+A different or missing digest cannot resume publication,
 including blocked-admission replay. Existing pre-configuration attempts must be
 reconciled under their original reviewed release before cutover; do not invent
 a digest or discard publication reservations. An admitted worker executes its
 resolved explicit model/effort. Relay never reads a moving Model Landscape.
 For a managed pool only, changing `generalRunnerPool.desiredCapacity` preserves
 the execution digest. All repository, identity, path and security fields remain
-bound. Its internal slot layout remains fixed across capacity changes.
+bound, including the complete repository list and runtime-user map. Its internal
+slot layout remains fixed across capacity changes. The single-repository digest
+and paths retain their historical representation. Replacing `repository` with
+`repositories` changes the installation digest, even for a one-element list.
+That change does not migrate or rebind retained attempts: reconcile them under
+their original reviewed configuration/release before cutover. New namespaced
+stores must not hide retained legacy records or bypass their original admission
+and recovery bindings.
+
+For plural configuration, the selected `workRoot`, `attemptRoot` and
+`diagnosticsRoot` append `/repositories/<owner>/<repository>` to their configured
+root, including those roots in every execution slot. Helpers, diagnostics
+configuration/store executable, credentials and `claimRoot` remain shared.
+Protected repository records are separated by repository beneath the shared
+Writer state root so equal repository-local run or Task numbers cannot collide.
+The publication lock, lifecycle admission state and physical pool occupancy
+cover the entire installation.
 
 `executionSlots`, when present, contains 1–32 entries with `id`, `runnerName`,
 `runnerUser`, `runtimeUser`, `workGroup` and `paths`. Slot paths contain exactly
@@ -39,11 +85,12 @@ has distinct Unix identities and group; all slots keep non-overlapping
 roots/helpers. Managed slots may share runner/runtime users and work group.
 Writer credentials,
 the root publication lock and `claimRoot` belong to the installation and remain
-outside every worker-writable root. Separate repository installations require
-separate namespaces, protected Writer/Reviewer identities, credentials and state;
-managed pool members may share the General Runner identity, and separately
-configured consumers select their own runtime user. A slot is not another
-consumer or a multi-repository Writer target.
+outside every worker-writable root. Separate installations retain separate
+namespaces, credentials and state. A plural installation shares its existing
+Writer/Reviewer identities and App installations across configured repositories;
+managed pool members share the General Runner identity and repository views may
+select their own configured runtime user. A slot is a physical execution resource,
+independent of repository selection; adding a repository does not add pool capacity.
 
 The complete installation configuration has one digest, independent of which
 slot runs a Task. A fresh automatic admission verifies the configured runner
@@ -89,16 +136,17 @@ and their digests are preserved, as are explicit live Task/CR overrides.
 The privileged Writer receives its configuration path from the root-owned
 `env -i` wrapper. It verifies root ownership and non-writable ancestors before
 credential access. Request JSON cannot select configuration, executable paths,
-credentials or repository. Keep configuration outside the worker checkout and
-worker-writable directories. Never share Writer credentials or state roots across
-consumers. Installed wrappers and sudoers must bind the same reviewed paths.
+or credentials; its explicit repository must be a configured target. Keep
+configuration outside the worker checkout and worker-writable directories.
+Writer credentials and shared protected state belong to one installation.
+Installed wrappers and sudoers must bind the same reviewed paths.
 
 Reviewer uses its deployment-owned `reviewer-mcp.json`: either `repository`
 or `repositories`, plus `owner`, `baseBranch`, `reviewCheckName`, `writerActor`,
 and `githubApp` are required. The two repository forms cannot be combined.
 All other Reviewer settings and its App/installation remain shared; each MCP
-operation selects an explicit configured repository. Consumer/Writer configuration
-remains single-repository.
+operation selects an explicit configured repository. Consumer/Writer and Reviewer
+configuration must cover the intended installation targets.
 The deployment projects `owner` from the existing consumer owner; Reviewer
 requires that human owner's canonical linked Issue before Step mutation.
 Its App and installation IDs must match its credential environment; the live

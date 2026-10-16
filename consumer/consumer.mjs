@@ -1,10 +1,12 @@
-import { loadConsumer, consumerDigest, resolveExecutionConsumer, selectExecutionSlot } from './consumer-config.mjs';
+import { loadConsumer, consumerDigest, selectRepositoryConsumer, resolveExecutionConsumer, selectExecutionSlot } from './consumer-config.mjs';
 import { execFileSync } from 'node:child_process';
 
 // One immutable deployment snapshot per process. No repository-local search,
 // implicit consumer, hot reload, or moving model-landscape lookup.
-export const CONSUMER = loadConsumer(process.env.RELAY_CONSUMER_CONFIG);
-export const CONSUMER_DIGEST = consumerDigest(CONSUMER);
+export const INSTALLATION_CONSUMER = loadConsumer(process.env.RELAY_CONSUMER_CONFIG);
+export const CONSUMER_DIGEST = consumerDigest(INSTALLATION_CONSUMER);
+export const CONSUMER = selectRepositoryConsumer(INSTALLATION_CONSUMER,
+  process.env.RELAY_REPOSITORY ?? (INSTALLATION_CONSUMER.repositories ? process.env.GITHUB_REPOSITORY : undefined));
 // Fixed installed wrappers pin the slot. The native routing runner supplies its
 // configured name; actual UID is checked before admission. Root Writer uses the
 // immutable stored envelope instead of this process-local resource view.

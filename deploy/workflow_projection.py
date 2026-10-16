@@ -13,7 +13,7 @@ import shlex
 import stat
 import tempfile
 
-from config import require, unique_object, execution_slot_label, general_pool_label
+from config import require, unique_object, execution_slot_label, general_pool_label, deployment_repository
 
 
 MANIFEST = '.github/relay-workflows.json'
@@ -78,11 +78,12 @@ def _path(root, relative):
     return path
 
 
-def render(config, revision, source_root):
+def render(config, revision, source_root, repository=None):
     """Return deterministic managed bytes; config must have passed config.load."""
     require(isinstance(revision, str) and REVISION.fullmatch(revision), 'workflow-exact-revision')
     source_root = Path(source_root)
     consumer, environment = config['consumer'], config['environment']
+    repository = deployment_repository(config, repository)
     general, production = environment['generalRunner'], environment['runner']
     slots = consumer.get('executionSlots')
     managed_pool = consumer.get('generalRunnerPool')
@@ -93,7 +94,7 @@ def render(config, revision, source_root):
                        if general.get('scope', 'repository') == 'organization' else general_labels)
     values = {
         'WORKFLOW_CONTRACT': contract(source_root, bool(slots)),
-        'REPOSITORY': consumer['repository'], 'OWNER': consumer['owner'],
+        'REPOSITORY': repository, 'OWNER': consumer['owner'],
         'BASE_BRANCH': consumer['baseBranch'],
         'BASE_BRANCH_YAML': json.dumps(consumer['baseBranch']),
         'NAMESPACE': environment['namespace'],
@@ -158,7 +159,7 @@ def render(config, revision, source_root):
             values['RECOVERY_SLOT_ENV'] = ''
             values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
-    if environment['localApply'].get('source') == 'installed':
+    if environment['localApply'].get('source') == 'installed' and repository == deployment_repository(config):
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],
                 'workflow-production-path-conflict')
         templates[PRODUCTION] = 'production'
@@ -175,12 +176,12 @@ def render(config, revision, source_root):
     return result
 
 
-def _manifest(config, source_root, rendered):
+def _manifest(config, source_root, rendered, repository=None):
     # Digests retain an independent purpose: refuse edits to the previous
     # managed baseline before writing a new proposal. No product SHA pin.
     return {'schemaVersion': 2, 'workflowContract': contract(source_root, bool(config['consumer'].get('executionSlots'))),
             'sourceRepository': config['source']['repository'],
-            'consumerRepository': config['consumer']['repository'],
+            'consumerRepository': deployment_repository(config, repository),
             'files': {path: sha256(data) for path, data in sorted(rendered.items())}}
 
 
@@ -214,10 +215,10 @@ def _existing(root):
     return manifest, observed
 
 
-def verify(config, revision, source_root, consumer_root):
+def verify(config, revision, source_root, consumer_root, repository=None):
     """Verify committed consumer projection matches the selected target source."""
-    rendered = render(config, revision, source_root)
-    expected = _manifest(config, source_root, rendered)
+    rendered = render(config, revision, source_root, repository)
+    expected = _manifest(config, source_root, rendered, repository)
     actual, observed = _existing(Path(consumer_root))
     require(actual == expected, 'workflow-projection-target-mismatch')
     require(all(observed[path] == content for path, content in rendered.items()),
@@ -239,7 +240,7 @@ def _write(path, content):
             os.unlink(name)
 
 
-def project(config, revision, source_root, consumer_root):
+def project(config, revision, source_root, consumer_root, repository=None):
     """Write reviewable projection only after checking all previous managed bytes.
 
     Existing consumer files are never adopted implicitly. An interrupted write
@@ -247,8 +248,8 @@ def project(config, revision, source_root, consumer_root):
     completed or rolled back over potentially new consumer edits.
     """
     root = Path(consumer_root)
-    rendered = render(config, revision, source_root)
-    expected = _manifest(config, source_root, rendered)
+    rendered = render(config, revision, source_root, repository)
+    expected = _manifest(config, source_root, rendered, repository)
     previous, observed = _existing(root)
     if previous:
         require(previous['consumerRepository'] == expected['consumerRepository']
@@ -289,11 +290,11 @@ def project(config, revision, source_root, consumer_root):
                          + ';inspect-worktree-before-retry') from error
     finally:
         lock.rmdir()
-    verify(config, revision, source_root, root)
+    verify(config, revision, source_root, root, repository)
     return expected
 
 
-def prepare(config, revision, source_root, consumer_root, output_root):
+def prepare(config, revision, source_root, consumer_root, output_root, repository=None):
     """Derive missing install artifacts without adopting consumer-owned files.
 
     A clean target needs no generated state. When consumer publication is still
@@ -302,11 +303,11 @@ def prepare(config, revision, source_root, consumer_root, output_root):
     same source/configuration binding. Managed drift always remains an error.
     """
     consumer_root, output_root = Path(consumer_root), Path(output_root).absolute()
-    rendered = render(config, revision, source_root)
-    expected = _manifest(config, source_root, rendered)
+    rendered = render(config, revision, source_root, repository)
+    expected = _manifest(config, source_root, rendered, repository)
     previous, observed = _existing(consumer_root)
     if previous == expected:
-        verify(config, revision, source_root, consumer_root)
+        verify(config, revision, source_root, consumer_root, repository)
         return {'state': 'ready', 'revision': revision}
     if previous:
         require(previous['consumerRepository'] == expected['consumerRepository']
@@ -323,9 +324,9 @@ def prepare(config, revision, source_root, consumer_root, output_root):
     if manifest.exists() or manifest.is_symlink():
         # Output is an immutable proposal for one target; do not overwrite a
         # previously edited or differently bound review directory.
-        verify(config, revision, source_root, output_root)
+        verify(config, revision, source_root, output_root, repository)
     else:
-        project(config, revision, source_root, output_root)
+        project(config, revision, source_root, output_root, repository)
     return {'state': 'workflow-review-required', 'revision': revision,
             'directory': str(output_root), 'files': [*rendered, MANIFEST],
             'next': 'Review and publish these derived files through consumer authority, then rerun the same command.'}

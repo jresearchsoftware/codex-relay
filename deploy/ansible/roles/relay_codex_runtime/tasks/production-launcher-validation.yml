@@ -191,6 +191,7 @@
   # deployed snapshot explicitly; workflow/source-workspace env is not authority.
   environment:
     RELAY_CONSUMER_CONFIG: '{{ relay_consumer_config_path }}'
+    RELAY_REPOSITORY: '{{ relay_github_repository }}'
   register: relay_production_diagnostics_closure
   changed_when: false
   check_mode: false

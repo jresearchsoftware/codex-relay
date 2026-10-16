@@ -57,6 +57,21 @@ def loads(raw, product_root):
     return config
 
 
+def configured_repositories(config):
+    """Return the installation allowlist without selecting an execution target."""
+    consumer = config['consumer']
+    return consumer.get('repositories', [consumer.get('repository')])
+
+
+def deployment_repository(config, repository=None):
+    """Resolve the protected lifecycle anchor or an explicit projection target."""
+    repositories = configured_repositories(config)
+    selected = repository if repository is not None else config['environment'].get(
+        'repository', config['consumer'].get('repository'))
+    require(isinstance(selected, str) and selected in repositories, 'environment.repository')
+    return selected
+
+
 def derive_managed_pool_slots(config):
     """Stable internal routes; desired capacity never allocates per-repo runners."""
     consumer, environment = config.get('consumer', {}), config.get('environment', {})
@@ -109,7 +124,9 @@ def validate(c, product_root):
     e = c['environment']
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
-        ['reviewCheckName', 'reviewerRepositories', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
+        ['repository', 'reviewCheckName', 'reviewerRepositories', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
+    repository = deployment_repository(c)
+    writer_repositories = configured_repositories(c)
     if 'reviewerRepositories' in e:
         repositories = e['reviewerRepositories']
         require(isinstance(repositories, list) and bool(repositories)
@@ -135,6 +152,8 @@ def validate(c, product_root):
         require('group' not in g, 'generalRunner.group')
     pool = c['consumer'].get('generalRunnerPool')
     if pool is not None:
+        require(all(value.split('/')[0] == repository.split('/')[0] for value in writer_repositories),
+                'generalRunnerPool.organization')
         require(general_scope == 'organization', 'generalRunnerPool.organization-scope')
         require(text(g['name'], r'[a-z][a-z0-9-]{0,54}'), 'generalRunnerPool.name')
         require('instance' in e, 'generalRunnerPool.namespaced-instance')
@@ -150,6 +169,9 @@ def validate(c, product_root):
     users = [e['serviceUser'], e['reviewerUser'], r['user'], g['user'], c['consumer']['runtimeUser']]
     require(len(set(users)) == len(users), 'isolated-users')
     require(e['codexWorkGroup'] not in users, 'isolated-work-group')
+    runtime_users = c['consumer'].get('repositoryRuntimeUsers', {})
+    require(not set(runtime_users.values()) & set(users[:-1] + [e['codexWorkGroup']]),
+            'repositoryRuntimeUsers.isolated-users')
     require(r['name'] != g['name'], 'isolated-runner-names')
     slots = c['consumer'].get('executionSlots')
     if slots is not None:
@@ -164,7 +186,8 @@ def validate(c, product_root):
         if pool is None:
             require(len(set(slot_users)) == len(slot_users), 'executionSlots.isolated-users')
         groups = [slot['workGroup'] for slot in slots]
-        require((pool is not None or len(set(groups)) == len(groups)) and not set(groups) & set(slot_users + protected_users),
+        require((pool is not None or len(set(groups)) == len(groups))
+                and not set(groups) & set(slot_users + protected_users + list(runtime_users.values())),
                 'executionSlots.isolated-work-groups')
         require(r['name'] not in [slot['runnerName'] for slot in slots], 'executionSlots.production-runner')
         for slot in slots[1:]:
@@ -217,7 +240,7 @@ def validate(c, product_root):
     local_apply = e['localApply']
     if object_keys(local_apply, ['source']) and local_apply['source'] == 'installed':
         repository = c['source']['repository'].removeprefix('https://github.com/').removeprefix('git@github.com:').removesuffix('.git')
-        require(repository == c['consumer']['repository'] and c['consumer']['baseBranch'] == 'main'
+        require(repository == deployment_repository(c) and c['consumer']['baseBranch'] == 'main'
                 and c['source'].get('revision', 'main') == 'main', 'localApply.installed-self-consumer')
     else:
         require(object_keys(local_apply, ['configPath']) and relative(local_apply['configPath']), 'localApply')
@@ -273,6 +296,10 @@ def execution_slot_inputs(c, slot):
     e = c['environment']
     ns, slot_id = e['namespace'], slot['id']
     install, config, state = '/opt/' + ns + '/slots/' + slot_id, '/etc/' + ns + '/slots/' + slot_id, '/var/lib/' + ns + '/slots/' + slot_id
+    # Repository overrides follow the installation default runtime identity.
+    # An explicitly independent slot retains its own account and credential.
+    runtime_users = (c['consumer'].get('repositoryRuntimeUsers', {})
+                     if slot['runtimeUser'] == c['consumer']['runtimeUser'] else {})
     result = {
         'relay_execution_slot': slot_id, 'relay_execution_slot_install_root': install,
         'relay_execution_slot_isolation': True,
@@ -287,6 +314,8 @@ def execution_slot_inputs(c, slot):
         'relay_runner_registration_group': e['generalRunner'].get('group', ''),
         'relay_dispatch_user': slot['runnerUser'], 'relay_dispatch_group': slot['runnerUser'],
         'relay_codex_user': slot['runtimeUser'], 'relay_codex_group': slot['runtimeUser'],
+        'relay_repository_runtime_users': runtime_users,
+        'relay_additional_runtime_users': sorted(set(runtime_users.values()) - {slot['runtimeUser']}),
         'relay_codex_work_group': slot['workGroup'], 'relay_codex_home': state + '/codex-home',
         'relay_codex_access_token_root': config + '/codex-credentials',
         'relay_codex_access_token_file': config + '/codex-credentials/access-token',
@@ -311,7 +340,7 @@ def execution_slot_label(c, slot):
     import hashlib
     identity = (c['environment']['generalRunner']['name'] + ':' + slot['id']
                 if 'generalRunnerPool' in c['consumer'] else
-                c['consumer']['repository'] + ':' + c['environment']['namespace'] + ':' + slot['id'])
+                deployment_repository(c) + ':' + c['environment']['namespace'] + ':' + slot['id'])
     return 'relay-slot-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]
 
 
@@ -349,6 +378,7 @@ def select_execution_slot(c, slot_id='primary'):
 def compile_inputs(c):
     """Private adapter. All backend paths and lifecycle mechanics are Relay-owned."""
     e, consumer, target = c['environment'], c['consumer'], c['target']
+    repository = deployment_repository(c)
     ns = e['namespace']
     install, config, state = '/opt/' + ns, '/etc/' + ns, '/var/lib/' + ns
     r, g, ingress, bind = e['runner'], e['generalRunner'], e['ingress'], e['reviewerBind']
@@ -368,12 +398,14 @@ def compile_inputs(c):
         'relay_runner_name': r['name'], 'relay_runner_user': r['user'], 'relay_runner_group': r['user'],
         'relay_runner_registration_scope': r['scope'], 'relay_runner_registration_group': r['group'],
         'relay_runner_labels': r['labels'], 'relay_general_runner_labels': r['labels'],
-        'relay_runner_repository': consumer['repository'],
+        'relay_runner_repository': repository,
+        'relay_github_repository': repository,
+        'relay_writer_repositories': configured_repositories(c),
         'relay_runner_package_cache_root': '/var/cache/' + ns,
         'relay_dispatch_user': g['user'], 'relay_dispatch_group': g['user'],
         'relay_codex_user': consumer['runtimeUser'], 'relay_codex_group': consumer['runtimeUser'],
         'relay_codex_work_group': e['codexWorkGroup'], 'relay_codex_token_required': e['codexTokenRequired'],
-        'relay_production_local_apply_checkout_root': state + '/runner/work/' + '/'.join([consumer['repository'].split('/')[1]] * 2),
+        'relay_production_local_apply_checkout_root': state + '/runner/work/' + '/'.join([repository.split('/')[1]] * 2),
         'relay_production_local_apply_stage_root': state + '/production-apply',
         'relay_owner_lifecycle_helper_path': '/usr/local/sbin/' + ns + '-owner-lifecycle',
         'relay_local_apply_source': e['localApply'].get('source', 'checkout'),
@@ -396,7 +428,7 @@ def compile_inputs(c):
         'relay_tls_acme_admitted_ip': '',
         'relay_nginx_manage': False, 'relay_docker_nginx_manage': False, 'relay_docker_nginx_service_enabled': False,
         'relay_review_check_name': e.get('reviewCheckName', 'chatgpt-review'),
-        'relay_reviewer_repositories': sorted(set(e.get('reviewerRepositories', [consumer['repository']]))),
+        'relay_reviewer_repositories': sorted(set(e.get('reviewerRepositories', configured_repositories(c)))),
         'relay_compatibility_links': [{'alias': k, 'target': v} for k, v in e['compatibilityLinks'].items()],
     }
     tls = e.get('tls')
@@ -435,11 +467,17 @@ def compile_inputs(c):
     for suffix, kind in [('codex', 'codex'), ('writer', 'writer'), ('diagnostics', 'diagnostics'),
                          ('production-apply', 'production_local_apply'), ('owner-lifecycle', 'owner_lifecycle')]:
         result['relay_' + kind + '_sudoers_file'] = '/etc/sudoers.d/' + ns + '-' + suffix
-    fields = {'repository':'github_repository', 'owner':'owner_actor', 'baseBranch':'github_base_branch',
+    fields = {'owner':'owner_actor', 'baseBranch':'github_base_branch',
               'taskBranchPrefix':'task_branch_prefix', 'routingWorkflow':'routing_workflow',
               'recoveryWorkflow':'recovery_workflow', 'validationWorkflow':'validation_workflow'}
     for field, variable in fields.items():
         result['relay_' + variable] = consumer[field]
+    if 'repositories' in consumer:
+        result['relay_github_repositories'] = consumer['repositories']
+    if 'repositoryRuntimeUsers' in consumer:
+        result['relay_repository_runtime_users'] = consumer['repositoryRuntimeUsers']
+        result['relay_additional_runtime_users'] = sorted(set(consumer['repositoryRuntimeUsers'].values())
+                                                        - {consumer['runtimeUser']})
     for role in ['writer', 'reviewer']:
         app = consumer[role + 'App']
         for key, suffix in [('slug','app_slug'),('appId','app_id'),('installationId','app_installation_id'),('expectedActor','expected_actor')]:

@@ -301,11 +301,11 @@ class CodexRuntimeContractTests(unittest.TestCase):
         self.assertNotIn('relay_production_reviewer_restore_only', self.site)
 
     def test_writer_helper_preserves_reviewed_source_import_topology(self):
-        expected_path = "relay_writer_helper_release_path: '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-helper.mjs'"
+        expected_path = "relay_writer_helper_release_path: '{{ relay_install_root }}/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'"
         self.assertIn(expected_path, self.group_vars)
         self.assertNotIn("relay_writer_helper_release_path: '{{ relay_release_path }}/bin/relay-writer-controller.mjs'", self.group_vars)
         self.assertIn(
-            "relay_install_root ~ '/current/reviewed-source/controller/src/privileged-writer-helper.mjs'",
+            "relay_install_root ~ '/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'",
             self.writer_binding_validation,
         )
         self.assertIn("from './publication-broker.mjs'", self.writer_helper)

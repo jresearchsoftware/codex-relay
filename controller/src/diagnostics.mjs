@@ -386,7 +386,7 @@ export async function persistExecutionDiagnostic(diagnostic, { spawnImpl = spawn
   child.stdout?.on("data", chunk => { stdoutCapture.push(chunk); });
   child.stderr?.on("data", chunk => { stderrCapture.push(chunk); });
   child.stdin?.once?.("error", () => {});
-  child.stdin?.end(JSON.stringify(diagnostic) + "\n");
+  child.stdin?.end(JSON.stringify({ ...diagnostic, repository: CONSUMER.repository }) + "\n");
   const result = await new Promise((resolve, reject) => {
     child.once("error", error => reject(Object.assign(new Error("Diagnostic store could not be started"), {
       code: "DIAGNOSTICS_STORE_FAILED",

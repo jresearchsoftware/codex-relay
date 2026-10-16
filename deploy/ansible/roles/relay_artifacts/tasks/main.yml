@@ -33,7 +33,7 @@
 
 - name: Stage the exact reviewed privileged Writer helper artifact
   ansible.builtin.copy:
-    src: '{{ relay_release_path }}/reviewed-source/controller/src/privileged-writer-helper.mjs'
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'
     dest: '{{ relay_release_path }}/bin/relay-writer-controller.mjs'
     remote_src: true
     owner: root
@@ -43,7 +43,7 @@
 
 - name: Stage the exact reviewed on-demand Codex dispatch artifact
   ansible.builtin.file:
-    src: '{{ relay_release_path }}/reviewed-source/controller/src/codex-dispatch.mjs'
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/codex-dispatch-entrypoint.mjs'
     dest: '{{ relay_release_path }}/bin/relay-codex-dispatch.mjs'
     state: link
     force: true
@@ -54,7 +54,7 @@
 
 - name: Stage the exact reviewed diagnostics store artifact
   ansible.builtin.file:
-    src: '{{ relay_release_path }}/reviewed-source/controller/src/diagnostic-store.mjs'
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/diagnostic-store-entrypoint.mjs'
     dest: '{{ relay_release_path }}/bin/relay-diagnostics-store.mjs'
     state: link
     force: true

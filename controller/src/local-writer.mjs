@@ -20,6 +20,8 @@ function requestError(error) {
 export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "/usr/bin/sudo", spawnImpl = nodeSpawn } = {}) {
   if (helperPath !== DEFAULT_HELPER) throw new WriterBlockedError("WRITER_HELPER_PATH_INVALID", "Only the fixed relay Writer helper path is allowed");
   async function invoke(request) {
+    if (request.repository !== undefined && request.repository !== CONSUMER.repository) throw new WriterBlockedError('WRITER_REPOSITORY_INVALID', 'The Writer target must match the selected configured repository');
+    request = { ...request, repository: CONSUMER.repository };
     let child;
     try { child = spawnImpl(sudo, ["-n", helperPath], { env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (error) { throw requestError(error); }

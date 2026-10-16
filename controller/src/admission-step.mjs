@@ -1,10 +1,11 @@
-import { positive, fail, digest } from './execution-contract.mjs';
+import { positive, fail, digest, REPOSITORY } from './execution-contract.mjs';
 
 // Called under the existing publication lock. Only successful durable Writer
 // admissions count; public labels, reviews and rejected routing never count.
 export function nextAdmissionStep(records, task, { automaticCompletionVerified = false } = {}) {
   if (!Array.isArray(records) || !positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
-  const admitted = records.filter(record => record?.envelope?.issueNumber === task && !record.admissionBlock);
+  const admitted = records.filter(record => record?.envelope?.issueNumber === task
+    && (record.envelope.repository === undefined || record.envelope.repository === REPOSITORY) && !record.admissionBlock);
   if (admitted.some(record => !positive(record.envelope.step) || !positive(record.envelope.runId))) fail('PRIOR_ADMISSION_UNKNOWN');
   if (admitted.some(record => !record.outcome || record.commentIntent || record.lifecycleIntent
     || record.handoffComplete === false || record.publicationIntent

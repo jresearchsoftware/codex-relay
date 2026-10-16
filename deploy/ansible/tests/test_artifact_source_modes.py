@@ -31,8 +31,8 @@ def test_actual_archive_export_and_retained_repair_preserve_bytes_modes_and_syml
     outside.write_text('unrelated target\n')
     os.chown(outside, 65534, 65534)
     outside.chmod(0o660)
-    payload = {'controller/src/codex-dispatch.mjs': ('dispatch fixture\n', 0o644),
-               'controller/src/diagnostic-store.mjs': ('diagnostic fixture\n', 0o644),
+    payload = {'controller/src/codex-dispatch-entrypoint.mjs': ('dispatch fixture\n', 0o644),
+               'controller/src/diagnostic-store-entrypoint.mjs': ('diagnostic fixture\n', 0o644),
                'bin/executable': ('#!/bin/sh\nexit 0\n', 0o755)}
     for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py']:
         payload['deploy/' + name] = ('# dependency fixture\n', 0o644)
@@ -67,7 +67,7 @@ def test_actual_archive_export_and_retained_repair_preserve_bytes_modes_and_syml
         return run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)])
     # Use the actual source transport/extraction tasks to expose real Git modes.
     apply(stage_tasks[:3], False)
-    target = source / 'controller/src/codex-dispatch.mjs'
+    target = source / 'controller/src/codex-dispatch-entrypoint.mjs'
     assert stat.S_IMODE(target.stat().st_mode) == 0o664
     assert stat.S_IMODE(target.parent.stat().st_mode) == 0o775
     # Retain the actual previous deployment's runner/service group exposure.

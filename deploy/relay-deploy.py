@@ -18,7 +18,7 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, loads, compile_inputs, require, selector, select_execution_slot
+from config import load, loads, compile_inputs, require, selector, select_execution_slot, deployment_repository
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -59,15 +59,15 @@ def clean_git(root):
     return revision
 
 
-def committed_projection(config, revision, source_root, consumer_root, consumer_revision):
+def committed_projection(config, revision, source_root, consumer_root, consumer_revision, repository=None):
     """Bind derived workflow bytes to the frozen consumer Git commit as well.
 
     A clean status excludes ignored files; ignored/untracked projections are
     proposals and cannot establish the reviewed consumer installation binding.
     """
     from workflow_projection import MANIFEST, render, verify
-    manifest = verify(config, revision, source_root, consumer_root)
-    files = {**render(config, revision, source_root),
+    manifest = verify(config, revision, source_root, consumer_root, repository)
+    files = {**render(config, revision, source_root, repository),
              MANIFEST: json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'}
     for path, expected in files.items():
         entry = git(consumer_root, 'ls-tree', consumer_revision, '--', path)
@@ -206,6 +206,7 @@ def arguments():
     p.add_argument('--requested-revision', help='selector already resolved by the trusted acquisition/bootstrap')
     p.add_argument('--resolved-revision', help='exact acquisition result; must equal this clean checkout')
     p.add_argument('--consumer-root', type=Path, help='consumer Git checkout when durable config is stored separately')
+    p.add_argument('--repository', help='explicit configured target for workflow-project or workflow-verify')
     p.add_argument('--authorize-upgrade', action='store_true')
     p.add_argument('--authorize-workflow-projection', action='store_true')
     p.add_argument('--authorize-bootstrap', action='store_true', help='install after inventory and consumer workflow review')
@@ -256,6 +257,8 @@ def arguments():
 
 def run(args):
     os.umask(0o077)
+    require(getattr(args, 'repository', None) is None or args.phase in ['workflow-project', 'workflow-verify'],
+            'repository-projection-only')
     require(args.authorize_upgrade == (args.phase == 'upgrade'), 'explicit-upgrade')
     require(args.authorize_workflow_projection == (args.phase == 'workflow-project'), 'explicit-workflow-projection')
     require(not args.authorize_bootstrap or args.phase == 'bootstrap', 'explicit-bootstrap')
@@ -396,9 +399,10 @@ def run(args):
     if args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile):
         from workflow_projection import project, verify
         if args.phase == 'workflow-project':
-            project(config, revision, ROOT, consumer_root)
+            project(config, revision, ROOT, consumer_root, getattr(args, 'repository', None))
         else:
-            committed_projection(config, revision, ROOT, consumer_root, consumer_revision)
+            committed_projection(config, revision, ROOT, consumer_root, consumer_revision,
+                                 getattr(args, 'repository', None))
         print(f'RELAY_WORKFLOW_PROJECTION=PASS;revision={revision};consumer={consumer_revision}', flush=True)
         if args.phase in ['workflow-project', 'workflow-verify']:
             print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
@@ -438,7 +442,7 @@ def run(args):
         proposal_key = hashlib.sha256(b''.join(path.encode() + b'\0' + content
             for path, content in render(config, revision, ROOT).items())).hexdigest()[:16]
         output = args.projection_output or (args.log_root / ('workflows-' + revision + '-' +
-                  config['consumer']['repository'].replace('/', '-') + '-' + proposal_key))
+                  deployment_repository(config).replace('/', '-') + '-' + proposal_key))
         proposal = prepare(config, revision, ROOT, consumer_root, output)
         print('RELAY_BOOTSTRAP_PROJECTION=' + json.dumps(proposal, sort_keys=True), flush=True)
         if proposal['state'] != 'ready':

@@ -18,6 +18,7 @@ import { publishManualOutcome } from './manual-outcome.mjs';
 import { nextAdmissionStep } from './admission-step.mjs';
 import { foldManualHandoff, safePublicationText, PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
 import { executionConsumer } from '../../consumer/consumer.mjs';
+import { compactManualPrompt } from './manual-handoff.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -274,6 +275,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
 
   return {
     async dispatch(request) {
+      if (request?.repository !== undefined) {
+        if (request.repository !== REPOSITORY) fail('ATTEMPT_REPOSITORY_MISMATCH');
+        const { repository, ...operationRequest } = request;
+        request = operationRequest;
+      }
       if (request?.operation === 'manual-outcome-direct' && !allowManualOutcome) fail('MANUAL_CAPABILITY_REQUIRED');
       if (request?.operation === 'begin-remediation') {
         if (!lifecycleStore) fail('PR_LIFECYCLE_STORE_REQUIRED');
@@ -322,7 +328,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         const charter = request.target === 'issue' ? subject : task ? await api.get(`/issues/${task}`) : null;
         const nativeAdmission = streamlinedAdmission && charter !== null && authorityMode(charter.body) === 'github-native-v1';
-        const priorRecords = nativeAdmission ? await store.all() : [];
+        const priorRecords = nativeAdmission ? (await store.all()).filter(record => record.envelope?.repository === REPOSITORY) : [];
         if (nativeAdmission && priorRecords.some(record => record.envelope?.issueNumber === task
           && record.envelope.route === 'auto' && !record.admissionBlock)) {
           if (!admission?.assertTaskComplete) fail('PRIOR_EXECUTION_UNRESOLVED');
@@ -339,6 +345,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (envelope.transport === 'label') {
           for (const previous of await store.all()) {
             const prior = previous.envelope;
+            if (prior.repository !== REPOSITORY) continue;
             if (prior.readyEventId === envelope.readyEventId) fail('READY_EVENT_ALREADY_CONSUMED');
             if (!(prior.target === envelope.target && prior.number === envelope.number)
               && !(positive(envelope.issueNumber) && prior.issueNumber === envelope.issueNumber)) continue;
@@ -691,7 +698,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           : e.requestReference ? `\nCurrent execution request: https://github.com/${REPOSITORY}/${e.requestReference.parent.kind === 'issue' ? 'issues' : 'pull'}/${e.requestReference.parent.number}#${e.requestReference.kind === 'review' ? 'pullrequestreview' : 'issuecomment'}-${e.requestReference.id}\nRequest SHA-256: ${e.requestReference.sha256}\nRead the stable Task charter plus this exact complete request and its selected source references. Verify it remains current; historical prose and ordinary comments grant no execution authority.\n` : '';
         const body = `MANUAL_CODEX_HANDOFF_READY\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nModel: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\n\nCopyable prompt:\n\n\`\`\`text\nExecute the project-defined procedure for this canonical authority:\n${url}${requestBinding}\nThread: ${e.thread}\nCodex model: ${e.profile.cliModelId}\nCodex effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\nFollow repository instructions and live authority. Commit and push safe task-owned work before handoff.\n\n${PROGRESS_BOUNDED_EXECUTION}\n\`\`\``;
         const promptStart = body.indexOf('```text\n');
-        const prompt = body.slice(promptStart + 8, -3);
+        const prompt = `${compactManualPrompt(e, url)}\n`;
         const fence = '`'.repeat(Math.max(3, ...[...prompt.matchAll(/`+/g)].map(match => match[0].length + 1)));
         const safeFenceBody = `${body.slice(0, promptStart)}${fence}text\n${prompt}${fence}`;
         const visibleBody = safeFenceBody.replace(`Thread: ${e.thread}\n`, `Thread: ${safePublicationText(e.thread)}\n`)

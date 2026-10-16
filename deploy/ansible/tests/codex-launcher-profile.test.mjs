@@ -57,7 +57,8 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   const template = await readFile(new URL('../roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2', import.meta.url), 'utf8');
   const launcher = join(root, 'launcher.mjs');
   await writeFile(join(root, 'relay-codex-isolation.mjs'), await readFile(new URL('../roles/relay_codex_runtime/files/relay-codex-isolation.mjs', import.meta.url)));
-  await writeFile(launcher, template.replace(/{{\s*(\w+)(\s*\|\s*to_json)?\s*}}/g, (_, key, json) => {
+  const singleton = template.replace(/{% if relay_github_repositories is defined %}[\s\S]*?{% endif %}/g, '');
+  await writeFile(launcher, singleton.replace(/{{\s*(\w+)(\s*\|\s*to_json)?\s*}}/g, (_, key, json) => {
     assert.ok(variables[key], key); return json ? JSON.stringify(variables[key]) : variables[key];
   }));
   let invocation = 0;

@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 sys.dont_write_bytecode = True
-from config import compile_inputs
+from config import compile_inputs, deployment_repository
 from deployment_lock import acquire
 from installed_config import verify as installed_config
 from lifecycle import execute, require
@@ -125,7 +125,7 @@ def run(request):
     action, installed, consumer_head = match.groups()
     config, _, _ = installed_config(ROOT, installed)
     values = compile_inputs(config)
-    repository = config['consumer']['repository']
+    repository = deployment_repository(config)
     source_repository = config['source']['repository'].removeprefix('https://github.com/').removeprefix(
         'git@github.com:').removesuffix('.git')
     gate_path = values['relay_install_root'] + '/relay-admission'

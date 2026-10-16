@@ -91,7 +91,7 @@ def _final_facts(
                 'test "$#" -eq 0 || exit 40',
                 "/usr/bin/env -i PATH=/usr/bin:/bin",
                 "RELAY_WRITER_CLAIM_ROOT=/var/lib/codex-relay/writer-claims",
-                "/usr/bin/node '/opt/codex-relay/current/reviewed-source/controller/src/privileged-writer-helper.mjs'",
+                "/usr/bin/node '/opt/codex-relay/current/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'",
             )
         ),
         "relay_production_final_services": {
@@ -259,7 +259,7 @@ class ProductionComposedLifecycleTests(unittest.TestCase):
                 "set -eu\n"
                 'test "$#" -eq 0 || exit 40\n'
                 "/usr/bin/env -i\n"
-                "/usr/bin/node '/opt/codex-relay/releases/" + "b" * 40 + "/reviewed-source/controller/src/privileged-writer-helper.mjs'\n"
+                "/usr/bin/node '/opt/codex-relay/releases/" + "b" * 40 + "/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'\n"
             ),
             expect_success=False,
         )

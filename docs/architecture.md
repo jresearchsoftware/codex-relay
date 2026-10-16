@@ -1,7 +1,10 @@
 # Architecture
 
 Relay connects GitHub task authority to a contained Codex worker and back to
-an exact PR head. One configured consumer is served per process. The
+an exact PR head. One configured Writer installation serves an explicit
+repository allowlist through the same App/installation and shared settings.
+Each operation process selects one configured repository before loading its
+repository-bound modules. The
 [consumer contract](../consumer/README.md) supplies repository identities,
 workflow names, runtime paths, model and explicit effort overrides. Omitted
 execution fields use the [shared contract resolver](../contracts/README.md),
@@ -223,6 +226,13 @@ authorize another review POST or a new Step.
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
 | Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
 
+Plural Writer configurations namespace each protected publication/PR store as
+`<store>/repositories/<owner>/<repository>/<id>.json`. Runner work, journals and
+diagnostics use the corresponding selected repository roots. The installation
+lock, lifecycle gate and pool slot inventory stay shared across every configured
+target. Singleton records keep their original paths and digests; changing the
+configuration cannot hide or rebind those retained records.
+
 Configuration is validated once and frozen. A digest accompanies admission;
 another configuration cannot resume the same attempt. Configuration/state
 migrations require reconciliation under the original qualified revision.
@@ -234,7 +244,8 @@ resources. General Runner and non-root Codex identities may be reused across
 attempts; checkout, environment, diagnostics, journal and process lifecycles
 remain attempt-specific. Protected consumer configuration supplies each
 repository's runtime identity; Task/PR content cannot select it. Writer and
-Reviewer remain separate and one consumer is served per Writer process.
+Reviewer remain separate. A Writer invocation selects one configured repository
+while pool capacity and controller settings belong to the whole installation.
 
 Managed capacity is an operational setting: changing only desired capacity
 preserves the execution digest and fixed internal resource-slot layout.
@@ -333,7 +344,9 @@ The consumer supplies runner policy, App/ingress references and owner lifecycle
 decisions and reviews the installed workflow projection. Relay owns canonical
 workflow templates, deterministic projection and workflow concurrency, as well
 as the root Writer
-lock, fixed wrappers/sudo policy, worker isolation and deployment lifecycle. Caller JSON cannot select a credential, executable or repository.
+lock, fixed wrappers/sudo policy, worker isolation and deployment lifecycle.
+Caller JSON may select a configured repository target; it cannot select a
+credential, executable, configuration or unconfigured repository.
 Keep root-owned configuration and separate consumer state outside worker-writable
 paths. Never execute PR/fork-controlled code on a persistent privileged runner.
 

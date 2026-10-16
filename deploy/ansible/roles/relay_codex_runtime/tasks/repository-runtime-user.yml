@@ -1,0 +1,83 @@
+---
+# Optional trusted runtime identity; Apps, consumer policy and capacity stay shared.
+- name: Create the repository runtime primary group
+  ansible.builtin.group:
+    name: '{{ relay_repository_runtime_user }}'
+    system: true
+  register: relay_repository_runtime_group
+
+- name: Inspect the repository runtime account before preserving existing settings
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ relay_repository_runtime_user }}'
+    fail_key: false
+  register: relay_repository_runtime_account
+  changed_when: false
+
+- name: Create the configured non-login runtime account with shared work access
+  ansible.builtin.user:
+    name: '{{ relay_repository_runtime_user }}'
+    group: '{{ omit if (relay_repository_runtime_account.ansible_facts.getent_passwd | default({})).get(relay_repository_runtime_user) else relay_repository_runtime_user }}'
+    groups: ['{{ relay_codex_work_group }}']
+    append: true
+    system: true
+    create_home: false
+    home: '{{ omit if (relay_repository_runtime_account.ansible_facts.getent_passwd | default({})).get(relay_repository_runtime_user) else relay_state_root ~ "/runtime-users/" ~ relay_repository_runtime_user }}'
+    shell: '{{ omit if (relay_repository_runtime_account.ansible_facts.getent_passwd | default({})).get(relay_repository_runtime_user) else "/usr/sbin/nologin" }}'
+  when:
+    - not ansible_check_mode | bool or not relay_repository_runtime_group.changed | bool
+    - not ansible_check_mode | bool or not relay_codex_work_group_planned | bool
+
+- name: Create root-owned repository credential parents
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - '{{ relay_config_root }}/runtime-users'
+    - '{{ relay_config_root }}/runtime-users/{{ relay_repository_runtime_user }}'
+  when: not ansible_check_mode | bool
+
+- name: Create the private runtime credential destination
+  ansible.builtin.file:
+    path: '{{ relay_config_root }}/runtime-users/{{ relay_repository_runtime_user }}/codex-credentials'
+    state: directory
+    owner: '{{ relay_repository_runtime_user }}'
+    group: '{{ relay_repository_runtime_user }}'
+    mode: '0700'
+  when: not ansible_check_mode | bool
+
+- name: Inspect the established primary credential metadata without reading bytes
+  ansible.builtin.stat:
+    path: '{{ relay_codex_access_token_file }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: relay_repository_primary_token
+
+- name: Require the existing bounded primary credential before making a runtime copy
+  ansible.builtin.assert:
+    that:
+      - relay_repository_primary_token.stat.isreg
+      - not relay_repository_primary_token.stat.islnk
+      - relay_repository_primary_token.stat.nlink == 1
+      - relay_repository_primary_token.stat.mode == '0600'
+      - relay_repository_primary_token.stat.pw_name == relay_codex_user
+      - relay_repository_primary_token.stat.gr_name == relay_codex_group
+      - relay_repository_primary_token.stat.size > 0
+      - relay_repository_primary_token.stat.size <= 16384
+  when: relay_repository_primary_token.stat.exists
+
+- name: Preserve the established consumer credential for the configured runtime user
+  ansible.builtin.copy:
+    src: '{{ relay_codex_access_token_file }}'
+    dest: '{{ relay_config_root }}/runtime-users/{{ relay_repository_runtime_user }}/codex-credentials/access-token'
+    remote_src: true
+    force: false
+    owner: '{{ relay_repository_runtime_user }}'
+    group: '{{ relay_repository_runtime_user }}'
+    mode: '0600'
+  no_log: true
+  when: relay_repository_primary_token.stat.exists and not ansible_check_mode | bool
