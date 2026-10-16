@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -90,6 +91,103 @@ def test_existing_foreign_unit_is_rejected_without_changing_it(tmp_path):
     assert unit.read_text() == content
     guard.verify('/opt/first', str(tmp_path / 'first'), 'example/first', [unit.name], units)
     guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second', ['second-reviewer.service'], units)
+
+
+def shared_pool_fixture(tmp_path):
+    from test_managed_pool import inputs as managed_inputs
+    public = managed_inputs(1)
+    values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()),
+              **config.compile_inputs(public), 'playbook_dir': str(BACKEND),
+              'relay_config_root': str(tmp_path / 'config')}
+    pool = values['relay_general_runner_pool']
+    member = pool['members'][0]
+    content = Templar(loader=DataLoader(), variables={**values, 'relay_pool_member': member}).template(
+        (BACKEND / 'roles/relay_runner/templates/relay-managed-pool.service.j2').read_text(), convert_data=False)
+    unit = tmp_path / member['service']
+    unit.write_text(content)
+    proof = {'name': pool['name'], 'runnerUser': pool['runnerUser'],
+             'root': member['root'], 'service': member['service']}
+    return public, values, unit, content, proof
+
+
+def test_compiled_pool_preflight_accepts_actual_shared_unit_without_a_legacy_allowlist(tmp_path):
+    public, values, unit, content, expected_proof = shared_pool_fixture(tmp_path)
+    legacy = tmp_path / (public['environment']['namespace'] + '-general-runner.service')
+    legacy_content = 'ExecStart=' + values['relay_install_root'] + '/general-runner/run.sh\n'
+    legacy.write_text(legacy_content)
+    task = yaml.safe_load((BACKEND / 'roles/relay_preflight/tasks/main.yml').read_text())[0]
+    argv = Templar(loader=DataLoader(), variables=values).template(task['ansible.builtin.command']['argv'])
+    arguments = argv[7:]
+    # On the old task no proof is passed, reproducing its exact namespace-prefix
+    # collision against the real shared pool unit format before the fix.
+    arguments, proof = guard.parse_pool_argument(arguments) if '--general-pool' in arguments else (arguments, None)
+    kwargs = {'general_pool': proof} if proof is not None else {}
+    guard.verify(argv[3], argv[4], json.loads(argv[5]), arguments, tmp_path,
+                 reviewer_user=argv[6], **kwargs)
+    assert proof == expected_proof
+    assert legacy.name not in arguments
+    assert unit.read_text() == content and legacy.read_text() == legacy_content
+
+
+@pytest.mark.parametrize('field', ['User', 'Group', 'WorkingDirectory', 'ExecStart'])
+def test_shared_pool_identity_rejects_foreign_or_duplicate_service_directives(tmp_path, field):
+    public, values, unit, content, proof = shared_pool_fixture(tmp_path)
+    identity_line = next(row for row in content.splitlines() if row.startswith(field + '='))
+    for changed in [
+        re.sub(r'(?m)^' + field + r'=.*$', field + '=foreign', content),
+        content.replace('[Service]\n', '[Service]\n' + identity_line + '\n'),
+        content.replace(identity_line + '\n', identity_line + '\n' + field + ' = foreign\n'),
+    ]:
+        unit.write_text(changed)
+        with pytest.raises(ValueError, match='UNIT_COLLISION'):
+            guard.verify(values['relay_install_root'], str(tmp_path / 'config'),
+                         public['consumer']['repository'], [unit.name], tmp_path, general_pool=proof)
+        assert unit.read_text() == changed
+
+
+@pytest.mark.parametrize('changes', [
+    {'name': '../foreign'}, {'runnerUser': 'root'}, {'runnerUser': 'foreign user'},
+    {'root': '/opt/foreign/runners/primary'}, {'service': 'foreign.service'}, {'extra': 'foreign.service'},
+])
+def test_shared_pool_proof_cannot_allow_arbitrary_units_paths_or_users(tmp_path, changes):
+    public, values, unit, content, proof = shared_pool_fixture(tmp_path)
+    with pytest.raises(ValueError, match='POOL_BINDING_INVALID'):
+        guard.verify(values['relay_install_root'], str(tmp_path / 'config'),
+                     public['consumer']['repository'], [unit.name], tmp_path, general_pool={**proof, **changes})
+    assert unit.read_text() == content
+
+
+def test_shared_pool_proof_preserves_symlink_and_other_unit_rejection(tmp_path):
+    public, values, unit, content, proof = shared_pool_fixture(tmp_path)
+    args = (values['relay_install_root'], str(tmp_path / 'config'), public['consumer']['repository'])
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify(*args, [unit.name], tmp_path)
+    with pytest.raises(ValueError, match='POOL_BINDING_INVALID'):
+        guard.verify(*args, [], tmp_path, general_pool=proof)
+    foreign = tmp_path / 'foreign.service'
+    foreign.write_text(content)
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify(*args, [unit.name, foreign.name], tmp_path, general_pool=proof)
+    unit.unlink()
+    unit.symlink_to(foreign)
+    with pytest.raises(ValueError, match='UNIT_UNSAFE'):
+        guard.verify(*args, [unit.name], tmp_path, general_pool=proof)
+    assert foreign.read_text() == content
+
+
+@pytest.mark.parametrize('arguments', [
+    ['--general-pool'], ['--general-pool', '{}', 'foreign.service'],
+    ['--general-pool', '{}', '--general-pool', '{}'], ['--general-pool', 'invalid-json'],
+])
+def test_general_pool_argument_requires_one_complete_trailing_value(arguments):
+    with pytest.raises(ValueError):
+        guard.parse_pool_argument(arguments)
+
+
+def test_general_pool_argument_preserves_legacy_invocation():
+    names = ['legacy-reviewer.service', 'legacy-runner.service']
+    assert guard.parse_pool_argument(names) == (names, None)
+    assert guard.parse_pool_argument([*names, '--general-pool', 'null']) == (names, None)
 
 
 def test_manual_outcome_units_bind_the_same_namespace_and_fixed_writer(tmp_path):
