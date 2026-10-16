@@ -2,11 +2,13 @@
 import base64
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import shlex
 import stat
 import subprocess
+import tempfile
 import time
 
 from managed_pool import GitHub, PERMISSION, require
@@ -119,11 +121,44 @@ def consumer_digest(consumer, source_root=None):
     return digest
 
 
+def projected_consumer(config, source_root=None):
+    """Use the existing backend compiler/template before binding a NEW target.
+
+    The template's object order is part of the existing consumer digest ABI.
+    Invoke the already-required Ansible executable so its Python environment
+    need not be importable by the owner's separate Python interpreter.
+    """
+    from config import compile_inputs
+    source_root = Path(source_root) if source_root is not None else Path(__file__).resolve().parents[1]
+    backend = source_root / 'deploy/ansible'
+    with tempfile.TemporaryDirectory(prefix='relay-consumer-projection-') as temporary:
+        work = Path(temporary)
+        destination = work / 'consumer.json'
+        inventory = work / 'inventory.json'
+        playbook = work / 'projection.json'
+        inventory.write_text(json.dumps({'all': {'hosts': {'localhost': {
+            **compile_inputs(config), 'ansible_connection': 'local', 'ansible_become': False,
+            'ansible_remote_tmp': str(work / 'remote-tmp')}}}}))
+        playbook.write_text(json.dumps([{'hosts': 'localhost', 'gather_facts': False,
+            'become': False, 'tasks': [{'ansible.builtin.template': {
+                'src': str(backend / 'roles/relay_controller/templates/consumer.json.j2'),
+                'dest': str(destination), 'mode': '0600'}, 'no_log': True}]}]))
+        for path in [inventory, playbook]:
+            path.chmod(0o600)
+        env = {key: os.environ[key] for key in ['HOME', 'PATH', 'USER', 'LANG', 'LC_ALL'] if key in os.environ}
+        env.update(ANSIBLE_CONFIG=str(backend / 'ansible.cfg'), ANSIBLE_LOCAL_TEMP=str(work / 'local-tmp'))
+        result = subprocess.run(['ansible-playbook', '-i', str(inventory), str(playbook), '--limit', 'localhost'],
+            cwd=backend, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=60, check=False)
+        require(result.returncode == 0, 'TARGET_DIGEST_UNPROVEN')
+        return json.loads(destination.read_text())
+
+
 def _owner_payload(config, action, revision=None, operation_id=None):
     from managed_pool import pool_contract
     contract = pool_contract(config)
     source_root = Path(__file__).parent
-    digest = consumer_digest(config['consumer'], source_root.parent)
+    digest = consumer_digest(projected_consumer(config, source_root.parent), source_root.parent)
     payload = {'sources': {name: (source_root / (name + '.py')).read_text(encoding='utf-8')
                           for name in OWNER_POOL_SOURCES},
                'contract': contract, 'config': config, 'targetDigest': digest,

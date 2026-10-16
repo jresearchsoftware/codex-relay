@@ -39,6 +39,18 @@ def consumer_digest(consumer, source):
         'console.log(JSON.stringify(consumerDigest(validateConsumer(JSON.parse(s)))));', consumer)
 
 
+def current_consumer_digest(config, source):
+    """Read the installed prospective graph after its identity was verified.
+
+    Historical callers keep consumer_digest and their original ordered bytes.
+    """
+    consumer_path = '/etc/' + config['environment']['namespace'] + '/consumer.json'
+    ProtectedFiles().read(consumer_path, modes={0o644})
+    return _node(source, consumer_path,
+        'import {CONSUMER_DIGEST} from "./consumer/consumer.mjs";'
+        'console.log(JSON.stringify(CONSUMER_DIGEST));')
+
+
 def original_installation(target):
     """Read original protected bytes, including after current has moved."""
     namespace = target['environment']['namespace']

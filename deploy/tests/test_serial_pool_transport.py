@@ -1,5 +1,6 @@
 """Private stdin root transport, fixed public proofs and F1-before-transition."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ def exchange(monkeypatch):
     authorization = {'organization': 'example-org', 'appId': '101',
                      'installationId': '201', 'installationToken': TOKEN}
     monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value=authorization))
+    monkeypatch.setattr(transport, 'projected_consumer', Mock(return_value=config['consumer']))
     monkeypatch.setattr(transport, 'consumer_digest', Mock(return_value=DIGEST))
     process = Mock(returncode=0)
     process.poll.return_value = 0
@@ -336,3 +338,123 @@ def test_current_node_digest_resolves_defaults_and_preserves_capacity_only_diges
     assert transport.consumer_digest(config['consumer'], ROOT) == first
     assert len(first) == 64
     assert first != hashlib.sha256(json.dumps(config['consumer']).encode()).hexdigest()
+
+
+@pytest.mark.parametrize('effort', [None, 'high'])
+@pytest.mark.parametrize('reordered', [False, True])
+def test_owner_target_digest_matches_actual_backend_consumer_template(tmp_path, monkeypatch, effort, reordered):
+    import yaml
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+    import config as deployment_config
+
+    value = inputs(1)
+    if effort is not None:
+        value['consumer']['defaultProfile']['effort'] = effort
+    if reordered:
+        value['consumer']['validationNames'] = ['candidate', 'runtime']
+        def reverse_objects(item):
+            if isinstance(item, dict):
+                return {key: reverse_objects(child) for key, child in reversed(list(item.items()))}
+            if isinstance(item, list):
+                return [reverse_objects(child) for child in item]
+            return item
+        value = reverse_objects(value)
+    value = deployment_config.loads(json.dumps(value), ROOT)
+    original = json.dumps(value)
+    raw_digest = transport.consumer_digest(value['consumer'], ROOT)
+    backend = ROOT / 'deploy/ansible'
+    variables = {**yaml.safe_load((backend / 'group_vars/all.yml').read_text()),
+                 **deployment_config.compile_inputs(value)}
+    rendered = Templar(loader=DataLoader(), variables=variables).template(
+        (backend / 'roles/relay_controller/templates/consumer.json.j2').read_text(), convert_data=False)
+    deployed = tmp_path / 'consumer.json'
+    deployed.write_text(rendered)
+    deployed.chmod(0o644)
+    code = ('import {loadConsumer,consumerDigest} from "./consumer/consumer-config.mjs";'
+            'console.log(consumerDigest(loadConsumer(process.argv[1])));')
+    expected = subprocess.check_output(['node', '--input-type=module', '-e', code, str(deployed)],
+                                       cwd=ROOT, text=True).strip()
+    monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value={}))
+    pending, digest = transport._owner_payload(value, 'preflight')
+    assert digest == expected
+    assert json.loads(pending)['targetDigest'] == expected
+    assert digest != raw_digest
+    assert json.loads(rendered) == value['consumer']
+    assert json.dumps(value) == original
+    assert transport.consumer_digest(value['consumer'], ROOT) == raw_digest
+
+
+def test_installed_prospective_digest_reads_protected_current_graph_without_changing_historical_digest(tmp_path, monkeypatch):
+    import serial_pool_installation as installation
+    from serial_pool_transition import ProtectedFiles
+
+    value = inputs(1)
+    projected = transport.projected_consumer(value, ROOT)
+    namespace = value['environment']['namespace']
+    logical = '/etc/' + namespace + '/consumer.json'
+    physical = tmp_path / logical.removeprefix('/')
+    physical.parent.mkdir(parents=True)
+    physical.write_text(json.dumps(projected))
+    physical.chmod(0o644)
+    historical_before = installation.consumer_digest(value['consumer'], ROOT)
+    files = ProtectedFiles(root=tmp_path, owner_uid=os.getuid())
+    monkeypatch.setattr(installation, 'ProtectedFiles', lambda: files)
+    node = installation._node
+    calls = []
+    def current_graph(source, consumer_path, code, payload=None):
+        assert consumer_path == logical
+        calls.append(consumer_path)
+        return node(source, str(physical), code, payload)
+    monkeypatch.setattr(installation, '_node', current_graph)
+    expected = transport.consumer_digest(projected, ROOT)
+    assert installation.current_consumer_digest(value, ROOT) == expected
+    assert expected != historical_before
+    assert calls == [logical]
+    physical.chmod(0o666)
+    with pytest.raises(managed_pool.PoolError, match='SERIAL_TRANSITION_FILE_UNSAFE'):
+        installation.current_consumer_digest(value, ROOT)
+    assert calls == [logical]
+    monkeypatch.setattr(installation, '_node', node)
+    assert installation.consumer_digest(value['consumer'], ROOT) == historical_before
+
+
+@pytest.mark.parametrize('denied', [False, True])
+def test_installed_pool_qualifies_identity_and_f1_before_reading_current_prospective_digest(monkeypatch, denied):
+    import installed_config
+    import serial_pool_installation as installation
+
+    value = inputs(1)
+    contract = managed_pool.pool_contract(value)
+    events = []
+    def verified(*_args, **_kwargs):
+        events.append('identity')
+        return value, '', ''
+    class GitHub:
+        def __init__(self, *_args):
+            pass
+        def qualify(self, _contract):
+            events.append('f1')
+            if denied:
+                raise managed_pool.PoolError('MANAGED_POOL_GROUP_UNTRUSTED_WORKFLOW_REF')
+    def digest(config, _source):
+        assert config is value
+        events.append('current-digest')
+        return DIGEST
+    def preflight(config, _github, target_digest):
+        assert config is value and target_digest == DIGEST
+        events.append('preflight')
+        raise RuntimeError('FIXTURE_BEFORE_POOL_MUTATION')
+    monkeypatch.setattr(installed_config, 'verify', verified)
+    monkeypatch.setattr(managed_pool.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(managed_pool, 'GitHub', GitHub)
+    monkeypatch.setattr(managed_pool.sys, 'stdin', io.StringIO(json.dumps({
+        **{key: contract[key] for key in ['appId', 'installationId', 'organization']},
+        'installationToken': TOKEN})))
+    monkeypatch.setattr(installation, 'current_consumer_digest', digest)
+    monkeypatch.setattr(installation, 'consumer_digest', Mock(side_effect=AssertionError('historical reader selected')))
+    monkeypatch.setattr(installation, 'preflight', preflight)
+    with pytest.raises((RuntimeError, managed_pool.PoolError),
+                       match='GROUP_UNTRUSTED_WORKFLOW_REF' if denied else 'FIXTURE_BEFORE_POOL_MUTATION'):
+        managed_pool.installed_main(REVISION)
+    assert events == (['identity', 'f1'] if denied else ['identity', 'f1', 'current-digest', 'preflight'])

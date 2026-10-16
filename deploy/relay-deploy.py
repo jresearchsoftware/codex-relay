@@ -18,7 +18,7 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, compile_inputs, require, selector, select_execution_slot
+from config import load, loads, compile_inputs, require, selector, select_execution_slot
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -295,6 +295,10 @@ def run(args):
         config, installed_digest, installed_consumer_revision = verify(ROOT, args.expected_installed_head)
     else:
         config = load(config_path, ROOT)
+    if 'generalRunnerPool' in config['consumer']:
+        # Bind new managed target policy in the same order that the protected
+        # canonical snapshot and installed reader produce, including derived slots.
+        config = loads(json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False), ROOT)
     pool_reinstall = args.phase == 'reinstall' and 'generalRunnerPool' in config['consumer']
     require(not (args.phase == 'reinstall' and args.authorize_lifecycle_recovery) or pool_reinstall,
             'pool-reinstall-recovery-only')

@@ -39,10 +39,10 @@ class SerialPoolOwnerFlowTests(unittest.TestCase):
         (cls.product / 'deploy/managed_pool_transport.py').write_text(common +
             'from types import SimpleNamespace\nfrom managed_pool import PoolError\n'
             f'operation_file=Path({str(cls.operation_file)!r}); phase_file=Path({str(cls.phase_file)!r})\n'
-            'def preflight_pool(*args, **kwargs):\n'
-            '    emit("preflight"); return SimpleNamespace(serial_transition=True, operation_id=operation_file.read_text() or None)\n'
+            'def preflight_pool(target,key,config,*args, **kwargs):\n'
+            '    emit("preflight", target_config=json.dumps(config,ensure_ascii=False,separators=(",",":"))); return SimpleNamespace(serial_transition=True, operation_id=operation_file.read_text() or None)\n'
             'def transition_pool(target,key,config,revision,operation_id,*args,action="begin",**kwargs):\n'
-            '    emit(action, operation=operation_id, target=revision)\n'
+            '    emit(action, operation=operation_id, target=revision, target_config=json.dumps(config,ensure_ascii=False,separators=(",",":")))\n'
             '    if fails(action): raise PoolError("MANAGED_POOL_FIXTURE_TRANSITION_FAILURE")\n'
             '    if action=="finish": phase_file.write_text("retired")\n'
             '    return {"phase":phase_file.read_text() if action=="begin" else "retired", "operationId":operation_id,"target":revision}\n'
@@ -148,8 +148,13 @@ class SerialPoolOwnerFlowTests(unittest.TestCase):
         self.assertEqual(json.loads(self.gate_file.read_text())['phase'], 'open')
 
     def test_reapply_after_final_acknowledgement_retains_uuid_and_does_not_repeat_retirement_or_resume(self):
+        from serial_pool_transition import encoded
+
         first = self.apply()
         self.assertEqual(first.returncode, 0, first.stderr)
+        values = json.loads(self.capture.read_text())
+        installed_target = config.loads(values['relay_installed_deployment_config'], self.product)
+        target_bytes = encoded(installed_target)
         second = self.apply()
         self.assertEqual(second.returncode, 0, second.stderr)
         names = self.names()
@@ -160,6 +165,8 @@ class SerialPoolOwnerFlowTests(unittest.TestCase):
         self.assertEqual(names.count('backend-check'), 2)
         self.assertNotIn('backend-apply', names)
         self.assertTrue(all(row.get('operation') in [None, OPERATION] for row in self.events()))
+        self.assertTrue(all(row['target_config'].encode() == target_bytes
+                            for row in self.events() if 'target_config' in row))
 
     def test_stopped_initial_install_proves_activation_before_retirement_and_resume(self):
         self.phase_file.write_text('stopped')
@@ -174,7 +181,7 @@ class SerialPoolOwnerFlowTests(unittest.TestCase):
         self.assertTrue(backend['transition'])
         self.assertTrue(backend['managed'])
 
-    def test_upgrade_preflight_retains_reserved_target_order_without_changing_canonical_snapshot(self):
+    def test_upgrade_target_policy_matches_installed_roundtrip_and_preserves_original_evidence(self):
         import yaml
         from ansible.parsing.dataloader import DataLoader
         from ansible.template import Templar
@@ -186,13 +193,18 @@ class SerialPoolOwnerFlowTests(unittest.TestCase):
                              '--resolved-revision', self.revision)
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(self.capture.read_text())
-        target = config.load(self.config, self.product)
-        canonical = json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+        owner_target = config.load(self.config, self.product)
+        canonical = json.dumps(owner_target, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+        target = config.loads(canonical, self.product)
         ordered = encoded(target)
+        self.assertEqual(target, owner_target)
+        self.assertNotEqual(ordered, encoded(owner_target))
         self.assertNotEqual(ordered, canonical.rstrip('\n').encode())
         self.assertEqual(values['relay_installed_deployment_config'], canonical)
         self.assertEqual(values['relay_installed_deployment_config_sha256'],
                          hashlib.sha256(canonical.encode()).hexdigest())
+        self.assertTrue(all(row['target_config'].encode() == ordered
+                            for row in self.events() if 'target_config' in row))
         task = yaml.safe_load((self.product / 'deploy/ansible/tasks/upgrade-preflight.yml').read_text())[0]
         stdin = Templar(loader=DataLoader(), variables=values).template(task['ansible.builtin.command']['stdin'])
         self.assertIsInstance(stdin, str)
