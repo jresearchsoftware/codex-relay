@@ -43,8 +43,7 @@ jobs:
           NODE_OPTIONS: ''
           NODE_PATH: ''
         run: |
-          test "$RUNNER_NAME" = @@GENERAL_RUNNER_NAME@@
-          test "$(/usr/bin/id -un)" = @@GENERAL_RUNNER_USER@@
+          @@GENERAL_RUNNER_GUARD@@
           /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           import { spawn } from 'node:child_process';
