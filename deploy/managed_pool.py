@@ -18,6 +18,8 @@ import urllib.request
 
 CAPACITY = 32
 PERMISSION = 'organization_self_hosted_runners'
+# Fixed product projection path; not an owner-supplied arbitrary workflow list.
+LIFECYCLE_WORKFLOW = '.github/workflows/manual-main-production-deploy.yml'
 
 
 class PoolError(RuntimeError):
@@ -36,6 +38,17 @@ def pool_contract(config):
     name = general['name']
     repository = deployment_repository(config)
     repositories = configured_repositories(config)
+    workflows = {target: [target + '/' + consumer[key] + '@refs/heads/' + consumer['baseBranch']
+                          for key in ['routingWorkflow', 'recoveryWorkflow']]
+                 for target in repositories}
+    # The opt-in installed owner lifecycle runs on General so it can restart
+    # Production. Only its protected installation anchor owns this workflow.
+    if environment['localApply'].get('source') == 'installed':
+        require(LIFECYCLE_WORKFLOW not in [consumer[key] for key in
+                ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow']],
+                'ELIGIBILITY_WORKFLOWS_UNPROVEN')
+        workflows[repository].append(repository + '/' + LIFECYCLE_WORKFLOW
+                                     + '@refs/heads/' + consumer['baseBranch'])
     return {'version': 1, 'name': name, 'runnerUser': general['user'],
             'organization': repository.split('/')[0], 'group': general['group'],
             'appId': general['poolApp']['appId'], 'installationId': general['poolApp']['installationId'],
@@ -43,13 +56,8 @@ def pool_contract(config):
             'repository': repository, 'repositories': repositories, 'namespace': environment['namespace'],
             'admission': '/opt/' + environment['namespace'] + '/relay-admission',
             'readiness': '/opt/' + environment['namespace'] + '/relay-reviewer-readiness',
-            'workflowRefs': [repository + '/' + consumer[key]
-                             + '@refs/heads/' + consumer['baseBranch']
-                             for key in ['routingWorkflow', 'recoveryWorkflow']],
-            'workflowRefsByRepository': {target: [target + '/' + consumer[key]
-                                                + '@refs/heads/' + consumer['baseBranch']
-                                                for key in ['routingWorkflow', 'recoveryWorkflow']]
-                                         for target in repositories},
+            'workflowRefs': workflows[repository],
+            'workflowRefsByRepository': workflows,
             'label': general_pool_label(config),
             'members': [{'id': slot['id'], 'name': slot['runnerName'],
                          'label': execution_slot_label(config, slot),
@@ -160,16 +168,19 @@ class GitHub:
         repositories = self.pages('/orgs/' + self.organization + '/actions/runner-groups/'
                                  + str(group['id']) + '/repositories', 'repositories')
         selected = [repository.get('full_name') for repository in repositories]
-        require(set(contract.get('repositories', [contract['repository']])) <= set(selected),
-                'GROUP_REPOSITORY_UNPROVEN')
+        require(bool(selected), 'GROUP_REPOSITORY_UNPROVEN')
         require(all(isinstance(repository, str) and repository in eligible for repository in selected),
                 'GROUP_ELIGIBLE_REPOSITORIES_UNPROVEN')
         workflows = group.get('selected_workflows')
         require(isinstance(workflows, list) and workflows and all(isinstance(value, str) for value in workflows),
                 'GROUP_WORKFLOWS_UNPROVEN')
         trusted = {ref for repository in selected for ref in eligible[repository]}
-        require(trusted <= set(workflows), 'GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN')
-        require(set(workflows) == trusted, 'GROUP_UNTRUSTED_WORKFLOW_REF')
+        active = set(workflows)
+        require(active <= trusted, 'GROUP_UNTRUSTED_WORKFLOW_REF')
+        for repository in selected:
+            automatic = set(eligible[repository][:2])
+            require(not automatic.intersection(active) or automatic <= active,
+                    'GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN')
         return group['id']
 
     def in_group(self, group_id, runner_id):

@@ -108,6 +108,40 @@ def test_pool_registers_all_writer_targets_with_one_capacity_and_trusted_refs(tm
     assert len({json.dumps(binding, sort_keys=True) for binding in store.value['consumers'].values()}) == 1
 
 
+@pytest.mark.parametrize('singleton', [False, True])
+def test_installed_owner_lifecycle_is_fixed_and_belongs_only_to_the_installation_anchor(tmp_path, singleton):
+    value = shared()
+    if singleton:
+        value['consumer']['repository'] = value['consumer'].pop('repositories')[0]
+        del value['environment']['repository']
+    anchor = 'example-org/first'
+    value['source'] = {'repository': 'https://github.com/' + anchor + '.git', 'revision': 'main'}
+    value['environment']['localApply'] = {'source': 'installed'}
+    config.validate(value, ROOT)
+    contract = managed_pool.pool_contract(value)
+    assert managed_pool.LIFECYCLE_WORKFLOW == workflow_projection.PRODUCTION
+    expected = {repository: [repository + '/' + value['consumer'][key] + '@refs/heads/main'
+                             for key in ['routingWorkflow', 'recoveryWorkflow']]
+                for repository in contract['repositories']}
+    expected[anchor].append(anchor + '/' + workflow_projection.PRODUCTION + '@refs/heads/main')
+    assert contract['workflowRefs'] == expected[anchor]
+    assert contract['workflowRefsByRepository'] == expected
+    assert pool_eligibility.eligible_workflows(contract, root=tmp_path,
+                                             owner_uid=tmp_path.stat().st_uid) == expected
+    for repository in contract['repositories']:
+        projected = workflow_projection.render(value, 'a' * 40, ROOT, repository)
+        assert (workflow_projection.PRODUCTION in projected) == (repository == anchor)
+
+
+def test_checkout_configuration_keeps_pair_only_contract_and_has_no_third_workflow_option():
+    value = shared()
+    contract = managed_pool.pool_contract(value)
+    assert all(len(workflows) == 2 for workflows in contract['workflowRefsByRepository'].values())
+    value['consumer']['lifecycleWorkflow'] = '.github/workflows/unknown.yml'
+    with pytest.raises(config.InvalidConfig):
+        config.validate(value, ROOT)
+
+
 @pytest.mark.parametrize('topology', ['default', 'managed', 'independent'])
 def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_identity(topology):
     value = shared()

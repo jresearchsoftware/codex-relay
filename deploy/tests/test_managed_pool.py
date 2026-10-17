@@ -187,6 +187,41 @@ def test_create_repeat_and_expand_never_multiply_capacity_by_repository_or_runti
     assert set(state.value['consumers']) == {'example-org/sample-project', 'example-org/another-project'}
 
 
+@pytest.mark.parametrize('active_repositories', [1, 2, 3])
+def test_one_to_six_shared_capacity_is_independent_of_active_allowlist_subset(active_repositories):
+    value = inputs(1)
+    anchor = value['consumer'].pop('repository')
+    repositories = [anchor, 'example-org/second', 'example-org/inactive']
+    value['consumer']['repositories'] = repositories
+    value['environment']['repository'] = anchor
+    contract = pool.pool_contract(value)
+    eligible = contract['workflowRefsByRepository']
+    group = {'id': 7, 'name': contract['group'], 'visibility': 'selected',
+             'restricted_to_workflows': True, 'selected_workflows': [
+                 ref for repository in repositories[:active_repositories] for ref in eligible[repository]]}
+    native = pool.GitHub('synthetic-token-never-transmitted', contract['organization'])
+    native.request = lambda method, path: group
+    native.pages = lambda path, field: ([group] if field == 'runner_groups' else [
+        {'full_name': repository} for repository in repositories[:active_repositories]])
+    state, remote = MemoryState(), Remote()
+    remote.qualify = lambda current: native.qualify(current, eligible)
+    host = Host(remote, state)
+    assert pool.reconcile(contract, state, remote, host)['capacity'] == 1
+    contract['desiredCapacity'] = 6
+    expanded = pool.reconcile(contract, state, remote, host)
+    assert expanded['capacity'] == len(expanded['ready']) == len(remote.values) == 6
+    assert len(host.mutations) == 6
+    assert set(state.value['consumers']) == set(repositories)
+    host.pending_attempts = True
+    contract['desiredCapacity'] = 1
+    shrinking = pool.reconcile(contract, state, remote, host)
+    assert len(shrinking['draining']) == 5 and not shrinking['retired']
+    assert not host.stops and len(remote.values) == 6
+    host.pending_attempts = False
+    assert len(pool.reconcile(contract, state, remote, host)['retired']) == 5
+    assert len(remote.values) == 1
+
+
 def test_busy_contraction_removes_scheduling_labels_but_never_stops_active_jobs():
     contract, state, github, host = setup(3)
     pool.reconcile(contract, state, github, host)
@@ -480,7 +515,7 @@ def test_live_group_qualification_rejects_untrusted_current_repository_refs_with
     elif bad == 'validation-ref':
         group['selected_workflows'].append(contract['repository'] + '/.github/workflows/validation.yml@refs/heads/main')
     else:
-        group['selected_workflows'].pop()
+        group['selected_workflows'].pop(1)
     github = pool.GitHub('synthetic-token', contract['organization'])
     requests = []
     github.request = lambda method, path: (requests.append((method, path)) or group)

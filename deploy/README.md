@@ -85,6 +85,8 @@ different protected `runtimeUser` while using the same physical pool. Task and
 PR content cannot choose that identity. Group overrides are not required.
 One Writer installation can instead configure `consumer.repositories` as a
 nonempty list of repository names, mutually exclusive with `consumer.repository`.
+This is the trusted Writer/Reviewer target list, independent of automatic
+workflow adoption. Configured targets may remain inactive for pool work.
 Its App/installation, owner, controller settings, credentials, protected state
 and managed pool remain shared. `environment.repository` explicitly selects
 the existing lifecycle workflow and Production Runner provenance anchor; it
@@ -100,8 +102,8 @@ The fixed launcher verifies its actual Unix user against the repository work
 root. Task/PR content cannot choose users or credential paths. This does not
 allocate extra runner capacity or create per-repository Apps or policy.
 
-Project each target's routing/recovery workflows with the ordinary
-`workflow-project` or `workflow-verify` command and an explicit
+For targets opting in to automatic work, project routing/recovery workflows
+with the ordinary `workflow-project` or `workflow-verify` command and an explicit
 `--repository owner/repository`. Omitting this option retains the protected
 `environment.repository` anchor. Projection manifests bind the selected target;
 the installed consumer JSON and digest retain the complete shared configuration.
@@ -156,16 +158,30 @@ is never copied to the runner host. Apply verifies App/installation identity and
 the actual `organization_self_hosted_runners: write` permission, then transports
 only a short-lived installation token through protected SSH stdin. The installed
 root-only helper derives runner tokens and emits a bounded public receipt.
-The group must already be restricted to selected eligible repositories and their
-exact trusted routing/recovery workflow refs. Apply qualifies the entire selected
+The group must already be restricted to selected eligible repositories and exact
+trusted workflow refs. Selected repositories may be a subset of the configured
+targets and protected eligible peers. A selected repository may also remain
+inactive with no selected workflow refs; configuration and group selection alone
+do not require workflow adoption. Apply qualifies the entire selected
 repository and workflow set against the current prospective owner configuration
 and protected installed peer snapshots with the same pool identity. Peer source,
 manifest and configuration bindings must agree; discovery never executes peer
 code. Every selected workflow must be an exact configured routing/recovery ref
-on that repository's trusted base branch, and both refs must be present for each
-selected repository. Qualification runs under the deployment locks before
-lifecycle or backend mutations and runs again before pool-state or runner
+on that selected repository's trusted base branch, or the optional fixed owner
+lifecycle ref described below. If either automatic routing/recovery ref is
+selected, both must be present; inactive targets need neither. Qualification
+runs under the deployment locks before lifecycle or backend mutations and runs
+again before pool-state or runner
 mutations. It neither writes runner-group ACLs nor grants App permissions.
+
+For the existing `environment.localApply.source: installed` self-consumer,
+the optional `.github/workflows/manual-main-production-deploy.yml` ref belongs
+only to the protected `environment.repository` anchor at its trusted `main`
+branch. It runs on General because lifecycle operations can restart the
+Production Runner. It may be selected with or without automatic workflows;
+other configured targets do not inherit it. The path is product-owned, not an
+arbitrary additional workflow allowlist. Recognition does not publish the
+workflow, change ACLs, authorize Apply or qualify installed execution.
 
 A selected peer without a qualifying protected installed snapshot fails closed.
 Bootstrap supplies prospective authority only for its own consumer. Keep the

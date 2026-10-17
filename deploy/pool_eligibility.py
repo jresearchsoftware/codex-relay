@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import stat
 
-from managed_pool import PoolError, require
+from managed_pool import LIFECYCLE_WORKFLOW, PoolError, require
 
 
 MAX_DISCOVERY = 1024
@@ -130,8 +130,22 @@ def _peer_refs(config, namespace, contract):
     require(_branch(branch) and all(isinstance(value, str) and WORKFLOW.fullmatch(value)
                                    for value in workflows)
             and len(set(workflows)) == 3, 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
-    return {repository: [repository + '/' + workflow + '@refs/heads/' + branch
-                         for workflow in workflows[:2]] for repository in repositories}
+    anchor = environment.get('repository', consumer.get('repository'))
+    require(isinstance(anchor, str) and anchor in repositories, 'ELIGIBILITY_REPOSITORY_UNPROVEN')
+    result = {repository: [repository + '/' + workflow + '@refs/heads/' + branch
+                           for workflow in workflows[:2]] for repository in repositories}
+    local_apply = environment.get('localApply')
+    if isinstance(local_apply, dict) and local_apply.get('source') == 'installed':
+        source = config.get('source')
+        require(set(local_apply) == {'source'} and isinstance(source, dict)
+                and isinstance(source.get('repository'), str), 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
+        source_repository = source['repository'].removeprefix('https://github.com/').removeprefix(
+            'git@github.com:').removesuffix('.git')
+        require(source_repository == anchor and source.get('revision', 'main') == 'main'
+                and branch == 'main' and LIFECYCLE_WORKFLOW not in workflows,
+                'ELIGIBILITY_WORKFLOWS_UNPROVEN')
+        result[anchor].append(anchor + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branch)
+    return result
 
 
 def _peer(opt, namespace, contract, owner_uid):
@@ -195,7 +209,7 @@ def _peer(opt, namespace, contract, owner_uid):
 
 
 def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
-    """Map selected-repository candidates to verified exact trusted refs only.
+    """Map configured candidates to permitted refs, without requiring adoption.
 
     The caller must compare *every* native selected repository/workflow with
     this map. Discovery alone grants no access and performs no mutation.
@@ -210,8 +224,8 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             and contract['repository'] in result, 'ELIGIBILITY_CONTRACT_INVALID')
     for repository, refs in result.items():
         require(_repository(repository) and repository.split('/')[0] == contract['organization']
-                and isinstance(refs, list) and len(refs) == 2
-                and all(isinstance(value, str) for value in refs) and len(set(refs)) == 2,
+                and isinstance(refs, list) and len(refs) in [2, 3]
+                and all(isinstance(value, str) for value in refs) and len(set(refs)) == len(refs),
                 'ELIGIBILITY_CONTRACT_INVALID')
         branches = []
         for value in refs:
@@ -222,6 +236,10 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             require(WORKFLOW.fullmatch(workflow) and _branch(branch), 'ELIGIBILITY_CONTRACT_INVALID')
             branches.append(branch)
         require(len(set(branches)) == 1, 'ELIGIBILITY_CONTRACT_INVALID')
+        if len(refs) == 3:
+            require(repository == contract['repository']
+                    and refs[2] == repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branches[0],
+                    'ELIGIBILITY_CONTRACT_INVALID')
     result = {repository: refs[:] for repository, refs in result.items()}
     with ExitStack() as stack:
         descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -245,7 +263,9 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             if peer is None:
                 continue
             for repository, workflows in peer.items():
-                require(repository not in result or set(result[repository]) == set(workflows),
+                require(repository not in result or set(result[repository][:2]) == set(workflows[:2]),
                         'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
+                if repository in result and len(result[repository]) == 3:
+                    workflows = result[repository]
                 result[repository] = workflows
     return result
