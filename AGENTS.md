@@ -204,6 +204,16 @@ disposable TEST retain their source-controlled entrypoints; shell and tool
 choice inside its sandbox follows
 [TEST Environment Authority](docs/execution-policy.md#test-environment-authority).
 
+For manual Codex on the owner's workstation, including Windows or NFS-mounted
+local source files, ordinary source-file ACL inheritance, group permissions,
+ownership and best-effort file modes are outside the file-at-rest audit scope:
+do not block, warn, note or report them. Private copies and mode tightening are
+optional; failure to tighten local modes does not stop work. Do not change
+original owner-file permissions without authorization. Preserve protection
+against actual secret exposure, tampering, remote/protected operations and
+explicit security requirements. This exception does not extend to Debian/server,
+CI, shared or cloud execution.
+
 ## Work within the admitted goal
 
 Use the canonical [progress-bounded execution policy](docs/execution-policy.md)
