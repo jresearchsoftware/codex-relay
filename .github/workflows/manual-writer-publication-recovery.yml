@@ -57,6 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELAY_CONSUMER_CONFIG: /etc/codex-relay/consumer.json
+          RELAY_REPOSITORY: jresearchsoftware/codex-relay
           EXPECTED_WORKFLOW_CONTRACT: "relay-workflows-v3"
           RECOVERY_OPERATION: ${{ inputs.operation }}
           RECOVERY_RUN_ID: ${{ inputs.run_id }}

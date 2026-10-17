@@ -15,9 +15,20 @@ that product. The installed release must provide the matching workflow contract
 before dispatch. The owner lifecycle workflow supplies explicit apply, stop or
 resume authority; merely publishing its projection grants none of those actions.
 
-Projection schema 2 is separate from schema-v3 Task authority. Migrated Tasks
-require the paired `relay-workflows-v2` installation; labels and PR titles are
-projections of their trusted Request, not Issue-body execution instructions.
+Routing and publication recovery explicitly bind `RELAY_REPOSITORY` to this
+consumer. The configured Writer/Reviewer repository allowlist, repositories
+selected in the General Runner group, and workflow-active targets remain distinct.
+The [Task 141 Phase B preparation](evidence/task141-step2/README.md) records the
+accepted projection source, external opt-in proposals and remaining rollout
+qualification; this v3 projection does not establish installed v4 readiness.
+
+Projection schema 2 and the workflow ABI are separate from Task authority
+schema versions. On a qualified current controller/Writer pair, schema-v4
+admission resolves the native charter and trusted Decisions into one protected
+execution snapshot; labels and titles project that admitted state. Retained
+schema-v3 attempts preserve their selected Requests and original bindings for
+safe completion and recovery. Source or projection changes alone do not qualify
+an installation for new admissions.
 See the [Task workflow guide](task-workflow.md) for usage and the
 [migration contract](../contracts/README.md#github-native-task-authority) for cutover.
 
