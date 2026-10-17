@@ -102,9 +102,12 @@ The fixed launcher verifies its actual Unix user against the repository work
 root. Task/PR content cannot choose users or credential paths. This does not
 allocate extra runner capacity or create per-repository Apps or policy.
 
-For targets opting in to automatic work, project routing/recovery workflows
-with the ordinary `workflow-project` or `workflow-verify` command and an explicit
-`--repository owner/repository`. Omitting this option retains the protected
+Installation preparation includes routing/recovery proposals for every explicitly
+owner-managed configured target, including targets whose automatic work remains
+inactive; see [per-repository preparation](#per-repository-installation-preparation).
+Project or verify each target with the ordinary `workflow-project` or
+`workflow-verify` command and an explicit `--repository owner/repository`.
+Omitting this option retains the protected
 `environment.repository` anchor. Projection manifests bind the selected target;
 the installed consumer JSON and digest retain the complete shared configuration.
 These source interfaces do not deploy, change GitHub App permissions or runner
@@ -515,8 +518,10 @@ the selected exact source and configuration. If the consumer does not yet
 contain that projection, it writes a review directory under `--log-root`
 (optionally selected with `--projection-output`) and returns
 `RELAY_DEPLOYMENT_PENDING=WORKFLOW_REVIEW_REQUIRED` before host mutation.
-Review/reconcile and publish those files through normal consumer authority,
-then rerun the same command from the clean consumer checkout containing them.
+Relay orchestration reviews/reconciles the derived files and publishes the
+separate target-repository PRs described below; target owners retain review,
+merge and activation authority. Rerun the same command from the clean consumer
+checkout containing its accepted projection.
 The derived directory is an output, never an independent reproduction input.
 Existing consumer-owned files are left intact; managed drift and edited
 proposals fail closed. Local proposals do not constitute review or merge proof.
@@ -872,6 +877,49 @@ and installation namespace. Candidate validation is specific to each consumer
 and is not projected. The `.github/workflows/` copies are versioned installation
 artifacts; product changes edit the templates. Self-dogfood uses this same rule.
 
+### Per-repository installation preparation
+
+For every explicitly owner-managed repository configured for the installation,
+Relay orchestration prepares and publishes a separate reviewable GitHub PR in
+that repository containing its routing workflow, publication-recovery workflow
+and `.github/relay-workflows.json`. Resolve each projection from the selected
+exact accepted product source and that target's configured repository, trusted
+base branch, runner identities/groups/labels and installation namespace. A
+projection for the protected installation anchor cannot stand in for another
+target's projection. The optional owner-lifecycle workflow is projected only
+where the configured installed self-consumer contract supports it.
+Use the validated installation configuration, including its managed-pool
+capacity and derived execution identities, rather than a singleton example:
+managed routing, recovery and owner lifecycle use `relay-workflows-v4` and the
+shared General Runner group/pool selector. A SERIAL example still renders v3
+and cannot verify a managed installation's projection.
+
+For the owner-selected four-repository rollout, the separate target PRs belong
+in `jresearchsoftware/codex-relay`, `jresearchsoftware/shared-governance`,
+`jresearchsoftware/codex-model-landscape` and
+`jresearchsoftware/docs-evolution-review`. This is an explicit rollout set,
+not a product default or authority to onboard other repositories. Configuration
+alone does not prove that a repository is owner-managed or authorize access to
+foreign repositories.
+
+The local projector below derives files; it does not publish PRs. Authorized
+Relay orchestration owns that publication through the target repositories'
+ordinary GitHub channels, preserves useful existing work and reuses the same
+matching proposal on repetition. One central product PR, a local review
+directory or a read-only proposal does not complete per-repository publication.
+If publication access is unavailable, report the missing target PR and access
+boundary rather than claiming preparation complete or substituting owner copy
+steps.
+
+Each target owner retains acceptance, merge, activation and repository-governance
+decisions. Proposal publication neither changes runner-group ACLs, App access,
+repository settings or local governance nor enables automatic execution.
+Inactive configured consumers still receive their preparation PRs; their
+unmerged proposals, missing workflow files or absence from the runner group's
+selected workflow refs do not block a safe Apply. Apply continues to qualify
+the actual selected repository/workflow set under the pool contract above;
+selecting automatic routing or recovery requires both accepted configured refs.
+
 From a clean checkout of one owner-selected **accepted exact product target**:
 
 ```sh
@@ -915,9 +963,11 @@ review/publication, and source checks do not authorize PROD adoption. See
 [control scheduling](../docs/concurrency-scheduling.md) for the one-runner
 capacity bound and separate native TEST/parallel qualification limits.
 
-When content, workflow contract and consumer inputs are unchanged, a different
-product SHA yields identical files and manifest, so bootstrap/reinstall requires
-no consumer PR. Actual managed content or compatibility changes yield a bounded
+For a target with an already accepted installation-preparation projection,
+unchanged content, workflow contract and consumer inputs at a different product
+SHA yield identical files and manifest, so bootstrap/reinstall requires no
+additional consumer PR.
+Actual managed content or compatibility changes yield a bounded
 proposal and stop for normal consumer review/merge. File digests remain solely
 as the previous managed drift baseline. Schema-1 SHA-bound manifests are read
 and drift-checked for a one-time schema-2 migration; they are not treated as
@@ -1006,6 +1056,12 @@ public Relay `main` once, reconcile an already installed exact target or upgrade
 to that immutable target, and finish this sequence under the existing host mutex:
 
 `OPEN -> QUIESCE -> DRAIN -> APPLY -> ACTIVATE/VERIFY -> RESUME -> OPEN`
+
+For a managed pool, any registered General Runner member may transport
+`apply`, `stop` or `resume`; the projected guard verifies its configured runner
+name and Unix user together. The protected Production Runner stays separate.
+The lifecycle preserves PID and start identity for every previously active
+General Runner, including a secondary member transporting the workflow.
 
 The protected coordinator resolves the target anonymously and never follows
 later movement of `main`. It verifies the frozen consumer dispatch's reviewed
