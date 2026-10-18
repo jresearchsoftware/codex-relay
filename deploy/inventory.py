@@ -12,7 +12,6 @@ import os
 from pathlib import Path, PurePosixPath
 import pwd
 import re
-import shlex
 import stat
 import subprocess
 import sys
@@ -535,13 +534,12 @@ def _validate_report(report, config=None):
 
 
 def remote_inventory(target, key, config):
-    """The entrypoint validates config and SSH identity before this call."""
+    """The entrypoint validates config and the configured target identity before this call."""
     source = Path(__file__).read_text()
-    argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
-            '-i', str(key), target['user'] + '@' + target['host'],
-            shlex.join(['/usr/bin/python3', '-I', '-c', source])]
+    from ansible_transport import run_target
+    argv = ['/usr/bin/python3', '-I', '-c', source]
     try:
-        result = subprocess.run(argv, input=json.dumps(config), text=True, capture_output=True, timeout=45)
+        result = run_target(target, key, argv, input=json.dumps(config), timeout=45)
         if result.returncode or len(result.stdout) > LIMIT:
             raise ValueError('inventory-transport')
         return _validate_report(_json(result.stdout), config)

@@ -107,12 +107,17 @@ def validate(c, product_root):
     require(text(source['repository'], r'(?:git@github\.com:|https://github\.com/)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?'), 'source.repository')
     require(selector(source.get('revision', 'main')), 'source.revision')
     target = c['target']
-    require(object_keys(target, ['host', 'user', 'identityFile', 'identityFingerprint', 'hostFingerprint']), 'target')
+    require(object_keys(target, ['host', 'user', 'hostFingerprint'],
+                        ['connection', 'identityFile', 'identityFingerprint']), 'target')
+    require(target.get('connection', 'ssh') in ['ssh', 'local'], 'target.connection')
     require(text(target['host'], r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}'), 'target.host')
     require(target['user'] == 'root', 'target.user')
-    require(absolute(target['identityFile'].replace('~/', '/home/operator/', 1)), 'target.identityFile')
+    if target.get('connection', 'ssh') == 'ssh' or 'identityFile' in target:
+        require(isinstance(target.get('identityFile'), str)
+                and absolute(target['identityFile'].replace('~/', '/home/operator/', 1)), 'target.identityFile')
     for key in ['identityFingerprint', 'hostFingerprint']:
-        require(text(target[key], r'SHA256:[A-Za-z0-9+/]{43}'), 'target.' + key)
+        if key == 'hostFingerprint' or target.get('connection', 'ssh') == 'ssh' or key in target:
+            require(text(target.get(key), r'SHA256:[A-Za-z0-9+/]{43}'), 'target.' + key)
     # The runtime remains the authority for its existing schema; do not create
     # a second subtly different validator in the deployment implementation.
     validation = subprocess.run(['node', '--input-type=module', '-e',

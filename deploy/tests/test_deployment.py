@@ -285,6 +285,34 @@ elif '/relay-admission' in sys.argv[-1]:
     if ' drain ' in sys.argv[-1] and Path({str(cls.base / 'drain-fail')!r}).exists(): sys.exit(1)
     print(json.dumps({{'phase':'recovery-required','active':[],'unknown':[]}}))
 ''',
+            'relay-test-target': f'''import json, os, shlex, subprocess, sys, time
+from pathlib import Path
+a=sys.argv; task=json.loads(Path(a[a.index('-i')+1]).with_name('request.json').read_text())
+command=task['argv']; base=Path({str(cls.base)!r}); output=''; errors=''; rc=0
+if 'RELAY_TARGET_IDENTITY=PASS' in shlex.join(command):
+    output='RELAY_TARGET_IDENTITY=PASS\\n'
+elif 'parent_start' in shlex.join(command):
+    directory=base/Path(command[-1]).name; directory.mkdir(mode=0o700)
+    value=json.loads(task['input'])
+    child=subprocess.Popen([str(base/'bin/ssh'), shlex.join(value['argv'])], stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if child.stdout.readline().strip()!=value['ready']: rc=1
+    else:
+        (directory/'ready').touch()
+        while not (directory/'release').exists() and child.poll() is None: time.sleep(.01)
+    child.stdin.close(); rc=child.wait()
+    for name in ['release','ready']: (directory/name).unlink(missing_ok=True)
+    directory.rmdir(); output='ANSIBLE_GUARD_RELEASED\\n'
+elif 'directory.lstat' in shlex.join(command):
+    directory=base/Path(command[-2]).name
+    if command[-1]=='release' and directory.exists(): (directory/'release').touch()
+    output=('READY' if (directory/'ready').exists() else 'WAIT')+'\\n'
+else:
+    result=subprocess.run([str(base/'bin/ssh'), shlex.join(command)], input=task['input'], text=True,capture_output=True)
+    rc,output,errors=result.returncode,result.stdout,result.stderr
+Path(a[a.index('-i')+1]).with_name('result.json').write_text(json.dumps({{'rc':rc,'stdout':output,'stderr':errors}}))
+sys.exit(0 if rc==0 else 2)
+''',
             'ansible-playbook': f'''import json,sys
 from pathlib import Path
 a=sys.argv; inventory=json.loads(Path(a[a.index('-i')+1]).read_text())
@@ -319,12 +347,25 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
 
     def invoke(self, *args):
         self.capture.unlink(missing_ok=True)
-        return subprocess.run([sys.executable, str(self.product / 'deploy/relay-deploy.py'),
-            '--config', str(self.config), '--log-root', str(self.base / 'logs'), *args],
-            env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'],
+        backend = self.bin / 'ansible-playbook'
+        original = backend.read_text()
+        delegated = self.bin / 'relay-test-backend'
+        delegated.write_text(original)
+        delegated.chmod(0o755)
+        backend.write_text('#!/usr/bin/python3\nimport os,sys\n'
+            + 'target=' + repr(str(self.bin / 'relay-test-target')) + '\n'
+            + 'backend=' + repr(str(delegated)) + '\n'
+            + 'os.execv(target if sys.argv[3].endswith("/operation.json") else backend, [sys.argv[0], *sys.argv[1:]])\n')
+        try:
+            return subprocess.run([sys.executable, str(self.product / 'deploy/relay-deploy.py'),
+                '--config', str(self.config), '--log-root', str(self.base / 'logs'), *args],
+                env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'],
                  'TMPDIR': str(self.base),
                  'ANSIBLE_CONFIG':'/untrusted/caller.cfg', 'PYTHONDONTWRITEBYTECODE':'1'},
-            capture_output=True, text=True)
+                capture_output=True, text=True)
+        finally:
+            backend.write_text(original)
+
 
     def test_apply_reports_exact_product_and_consumer_without_review_gate(self):
         result = self.invoke('--phase','apply','--requested-revision','main','--resolved-revision',self.revision)
@@ -342,6 +383,20 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
         result = self.invoke('--phase','post-check','--requested-revision',self.revision)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('installed_revision='+self.revision,result.stdout)
+
+    def test_public_owner_local_connection_keeps_config_binding_without_an_ssh_identity(self):
+        key = self.key.read_bytes()
+        self.key.unlink()
+        try:
+            result = self.invoke('--phase', 'apply', '--resolved-revision', self.revision, '--connection', 'local')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = json.loads(self.capture.read_text())
+            self.assertEqual(values['ansible_connection'], 'local')
+            self.assertNotIn('ansible_ssh_private_key_file', values)
+            self.assertEqual(json.loads(values['relay_installed_deployment_config']), json.loads(self.config.read_text()))
+            self.assertFalse(values['relay_service_activation_authorized'])
+        finally:
+            self.key.write_bytes(key)
 
     def test_ingress_final_host_guard_failure_cannot_report_success(self):
         marker = self.base / 'guard-fail'

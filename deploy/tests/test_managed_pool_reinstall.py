@@ -14,6 +14,7 @@ import pytest
 from test_clean_reinstall import SOURCE, TARGET, installation
 from test_reinstall_recovery import snapshot
 import clean_reinstall as reinstall
+import ansible_transport
 
 OPERATION = '11111111-2222-3333-4444-555555555555'
 
@@ -173,13 +174,13 @@ def test_generated_pool_wrapper_and_admission_adapter_parse_without_execution(mo
     captured = []
     class Prepared(Exception):
         pass
-    def capture(command, **kwargs):
-        captured.append(shlex.split(command[-1])[-1])
+    def capture(_target, _key, command, **kwargs):
+        captured.append(command[-1])
         raise Prepared
     config = {'consumer': {'generalRunnerPool': {'desiredCapacity': 2}, 'paths': {'claimRoot': '/var/lib/codex-relay/claims'}},
               'environment': {'namespace': 'codex-relay'}}
     with monkeypatch.context() as local:
-        local.setattr(reinstall.subprocess, 'Popen', capture)
+        local.setattr(ansible_transport, 'TargetProcess', capture)
         for action in ['decommission', 'continuation', 'continue', 'complete']:
             with pytest.raises(Prepared):
                 reinstall.remote_action({'user': 'owner', 'host': 'test.invalid'}, '/private/key', config, TARGET,

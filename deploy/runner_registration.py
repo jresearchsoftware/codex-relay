@@ -1,6 +1,5 @@
 """Ephemeral input transport to the exact installed runner registration helper."""
 import re
-import shlex
 import subprocess
 
 
@@ -31,11 +30,8 @@ def register_runner(target, key, values, revision, token, guard):
     helper = values['relay_runner_registration_helper_path'] if extra else values['relay_install_root'] + ('/relay-general-runner-registration' if general
                                            else '/relay-runner-registration')
     binding = f'url={url} name={name} label={",".join(values["relay_runner_labels"])} group={group} work={work}'
-    argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-            '-o', 'IdentitiesOnly=yes', '-i', str(key),
-            target['user'] + '@' + target['host'], shlex.join([helper, '--expect-binding', binding])]
-    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
+    from ansible_transport import TargetProcess
+    process = TargetProcess(target, key, [helper, '--expect-binding', binding])
     try:
         pending = (token or '') + '\n'
         while True:

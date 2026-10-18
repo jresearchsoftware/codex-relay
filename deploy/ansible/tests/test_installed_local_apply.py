@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HEAD = 'a' * 40
 WORKFLOW_HEAD = 'b' * 40
 CODE = ['deploy/relay-deploy.py', 'deploy/config.py', 'deploy/installed_config.py',
-        'deploy/deployment_lock.py', 'consumer/consumer-config.mjs',
+        'deploy/deployment_lock.py', 'deploy/ansible_transport.py', 'consumer/consumer-config.mjs',
         'contracts/src/execution-defaults.mjs', 'reviewer/src/executable-cr-v2.json']
 
 

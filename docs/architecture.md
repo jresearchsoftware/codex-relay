@@ -376,8 +376,14 @@ can be considered qualified for parallel operation.
 Relay owns the [deployment interface](../deploy/README.md), source/build/install
 mechanics, layout, wrappers, users/services, upgrade/rollback and verification.
 Consumers own configuration, secret references, target properties, policy and
-channel/revision selection. Ansible is a replaceable internal backend; it is
-not a consumer API. A selector resolves once and the exact installed identity
+channel/revision selection. Ansible is the configured target execution transport
+behind the public deployment entrypoint, including inventory, guards and protected
+helpers; internal playbooks are not a consumer API. Target-local Python owns pool
+reconciliation and GitHub App authorization using the existing protected target PEM.
+Keys and installation/runner tokens stay on the target; only bounded nonsecret
+receipts return to the controller. Qualified SSH and Debian local connections
+preserve their respective host identity and root authorization checks.
+A selector resolves once and the exact installed identity
 is reported. Selecting a version does not grant deployment authority.
 
 Product source revision, installed product revision, consumer authority revision

@@ -8,8 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import selectors
-import shlex
 import stat
 import subprocess
 import sys
@@ -22,6 +20,7 @@ from config import load, loads, compile_inputs, require, selector, select_execut
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
+from ansible_transport import connection_vars, backend_environment, hold_target, run_target
 PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post-check': 'site.yml',
           'inventory': None, 'bootstrap': 'site.yml', 'reinstall': 'site.yml',
           'reinstall-recover': None,
@@ -121,21 +120,7 @@ def ingress_guard(target, key, values, revision):
               '--operation-record', values['relay_production_operation_record_path'],
               '--manifest', values['relay_install_root'] + '/current/artifact-manifest.json',
               '--exact-head', revision]
-    process = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(remote)],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    with selectors.DefaultSelector() as ready:
-        ready.register(process.stdout, selectors.EVENT_READ)
-        acquired = bool(ready.select(timeout=30)) and process.stdout.readline().strip() == 'BOOTSTRAP_GUARD_READY'
-    if not acquired:
-        process.stdin.close()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-        raise RuntimeError('ingress-operation-guard-unavailable')
-    return process
+    return hold_target(target, key, remote, 'BOOTSTRAP_GUARD_READY')
 
 
 def apply_guard(target, key, namespace):
@@ -145,28 +130,12 @@ def apply_guard(target, key, namespace):
     source = (ROOT / 'deploy/deployment_lock.py').read_text()
     remote = ['/usr/bin/python3', '-I', '-c', source,
               '/var/lib/' + namespace + '-deployment.lock']
-    process = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(remote)],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    with selectors.DefaultSelector() as ready:
-        ready.register(process.stdout, selectors.EVENT_READ)
-        acquired = bool(ready.select(timeout=30)) and process.stdout.readline().strip() == 'DEPLOYMENT_LOCK_READY'
-    if not acquired:
-        process.stdin.close()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-        raise RuntimeError('host-apply-lock-unavailable')
-    return process
+    return hold_target(target, key, remote, 'DEPLOYMENT_LOCK_READY')
 
 
 def remote_admission(target, key, namespace, *arguments):
     remote = ['/opt/' + namespace + '/relay-admission', *arguments]
-    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'],
-        shlex.join(remote)], text=True, capture_output=True, timeout=1860)
+    result = run_target(target, key, remote, timeout=1860)
     require(result.returncode == 0, 'trusted-admission-operation-failed;inspect-before-recovery')
     return json.loads(result.stdout)
 
@@ -202,6 +171,8 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
+    p.add_argument('--connection', choices=['ssh', 'local'],
+                   help='Ansible connection override; preserves the exact deployment configuration binding')
     p.add_argument('--phase', choices=[*PHASES, 'validate'], required=True)
     p.add_argument('--requested-revision', help='selector already resolved by the trusted acquisition/bootstrap')
     p.add_argument('--resolved-revision', help='exact acquisition result; must equal this clean checkout')
@@ -413,16 +384,21 @@ def run(args):
         from installed_config import verify
         _, _, consumer_revision = verify(Path(values['relay_install_root']) / 'releases' /
                                          revision / 'reviewed-source', revision)
-    target = config['target']
-    key = Path(target['identityFile']).expanduser()
-    if not args.local_reconcile and not args.local_lifecycle:
+    target = dict(config['target'])
+    if getattr(args, 'connection', None) is not None:
+        target['connection'] = args.connection
+    key = Path(target.get('identityFile', '/unused-local-identity')).expanduser()
+    if not args.local_reconcile and not args.local_lifecycle and target.get('connection', 'ssh') == 'ssh':
+        require(isinstance(target.get('identityFile'), str)
+                and isinstance(target.get('identityFingerprint'), str), 'ssh-identity-required')
         require(key.is_file() and not key.is_symlink(), 'operator-key')
         require(command(['ssh-keygen', '-lf', key]).split()[1] == target['identityFingerprint'], 'operator-key-identity')
         known = command(['ssh-keygen', '-F', target['host']])
         fingerprints = command(['ssh-keygen', '-lf', '-'], input=known).splitlines()
         require(any(row.split()[1] == target['hostFingerprint'] for row in fingerprints), 'host-identity')
-        command(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
-                 '-i', key, target['user'] + '@' + target['host'], 'true'])
+    if not args.local_reconcile and not args.local_lifecycle:
+        from ansible_transport import qualify_target
+        qualify_target(target, key)
     install_flow = args.phase in ['bootstrap', 'reinstall']
     pool_reinstall_proof = None
     if args.phase == 'inventory' or install_flow:
@@ -565,13 +541,9 @@ def run(args):
                 git(ROOT, 'archive', '--format=tar', '--output=' + str(archive), revision)
                 values['relay_source_archive'] = str(archive)
             inventory = {'all': {'children': {'relay': {'hosts': {target['host']: {**values,
-                'ansible_user': target['user'], 'ansible_connection': 'local' if args.local_reconcile or args.local_lifecycle else 'ssh',
-                'ansible_become': not (args.local_reconcile or args.local_lifecycle)}}}}}}
+                **connection_vars(target, key, local=args.local_reconcile or args.local_lifecycle)}}}}}}
             (work / 'inventory.json').write_text(json.dumps(inventory))
-            env = {k: os.environ[k] for k in ['HOME', 'PATH', 'USER', 'LANG', 'LC_ALL', 'SSH_AUTH_SOCK'] if k in os.environ}
-            env.update({'ANSIBLE_CONFIG': str(BACKEND / 'ansible.cfg'), 'ANSIBLE_ROLES_PATH': str(BACKEND / 'roles'),
-                'ANSIBLE_SSH_COMMON_ARGS': '-o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes',
-                'ANSIBLE_PRIVATE_KEY_FILE': str(key), 'PYTHONDONTWRITEBYTECODE': '1'})
+            env = backend_environment()
             playbook = ('relay-production-bootstrap-disposition.yml' if args.stale_apply_shape else PHASES[args.phase])
             argv = ['ansible-playbook', '-i', str(work / 'inventory.json'), str(BACKEND / playbook),
                     '--limit', target['host']]

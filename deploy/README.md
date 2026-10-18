@@ -21,7 +21,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | Input | Meaning |
 | --- | --- |
 | `source.repository`, optional `source.revision` | Trusted repository and deployment selector; omitted revision means `main` |
-| `target` | Host, root SSH transport, existing key reference and known host/key fingerprints |
+| `target` | Host, root authorization, Ansible `ssh` (default) or `local` connection, and host fingerprint; SSH also uses the existing key reference and identity fingerprint |
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
 | `environment.repository` | Required lifecycle/Production Runner anchor for plural `consumer.repositories`; must be a configured target. Singleton inputs keep their existing repository |
@@ -156,11 +156,13 @@ For example, merge these synthetic fields into the existing owner configuration:
 }
 ```
 
-The PEM path belongs to the owner machine running the deployment command. It
-is never copied to the runner host. Apply verifies App/installation identity and
-the actual `organization_self_hosted_runners: write` permission, then transports
-only a short-lived installation token through protected SSH stdin. The installed
-root-only helper derives runner tokens and emits a bounded public receipt.
+The PEM path refers to the existing protected key on the target host. App JWT
+signing, installation identity/permission qualification and token creation run
+there as root through the configured Ansible connection. The PEM, installation
+token and derived registration/removal tokens stay on that host. The controller
+receives only bounded nonsecret preflight, transition and reconciliation receipts.
+The installed root-only helper retains its exact revision/configuration checks,
+pool lock, durable mutation reservations and reconciliation state machine.
 The group must already be restricted to selected eligible repositories and exact
 trusted workflow refs. Selected repositories may be a subset of the configured
 targets and protected eligible peers. A selected repository may also remain
@@ -726,7 +728,7 @@ object with the complete public DNS address set (all examples are synthetic):
 
 Set `environment.ingress.publicAddresses` to an explicit array such as
 `["198.51.100.20", "2001:db8::20"]`. It must match the observed DNS A/AAAA set.
-`target.host` is solely the SSH endpoint and is never an ACME address fallback.
+`target.host` identifies the deployment target and is never an ACME address fallback.
 The supported issuance topology is the configured, pinned Docker nginx shared
 ingress, with its existing configuration directory mounted at
 `/etc/nginx/conf.d`, the explicit webroot mounted at `/var/www/html`, and public
@@ -833,10 +835,37 @@ upgrade explicitly updates the workflow projection and runtime together.
 
 Use a Linux controller with Git, Python 3, Node 22+, OpenSSH and Ansible Core
 plus the dependencies in [ansible/requirements.txt](ansible/requirements.txt).
-The target baseline is Debian 12. The controller uses the existing owner SSH
-identity and strict host-key checking. The target needs no GitHub source
+The target baseline is Debian 12. The default Ansible SSH connection uses the
+existing owner SSH identity and strict host-key checking. Target operations,
+inventory, admission, registration and the host/pool guards all use that same
+connection. The target needs no GitHub source
 credential: Relay transfers a normal Git archive internally. There is no
 consumer distribution bundle, installer hash lock or cached executable helper.
+
+On the verified Debian host, use the same public command and durable configuration
+with `--connection local`. This selects Ansible's local connection without changing
+the configuration digest, original installation identity or recovery binding:
+
+```sh
+python3 deploy/relay-deploy.py --config /path/to/relay.json --phase check --connection local
+```
+
+For a new local-only configuration, `target.connection: "local"` selects the same
+transport; `identityFile` and `identityFingerprint` may be omitted. `host`, `user:
+"root"` and `hostFingerprint` remain required. Local execution verifies root
+authorization, Debian 12 and the configured fingerprint against the host's protected
+public SSH host keys, without loopback SSH, a login identity or reading a private
+host key. SSH execution retains its owner-key and known-host fingerprint checks.
+Ansible performs the configured root privilege escalation; no new credential or
+runner privilege is required. Other platforms and connection plugins are unsupported.
+
+The blocking Ansible guard keeps stdin open to the existing reviewed lock helper.
+Private, invocation-specific rendezvous files under `/run` carry only readiness
+and release signals. They add no durable operation state, lease, lock stealing or
+operator step. Guard/channel loss stops orchestration and requires inspection of
+the existing recovery evidence; it never proves that all remote descendants stopped.
+The projected Owner Relay lifecycle workflow retains `workflow_dispatch` on main,
+the same `apply`, `stop` and `resume` inputs, fixed protected helpers and privileges.
 
 `--phase validate` validates local input without contacting the target.
 `diagnose --issue-number N` reads bounded installed/runtime metadata without

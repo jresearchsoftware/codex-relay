@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / 'deploy'))
 import config
 import managed_pool as pool
 import managed_pool_transport as transport
+import pool_authorization as authorization
 
 
 def inputs(capacity=2, namespace='codex-relay', repository='example-org/sample-project'):
@@ -423,10 +424,12 @@ def test_repository_pool_binding_cannot_replace_group_or_app_to_adopt_credential
         pool.reconcile(contract, state, github, host)
 
 
+@pytest.mark.skipif(os.geteuid() != 0, reason='target authorization requires root')
 def test_app_key_stays_local_and_installation_token_requests_only_runner_permission(tmp_path, monkeypatch):
     value = inputs(1)
     key = tmp_path / 'private.pem'
     key.write_text('synthetic key fixture')
+    key.chmod(0o600)
     value['environment']['generalRunner']['poolApp']['privateKeyFile'] = str(key)
     calls = []
     monkeypatch.setattr(transport.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=b'signature'))
@@ -445,7 +448,7 @@ def test_app_key_stays_local_and_installation_token_requests_only_runner_permiss
             return {'token': 'synthetic-installation-token', 'permissions': {pool.PERMISSION: 'write'},
                     'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}
 
-    result = transport.installation_authorization(value, App)
+    result = authorization.installation_authorization(value, App)
     assert result == {'appId': '101', 'installationId': '201', 'organization': 'example-org',
                       'installationToken': 'synthetic-installation-token'}
     assert calls[-1] == ('POST', '/app/installations/201/access_tokens', {'permissions': {pool.PERMISSION: 'write'}})

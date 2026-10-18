@@ -1,7 +1,6 @@
 """Execute the remote wrapper locally to qualify its diagnostic transport."""
 import json
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 
@@ -10,6 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 import clean_reinstall as reinstall
+import ansible_transport
 
 DEFAULT_HINT = 'inspect-retained-operation-and-reinstall-evidence'
 TARGET = 'b' * 40
@@ -37,7 +37,7 @@ def warning_line(warning):
 
 @pytest.fixture
 def local_remote(monkeypatch):
-    """Replace SSH and lifecycle actions, retaining generated wrapper handling."""
+    """Replace the Ansible adapter and lifecycle actions, retaining wrapper handling."""
     read_text = Path.read_text
     popen = subprocess.Popen
     calls = []
@@ -68,18 +68,16 @@ decommission = complete = diagnostic_action
             content += '\ndef inspect(config):\n    return {}\n'
         return content
 
-    def local_popen(command, **kwargs):
-        assert command[:9] == ['ssh', '-o', 'BatchMode=yes', '-o',
-                               'StrictHostKeyChecking=yes', '-o',
-                               'IdentitiesOnly=yes', '-i', '/synthetic/ssh-key']
-        assert command[9] == 'synthetic@host.invalid'
-        python = shlex.split(command[10])
+    def local_popen(target, key, python, **kwargs):
+        assert target == {'user': 'synthetic', 'host': 'host.invalid'}
+        assert key == '/synthetic/ssh-key'
         assert python[:3] == ['/usr/bin/python3', '-I', '-c']
-        calls.append(command)
-        return popen([sys.executable, '-I', '-c', python[3]], **kwargs)
+        calls.append(python)
+        return popen([sys.executable, '-I', '-c', python[3]], stdin=subprocess.PIPE,
+                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     monkeypatch.setattr(Path, 'read_text', source)
-    monkeypatch.setattr(reinstall.subprocess, 'Popen', local_popen)
+    monkeypatch.setattr(ansible_transport, 'TargetProcess', local_popen)
 
     def invoke(*, action, error=None, error_type='ValueError', result=None,
                warning=None, raw_stderr=None, raw_exit=False):
