@@ -12,13 +12,13 @@ import { memoryStore } from './fixture.mjs';
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement independent source/research work.';
 const copy = value => structuredClone(value);
 
-export async function harness(t) {
+export async function harness(t, { tasks = [42, 44] } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-independent-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = memoryStore(); const journal = memoryStore();
   const control = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false });
   await control.initialize();
-  const issues = new Map([42, 44].map(number => [number, { id: number + 1000, number, title: `Task ${number} — Source work`,
+  const issues = new Map(tasks.map(number => [number, { id: number + 1000, number, title: `Task ${number} — Source work`,
     state: 'open', user: { login: CONSUMER.owner }, body: charter, labels: [] }]));
   const runs = new Map(); const events = new Map(); const comments = [];
   let eventId = 1000; let command = 0; let deletes = 0;
@@ -26,7 +26,7 @@ export async function harness(t) {
     getRun: async id => copy(runs.get(id)),
     userIdentity: async login => ({ login, id: 701, type: 'Bot' }),
     async get(path) {
-      if (/^\/issues\/(42|44)$/.test(path)) return copy(issues.get(Number(path.split('/')[2])));
+      if (/^\/issues\/\d+$/.test(path) && issues.has(Number(path.split('/')[2]))) return copy(issues.get(Number(path.split('/')[2])));
       if (path.startsWith('/git/ref/heads/')) return { object: { sha: 'a'.repeat(40) } };
       if (path.startsWith('/git/matching-refs/heads/')) return [];
       throw new Error(`Unexpected GET ${path}`);

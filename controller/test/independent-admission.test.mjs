@@ -9,8 +9,40 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { EXECUTION_PATH_NAMES } from '../../consumer/consumer-config.mjs';
+import { REPOSITORY, REVIEWER } from '../src/execution-contract.mjs';
+import { canonicalAuthorityJson, sha256Body } from '../../contracts/src/github-authority.mjs';
+import { revalidateAuthority } from '../src/live-authority.mjs';
 
 const copy = value => structuredClone(value);
+
+test('Task 85 pattern: withdraw a Step 2 manual handoff, then admit isolated Step 3 without inventing cancellation', async t => {
+  const f = await harness(t, { tasks: [85] });
+  await f.broker.dispatch(f.ready(98, 85, 'manual'));
+  const step2 = await f.broker.dispatch(f.ready(99, 85, 'manual'));
+  await f.broker.dispatch({ operation: 'handoff', runId: 99, attemptId: 'run-99' });
+  const original = copy(await f.store.get(99));
+  const handoff = f.comments[0].body;
+  const decision = { schema_version: '4.0', kind: 'decision', repository: REPOSITORY, task: 85,
+    parent: { kind: 'issue', number: 85 }, charter_sha256: sha256Body(f.issues.get(85).body),
+    purpose: 'Withdraw the old manual handoff and authorize a fresh independent source attempt.',
+    amendments: { purpose: 'Continue independent source work after withdrawal',
+      boundaries: ['Do not execute withdrawn run-99; only newly admitted independent work is authorized.'],
+      scope: ['The prior manual handoff is withdrawn; only the new isolated attempt may perform this source work.'] },
+    supersedes: null, context: [] };
+  f.comments.push({ id: 6000, number: 85, user: { login: REVIEWER, id: 701, type: 'Bot' },
+    issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/85`,
+    body: '```relay-authority\n' + canonicalAuthorityJson(decision) + '\n```\n' });
+  const step3 = await f.broker.dispatch(f.ready(100, 85, 'manual'));
+  assert.equal(step2.envelope.step, 2); assert.equal(step3.envelope.step, 3);
+  assert.equal(step3.envelope.request.lineage.attempt, 'run-99');
+  assert.equal(step3.envelope.request.authority.decisions[0].id, 6000);
+  await assert.rejects(revalidateAuthority(f.api, step2.envelope), { code: 'AUTHORITY_CHANGED' });
+  await revalidateAuthority(f.api, step2.envelope, { reporting: true });
+  assert.deepEqual(await f.store.get(99), original);
+  assert.equal(original.outcome, null);
+  assert.equal(f.comments[0].body, handoff);
+  assert.deepEqual(f.issues.get(85).labels, [{ name: 'step-3' }]);
+});
 
 for (const routes of [['manual', 'manual'], ['auto', 'manual'], ['manual', 'auto']]) {
   test(`same Task admits ${routes.join('/')} independent commands while prior work has no Outcome`, async t => {
