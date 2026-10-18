@@ -264,8 +264,6 @@ def finish(config, github):
         pool_authorization='def installation_authorization(config): return ' + repr({'organization': 'example-org', 'appId': '101', 'installationId': '201', 'installationToken': TOKEN}) + '\n')
     return {'sources': sources, 'contract': contract,
             'config': {'contract': contract, 'proof': proof, 'privateError': private_error, 'beginPhase': begin_phase},
-            'authorization': {'organization': 'example-org', 'appId': '101',
-                              'installationId': '201', 'installationToken': TOKEN},
             'targetDigest': DIGEST, 'action': action, 'revision': REVISION, 'operationId': OPERATION}
 
 
@@ -333,6 +331,46 @@ def test_native_script_rejects_oversized_payload_without_echoing_it():
         input=TOKEN + 'x' * transport.OWNER_POOL_INPUT_BYTES, text=True, capture_output=True, timeout=10)
     assert result.returncode != 0 and result.stdout == ''
     assert result.stderr == 'MANAGED_POOL_PREFLIGHT_UNPROVEN_INSPECT_BEFORE_RETRY\n'
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='execute the actual target root receipt boundary')
+@pytest.mark.parametrize('damage', [None, 'private-field', 'foreign-member', 'capacity', 'malformed', 'interrupted'])
+def test_target_reconciliation_keeps_authorization_on_host_and_bounds_the_installed_helper_receipt(damage):
+    payload = script_payload(action='reconcile')
+    payload['contract'].update(desiredCapacity=1, members=[{'id': 'primary'}])
+    payload['config']['environment'] = {'namespace': 'synthetic-relay'}
+    expected_digest = hashlib.sha256((json.dumps(payload['config'], sort_keys=True,
+        separators=(',', ':'), ensure_ascii=False) + '\n').encode()).hexdigest()
+    report = {'capacity': 1, 'ready': ['primary'], 'draining': [], 'retired': []}
+    if damage == 'private-field':
+        report['private'] = TOKEN
+    elif damage == 'foreign-member':
+        report['ready'] = ['foreign']
+    elif damage == 'capacity':
+        report['capacity'] = 2
+    output = 'MANAGED_POOL_RESULT=' + (TOKEN if damage == 'malformed' else json.dumps(report)) + '\n'
+    # Replace only the installed helper capability inside the target process.
+    # The actual owner script must create/bind its target authorization, invoke
+    # that exact helper/revision, and reject unsafe receipts before transport.
+    payload['sources']['pool_authorization'] += (
+        'import json,sys,types\n'
+        'def helper(argv, *, input, text, capture_output, check):\n'
+        f'    assert argv == ["/opt/synthetic-relay/relay-managed-pool", {REVISION!r}]\n'
+        '    authorization=json.loads(input)\n'
+        f'    assert authorization["installationToken"] == {TOKEN!r}\n'
+        f'    assert authorization["deploymentConfigSha256"] == {expected_digest!r}\n'
+        '    assert set(authorization)=={"appId","installationId","organization","installationToken","deploymentConfigSha256"}\n'
+        f'    return types.SimpleNamespace(returncode={1 if damage == "interrupted" else 0}, stdout={output!r}, stderr={TOKEN!r})\n'
+        'sys.modules["subprocess"]=types.SimpleNamespace(run=helper)\n')
+    assert 'authorization' not in payload
+    result = run_script(payload)
+    if damage is None:
+        assert result.returncode == 0 and result.stderr == ''
+        assert json.loads(result.stdout.removeprefix('MANAGED_POOL_RESULT=')) == report
+    else:
+        assert result.returncode != 0 and result.stdout == ''
+        assert result.stderr.startswith('MANAGED_POOL_')
+    assert TOKEN not in result.stdout + result.stderr
 
 
 def test_current_node_digest_resolves_defaults_and_preserves_capacity_only_digest():
