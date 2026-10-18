@@ -237,6 +237,15 @@ A workstation-only key reference does not qualify an installed GitHub lifecycle
 job on another host; that path needs its own owner-provided protected credential
 binding. The installer never copies the key or silently omits reconciliation.
 
+Managed-pool `check` can plan missing instance roots and packages without creating
+them. Each package needing installation reports
+`MANAGED_POOL_CHECK_MODE_PACKAGE_PLAN=extract_verify` and contributes a planned
+change, including when the root already exists. Extraction, installed-entrypoint
+ownership/executable checks and the exact version probe run during Apply;
+check mode does not execute the physical runner. Existing path, registration,
+service and available archive preflight checks remain binding. A successful plan
+does not prove package installation, registration, activation or Apply readiness.
+
 ### Retained explicit execution slots
 
 The optional `consumer.executionSlots` array describes one finite installation
