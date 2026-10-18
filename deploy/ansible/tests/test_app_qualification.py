@@ -1,6 +1,7 @@
 """Deterministic tests for the host-local read-only GitHub App gate."""
 
 import importlib.util
+import json
 import os
 import pathlib
 import unittest
@@ -180,6 +181,32 @@ class AppQualificationTests(unittest.TestCase):
                 required,
                 "APP_INSTALLATION",
             )
+
+    def test_pool_binding_cannot_expand_reviewer_permissions(self):
+        with mock.patch.dict(os.environ, {"RELAY_MANAGED_POOL_BINDING": json.dumps({
+            "appId": "1001", "installationId": "2001", "organization": "example",
+            "repositories": ["example/relay-consumer"],
+        })}):
+            required = self.reviewer_permissions()
+            with self.assertRaisesRegex(self.helper.QualificationFailure, "PERMISSION_SCOPE_TOO_BROAD"):
+                self.helper.validate_permissions(
+                    {**required, "organization_self_hosted_runners": "write"},
+                    required, "APP_INSTALLATION", exact=True)
+
+    def test_invalid_or_out_of_scope_pool_binding_fails_closed(self):
+        config = {"role": "writer", "app_id": "1001", "installation_id": "2001",
+                  "repository": "example/relay-consumer"}
+        binding = {"appId": "1001", "installationId": "2001", "organization": "example",
+                   "repositories": ["example/relay-consumer"]}
+        for raw in ("{", "true", "[]", json.dumps({**binding, "appId": 1001}),
+                    json.dumps({**binding, "repositories": []}),
+                    json.dumps({**binding, "repositories": ["foreign/relay-consumer"]}),
+                    json.dumps({**binding, "repositories": ["example/other"]}),
+                    json.dumps({**binding, "organization": "foreign"}),
+                    json.dumps({**binding, "permission": "administration"})):
+            with self.subTest(raw=raw), mock.patch.dict(os.environ, {"RELAY_MANAGED_POOL_BINDING": raw}):
+                with self.assertRaisesRegex(self.helper.QualificationFailure, "MANAGED_POOL_BINDING_INVALID"):
+                    self.helper.managed_pool_binding(config)
 
 
 if __name__ == "__main__":

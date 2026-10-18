@@ -12,6 +12,12 @@ export RELAY_EXPECTED_ACTOR='{{ relay_writer_expected_actor }}'
 export RELAY_EXPECTED_WRITE_PERMISSION_NAMES='contents,issues,pull_requests,workflows'
 export RELAY_TOKEN_PERMISSIONS='metadata:read'
 export RELAY_EXPECTED_KEY_MODE=0600
+# Always replace inherited binding; only protected deployment configuration selects it.
+{% if relay_general_runner_pool is defined %}
+export RELAY_MANAGED_POOL_BINDING='{{ {"appId": relay_general_runner_pool.appId, "installationId": relay_general_runner_pool.installationId, "organization": relay_general_runner_pool.organization, "repositories": relay_general_runner_pool.repositories} | to_json }}'
+{% else %}
+export RELAY_MANAGED_POOL_BINDING='null'
+{% endif %}
 {% if relay_github_repositories is defined %}
 {% for repository in relay_github_repositories %}
 RELAY_EXPECTED_REPOSITORY='{{ repository }}' /usr/bin/python3 '{{ relay_install_root }}/relay-app-qualification.py'

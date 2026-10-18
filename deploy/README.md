@@ -811,6 +811,16 @@ service. Qualify the Writer's installed App identity and repository permissions
 through the fixed `relay-writer-app-qualification` helper after staging. Do not
 use the legacy all-credential interactive helper for a scoped provisioning step.
 
+For a managed organization General Runner pool, this root-generated wrapper binds
+the configured pool App/installation, organization and repository list. Only when
+that identity equals the Writer App/installation does its read-only qualification
+require and accept `organization_self_hosted_runners:write`; live installation
+responses must also prove the configured organization account. A separate pool
+App grants no additional Writer scope. Non-pool Writer requirements and strict
+Reviewer permissions remain unchanged, and probe tokens stay repository-scoped
+with only `metadata:read`. This qualification does not grant App permissions,
+qualify the host's Node runtime or authorize installation or routing.
+
 `environment.codexTokenRequired: false` permits unauthenticated installation
 and staged Reviewer qualification only. The accepted launcher still requires
 the fixed access-token file and recreates an isolated home for every worker;
