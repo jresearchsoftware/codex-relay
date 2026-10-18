@@ -20,9 +20,13 @@ export function compactManualPrompt(e, authorityUrl) {
   if (e.branch) lines.push(`Admitted branch: ${e.branch}`);
   if (e.startHead) lines.push(`Required starting head: ${e.startHead}`);
   lines.push('Read AGENTS.md, the current canonical authority and its referenced accepted governance.');
-  if (e.startHead) lines.push('Safely normalize the canonical checkout to the admitted branch/head before applying the starting-head gate; preserve local work.');
-  lines.push('Stop on an authority or starting-head mismatch, or a protected boundary.',
-    'Complete the admitted work and validation; commit and push safe task-owned source work before handoff.',
+  const source = e.request?.kind === 'admission' && e.branch;
+  if (e.startHead) lines.push((source ? `Use an independent checkout/worktree and execution resources for ${e.attemptId ?? e.request.attempt ?? 'this admitted attempt'}. ` : '')
+    + 'Safely normalize the canonical checkout to the admitted branch/head before applying the starting-head gate; preserve local work.');
+  lines.push('Stop on an authority or starting-head mismatch, or a protected boundary.'
+    + (source ? ' Do not reuse an active checkout/slot/exclusive environment. Before pushing, revalidate current authority and exact ref/PR head; stop on sibling progress or uncertain publication.' : ''),
+    e.branch ? 'Complete the admitted work and validation; commit and push safe task-owned source work before handoff.'
+      : 'Complete the admitted work and validation.',
     e.request?.kind === 'admission'
       ? 'Submit one canonical Outcome through submit_manual_outcome using the admitted binding.'
       : 'Publish one canonical Outcome through the admitted Writer publication path.');

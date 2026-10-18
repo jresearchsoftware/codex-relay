@@ -67,7 +67,7 @@ test('a public BLOCKED Outcome cannot authorize a new execution when prior conta
       details: { childState: 'unknown', containment: 'unknown' } });
   } }));
   assert.equal((await f.store.get(99)).outcome.status, 'BLOCKED');
-  await assert.rejects(f.broker.invoke(nextReady(f)), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
+  await assert.rejects(f.broker.invoke(nextReady(f)), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
   assert.equal(await f.store.get(100), null);
 });
 
@@ -254,7 +254,7 @@ test('retained v3 admission replays under upgraded broker without adopting new D
   assert.equal(calls, 1);
 });
 
-test('concurrent native admissions serialize through the existing OS flock and admit one execution', async t => {
+test('concurrent delivery of one native command serializes through OS flock and admits it once', async t => {
   assert.equal(process.platform, 'linux', 'This concurrency proof requires Linux flock.');
   const root = await mkdtemp(join(tmpdir(), 'relay-native-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -268,20 +268,24 @@ test('concurrent native admissions serialize through the existing OS flock and a
     import {createPublicationBroker} from './controller/src/publication-broker.mjs';
     import {createAttemptStore} from './controller/src/attempt-store.mjs';
     import {labelRunName} from './controller/src/launch-metadata.mjs';
+    import {WRITER} from './controller/src/execution-contract.mjs';
     const root=process.env.TEST_FIXTURE_ROOT;const runId=Number(process.env.TEST_RUN_ID);
     const repository=CONSUMER.repository;const subjectPath=join(root,'subject.json');
     const read=async()=>JSON.parse(await readFile(subjectPath,'utf8'));
     const write=async value=>writeFile(subjectPath,JSON.stringify(value),{mode:0o600});
+    const events=[{id:71,event:'labeled',actor:{login:CONSUMER.owner,type:'User'},
+      label:{name:'codex-ready-auto'},created_at:'2026-09-04T12:00:00Z'}];
     const api={getRun:async id=>({id,repository:{full_name:repository},actor:{login:CONSUMER.owner},status:'in_progress',
       event:'issues',head_branch:CONSUMER.baseBranch,display_title:labelRunName({route:'auto',target:'issue',number:42},
         {body:'Authority model: github-native-v1',labels:[{name:'codex-ready-auto'}]}),path:CONSUMER.routingWorkflow,run_attempt:1,
       created_at:'2026-09-04T12:00:01Z'}),userIdentity:async login=>({login,id:701,type:'Bot'}),
       get:async path=>path==='/issues/42'?read():path.startsWith('/git/ref/heads/')?{object:{sha:'a'.repeat(40)}}
         :path.startsWith('/git/matching-refs/heads/')?[]:Promise.reject(new Error('Unexpected GET '+path)),
-      list:async path=>path.endsWith('/events')?[{id:71,event:'labeled',actor:{login:CONSUMER.owner,type:'User'},
-        label:{name:'codex-ready-auto'},created_at:'2026-09-04T12:00:00Z'}]:[],ensureStepLabel:async()=>{},
+      list:async path=>path.endsWith('/events')?events:[],ensureStepLabel:async()=>{},
+      post:async(path,data)=>{const subject=await read();subject.labels.push(...data.labels.map(name=>({name})));await write(subject);return subject.labels;},
       patch:async(path,data)=>{const subject=await read();subject.labels=data.labels.map(name=>({name}));await write(subject);return subject;},
-      delete:async()=>{const subject=await read();subject.labels=subject.labels.filter(label=>label.name!=='codex-ready-auto');await write(subject);}};
+      delete:async()=>{const subject=await read();subject.labels=subject.labels.filter(label=>label.name!=='codex-ready-auto');await write(subject);
+        events.push({id:72,event:'unlabeled',actor:{login:WRITER,type:'Bot'},label:{name:'codex-ready-auto'},created_at:'2026-09-04T12:00:01Z'});}};
     try { const receipt=await createPublicationBroker({api,store:createAttemptStore(join(root,'attempts')),publisher:{},streamlinedAdmission:true})
       .dispatch({operation:'admit',runId,target:'issue',number:42,issueNumber:42,route:'auto',transport:'label',step:null});
       process.stdout.write(JSON.stringify({step:receipt.envelope.step})+'\\n'); }
@@ -292,7 +296,7 @@ test('concurrent native admissions serialize through the existing OS flock and a
   { cwd: fileURLToPath(new URL('../../', import.meta.url)), env: { ...process.env, TEST_FIXTURE_ROOT: root, TEST_RUN_ID: String(runId) } })).stdout.trim());
   const results = await Promise.all([run(100), run(101)]);
   assert.deepEqual(results.filter(result => result.step), [{ step: 1 }], JSON.stringify(results));
-  assert.deepEqual(results.filter(result => result.code), [{ code: 'PRIOR_EXECUTION_UNRESOLVED' }]);
+  assert.deepEqual(results.filter(result => result.code), [{ code: 'READY_LABEL_AMBIGUOUS' }]);
   const labels = JSON.parse(await readFile(join(root, 'subject.json'), 'utf8')).labels;
   assert.deepEqual(labels, [{ name: 'step-1' }]);
 });

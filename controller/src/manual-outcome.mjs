@@ -14,7 +14,8 @@ export function validateManualSubmission(value) {
 }
 
 export async function publishManualOutcome({ api, store, record: r, submission,
-  commentOnce, rememberPullRequest, transitionManual, revalidate, existingPullRequest }) {
+  commentOnce, rememberPullRequest, transitionManual, revalidate, existingPullRequest,
+  historical = async () => false }) {
   validateManualSubmission(submission);
   const e = r.envelope; const result = submission.result;
   if (e.route !== 'manual' || e.issueNumber !== submission.task || e.runId !== submission.run_id
@@ -34,6 +35,7 @@ export async function publishManualOutcome({ api, store, record: r, submission,
   }
   const resultDigest = sha256Body(canonicalAuthorityJson(result));
   if (r.manualSubmission && r.manualSubmission.sha256 !== resultDigest) fail('MANUAL_OUTCOME_CHANGED');
+  const historicalResult = result.schema_version === '4.0' && await historical(e);
   let pr = null;
   if (result.parent.kind === 'pull_request') {
     pr = await api.get(`/pulls/${result.parent.number}`);
@@ -41,11 +43,15 @@ export async function publishManualOutcome({ api, store, record: r, submission,
       ? `Execution admission digest: ${admissionBinding(e.request).sha256}` : `Execution request digest: ${e.requestReference.sha256}`;
     if (pr.number !== result.parent.number || pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
       || taskReferences(pr.body, REPOSITORY).length !== 1 || taskReferences(pr.body, REPOSITORY)[0] !== e.issueNumber
-      || (e.branch && pr.head.ref !== e.branch) || (result.result.kind === 'git' && result.result.revision !== pr.head.sha)
+      || (e.branch && pr.head.ref !== e.branch) || (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
       || !pr.body?.split(/\r?\n/).includes(marker) || (r.prNumber && r.prNumber !== pr.number)) fail('PR_AUTHORITY_CHANGED');
     const artifacts = (await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(pr.head.ref)}`))
       .filter(candidate => candidate.body?.split(/\r?\n/).includes(marker));
     if (artifacts.length !== 1 || artifacts[0].number !== pr.number) fail('PR_AMBIGUOUS');
+    if (historicalResult && result.result.kind === 'git' && result.result.revision !== pr.head.sha) {
+      const commit = await api.get(`/git/commits/${result.result.revision}`);
+      if (commit.sha !== result.result.revision) fail('PUBLISHED_HEAD_REQUIRED');
+    }
     // An open implementation PR can become Ready only at an exact Git head.
     // Reject this existing lifecycle incompatibility before reserving claims or
     // posting a successful Outcome that no replay could finish.
@@ -60,14 +66,16 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     if (durable.user?.login !== WRITER || durable.user?.type !== 'Bot' || durable.user?.id !== writer.id
       || sha256Body(durable.body) !== r.outcome.bodySha256
       || canonicalAuthorityJson(extractAuthorityRecord(durable.body)) !== canonicalAuthorityJson(r.manualSubmission.publishedResult ?? result)) fail('COMMENT_CONTENT_CHANGED');
-    if (result.status === 'implemented') await transitionManual(r, pr, result, false);
+    if (result.status === 'implemented' && !historicalResult) await transitionManual(r, pr, result, false);
     return r.outcome;
   }
   r.manualSubmission = { ...r.manualSubmission, sha256: resultDigest, parent: result.parent, rendererVersion: 'human-v1' };
   await store.put(e.runId, r);
   const current = await revalidate(e);
-  let publishedResult = r.manualSubmission.publishedResult ?? result;
-  if (!r.manualSubmission.publishedResult && result.schema_version === '4.0' && current?.authorityDrift) {
+  const frozenResult = r.manualSubmission.publishedResult
+    ?? (r.commentIntent?.key === 'outcome' && r.commentIntent.body ? extractAuthorityRecord(r.commentIntent.body) : null);
+  let publishedResult = frozenResult ?? result;
+  if (!frozenResult && result.schema_version === '4.0' && current?.authorityDrift) {
     const drift = current.authorityDrift;
     if (result.authority_drift && canonicalAuthorityJson(result.authority_drift) !== canonicalAuthorityJson(drift)) fail('MANUAL_OUTCOME_BINDING_INVALID');
     publishedResult = { ...result, ...(e.request.authority_resolution ? { authority_resolution: e.request.authority_resolution } : {}),
@@ -75,7 +83,15 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     r.manualSubmission.publishedResult = publishedResult;
     await store.put(e.runId, r);
   }
-  if (result.status !== 'implemented') await transitionManual(r, pr, result, true);
+  if (historicalResult && !frozenResult && !publishedResult.limitations.includes('Historical attempt report only; a later Step owns current projections. This Outcome grants no current-head acceptance.')) {
+    publishedResult = { ...publishedResult, limitations: [...publishedResult.limitations,
+      'Historical attempt report only; a later Step owns current projections. This Outcome grants no current-head acceptance.'] };
+    r.manualSubmission.publishedResult = publishedResult; await store.put(e.runId, r);
+  }
+  if (!r.manualSubmission.publishedResult) {
+    r.manualSubmission.publishedResult = publishedResult; await store.put(e.runId, r);
+  }
+  if (result.status !== 'implemented' && !historicalResult) await transitionManual(r, pr, result, true);
   const comment = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, renderAuthorityRecord(publishedResult));
   const durable = await api.get(`/issues/comments/${comment.id}`);
   if (durable.body !== comment.body || durable.user?.login !== WRITER || durable.user?.type !== 'Bot'
@@ -84,6 +100,6 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     head: exactSha(result.result.revision) ? result.result.revision : null, prNumber: pr?.number ?? null,
     outcomeId: durable.id, bodySha256: sha256Body(durable.body), manual: true };
   await store.put(e.runId, r);
-  if (result.status === 'implemented') await transitionManual(r, pr, result, false);
+  if (result.status === 'implemented' && !historicalResult) await transitionManual(r, pr, result, false);
   return r.outcome;
 }

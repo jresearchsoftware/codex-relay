@@ -8,7 +8,7 @@ import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
 import { runAttempt } from '../src/attempt.mjs';
-import { REPOSITORY, digest } from '../src/execution-contract.mjs';
+import { REPOSITORY, WRITER, digest } from '../src/execution-contract.mjs';
 import { labelRunName } from '../src/launch-metadata.mjs';
 import { memoryStore } from './fixture.mjs';
 
@@ -57,27 +57,40 @@ function harness(root = tmpdir()) {
       mutations.push(['delete', path]);
       const issue = issues.get(Number(path.split('/')[2]));
       issue.labels = issue.labels.filter(label => label.name !== path.split('/').at(-1));
+      const label = decodeURIComponent(path.split('/').at(-1));
+      if (label.startsWith('codex-ready-')) {
+        const history = events.get(issue.number) ?? [];
+        history.push({ id: Math.max(...history.map(event => event.id)) + 1, event: 'unlabeled',
+          actor: { login: WRITER, type: 'Bot' }, label: { name: label }, created_at: '2026-09-04T12:00:01Z' });
+        events.set(issue.number, history);
+      }
     },
-    async post() { assert.fail('Rejected scheduling input must not publish'); },
+    async post(path, body) {
+      if (!/^\/issues\/\d+\/labels$/.test(path)) assert.fail('Rejected scheduling input must not publish');
+      mutations.push(['post-labels', path]);
+      const issue = issues.get(Number(path.split('/')[2]));
+      for (const name of body.labels) if (!issue.labels.some(label => label.name === name)) issue.labels.push({ name });
+      return copy(issue.labels);
+    },
     async draft() { assert.fail('Rejected scheduling input must not change PR lifecycle'); }
   };
   // The fixture isolates Task inventory semantics from privileged filesystem
   // gate checks. Installed flock/gate qualification belongs to Linux tests.
   const admission = { assertOpen: async () => {}, reserve: async () => ({ version: 1, status: 'active' }),
-    assertTaskComplete: task => control.assertTaskComplete(task) };
+    assertSlotComplete: slot => control.assertSlotComplete(slot) };
   const broker = createPublicationBroker({ api, store, journal, admission, publisher: {
     inspect: async () => assert.fail('Rejected scheduling input must not publish Git') }, streamlinedAdmission: true });
-  function ready(runId, number, { target = 'issue', repository = REPOSITORY } = {}) {
+  function ready(runId, number, { target = 'issue', repository = REPOSITORY, route = 'auto' } = {}) {
     const subject = target === 'issue' ? issues.get(number) : pr;
-    subject.labels = [{ name: 'codex-ready-auto' }];
-    const launch = { route: 'auto', target, number };
+    subject.labels = [...(subject.labels ?? []).filter(label => !label.name.startsWith('codex-ready-')), { name: `codex-ready-${route}` }];
+    const launch = { route, target, number };
     runs.set(runId, { id: runId, repository: { full_name: repository }, actor: { login: CONSUMER.owner },
       status: 'in_progress', event: target === 'issue' ? 'issues' : 'pull_request_target',
       head_branch: CONSUMER.baseBranch, display_title: labelRunName(launch, subject),
       path: CONSUMER.routingWorkflow, run_attempt: 1, created_at: '2026-09-04T12:00:01Z' });
     events.set(number, [{ id: runId + 1000, event: 'labeled', actor: { login: CONSUMER.owner, type: 'User' },
-      label: { name: 'codex-ready-auto' }, created_at: '2026-09-04T12:00:00Z' }]);
-    return { operation: 'admit', runId, target, number, route: 'auto', transport: 'label', step: null };
+      label: { name: `codex-ready-${route}` }, created_at: '2026-09-04T12:00:00Z' }]);
+    return { operation: 'admit', runId, target, number, route, transport: 'label', step: null };
   }
   return { store, journal, control, issues, runs, mutations, broker, ready };
 }
@@ -112,22 +125,23 @@ test('a foreign native run with identical numeric identities cannot create an ad
   assert.deepEqual(f.issues.get(42).labels, [{ name: 'codex-ready-auto' }]);
 });
 
-test('same-Task duplicate ready and linked PR remediation share ownership while an independent Task retains separate admission', async () => {
+test('a SERIAL physical slot is exclusive across Tasks, while independent manual work may proceed', async () => {
   const f = harness(); const first = await f.broker.dispatch(f.ready(99, 42));
   for (const request of [f.ready(100, 42), f.ready(101, 43, { target: 'pull_request' })]) {
     const before = copy(f.mutations);
-    await assert.rejects(f.broker.dispatch(request), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
+    await assert.rejects(f.broker.dispatch(request), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
     assert.equal(await f.store.get(request.runId), null); assert.deepEqual(f.mutations, before);
   }
-  const independent = await f.broker.dispatch(f.ready(102, 44));
+  await assert.rejects(f.broker.dispatch(f.ready(102, 44)), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
+  const independent = await f.broker.dispatch(f.ready(103, 44, { route: 'manual' }));
   assert.equal(independent.envelope.step, 1); assert.equal(independent.envelope.issueNumber, 44);
   assert.notEqual(independent.envelope.branch, first.envelope.branch);
   assert.deepEqual((await f.store.get(99)).envelope, first.envelope);
-  assert.deepEqual((await f.store.get(102)).controllerLifecycle, { version: 1, status: 'active' });
+  assert.equal((await f.store.get(103)).controllerLifecycle, undefined);
 });
 
 for (const priorState of ['cancelled-unknown', 'interrupted-no-journal', 'recovery-pending']) {
-  test(`${priorState} predecessor blocks its Task without occupying an independent Task identity`, async () => {
+  test(`${priorState} predecessor holds its actual resource without occupying an independent manual identity`, async () => {
     const f = harness(); await f.broker.dispatch(f.ready(99, 42));
     const record = await f.store.get(99);
     record.outcome = { status: 'BLOCKED', head: null, outcomeId: 801 };
@@ -142,17 +156,20 @@ for (const priorState of ['cancelled-unknown', 'interrupted-no-journal', 'recove
     await f.store.put(99, record);
     const originalDigest = digest(record);
     const before = copy(f.mutations);
-    await assert.rejects(f.broker.dispatch(f.ready(100, 42)), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
     if (priorState === 'recovery-pending') {
-      // Historical controller completion does not clear a later recovery intent.
+      // Historical physical completion releases the slot. Recovery remains an
+      // exact publication operation and a global lifecycle drain boundary.
+      const next = await f.broker.dispatch(f.ready(100, 42));
+      assert.equal(next.envelope.step, 2);
       assert.deepEqual(await f.control.complete({ runId: 99, attemptId: 'run-99' }), { complete: true });
       await assert.rejects(f.control.assertTaskComplete(42), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
     } else {
+      await assert.rejects(f.broker.dispatch(f.ready(100, 42)), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
       await assert.rejects(f.control.complete({ runId: 99, attemptId: 'run-99' }), { code: 'ADMISSION_COMPLETION_UNKNOWN' });
+      assert.equal(await f.store.get(100), null); assert.deepEqual(f.mutations, before);
     }
-    assert.equal(await f.store.get(100), null); assert.deepEqual(f.mutations, before);
     assert.equal(digest(await f.store.get(99)), originalDigest);
-    const independent = await f.broker.dispatch(f.ready(101, 44));
+    const independent = await f.broker.dispatch(f.ready(101, 44, { route: 'manual' }));
     assert.equal(independent.envelope.step, 1);
   });
 }
@@ -162,7 +179,7 @@ test('drain observes every admitted Task and pending recovery even after one con
     const root = await mkdtemp(join(tmpdir(), 'relay-scheduling-isolation-'));
     t.after(() => rm(root, { recursive: true, force: true }));
     const f = harness(root); await f.control.initialize();
-    await f.broker.dispatch(f.ready(99, 42)); await f.broker.dispatch(f.ready(100, 44));
+    await f.broker.dispatch(f.ready(99, 42));
     const finish = async runId => {
       const record = await f.store.get(runId);
       record.outcome = { status: 'BLOCKED', head: null, outcomeId: runId + 800 };
@@ -171,7 +188,8 @@ test('drain observes every admitted Task and pending recovery even after one con
         execution: { reserved: true, returned: true, child: 'started', containment: 'reaped' } });
       await f.control.complete({ runId, attemptId: `run-${runId}` });
     };
-    await finish(99); await f.control.quiesce({ operationId, target: head });
+    await finish(99); await f.broker.dispatch(f.ready(100, 44));
+    await f.control.quiesce({ operationId, target: head });
     const waiting = await f.control.drained({ operationId });
     assert.equal(waiting.drained, false); assert.deepEqual(waiting.active, [100]);
     await finish(100);

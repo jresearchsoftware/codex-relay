@@ -117,10 +117,10 @@ def render(config, revision, source_root, repository=None):
     }
     if slots:
         # Native groups are repository-local. The configured finite runner pool
-        # bounds active controllers; protected admission still serializes Task
-        # conflicts that cannot be resolved from an untrusted PR body here.
-        subject = "${{ github.event_name == 'workflow_dispatch' && format('issue-{0}', inputs.task) || github.event_name == 'issues' && format('issue-{0}', github.event.issue.number) || format('pull-{0}', github.event.pull_request.number) }}"
-        values['CONTROL_GROUP_YAML'] = json.dumps(environment['namespace'] + '-control-' + subject)
+        # bounds active controllers. Independent owner commands for the same
+        # Task may overlap; trusted admission owns physical resource conflicts
+        # and Writer owns exact publication targets and event deduplication.
+        values['CONTROL_GROUP_YAML'] = json.dumps(environment['namespace'] + '-control-${{ github.run_id }}')
         values['RECOVERY_GROUP_YAML'] = json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}')
         lines = ['case "$RUNNER_NAME:$(/usr/bin/id -un)" in']
         lines.extend('            ' + shlex.quote(slot['runnerName'] + ':' + slot['runnerUser'])

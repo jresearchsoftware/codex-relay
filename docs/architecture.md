@@ -216,6 +216,24 @@ authorize another review POST or a new Step.
 
 ## Durable state
 
+Fresh schema-v4 source/research admissions allocate a unique monotonic Step
+without a prior-Outcome dependency. The bounded Writer lock protects immutable
+admission/event allocation and exact publication operations, not the model call.
+Independent attempts may overlap; physical slots, checkouts, exclusive environments
+and unresolved external effects retain their own holds. A verified contained
+execution with a preserved collection can release its physical slot while its
+publication remains pending. Full lifecycle drain still verifies all ownership
+and operations. Missing/corrupt evidence is scoped by trusted repository/resource
+identity; genuinely unknown ownership remains an explicit blocking conflict.
+
+The latest successful admission owns current Step/title projections. Sibling
+candidates contend at their exact ref predecessor under Writer serialization;
+non-force publication, original mutation intents and readback recovery remain
+binding. Late original Outcomes preserve their admission and claims without
+changing a newer Step's Draft/Ready state or granting current-head acceptance.
+Historical unknown manual execution stays unknown: owner withdrawal revokes future
+permission and does not create a cancellation or negative-execution receipt.
+
 | Owner | Record | Purpose |
 | --- | --- | --- |
 | GitHub/Git | Original Issue charter, trusted Decisions/CR, owner event/run, Step display labels, commits/ref/PR, checks, reviews and Outcome; retained v3 Requests | Authority, durable progress and acceptance truth |

@@ -205,7 +205,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
         || subject.head?.repo?.full_name !== REPOSITORY || ![CONSUMER.baseBranch, subject.head.ref].includes(run.head_branch)))) fail('OWNER_RUN_NOT_ADMITTED');
     // Unsafe/unbound/stale commands throw outside the domain-result boundary:
     // they authorize neither consumption nor an Outcome on this target.
-    const event = await readReadyEvent(api, { number, route, run, subject });
+    const event = await readReadyEvent(api, { number, route, run, subject, rejectAmbiguous: streamlined });
     command = { transport, readyEventId: event.id, readyEventAt: event.created_at,
       readyLabel: event.label.name, runName: run.display_title };
   }
@@ -279,18 +279,39 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   }
 }
 
-async function readReadyEvent(api, { number, route, run, subject }) {
+export async function readyTransitions(api, number) {
+  const events = (await api.list(`/issues/${number}/events`))
+    .filter(e => ['labeled', 'unlabeled'].includes(e.event) && READY_LABELS.includes(e.label?.name));
+  if (events.some(event => !positive(event.id))) fail('READY_EVENT_AMBIGUOUS');
+  const unique = new Map();
+  for (const event of events) {
+    const previous = unique.get(event.id);
+    if (previous && canonicalAuthorityJson(previous) !== canonicalAuthorityJson(event)) fail('READY_EVENT_AMBIGUOUS');
+    unique.set(event.id, event);
+  }
+  return [...unique.values()].sort((a, b) => a.id - b.id);
+}
+
+async function readReadyEvent(api, { number, route, run, subject, rejectAmbiguous = false }) {
   const label = route === 'auto' ? READY_LABELS[0] : READY_LABELS[1];
   const ready = labelNames(subject.labels).filter(name => READY_LABELS.includes(name));
   if (ready.length !== 1 || ready[0] !== label) fail('READY_LABEL_AMBIGUOUS');
-  const events = (await api.list(`/issues/${number}/events`))
-    .filter(e => ['labeled', 'unlabeled'].includes(e.event) && READY_LABELS.includes(e.label?.name));
-  const event = events.sort((a, b) => Number(a.id) - Number(b.id)).at(-1);
+  const events = await readyTransitions(api, number);
+  const event = events.at(-1);
   const age = Date.parse(run.created_at) - Date.parse(event?.created_at);
   // Bind the live native command to this first run, not a surviving old label.
   if (!positive(event?.id) || event.event !== 'labeled' || event.label.name !== label
     || event.actor?.login !== OWNER || event.actor?.type !== 'User'
     || !Number.isFinite(age) || age < 0 || age > 120000) fail('READY_EVENT_STALE');
+  // The run API timestamps have second precision and expose no triggering
+  // timeline event ID. A same-second replacement cannot be attributed safely.
+  if (rejectAmbiguous && events.some(other => other.id !== event.id && other.event === 'labeled'
+    && other.created_at === event.created_at)) {
+    const error = new Error('READY_EVENT_AMBIGUOUS'); error.code = error.message;
+    error.details = { failureDiagnostic: { code: error.code, stage: 'authority', boundary: 'authority', workerStarted: false,
+      preview: `Task command on #${number} has multiple ready events in one timestamp second. No command was consumed. Remove the ready label and apply the intended command again in a later second.` } };
+    throw error;
+  }
   return event;
 }
 
@@ -300,7 +321,7 @@ export async function revalidateReadyEvent(api, e) {
   const subject = await api.get(`/issues/${e.number}`);
   if (subject.number !== e.number) fail('OWNER_RUN_NOT_ADMITTED');
   const event = await readReadyEvent(api, { number: e.number, route: e.route,
-    run: await api.getRun(e.runId), subject });
+    run: await api.getRun(e.runId), subject, rejectAmbiguous: e.request?.kind === 'admission' });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
 }
 export async function revalidateAuthority(api, e, { reporting = false, verifyStartingBase = false } = {}) {
@@ -319,7 +340,7 @@ export async function revalidateAuthority(api, e, { reporting = false, verifySta
     // intersection. Do not interpret permission prose or execute new scope.
     // Reporting remains possible after a revoked or ambiguous permission.
     const old = a.originalRequest; const current = a.currentRequest;
-    if (['branch', 'base_sha', 'starting_head', 'existing_pr'].some(field =>
+    if (!reporting && ['branch', 'base_sha', 'starting_head', 'existing_pr'].some(field =>
       canonicalAuthorityJson(old[field]) !== canonicalAuthorityJson(current[field]))) fail('AUTHORITY_CHANGED');
     if (!reporting && (old.scope.some(value => !current.scope.includes(value))
       || current.boundaries.some(value => !old.boundaries.includes(value))

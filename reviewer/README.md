@@ -306,6 +306,14 @@ Codex claims and verified binding, not proof that every claimed test ran or
 independent acceptance. Old owner-authored manual-result and Writer Outcome
 records remain immutable readable history. Source tests of this boundary do
 not qualify an installed UNIX socket, service, mTLS ingress or credentials.
+Late schema-v4 manual reports remain bound to their original immutable
+admission. When a later Step owns current projections, an original hosted Git
+commit may be reported on its bound PR without changing the current ref or
+Draft/Ready state; it is historical evidence, not current-head acceptance.
+Outcome bytes freeze before the original POST, so later Steps or Decisions
+cannot change a lost-response readback into a different result. Retained
+v3/legacy publication keeps its original bindings and cannot overwrite newer
+native Step lifecycle projections.
 Configure either the existing top-level `repository` string or a nonempty
 `repositories` array of strings, never both. Both forms normalize to a repository
 set; duplicate entries collapse. For example, replace the `repository` field in

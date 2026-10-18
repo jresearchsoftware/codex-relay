@@ -19,7 +19,7 @@ and the [May 7, 2026 release notice](https://github.blog/changelog/2026-05-07-gi
 | --- | --- | --- |
 | A: global group with the native default queue | One running and one pending invocation; a new arrival replaces the pending invocation. Model concurrency stays at one, but independent waiting work can be lost. | Historical projection behavior; existing evidence retains its original meaning. |
 | B: global group with `queue: max` | One running invocation and up to 100 waiting invocations; no replacement merely because newer work arrives within that bound. Model concurrency stays at one. | Selected SERIAL source behavior; consumer projection and native TEST evidence establish adoption separately. |
-| C: bounded shared pool | One configured desired capacity bounds the physical General Runner pool across eligible repositories; per-subject queues and trusted Writer critical sections remain. | Managed Apply, same-UID isolation, retained recovery and actual model overlap require source and installed qualification. |
+| C: bounded shared pool | One configured desired capacity bounds the physical General Runner pool across eligible repositories; per-run groups and trusted resource/publication critical sections allow independent attempts on the same Task. | Managed Apply, same-UID isolation, retained recovery and actual model overlap require source and installed qualification. |
 
 For an illustrative batch of three admitted executions taking the same time
 `T`, one qualified slot needs about `3T`, excluding controller overhead and
@@ -62,7 +62,14 @@ pool member can transport recovery; trusted Writer selects the original slot
 from the retained envelope before opening its evidence. The public managed
 recovery path needs no per-slot owner choice.
 
-Native subject groups retain `queue: max` and cancellation disabled. Shared
+Parallel routing uses `<namespace>-control-${{ github.run_id }}` with
+`queue: max` and cancellation disabled. The `github` context, including the
+native run ID, is supported in the workflow-level
+[concurrency expression](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
+Distinct owner-authorized runs on one Task can reach separate free slots while
+the earlier run is still executing or publishing. Same-event deduplication and
+same-attempt replay remain protected Writer responsibilities. Recovery retains
+its original-run group `<namespace>-recovery-${{ inputs.run_id }}`. Shared
 physical registrations bound simultaneous jobs across repositories, whereas
 GitHub concurrency groups remain repository-local. Waiting, cancellation,
 replay, protected admission/publication locks and lifecycle gates retain their
@@ -88,12 +95,13 @@ Unix UID and immutable protected attempt envelope. The root Writer selects
 retained evidence through that stored envelope, never through a caller path.
 
 The candidate parallel projection uses `relay-workflows-v4`; ordinary projections
-retain `relay-workflows-v3` and the SERIAL group. Parallel subject groups retain
+retain `relay-workflows-v3` and the SERIAL group. Parallel native-run groups retain
 `queue: max` and cancellation disabled. A finite qualified runner pool bounds
 active jobs. GitHub groups are repository-local: independent consumer
 installations sharing a host additionally need distinct namespaces, identities,
-paths and capacity allocations. This does not implement one Writer selecting
-multiple repositories.
+paths and capacity allocations. A multi-repository Writer selects only an
+explicitly configured repository per operation process; native groups do not
+provide that authorization or physical isolation.
 
 Source corrections add a kernel lock for each automatic controller's complete
 lifetime, exclusive initial journal creation and a short diagnostic-retention
@@ -121,11 +129,45 @@ supported fallback, and cannot satisfy an objective requiring real parallel
 execution.
 
 The finite pool bounds active executions, not the total installation-wide
-waiting population. Each native subject group retains up to 100 pending runs;
-independent subjects have separate groups. GitHub owns runner waiting and queue
+waiting population. GitHub's limit of 100 pending runs applies to each
+concurrency group; independent run groups can also wait for a runner. GitHub
+owns runner waiting and queue
 overflow/cancellation records. There is no Relay-wide durable queue or automatic
 retry. Pending runs do not consume an admitted execution slot, and an overflow
 or cancellation before controller entry creates no invented admission/Outcome.
+
+## Independent attempts and scoped holds
+
+Fresh schema-v4 native owner commands allocate monotonic unique Steps from
+successful immutable admissions under the bounded trusted Writer lock. Earlier
+attempts need not have terminal Outcomes or completed publication for an
+independent Step on the same Task, or an independent Task, to be admitted.
+Two manual handoffs, two automatic attempts or mixed routes retain separate
+run/attempt lineage. A manual handoff is not evidence of physical slot occupation;
+it does not assert whether the owner later launched the manual session.
+
+Automatic attempts require a free bound slot and a distinct
+`workRoot/<attemptId>` checkout. Checkout creation reserves the final directory
+atomically; an existing checkout is preserved and rejected. Shared runtime UIDs
+are allowed when attempt filesystem and process boundaries are isolated. An
+unknown child holds the slot and resources it could affect; a missing unrelated
+Outcome or an unreadable journal for a known different slot does not reserve
+those resources. A record whose shared identity or migration ownership cannot
+be attributed safely still fails closed and identifies the conflicting record.
+
+After verified containment, complete collection durably saves an exact head,
+known clean/dirty observation and `collection.preserved: true` before Writer
+publication. That receipt proves that work remains in its retained attempt
+checkout and permits physical slot reuse even if the original Outcome or
+publication is pending. Existing strong terminal completion receipts keep their
+original meaning. No old record is rewritten and no new model call is inferred.
+
+Effects remain separate: pending or uncertain publication holds the exact shared
+Git ref, PR or operation and requires its original read-back recovery. Independent
+computation grants no right to replace a sibling's output, move an unexpected
+remote head, restore an older Step/title, bypass current authority or repeat an
+ambiguous push/POST. Full lifecycle Apply, quiesce/drain and protected pool
+ownership still require their global evidence.
 
 ## Accepted SERIAL runtime bounds
 
@@ -173,18 +215,34 @@ The ready-event freshness check remains
 run's creation with the owner event, not job start or the eventual admission
 time. Waiting in the Actions concurrency queue does not age that comparison.
 When the job starts, Writer still checks the latest ready transition, current
-label, owner/run binding, effective authority, exact head and protected prior
-attempts. Applying another ready transition can invalidate an older queued
-command. A same-task command written before the preceding admitted run finishes
-remains an invalid prewritten retry. See
+label, owner/run binding, effective authority, exact head and scoped physical
+resource/effect conflicts. Applying another ready transition can invalidate an
+older queued command. A distinct fresh schema-v4 native command may admit an
+independent attempt before an earlier Task Step completes; it cannot reuse a
+consumed event or retry that attempt. Retained v3/legacy prior-run ordering keeps
+its original checks. See
 [native command verification](../controller/src/live-authority.mjs) and
 [prior-attempt verification](../controller/src/publication-broker.mjs).
+
+Native timeline IDs order ready transitions, including within one timestamp
+second. Initial commands with multiple distinct ready-label additions in that
+second stop with `READY_EVENT_AMBIGUOUS`, because the run API cannot identify
+which event triggered the run. Consumption reserves one DELETE, checks the
+original event again immediately before it and reads back both labels and native
+transitions. A replacement may occur inside GitHub's non-atomic DELETE interval
+and may already have been erased. `READY_EVENT_REPLACED` or
+`READY_CONSUMPTION_UNCERTAIN` retains the original attempt, starts no worker and
+reports the affected original/later event IDs and a fresh-command path. The
+operator inspects the target, removes any remaining ready label and reapplies
+the intended command in a later second. No blind DELETE retry or automatic
+replacement command is issued. Step-label projection uses individual mutations
+to preserve later owner commands.
 
 Cancellation or overflow before the queued job enters the controller leaves an
 owner-visible native canceled run and creates no Relay admission, Step, journal,
 Writer Outcome or model call. Inspect that native run and the protected original
-attempt state before deciding whether fresh work is safe. A fresh owner command
-must satisfy the existing authority and prior-attempt checks; no background
+attempt state before deciding whether shared resources are safe. A fresh owner
+command must satisfy current authority and its scoped resource/effect checks; no background
 retry, synthetic success or substituted Outcome is created. Cancellation after
 controller entry retains the existing containment, durable evidence and unknown
 execution rules. A canceled run alone is not proof that no attempt was admitted.
@@ -192,7 +250,8 @@ execution rules. A canceled run alone is not proof that no attempt was admitted.
 The root publication lock and
 [lifecycle quiesce/drain](../controller/README.md#lifecycle-admission-and-drain)
 remain unchanged. Quiesce closes admission, admitted controllers may complete,
-and drain requires their containment/publication/terminal receipts. Native
+and drain requires their containment/publication/terminal receipts even if a
+physical slot has already been released. Native
 waiting runs are not admitted controllers; a later job still encounters the
 current gate. Stop and upgrade continue through their existing protected paths.
 
@@ -213,12 +272,13 @@ projection or qualify native scheduling. PROD adoption and deployment remain
 separately authorized; Task 103 does not mutate PROD, runner-group ACLs,
 credentials or shared resources, and does not expand Tasks 85/86.
 
-Local scenarios cover independent Issues, same-task commands, Issue/PR number
-collisions, foreign-repository numeric identity rejection within one configured
-consumer, replay, unresolved attempts and quiesce/drain. Cross-repository
-fixtures demonstrate identity separation only: current Writer remains bound to
-one configured consumer per process. Native TEST observations must additionally
+Local scenarios cover independent Issues and same-Task attempts, manual/automatic
+routes, shared-slot and checkout exclusion, same-UID process overlap, uncertain
+publication, ready-event races, Issue/PR number collisions, foreign-repository
+numeric identity rejection, replay, unresolved attempts and quiesce/drain.
+Cross-repository fixtures use the configured repository selection and preserve
+original attempt bindings; they do not qualify live routing. Native TEST observations must additionally
 show multiple waiting runs surviving, serial worker entry and truthful terminal
 state. Independent parallel execution and future many-repository scheduling
 require native qualification; native concurrency groups alone do not coordinate
-different repositories or establish a multi-repository Writer.
+different repositories, establish installed isolation or authorize a Writer target.

@@ -4,7 +4,7 @@ import { fixture } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { REPOSITORY, WRITER } from '../src/execution-contract.mjs';
-import { admissionBinding, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { admissionBinding, createAdmissionSnapshot, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement the admitted repository change through manual Codex; independent acceptance remains required.';
 const copy = value => structuredClone(value);
@@ -39,6 +39,9 @@ async function manualBroker(t, race) {
     comment.user = { login: WRITER, type: 'Bot', id: 702 };
     f.comments.find(value => value.id === comment.id).user = copy(comment.user);
     if (race === 'after-outcome') removeMarker();
+    if (race === 'lost-outcome-response' && posts === 1) {
+      throw Object.assign(new Error('Lost native Outcome POST response'), { code: 'POST_UNCERTAIN' });
+    }
     return copy(comment);
   };
   f.api.ready = async node => { assert.equal(node, pr.node_id); ready++; pr.draft = false; };
@@ -63,6 +66,34 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
   assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
+});
+
+test('lost manual Outcome POST followed by a later Step replays the exact original result twice without another POST or Ready', async t => {
+  const f = await manualBroker(t, 'lost-outcome-response');
+  await assert.rejects(f.invoke(), { code: 'POST_UNCERTAIN' });
+  const original = await f.store.get(f.envelope.runId);
+  const originalBody = f.comments[0].body;
+  assert.equal(original.outcome, null);
+  assert.equal(original.commentIntent.body, originalBody);
+  assert.deepEqual(original.manualSubmission.publishedResult, extractAuthorityRecord(originalBody));
+  const e = f.envelope;
+  const next = { ...e, runId: 100, attemptId: 'run-100', step: e.step + 1,
+    request: createAdmissionSnapshot({ request: e.request, authority: e.request.authority },
+      { step: e.step + 1, attempt: 'run-100', runId: 100, route: e.route }) };
+  await f.store.put(100, { envelope: next });
+  f.issue.labels = [{ name: `step-${next.step}` }];
+  f.pr.draft = false;
+  const before = copy(f.pr);
+  const recovered = await f.invoke();
+  assert.equal(recovered.outcomeId, f.comments[0].id);
+  assert.deepEqual(await f.invoke(), recovered);
+  assert.equal(f.posts(), 1); assert.equal(f.ready(), 0);
+  assert.equal(f.comments.length, 1); assert.equal(f.comments[0].body, originalBody);
+  assert.deepEqual(f.pr, before);
+  const saved = await f.store.get(e.runId);
+  assert.equal(saved.commentIntent, null);
+  assert.deepEqual(saved.manualSubmission.publishedResult, original.manualSubmission.publishedResult);
+  assert.deepEqual(await f.store.get(100), { envelope: next });
 });
 
 for (const race of ['after-outcome', 'after-reservation']) {

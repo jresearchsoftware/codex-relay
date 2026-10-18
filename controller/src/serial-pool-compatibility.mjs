@@ -164,7 +164,24 @@ else if(request.operation==='inventory'){
     store:{all:async()=>selected},journal:createAttemptStore(request.journalRoot),protectedRoot:request.protectedRoot});
   const state=await gate.status();
   if(state.phase==='open'||state.operationId!==request.operationId)contract.fail('SERIAL_POOL_COMPATIBILITY_GATE_CHANGED');
-  result={active:state.active,unknown:state.unknown,phase:state.phase,
+  let active=state.active,unknown=state.unknown;
+  if(request.resourceOnly){
+    const released=new Set();const journal=createAttemptStore(request.journalRoot);
+    for(const record of selected){
+      const lifecycle=record.controllerLifecycle;const e=record.envelope;
+      if(e.route!=='auto'||record.admissionBlock)continue;
+      const contained=value=>value&&['started','not_started'].includes(value.child)
+        &&(value.containment==='reaped'||value.child==='not_started'&&value.containment==='not_required');
+      if(lifecycle?.version===1&&lifecycle.status==='complete'&&contained(lifecycle)){released.add(e.runId);continue;}
+      const saved=await journal.get(e.runId);
+      if(saved?.version===contract.VERSION&&contract.digest(saved.envelope)===contract.digest(e)
+        &&saved.execution?.reserved===true&&saved.execution.returned===true&&contained(saved.execution)
+        &&saved.collection?.preserved===true&&contract.exactSha(saved.collection.head)
+        &&typeof saved.collection.clean==='boolean')released.add(e.runId);
+    }
+    active=active.filter(id=>!released.has(id));unknown=unknown.filter(id=>!released.has(id));
+  }
+  result={active,unknown,phase:state.phase,
     runs:records.map(record=>({runId:record.envelope.runId,attemptId:record.envelope.attemptId,
       envelopeSha256:contract.digest(record.envelope)})).sort((left,right)=>left.runId-right.runId)};
 }else contract.fail('SERIAL_POOL_COMPATIBILITY_READER_INVALID');
@@ -312,6 +329,7 @@ export async function verifySerialPoolCompatibility(context, { privateChecks = c
   const current = await loadSerialPoolCompatibility({ ...options, privateChecks });
   require(current && hash(await protectedRead(current.receiptPath, options, [0o644])) === options.receiptSha256,
     'SERIAL_POOL_COMPATIBILITY_RECEIPT_CHANGED');
+  if (privateChecks) await verifyOriginalStoreOwnership(current);
   return current;
 }
 
@@ -327,17 +345,42 @@ export function historicalOperationContext(context, record, operation) {
   return { kind: 'original', ...context.original };
 }
 
-export async function invokeOriginalReader(context, { operation, envelope, task = null, slot = null } = {}) {
+export async function invokeOriginalReader(context, { operation, envelope, task = null, slot = null, resourceOnly = false } = {}) {
   require(['validate-envelope', 'inventory'].includes(operation), 'SERIAL_POOL_COMPATIBILITY_READER_INVALID');
   const verified = await verifySerialPoolCompatibility(context, { privateChecks: true });
   require(task === null || positive(task), 'SERIAL_POOL_COMPATIBILITY_READER_INVALID');
   require(slot === null || /^[a-z][a-z0-9-]{0,31}$/.test(slot), 'SERIAL_POOL_COMPATIBILITY_READER_INVALID');
   if (operation === 'validate-envelope') historicalOperationContext(verified, { envelope }, operation);
-  await readProtectedStore(verified, verified.original.storeRoot);
-  return originalCall(verified, { operation, envelope, task, slot }, settings.get(verified));
+  await verifyOriginalStoreOwnership(verified);
+  // Every sealed SERIAL execution used the original primary resource. Its
+  // retained journal cannot occupy a distinct managed slot merely because it
+  // is unavailable or has unresolved logical publication.
+  if (operation === 'inventory' && slot !== null && slot !== 'primary') return { active: [], unknown: [] };
+  if (operation === 'inventory') await readProtectedStore(verified, verified.original.storeRoot);
+  return originalCall(verified, { operation, envelope, task, slot, resourceOnly }, settings.get(verified));
 }
 
-async function readProtectedStore(context, pathname) {
+async function verifyOriginalStoreOwnership(context) {
+  const options = settings.get(context); const pathname = context.original.storeRoot;
+  await parents(pathname, options);
+  let names;
+  try {
+    const info = await lstat(pathname);
+    require(info.isDirectory() && !info.isSymbolicLink() && info.uid === options.ownerUid
+      && !(info.mode & 0o022), 'SERIAL_POOL_COMPATIBILITY_STORE_UNSAFE');
+    names = await readdir(pathname);
+  } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  require(names.length <= 10000, 'SERIAL_POOL_COMPATIBILITY_STORE_LIMIT');
+  const sealed = new Set(context.receipt.original.runs.map(run => `${run.runId}.json`));
+  for (const name of names.filter(name => name.endsWith('.json'))) {
+    require(sealed.has(name), 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
+    const info = await lstat(join(pathname, name));
+    require(info.isFile() && !info.isSymbolicLink() && info.nlink === 1 && info.uid === options.ownerUid
+      && !(info.mode & 0o077), 'SERIAL_POOL_COMPATIBILITY_STORE_UNSAFE');
+  }
+}
+
+async function readProtectedStore(context, pathname, { runId = null, repository = null, scan = false } = {}) {
   const options = settings.get(context); let names;
   await parents(pathname, options);
   try {
@@ -351,20 +394,35 @@ async function readProtectedStore(context, pathname) {
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
     require(/^[1-9][0-9]*\.json$/.test(name), 'SERIAL_POOL_COMPATIBILITY_STORE_UNSAFE');
-    const record = json(await protectedRead(join(pathname, name), options, [0o600], 512 * 1024));
-    require(record?.envelope?.runId === Number(name.slice(0, -5)), 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
-    records.push(record);
+    const id = Number(name.slice(0, -5));
+    if (runId !== null && runId !== id) continue;
+    let record = null;
+    try {
+      record = json(await protectedRead(join(pathname, name), options, [0o600], 512 * 1024));
+      require(record?.envelope?.runId === id, 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
+      records.push(scan ? { runId: id, repository, record, error: null } : record);
+    } catch (error) {
+      if (!scan) throw error;
+      records.push({ runId: id, repository, record, error: error.code ?? 'SERIAL_POOL_COMPATIBILITY_RECORD_UNREADABLE' });
+    }
   }
   return records;
 }
 
-async function readCurrentStore(context) {
+async function readCurrentStore(context, selection = {}) {
   const root = context.current.storeRoot;
   const repositories = context.currentConsumer.repositories;
-  if (!repositories) return readProtectedStore(context, root);
+  if (!repositories) return readProtectedStore(context, root, { ...selection, repository: context.currentConsumer.repository });
   // A plural graph cannot hide flat records or another repository's tree.
-  require((await readProtectedStore(context, root)).length === 0, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
-  const options = settings.get(context);
+  const options = settings.get(context); await parents(root, options);
+  let flat;
+  try {
+    const info = await lstat(root);
+    require(info.isDirectory() && !info.isSymbolicLink() && info.uid === options.ownerUid
+      && !(info.mode & 0o022), 'SERIAL_POOL_COMPATIBILITY_STORE_UNSAFE');
+    flat = await readdir(root);
+  } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  require(!flat.some(name => name.endsWith('.json')), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
   async function directories(pathname, allowed) {
     await parents(pathname, options);
     let entries;
@@ -386,8 +444,9 @@ async function readCurrentStore(context) {
     for (const name of await directories(join(root, 'repositories', owner),
       repositories.filter(repository => repository.startsWith(owner + '/')).map(repository => repository.split('/')[1]))) {
       const repository = owner + '/' + name;
-      const selected = await readProtectedStore(context, join(root, 'repositories', owner, name));
-      require(selected.every(record => record.envelope.repository === repository), 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
+      if (selection.repository !== undefined && selection.repository !== repository) continue;
+      const selected = await readProtectedStore(context, join(root, 'repositories', owner, name), { ...selection, repository });
+      require(selected.every(row => selection.scan || row.envelope.repository === repository), 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
       records.push(...selected);
       require(records.length <= 10000, 'SERIAL_POOL_COMPATIBILITY_STORE_LIMIT');
     }
@@ -395,10 +454,72 @@ async function readCurrentStore(context) {
   return records;
 }
 
+// A sealed envelope hash can recover ownership from the original runner
+// journal when the publication record is unreadable. This is identity proof
+// only: it supplies no admission disposition, containment or Outcome receipt.
+async function sealedJournalEnvelope(context, binding) {
+  const options = settings.get(context);
+  const pathname = join(physical(options.root, context.originalConsumer.paths.attemptRoot), `${binding.runId}.json`);
+  const owners = new Set([options.ownerUid, context.original.runnerUid]);
+  try {
+    for (let at = dirname(pathname); ; at = dirname(at)) {
+      const info = await lstat(at);
+      if (!info.isDirectory() || info.isSymbolicLink() || !owners.has(info.uid) || (info.mode & 0o022)) return null;
+      if (at === options.root) break;
+      if (dirname(at) === at) return null;
+    }
+    const file = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || info.nlink !== 1 || !owners.has(info.uid) || (info.mode & 0o077) || info.size > 512 * 1024) return null;
+      const bytes = await file.readFile();
+      if (bytes.length !== info.size || stamp(info) !== stamp(await file.stat()) || stamp(info) !== stamp(await lstat(pathname))) return null;
+      const e = json(bytes)?.envelope;
+      if (e?.runId !== binding.runId || e.attemptId !== binding.attemptId || e.repository !== context.receipt.repository
+        || envelopeHash(e) !== binding.envelopeSha256) return null;
+      await originalCall(context, { operation: 'validate-envelope', envelope: e }, options);
+      return e;
+    } finally { await file.close(); }
+  } catch { return null; }
+}
+
 // The public composite retains history for lineage/deduplication but cannot
 // mutate it. Original Writer operations use their original store separately.
 export function createCompatibilityStore({ compatibility, currentStore, originalStore }) {
   require(settings.has(compatibility), 'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
+  const sealed = compatibility.receipt.original.runs;
+  const historical = (runId, repository) => repository === compatibility.receipt.repository
+    && sealed.some(run => run.runId === runId);
+  function validateCurrent(record, runId, repository) {
+    const e = record?.envelope;
+    require(e && e.runId === runId && e.repository === repository && typeof e.attemptId === 'string'
+      && e.consumerDigest === compatibility.receipt.target.consumerDigest
+      && !historical(runId, repository), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+    return record;
+  }
+  async function verifiedContext() {
+    const verified = await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
+    return verified;
+  }
+  async function selected(runId, repository) {
+    require(positive(runId), 'RUN_ID_INVALID');
+    require(configuredRepositories(compatibility.currentConsumer).includes(repository), 'ATTEMPT_REPOSITORY_MISMATCH');
+    const verified = await verifiedContext();
+    const current = await readCurrentStore(verified, { runId, repository });
+    const view = await currentStore.get(runId, repository);
+    require(current.length <= 1 && envelopeHash(current[0] ?? null) === envelopeHash(view),
+      'SERIAL_POOL_COMPATIBILITY_STORE_VIEW_CHANGED');
+    if (!historical(runId, repository)) return current.length ? validateCurrent(current[0], runId, repository) : null;
+    require(current.length === 0, 'SERIAL_POOL_COMPATIBILITY_DUPLICATE_ATTEMPT');
+    const original = await readProtectedStore(verified, verified.original.storeRoot, { runId });
+    require(original.length === 1, 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
+    require(envelopeHash(original[0]) === envelopeHash(await originalStore.get(runId, repository)),
+      'SERIAL_POOL_COMPATIBILITY_STORE_VIEW_CHANGED');
+    historicalOperationContext(compatibility, original[0], 'inventory');
+    if (!original[0].admissionBlock) await originalCall(verified,
+      { operation: 'validate-envelope', envelope: original[0].envelope }, settings.get(verified));
+    return original[0];
+  }
   async function classified() {
     const verified = await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
     const [original, current] = await Promise.all([readProtectedStore(verified, verified.original.storeRoot), readCurrentStore(verified)]);
@@ -408,7 +529,7 @@ export function createCompatibilityStore({ compatibility, currentStore, original
         .sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]);
       require(JSON.stringify(rows(records)) === JSON.stringify(rows(views[index])), 'SERIAL_POOL_COMPATIBILITY_STORE_VIEW_CHANGED');
     }
-    const sealed = compatibility.receipt.original.runs; const runIds = new Set(); const attempts = new Set();
+    const runIds = new Set(); const attempts = new Set();
     require(original.length === sealed.length, 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
     for (const [records, historical] of [[original, true], [current, false]]) for (const record of records) {
       const e = record?.envelope;
@@ -423,34 +544,75 @@ export function createCompatibilityStore({ compatibility, currentStore, original
       'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
       runIds.add(key); attempts.add(attemptKey);
     }
-    await invokeOriginalReader(compatibility, { operation: 'inventory' });
+    // Full classification proves immutable ownership and envelope provenance.
+    // Logical execution/publication completion belongs to an explicit drain,
+    // not to every unrelated lookup or Writer mutation.
+    for (const record of original.filter(record => !record.admissionBlock)) await originalCall(verified,
+      { operation: 'validate-envelope', envelope: record.envelope }, settings.get(verified));
     return [...original, ...current].sort((left, right) => left.envelope.runId - right.envelope.runId);
   }
   return {
     all: classified,
+    async scan() {
+      const verified = await verifiedContext();
+      const original = await readProtectedStore(verified, verified.original.storeRoot,
+        { scan: true, repository: compatibility.receipt.repository });
+      const current = await readCurrentStore(verified, { scan: true });
+      for (const binding of sealed) if (!original.some(row => row.runId === binding.runId)) original.push({
+        runId: binding.runId, repository: compatibility.receipt.repository, record: null, error: 'ATTEMPT_RECORD_MISSING' });
+      for (const [rows, old] of [[original, true], [current, false]]) for (const row of rows) {
+        if (row.error) {
+          if (old) {
+            const binding = sealed.find(run => run.runId === row.runId);
+            if (binding) {
+              const envelope = await sealedJournalEnvelope(verified, binding);
+              if (envelope) row.envelope = envelope;
+            }
+          }
+          continue;
+        }
+        try {
+          if (old) {
+            historicalOperationContext(compatibility, row.record, 'inventory');
+            if (!row.record.admissionBlock) await originalCall(verified,
+              { operation: 'validate-envelope', envelope: row.record.envelope }, settings.get(verified));
+          } else validateCurrent(row.record, row.runId, row.repository);
+        } catch (error) {
+          row.error = error.code ?? 'SERIAL_POOL_COMPATIBILITY_RECORD_UNREADABLE';
+          if (old) {
+            // A changed sealed envelope is not ownership evidence. Only the
+            // original hash-bound journal can supply its identity fallback.
+            row.record = null;
+            const binding = sealed.find(run => run.runId === row.runId);
+            const envelope = binding && await sealedJournalEnvelope(verified, binding);
+            if (envelope) row.envelope = envelope;
+          }
+        }
+      }
+      return [...original, ...current].sort((left, right) => left.runId - right.runId);
+    },
     async get(runId, repository = compatibility.selectedRepository) {
-      require(positive(runId), 'RUN_ID_INVALID');
-      require(configuredRepositories(compatibility.currentConsumer).includes(repository), 'ATTEMPT_REPOSITORY_MISMATCH');
-      return (await classified()).find(record => record.envelope.runId === runId && record.envelope.repository === repository) ?? null;
+      return selected(runId, repository);
     },
     async put(runId, value) {
-      await classified();
+      require(positive(runId), 'RUN_ID_INVALID');
       require(compatibility.selectedRepository !== compatibility.receipt.repository
         || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
-      require(value?.envelope?.runId === runId && value.envelope.repository === compatibility.selectedRepository
-        && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
-        'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      await selected(runId, compatibility.selectedRepository);
+      validateCurrent(value, runId, compatibility.selectedRepository);
       return currentStore.put(runId, value);
     },
     async reserve(runId, value) {
-      await classified();
+      require(positive(runId), 'RUN_ID_INVALID');
       require(compatibility.selectedRepository !== compatibility.receipt.repository
         || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_EXECUTION_FORBIDDEN');
-      require(value?.envelope?.runId === runId && value.envelope.repository === compatibility.selectedRepository
-        && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
-        'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      await selected(runId, compatibility.selectedRepository);
+      validateCurrent(value, runId, compatibility.selectedRepository);
       return currentStore.reserve(runId, value);
     },
-    async withLock(runId, action) { await classified(); return currentStore.withLock(runId, action); }
+    async withLock(runId, action) {
+      await selected(runId, compatibility.selectedRepository);
+      return currentStore.withLock(runId, action);
+    }
   };
 }

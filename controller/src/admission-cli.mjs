@@ -44,7 +44,7 @@ export function installedAdmissionControl() {
   const methods = ['initialize', 'read', 'assertOpen', 'assertTaskComplete', 'assertSlotComplete',
     'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete'];
   return Object.fromEntries(methods.map(name => [name, async (...args) => {
-    const { loadSerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
+    const { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
     if (!compatibility) {
@@ -58,9 +58,12 @@ export function installedAdmissionControl() {
     const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
       stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
-      supplementalInventory: async ({ task, slot }) => {
-        await composite.all();
-        const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot });
+      supplementalVerify: async () => {
+        await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
+      },
+      supplementalInventory: async ({ task, slot, resourceOnly }) => {
+        if (task === null && slot === null) await composite.all();
+        const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
         return task !== null && CONSUMER.repository !== compatibility.receipt.repository
           ? { active: [], unknown: [] } : inventory;
       } });

@@ -128,16 +128,20 @@ def test_parallel_configuration_rejects_ambiguous_authority_or_identity_before_b
         config.validate(public, ROOT)
 
 
-def test_v4_parallel_projection_keeps_max_queue_and_separates_native_subject_groups():
-    public = inputs()
+@pytest.mark.parametrize('topology', ['explicit', 'managed'])
+def test_v4_parallel_projection_keeps_max_queue_and_separates_native_attempt_groups(topology):
+    if topology == 'managed':
+        from test_managed_pool import inputs as managed_inputs
+        public = managed_inputs()
+    else:
+        public = inputs()
     config.validate(public, ROOT)
     rendered = projection.render(public, 'a' * 40, ROOT)
     route = yaml.safe_load(rendered[public['consumer']['routingWorkflow']])
     recovery = yaml.safe_load(rendered[public['consumer']['recoveryWorkflow']])
     assert route['concurrency']['queue'] == recovery['concurrency']['queue'] == 'max'
     assert route['concurrency']['cancel-in-progress'] is False
-    assert "format('issue-{0}', inputs.task)" in route['concurrency']['group']
-    assert "format('pull-{0}', github.event.pull_request.number)" in route['concurrency']['group']
+    assert route['concurrency']['group'] == 'codex-relay-control-${{ github.run_id }}'
     assert recovery['concurrency']['group'] == 'codex-relay-recovery-${{ inputs.run_id }}'
     route_step, = route['jobs']['route']['steps']
     assert route_step['env']['EXPECTED_WORKFLOW_CONTRACT'] == 'relay-workflows-v4'

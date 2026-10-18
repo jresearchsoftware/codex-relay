@@ -33,10 +33,11 @@ function validServices(value) {
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
-  stateName = 'admission-v1.json', supplementalInventory = null }) {
+  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
-    || (supplementalInventory !== null && typeof supplementalInventory !== 'function')) fail('ADMISSION_CONFIG_INVALID');
+    || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
+    || (supplementalVerify !== null && typeof supplementalVerify !== 'function')) fail('ADMISSION_CONFIG_INVALID');
   const pathname = join(root, stateName);
   async function protect() {
     if (!protectedRoot) return;
@@ -58,10 +59,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     return value;
   }
   async function read({ missing = false } = {}) {
-    // A migrated gate never makes its old store invisible. Verify both stores
-    // before observing even an open gate; the callback retains the original
-    // configuration/validator rather than accepting its digest here.
-    if (supplementalInventory) await inventory();
+    // The migration owner/source/gate binding is global. Historical execution
+    // and publication state are inspected only for the resource being used,
+    // or in full for a lifecycle drain.
+    if (supplementalVerify) await supplementalVerify();
+    else if (supplementalInventory) await inventory();
     await protect();
     let file;
     try { file = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
@@ -118,19 +120,68 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       || !(execution.containment === 'reaped' || (execution.child === 'not_started' && execution.containment === 'not_required'))) return null;
     return { child: execution.child, containment: execution.containment };
   }
+  async function resourceReleased(record) {
+    const lifecycle = record.controllerLifecycle;
+    if (lifecycle?.version === 1 && lifecycle.status === 'complete'
+      && ['started', 'not_started'].includes(lifecycle.child)
+      && (lifecycle.containment === 'reaped'
+        || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))) return true;
+    const e = record.envelope;
+    const saved = await journal.get(e.runId, e.repository);
+    if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)) return false;
+    const execution = saved.execution;
+    // The collector persists this receipt before Writer publication. Work
+    // remains in the original attempt checkout; publication uncertainty owns
+    // its exact effect, rather than the physical runner slot.
+    if (execution?.reserved === true && execution.returned === true
+      && ['started', 'not_started'].includes(execution.child)
+      && (execution.containment === 'reaped'
+        || (execution.child === 'not_started' && execution.containment === 'not_required'))
+      && saved.collection?.preserved === true && exactSha(saved.collection.head)
+      && typeof saved.collection.clean === 'boolean') return true;
+    // Retained receipts have no new preservation field. Keep their original
+    // strong terminal evidence readable without backfilling historical bytes.
+    return Boolean(await contained(record));
+  }
   function validRecord(record) {
     const e = record?.envelope;
     if (!e || e.version !== VERSION || !positive(e.runId) || !['auto', 'manual'].includes(e.route)
-      || e.consumerDigest !== consumerDigest) fail('ADMISSION_ATTEMPT_INVALID');
+      || e.consumerDigest !== consumerDigest) throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID'), {
+      code: 'ADMISSION_ATTEMPT_INVALID', details: { conflictingRunId: e?.runId, repository: e?.repository,
+        resource: e?.executionSlot ?? 'primary' } });
     return e;
   }
-  async function currentInventory(task = null, slot = null) {
+  async function currentInventory(task = null, slot = null, resourceOnly = false) {
     const active = []; const unknown = [];
-    for (const record of await store.all()) {
+    const rows = store.scan ? await store.scan()
+      : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
+    for (const row of rows) {
+      const record = row.record; const identity = record?.envelope ?? row.envelope;
+      if (task !== null && row.repository !== undefined && row.repository !== REPOSITORY) continue;
+      if (identity && task !== null && identity.issueNumber !== task) continue;
+      if (identity && slot !== null && (identity.executionSlot ?? 'primary') !== slot) continue;
+      if (row.error || !identity) {
+        throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID'), { code: 'ADMISSION_ATTEMPT_INVALID',
+          details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } });
+      }
+      // A handoff is not evidence of physical runner occupation.
+      if (resourceOnly && identity.route === 'manual') continue;
       const e = validRecord(record);
-      if (task !== null && (e.issueNumber !== task || (e.repository !== undefined && e.repository !== REPOSITORY))) continue;
-      if (slot !== null && (e.executionSlot ?? 'primary') !== slot) continue;
       if (e.route !== 'auto' || record.admissionBlock) continue;
+      if (resourceOnly) {
+        let released;
+        try { released = await resourceReleased(record); }
+        catch (error) {
+          throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE'), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
+            details: { conflictingRunId: e.runId, repository: e.repository, resource: slot,
+              cause: /^[A-Z][A-Z0-9_]{0,100}$/.test(error.code ?? '') ? error.code : 'JOURNAL_UNREADABLE' } });
+        }
+        if (!released) {
+          if (record.controllerLifecycle?.version === 1 && record.controllerLifecycle.status === 'active' && !record.outcome) active.push(e.runId);
+          else unknown.push(e.runId);
+        }
+        continue;
+      }
       const recovery = record.prepublicationRecovery;
       if (recovery) {
         const saved = await journal.get(e.runId, e.repository);
@@ -170,15 +221,12 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     }
     return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
   }
-  async function inventory(task = null, slot = null) {
-    if (!supplementalInventory) return currentInventory(task, slot);
-    // Classify the complete current store before a filtered Task/slot check.
-    // Corrupt unrelated records must not be hidden by the requested filter.
-    const complete = await currentInventory();
-    const supplemental = await supplementalInventory({ task, slot });
+  async function inventory(task = null, slot = null, resourceOnly = false) {
+    if (!supplementalInventory) return currentInventory(task, slot, resourceOnly);
+    const current = await currentInventory(task, slot, resourceOnly);
+    const supplemental = await supplementalInventory({ task, slot, resourceOnly });
     if (!supplemental || !['active', 'unknown'].every(key => Array.isArray(supplemental[key])
       && supplemental[key].every(positive))) fail('ADMISSION_ATTEMPT_INVALID');
-    const current = task === null && slot === null ? complete : await currentInventory(task, slot);
     return Object.fromEntries(['active', 'unknown'].map(key =>
       [key, [...new Set([...current[key], ...supplemental[key]])].sort((a, b) => a - b)]));
   }
@@ -192,12 +240,14 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     async assertTaskComplete(task) {
       if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
       const pending = await inventory(task);
-      if (pending.active.length || pending.unknown.length) fail('PRIOR_EXECUTION_UNRESOLVED');
+      if (pending.active.length || pending.unknown.length) throw Object.assign(new Error('PRIOR_EXECUTION_UNRESOLVED'),
+        { code: 'PRIOR_EXECUTION_UNRESOLVED', details: { task, ...pending } });
     },
     async assertSlotComplete(slot) {
       if (!/^[a-z][a-z0-9-]{0,31}$/.test(slot ?? '')) fail('EXECUTION_SLOT_INVALID');
-      const pending = await inventory(null, slot);
-      if (pending.active.length || pending.unknown.length) fail('EXECUTION_SLOT_UNAVAILABLE');
+      const pending = await inventory(null, slot, true);
+      if (pending.active.length || pending.unknown.length) throw Object.assign(new Error('EXECUTION_SLOT_UNAVAILABLE'),
+        { code: 'EXECUTION_SLOT_UNAVAILABLE', details: { resource: slot, ...pending } });
     },
     async reserve() { await this.assertOpen(); return { version: 1, status: 'active' }; },
     async quiesce({ operationId, target }) {
@@ -263,7 +313,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       return write({ ...state, phase: 'open', operationId: null, target: null, previousActive: null, verifiedRevision: null });
     },
     async complete({ runId, attemptId }) {
-      if (supplementalInventory) await inventory();
+      if (supplementalVerify) await supplementalVerify();
       await protect();
       if (!positive(runId)) fail('RUN_ID_INVALID');
       const record = await store.get(runId); const e = validRecord(record);

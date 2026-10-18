@@ -40,10 +40,15 @@ The dispatch fallback does not bypass the fresh-v4 protocol gate.
 
 For schema `4.0`, the first successful Writer admission allocates Step 1; a new
 admission allocates the next Step from successful protected admissions for that
-Task. Rejected routing does not allocate Step. Replay of an existing admission
-retains its Step; unresolved prior execution or publication blocks another
-admission. Writer projects exactly one `step-N` label onto the Issue and current
-PR and the bounded title. Labels are not allocation inputs or execution authority.
+Task under the bounded trusted Writer lock. Rejected routing does not allocate
+Step. Replay of an existing admission retains its Step. A fresh native owner
+command may admit an independent subsequent Step while an earlier attempt lacks
+an Outcome or completed publication. The new attempt must have an independent
+checkout and available execution resource; effects sharing a ref, PR or operation
+retain their exact guards. The earlier attempt remains attributable and is not
+canceled or retried. Writer projects the latest admitted `step-N` and bounded
+title onto the Issue/current PR; late results cannot restore an older projection.
+Labels are not allocation inputs or execution authority.
 Retained schema `3.0` and legacy attempts preserve their historical Step
 procedures and projection checks; these are not fresh-admission authority on a
 qualified v4 installation. The `step` namespace remains
@@ -66,9 +71,19 @@ BLOCKED chain; the visible diagnostic identifies the current-v4 correction.
 Correct the metadata/authority and apply the ready label again for a fresh
 event. A rejected compatibility Step cannot become valid through a later label
 repair. New schema `4.0` admission binds the resolved protected snapshot instead.
-Unbound, unauthorized, stale, cross-target or replaced commands cause no
-label mutation or unrelated publication. An uncertain consumption stays reserved
-and is never blindly repeated. Step stays in place. `runId` / `run-<runId>`
+Unbound, unauthorized, stale or cross-target commands cause no label mutation or
+unrelated publication. Native v4 consumption reserves one DELETE of the original
+ready label, revalidates immediately before it and checks native timeline IDs
+afterward. GitHub has no atomic event-conditioned DELETE: a replacement in that
+interval may already have been erased. `READY_EVENT_REPLACED` or
+`READY_CONSUMPTION_UNCERTAIN` retains the original attempt, launches no worker
+and emits an actionable owner diagnostic; the DELETE is never blindly repeated.
+Inspect the target, remove any remaining ready label and apply the intended
+command in a later second. `READY_EVENT_AMBIGUOUS` rejects multiple distinct
+ready events in the same timestamp second before consumption; identical native
+event deliveries deduplicate by ID. Individual Step-label operations preserve
+new ready labels. Retained v3/legacy consumption and exact replay keep their
+original contract. Step stays in place. `runId` / `run-<runId>`
 identifies the attempt inside its configured repository and installation. Protected
 records verify the explicit repository; separate installations retain separate
 roots even when native numeric run IDs coincide. Each runner journal uses an
@@ -80,26 +95,32 @@ calls; process death releases the lock while retained execution state still
 prevents unknown work from being inferred again. Same-run replay cannot repeat a model call, and a fresh run cannot
 reuse the consumed native command event. The event must be the latest ready
 transition, authored by the owner, no more than two minutes before native run
-creation, and after completion of any preceding admitted run for this task.
-Stale commands and prewritten retries fail closed; no retry queue is created.
+creation. A later distinct native owner command may request an independent
+attempt before an earlier attempt completes; it cannot reuse the earlier event
+or authorize another invocation of that attempt. Retained v3/legacy prior-run
+ordering remains unchanged. Stale commands fail closed; no retry queue is created.
 
 The default SERIAL projection uses native Actions `queue: max` in the shared
 control group. An explicit bounded parallel projection retains that queue
-guarantee for each independent target, with installed execution slots providing
-finite capacity and protected Writer reservations preserving Task conflicts.
+guarantee for each native run, using `<namespace>-control-${{ github.run_id }}`,
+with installed execution slots providing finite capacity and protected Writer
+reservations guarding actual shared resources. Independent automatic or mixed
+attempts on the same Task can overlap when those resources permit it.
 The pool bounds active automatic controllers to the configured slot count;
-`queue: max` bounds native waiting to 100 per Task/PR group. Distinct target
+`queue: max` bounds native waiting to 100 per concurrency group. Distinct run
 groups can also wait for the finite runner pool, so this is not a single
 installation-wide pending-count limit. Native overflow or owner cancellation
 before admission leaves the ready command unconsumed and visible on its target;
-reconcile the canceled run before issuing a fresh owner command. Cancellation
+inspect its native and original protected state before using any shared resource. Cancellation
 after reservation preserves that attempt and cannot trigger new inference.
 The routing workflow uses an `exec` controller launch so native SIGINT reaches
 its cancellation handler. Cooperative cancellation waits for the model-UID
 launcher's group-reaping acknowledgement before durable terminal routing. Caller
 lifetime pipes also request cleanup when the controller or dispatcher dies;
 an abruptly killed controller may leave no terminal receipt, which remains an
-unresolved original attempt even after physical child exit. Neither native
+unresolved original attempt even after physical child exit. Its uncertainty
+holds only the resources it can affect; missing logical completion alone does
+not block an independent Task or Step. Neither native
 `cancelled` nor successful group signalling proves containment by itself.
 Native groups coordinate only their GitHub repository; distinct repository
 installations need separate protected paths and qualified host identities.
@@ -184,7 +205,7 @@ original admission, attempt, Task/PR/CR, branch/base, source digests, configured
 native Reviewer/Writer Bot identities, exact native Outcome/body bindings and
 Git ancestry/ref observations. The live CR must remain current and executable
 with original reviewed head A, while the live PR/ref must match proven B.
-Unresolved or unknown prior execution/publication, moved or foreign heads,
+Unresolved or unknown publication in that required predecessor lineage, moved or foreign heads,
 changed base/branch, stale or missing CR, altered authority/publication evidence,
 replayed ready events and unsafe route/profile changes stop admission. Ordinary
 replay/recovery still keeps the original attempt and cannot run inference again.
@@ -412,11 +433,25 @@ A refused automatic launch reports `ADMISSION_QUIESCED`, starts no worker and
 does not claim a terminal Outcome. Manual handoff and publication-only recovery
 retain their existing authority and remain available.
 
-An automatic reservation covers the complete controller invocation: checkout,
+Physical slot occupancy is separate from the complete controller lifecycle.
+A manual handoff alone does not occupy an automatic slot. A matching retained
+journal can release a slot once the returned child is verified reaped (or
+verified not started with containment unnecessary) and complete collection has
+durably recorded `collection.preserved: true`, an exact head and a known
+clean/dirty observation. Collection writes that receipt before Writer publication;
+all work remains in the original per-attempt checkout. Unknown children or
+incomplete preservation hold the affected slot. Existing strong terminal
+receipts remain valid without adding fields to historical records. An unrelated
+known slot is excluded before its journal is read; unresolvable shared resource
+or migration ownership still fails closed with the conflicting identity.
+Pending publication retains its exact ref/PR/operation guard and original
+read-back recovery, independently of physical slot availability.
+
+The lifecycle reservation covers the complete controller invocation: checkout,
 Codex execution and containment, collection, Writer publication, and durable
 terminal receipts. An already admitted invocation may finish while admission
 is quiesced. A model exit or an idle runner does not establish drain. The last
-trusted controller operation asks root to release its reservation; root reads
+trusted controller operation asks root to complete this reservation; root reads
 the matching runner journal itself and requires known containment, matching
 terminal receipts and no unresolved publication intent. Caller JSON cannot
 assert that proof. Earlier attempts without `controllerLifecycle` require the

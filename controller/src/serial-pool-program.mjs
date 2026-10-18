@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createAttemptStore } from './attempt-store.mjs';
 import { configuredRepositories } from '../../consumer/consumer-config.mjs';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
-import { loadSerialPoolCompatibility, createCompatibilityStore,
+import { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore,
   historicalOperationContext } from './serial-pool-compatibility.mjs';
 
 const fail = code => { throw Object.assign(new Error(code), { code }); };
@@ -79,13 +79,11 @@ export async function historicalProgram({ kind, request, consumer, consumerPath,
       'inspect-prepublication': 'prepublication-state' }[request.operation] ?? request.operation ?? 'recover-publication') : request.operation;
   const selectedRepository = consumer?.repository ?? compatibility.selectedRepository;
   if (privateChecks) {
+    await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
     const store = createCompatibilityStore({ compatibility,
       currentStore: createAttemptStore(compatibility.current.storeRoot, { repository: selectedRepository,
         repositories: configuredRepositories(compatibility.currentConsumer), namespace: !!compatibility.currentConsumer.repositories }),
       originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) });
-    // Root classification is complete, even for a current run. A foreign
-    // retained record cannot disappear through a per-run or terminal filter.
-    await store.all();
     if (selectedRepository !== compatibility.receipt.repository) return { handled: false };
     if (!compatibility.receipt.original.runs.some(run => run.runId === runId)) return { handled: false };
     const record = await store.get(runId);

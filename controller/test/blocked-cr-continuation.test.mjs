@@ -43,7 +43,7 @@ async function blockedContinuation(t, { resolvingDecision = true, initialAmendme
   const commentMetadata = new Map();
   const f = await fixture(t, { remediation: true, issueBody: charter, labelLaunch: true,
     streamlinedAdmission: true, createAdmission: admissionControl,
-    beforeAdmission: ({ api, review, pr, admissionRequest }) => {
+    beforeAdmission: ({ api, review, pr, events, admissionRequest }) => {
       admissionRequest.step = null;
       review.submitted_at = '2026-09-04T11:59:00Z';
       review.body = renderAuthorityRecord({ ...common('change-request'), parent: { kind: 'pull_request', number: 43 },
@@ -58,7 +58,9 @@ async function blockedContinuation(t, { resolvingDecision = true, initialAmendme
       const remove = api.delete.bind(api);
       api.delete = async path => {
         if (path === '/issues/43/labels/codex-ready-manual') {
-          pr.labels = pr.labels.filter(label => label.name !== 'codex-ready-manual'); return;
+          pr.labels = pr.labels.filter(label => label.name !== 'codex-ready-manual');
+          events.push({ id: Math.max(...events.map(event => event.id)) + 1, event: 'unlabeled',
+            actor: copy(writer), label: { name: 'codex-ready-manual' }, created_at: '2026-09-04T12:04:01Z' }); return;
         }
         return remove(path);
       };
@@ -287,12 +289,18 @@ for (const mode of ['removed', 'edited']) test(`${mode} originally admitted Deci
   await assertRefused(f, f.nextReady(), ['AUTHORITY_CONTINUATION_INVALID', 'AUTHORITY_SOURCE_MISMATCH']);
 });
 
-for (const mode of ['active', 'unknown']) test(`${mode} previous execution cannot be hidden by its public BLOCKED Outcome`, async t => {
+test('reaped and preserved CR execution releases its slot before logical lifecycle completion', async t => {
   const f = await blockedContinuation(t, { complete: false });
-  if (mode === 'unknown') {
-    const record = await f.journal.get(99); record.execution.containment = 'unknown'; await f.journal.put(99, record);
-  }
-  await assertRefused(f, f.nextReady(), ['PRIOR_EXECUTION_UNRESOLVED']);
+  const original = await f.store.get(99);
+  const next = await f.broker.invoke(f.nextReady());
+  assert.equal(next.envelope.step, 2);
+  assert.deepEqual(await f.store.get(99), original);
+});
+
+test('unknown prior physical containment cannot be hidden by its public BLOCKED Outcome', async t => {
+  const f = await blockedContinuation(t, { complete: false });
+  const record = await f.journal.get(99); record.execution.containment = 'unknown'; await f.journal.put(99, record);
+  await assertRefused(f, f.nextReady(), ['EXECUTION_SLOT_UNAVAILABLE']);
   assert.equal(await f.store.get(100), null);
 });
 
@@ -409,11 +417,11 @@ test('replaying an already consumed owner ready event cannot allocate another St
   assert.deepEqual(await f.store.get(99), f.prior);
 });
 
-test('a fresh owner event cannot admit a third Step while the successor execution is active', async t => {
+test('a fresh owner event cannot reuse the physical slot held by the active successor', async t => {
   const f = await blockedContinuation(t);
   const admitted = await f.broker.invoke(f.nextReady());
   assert.equal(admitted.envelope.step, 2);
-  await assertRefused(f, f.nextReady({ runId: 101, eventId: 73, at: '2026-09-04T12:05:00Z' }), ['PRIOR_EXECUTION_UNRESOLVED']);
+  await assertRefused(f, f.nextReady({ runId: 101, eventId: 73, at: '2026-09-04T12:05:00Z' }), ['EXECUTION_SLOT_UNAVAILABLE']);
   assert.equal(await f.store.get(101), null);
   assert.deepEqual((await f.store.get(100)).envelope, admitted.envelope);
   assert.deepEqual(await f.store.get(99), f.prior);
