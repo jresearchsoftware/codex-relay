@@ -15,6 +15,23 @@ handover; run the command from the external owner machine where its existing
 SSH and pool App references are available. No new migration command, token
 copy, record repair or runner-group permission change is required.
 
+An owner-selected transition may also expand a singleton Writer installation
+to a same-organization repository allowlist. Keep the original repository as
+the explicit `environment.repository` lifecycle anchor, retain all original
+Reviewer targets, and give Reviewer exactly the resulting Writer target set.
+This permits the selected repository configuration change together with the
+pool transition; it grants no App access, runner-group selection or workflow
+activation. Existing App/group qualification still applies before mutation.
+Other policy, runtime users, paths, credentials, namespace and Production Runner
+must remain equal to their original bindings. Per-repository runtime identity
+changes are outside this transition.
+
+Select a new managed registration name whose derived member names do not
+collide with the retained SERIAL registration. The projector derives its pool
+selector and runner guards from that same desired configuration. Reconcile and
+independently review any affected unmerged workflow proposals before their
+governed merge/activation; an earlier approval does not cover a changed head.
+
 ## Compatibility readers
 
 These bindings serve different purposes. A deployment snapshot byte hash is not
@@ -97,6 +114,15 @@ observed first snapshot records actual target service intent and peer listener
 state. The old three-key helper never receives managed slot keys. A pending
 owner-local manual attempt retains its original publication path; unresolved
 host execution, unknown containment or malformed records still block draining.
+
+For a plural target, the new publication store uses the existing
+`repositories/<owner>/<repository>` namespaces and installation-wide consumer
+digest. The admission gate and lock remain shared. Original SERIAL records stay
+flat and retain their original digest and repository; only that anchor's
+requests can select their historical programs. Identical run/Task numbers in
+another configured repository do not select or overwrite anchor history. Store
+classification still inspects all configured namespaces before publication or
+admission and rejects foreign, aliased, malformed or mixed flat/current state.
 
 After backend installation, pool reconciliation and runtime/activation identity
 proof, retirement reobserves the exact original registration. Its durable

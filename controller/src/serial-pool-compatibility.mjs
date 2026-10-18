@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { consumerDigest, parseConsumerJson, validateConsumer } from '../../consumer/consumer-config.mjs';
+import { configuredRepositories, consumerDigest, parseConsumerJson, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -193,7 +193,7 @@ async function originalCall(context, request, options) {
 
 function validateReceipt(value, namespace, currentConsumer, { allowSerialSibling = false } = {}) {
   require(exactKeys(value, ['version', 'repository', 'namespace', 'operationId', 'original', 'target'])
-    && value.version === 1 && value.repository === currentConsumer.repository && value.namespace === namespace
+    && value.version === 1 && configuredRepositories(currentConsumer).includes(value.repository) && value.namespace === namespace
     && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.operationId ?? '')
     && exactKeys(value.target, ['consumerDigest']) && sha(value.target.consumerDigest)
     && (allowSerialSibling || value.target.consumerDigest === consumerDigest(currentConsumer)),
@@ -239,7 +239,9 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
   const currentPath = physical(options.root, `/etc/${namespace}/consumer.json`);
   const currentBytes = await protectedRead(currentPath, options, [0o644]);
   const currentConsumer = validateConsumer(json(currentBytes));
-  require(historicalContext || consumer === undefined || consumerDigest(consumer) === consumerDigest(currentConsumer),
+  const selectedRepository = consumer?.repository ?? currentConsumer.repository;
+  const selectedConsumer = selectedRepository === undefined ? null : selectRepositoryConsumer(currentConsumer, selectedRepository);
+  require(historicalContext || consumer === undefined || consumerDigest(consumer) === consumerDigest(selectedConsumer),
     'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
   require(currentConsumer.generalRunnerPool || historicalContext, 'SERIAL_POOL_COMPATIBILITY_CONFIG_INVALID');
   const receiptBytes = await protectedRead(receiptPath, options, [0o644]); const receipt = json(receiptBytes);
@@ -261,7 +263,7 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
     'SERIAL_POOL_COMPATIBILITY_SOURCE_CHANGED');
   const source = json(await protectedRead(join(sourceRoot, '.relay-source.json'), options, [0o644, 0o640, 0o600]));
   require(source.revision === old.revision, 'SERIAL_POOL_COMPATIBILITY_SOURCE_CHANGED');
-  const context = { receipt, consumerPath, receiptPath, currentConsumer,
+  const context = { receipt, consumerPath, receiptPath, currentConsumer, selectedRepository: selectedRepository ?? receipt.repository,
     originalConsumer: json(originalBytes), root: options.root, ownerUid, privateChecks,
     original: { sourceRoot, consumerPath: oldConsumerPath, runnerUser: old.runnerUser, runnerUid: old.runnerUid } };
   // Original module/default resolution belongs to the original source process.
@@ -272,7 +274,8 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
   require(!historicalContext || consumer === undefined || consumerDigest(consumer) === old.consumerDigest,
     'SERIAL_POOL_COMPATIBILITY_CONSUMER_CHANGED');
   context.originalConsumer = resolved.consumer;
-  const { generalRunnerPool, executionSlots, ...base } = currentConsumer;
+  const { generalRunnerPool, executionSlots, repositories, ...base } = currentConsumer;
+  if (repositories) base.repository = receipt.repository;
   require(!resolved.consumer.generalRunnerPool && !resolved.consumer.executionSlots
     && canonical(base) === canonical(resolved.consumer), 'SERIAL_POOL_COMPATIBILITY_CONFIG_CHANGED');
   require(!serialSibling || !currentConsumer.executionSlots && consumerDigest(currentConsumer) === old.consumerDigest,
@@ -317,7 +320,8 @@ export function historicalOperationContext(context, record, operation) {
   const e = record?.envelope;
   if (e?.consumerDigest === context.receipt.target.consumerDigest) return { kind: 'current', ...context.current };
   const run = context.receipt.original.runs.find(run => run.runId === e?.runId);
-  require(run && e.consumerDigest === context.receipt.original.consumerDigest && e.attemptId === run.attemptId
+  require(run && e.repository === context.receipt.repository
+    && e.consumerDigest === context.receipt.original.consumerDigest && e.attemptId === run.attemptId
     && envelopeHash(e) === run.envelopeSha256, 'SERIAL_POOL_COMPATIBILITY_ENVELOPE_CHANGED');
   require(historicalOperations.has(operation), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_EXECUTION_FORBIDDEN');
   return { kind: 'original', ...context.original };
@@ -354,47 +358,96 @@ async function readProtectedStore(context, pathname) {
   return records;
 }
 
+async function readCurrentStore(context) {
+  const root = context.current.storeRoot;
+  const repositories = context.currentConsumer.repositories;
+  if (!repositories) return readProtectedStore(context, root);
+  // A plural graph cannot hide flat records or another repository's tree.
+  require((await readProtectedStore(context, root)).length === 0, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+  const options = settings.get(context);
+  async function directories(pathname, allowed) {
+    await parents(pathname, options);
+    let entries;
+    try { entries = await readdir(pathname, { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    for (const entry of entries) {
+      require((entry.isDirectory() || entry.isSymbolicLink()) && allowed.includes(entry.name),
+        'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
+      const info = await lstat(join(pathname, entry.name));
+      require(info.isDirectory() && !info.isSymbolicLink() && info.uid === options.ownerUid
+        && !(info.mode & 0o022), 'SERIAL_POOL_COMPATIBILITY_STORE_UNSAFE');
+    }
+    return entries.filter(entry => entry.isDirectory()).map(entry => entry.name);
+  }
+  if (!(await directories(root, ['repositories'])).includes('repositories')) return [];
+  const owners = [...new Set(repositories.map(repository => repository.split('/')[0]))];
+  const records = [];
+  for (const owner of await directories(join(root, 'repositories'), owners)) {
+    for (const name of await directories(join(root, 'repositories', owner),
+      repositories.filter(repository => repository.startsWith(owner + '/')).map(repository => repository.split('/')[1]))) {
+      const repository = owner + '/' + name;
+      const selected = await readProtectedStore(context, join(root, 'repositories', owner, name));
+      require(selected.every(record => record.envelope.repository === repository), 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
+      records.push(...selected);
+      require(records.length <= 10000, 'SERIAL_POOL_COMPATIBILITY_STORE_LIMIT');
+    }
+  }
+  return records;
+}
+
 // The public composite retains history for lineage/deduplication but cannot
 // mutate it. Original Writer operations use their original store separately.
 export function createCompatibilityStore({ compatibility, currentStore, originalStore }) {
   require(settings.has(compatibility), 'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
   async function classified() {
     const verified = await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
-    const [original, current] = await Promise.all([readProtectedStore(verified, verified.original.storeRoot), readProtectedStore(verified, verified.current.storeRoot)]);
+    const [original, current] = await Promise.all([readProtectedStore(verified, verified.original.storeRoot), readCurrentStore(verified)]);
     const views = await Promise.all([originalStore.all(), currentStore.all()]);
     for (const [index, records] of [original, current].entries()) {
-      const rows = values => values.map(value => [value?.envelope?.runId, envelopeHash(value)]).sort((a, b) => a[0] - b[0]);
+      const rows = values => values.map(value => [value?.envelope?.repository, value?.envelope?.runId, envelopeHash(value)])
+        .sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]);
       require(JSON.stringify(rows(records)) === JSON.stringify(rows(views[index])), 'SERIAL_POOL_COMPATIBILITY_STORE_VIEW_CHANGED');
     }
     const sealed = compatibility.receipt.original.runs; const runIds = new Set(); const attempts = new Set();
     require(original.length === sealed.length, 'SERIAL_POOL_COMPATIBILITY_RUN_SET_CHANGED');
     for (const [records, historical] of [[original, true], [current, false]]) for (const record of records) {
       const e = record?.envelope;
-      require(e && positive(e.runId) && typeof e.attemptId === 'string' && !runIds.has(e.runId) && !attempts.has(e.attemptId),
+      const key = e && `${e.repository}:${e.runId}`; const attemptKey = e && `${e.repository}:${e.attemptId}`;
+      require(e && positive(e.runId) && typeof e.attemptId === 'string' && !runIds.has(key) && !attempts.has(attemptKey),
         'SERIAL_POOL_COMPATIBILITY_DUPLICATE_ATTEMPT');
-      require(e.repository === compatibility.receipt.repository, 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
+      require(historical ? e.repository === compatibility.receipt.repository
+        : configuredRepositories(verified.currentConsumer).includes(e.repository), 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
       if (historical) historicalOperationContext(compatibility, record, 'inventory');
       else require(e.consumerDigest === compatibility.receipt.target.consumerDigest
-        && !sealed.some(run => run.runId === e.runId), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
-      runIds.add(e.runId); attempts.add(e.attemptId);
+        && !(e.repository === compatibility.receipt.repository && sealed.some(run => run.runId === e.runId)),
+      'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      runIds.add(key); attempts.add(attemptKey);
     }
     await invokeOriginalReader(compatibility, { operation: 'inventory' });
     return [...original, ...current].sort((left, right) => left.envelope.runId - right.envelope.runId);
   }
   return {
     all: classified,
-    async get(runId) { require(positive(runId), 'RUN_ID_INVALID'); return (await classified()).find(record => record.envelope.runId === runId) ?? null; },
+    async get(runId, repository = compatibility.selectedRepository) {
+      require(positive(runId), 'RUN_ID_INVALID');
+      require(configuredRepositories(compatibility.currentConsumer).includes(repository), 'ATTEMPT_REPOSITORY_MISMATCH');
+      return (await classified()).find(record => record.envelope.runId === runId && record.envelope.repository === repository) ?? null;
+    },
     async put(runId, value) {
       await classified();
-      require(!compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
-      require(value?.envelope?.runId === runId && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
+      require(compatibility.selectedRepository !== compatibility.receipt.repository
+        || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
+      require(value?.envelope?.runId === runId && value.envelope.repository === compatibility.selectedRepository
+        && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
         'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
       return currentStore.put(runId, value);
     },
     async reserve(runId, value) {
       await classified();
-      require(!compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_EXECUTION_FORBIDDEN');
-      require(value?.envelope?.runId === runId && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
+      require(compatibility.selectedRepository !== compatibility.receipt.repository
+        || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_EXECUTION_FORBIDDEN');
+      require(value?.envelope?.runId === runId && value.envelope.repository === compatibility.selectedRepository
+        && value.envelope.consumerDigest === compatibility.receipt.target.consumerDigest,
         'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
       return currentStore.reserve(runId, value);
     },

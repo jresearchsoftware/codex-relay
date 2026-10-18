@@ -110,6 +110,19 @@ def test_real_original_installation_transition_replay_and_retained_recovery(sour
                          'retainedRuns': [11, 12, 13], 'removed': 1, 'networkIsolated': True}
 
 
+def test_real_original_to_four_repository_six_runner_transition(source_bundle):
+    bundle, tree = source_bundle
+    with tempfile.TemporaryDirectory(prefix='relay-serial-plural-installed-', dir='/run') as temporary:
+        command = ['unshare', '--mount', '--net', '--pid', '--fork', '--kill-child', '--mount-proc',
+            sys.executable, str(bundle / 'current/deploy/tests/test_serial_pool_installation.py'),
+            '--installed-harness', temporary, str(bundle), tree, '6', 'plural', str(QUALIFIED_NODE)]
+        result = subprocess.run(command, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+                                text=True, capture_output=True, timeout=120)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {'capacity': 6, 'originalGate': 'applying', 'newGate': 'open',
+            'retainedRuns': [11, 12, 13], 'removed': 1, 'networkIsolated': True}
+
+
 @pytest.mark.parametrize('boundary', ['unknown-original', 'owner-policy-change'])
 def test_integrated_original_unknown_execution_and_owner_policy_delta_stop_before_transition(source_bundle, boundary):
     bundle, tree = source_bundle
@@ -184,6 +197,12 @@ def installed_harness(fixture, bundle, source_tree, capacity, scenario, qualifie
     target['consumer']['generalRunnerPool'] = {'desiredCapacity': capacity}
     target['environment']['generalRunner'].update(name='fixture-managed', poolApp={
         'appId': '101', 'installationId': '201', 'privateKeyFile': '/unavailable/fixture-only.pem'})
+    if scenario == 'plural':
+        anchor = target['consumer'].pop('repository')
+        target['consumer']['repositories'] = [anchor, 'example-org/governance',
+                                               'example-org/landscape', 'example-org/doc-review']
+        target['environment']['repository'] = anchor
+        target['environment']['reviewerRepositories'] = target['consumer']['repositories'][:]
     config.derive_managed_pool_slots(target)
     values = config.compile_inputs(original)
     release = Path('/opt') / namespace / 'releases' / ORIGINAL_REVISION
@@ -308,7 +327,7 @@ def installed_harness(fixture, bundle, source_tree, capacity, scenario, qualifie
     with patch('subprocess.run', side_effect=boundary):
         recovered_original, evidence = installation.original_installation(target)
         assert recovered_original == original and [run['runId'] for run in evidence['runs']] == [11, 12, 13]
-        if scenario not in ['lifecycle', 'same-revision', 'same-revision-links', 'retained-context-tamper']:
+        if scenario not in ['lifecycle', 'plural', 'same-revision', 'same-revision-links', 'retained-context-tamper']:
             if scenario == 'unknown-original':
                 damaged = copy.deepcopy(old_records[11])
                 damaged['controllerLifecycle']['containment'] = 'unknown'
@@ -480,11 +499,11 @@ def installed_harness(fixture, bundle, source_tree, capacity, scenario, qualifie
 import {CONSUMER} from './consumer/consumer.mjs';
 import {loadSerialPoolCompatibility,createCompatibilityStore,invokeOriginalReader,historicalOperationContext}
  from './controller/src/serial-pool-compatibility.mjs';
-import {createAttemptStore} from './controller/src/attempt-store.mjs';
+import {createAttemptStore,createPublicationStore} from './controller/src/attempt-store.mjs';
 import {installedAdmissionControl} from './controller/src/admission-cli.mjs';
 const c=await loadSerialPoolCompatibility({consumer:CONSUMER});
-const store=createCompatibilityStore({compatibility:c,currentStore:createAttemptStore(c.current.storeRoot),
- originalStore:createAttemptStore(c.original.storeRoot)});
+const store=createCompatibilityStore({compatibility:c,currentStore:createPublicationStore(c.current.storeRoot),
+ originalStore:createAttemptStore(c.original.storeRoot,{repository:c.receipt.repository})});
 const records=await store.all();assert.deepEqual(records.map(r=>r.envelope.runId),[11,12,13]);
 assert.equal(historicalOperationContext(c,records[1],'manual-outcome-direct').kind,'original');
 assert.equal(historicalOperationContext(c,records[2],'recover-prepublication').kind,'original');
@@ -504,7 +523,8 @@ assert.equal((await gate.status()).phase,'open');console.log(JSON.stringify({ok:
         reader = reader.replace('@@TARGET_REVISION@@', target_revision).replace('@@CURRENT_SLOT@@',
             'pool-2' if capacity == 2 else 'primary')
         response = real_run(['/usr/bin/node', '--input-type=module', '-e', reader],
-            cwd=new_release / 'reviewed-source', env={**gate_environment, 'RELAY_CONSUMER_CONFIG': str(consumer_path)},
+            cwd=new_release / 'reviewed-source', env={**gate_environment, 'RELAY_CONSUMER_CONFIG': str(consumer_path),
+                'RELAY_REPOSITORY': config.deployment_repository(target)},
             text=True, capture_output=True, timeout=60)
         assert response.returncode == 0, response.stdout + response.stderr
         assert all(Path(path).read_bytes() == raw for path, raw in old_bytes.items())

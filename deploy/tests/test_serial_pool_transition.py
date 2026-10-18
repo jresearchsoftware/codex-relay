@@ -206,6 +206,58 @@ def test_unexpected_owner_delta_is_refused_before_any_mutation(setup, change):
     assert not (setup['root'] / setup['claim'].lstrip('/') / transition.STATE_NAME).exists()
 
 
+def plural_target(setup):
+    target = setup['target']
+    anchor = target['consumer'].pop('repository')
+    organization = anchor.split('/')[0]
+    target['consumer']['repositories'] = [anchor] + [organization + '/' + name for name in
+        ['governance', 'model-landscape', 'doc-review']]
+    target['consumer']['generalRunnerPool']['desiredCapacity'] = 6
+    target['environment']['repository'] = anchor
+    target['environment']['reviewerRepositories'] = target['consumer']['repositories'][:]
+    return target
+
+
+def test_plural_pool_transition_preserves_anchor_original_bytes_and_replay(setup):
+    target = plural_target(setup)
+    config.validate(target, ROOT)
+    original_raw = (setup['root'] / setup['evidence']['configPath'].lstrip('/')).read_bytes()
+    plan = prepare(setup)
+    assert plan['phase'] == 'prepared'
+    assert plan['plan']['repository'] == setup['original']['consumer']['repository']
+    assert (setup['root'] / setup['evidence']['configPath'].lstrip('/')).read_bytes() == original_raw
+    assert (setup['root'] / 'etc/codex-relay' / transition.CONSUMER_NAME).read_bytes() == setup['consumer_raw']
+    assert prepare(setup) == plan
+    assert advance(setup)['phase'] == 'stopped'
+    setup['host'].ready = True
+    assert advance(setup)['phase'] == 'retired'
+    # Reapply does not remove the original runner a second time.
+    assert advance(setup)['phase'] == 'retired'
+    assert setup['github'].removes == 1
+
+
+@pytest.mark.parametrize('change', [
+    lambda value: value['consumer']['repositories'].pop(0),
+    lambda value: value['consumer']['repositories'].append('foreign/target'),
+    lambda value: value['consumer']['repositories'].append(value['consumer']['repositories'][0]),
+    lambda value: value['environment'].update(repository=value['consumer']['repositories'][1]),
+    lambda value: value['environment'].pop('repository'),
+    lambda value: value['environment']['reviewerRepositories'].pop(0),
+    lambda value: value['environment']['reviewerRepositories'].append('foreign/reviewer'),
+    lambda value: value['consumer'].update(repositoryRuntimeUsers={value['consumer']['repositories'][1]: 'foreign-runtime'}),
+    lambda value: value['consumer']['writerApp'].update(appId='999'),
+    lambda value: value['environment']['runner'].update(name='foreign-production'),
+    lambda value: value['consumer']['paths'].update(claimRoot='/var/lib/foreign-claims'),
+])
+def test_plural_transition_rejects_policy_identity_or_target_drift_before_mutation(setup, change):
+    change(plural_target(setup))
+    with pytest.raises((managed_pool.PoolError, config.InvalidConfig)):
+        prepare(setup)
+    assert setup['gate'].calls == []
+    assert setup['host'].stops == setup['github'].removes == 0
+    assert not (setup['root'] / setup['claim'].lstrip('/') / transition.STATE_NAME).exists()
+
+
 def test_pending_external_manual_result_is_preserved_without_blocking_host_transition(setup):
     envelope = {'runId': 9, 'attemptId': 'original-attempt', 'route': 'manual', 'consumerDigest': OLD_DIGEST}
     record = {'envelope': envelope, 'manualSubmission': None}

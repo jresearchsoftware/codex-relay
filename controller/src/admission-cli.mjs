@@ -47,19 +47,22 @@ export function installedAdmissionControl() {
     const { loadSerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
-    const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
     if (!compatibility) {
+      const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
         store: originalStore, journal: createSlotJournal(originalStore) });
       return admission[name](...args);
     }
+    const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
     const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
       stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
       supplementalInventory: async ({ task, slot }) => {
         await composite.all();
-        return invokeOriginalReader(compatibility, { operation: 'inventory', task, slot });
+        const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot });
+        return task !== null && CONSUMER.repository !== compatibility.receipt.repository
+          ? { active: [], unknown: [] } : inventory;
       } });
     return admission[name](...args);
   }]));

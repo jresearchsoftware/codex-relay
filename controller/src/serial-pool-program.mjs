@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createAttemptStore } from './attempt-store.mjs';
+import { configuredRepositories } from '../../consumer/consumer-config.mjs';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { loadSerialPoolCompatibility, createCompatibilityStore,
   historicalOperationContext } from './serial-pool-compatibility.mjs';
@@ -76,13 +77,16 @@ export async function historicalProgram({ kind, request, consumer, consumerPath,
   const operation = kind === 'manual-outcome' ? 'manual-outcome-direct'
     : kind === 'publication-recovery' ? ({ inspect: 'publication-state',
       'inspect-prepublication': 'prepublication-state' }[request.operation] ?? request.operation ?? 'recover-publication') : request.operation;
+  const selectedRepository = consumer?.repository ?? compatibility.selectedRepository;
   if (privateChecks) {
     const store = createCompatibilityStore({ compatibility,
-      currentStore: createAttemptStore(compatibility.current.storeRoot),
-      originalStore: createAttemptStore(compatibility.original.storeRoot) });
+      currentStore: createAttemptStore(compatibility.current.storeRoot, { repository: selectedRepository,
+        repositories: configuredRepositories(compatibility.currentConsumer), namespace: !!compatibility.currentConsumer.repositories }),
+      originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) });
     // Root classification is complete, even for a current run. A foreign
     // retained record cannot disappear through a per-run or terminal filter.
     await store.all();
+    if (selectedRepository !== compatibility.receipt.repository) return { handled: false };
     if (!compatibility.receipt.original.runs.some(run => run.runId === runId)) return { handled: false };
     const record = await store.get(runId);
     historicalOperationContext(compatibility, record, operation);
@@ -101,7 +105,8 @@ export async function historicalProgram({ kind, request, consumer, consumerPath,
     // The public sealed membership selects an immutable recovery program only.
     // It grants no record access or mutation: the original program obtains the
     // real envelope through the root Writer, which reclassifies both stores.
-    if (!compatibility.receipt.original.runs.some(run => run.runId === runId)) return { handled: false };
+    if (selectedRepository !== compatibility.receipt.repository
+      || !compatibility.receipt.original.runs.some(run => run.runId === runId)) return { handled: false };
     if (!['publication-state', 'recover-publication', 'prepublication-state', 'recover-prepublication'].includes(operation))
       fail('SERIAL_POOL_HISTORICAL_EXECUTION_FORBIDDEN');
   }

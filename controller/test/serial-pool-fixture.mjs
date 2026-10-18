@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { consumerDigest, EXECUTION_PATH_NAMES, validateConsumer } from '../../consumer/consumer-config.mjs';
+import { consumerDigest, EXECUTION_PATH_NAMES, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { loadSerialPoolCompatibility, protectedSourceTreeSha256 } from '../src/serial-pool-compatibility.mjs';
 
@@ -14,14 +14,14 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => hash(JSON.stringify(value));
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const operationId = '12345678-1234-1234-1234-123456789abc';
-export async function serialPoolFixture(t, { retained = true, sourceLinks = {} } = {}) {
+export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = 'HEAD' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-serial-compat-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const ownerUid = process.getuid(); const namespace = 'relay-compat';
   const currentUser = (await execute('/usr/bin/id', ['-un'])).stdout.trim();
   const user = currentUser === 'root' ? 'nobody' : currentUser;
   const runnerUid = Number((await execute('/usr/bin/id', ['-u', user])).stdout.trim());
-  const revision = (await execute('/usr/bin/git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot })).stdout.trim();
+  const revision = (await execute('/usr/bin/git', ['rev-parse', originalRevision], { cwd: repositoryRoot })).stdout.trim();
   const at = pathname => join(root, pathname.slice(1));
   const write = async (pathname, value, mode = 0o600) => {
     await mkdir(dirname(pathname), { recursive: true, mode: 0o755 });
@@ -33,7 +33,7 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {} }
   await mkdir(sourceRoot, { recursive: true, mode: 0o755 });
   // Export actual retained source, including its complete envelope validator.
   // The fixture never opens model Git metadata or substitutes a mock validator.
-  const archive = await execute('/usr/bin/git', ['archive', '--format=tar', 'HEAD', 'consumer', 'controller/src',
+  const archive = await execute('/usr/bin/git', ['archive', '--format=tar', revision, 'consumer', 'controller/src',
     'runtime/src', 'contracts/src', 'reviewer/src/executable-cr-v2.json'], { cwd: repositoryRoot, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
   const extraction = execute('/usr/bin/tar', ['-xf', '-', '-C', sourceRoot]);
   extraction.child.stdin.end(archive.stdout); await extraction;
@@ -55,10 +55,13 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {} }
     workGroup: 'relay-work', paths: Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name, originalConsumer.paths[name]])) },
   { id: 'pool-2', runnerName: 'compat-pool-2', runnerUser: user, runtimeUser: originalConsumer.runtimeUser,
     workGroup: 'relay-work', paths: Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name, `/var/lib/relay-second/${name}`])) }];
-  const currentConsumer = validateConsumer({ ...originalConsumer, generalRunnerPool: { desiredCapacity: 2 }, executionSlots: slots });
-  const currentDigest = consumerDigest(currentConsumer);
+  const target = { ...originalConsumer, generalRunnerPool: { desiredCapacity: 2 }, executionSlots: slots };
+  if (repositories) { delete target.repository; target.repositories = repositories; }
+  const installationConsumer = validateConsumer(target);
+  const currentConsumer = selectRepositoryConsumer(installationConsumer, repository ?? originalConsumer.repository);
+  const currentDigest = consumerDigest(installationConsumer);
   const consumerPath = at(`/etc/${namespace}/consumer.json`);
-  await write(consumerPath, currentConsumer, 0o644);
+  await write(consumerPath, installationConsumer, 0o644);
   const oldConsumerPath = `/etc/${namespace}/serial-consumer-v1.json`;
   const consumerSha256 = await write(at(oldConsumerPath), originalConsumer, 0o644);
   const configPath = release + '/deployment-config.json';
@@ -89,8 +92,10 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {} }
   for (const record of records) await originalStore.put(record.envelope.runId, record);
   const journal = createAttemptStore(at(originalConsumer.paths.attemptRoot), { repository: originalConsumer.repository });
   await journal.put(102, { version: 2, envelope: legacy.envelope, execution: null, outcome });
-  const currentStore = createAttemptStore(join(claimRoot, 'publication-pool-v1'), { repository: originalConsumer.repository });
-  const current = { envelope: envelope(200, { consumerDigest: currentDigest, executionSlot: 'primary', step: 2 }),
+  const currentStore = createAttemptStore(join(claimRoot, 'publication-pool-v1'), {
+    repository: currentConsumer.repository, repositories: repositories ?? [originalConsumer.repository], namespace: !!repositories });
+  const current = { envelope: envelope(200, { repository: currentConsumer.repository,
+    consumerDigest: currentDigest, executionSlot: 'primary', step: 2 }),
     controllerLifecycle: { version: 1, status: 'active' } };
   await currentStore.put(200, current);
   const receipt = { version: 1, repository: originalConsumer.repository, namespace, operationId,
@@ -105,5 +110,5 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {} }
   const options = { root, ownerUid, consumerPath, consumer: currentConsumer, privateChecks: true };
   const load = () => loadSerialPoolCompatibility(options);
   return { root, at, write, options, load, receipt, receiptPath, sourceRoot, gatePath, oldConsumerPath: at(oldConsumerPath),
-    currentConsumer, consumerPath, originalStore, currentStore, records, current, envelope, journal, originalSourceRoot };
+    currentConsumer, installationConsumer, consumerPath, originalStore, currentStore, records, current, envelope, journal, originalSourceRoot };
 }
