@@ -901,7 +901,8 @@ def test_listener_present_partial_package_repairs_only_when_inactive(tmp_path, m
         assert plan['members']['primary']['installPackage'] is True
         tasks = yaml.safe_load((ROOT / 'deploy/ansible/tasks/managed-pool-member.yml').read_text())
         extraction = next(task for task in tasks if 'ansible.builtin.unarchive' in task)
-        assert extraction['when'] == 'relay_pool_install_plan.members[relay_pool_member.id].installPackage'
+        assert extraction['when'] == ['not ansible_check_mode | bool',
+                                     'relay_pool_install_plan.members[relay_pool_member.id].installPackage']
         assert 'creates' not in extraction['ansible.builtin.unarchive']
         assert extraction['become_user'] == '{{ relay_general_runner_pool.runnerUser }}'
     assert unchanged_tree(tmp_path) == before
@@ -934,7 +935,8 @@ def test_ansible_preflight_precedes_first_mutation_and_creates_only_planned_miss
     creation = next(task for task in member_tasks if 'ansible.builtin.file' in task)
     extraction = next(task for task in member_tasks if 'ansible.builtin.unarchive' in task)
     assert creation['loop'] == '{{ relay_pool_install_plan.members[relay_pool_member.id].createDirectories }}'
-    assert extraction['when'] == 'relay_pool_install_plan.members[relay_pool_member.id].installPackage'
+    assert extraction['when'] == ['not ansible_check_mode | bool',
+                                 'relay_pool_install_plan.members[relay_pool_member.id].installPackage']
 
 
 @pytest.mark.parametrize('backend', ['tar', 'ansible'])

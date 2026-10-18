@@ -23,6 +23,14 @@
     follow: false
   loop: '{{ relay_pool_install_plan.members[relay_pool_member.id].createDirectories }}'
 
+- name: Record the physical runner package check-mode plan
+  ansible.builtin.debug:
+    msg: 'MANAGED_POOL_CHECK_MODE_PACKAGE_PLAN=extract_verify; member={{ relay_pool_member.id }}; version={{ relay_runner_package_version }}; root={{ relay_pool_member.root }}'
+  changed_when: true
+  when:
+    - ansible_check_mode | bool
+    - relay_pool_install_plan.members[relay_pool_member.id].installPackage
+
 - name: Install the same pinned verified runner package for this physical instance
   ansible.builtin.unarchive:
     src: '{{ relay_runner_package_archive }}'
@@ -32,7 +40,11 @@
     # existing private directory metadata; extraction already has runner UID.
     extra_opts: [--no-overwrite-dir]
   become_user: '{{ relay_general_runner_pool.runnerUser }}'
-  when: relay_pool_install_plan.members[relay_pool_member.id].installPackage
+  # Check mode only predicts directory creation and may not have an archive.
+  # Extraction and installed-package verification need materialized Apply state.
+  when:
+    - not ansible_check_mode | bool
+    - relay_pool_install_plan.members[relay_pool_member.id].installPackage
 
 - name: Inspect the installed physical runner executable paths
   ansible.builtin.stat:
