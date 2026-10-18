@@ -62,7 +62,7 @@ jobs:
            github.event.pull_request.head.repo.full_name == github.repository) }}
     # Labels/if/identity checks are not the external runner scheduling boundary.
     # Keep runners inactive until the external runner restrictions are qualified.
-    runs-on: {"group": "codex-relay-general-runner", "labels": ["self-hosted", "Linux", "X64", "relay-pool-499b647027da1b90d2f73703"]}
+    runs-on: {"group": "codex-relay-general-runner", "labels": ["self-hosted", "Linux", "X64", "relay-pool-e6987beab0b057123d402738"]}
     timeout-minutes: 120
     steps:
       - name: Run the accepted installed Relay
@@ -76,38 +76,38 @@ jobs:
           NODE_PATH: ''
         run: |
           case "$RUNNER_NAME:$(/usr/bin/id -un)" in
-            codex-relay-general-runner:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=primary ;;
-            codex-relay-general-runner-2:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-2 ;;
-            codex-relay-general-runner-3:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-3 ;;
-            codex-relay-general-runner-4:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-4 ;;
-            codex-relay-general-runner-5:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-5 ;;
-            codex-relay-general-runner-6:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-6 ;;
-            codex-relay-general-runner-7:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-7 ;;
-            codex-relay-general-runner-8:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-8 ;;
-            codex-relay-general-runner-9:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-9 ;;
-            codex-relay-general-runner-10:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-10 ;;
-            codex-relay-general-runner-11:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-11 ;;
-            codex-relay-general-runner-12:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-12 ;;
-            codex-relay-general-runner-13:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-13 ;;
-            codex-relay-general-runner-14:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-14 ;;
-            codex-relay-general-runner-15:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-15 ;;
-            codex-relay-general-runner-16:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-16 ;;
-            codex-relay-general-runner-17:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-17 ;;
-            codex-relay-general-runner-18:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-18 ;;
-            codex-relay-general-runner-19:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-19 ;;
-            codex-relay-general-runner-20:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-20 ;;
-            codex-relay-general-runner-21:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-21 ;;
-            codex-relay-general-runner-22:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-22 ;;
-            codex-relay-general-runner-23:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-23 ;;
-            codex-relay-general-runner-24:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-24 ;;
-            codex-relay-general-runner-25:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-25 ;;
-            codex-relay-general-runner-26:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-26 ;;
-            codex-relay-general-runner-27:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-27 ;;
-            codex-relay-general-runner-28:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-28 ;;
-            codex-relay-general-runner-29:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-29 ;;
-            codex-relay-general-runner-30:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-30 ;;
-            codex-relay-general-runner-31:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-31 ;;
-            codex-relay-general-runner-32:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-32 ;;
+            codex-relay-general-runner-pool:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=primary ;;
+            codex-relay-general-runner-pool-2:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-2 ;;
+            codex-relay-general-runner-pool-3:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-3 ;;
+            codex-relay-general-runner-pool-4:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-4 ;;
+            codex-relay-general-runner-pool-5:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-5 ;;
+            codex-relay-general-runner-pool-6:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-6 ;;
+            codex-relay-general-runner-pool-7:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-7 ;;
+            codex-relay-general-runner-pool-8:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-8 ;;
+            codex-relay-general-runner-pool-9:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-9 ;;
+            codex-relay-general-runner-pool-10:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-10 ;;
+            codex-relay-general-runner-pool-11:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-11 ;;
+            codex-relay-general-runner-pool-12:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-12 ;;
+            codex-relay-general-runner-pool-13:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-13 ;;
+            codex-relay-general-runner-pool-14:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-14 ;;
+            codex-relay-general-runner-pool-15:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-15 ;;
+            codex-relay-general-runner-pool-16:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-16 ;;
+            codex-relay-general-runner-pool-17:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-17 ;;
+            codex-relay-general-runner-pool-18:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-18 ;;
+            codex-relay-general-runner-pool-19:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-19 ;;
+            codex-relay-general-runner-pool-20:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-20 ;;
+            codex-relay-general-runner-pool-21:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-21 ;;
+            codex-relay-general-runner-pool-22:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-22 ;;
+            codex-relay-general-runner-pool-23:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-23 ;;
+            codex-relay-general-runner-pool-24:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-24 ;;
+            codex-relay-general-runner-pool-25:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-25 ;;
+            codex-relay-general-runner-pool-26:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-26 ;;
+            codex-relay-general-runner-pool-27:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-27 ;;
+            codex-relay-general-runner-pool-28:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-28 ;;
+            codex-relay-general-runner-pool-29:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-29 ;;
+            codex-relay-general-runner-pool-30:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-30 ;;
+            codex-relay-general-runner-pool-31:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-31 ;;
+            codex-relay-general-runner-pool-32:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=pool-32 ;;
             *) echo RELAY_RUNNER_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;
           esac
           exec /usr/bin/node --input-type=module <<'NODE'
