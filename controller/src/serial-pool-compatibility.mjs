@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAttemptStore } from './attempt-store.mjs';
 import { configuredRepositories, consumerDigest, parseConsumerJson, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 
 const execute = promisify(execFile);
@@ -452,5 +453,85 @@ export function createCompatibilityStore({ compatibility, currentStore, original
       return currentStore.reserve(runId, value);
     },
     async withLock(runId, action) { await classified(); return currentStore.withLock(runId, action); }
+  };
+}
+
+// PR review IDs are repository-local, unlike the sealed execution run set.
+// Only a verified SERIAL transition identifies the owner of the flat receipts.
+// Keep those bytes in place and write new receipts solely in target namespaces.
+export function createSerialPrLifecycleStore(compatibility) {
+  require(settings.has(compatibility) && compatibility.currentConsumer.repositories,
+    'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
+  const root = join(dirname(compatibility.original.storeRoot), 'pr-lifecycle-v1');
+  const repository = compatibility.selectedRepository;
+  const repositories = configuredRepositories(compatibility.currentConsumer);
+  require(repositories.includes(repository), 'ATTEMPT_REPOSITORY_MISMATCH');
+  const currentStore = createAttemptStore(join(root, 'repositories', ...repository.split('/')), { repository });
+  const code = 'SERIAL_POOL_LIFECYCLE_INVALID';
+  function validate(record, id, target, retained) {
+    const b = record?.binding;
+    require(exactKeys(record, ['binding', 'lifecycleIntent'])
+      && exactKeys(b, ['repository', 'prNumber', 'reviewId', 'head', 'authorityDigest'])
+      && b.repository === target && positive(b.prNumber) && b.reviewId === id
+      && positive(id) && revision(b.head) && sha(b.authorityDigest), code);
+    if (retained) require(record.lifecycleIntent === null, 'SERIAL_POOL_LIFECYCLE_UNRESOLVED');
+    else require(record.lifecycleIntent === null || exactKeys(record.lifecycleIntent, ['number', 'head', 'draft'])
+      && record.lifecycleIntent.number === b.prNumber && record.lifecycleIntent.head === b.head
+      && record.lifecycleIntent.draft === true, code);
+    return record;
+  }
+  async function classified() {
+    const verified = await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
+    const options = settings.get(verified); const original = new Map(); const current = new Map();
+    let count = 0;
+    async function entries(pathname) {
+      await parents(join(pathname, '_'), options).catch(error => { if (error.code !== 'ENOENT') throw error; });
+      try {
+        const info = await lstat(pathname);
+        require(info.isDirectory() && !info.isSymbolicLink() && info.uid === options.ownerUid && !(info.mode & 0o022), code);
+        const names = await readdir(pathname);
+        count += names.length; require(count <= 10000, 'SERIAL_POOL_COMPATIBILITY_STORE_LIMIT');
+        return names;
+      } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    }
+    async function record(pathname, name, target, retained) {
+      require(/^[1-9][0-9]*\.json$/.test(name), code);
+      const id = Number(name.slice(0, -5));
+      const value = validate(json(await protectedRead(join(pathname, name), options, [0o600], 512 * 1024)), id, target, retained);
+      const key = `${target}:${id}`;
+      require(!original.has(key) && !current.has(key), 'SERIAL_POOL_LIFECYCLE_COLLISION');
+      (retained ? original : current).set(key, value);
+    }
+    for (const name of await entries(root)) {
+      if (name !== 'repositories') await record(root, name, compatibility.receipt.repository, true);
+    }
+    const targetRoot = join(root, 'repositories');
+    for (const owner of await entries(targetRoot)) {
+      require(repositories.some(target => target.split('/')[0] === owner), code);
+      for (const name of await entries(join(targetRoot, owner))) {
+        const target = `${owner}/${name}`; require(repositories.includes(target), code);
+        const pathname = join(targetRoot, owner, name);
+        for (const file of await entries(pathname)) await record(pathname, file, target, false);
+      }
+    }
+    return { original, current };
+  }
+  return {
+    async get(id) {
+      require(positive(id), 'RUN_ID_INVALID');
+      const { original, current } = await classified(); const key = `${repository}:${id}`;
+      return original.get(key) ?? current.get(key) ?? null;
+    },
+    async isRetained(id) {
+      return (await classified()).original.has(`${repository}:${id}`);
+    },
+    async put(id, value) {
+      const { original, current } = await classified(); const key = `${repository}:${id}`;
+      require(!original.has(key), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
+      validate(value, id, repository, false);
+      const previous = current.get(key);
+      require(!previous || canonical(previous.binding) === canonical(value.binding), 'PR_LIFECYCLE_BINDING_CHANGED');
+      return currentStore.put(id, value);
+    }
   };
 }

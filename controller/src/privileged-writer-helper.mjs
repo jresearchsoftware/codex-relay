@@ -14,7 +14,7 @@ import { installedAdmissionControl } from './admission-cli.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { historicalProgram } from './serial-pool-program.mjs';
-import { loadSerialPoolCompatibility, createCompatibilityStore } from './serial-pool-compatibility.mjs';
+import { loadSerialPoolCompatibility, createCompatibilityStore, createSerialPrLifecycleStore } from './serial-pool-compatibility.mjs';
 
 export function callerExecutionSlot({ uid, slotId, uidForUser = unixUserId } = {}) {
   if (!CONSUMER.executionSlots) return undefined;
@@ -100,7 +100,8 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
     : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store,
-    lifecycleStore: createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
+    lifecycleStore: compatibility?.currentConsumer.repositories ? createSerialPrLifecycleStore(compatibility)
+      : createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
     admissionLifecycleStore: createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-admission-v1`),
     journal: createSlotJournal(store),
     publisher: createGitPublisher({ token: value, root: deployment.claimRoot }),
