@@ -28,7 +28,7 @@ def exchange(monkeypatch):
     config = inputs(1)
     authorization = {'organization': 'example-org', 'appId': '101',
                      'installationId': '201', 'installationToken': TOKEN}
-    monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value=authorization))
+    monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value=authorization), raising=False)
     monkeypatch.setattr(transport, 'projected_consumer', Mock(return_value=config['consumer']))
     monkeypatch.setattr(transport, 'consumer_digest', Mock(return_value=DIGEST))
     process = Mock(returncode=0)
@@ -36,7 +36,7 @@ def exchange(monkeypatch):
     process.communicate.return_value = (
         'MANAGED_POOL_PREFLIGHT=PASS\nMANAGED_POOL_SERIAL_TRANSITION=required\n', '')
     popen = Mock(return_value=process)
-    monkeypatch.setattr(transport.subprocess, 'Popen', popen)
+    monkeypatch.setattr(transport, 'TargetProcess', popen)
     guard = Mock()
     guard.poll.return_value = None
     return config, process, popen, guard
@@ -114,14 +114,15 @@ def test_no_transition_cannot_claim_a_retained_operation(exchange):
         preflight(exchange)
 
 
-def test_full_config_sources_digest_and_token_only_travel_on_private_stdin(exchange):
+def test_full_config_sources_and_digest_travel_without_controller_authorization(exchange):
     preflight(exchange)
     config, process, popen, _ = exchange
     command = popen.call_args.args[0]
-    assert command[0] == 'ssh' and 'StrictHostKeyChecking=yes' in command
+    assert command == {'user': 'root', 'host': 'test.invalid'}
+    assert popen.call_args.args[2][:3] == ['/usr/bin/python3', '-I', '-c']
     assert TOKEN not in str(command) and '/owner-private/app.pem' not in str(command)
     payload = json.loads(process.communicate.call_args.kwargs['input'])
-    assert payload['authorization']['installationToken'] == TOKEN
+    assert 'authorization' not in payload and TOKEN not in json.dumps(payload)
     assert payload['config'] == config and payload['targetDigest'] == DIGEST
     assert list(payload['sources']) == transport.OWNER_POOL_SOURCES
     assert list(payload['sources']).index('config') < list(payload['sources']).index('serial_pool_transition')
@@ -130,7 +131,8 @@ def test_full_config_sources_digest_and_token_only_travel_on_private_stdin(excha
 
 def test_local_transport_has_no_ssh_and_no_caller_selected_installed_helper(exchange):
     preflight(exchange, local=True)
-    command = exchange[2].call_args.args[0]
+    command = exchange[2].call_args.args[2]
+    assert exchange[2].call_args.kwargs['local'] is True
     assert command[:3] == ['/usr/bin/python3', '-I', '-c']
     assert command[3] == transport.OWNER_POOL_SCRIPT
 
@@ -181,12 +183,13 @@ def test_unknown_private_errors_are_sanitized_but_fixed_product_errors_survive(e
         assert TOKEN not in str(error.value)
 
 
-def test_timeout_continues_same_exchange_without_resending_token(exchange):
+def test_timeout_continues_same_exchange_without_resending_request(exchange):
     process = exchange[1]
     process.communicate.side_effect = [subprocess.TimeoutExpired('ssh', 1),
         ('MANAGED_POOL_PREFLIGHT=PASS\nMANAGED_POOL_SERIAL_TRANSITION=none\n', '')]
     assert preflight(exchange).serial_transition is False
-    assert TOKEN in process.communicate.call_args_list[0].kwargs['input']
+    assert 'targetDigest' in process.communicate.call_args_list[0].kwargs['input']
+    assert TOKEN not in process.communicate.call_args_list[0].kwargs['input']
     assert process.communicate.call_args_list[1].kwargs['input'] is None
     assert exchange[2].call_count == 1
 
@@ -257,11 +260,10 @@ def finish(config, github):
     sources = {name: '' for name in transport.OWNER_POOL_SOURCES}
     sources.update(managed_pool=pool, config='LOADED=True\n',
         serial_pool_transition='import config\nassert config.LOADED\n',
-        serial_pool_installation=installation)
+        serial_pool_installation=installation,
+        pool_authorization='def installation_authorization(config): return ' + repr({'organization': 'example-org', 'appId': '101', 'installationId': '201', 'installationToken': TOKEN}) + '\n')
     return {'sources': sources, 'contract': contract,
             'config': {'contract': contract, 'proof': proof, 'privateError': private_error, 'beginPhase': begin_phase},
-            'authorization': {'organization': 'example-org', 'appId': '101',
-                              'installationId': '201', 'installationToken': TOKEN},
             'targetDigest': DIGEST, 'action': action, 'revision': REVISION, 'operationId': OPERATION}
 
 
@@ -331,6 +333,46 @@ def test_native_script_rejects_oversized_payload_without_echoing_it():
     assert result.stderr == 'MANAGED_POOL_PREFLIGHT_UNPROVEN_INSPECT_BEFORE_RETRY\n'
 
 
+@pytest.mark.skipif(os.geteuid() != 0, reason='execute the actual target root receipt boundary')
+@pytest.mark.parametrize('damage', [None, 'private-field', 'foreign-member', 'capacity', 'malformed', 'interrupted'])
+def test_target_reconciliation_keeps_authorization_on_host_and_bounds_the_installed_helper_receipt(damage):
+    payload = script_payload(action='reconcile')
+    payload['contract'].update(desiredCapacity=1, members=[{'id': 'primary'}])
+    payload['config']['environment'] = {'namespace': 'synthetic-relay'}
+    expected_digest = hashlib.sha256((json.dumps(payload['config'], sort_keys=True,
+        separators=(',', ':'), ensure_ascii=False) + '\n').encode()).hexdigest()
+    report = {'capacity': 1, 'ready': ['primary'], 'draining': [], 'retired': []}
+    if damage == 'private-field':
+        report['private'] = TOKEN
+    elif damage == 'foreign-member':
+        report['ready'] = ['foreign']
+    elif damage == 'capacity':
+        report['capacity'] = 2
+    output = 'MANAGED_POOL_RESULT=' + (TOKEN if damage == 'malformed' else json.dumps(report)) + '\n'
+    # Replace only the installed helper capability inside the target process.
+    # The actual owner script must create/bind its target authorization, invoke
+    # that exact helper/revision, and reject unsafe receipts before transport.
+    payload['sources']['pool_authorization'] += (
+        'import json,sys,types\n'
+        'def helper(argv, *, input, text, capture_output, check):\n'
+        f'    assert argv == ["/opt/synthetic-relay/relay-managed-pool", {REVISION!r}]\n'
+        '    authorization=json.loads(input)\n'
+        f'    assert authorization["installationToken"] == {TOKEN!r}\n'
+        f'    assert authorization["deploymentConfigSha256"] == {expected_digest!r}\n'
+        '    assert set(authorization)=={"appId","installationId","organization","installationToken","deploymentConfigSha256"}\n'
+        f'    return types.SimpleNamespace(returncode={1 if damage == "interrupted" else 0}, stdout={output!r}, stderr={TOKEN!r})\n'
+        'sys.modules["subprocess"]=types.SimpleNamespace(run=helper)\n')
+    assert 'authorization' not in payload
+    result = run_script(payload)
+    if damage is None:
+        assert result.returncode == 0 and result.stderr == ''
+        assert json.loads(result.stdout.removeprefix('MANAGED_POOL_RESULT=')) == report
+    else:
+        assert result.returncode != 0 and result.stdout == ''
+        assert result.stderr.startswith('MANAGED_POOL_')
+    assert TOKEN not in result.stdout + result.stderr
+
+
 def test_current_node_digest_resolves_defaults_and_preserves_capacity_only_digest():
     config = inputs(1)
     first = transport.consumer_digest(config['consumer'], ROOT)
@@ -375,7 +417,7 @@ def test_owner_target_digest_matches_actual_backend_consumer_template(tmp_path, 
             'console.log(consumerDigest(loadConsumer(process.argv[1])));')
     expected = subprocess.check_output(['node', '--input-type=module', '-e', code, str(deployed)],
                                        cwd=ROOT, text=True).strip()
-    monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value={}))
+    monkeypatch.setattr(transport, 'installation_authorization', Mock(return_value={}), raising=False)
     pending, digest = transport._owner_payload(value, 'preflight')
     assert digest == expected
     assert json.loads(pending)['targetDigest'] == expected
@@ -459,3 +501,27 @@ def test_installed_pool_qualifies_identity_and_f1_before_reading_current_prospec
                        match='GROUP_UNTRUSTED_WORKFLOW_REF' if denied else 'FIXTURE_BEFORE_POOL_MUTATION'):
         managed_pool.installed_main(REVISION)
     assert events == (['identity', 'f1'] if denied else ['identity', 'f1', 'current-digest', 'preflight'])
+
+
+@pytest.mark.parametrize('expected', [DIGEST, 'c' * 64, None])
+def test_installed_reconciliation_binds_exact_configuration_before_any_github_call(monkeypatch, expected):
+    import installed_config
+    value = inputs(1)
+    contract = managed_pool.pool_contract(value)
+    payload = {key: contract[key] for key in ['appId', 'installationId', 'organization']}
+    payload['installationToken'] = TOKEN
+    if expected is not None:
+        payload['deploymentConfigSha256'] = expected
+    monkeypatch.setattr(installed_config, 'verify', lambda *_args, **_kwargs: (value, DIGEST, ''))
+    monkeypatch.setattr(managed_pool.os, 'geteuid', lambda: 0)
+    github = Mock(side_effect=RuntimeError('FIXTURE_AFTER_CONFIG_BINDING'))
+    monkeypatch.setattr(managed_pool, 'GitHub', github)
+    monkeypatch.setattr(managed_pool.sys, 'stdin', io.StringIO(json.dumps(payload)))
+    if expected not in [DIGEST, None]:
+        with pytest.raises(managed_pool.PoolError, match='TARGET_CONFIG_BINDING_UNPROVEN'):
+            managed_pool.installed_main(REVISION)
+        github.assert_not_called()
+    else:
+        with pytest.raises(RuntimeError, match='FIXTURE_AFTER_CONFIG_BINDING'):
+            managed_pool.installed_main(REVISION)
+        github.assert_called_once()

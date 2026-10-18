@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 import inventory
+import ansible_transport
 
 
 @pytest.fixture
@@ -340,15 +341,14 @@ def test_remote_probe_is_read_only_standalone_source_without_installed_dependenc
     report = observe(target)
     calls = []
 
-    def run(argv, **kwargs):
+    def run(target, key, argv, **kwargs):
         calls.append((argv, kwargs))
         return SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr='')
 
-    monkeypatch.setattr(inventory.subprocess, 'run', run)
+    monkeypatch.setattr(ansible_transport, 'run_target', run)
     assert inventory.remote_inventory(target.config['target'], '/owner/key', target.config) == report
     argv, options = calls[0]
-    assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
-    assert '/usr/bin/python3 -I -c' in argv[-1]
+    assert argv[:3] == ['/usr/bin/python3', '-I', '-c']
     assert 'def inspect(' in argv[-1]
     assert json.loads(options['input']) == target.config
     assert options['timeout'] == 45
@@ -396,7 +396,7 @@ def test_partial_remote_report_is_bounded_failure(target, monkeypatch, damage):
         report['installed'] = {'status': 'present'}
     else:
         report['status'] = 'blocked'
-    monkeypatch.setattr(inventory.subprocess, 'run', lambda *args, **kwargs:
+    monkeypatch.setattr(ansible_transport, 'run_target', lambda *args, **kwargs:
                         SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr='PRIVATE_FIXTURE'))
     with pytest.raises(RuntimeError, match='RELAY_INVENTORY_UNAVAILABLE'):
         inventory.remote_inventory(target.config['target'], '/owner/key', target.config)
@@ -411,7 +411,7 @@ def test_remote_failure_is_sanitized(target, monkeypatch, failure):
                                stdout='x' * (inventory.LIMIT + 1) if failure == 'oversize' else
                                '{}' if failure == 'wrong-proof' else 'PRIVATE_FIXTURE', stderr='PRIVATE_FIXTURE')
 
-    monkeypatch.setattr(inventory.subprocess, 'run', run)
+    monkeypatch.setattr(ansible_transport, 'run_target', run)
     with pytest.raises(RuntimeError, match='RELAY_INVENTORY_UNAVAILABLE') as caught:
         inventory.remote_inventory(target.config['target'], '/owner/key', target.config)
     assert 'PRIVATE_FIXTURE' not in str(caught.value)

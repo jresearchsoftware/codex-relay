@@ -33,7 +33,7 @@ class TransportTests(unittest.TestCase):
                                                 'work=/var/lib/example-relay/runner/work\n', '')
 
     def invoke(self, token=None):
-        with patch.object(MODULE.subprocess, 'Popen', return_value=self.process) as popen:
+        with patch('ansible_transport.TargetProcess', return_value=self.process) as popen:
             result = MODULE.register_runner(self.target, '/path/to/key', self.values, 'a' * 40, token, self.guard)
         return result, popen
 
@@ -42,8 +42,8 @@ class TransportTests(unittest.TestCase):
         self.assertIn('state=reused', proof)
         self.assertNotIn('synthetic-ephemeral-token', str(popen.call_args))
         self.process.communicate.assert_called_once_with(input='synthetic-ephemeral-token\n', timeout=1)
-        self.assertTrue(popen.call_args.args[0][-1].startswith('/opt/example-relay/relay-runner-registration --expect-binding '))
-        self.assertIn('group=production-group', popen.call_args.args[0][-1])
+        self.assertTrue(__import__('shlex').join(popen.call_args.args[2]).startswith('/opt/example-relay/relay-runner-registration --expect-binding '))
+        self.assertIn('group=production-group', __import__('shlex').join(popen.call_args.args[2]))
 
     def test_missing_optional_token_still_invokes_reuse_check(self):
         self.invoke()
@@ -57,7 +57,7 @@ class TransportTests(unittest.TestCase):
                                                 'version=2.336.0 state=registered group=- '
                                                 'work=/var/lib/example-relay/general-runner/work\n', '')
         _, popen = self.invoke()
-        self.assertTrue(popen.call_args.args[0][-1].startswith('/opt/example-relay/relay-general-runner-registration --expect-binding '))
+        self.assertTrue(__import__('shlex').join(popen.call_args.args[2]).startswith('/opt/example-relay/relay-general-runner-registration --expect-binding '))
 
     def test_raw_errors_and_token_are_never_reemitted(self):
         self.process.returncode = 1
@@ -93,7 +93,7 @@ class TransportTests(unittest.TestCase):
 
     def test_invalid_token_does_not_reach_ssh(self):
         for token in ('bad\ninput', 'bad\x00input', 'a' * 4097):
-            with self.subTest(token_length=len(token)), patch.object(MODULE.subprocess, 'Popen') as popen:
+            with self.subTest(token_length=len(token)), patch('ansible_transport.TargetProcess') as popen:
                 with self.assertRaisesRegex(RuntimeError, 'token-invalid-input'):
                     MODULE.register_runner(self.target, '/path/to/key', self.values, 'a' * 40, token, self.guard)
                 popen.assert_not_called()

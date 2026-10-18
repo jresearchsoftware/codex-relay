@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 import pwd
 import re
-import shlex
 import stat
 import subprocess
 import sys
@@ -1265,11 +1264,8 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
                 '    diagnostic = safe_reinstall_diagnostic(str(error)) or safe_reinstall_diagnostic("REINSTALL_BLOCKED")\n'
                 '    print(diagnostic, file=sys.stderr)\n'
                 '    raise SystemExit(1)\n')
-    command = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
-               '-i', str(key), target['user'] + '@' + target['host'],
-               shlex.join(['/usr/bin/python3', '-I', '-c', program])]
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
+    from ansible_transport import TargetProcess
+    process = TargetProcess(target, key, ['/usr/bin/python3', '-I', '-c', program])
     payload = json.dumps({'config': config, 'revision': revision, 'report': report, 'operation_id': operation_id})
     try:
         while True:

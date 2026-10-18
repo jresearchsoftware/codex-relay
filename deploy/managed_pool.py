@@ -496,13 +496,16 @@ def installed_main(revision):
     require(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}', revision), 'ROOT_EXACT_REVISION_REQUIRED')
     from installed_config import verify
     source = Path(__file__).resolve().parents[1]
-    config, _, _ = verify(source, revision, require_local_apply=False)
+    config, config_digest, _ = verify(source, revision, require_local_apply=False)
     contract = pool_contract(config)
     payload = json.loads(sys.stdin.read(16385))
-    require(set(payload) == {'installationToken', 'appId', 'installationId', 'organization'}
+    require(set(payload) in [{'installationToken', 'appId', 'installationId', 'organization'},
+                            {'installationToken', 'appId', 'installationId', 'organization', 'deploymentConfigSha256'}]
             and all(payload[key] == contract[key] for key in ['appId', 'installationId', 'organization'])
             and isinstance(payload['installationToken'], str) and 0 < len(payload['installationToken']) <= 4096,
             'TOKEN_BINDING_INVALID')
+    require('deploymentConfigSha256' not in payload or payload['deploymentConfigSha256'] == config_digest,
+            'TARGET_CONFIG_BINDING_UNPROVEN')
     github = GitHub(payload['installationToken'], contract['organization'])
     github.qualify(contract)
     from serial_pool_installation import preflight, current_consumer_digest

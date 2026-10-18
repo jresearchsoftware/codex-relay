@@ -11,9 +11,13 @@ Use the existing [owner deployment command](../deploy/README.md#inputs-and-invoc
 with the same namespace, Unix users, paths and owner policy, adding the managed
 pool configuration and selected exact product revision. Capacity 1 and 2 are
 explicit regression cases. The installed runner cannot stop itself for this
-handover; run the command from the external owner machine where its existing
-SSH and pool App references are available. No new migration command, token
-copy, record repair or runner-group permission change is required.
+handover; run the public command outside that runner, from the WSL owner controller
+over its configured Ansible SSH connection or directly on the verified Debian host
+with `--connection local`. Keep the same durable configuration for retained-operation
+recovery. The existing protected pool App PEM is read only on the target; signing,
+installation qualification and registration/removal tokens stay there. The controller
+receives bounded public receipts. No loopback SSH, additional login identity, key
+copy, new migration command, record repair or runner-group permission change is required.
 
 An owner-selected transition may also expand a singleton Writer installation
 to a same-organization repository allowlist. Keep the original repository as

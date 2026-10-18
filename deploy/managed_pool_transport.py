@@ -1,47 +1,66 @@
-"""Local owner App signing and ephemeral stdin-only pool Apply transport."""
-import base64
-from datetime import datetime, timezone
+"""Ansible transport of nonsecret pool requests and bounded target-local receipts."""
 import json
 import os
 from pathlib import Path
 import re
-import shlex
-import stat
 import subprocess
 import tempfile
-import time
 
-from managed_pool import GitHub, PERMISSION, require
-from config import deployment_repository
+from managed_pool import require
+from ansible_transport import TargetProcess
 
 
 OWNER_POOL_SOURCES = ['managed_pool', 'pool_eligibility', 'config', 'pool_migration',
-                      'serial_pool_transition', 'serial_pool_host', 'serial_pool_installation']
+                      'serial_pool_transition', 'serial_pool_host', 'serial_pool_installation', 'pool_authorization']
 OWNER_POOL_INPUT_BYTES = 262144
 OWNER_POOL_OUTPUT_BYTES = 16384
 
 
-OWNER_POOL_SCRIPT = '''import json, os, re, sys, types
+OWNER_POOL_SCRIPT = r'''import json, os, re, sys, types
 try:
     raw = sys.stdin.buffer.read(262145)
     if len(raw) > 262144 or os.geteuid() != 0:
         raise ValueError()
     payload = json.loads(raw)
     for name in ['managed_pool', 'pool_eligibility', 'config', 'pool_migration',
-                 'serial_pool_transition', 'serial_pool_host', 'serial_pool_installation']:
+                 'serial_pool_transition', 'serial_pool_host', 'serial_pool_installation', 'pool_authorization']:
         module = types.ModuleType(name)
         module.__file__ = '/owner-source/' + name + '.py'
         sys.modules[name] = module
         exec(compile(payload['sources'][name], module.__file__, 'exec'), module.__dict__)
     pool = sys.modules['managed_pool']
     installation = sys.modules['serial_pool_installation']
-    contract, auth = payload['contract'], payload['authorization']
+    contract = payload['contract']
+    auth = sys.modules['pool_authorization'].installation_authorization(payload['config'])
     pool.require(pool.pool_contract(payload['config']) == contract
                  and all(auth[key] == contract[key] for key in ['organization', 'appId', 'installationId']),
                  'TOKEN_BINDING_INVALID')
     pool.require(isinstance(payload['targetDigest'], str)
                  and re.fullmatch('[0-9a-f]{64}', payload['targetDigest']), 'TARGET_DIGEST_UNPROVEN')
     github = pool.GitHub(auth['installationToken'], contract['organization'])
+    if payload['action'] == 'reconcile':
+        import hashlib, subprocess
+        pool.require(re.fullmatch('[0-9a-f]{40}', payload['revision']), 'EXACT_REVISION_REQUIRED')
+        helper = '/opt/' + payload['config']['environment']['namespace'] + '/relay-managed-pool'
+        auth['deploymentConfigSha256'] = hashlib.sha256((json.dumps(payload['config'], sort_keys=True,
+            separators=(',', ':'), ensure_ascii=False) + '\n').encode()).hexdigest()
+        result = subprocess.run([helper, payload['revision']], input=json.dumps(auth),
+            text=True, capture_output=True, check=False)
+        if result.returncode:
+            codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', result.stderr, re.MULTILINE)
+            pool.require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else
+                         'RECONCILIATION_UNPROVEN_INSPECT_BEFORE_RETRY')
+        pool.require(len(result.stdout.encode()) <= 16384 and
+                     result.stdout.startswith('MANAGED_POOL_RESULT='), 'RESULT_UNPROVEN_INSPECT_BEFORE_RETRY')
+        public = json.loads(result.stdout.removeprefix('MANAGED_POOL_RESULT='))
+        ids = {member['id'] for member in contract['members']}
+        pool.require(isinstance(public, dict) and set(public) == {'capacity', 'ready', 'draining', 'retired'}
+            and type(public['capacity']) is int and public['capacity'] == contract['desiredCapacity']
+            and all(isinstance(public[key], list) and len(public[key]) <= 32
+                    and all(isinstance(member, str) and member in ids for member in public[key])
+                    for key in ['ready', 'draining', 'retired']), 'RESULT_UNPROVEN_INSPECT_BEFORE_RETRY')
+        print('MANAGED_POOL_RESULT=' + json.dumps(public, sort_keys=True))
+        sys.exit(0)
     # F1 remains before any original SERIAL reads or ownership transition.
     github.qualify(contract)
     proof = installation.preflight(payload['config'], github, payload['targetDigest'])
@@ -165,7 +184,6 @@ def _owner_payload(config, action, revision=None, operation_id=None):
                'contract': contract, 'config': config, 'targetDigest': digest,
                'action': action, 'revision': revision, 'operationId': operation_id}
     require(len(json.dumps(payload).encode()) <= OWNER_POOL_INPUT_BYTES - 8192, 'OWNER_PREFLIGHT_INPUT_SIZE')
-    payload['authorization'] = installation_authorization(config)
     pending = json.dumps(payload)
     require(len(pending.encode()) <= OWNER_POOL_INPUT_BYTES, 'OWNER_PREFLIGHT_INPUT_SIZE')
     return pending, digest
@@ -174,11 +192,8 @@ def _owner_payload(config, action, revision=None, operation_id=None):
 def _owner_transport(target, key, pending, guard, *, local, extra_guard):
     """One bounded stdin exchange under the existing owner deployment guards."""
     command = ['/usr/bin/python3', '-I', '-c', OWNER_POOL_SCRIPT]
-    argv = command if local else ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-        '-o', 'IdentitiesOnly=yes', '-i', str(key), target['user'] + '@' + target['host'], shlex.join(command)]
     require(local or guard is not None and guard.poll() is None, 'HOST_GUARD_LOST')
-    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
+    process = TargetProcess(target, key, command, local=local)
     try:
         while True:
             require(local or guard.poll() is None, 'HOST_GUARD_LOST_INSPECT_BEFORE_RETRY')
@@ -242,88 +257,14 @@ def transition_pool(target, key, config, revision, operation_id, guard=None, *,
     return result
 
 
-def installation_authorization(config, api_factory=GitHub):
-    """Private key remains on the owner machine, never copied to a runner host."""
-    app = config['environment']['generalRunner']['poolApp']
-    key = Path(app['privateKeyFile'])
-    try:
-        metadata = key.lstat()
-    except OSError:
-        require(False, 'OWNER_APP_KEY_UNAVAILABLE_ON_OWNER_EXECUTION_HOST')
-    require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, 'OWNER_APP_KEY_INVALID')
-    now = int(time.time())
-    encode = lambda value: base64.urlsafe_b64encode(value).rstrip(b'=').decode('ascii')
-    header = encode(b'{"alg":"RS256","typ":"JWT"}')
-    payload = encode(json.dumps({'iat': now - 60, 'exp': now + 540, 'iss': app['appId']},
-                                separators=(',', ':')).encode())
-    message = (header + '.' + payload).encode('ascii')
-    signature = subprocess.run(['openssl', 'dgst', '-sha256', '-sign', str(key)], input=message,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
-    require(signature.returncode == 0, 'OWNER_APP_SIGNING_FAILED')
-    organization = deployment_repository(config).split('/')[0]
-    api = api_factory(message.decode() + '.' + encode(signature.stdout), organization)
-    identity = api.request('GET', '/app')
-    require(str(identity.get('id')) == app['appId'], 'OWNER_APP_IDENTITY_UNPROVEN')
-    installation = api.request('GET', '/app/installations/' + app['installationId'])
-    require(str(installation.get('id')) == app['installationId']
-            and str(installation.get('app_id')) == app['appId']
-            and installation.get('account', {}).get('login', '').lower() == organization.lower()
-            and installation.get('account', {}).get('type') == 'Organization'
-            and installation.get('permissions', {}).get(PERMISSION) == 'write',
-            'OWNER_APP_INSTALLATION_PERMISSION_UNPROVEN')
-    authorization = api.request('POST', '/app/installations/' + app['installationId'] + '/access_tokens',
-                                {'permissions': {PERMISSION: 'write'}})
-    require(authorization.get('permissions', {}).get(PERMISSION) == 'write'
-            and isinstance(authorization.get('token'), str) and bool(authorization['token']),
-            'OWNER_APP_INSTALLATION_TOKEN_UNPROVEN')
-    try:
-        remaining = (datetime.fromisoformat(authorization['expires_at'].replace('Z', '+00:00'))
-                     - datetime.now(timezone.utc)).total_seconds()
-    except (ValueError, TypeError, KeyError):
-        remaining = 0
-    require(60 <= remaining <= 7200, 'OWNER_APP_TOKEN_EXPIRY_UNPROVEN')
-    return {'appId': app['appId'], 'installationId': app['installationId'],
-            'organization': organization, 'installationToken': authorization['token']}
-
-
 def reconcile_pool(target, key, config, revision, guard=None, *, local=False, extra_guard=None):
-    """Caller retains the ordinary owner deployment lock for this whole call."""
-    import re
+    """Sign and invoke the installed reconciliation helper entirely on the target."""
     require(re.fullmatch('[0-9a-f]{40}', revision), 'EXACT_REVISION_REQUIRED')
-    require(local or guard is not None and guard.poll() is None, 'HOST_GUARD_LOST')
-    helper = '/opt/' + config['environment']['namespace'] + '/relay-managed-pool'
-    authorization = installation_authorization(config)
-    argv = [helper, revision] if local else ['ssh', '-o', 'BatchMode=yes', '-o',
-        'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes', '-i', str(key),
-        target['user'] + '@' + target['host'], shlex.join([helper, revision])]
-    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
-    try:
-        pending = json.dumps(authorization)
-        authorization = None
-        while True:
-            require(local or guard.poll() is None, 'HOST_GUARD_LOST_INSPECT_BEFORE_RETRY')
-            require(extra_guard is None or extra_guard.poll() is None, 'POOL_GUARD_LOST_INSPECT_BEFORE_RETRY')
-            try:
-                output, errors = process.communicate(input=pending, timeout=1)
-                break
-            except subprocess.TimeoutExpired:
-                pending = None
-        if process.returncode:
-            codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', errors, re.MULTILINE)
-            require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else
-                    'RECONCILIATION_UNPROVEN_INSPECT_BEFORE_RETRY')
-        require(output.startswith('MANAGED_POOL_RESULT=') and len(output) <= 16384,
-                'RESULT_UNPROVEN_INSPECT_BEFORE_RETRY')
-        result = json.loads(output.removeprefix('MANAGED_POOL_RESULT='))
-        require(result.get('capacity') == config['consumer']['generalRunnerPool']['desiredCapacity'],
-                'RESULT_CAPACITY_UNPROVEN')
-        return output.strip()
-    finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+    pending, _ = _owner_payload(config, 'reconcile', revision)
+    output = _owner_transport(target, key, pending, guard, local=local, extra_guard=extra_guard)
+    require(output.startswith('MANAGED_POOL_RESULT=') and len(output) <= 16384,
+            'RESULT_UNPROVEN_INSPECT_BEFORE_RETRY')
+    result = json.loads(output.removeprefix('MANAGED_POOL_RESULT='))
+    require(result.get('capacity') == config['consumer']['generalRunnerPool']['desiredCapacity'],
+            'RESULT_CAPACITY_UNPROVEN')
+    return output.strip()

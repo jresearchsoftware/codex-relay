@@ -44,7 +44,7 @@ try:
     assert re.fullmatch('[0-9a-f]{40}', head) and release == install / 'releases' / head
     assert head == sys.argv[2]
     for name in ['deploy/relay-deploy.py', 'deploy/config.py', 'deploy/installed_config.py',
-                 'deploy/deployment_lock.py', 'consumer/consumer-config.mjs',
+                 'deploy/deployment_lock.py', 'deploy/ansible_transport.py', 'consumer/consumer-config.mjs',
                  'contracts/src/execution-defaults.mjs', 'reviewer/src/executable-cr-v2.json']:
         path = release / 'reviewed-source' / name
         for entry in [path, *path.parents]:
