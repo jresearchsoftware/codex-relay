@@ -1,11 +1,11 @@
 {
   "consumerRepository": "jresearchsoftware/codex-relay",
   "files": {
-    ".github/workflows/codex-relay-routing.yml": "5d4d7cfe9d35ae32c3c9f6aab13c16d81fd4bc6ccde85629ca2f85843f624757",
-    ".github/workflows/manual-main-production-deploy.yml": "7c4dc6ef95407e64f9e4e27915ee56d9e2b2f6d64a56f60058fe7dd0b25a43da",
-    ".github/workflows/manual-writer-publication-recovery.yml": "37d98ad755a88b652ce4511b8a3115dcc1a16103c7cc0ce2e59a81bf22410a81"
+    ".github/workflows/codex-relay-routing.yml": "e372eaedc1dddd741848d7084199be6d9af74b499fb5ac1b14c1663a58b3a6c1",
+    ".github/workflows/manual-main-production-deploy.yml": "b8e1b6586dd170cf55aef08c4e7e40f3d941f56e328369a9b5cce27d67f61b73",
+    ".github/workflows/manual-writer-publication-recovery.yml": "15c6c0109b71f5f9a406104c48e38ccc86ca997981615a6468cfd996e66a3850"
   },
   "schemaVersion": 2,
   "sourceRepository": "https://github.com/jresearchsoftware/codex-relay.git",
-  "workflowContract": "relay-workflows-v3"
+  "workflowContract": "relay-workflows-v4"
 }
