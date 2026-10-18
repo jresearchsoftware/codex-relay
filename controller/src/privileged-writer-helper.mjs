@@ -96,7 +96,7 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
   const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
   const store = compatibility ? createCompatibilityStore({ compatibility,
     currentStore: createPublicationStore(compatibility.current.storeRoot),
-    originalStore: createAttemptStore(compatibility.original.storeRoot) })
+    originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) })
     : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
   return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
     store,

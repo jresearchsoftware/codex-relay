@@ -264,7 +264,7 @@ class ProtectedFiles:
 
 
 def validate_delta(original, target):
-    """Only the explicitly selected source and General Runner pool may change."""
+    """Retain original policy while adding a pool and same-owner target set."""
     from config import derive_managed_pool_slots
     old, new = copy.deepcopy(original), copy.deepcopy(target)
     require('generalRunnerPool' not in old['consumer'] and 'executionSlots' not in old['consumer'],
@@ -281,6 +281,29 @@ def validate_delta(original, target):
         'SERIAL_TRANSITION_REGISTRATION_NAME_COLLISION')
     new['consumer'].pop('generalRunnerPool')
     new['consumer'].pop('executionSlots')
+    if 'repositories' in new['consumer']:
+        anchor = old['consumer'].get('repository')
+        repositories = new['consumer']['repositories']
+        require(isinstance(anchor, str) and isinstance(repositories, list)
+                and bool(repositories) and all(isinstance(repo, str) for repo in repositories)
+                and len(set(repositories)) == len(repositories) and anchor in repositories
+                and all(repo.split('/')[0] == anchor.split('/')[0] for repo in repositories)
+                and 'repository' not in new['consumer']
+                and new['environment'].get('repository') == anchor,
+                'SERIAL_TRANSITION_REPOSITORY_SET_CHANGED')
+        old_reviewers = old['environment'].get('reviewerRepositories', [anchor])
+        new_reviewers = new['environment'].get('reviewerRepositories', repositories)
+        require(isinstance(new_reviewers, list)
+                and all(isinstance(repo, str) for repo in new_reviewers)
+                and set(old_reviewers) <= set(new_reviewers) == set(repositories),
+                'SERIAL_TRANSITION_REVIEWER_TARGETS_CHANGED')
+        new['consumer'].pop('repositories')
+        new['consumer']['repository'] = anchor
+        for key in ['repository', 'reviewerRepositories']:
+            if key in old['environment']:
+                new['environment'][key] = copy.deepcopy(old['environment'][key])
+            else:
+                new['environment'].pop(key, None)
     for value in (old, new):
         value['source'].pop('revision', None)
         general = value['environment']['generalRunner']

@@ -4,12 +4,101 @@ import { chmod, lchown, link, mkdir, mkdtemp, readFile, readlink, rm, symlink, w
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { createAttemptStore } from '../src/attempt-store.mjs';
+import { consumerDigest, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
 import { createCompatibilityStore, historicalOperationContext, invokeOriginalReader, loadSerialPoolCompatibility,
   protectedSourceTreeSha256, verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
 import { serialPoolFixture as fixture } from './serial-pool-fixture.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const linux = process.platform === 'linux';
+const repositories = ['example-org/sample-project', 'example-org/second'];
+
+test('plural migration binds raw installation digest and namespaces current records while retaining flat originals', { skip: !linux }, async t => {
+  const f = await fixture(t, { repositories }); const ctx = await f.load();
+  assert.equal(ctx.receipt.target.consumerDigest, consumerDigest(f.installationConsumer));
+  assert.notEqual(ctx.receipt.target.consumerDigest, consumerDigest(f.currentConsumer));
+  assert.equal(ctx.original.storeRoot, f.at(f.currentConsumer.paths.claimRoot + '/publication-v2'));
+  assert.equal(ctx.current.gatePath, f.at(f.currentConsumer.paths.claimRoot + '/admission-pool-v1.json'));
+  assert.ok(f.currentConsumer.paths.attemptRoot.endsWith('/repositories/' + repositories[0]));
+  const before = await readFile(join(ctx.original.storeRoot, '99.json'));
+  const otherStore = createAttemptStore(ctx.current.storeRoot, { repository: repositories[1], repositories, namespace: true });
+  const other = { ...f.current, envelope: { ...f.current.envelope, repository: repositories[1], runId: 99, attemptId: 'run-99' } };
+  await otherStore.put(99, other);
+  const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore, currentStore: f.currentStore });
+  assert.equal((await store.all()).length, f.records.length + 2);
+  assert.deepEqual((await store.get(99)).envelope, f.records[0].envelope);
+  assert.deepEqual((await store.get(99, repositories[1])).envelope, other.envelope);
+  const otherConsumer = selectRepositoryConsumer(f.installationConsumer, repositories[1]);
+  const selected = await loadSerialPoolCompatibility({ ...f.options, consumer: otherConsumer });
+  const otherComposite = createCompatibilityStore({ compatibility: selected, originalStore: f.originalStore, currentStore: otherStore });
+  await otherComposite.put(99, { ...other, collection: { clean: true } });
+  assert.equal((await otherComposite.get(99)).collection.clean, true);
+  await assert.rejects(otherComposite.put(201, { envelope: { ...other.envelope, repository: repositories[0], runId: 201 } }));
+  assert.deepEqual(await readFile(join(ctx.original.storeRoot, '99.json')), before);
+  await assert.rejects(store.get(99, 'foreign/repository'), { code: 'ATTEMPT_REPOSITORY_MISMATCH' });
+});
+
+test('plural compatibility composes actual process-selected publication store for every configured repository', { skip: !linux }, async t => {
+  const f = await fixture(t, { repositories });
+  const moduleRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const driver = `
+    import {pathToFileURL} from 'node:url';
+    const input=JSON.parse(process.argv[1]);
+    const {CONSUMER,CONSUMER_DIGEST}=await import(pathToFileURL(input.moduleRoot+'/consumer/consumer.mjs'));
+    const {createAttemptStore,createPublicationStore}=await import(pathToFileURL(input.moduleRoot+'/controller/src/attempt-store.mjs'));
+    const {loadSerialPoolCompatibility,createCompatibilityStore}=await import(pathToFileURL(input.moduleRoot+'/controller/src/serial-pool-compatibility.mjs'));
+    const compatibility=await loadSerialPoolCompatibility({...input.options,consumer:CONSUMER});
+    const store=createCompatibilityStore({compatibility,currentStore:createPublicationStore(compatibility.current.storeRoot),
+      originalStore:createAttemptStore(compatibility.original.storeRoot,{repository:compatibility.receipt.repository})});
+    await store.reserve(201,{envelope:{repository:CONSUMER.repository,consumerDigest:CONSUMER_DIGEST,runId:201,attemptId:'run-201'}});
+    process.stdout.write(JSON.stringify({repository:(await store.get(201)).envelope.repository,count:(await store.all()).length}));`;
+  for (const repository of repositories) {
+    const output = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', driver,
+      JSON.stringify({ moduleRoot, options: { ...f.options, consumer: undefined } })], {
+      env: { PATH: '/usr/bin:/bin', RELAY_CONSUMER_CONFIG: f.consumerPath, RELAY_REPOSITORY: repository } });
+    assert.equal(JSON.parse(output.stdout).repository, repository);
+    assert.ok(await readFile(join((await f.load()).current.storeRoot, 'repositories', repository, '201.json')));
+  }
+});
+
+test('plural compatibility rejects hidden flat or unconfigured current records before a filtered lookup', { skip: !linux }, async t => {
+  const f = await fixture(t, { repositories }); const ctx = await f.load();
+  const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore, currentStore: f.currentStore });
+  await f.write(join(ctx.current.storeRoot, '202.json'), { envelope: { ...f.current.envelope, runId: 202 } });
+  await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+  await rm(join(ctx.current.storeRoot, '202.json'));
+  await f.write(join(ctx.current.storeRoot, 'repositories/foreign/repository/202.json'), { envelope: { ...f.current.envelope, runId: 202 } });
+  await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED' });
+});
+
+test('plural compatibility permits an empty new store but never a selected-view receipt digest', { skip: !linux }, async t => {
+  const f = await fixture(t, { repositories }); const ctx = await f.load();
+  await rm(ctx.current.storeRoot, { recursive: true });
+  await mkdir(join(ctx.current.storeRoot, 'repositories'), { recursive: true, mode: 0o700 });
+  const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore, currentStore: f.currentStore });
+  assert.equal((await store.all()).length, f.records.length);
+  f.receipt.target.consumerDigest = consumerDigest(f.currentConsumer);
+  await f.write(f.receiptPath, f.receipt, 0o644);
+  await assert.rejects(f.load(), { code: 'SERIAL_POOL_COMPATIBILITY_RECEIPT_INVALID' });
+});
+
+test('plural migration does not accept changed runtime identity, trust fields or a missing original anchor', { skip: !linux }, async t => {
+  const f = await fixture(t, { repositories });
+  for (const change of [value => { value.runtimeUser = 'foreign-runtime'; },
+    value => { value.writerApp.appId = '12345'; }, value => { value.paths.workRoot = '/var/lib/foreign'; },
+    value => { value.repositoryRuntimeUsers = { [repositories[1]]: value.runtimeUser }; },
+    value => { value.repositories = [repositories[1]]; }]) {
+    const changed = structuredClone(f.installationConsumer); change(changed);
+    await f.write(f.consumerPath, changed, 0o644);
+    const receipt = structuredClone(f.receipt); receipt.target.consumerDigest = consumerDigest(changed);
+    await f.write(f.receiptPath, receipt, 0o644);
+    await assert.rejects(loadSerialPoolCompatibility({ ...f.options, consumer: undefined }));
+  }
+});
 test('ordinary consumers without a compatibility receipt preserve existing path semantics', async t => {
   const root = await mkdtemp(join(tmpdir(), 'relay-no-compat-')); t.after(() => rm(root, { recursive: true, force: true }));
   assert.equal(await loadSerialPoolCompatibility({ consumerPath: join(root, 'test-consumer.json') }), null);

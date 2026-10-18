@@ -52,9 +52,12 @@ The complete installation configuration is loaded once, validated and frozen.
 Its digest accompanies every admitted attempt independently of the selected
 repository or slot. The selected process view retains one concrete `repository`.
 A different or missing digest cannot resume publication,
-including blocked-admission replay. Existing pre-configuration attempts must be
-reconciled under their original reviewed release before cutover; do not invent
-a digest or discard publication reservations. An admitted worker executes its
+including blocked-admission replay. Existing pre-configuration attempts retain
+their original reviewed release and bindings; ordinary configuration replacement
+requires reconciliation before cutover. The bounded
+[SERIAL-to-pool transition](../docs/serial-pool-migration.md) instead seals and
+preserves the complete original attempt set and readers. Do not invent a digest
+or discard publication reservations. An admitted worker executes its
 resolved explicit model/effort. Relay never reads a moving Model Landscape.
 For a managed pool only, changing `generalRunnerPool.desiredCapacity` preserves
 the execution digest. All repository, identity, path and security fields remain
@@ -62,10 +65,11 @@ bound, including the complete repository list and runtime-user map. Its internal
 slot layout remains fixed across capacity changes. The single-repository digest
 and paths retain their historical representation. Replacing `repository` with
 `repositories` changes the installation digest, even for a one-element list.
-That change does not migrate or rebind retained attempts: reconcile them under
-their original reviewed configuration/release before cutover. New namespaced
-stores must not hide retained legacy records or bypass their original admission
-and recovery bindings.
+That change alone does not migrate or rebind retained attempts. Reconcile them
+under their original reviewed configuration/release before ordinary cutover, or
+use the separately qualified bounded SERIAL-to-pool transition to preserve their
+original context. New namespaced stores must not hide retained legacy records
+or bypass their original admission and recovery bindings.
 
 For plural configuration, the selected `workRoot`, `attemptRoot` and
 `diagnosticsRoot` append `/repositories/<owner>/<repository>` to their configured

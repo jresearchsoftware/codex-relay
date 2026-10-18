@@ -40,6 +40,33 @@ function route(f, overrides = {}) {
     load: options => loadSerialPoolCompatibility({ ...f.options, ...options, root: f.root, ownerUid: f.options.ownerUid }), ...overrides };
 }
 
+test('plural original dispatch stays bound to the original repository with unchanged historical envelopes', { skip: !linux }, async t => {
+  const repositories = ['example-org/sample-project', 'example-org/second'];
+  const f = await serialPoolFixture(t, { repositories,
+    originalRevision: 'f6431d612d464c511fdda97e7dea64ace7f03ac7' });
+  const before = await readFile(join((await f.load()).original.storeRoot, '99.json'));
+  const driver = `
+    import {pathToFileURL} from 'node:url';
+    const root=${JSON.stringify(f.sourceRoot)};
+    const {createPublicationBroker}=await import(pathToFileURL(root+'/controller/src/publication-broker.mjs'));
+    const {createAttemptStore}=await import(pathToFileURL(root+'/controller/src/attempt-store.mjs'));
+    const chunks=[];for await(const chunk of process.stdin)chunks.push(chunk);
+    const unexpected=()=>{throw Error('UNEXPECTED_MUTATION_OR_NETWORK')};
+    const broker=createPublicationBroker({store:createAttemptStore(${JSON.stringify((await f.load()).original.storeRoot)}),
+      api:new Proxy({},{get:()=>unexpected}),publisher:new Proxy({},{get:()=>unexpected})});
+    process.stdout.write(JSON.stringify(await broker.dispatch(JSON.parse(Buffer.concat(chunks)))));`;
+  const request = { operation: 'publication-state', runId: 99, attemptId: 'run-99', executionSlot: 'pool-2' };
+  const result = await historicalProgram({ ...route(f), kind: 'writer', request,
+    invoke: (context, kind, input, options) => originalProgram(context, kind, input, { ...options,
+      execute: (_command, _args, childOptions) => spawn(process.execPath, ['--input-type=module', '-e', driver], childOptions) }) });
+  assert.equal(result.handled, true); assert.deepEqual(result.value.envelope, f.records[0].envelope);
+  const { selectRepositoryConsumer } = await import('../../consumer/consumer-config.mjs');
+  const other = selectRepositoryConsumer(f.installationConsumer, repositories[1]);
+  assert.deepEqual(await historicalProgram({ ...route(f, { consumer: other }), kind: 'writer', request,
+    invoke: async () => assert.fail('Foreign repository cannot select sealed original run') }), { handled: false });
+  assert.deepEqual(await readFile(join((await f.load()).original.storeRoot, '99.json')), before);
+});
+
 test('fixed original program preserves duplicate receipts and only recreates the permitted environment', async () => {
   const result = { status: 'DUPLICATE_SUPPRESSED', repository: 'example-org/sample-project', outcome: { id: 72, sha256: 'a'.repeat(64) } };
   const fake = fakeExecution({ stdout: JSON.stringify(result), stderr: 'private diagnostic sentinel' });

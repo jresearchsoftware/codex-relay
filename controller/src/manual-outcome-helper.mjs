@@ -27,7 +27,7 @@ export async function main(selectedSubmission) {
   const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
   const store = compatibility ? createCompatibilityStore({ compatibility,
     currentStore: createPublicationStore(compatibility.current.storeRoot),
-    originalStore: createAttemptStore(compatibility.original.storeRoot) })
+    originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) })
     : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
   const record = await store.get(submission.run_id);
   if (!record || record.envelope?.issueNumber !== submission.task || record.envelope?.route !== 'manual') fail('MANUAL_OUTCOME_NOT_ADMITTED');
