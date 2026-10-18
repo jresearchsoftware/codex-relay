@@ -87,6 +87,14 @@ export async function beginRemediation({ api, store, request, authorityDigest, a
   if (continuing) binding.admission = digest(admittedEnvelope);
   const record = await store.get(key) ?? { binding };
   if (digest(record.binding) !== digest(binding)) fail('PR_LIFECYCLE_BINDING_CHANGED');
+  if (await store.isRetained?.(key)) {
+    // Completed SERIAL receipts are read-only evidence, never a new intent.
+    // Live authority above and below must still identify the exact old review.
+    const fresh = await read();
+    if (fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
+    if (record.lifecycleIntent !== null || fresh.pr.draft !== true) fail('SERIAL_POOL_LIFECYCLE_UNRESOLVED');
+    return { repository: REPOSITORY, prNumber: fresh.pr.number, reviewId: request.reviewId, head: fresh.pr.head.sha, draft: true };
+  }
   const pr = await transitionPr({ api, store, key, record, head: request.head, draft: true,
     readPr: async () => {
       const fresh = await read();

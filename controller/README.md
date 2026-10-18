@@ -196,6 +196,22 @@ Outcome records are retained unchanged. The public `begin-remediation` operation
 continues to accept only the original current CR's reviewed head A. The internal
 continuation intent cannot turn an arbitrary head into review authority.
 
+For a verified SERIAL-to-managed transition with plural repositories, the
+review-ID lifecycle store coexists with preserved flat `pr-lifecycle-v1` receipts.
+The existing protected transition receipt and original consumer identify the
+flat records' anchor repository. Every operation validates the complete retained
+and configured namespace tree before using a selected receipt; foreign, corrupt,
+ambiguous, colliding or unresolved original intents fail closed. New receipts
+are written only under `pr-lifecycle-v1/repositories/<owner>/<repository>/`.
+Equal review IDs in different repositories remain independent. Completed flat
+receipts remain byte-for-byte read-only: exact current-review/authority replay
+can confirm an already-Draft PR, but cannot reserve another intent or change PR
+state through that receipt. Current namespaced intents retain exact binding and
+lost-response reconciliation. This adapter does not relax the generic attempt
+or publication namespace guard, rewrite transition provenance or original state,
+or qualify an installed release. A retained unresolved intent requires its own
+original-authority disposition; the adapter never adopts it into a newer CR.
+
 PR #134 and run `38813244210` exposed the old coupling of reviewed head and
 continuation starting head. The transient Ready/new-current-head-CR bridge used
 under that installed protocol was a temporary workaround. It is obsolete under
