@@ -77,9 +77,10 @@ def cleanup(argv):
         reject('SANDBOX_CLEANUP_ARGUMENT_INVALID')
     cwd, identity = argv[1], argv[3]
     work_root = os.path.dirname(cwd)
-    if REPOSITORY_ROOT_USERS is None:
-        allowed_root = work_root == WORK_ROOT
-    else:
+    # Retained flat attempts keep the existing cleanup path after a plural
+    # installation. Repository-qualified roots add their execution UID binding.
+    allowed_root = work_root == WORK_ROOT
+    if not allowed_root and REPOSITORY_ROOT_USERS is not None:
         # Installation-owned profiles bind cleanup to the same repository and
         # runtime identity as execution. Caller input cannot add a work root.
         try:

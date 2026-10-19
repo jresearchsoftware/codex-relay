@@ -61,13 +61,13 @@ class SandboxCleanupTests(unittest.TestCase):
         self.assertTrue(retained.exists())
         self.assertTrue(self.sandbox.exists())
 
-    def test_repository_cleanup_rejects_unconfigured_root_and_flat_root(self):
+    def test_repository_cleanup_rejects_unconfigured_root_and_preserves_legacy_support(self):
         cwd, sandbox, identity = self.repository_sandbox('foreign/repo')
         self.render_helper(relay_github_repositories=['example/alpha'],
                            relay_codex_user=pwd.getpwuid(os.geteuid()).pw_name)
         self.assertEqual(self.invoke(cwd=cwd, identity=identity)[1]['code'],
                          'SANDBOX_CLEANUP_PATH_INVALID')
-        self.assertEqual(self.invoke()[1]['code'], 'SANDBOX_CLEANUP_PATH_INVALID')
+        self.assertEqual(self.invoke(), (0, {'schemaVersion': 1, 'status': 'removed'}))
         self.assertTrue(sandbox.exists())
 
     def test_repository_cleanup_rejects_other_runtime_identity(self):

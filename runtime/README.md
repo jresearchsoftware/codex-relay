@@ -90,7 +90,8 @@ Python helper permits only the `.codex-sandbox` of a direct `run-N`/`event-N`
 checkout under the configured work root, matching the pre-child identity.
 Plural installations select only the fixed repository roots and runtime users
 from protected installation configuration, as execution does; flat legacy roots
-retain their existing behavior. Cleanup never adds a caller-selected root.
+retain their existing behavior, including retained flat attempts after plural
+installation. Cleanup never adds a caller-selected root.
 Descriptor-relative traversal uses `O_NOFOLLOW`, rejects filesystem transitions,
 and unlinks symlinks without following them. It neither changes private modes nor
 grants root or arbitrary-path deletion. Cleanup is bounded to 100,000 entries,
