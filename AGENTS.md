@@ -222,11 +222,12 @@ CI, shared or cloud execution.
 Use the canonical [progress-bounded execution policy](docs/execution-policy.md)
 for correction, stop, prior-state and work-preservation decisions.
 
-Default ordinary repository-only implementation or remediation to automatic
-Relay when its required unprivileged checks are available to the governed
-worker. Use owner-launched manual/standalone Codex for required capabilities
-unavailable to that worker, protected operations outside disposable TEST
-authority, or genuine human judgment or choice. This includes protected root
+For Relay work, default ordinary repository-only implementation or remediation
+to automatic execution when its required unprivileged checks are available to
+the governed worker. The owner may also authorize the ordinary standalone/manual
+route in the Task workflow guide. Manual work is especially useful for required
+capabilities unavailable to the worker, protected operations outside disposable
+TEST authority, or human judgment or choice. This includes protected root
 qualification and live host/environment mutation outside that sandbox.
 When implementation and protected/manual qualification are both required to
 accept one Task objective, default to one owner-launched manual Codex Step
