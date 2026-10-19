@@ -81,7 +81,16 @@ def main():
         source = template.read_text(encoding='utf8')
         assert source.count('{{ relay_dispatch_work_root | to_json }}') == 1
         helper = base / 'cleanup.py'
-        helper.write_text(source.replace('{{ relay_dispatch_work_root | to_json }}', json.dumps(str(work))), encoding='utf8')
+        substitutions = {
+            '{{ relay_dispatch_work_root | to_json }}': json.dumps(str(work)),
+            '{{ relay_github_repositories | default([]) | to_json }}': '[]',
+            '{{ relay_repository_runtime_users | default({}) | to_json }}': '{}',
+            "{{ relay_codex_user | default('') | to_json }}": '""',
+        }
+        for token, value in substitutions.items():
+            assert source.count(token) == 1
+            source = source.replace(token, value)
+        helper.write_text(source, encoding='utf8')
         helper.chmod(0o644)
         metadata = sandbox.stat()
         identity = f'{metadata.st_dev}:{metadata.st_ino}'

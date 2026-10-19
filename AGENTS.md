@@ -1,6 +1,9 @@
 # Developing Codex Relay
 
-These instructions govern **owner-admitted Relay/Codex development**. Ordinary
+These instructions govern **owner-admitted Relay/Codex development**. The
+[Task workflow](docs/task-workflow.md#owner-acceptance-and-execution-routes)
+also defines owner acceptance and ordinary authorized standalone/manual work;
+native admission and publication rules apply to the Relay route. Ordinary
 human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
 Task/Step admission, an installed Relay consumer, Codex UI tools or these
 optional developer hooks to propose a change.
@@ -219,11 +222,12 @@ CI, shared or cloud execution.
 Use the canonical [progress-bounded execution policy](docs/execution-policy.md)
 for correction, stop, prior-state and work-preservation decisions.
 
-Default ordinary repository-only implementation or remediation to automatic
-Relay when its required unprivileged checks are available to the governed
-worker. Use owner-launched manual/standalone Codex for required capabilities
-unavailable to that worker, protected operations outside disposable TEST
-authority, or genuine human judgment or choice. This includes protected root
+For Relay work, default ordinary repository-only implementation or remediation
+to automatic execution when its required unprivileged checks are available to
+the governed worker. The owner may also authorize the ordinary standalone/manual
+route in the Task workflow guide. Manual work is especially useful for required
+capabilities unavailable to the worker, protected operations outside disposable
+TEST authority, or human judgment or choice. This includes protected root
 qualification and live host/environment mutation outside that sandbox.
 When implementation and protected/manual qualification are both required to
 accept one Task objective, default to one owner-launched manual Codex Step
@@ -412,10 +416,12 @@ warnings, evidence gaps and limitations visibly readable before one folded
 canonical machine block. Preserve full handoff prompt bytes and historical body
 hashes; rendering changes grant no execution or publication authority.
 
-If the required connected App/Reviewer/Writer tool is missing or exposes an
-outdated input schema, stop with the missing capability and qualified installation
-needed to proceed. Never substitute legacy/v3 publication or routing for new v4
-work. The caller checks its available tools; the server cannot observe a stale
+If a required connected App/Reviewer/Writer tool is missing or exposes an
+outdated input schema, stop the affected native operation and identify the
+capability and qualified installation needed. An authorized standalone/manual
+route follows the Task workflow guide; it cannot fabricate native admission or
+replace an admitted attempt's publication/recovery. Never substitute legacy/v3
+publication or routing for new v4 work. The caller checks its available tools; the server cannot observe a stale
 client cache or an inaccessible connected App. See the
 [capability contract](reviewer/README.md#current-protocol-capabilities).
 

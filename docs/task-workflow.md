@@ -12,12 +12,49 @@ human/native Skill adapters without a VibeVM runtime requirement. Detailed rules
 Owner-designated isolated TEST development and qualification follow
 [TEST Environment Authority](execution-policy.md#test-environment-authority).
 
-## From Task to completion
+## Owner acceptance and execution routes
+
+A verified owner or authorized-maintainer merge into accepted `main` is final
+owner acceptance of that exact contribution, including when no native `APPROVE`
+or Writer Outcome exists. Verify the actor's authority and the actual merged
+contribution in GitHub/Git. Downstream work must not demand retrospective
+approval, reconstructed receipts or another waiver solely because those native
+records are absent. Describe the provenance as owner acceptance by merge; never
+report a native approval or execution that did not occur. Revoked acceptance,
+material new defects and changed candidates still require their own disposition.
+Before a new assistant-controlled approval or merge, preserve independent
+exact-head review, required checks and the applicable owner authority.
+
+Owner-authorized standalone/manual Codex work is an ordinary alternative to
+Relay automatic execution and Relay-admitted manual execution. It retains the
+Task/CR goal and boundaries, exact source and target identity, effect safety,
+validation, durable result publication and independent review. It does not
+invent a native admission, Step, ready event or Writer Outcome. Publish its
+actual evidence through the owner-authorized channel and state its provenance.
+For Relay-admitted manual work, use the real admission and Writer transport
+below; standalone work cannot replace that attempt's publication or recovery.
+
+An unavailable automation capability blocks the operation that requires it;
+it does not by itself prohibit otherwise authorized standalone/manual work.
+Changing routes never resolves an uncertain live process, conflicting ref,
+ambiguous external mutation or protected effect. Reconcile those facts before
+dependent work, retain original-attempt recovery protections and never replay
+an admitted execution merely because its automation is unavailable.
+
+These are repository owner operating policies. They do not add capabilities to
+installed automation, relax its native checks or authorize deployment. The
+normal delivery path is independent review and merge, followed by one
+owner-triggered deployment workflow completing its authorized internal phases
+and post-checks. The [bounded repair policy](execution-policy.md) covers related
+corrections and representative TEST qualification before that handoff; future
+external failures remain possible.
+
+## From Task to completion through Relay
 
 The connected App must expose the current typed authority inputs and the tools
 required for the selected operation, including `submit_manual_outcome` for new
 manual v4 results. If a required tool is absent or its schema is outdated, stop
-and identify the capability/installation mismatch and the owner action needed
+the affected native operation and identify the capability/installation mismatch and the owner action needed
 to qualify the connection. Do not publish a new v3 Decision/Request/CR, use legacy CR2 or
 switch to the old owner-result comment transport as a workaround. The service
 cannot inspect tools hidden from the caller or a stale client-side tool cache.
@@ -185,8 +222,9 @@ acquisition. See [warning policy](execution-policy.md#execution-warning-disposit
 and Reviewer `read_pr_review_evidence`.
 
 A local in-scope correction can continue within the admitted attempt while its
-next action is clear and authorized. Uncertain authority, containment, native
-head or prior publication stops progress. Publication recovery reconciles exact
+next action is clear and authorized. Uncertain authority, containment, conflicting
+native head or uncertain prior publication stops dependent progress. An unavailable
+automation capability alone follows the route distinction above. Publication recovery reconciles exact
 retained bytes/markers and frozen renderer intent through existing protected
 operations; it never blindly repeats POST/push or launches Codex again.
 Already-admitted v3 records keep their exact historical body/digest/Step.

@@ -1,10 +1,21 @@
 # Progress-bounded execution
 
-An admitted Codex execution may inspect, diagnose, make bounded corrections
+An authorized Codex execution, Relay-admitted or standalone/manual, may inspect, diagnose, make bounded corrections
 and rerun relevant validation until its goal is complete, while each next
 action has concrete evidence and remains within admitted authority. There is
 no fixed correction-count default. Repeating the same failed action without
 new evidence is not progress.
+
+One bounded repair owns reproduction, directly related corrections, regression
+checks, representative installed-to-target deployment and the original operation
+through durable result publication. Keep the owner's original goal intact;
+source-only checks do not complete a goal that requires installed operation.
+Address material TEST/PROD differences and revalidate evidence affected by each
+correction, without repeating unrelated historical proof. The
+[deployment guide](../deploy/README.md) owns lifecycle interfaces; the
+[Task workflow](task-workflow.md#owner-acceptance-and-execution-routes) owns
+execution routes and owner acceptance. Deployment remains limited to the
+environment and effects actually authorized.
 
 Stop and preserve useful work when:
 
@@ -60,7 +71,9 @@ mandatory decision inputs at the next owner/review boundary. Incomplete
 collection, uncertain publication, lost evidence and unknown containment remain
 automation failures. No second worker pass or cleanup daemon is authorized.
 
-This policy applies inside one admitted invocation. Relay still reserves a
+This policy applies inside one authorized execution. For Relay this is one
+admitted invocation; standalone work does not manufacture native records.
+Relay still reserves a
 single execution per attempt and refuses blind retries, including after a crash.
 Replaying returned-result verification/publication does not re-execute Codex.
 Fresh launch commands, publication recovery, merge and deployment retain their
@@ -81,6 +94,15 @@ repositories, configuration and resources that form the boundary. This is a
 general standing policy, not an exception for an individual Task. No new
 per-operation approval, Task, Step or Relay attempt is required for operations
 inside that boundary.
+
+Routine reproduction, related fixes, checks, representative deployment and
+original-operation qualification remain the same bounded repair in that owned
+sandbox. Do not split these iterations into extra Tasks, Steps or owner prompts.
+Use the supported interface when qualifying that interface and report actual
+installed source/consumer identities and operation results. A realistic TEST
+success must identify material differences from PROD; it does not qualify an
+untested deployment or erase an external prerequisite. Fresh real Relay
+executions still require genuine native admission and preserve original events.
 
 A shared disposable TEST installation has at most one owner Task at a time.
 Establish its allocation before use, return it to normal working TEST state

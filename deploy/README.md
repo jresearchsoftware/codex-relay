@@ -8,6 +8,11 @@ not copy or maintain its inventory, roles, tasks or handlers.
 
 For an owner-designated isolated TEST deployment, use the standing
 [TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
+Keep reproduction, related repairs, representative installation and the original
+operation within the [bounded repair policy](../docs/execution-policy.md), through
+durable result publication. Source acceptance and the normal owner-triggered
+deployment path follow the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes);
+documentation alone proves no installed capability or deployment result.
 Disposable TEST cleanup and rebuilding may use suitable shells and tools;
 these production-safe lifecycle procedures are optional inside that sandbox.
 When qualifying a product lifecycle interface, exercise and report its actual
@@ -276,6 +281,18 @@ visibility, credentials, services and finite resource capacity across consumers.
 Separate installations retain separate Writer locks and claim roots. Targets
 within one plural Writer configuration share its installation lock and claim
 root; repository-specific publication records preserve their own authority.
+
+For plural Writer configurations, every launcher reconciliation provisions the
+fixed `workRoot/repositories/<owner>/<repository>` ancestors with the existing
+runner owner, slot work group and mode `2770`. This applies to installation and
+upgrade, including retained slots and managed-pool slots. It repairs ancestor
+metadata left by recursive runner creation under `UMask=0077`, without walking
+or changing existing attempt contents. The launcher and cleanup boundaries,
+private journals and credential permissions remain unchanged.
+The cleanup helper uses the same configured repository work roots and runtime
+identity binding as the launcher. It retains direct-attempt, pre-child inode,
+no-follow traversal and private-mode protections; repository-qualified attempts
+require no separate operator cleanup action.
 
 Use the existing `general-runner-register` and `general-runner-enable` phases
 with `--execution-slot <id>` for an additional configured slot; omission selects

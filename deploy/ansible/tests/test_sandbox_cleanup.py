@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import pwd
 from pathlib import Path
 import subprocess
 import shutil
@@ -33,8 +34,62 @@ class SandboxCleanupTests(unittest.TestCase):
         metadata = self.sandbox.stat()
         self.identity = f'{metadata.st_dev}:{metadata.st_ino}'
         self.helper = self.base / 'cleanup.py'
-        self.helper.write_text(TEMPLATE.read_text().replace(
-            '{{ relay_dispatch_work_root | to_json }}', json.dumps(str(self.work))))
+        self.render_helper()
+
+    def render_helper(self, **values):
+        env = Environment(undefined=StrictUndefined)
+        env.filters['to_json'] = json.dumps
+        self.helper.write_text(env.from_string(TEMPLATE.read_text()).render(
+            relay_dispatch_work_root=str(self.work), **values))
+
+    def repository_sandbox(self, repository):
+        cwd = self.work / 'repositories' / repository / 'run-40'
+        sandbox = cwd / '.codex-sandbox'
+        sandbox.mkdir(parents=True)
+        (sandbox / 'private').write_text('retained unless correctly bound')
+        metadata = sandbox.stat()
+        return cwd, sandbox, f'{metadata.st_dev}:{metadata.st_ino}'
+
+    def test_repository_cleanup_uses_fixed_root_and_preserves_other_attempts(self):
+        cwd, sandbox, identity = self.repository_sandbox('example/alpha')
+        other, retained, _ = self.repository_sandbox('example/beta')
+        self.render_helper(relay_github_repositories=['example/alpha', 'example/beta'],
+                           relay_codex_user=pwd.getpwuid(os.geteuid()).pw_name)
+        self.assertEqual(self.invoke(cwd=cwd, identity=identity),
+                         (0, {'schemaVersion': 1, 'status': 'removed'}))
+        self.assertFalse(sandbox.exists())
+        self.assertTrue(retained.exists())
+        self.assertTrue(self.sandbox.exists())
+
+    def test_repository_cleanup_rejects_unconfigured_root_and_preserves_legacy_support(self):
+        cwd, sandbox, identity = self.repository_sandbox('foreign/repo')
+        self.render_helper(relay_github_repositories=['example/alpha'],
+                           relay_codex_user=pwd.getpwuid(os.geteuid()).pw_name)
+        self.assertEqual(self.invoke(cwd=cwd, identity=identity)[1]['code'],
+                         'SANDBOX_CLEANUP_PATH_INVALID')
+        self.assertEqual(self.invoke(), (0, {'schemaVersion': 1, 'status': 'removed'}))
+        self.assertTrue(sandbox.exists())
+
+    def test_repository_cleanup_rejects_other_runtime_identity(self):
+        cwd, sandbox, identity = self.repository_sandbox('example/alpha')
+        self.render_helper(relay_github_repositories=['example/alpha'],
+                           relay_codex_user=pwd.getpwuid(os.geteuid()).pw_name,
+                           relay_repository_runtime_users={'example/alpha': 'different-runtime-user'})
+        self.assertEqual(self.invoke(cwd=cwd, identity=identity)[1]['code'],
+                         'SANDBOX_CLEANUP_PATH_INVALID')
+        self.assertTrue(sandbox.exists())
+
+    def test_repository_cleanup_rejects_alias_and_wrong_inode(self):
+        cwd, sandbox, identity = self.repository_sandbox('example/alpha')
+        self.render_helper(relay_github_repositories=['example/alpha'],
+                           relay_codex_user=pwd.getpwuid(os.geteuid()).pw_name)
+        self.assertEqual(self.invoke(cwd=cwd, identity=self.identity)[1]['code'],
+                         'SANDBOX_CLEANUP_IDENTITY_MISMATCH')
+        saved = cwd.parent / 'saved'
+        cwd.rename(saved)
+        cwd.symlink_to(saved, target_is_directory=True)
+        self.assertEqual(self.invoke(cwd=cwd, identity=identity)[0], 1)
+        self.assertTrue((saved / '.codex-sandbox/private').exists())
 
     def invoke(self, cwd=None, identity=None):
         result = subprocess.run([sys.executable, '-I', '-S', str(self.helper),
