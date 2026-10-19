@@ -165,6 +165,13 @@ def validate_installation(response, config, field):
         fail(f"{field}_INSTALLATION_MISMATCH")
     if str(response.get("app_id", "")) != config["app_id"] or response.get("app_slug") != config["slug"]:
         fail(f"{field}_APP_MISMATCH")
+    pool = managed_pool_binding(config)
+    if pool:
+        account = require_object(response.get("account"), f"{field}_ACCOUNT")
+        login = account.get("login")
+        if (account.get("type") != "Organization" or not isinstance(login, str)
+                or login.lower() != pool["organization"].lower()):
+            fail(f"{field}_POOL_ORGANIZATION_MISMATCH")
     return response
 
 
@@ -179,6 +186,40 @@ def parse_permissions(value, field):
     return permissions
 
 
+def managed_pool_binding(config):
+    """Use only the root-generated wrapper's configured pool identity/targets.
+
+    A separate pool App does not extend the Writer's permitted write scopes.
+    Live App, installation and organization identity are still proved by GETs.
+    """
+    if config["role"] != "writer":
+        return None
+    try:
+        pool = json.loads(os.environ.get("RELAY_MANAGED_POOL_BINDING", "null"))
+    except (ValueError, TypeError):
+        fail("MANAGED_POOL_BINDING_INVALID")
+    if pool is None:
+        return None
+    if not isinstance(pool, dict) or set(pool) != {"appId", "installationId", "organization", "repositories"}:
+        fail("MANAGED_POOL_BINDING_INVALID")
+    if any(not isinstance(pool[key], str) or not re.fullmatch(r"[1-9][0-9]{0,19}", pool[key])
+           for key in ("appId", "installationId")):
+        fail("MANAGED_POOL_BINDING_INVALID")
+    organization = pool["organization"]
+    repositories = pool["repositories"]
+    if (not isinstance(organization, str) or not re.fullmatch(r"[A-Za-z0-9-]+", organization)
+            or not isinstance(repositories, list) or not repositories
+            or any(not isinstance(repository, str)
+                   or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+                   or repository.split("/")[0].lower() != organization.lower()
+                   for repository in repositories)
+            or config["repository"] not in repositories):
+        fail("MANAGED_POOL_BINDING_INVALID")
+    if pool["appId"] != config["app_id"] or pool["installationId"] != config["installation_id"]:
+        return None
+    return pool
+
+
 def expected_installation_permissions(config):
     configured_names = set(env_required("RELAY_EXPECTED_WRITE_PERMISSION_NAMES").split(","))
     if configured_names != EXPECTED_WRITE_PERMISSION_NAMES[config["role"]]:
@@ -186,6 +227,8 @@ def expected_installation_permissions(config):
     result = {name: "read" for name in EXPECTED_READ_PERMISSION_NAMES[config["role"]]}
     for name in EXPECTED_WRITE_PERMISSION_NAMES[config["role"]]:
         result[name] = "write"
+    if managed_pool_binding(config):
+        result["organization_self_hosted_runners"] = "write"
     return result
 
 
