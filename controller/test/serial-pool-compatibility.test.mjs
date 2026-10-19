@@ -258,11 +258,12 @@ test('complete inventories reject extra, duplicate and altered historical/curren
   await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_ENVELOPE_CHANGED' });
 });
 
-test('full inventory is validated before task/slot filtering', { skip: !linux }, async t => {
+test('sealed ownership remains strict on primary while distinct managed resource ignores unrelated history', { skip: !linux }, async t => {
   const f = await fixture(t); const ctx = await f.load();
   const changed = structuredClone(f.records[0]); changed.envelope.issueNumber = 77;
   await f.originalStore.put(99, changed);
-  await assert.rejects(invokeOriginalReader(ctx, { operation: 'inventory', task: 42, slot: 'pool-2' }),
+  assert.deepEqual(await invokeOriginalReader(ctx, { operation: 'inventory', task: 42, slot: 'pool-2' }), { active: [], unknown: [] });
+  await assert.rejects(invokeOriginalReader(ctx, { operation: 'inventory', task: 42, slot: 'primary' }),
     { code: 'SERIAL_POOL_COMPATIBILITY_ENVELOPE_CHANGED' });
 });
 

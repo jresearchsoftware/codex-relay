@@ -157,6 +157,7 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Durable/published head: ${head}`,
     `Observed integration base: ${integrationBase}`,
     `Terminal code: ${safeCode(terminalCode)}`,
+    ...(d.admissionSummary ? [`Admission diagnostic: ${safeText(d.admissionSummary)}`] : []),
     `Classification: ${diagnosticCode(d)}`,
     `Last successful boundary: ${safeBoundary(d.lastSuccessfulBoundary)}`,
     `Failure boundary: ${safeBoundary(d.failureBoundary)}`,

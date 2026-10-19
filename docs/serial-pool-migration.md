@@ -125,8 +125,16 @@ digest. The admission gate and lock remain shared. Original SERIAL records stay
 flat and retain their original digest and repository; only that anchor's
 requests can select their historical programs. Identical run/Task numbers in
 another configured repository do not select or overwrite anchor history. Store
-classification still inspects all configured namespaces before publication or
-admission and rejects foreign, aliased, malformed or mixed flat/current state.
+classification still inspects all configured namespaces for global lifecycle
+drain and ownership reconciliation. Ordinary target reads/writes and resource
+admission verify the sealed source/configuration/gate and exact selected record;
+an unrelated missing terminal receipt or incompatible historical record does not
+reserve a free managed slot or independent Task. Bounded scans retain damaged
+record identities. A sealed original journal may prove its Task/ref ownership,
+without proving successful admission, containment or terminal disposition.
+Unidentifiable ownership, changed seals, foreign/aliased paths and mixed
+flat/current state retain explicit blocking diagnostics. Historical bytes and
+digests are never rewritten to obtain a current successful classification.
 
 After backend installation, pool reconciliation and runtime/activation identity
 proof, retirement reobserves the exact original registration. Its durable

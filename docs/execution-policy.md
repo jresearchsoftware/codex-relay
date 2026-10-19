@@ -32,6 +32,14 @@ TEST state may be deleted and rebuilt without forensic preservation or a
 protected recovery procedure. Stop if the sandbox boundary or an effect outside
 it is uncertain; disposable TEST authority does not resolve that uncertainty.
 
+For fresh schema-v4 independent source/research attempts, the prior-state stops
+apply to the concrete shared checkout, physical execution resource, exclusive
+environment or external effect whose independence cannot be established. Missing
+an unrelated older Outcome alone does not block an independent attempt. Unknown
+older work remains unknown, without cancellation, negative-start proof, Step
+reuse or another model call for that same attempt. Full lifecycle drain and
+ownership reconciliation retain their global evidence requirements.
+
 Subagent use is discretionary and evidence-driven within the resolved Subagents
 permission. It does not authorize nested Relay workers or execution fan-out.
 Keep the admitted parent model/effort fixed. Select each subagent's model and

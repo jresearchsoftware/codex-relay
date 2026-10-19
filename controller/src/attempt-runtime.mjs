@@ -1,6 +1,6 @@
 import { CONSUMER, EXECUTION_CONSUMER, executionConsumer } from '../../consumer/consumer.mjs';
-import { mkdir, lstat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { git, collectProgress, REMOTE } from './trusted-git.mjs';
 import { fail, validateEnvelope } from './execution-contract.mjs';
 import { establishCanonicalCheckout } from './canonical-checkout.mjs';
@@ -13,8 +13,9 @@ export async function prepareCheckout(e, { root, remote = REMOTE, token = proces
   const cwd = checkoutPath(e, root);
   // Existing work is evidence, not disposable scratch. Preparation failure is
   // visible and needs inspection instead of an automatic destructive retry.
-  if (await lstat(cwd).catch(() => null)) fail('CHECKOUT_ALREADY_EXISTS');
-  await mkdir(cwd, { recursive: true, mode: 0o2770 });
+  await mkdir(dirname(cwd), { recursive: true, mode: 0o2770 });
+  try { await mkdir(cwd, { mode: 0o2770 }); }
+  catch (error) { if (error.code === 'EEXIST') fail('CHECKOUT_ALREADY_EXISTS'); throw error; }
   await git(cwd, ['init']);
   await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation,
     allowBaseAdvance: e.request?.kind === 'admission' }, { remote, token });

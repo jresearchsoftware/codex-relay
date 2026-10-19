@@ -95,6 +95,14 @@ See [current protocol capabilities](../reviewer/README.md#current-protocol-capab
    and full copyable prompt. Only the prompt fence may be folded by default,
    after actual GitHub expand/copy usability is qualified; otherwise it stays
    open. The handoff does not allocate a future Step.
+   A fresh native command may admit an independent source/research attempt even
+   when an older Step has no terminal Outcome. Use an independent checkout and
+   available execution resource; a shared checkout, physical slot or exclusive
+   environment remains exclusive. Withdrawal revokes future authority without
+   proving whether an offline manual session ever started. There is no mandatory
+   Start/Cancel handshake and no implicit cancellation of the older attempt.
+   Each new attempt has its own Step and may duplicate computation; replay of
+   the same attempt never invokes the model again.
 5. **Inspect the single Writer Outcome.** Automatic workers preserve task
    commits and report validation claims. Trusted Writer imports bounded objects
    into fresh Git, scans every introduced blob, revalidates authority and pushes
@@ -107,6 +115,12 @@ See [current protocol capabilities](../reviewer/README.md#current-protocol-capab
    target and replay state before publishing one canonical Writer-Bot Outcome.
    It records claims and verified bindings, not independent proof of every
    claimed test or operation.
+   Competing candidates retain the canonical Task branch. The first authorized
+   publication may advance its exact predecessor; another candidate must stop
+   when that predecessor has changed. Unknown push/PR operations hold their
+   own publication target until exact readback recovery. Late original reports
+   do not roll back current Step/title or Draft/Ready state and cannot accept a
+   newer head. A same-Task missing Outcome is not a global admission dependency.
    For schema-v4 work, valid trusted Decisions added during execution are
    reported alongside the original immutable admission. They do not suppress
    a truthful Outcome or prove that newly added work was performed. Permission

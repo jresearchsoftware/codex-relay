@@ -134,16 +134,27 @@ test('manual no-PR reporting accepts trusted Decision drift and preserves claims
   assert.equal(f.comments.filter(c => extractAuthorityRecord(c.body)?.kind === 'outcome').length, 1);
 });
 
-test('reporting still rejects altered original source bytes, wrong trusted actor, execution identity and changed starting pins', async t => {
-  for (const change of ['bytes', 'actor', 'digest', 'branch', 'snapshot-scope']) {
+test('reporting still rejects altered original source bytes, wrong trusted actor and execution identity', async t => {
+  for (const change of ['bytes', 'actor', 'digest', 'snapshot-scope']) {
     const f = await driftFixture(t);
     if (change === 'bytes') f.decisions[0].body += '<!-- edited -->';
     if (change === 'actor') f.decisions[0].user.id++;
     if (change === 'digest') f.envelope.authorityDigest = 'f'.repeat(64);
-    if (change === 'branch') f.amend({ branch: 'codex/other' });
     if (change === 'snapshot-scope') f.envelope.request.scope = ['Caller-expanded scope'];
     await assert.rejects(revalidateAuthority(f.api, f.envelope, { reporting: true }),
       { code: change === 'digest' ? 'EXECUTION_ENVELOPE_INVALID'
-        : ['branch', 'snapshot-scope'].includes(change) ? 'AUTHORITY_CHANGED' : 'AUTHORITY_SOURCE_MISMATCH' });
+        : change === 'snapshot-scope' ? 'AUTHORITY_CHANGED' : 'AUTHORITY_SOURCE_MISMATCH' });
+  }
+});
+
+test('late original reporting survives new starting pins while active effects remain bound to current authority', async t => {
+  for (const amendments of [{ branch: 'codex/other' }, { base_sha: 'f'.repeat(40) }, { starting_head: 'f'.repeat(40) }]) {
+    const f = await driftFixture(t);
+    f.amend(amendments);
+    const reported = await revalidateAuthority(f.api, f.envelope, { reporting: true });
+    assert.equal(reported.authorityDrift.review_required, true);
+    for (const field of Object.keys(amendments)) assert.ok(reported.authorityDrift.changed_fields.includes(field));
+    await assert.rejects(revalidateAuthority(f.api, f.envelope), { code: 'AUTHORITY_CHANGED' });
+    assert.deepEqual((await f.store.get(99)).envelope, f.originalEnvelope);
   }
 });

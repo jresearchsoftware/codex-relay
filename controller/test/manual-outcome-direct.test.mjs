@@ -9,7 +9,7 @@ const copy = value => structuredClone(value);
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nBounded manual qualification.';
 const head = 'a'.repeat(40);
 const parent = { kind: 'issue', number: 42 };
-function fixture({ prState, resultKind = 'qualification', status = 'implemented', version = '4.0' } = {}) {
+function fixture({ prState, resultKind = 'qualification', status = 'implemented', version = '4.0', historical = false } = {}) {
   const source = { charter: { kind: 'issue-body', id: 42, parent: copy(parent), sha256: sha256Body(charter) },
     decisions: [], change_request: null, compatibility_request: null };
   const authority = { ...source, sha256: authoritySourceDigest(source) };
@@ -47,6 +47,7 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
       calls.push(['get', path]);
       if (path === '/issues/42') return { number: 42, body: charter };
       if (path === '/pulls/55' && pr) return copy(pr);
+      if (path === `/git/commits/${head}`) return { sha: head };
       if (/^\/issues\/comments\/\d+$/.test(path)) {
         const comment = comments.find(c => c.id === Number(path.split('/').at(-1)));
         if (comment) return copy(comment);
@@ -84,6 +85,7 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
     r.commentIntent = null; await store.put(123, r); return comment;
   }
   const invoke = async (value = result) => publishManualOutcome({ api, store, record: await store.get(123),
+    historical: async () => historical,
     submission: { repository: REPOSITORY, task: 42, run_id: 123, result: value }, commentOnce,
     rememberPullRequest: async (r, value) => { r.prNumber = value.number; await store.put(123, r); },
     existingPullRequest: async () => pr,
@@ -130,6 +132,21 @@ test('blocked manual Git outcome drafts before publishing and never marks Ready'
   const value = await f.invoke();
   assert.equal(value.status, 'BLOCKED');
   assert.deepEqual(f.transitions, [{ number: 55, draft: true, outcomeAlreadyDurable: false, status: 'blocked' }]);
+});
+
+test('a late historical manual result reports its original hosted commit without changing sibling lifecycle', async () => {
+  const f = fixture({ prState: 'open', resultKind: 'git', historical: true });
+  f.pr.head.sha = 'c'.repeat(40);
+  const receipt = await f.invoke();
+  assert.equal(receipt.head, head);
+  assert.equal(f.posted(), 1);
+  assert.deepEqual(f.transitions, []);
+  const outcome = extractAuthorityRecord(f.comments[0].body);
+  assert.equal(outcome.result.revision, head);
+  assert.match(outcome.limitations.at(-1), /Historical attempt report only/);
+  assert.deepEqual(await f.invoke(), receipt);
+  assert.equal(f.posted(), 1);
+  assert.deepEqual(f.transitions, []);
 });
 
 test('an implemented non-Git result on an open PR is rejected before irreversible publication', async () => {

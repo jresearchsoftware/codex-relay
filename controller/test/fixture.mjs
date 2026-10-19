@@ -173,16 +173,25 @@ export async function fixture(t, { remediation = false, continuation = false, co
           head: { ref: body.head, sha: await remoteHead(), repo: { full_name: REPOSITORY } }, mergeable: true };
         return copy(pr);
       }
-      if (path === '/issues/43/labels') {
-        pr.labels.push(...body.labels.map(name => ({ name }))); return copy(pr.labels);
+      if (path === '/issues/42/labels' || path === '/issues/43/labels') {
+        const subject = path === '/issues/42/labels' ? issue : pr;
+        for (const name of body.labels) if (!subject.labels.some(label => label.name === name)) subject.labels.push({ name });
+        return copy(subject.labels);
       }
       if (path.endsWith('/comments')) { const c = { id: nextComment++, user: { login: WRITER }, body: body.body }; comments.push(c); return copy(c); }
       throw new Error(`Unexpected POST ${path}`);
     },
     async delete(path) {
+      if (streamlinedAdmission && /^\/issues\/(42|43)\/labels\/step-/.test(path)) {
+        const subject = path.startsWith('/issues/42/') ? issue : pr;
+        subject.labels = subject.labels.filter(label => label.name !== decodeURIComponent(path.split('/').at(-1))); return;
+      }
       assertLabelPath(path);
       const subject = remediation ? pr : issue;
       subject.labels = subject.labels.filter(l => l.name !== path.split('/').at(-1));
+      if (streamlinedAdmission) events.push({ id: Math.max(...events.map(event => event.id)) + 1,
+        event: 'unlabeled', actor: { login: WRITER, type: 'Bot' }, label: { name: `codex-ready-${route}` },
+        created_at: run.created_at });
     },
     async patch(path, body) {
       if ((path === '/issues/42' || path === '/issues/43') && Object.keys(body).length === 1 && body.labels) {

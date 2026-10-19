@@ -27,12 +27,26 @@ test('accepted execution completion advances allocation, while rejected admissio
   assert.deepEqual(nextAdmissionStep([records[1]], 42), { step: 1, lineage: null });
 });
 
-test('active/uncertain publication and execution boundaries prevent concurrent fresh admission', () => {
+test('allocation is independent of old execution, handoff and publication completion', () => {
   for (const pending of [{ outcome: null }, { commentIntent: { key: 'outcome' } }, { prIntent: true },
     { publicationIntent: { head: 'a'.repeat(40) }, publishedHead: null },
     { publicationIntent: { head: 'a'.repeat(40) }, publishedHead: 'a'.repeat(40) },
     { lifecycleIntent: {} }, { handoffComplete: false }])
-    assert.throws(() => nextAdmissionStep([admitted(1, pending)], 42), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
+    assert.equal(nextAdmissionStep([admitted(1, pending)], 42).step, 2);
+});
+
+test('conflicting immutable Steps or run identities fail rather than reusing an admission', () => {
+  assert.throws(() => nextAdmissionStep([admitted(1, { nativeAdmission: true }), admitted(1, { envelope: {
+    issueNumber: 42, step: 1, runId: 202, attemptId: 'run-202' } })], 42), { code: 'PRIOR_ADMISSION_CONFLICT' });
+  assert.throws(() => nextAdmissionStep([admitted(1), admitted(2, { envelope: {
+    issueNumber: 42, step: 2, runId: 101, attemptId: 'run-101' } })], 42), { code: 'PRIOR_ADMISSION_CONFLICT' });
+});
+
+test('retained compatibility executions may repeat their original authored Step without rewriting history', () => {
+  const records = [admitted(3), admitted(3, { envelope: { issueNumber: 42, step: 3, runId: 204, attemptId: 'run-204' } })];
+  const before = structuredClone(records);
+  assert.equal(nextAdmissionStep(records, 42).step, 4);
+  assert.deepEqual(records, before);
 });
 
 test('allocation only counts successfully admitted executions of the same Task', () => {

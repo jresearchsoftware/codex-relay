@@ -44,6 +44,29 @@ export function createAttemptStore(root, { repository = REPOSITORY, repositories
     catch (error) { if (error.code === 'ENOENT') return null; fail('ATTEMPT_RECORD_UNREADABLE'); }
     return validate(value, target);
   }
+  async function scan() {
+    await assertNamespace();
+    const rows = []; let observed = 0;
+    for (const target of namespace ? repositories : [repository]) {
+      let names; try { names = await readdir(targetRoot(target)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+      observed += names.length;
+      if (observed > 10000) fail('ATTEMPT_STORE_LIMIT');
+      for (const name of names.filter(n => /^[1-9][0-9]*\.json$/.test(n))) {
+        const runId = Number(name.slice(0, -5));
+        try {
+          const record = await readRecord(runId, target);
+          const error = record === null ? 'ATTEMPT_RECORD_UNAVAILABLE'
+            : !record?.envelope || record.envelope.runId !== runId ? 'ATTEMPT_RECORD_INVALID' : null;
+          rows.push({ runId, repository: target, record, error });
+        } catch (error) {
+          // Preserve the known namespace/run identity. Callers may scope a
+          // check, but cannot silently turn an unreadable row into absence.
+          rows.push({ runId, repository: target, record: null, error: error.code ?? 'ATTEMPT_RECORD_UNREADABLE' });
+        }
+      }
+    }
+    return rows;
+  }
   return {
     async get(id, target = repository) {
       await assertNamespace();
@@ -75,17 +98,9 @@ export function createAttemptStore(root, { repository = REPOSITORY, repositories
       await rename(temp, path(id));
       await syncDirectory();
     },
+    scan,
     async all() {
-      await assertNamespace();
-      const records = [];
-      let observed = 0;
-      for (const target of namespace ? repositories : [repository]) {
-        let names; try { names = await readdir(targetRoot(target)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
-        observed += names.length;
-        if (observed > 10000) fail('ATTEMPT_STORE_LIMIT');
-        for (const name of names.filter(n => /^[1-9][0-9]*\.json$/.test(n))) records.push(await readRecord(Number(name.slice(0, -5)), target));
-      }
-      return records;
+      return (await scan()).map(row => { if (row.error) fail(row.error); return row.record; });
     }
   };
 }

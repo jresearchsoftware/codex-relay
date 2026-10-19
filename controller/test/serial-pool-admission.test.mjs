@@ -39,17 +39,22 @@ async function fixture(t) {
   let inspections = 0;
   // The installed adapter delegates this inventory to the bound original
   // source/config in an isolated process. Here both real gates use durable
-  // disjoint stores; complete original classification precedes every filter.
-  const supplementalInventory = async ({ task = null, slot = null } = {}) => {
+  // disjoint stores; admission scopes execution evidence to its resource.
+  const supplementalInventory = async ({ task = null, slot = null, resourceOnly = false } = {}) => {
     inspections++;
-    const complete = await original.status();
-    const selected = new Set((await originalStore.all()).filter(({ envelope: e }) =>
+    const selected = (await originalStore.all()).filter(({ envelope: e }) =>
       (task === null || e.issueNumber === task) && (slot === null || (e.executionSlot ?? 'primary') === slot))
-      .map(({ envelope }) => envelope.runId));
-    return { active: complete.active.filter(id => selected.has(id)), unknown: complete.unknown.filter(id => selected.has(id)) };
+    const gate = createAdmissionControl({ root, consumerDigest: originalDigest,
+      store: { all: async () => selected }, journal: originalJournal, protectedRoot: false });
+    if (resourceOnly) {
+      try { await gate.assertSlotComplete(slot); return { active: [], unknown: [] }; }
+      catch (error) { if (error.code !== 'EXECUTION_SLOT_UNAVAILABLE') throw error; return error.details; }
+    }
+    return gate.status();
   };
   const options = { root, consumerDigest: CONSUMER_DIGEST, store: currentStore,
-    journal: currentJournal, protectedRoot: false, stateName: 'admission-pool-v1.json', supplementalInventory };
+    journal: currentJournal, protectedRoot: false, stateName: 'admission-pool-v1.json', supplementalInventory,
+    supplementalVerify: async () => { inspections++; await original.read(); } };
   return { root, original, originalBytes, originalStore, currentStore, options,
     gate: createAdmissionControl(options), inspections: () => inspections };
 }
@@ -105,31 +110,33 @@ test('unknown original containment remains visible and prevents drain or verifie
   assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), f.originalBytes);
 });
 
-test('unknown digest in either store fails complete classification before unrelated admission or gate reads', async t => {
+test('unknown digest holds its resource and global lifecycle, while independent admission stays available', async t => {
   for (const old of [true, false]) await t.test(old ? 'original store' : 'current store', async t => {
     const f = await fixture(t);
     await f.gate.initialize();
     await (old ? f.originalStore : f.currentStore).put(33, record(33, 99, { digest: 'c'.repeat(64) }));
-    for (const action of [() => f.gate.read(), () => f.gate.assertOpen(), () => f.gate.status(),
-      () => f.gate.initialize(), () => f.gate.assertTaskComplete(41), () => f.gate.assertSlotComplete('primary'),
-      () => f.gate.complete({ runId: 22, attemptId: 'run-22' })]) {
+    for (const action of [() => f.gate.status(), () => f.gate.assertTaskComplete(99), () => f.gate.assertSlotComplete('primary')]) {
       await assert.rejects(action(), { code: 'ADMISSION_ATTEMPT_INVALID' });
     }
+    await f.gate.read(); await f.gate.assertOpen(); await f.gate.initialize();
+    await f.gate.assertTaskComplete(41); await f.gate.assertSlotComplete('pool-2');
     assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), f.originalBytes);
   });
 });
 
-test('malformed unrelated current lifecycle cannot hide behind a filtered admission check', async t => {
+test('malformed lifecycle holds its own Task and slot without blocking an unrelated resource', async t => {
   const f = await fixture(t);
   await f.gate.initialize();
   await f.currentStore.put(33, record(33, 99, { status: 'unrecognized' }));
-  await assert.rejects(f.gate.assertTaskComplete(41), { code: 'ADMISSION_ATTEMPT_INVALID' });
-  await assert.rejects(f.gate.assertSlotComplete('pool-2'), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  await f.gate.assertTaskComplete(41);
+  await f.gate.assertSlotComplete('pool-2');
+  await assert.rejects(f.gate.assertTaskComplete(99), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  await assert.rejects(f.gate.assertSlotComplete('primary'), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
 });
 
 test('compatibility verification failure precedes creation and mutation of a new gate', async t => {
   const f = await fixture(t);
-  const gate = createAdmissionControl({ ...f.options, supplementalInventory: async () => {
+  const gate = createAdmissionControl({ ...f.options, supplementalVerify: async () => {
     throw Object.assign(new Error('changed original record'), { code: 'SERIAL_POOL_ORIGINAL_RECORD_CHANGED' });
   } });
   await assert.rejects(gate.initialize(), { code: 'SERIAL_POOL_ORIGINAL_RECORD_CHANGED' });

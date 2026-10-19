@@ -95,8 +95,12 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     stage = 'progress';
     const progress = await collect(e);
     if (typeof progress.clean !== 'boolean') fail('WORKTREE_STATE_UNKNOWN');
-    record.collection = { head: progress.head, clean: progress.clean === true };
+    record.collection = { head: progress.head, clean: progress.clean === true, preserved: true };
     lastSuccessfulBoundary = 'collection';
+    // Collection observes the complete retained checkout after containment.
+    // Persist that physical-resource proof before any external publication;
+    // an uncertain Writer response cannot turn it into unknown execution.
+    await journal.put(e.runId, record);
     if (progress.bundle) {
       const published = await invoke('publish-progress', { bundle: progress.bundle });
       record.progress = { head: published.publishedHead, prNumber: published.prNumber, clean: progress.clean === true };
