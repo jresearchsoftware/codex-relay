@@ -10,12 +10,22 @@ import errno
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
 import sys
 import time
 
 WORK_ROOT = {{ relay_dispatch_work_root | to_json }}
+{% if relay_github_repositories is defined %}
+REPOSITORY_ROOT_USERS = {
+{% for repository in relay_github_repositories %}
+    {{ (relay_dispatch_work_root ~ '/repositories/' ~ repository) | to_json }}: {{ (relay_repository_runtime_users | default({})).get(repository, relay_codex_user) | to_json }},
+{% endfor %}
+}
+{% else %}
+REPOSITORY_ROOT_USERS = None
+{% endif %}
 SANDBOX = '.codex-sandbox'
 MAX_ENTRIES = 100000
 MAX_DEPTH = 128
@@ -68,13 +78,23 @@ def cleanup(argv):
     if len(argv) != 4 or argv[0] != '--cwd' or argv[2] != '--sandbox-identity':
         reject('SANDBOX_CLEANUP_ARGUMENT_INVALID')
     cwd, identity = argv[1], argv[3]
-    if os.path.dirname(cwd) != WORK_ROOT or not re.fullmatch(r'(?:run|event)-[1-9][0-9]{0,19}', os.path.basename(cwd)):
+    work_root = os.path.dirname(cwd)
+    if REPOSITORY_ROOT_USERS is None:
+        allowed_root = work_root == WORK_ROOT
+    else:
+        # Installation-owned profiles bind cleanup to the same repository and
+        # runtime identity as execution. Caller input cannot add a work root.
+        try:
+            allowed_root = REPOSITORY_ROOT_USERS.get(work_root) == pwd.getpwuid(os.geteuid()).pw_name
+        except KeyError:
+            allowed_root = False
+    if not allowed_root or not re.fullmatch(r'(?:run|event)-[1-9][0-9]{0,19}', os.path.basename(cwd)):
         reject('SANDBOX_CLEANUP_PATH_INVALID')
     if not re.fullmatch(r'[0-9]{1,20}:[1-9][0-9]{0,19}', identity):
         reject('SANDBOX_CLEANUP_IDENTITY_INVALID')
     expected = tuple(map(int, identity.split(':')))
     operation = 'open-work-root'
-    root = open_absolute(WORK_ROOT)
+    root = open_absolute(work_root)
     try:
         operation = 'open-checkout'
         checkout = checked('open', os.open, os.path.basename(cwd), FLAGS, dir_fd=root)

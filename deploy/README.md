@@ -289,6 +289,10 @@ upgrade, including retained slots and managed-pool slots. It repairs ancestor
 metadata left by recursive runner creation under `UMask=0077`, without walking
 or changing existing attempt contents. The launcher and cleanup boundaries,
 private journals and credential permissions remain unchanged.
+The cleanup helper uses the same configured repository work roots and runtime
+identity binding as the launcher. It retains direct-attempt, pre-child inode,
+no-follow traversal and private-mode protections; repository-qualified attempts
+require no separate operator cleanup action.
 
 Use the existing `general-runner-register` and `general-runner-enable` phases
 with `--execution-slot <id>` for an additional configured slot; omission selects
