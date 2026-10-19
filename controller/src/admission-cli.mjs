@@ -94,6 +94,23 @@ export async function drainAdmission({ operationId, timeout }, { snapshot, wait 
     await wait(Math.min(1000, deadline - now()));
   }
 }
+export async function readDrainSnapshot(operationId, remaining, { execute = exec } = {}) {
+  try {
+    const result = await execute('/usr/bin/flock', ['-w', '1', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
+      '/usr/bin/node', fileURLToPath(import.meta.url), 'drain-check', '--operation', operationId],
+    { env: { RELAY_CONSUMER_CONFIG: process.env.RELAY_CONSUMER_CONFIG, RELAY_REPOSITORY: CONSUMER.repository, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+      // A retained-history inventory can exceed five seconds. Bound the full
+      // locked observation by the remaining drain deadline, not a shorter poll.
+      timeout: remaining, maxBuffer: 1024 * 1024 });
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    let payload;
+    try { payload = JSON.parse(error.stderr); } catch { /* flock contention has no JSON */ }
+    if (payload?.code) fail(payload.code);
+    if (error.code === 1 && !error.stdout && !error.stderr) return { drained: false };
+    fail('ADMISSION_DRAIN_STATUS_UNAVAILABLE');
+  }
+}
 export async function main(args = process.argv.slice(2)) {
   if (process.getuid?.() !== 0) fail('FIXED_ROOT_ADMISSION_REQUIRED');
   assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);
@@ -103,21 +120,7 @@ export async function main(args = process.argv.slice(2)) {
     // Never hold that lock during the wait: admitted controllers must finish.
     return drainAdmission(options, {
       reportProgress: value => process.stderr.write(`ADMISSION_DRAIN_PROGRESS phase=${value.phase} active=${value.active ?? 'UNAVAILABLE'} unknown=${value.unknown ?? 'UNAVAILABLE'} elapsedSeconds=${value.elapsedSeconds}\n`),
-      snapshot: async (operationId, remaining) => {
-      try {
-        const result = await exec('/usr/bin/flock', ['-w', '1', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
-          '/usr/bin/node', fileURLToPath(import.meta.url), 'drain-check', '--operation', operationId],
-        { env: { RELAY_CONSUMER_CONFIG: process.env.RELAY_CONSUMER_CONFIG, RELAY_REPOSITORY: CONSUMER.repository, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
-          timeout: Math.min(5000, remaining), maxBuffer: 1024 * 1024 });
-        return JSON.parse(result.stdout);
-      } catch (error) {
-        let payload;
-        try { payload = JSON.parse(error.stderr); } catch { /* flock contention has no JSON */ }
-        if (payload?.code) fail(payload.code);
-        if (error.code === 1 && !error.stdout && !error.stderr) return { drained: false };
-        fail('ADMISSION_DRAIN_STATUS_UNAVAILABLE');
-      }
-    } });
+      snapshot: readDrainSnapshot });
   }
   const admission = installedAdmissionControl();
   if (command === 'drain-check') return admission.drained(options);
