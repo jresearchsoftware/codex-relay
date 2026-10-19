@@ -10,7 +10,7 @@ import { setTimeout } from 'node:timers/promises';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
-import { parseAdmissionArguments, drainAdmission, readAdmissionSnapshot } from '../src/admission-cli.mjs';
+import { parseAdmissionArguments, drainAdmission, readDrainSnapshot, readAdmissionSnapshot } from '../src/admission-cli.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { reportRoutingResult } from '../src/entrypoint.mjs';
 import { VERSION } from '../src/execution-contract.mjs';
@@ -348,6 +348,42 @@ test('bounded drain releases its snapshot lock while waiting and cannot imply su
   await assert.rejects(drainAdmission({ operationId, timeout: 2 }, { snapshot: async () => ({ drained: false }),
     now: () => clock, wait: async ms => { clock += ms; } }), { code: 'ADMISSION_DRAIN_TIMEOUT' });
   assert.equal(clock, 2000);
+});
+
+test('drain permits a retained-history snapshot longer than five seconds within its deadline', async () => {
+  const result = await drainAdmission({ operationId, timeout: 15 }, {
+    snapshot: (operation, remaining) => readDrainSnapshot(operation, remaining, {
+      execute: (file, args, options) => {
+        assert.equal(file, '/usr/bin/flock');
+        assert.deepEqual(args.slice(0, 2), ['-w', '1']);
+        assert.deepEqual(args.slice(-3), ['drain-check', '--operation', operationId]);
+        assert.equal(options.env.RELAY_REPOSITORY, CONSUMER.repository);
+        assert.equal(options.maxBuffer, 1024 * 1024);
+        // Exercise execFile's real timeout behavior rather than just inspecting
+        // the configured number. The old five-second cap kills this reader.
+        return exec(process.execPath, ['-e',
+          'setTimeout(() => console.log(JSON.stringify({drained:true,active:[],unknown:[]})), 5200)'], options);
+      }
+    })
+  });
+  assert.deepEqual(result, { drained: true, active: [], unknown: [] });
+});
+
+test('drain snapshot retains deadline, contention and fail-closed error handling', async () => {
+  await assert.rejects(readDrainSnapshot(operationId, 50, {
+    execute: (_file, _args, options) => exec(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], options)
+  }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
+  const reject = error => ({ execute: async () => { throw error; } });
+  assert.deepEqual(await readDrainSnapshot(operationId, 1000, reject({ code: 1, stdout: '', stderr: '' })),
+    { drained: false });
+  await assert.rejects(readDrainSnapshot(operationId, 1000,
+    reject({ code: 1, stderr: '{"code":"ADMISSION_DRAIN_UNKNOWN"}' })), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  for (const error of [{ code: 2 }, { code: 1, stderr: 'unreadable' }, { code: 1, stdout: 'partial' }]) {
+    await assert.rejects(readDrainSnapshot(operationId, 1000, reject(error)),
+      { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
+  }
+  await assert.rejects(readDrainSnapshot(operationId, 1000, { execute: async () => ({ stdout: '{' }) }),
+    { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
 });
 
 test('long drain emits bounded counts every thirty seconds without exposing attempt identities or changing its result', async () => {

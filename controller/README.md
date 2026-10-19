@@ -440,7 +440,12 @@ same existing terminal journal evidence. Missing, mismatched or unknown
 execution and ambiguous publication fail closed.
 
 Drain polls bounded snapshots and releases the Writer lock between snapshots,
-allowing admitted controllers to finish. It emits only bounded active/unknown
+allowing admitted controllers to finish. Each snapshot allows
+the protected retained-history inventory the remaining overall drain
+deadline rather than a separate five-second subprocess limit. The one-second
+lock acquisition wait remains unchanged; contention permits another observation
+while the deadline remains. A slow inventory does not bypass any history checks.
+Drain emits only bounded active/unknown
 counts and elapsed time on stderr every thirty seconds; stdout remains one JSON
 receipt. Timeout, unreadable state or an unknown attempt preserves quiesce for
 owner inspection. Drain neither relaunches Codex nor discards retained work or
