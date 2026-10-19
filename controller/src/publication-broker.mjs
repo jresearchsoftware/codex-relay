@@ -262,7 +262,51 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     if (r.relationshipIntent) { r.relationshipIntent = null; await store.put(r.envelope.runId, r); }
     return pr;
   }
-  async function existingPullRequest(r, { allowStepMirror = false } = {}) {
+  async function historicalManualPullRequest(r) {
+    const e = r.envelope;
+    // An Issue report cannot replace an original PR target or escape an
+    // unresolved effect. Only its own exact Issue Outcome POST may recover.
+    if (e.target === 'pull_request' || e.continuation?.pullRequest || e.request.existing_pr
+      || r.outcome?.prNumber) fail('PR_AUTHORITY_CHANGED');
+    const effect = ['publicationIntent', 'publishedHead', 'lifecycleIntent', 'relationshipIntent',
+      'readinessIntent', 'successOutcomeIntent'].find(key => r[key])
+      ?? (r.prepublicationRecovery?.publication ? 'prepublicationRecovery' : null)
+      ?? (r.commentIntent && (r.commentIntent.key !== 'outcome' || r.commentIntent.number !== e.issueNumber)
+        ? 'commentIntent' : null);
+    if (effect) throw Object.assign(new Error('MANUAL_OUTCOME_PUBLICATION_UNRESOLVED'), {
+      code: 'MANUAL_OUTCOME_PUBLICATION_UNRESOLVED', details: { conflictingAttempt: e.attemptId,
+        resource: effect, nextAction: 'inspect-original-manual-publication' } });
+    if (!e.branch) return null;
+    const artifacts = await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(e.branch)}`);
+    const owns = (pr, owner) => pr.body?.split(/\r?\n/).includes(`Execution admission digest: ${admissionBinding(owner.request).sha256}`);
+    const original = artifacts.filter(pr => owns(pr, e)
+      || pr.body?.split(/\r?\n/).includes(`Attempt: ${e.attemptId}`));
+    if (original.length > 1) fail('PR_AMBIGUOUS');
+    if (original.length) return original[0];
+    const open = artifacts.filter(pr => pr.state === 'open');
+    if (open.length > 1) fail('PR_AMBIGUOUS');
+    if (open.length) {
+      const records = await publicationRecords(e);
+      for (const pr of open) {
+        assertPr(pr, pr.number);
+        const owners = records.filter(other => !other.admissionBlock
+          && other.envelope?.repository === e.repository && other.envelope.issueNumber === e.issueNumber
+          && other.envelope.branch === e.branch && other.envelope.step > e.step
+          && other.envelope.request?.kind === 'admission' && owns(pr, other.envelope)
+          && (!other.prNumber || other.prNumber === pr.number)
+          && (other.envelope.target !== 'pull_request' || other.envelope.number === pr.number)
+          && (!other.envelope.continuation?.pullRequest || other.envelope.continuation.pullRequest === pr.number)
+          && (!other.envelope.request.existing_pr || other.envelope.request.existing_pr === pr.number));
+        if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber || owners.length !== 1)
+          fail('PR_AUTHORITY_CHANGED');
+      }
+    }
+    // Discovery here is read-only: a sibling's PR is never remembered as ours,
+    // and its current title, Step labels, ref and readiness remain untouched.
+    return null;
+  }
+  async function existingPullRequest(r, { allowStepMirror = false, attemptOnly = false } = {}) {
+    if (attemptOnly) return historicalManualPullRequest(r);
     const e = r.envelope;
     const projection = await projectionFor(e, { sameBranch: true });
     if (e.target === 'pull_request') {

@@ -58,7 +58,7 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     if (result.status === 'implemented' && pr.state === 'open' && result.result.kind !== 'git') fail('PUBLISHED_HEAD_REQUIRED');
     await rememberPullRequest(r, pr);
   } else if (result.parent.number !== e.issueNumber || r.prNumber || r.prIntent
-    || e.branch && await existingPullRequest(r)) fail('PR_AUTHORITY_CHANGED');
+    || (e.branch || historicalResult) && await existingPullRequest(r, { attemptOnly: historicalResult })) fail('PR_AUTHORITY_CHANGED');
   const writer = await api.userIdentity(WRITER);
   if (writer.login !== WRITER || writer.type !== 'Bot' || !positive(writer.id)) fail('WRITER_IDENTITY_CHANGED');
   if (r.outcome) {

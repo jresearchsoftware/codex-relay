@@ -342,6 +342,15 @@ that the executor satisfied requirements added later. This applies to manual
 and automatic completion, including a blocked result when a later action is
 no longer authorized.
 
+A historical schema-v4 Issue-parent manual Outcome stays on its original Issue
+when a later immutable admission owns the current PR on the same Task branch.
+Writer checks the original attempt's PR bindings and publication effects without
+adopting the sibling PR or changing its ref, metadata or readiness. An original
+PR target, unresolved original effect or ambiguous PR ownership still blocks
+Issue publication; only the exact original Issue Outcome POST may be recovered.
+The late report remains attributable to its original admission and Step and
+grants no acceptance of the current head.
+
 Reporting a result grants no new operation permission. Source publication and
 other execution actions remain bounded by both admitted and current protected
 authority; uncertain or revoked permission stops the action while preserving
