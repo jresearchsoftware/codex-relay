@@ -2,7 +2,10 @@
 
 Load an explicit [consumer configuration](../consumer/README.md) before execution.
 
-For the ordinary human path, see the [Task workflow guide](../docs/task-workflow.md).
+For owner acceptance and ordinary authorized standalone/manual work, see the
+[Task workflow guide](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
+This contract describes native Relay routing, not a requirement to fabricate
+native admission for the standalone route.
 A Task marked `Authority model: github-native-v1` uses its current stable charter,
 applicable trusted Decisions and an independent exact-head native Change Request
 when remediation is needed. New schema `4.0` execution snapshots are created by

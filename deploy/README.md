@@ -8,6 +8,11 @@ not copy or maintain its inventory, roles, tasks or handlers.
 
 For an owner-designated isolated TEST deployment, use the standing
 [TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
+Keep reproduction, related repairs, representative installation and the original
+operation within the [bounded repair policy](../docs/execution-policy.md), through
+durable result publication. Source acceptance and the normal owner-triggered
+deployment path follow the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes);
+documentation alone proves no installed capability or deployment result.
 Disposable TEST cleanup and rebuilding may use suitable shells and tools;
 these production-safe lifecycle procedures are optional inside that sandbox.
 When qualifying a product lifecycle interface, exercise and report its actual

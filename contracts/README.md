@@ -593,6 +593,13 @@ of current checks, mergeability or independent review acceptance.
 
 ### Authorized continuation after independent acceptance
 
+This section specifies the native Relay continuation helper. Repository owner
+acceptance by verified merge and ordinary authorized standalone/manual work
+follow the [Task workflow policy](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
+Missing historical native receipts do not reverse that owner acceptance; they
+also do not manufacture the native evidence this helper requires for a new
+operation. No installed helper behavior changes through this policy distinction.
+
 The complete Request, authored Step and `task_complete` details below describe
 the retained schema 3.0 path. Schema 4.0 uses the exact authority/admission/Outcome
 binding, verified canonical completion and `{hold,next}` direction described in

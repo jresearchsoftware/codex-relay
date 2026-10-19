@@ -114,9 +114,13 @@ its additional topics do not alter native verdict, identity or routing behavior.
 enabled `submit_manual_outcome` tool. A caller needing current Task Decisions,
 CR publication, independent review or a manual Writer Outcome must use the
 required current connected App/Reviewer/Writer capability. If the tool is absent
-or its exposed schema is outdated, stop before mutation, identify the missing
+or its exposed schema is outdated, stop the affected native operation before mutation, identify the missing
 tool/schema and the qualified installation/connection needed, and ask the owner
-to correct that mismatch within existing installation authority. Never substitute
+to correct that mismatch within existing installation authority. Ordinary
+owner-authorized standalone/manual work follows the
+[route policy](../docs/task-workflow.md#owner-acceptance-and-execution-routes),
+without fabricating native records or replacing admitted-attempt recovery.
+This distinction does not add an installed service capability. Never substitute
 a v3 Decision/Task Request/CR, legacy CR2, old owner-result comment transport or alternate
 legacy routing. Historical exact-attempt completion/recovery uses its preserved
 contract; it does not initiate fresh work.

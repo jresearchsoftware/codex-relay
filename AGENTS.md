@@ -1,6 +1,9 @@
 # Developing Codex Relay
 
-These instructions govern **owner-admitted Relay/Codex development**. Ordinary
+These instructions govern **owner-admitted Relay/Codex development**. The
+[Task workflow](docs/task-workflow.md#owner-acceptance-and-execution-routes)
+also defines owner acceptance and ordinary authorized standalone/manual work;
+native admission and publication rules apply to the Relay route. Ordinary
 human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
 Task/Step admission, an installed Relay consumer, Codex UI tools or these
 optional developer hooks to propose a change.
@@ -412,10 +415,12 @@ warnings, evidence gaps and limitations visibly readable before one folded
 canonical machine block. Preserve full handoff prompt bytes and historical body
 hashes; rendering changes grant no execution or publication authority.
 
-If the required connected App/Reviewer/Writer tool is missing or exposes an
-outdated input schema, stop with the missing capability and qualified installation
-needed to proceed. Never substitute legacy/v3 publication or routing for new v4
-work. The caller checks its available tools; the server cannot observe a stale
+If a required connected App/Reviewer/Writer tool is missing or exposes an
+outdated input schema, stop the affected native operation and identify the
+capability and qualified installation needed. An authorized standalone/manual
+route follows the Task workflow guide; it cannot fabricate native admission or
+replace an admitted attempt's publication/recovery. Never substitute legacy/v3
+publication or routing for new v4 work. The caller checks its available tools; the server cannot observe a stale
 client cache or an inaccessible connected App. See the
 [capability contract](reviewer/README.md#current-protocol-capabilities).
 
