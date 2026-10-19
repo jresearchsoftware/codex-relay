@@ -16,7 +16,22 @@ sys.path.insert(0, str(ROOT / 'deploy'))
 sys.path.insert(0, str(Path(__file__).parent))
 import owner_lifecycle as owner
 import workflow_projection as projection
+from config import loads
 from test_lifecycle import Gate, HEAD, OLD, OPERATION
+
+
+REAL_RUN = subprocess.run
+REAL_POPEN = subprocess.Popen
+
+
+def copy_projection_source(destination):
+    shutil.copytree(ROOT / 'deploy/workflows', destination / 'deploy/workflows')
+    for name in ['deploy/config.py', 'deploy/workflow_projection.py',
+                 'consumer/consumer-config.mjs', 'contracts/src/execution-defaults.mjs',
+                 'reviewer/src/executable-cr-v2.json']:
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, path)
 
 
 class OwnerLifecycleTests(unittest.TestCase):
@@ -30,7 +45,7 @@ class OwnerLifecycleTests(unittest.TestCase):
         self.values = {'relay_install_root': str(self.root / 'install'), 'relay_namespace': 'fixture',
                        'relay_production_local_apply_stage_root': str(self.root)}
         self.source = self.root / 'accepted-source'
-        shutil.copytree(ROOT / 'deploy/workflows', self.source / 'deploy/workflows')
+        copy_projection_source(self.source)
         projection.project(self.config, HEAD, self.source, self.source)
         self.gate = Gate()
         self.primitive = []
@@ -44,6 +59,7 @@ class OwnerLifecycleTests(unittest.TestCase):
         self.public_reads = []
         self.root_reads = []
         self.preflights = []
+        self.projection_preflights = []
         self.preflight_failure = None
         self.preflight_output = 'MANAGED_POOL_PREFLIGHT=PASS\n'
         self.active_locks = []
@@ -79,11 +95,17 @@ class OwnerLifecycleTests(unittest.TestCase):
             return True
 
         def backend(argv, **kwargs):
+            if argv[0] == 'node':
+                return REAL_RUN(argv, **kwargs)
             if argv[0].endswith('/relay-admission'):
                 self.events.append('gate-' + argv[1])
                 value = self.gate(argv[1], *argv[2:])
                 return SimpleNamespace(stdout=json.dumps(value), stderr='', returncode=0)
             self.assertEqual(argv[0], '/usr/bin/python3')
+            if argv[1:4] == ['-I', '-c', owner.PROJECTION_PREFLIGHT_SCRIPT]:
+                self.events.append('projection-preflight')
+                self.projection_preflights.append((argv, kwargs, self.active_locks[:]))
+                return REAL_RUN(argv, **kwargs)
             if argv[1:3] == ['-I', '-c']:
                 self.events.append('pool-preflight')
                 self.preflights.append((argv, kwargs, self.active_locks[:]))
@@ -116,6 +138,8 @@ class OwnerLifecycleTests(unittest.TestCase):
         patched.start()
         self.addCleanup(patched.stop)
         def spawn(argv, **kwargs):
+            if argv[0] == 'node' or argv[1:4] == ['-I', '-c', owner.PROJECTION_PREFLIGHT_SCRIPT]:
+                return REAL_POPEN(argv, **kwargs)
             result = backend(argv, **kwargs)
             return SimpleNamespace(stdout=io.StringIO(result.stdout),
                 wait=lambda **options: result.returncode, poll=lambda: result.returncode,
@@ -130,6 +154,10 @@ class OwnerLifecycleTests(unittest.TestCase):
 
     def configure_pool(self):
         self.config['consumer']['generalRunnerPool'] = {'desiredCapacity': 2}
+        self.config['environment']['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
+        self.config['environment']['generalRunner'].update(scope='organization', group='sample-general',
+            poolApp={'appId': '101', 'installationId': '201', 'privateKeyFile': '/owner-private/app.pem'})
+        self.config = loads(json.dumps(self.config, sort_keys=True), self.source)
         projection.project(self.config, HEAD, self.source, self.source)
 
     def test_one_public_main_binding_and_one_existing_upgrade_survive_later_main_movement(self):
@@ -172,7 +200,7 @@ class OwnerLifecycleTests(unittest.TestCase):
         self.assertFalse(options['check'])
         self.assertEqual(locks, ['/var/lib/fixture-deployment.lock',
             '/var/lib/codex-relay-pool-' + self.config['environment']['generalRunner']['name'] + '-deployment.lock'])
-        self.assertEqual(self.events[0], 'pool-preflight')
+        self.assertEqual(self.events[:2], ['projection-preflight', 'pool-preflight'])
         self.assertLess(self.events.index('pool-preflight'), self.events.index('gate-quiesce'))
         self.assertEqual(self.gate.phase, 'open')
         self.assertEqual(self.active_locks, [])
@@ -229,6 +257,44 @@ class OwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.gate.calls, [])
         self.assertEqual(self.primitive, [])
         self.assertEqual(self.proof_calls, [])
+
+    def test_target_renderer_rejects_old_concurrency_bytes_before_quiesce(self):
+        self.configure_pool()
+        render = projection.render
+        subject = "${{ github.event_name == 'workflow_dispatch' && format('issue-{0}', inputs.task) || github.event_name == 'issues' && format('issue-{0}', github.event.issue.number) || format('pull-{0}', github.event.pull_request.number) }}"
+        group = self.config['environment']['namespace'] + '-control-'
+        current = json.dumps(group + '${{ github.run_id }}').encode()
+        previous = json.dumps(group + subject).encode()
+
+        def installed_render(*args, **kwargs):
+            # The 75f9 renderer used the Task/PR subject even when passed f323
+            # templates. Reproduce those actual previous bytes and manifest.
+            return {path: raw.replace(current, previous)
+                    for path, raw in render(*args, **kwargs).items()}
+
+        with patch.object(projection, 'render', side_effect=installed_render):
+            projection.project(self.config, HEAD, self.source, self.source)
+            projection.verify(self.config, HEAD, self.source, self.source)
+        with self.assertRaisesRegex(ValueError, 'WORKFLOW_REVIEW_REQUIRED'):
+            self.run_owner()
+        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(self.primitive, [])
+        self.assertEqual(self.preflights, [])
+
+    def test_target_projection_acceptance_ignores_installed_renderer_and_uses_private_stdin(self):
+        self.configure_pool()
+        with patch.object(projection, 'verify', side_effect=AssertionError('installed verifier must not run')):
+            self.run_owner()
+        argv, options, locks = self.projection_preflights[0]
+        self.assertEqual(argv[:4], ['/usr/bin/python3', '-I', '-c', owner.PROJECTION_PREFLIGHT_SCRIPT])
+        self.assertTrue(argv[4].endswith('/product'))
+        self.assertEqual(argv[5], HEAD)
+        self.assertEqual(argv[6], argv[4])
+        self.assertEqual(json.loads(options['input']), self.config)
+        self.assertEqual(options['env'], owner.clean_environment())
+        self.assertEqual(locks, ['/var/lib/fixture-deployment.lock'])
+        self.assertLess(self.events.index('projection-preflight'), self.events.index('gate-quiesce'))
+        self.assertEqual(self.gate.phase, 'open')
 
     def test_malformed_input_and_nonroot_call_never_read_source_or_quiesce(self):
         for request in ['apply', f'upgrade:{OLD}:{HEAD}', f'apply:main:{HEAD}',
@@ -376,6 +442,25 @@ class OwnerPoolPreflightProcessTests(unittest.TestCase):
                         self.assertEqual(result.stdout, '')
                         self.assertEqual(result.stderr, expected + '\n')
                     self.assertNotIn('selected-source-private-input', result.stdout + result.stderr)
+
+
+class OwnerProjectionPreflightProcessTests(unittest.TestCase):
+    def test_malformed_oversized_or_private_target_errors_are_fixed(self):
+        with tempfile.TemporaryDirectory(prefix='owner-projection-process-', dir='/tmp') as temporary:
+            source = Path(temporary)
+            copy_projection_source(source)
+            valid = (ROOT / 'deploy/example.json').read_text()
+            for raw, private_error in [('{', False), ('x' * 262145, False), (valid, True)]:
+                with self.subTest(oversized=len(raw) > 262144, private_error=private_error):
+                    if private_error:
+                        (source / 'deploy/workflow_projection.py').write_text(
+                            'raise ValueError("synthetic private target diagnostic")\n')
+                    result = subprocess.run([sys.executable, '-I', '-c', owner.PROJECTION_PREFLIGHT_SCRIPT,
+                        str(source), HEAD, str(source)], input=raw,
+                        env=owner.clean_environment(), text=True, capture_output=True, timeout=10)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, '')
+                    self.assertEqual(result.stderr, 'WORKFLOW_REVIEW_REQUIRED\n')
 
 
 if __name__ == '__main__':
