@@ -17,15 +17,13 @@ import sys
 import time
 
 WORK_ROOT = {{ relay_dispatch_work_root | to_json }}
-{% if relay_github_repositories is defined %}
+REPOSITORIES = {{ relay_github_repositories | default([]) | to_json }}
+REPOSITORY_RUNTIME_USERS = {{ relay_repository_runtime_users | default({}) | to_json }}
+RUNTIME_USER = {{ relay_codex_user | default('') | to_json }}
 REPOSITORY_ROOT_USERS = {
-{% for repository in relay_github_repositories %}
-    {{ (relay_dispatch_work_root ~ '/repositories/' ~ repository) | to_json }}: {{ (relay_repository_runtime_users | default({})).get(repository, relay_codex_user) | to_json }},
-{% endfor %}
-}
-{% else %}
-REPOSITORY_ROOT_USERS = None
-{% endif %}
+    os.path.join(WORK_ROOT, 'repositories', repository): REPOSITORY_RUNTIME_USERS.get(repository, RUNTIME_USER)
+    for repository in REPOSITORIES
+} if REPOSITORIES else None
 SANDBOX = '.codex-sandbox'
 MAX_ENTRIES = 100000
 MAX_DEPTH = 128
