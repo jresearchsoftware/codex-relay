@@ -45,7 +45,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: "codex-relay-control-${{ github.event_name == 'workflow_dispatch' && format('issue-{0}', inputs.task) || github.event_name == 'issues' && format('issue-{0}', github.event.issue.number) || format('pull-{0}', github.event.pull_request.number) }}"
+  group: "codex-relay-control-${{ github.run_id }}"
   cancel-in-progress: false
   queue: max
 

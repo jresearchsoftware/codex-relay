@@ -19,6 +19,38 @@ from lifecycle import execute, require
 ROOT = Path(__file__).resolve().parents[1]
 
 
+PROJECTION_PREFLIGHT_SCRIPT = '''import json, sys
+from pathlib import Path
+sys.dont_write_bytecode = True
+source = Path(sys.argv[1])
+sys.path.insert(0, str(source / 'deploy'))
+try:
+    raw = sys.stdin.buffer.read(262145)
+    if len(raw) > 262144:
+        raise ValueError()
+    from config import loads
+    from workflow_projection import verify
+    config = loads(raw.decode('utf-8'), source)
+    if 'generalRunnerPool' in config['consumer']:
+        config = loads(json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False), source)
+    verify(config, sys.argv[2], source, Path(sys.argv[3]))
+    print('WORKFLOW_PREFLIGHT=PASS')
+except Exception:
+    print('WORKFLOW_REVIEW_REQUIRED', file=sys.stderr)
+    sys.exit(1)
+'''
+
+
+def projection_preflight(source, target, consumer, config):
+    """Validate with the frozen target's code, never the installed renderer."""
+    result = subprocess.run(['/usr/bin/python3', '-I', '-c', PROJECTION_PREFLIGHT_SCRIPT,
+                             str(source), target, str(consumer)],
+        input=json.dumps(config), env=clean_environment(), text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=180)
+    require(result.returncode == 0 and result.stdout == 'WORKFLOW_PREFLIGHT=PASS\n',
+            'WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target')
+
+
 POOL_PREFLIGHT_SCRIPT = '''import json, re, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
@@ -160,11 +192,7 @@ def run(request):
             source = acquire_source(work / 'product', source_repository, target)
             consumer = source if repository == source_repository and target == consumer_head else acquire_source(
                 work / 'consumer', repository, consumer_head)
-            from workflow_projection import verify
-            try:
-                verify(config, target, source, consumer)
-            except ValueError:
-                raise ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target') from None
+            projection_preflight(source, target, consumer, config)
             # Freeze source and consumer before quiesce. The existing public API
             # performs committed projection checks again at its mutation boundary.
             phase = 'post-check' if action == 'resume' else ('apply' if target == installed else 'upgrade')

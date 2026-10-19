@@ -1204,6 +1204,12 @@ implicitly starts inactive components. Existing operation/recovery evidence bloc
 an upgrade; diagnose it through the existing recovery interface. Failed or
 ambiguous apply/activation/verification never becomes a successful upgrade receipt.
 
+The installed owner lifecycle coordinator verifies frozen consumer workflow
+bytes before quiescing, using the selected target's verifier and configuration
+canonicalization in an isolated process. The installed renderer cannot prove
+compatibility with a newer target's projection rules; projection differences
+require the existing reviewed consumer workflow update before Apply.
+
 Ordinary owner apply verifies the workflow target and permits first installation
 or reconciliation of the same installed revision. Changing the installed
 revision requires `upgrade`. Moving Relay `main` does not trigger either action.
