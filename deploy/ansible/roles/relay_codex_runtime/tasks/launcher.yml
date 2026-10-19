@@ -5,6 +5,12 @@
       - relay_codex_launcher_path == ((relay_execution_slot_install_root | default(relay_install_root)) ~ '/relay-codex')
     fail_msg: 'CODEX_LAUNCHER_PATH_CONTRACT_INVALID'
 
+- name: Reconcile shared repository work ancestors before installing the launcher
+  ansible.builtin.include_tasks: repository-work-root.yml
+  loop: '{{ relay_github_repositories | default([]) }}'
+  loop_control:
+    loop_var: relay_work_repository
+
 - name: Install the fixed Codex diagnostic helper with every launcher reconciliation
   ansible.builtin.copy:
     src: relay-codex-diagnostic.mjs

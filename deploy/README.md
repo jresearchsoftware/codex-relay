@@ -277,6 +277,14 @@ Separate installations retain separate Writer locks and claim roots. Targets
 within one plural Writer configuration share its installation lock and claim
 root; repository-specific publication records preserve their own authority.
 
+For plural Writer configurations, every launcher reconciliation provisions the
+fixed `workRoot/repositories/<owner>/<repository>` ancestors with the existing
+runner owner, slot work group and mode `2770`. This applies to installation and
+upgrade, including retained slots and managed-pool slots. It repairs ancestor
+metadata left by recursive runner creation under `UMask=0077`, without walking
+or changing existing attempt contents. The launcher and cleanup boundaries,
+private journals and credential permissions remain unchanged.
+
 Use the existing `general-runner-register` and `general-runner-enable` phases
 with `--execution-slot <id>` for an additional configured slot; omission selects
 `primary`. The same registration token transport and explicit phase authority

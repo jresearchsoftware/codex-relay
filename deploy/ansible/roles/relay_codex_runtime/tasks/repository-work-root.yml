@@ -1,0 +1,33 @@
+---
+# Recursive mkdir in the runner inherits UMask=0077. The checkout grant cannot
+# repair its parents, so provision only these fixed installation namespaces.
+- name: Inspect repository work ancestors without following aliases
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ relay_dispatch_work_root }}/repositories'
+    - '{{ relay_dispatch_work_root }}/repositories/{{ relay_work_repository.split("/")[0] }}'
+    - '{{ relay_dispatch_work_root }}/repositories/{{ relay_work_repository }}'
+  register: relay_repository_work_ancestors
+
+- name: Preserve the real directory boundary for repository work ancestors
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+    fail_msg: CODEX_REPOSITORY_WORK_ROOT_UNSAFE
+  loop: '{{ relay_repository_work_ancestors.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Reconcile only fixed repository work ancestor metadata
+  ansible.builtin.file:
+    path: '{{ item.item }}'
+    state: directory
+    owner: '{{ relay_dispatch_user }}'
+    group: '{{ relay_codex_work_group }}'
+    mode: '2770'
+    follow: false
+  loop: '{{ relay_repository_work_ancestors.results }}'
+  loop_control:
+    label: '{{ item.item }}'
