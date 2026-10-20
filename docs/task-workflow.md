@@ -34,6 +34,19 @@ actual evidence through the owner-authorized channel and state its provenance.
 For Relay-admitted manual work, use the real admission and Writer transport
 below; standalone work cannot replace that attempt's publication or recovery.
 
+After an independently published current native `APPROVE`, the existing owner
+continuation channel can squash an explicitly authorized standalone source PR
+without another confirmation or a fabricated Writer receipt. Reviewer binds the
+owner-created PR, exact head and current canonical authority as source evidence.
+Owner orchestration verifies explicit standalone permission, absence of an
+admitted attempt for that result, warnings, required checks, mergeability and
+protected holds before merging. An ordinary owner Outcome stays ordinary
+evidence. Owner authorship or a missing Writer Outcome alone grants no
+permission. Automatic and Relay-admitted manual results keep their Writer
+requirements; no-PR acceptance keeps typed Task Approval. See the
+[continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+Source support does not qualify an installed Reviewer or owner adapter.
+
 An unavailable automation capability blocks the operation that requires it;
 it does not by itself prohibit otherwise authorized standalone/manual work.
 Changing routes never resolves an uncertain live process, conflicting ref,

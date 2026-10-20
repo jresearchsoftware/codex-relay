@@ -257,9 +257,10 @@ fn valid_input(
             || body.len() > 12_000
             || !body.nfc().eq(body.chars())
             || body.to_ascii_lowercase().contains("filecite")
-            || body
-                .lines()
-                .any(|line| line.starts_with("<!-- jresearchsoftware-reviewer-acceptance:v1 "))
+            || body.lines().any(|line| {
+                line.starts_with("<!-- jresearchsoftware-reviewer-acceptance:v1 ")
+                    || line.starts_with("<!-- jresearchsoftware-reviewer-source-pr:v1")
+            })
             || body
                 .chars()
                 .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
@@ -822,6 +823,10 @@ async fn mcp(
                         native_review_body(&app.policy.validation_names, arguments, &operation);
                     if let Some(binding) = &approval_binding {
                         current_body.push_str(&format!("\n<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256={} -->", binding["authority"]["sha256"].as_str().unwrap()));
+                        if binding["source_pr"].is_object() {
+                            current_body
+                                .push_str("\n<!-- jresearchsoftware-reviewer-source-pr:v1 -->");
+                        }
                     }
                     let legacy_body = if arguments["action"] == "REQUEST_CHANGES" {
                         format!("{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
@@ -1315,6 +1320,9 @@ async fn approval_continuation_plan(
             object.insert("completion_conditions".into(),json!("trusted-owner-canonical-state-required"));
             object.insert("next".into(),request["continuation"]["next"].clone());
             object.insert("warnings".into(),request["warnings"].clone());
+            if request["source_pr"].is_object() {
+                object.insert("owner_authorization".into(),json!("explicit-standalone-required"));
+            }
         }
         Ok(plan)
     }.await;
@@ -1412,7 +1420,10 @@ fn verify_approval_authority(
     let Some(current) = current else {
         return Ok(());
     };
-    let binding = json!({"authority":current["authority"],"original_authority":current["original_authority"],"admission":current["admission"],"outcome":current["outcome"]});
+    let mut binding = json!({"authority":current["authority"],"original_authority":current["original_authority"],"admission":current["admission"],"outcome":current["outcome"]});
+    if current["source_pr"].is_object() {
+        binding["source_pr"] = current["source_pr"].clone();
+    }
     let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
     let original = store
         .authority_binding(operation)
