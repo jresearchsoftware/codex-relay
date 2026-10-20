@@ -836,6 +836,24 @@ shortcut. The opt-in operation uses the existing fixed root Writer as a bounded
 read-only observer of the authorized retained attempt, so it can read 0600 bytes
 without transferring permissions or trusting a worker observation claim.
 
+For new source work, the shared-group umask is insufficient when a tool writes
+an explicit private mode. VibeVM's `.vibe-slot.toml` is one observed example:
+its Git mode `100644` can coexist with worker-owned filesystem mode `0600`.
+Reconcile only known public, task-owned source through the existing work group
+before handoff, or report the precise access blocker. Never skip unreadable
+tracked/non-ignored content, broaden private access or elevate ordinary collection.
+Ignored private caches remain excluded when they contain no tracked content.
+
+Filesystem acquisition failures retain `TRUSTED_GIT_FAILED` /
+`GIT_LOCAL_FAILURE`, plus allowlisted OS `diagnosticCode` and `syscall`. The
+protected diagnostic preview distinguishes source reads, source directories,
+Git-object acquisition and trusted snapshot writes, with the collector's
+effective UID/GID. It contains no worker path or raw error message. The terminal
+Outcome shows the operation, syscall and OS code; a collector error is never
+presented as a Codex launcher observation. Snapshot write failures do not claim
+that checkout reads failed. Missing historical detail stays unknown rather than
+being reconstructed as a new fact about the original execution.
+
 Local unprivileged checks do not qualify that protected access on an installed
 consumer. Before incident use, separately admit exact accepted source installation
 and disposable Linux qualification of the fixed wrapper/root lock, actual

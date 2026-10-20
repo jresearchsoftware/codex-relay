@@ -110,6 +110,33 @@ deployment suite is a prerequisite of the CLI compatibility job. None of these
 checks establishes production credentials, ingress, model access or deployment
 readiness. Local success and native exact-head CI remain distinct evidence.
 
+## Native filesystem probe
+
+The optional credential-free probe exercises actual command filesystem access
+with the exact installed CLI, under an ordinary Linux UID:
+
+```sh
+python3 scripts/qualify-worker-filesystem.py --codex /absolute/path/to/codex
+```
+
+It creates disposable fixtures and checks both default read-only and
+`workspace-write` policy, with absent and existing root `.agents`. For pinned
+0.160.0, ordinary writes and the explicit `.git` writable root succeed under
+workspace-write; root `.agents` returns `EROFS` with a read-only mount, and
+nested fixture projection paths remain writable. Original `.agents` bytes and
+metadata are preserved. This is consistent with the documented
+[protected-path policy](https://learn.chatgpt.com/docs/agent-approvals-security),
+with the missing-path case established by the pinned executable probe.
+
+The pinned `codex sandbox` subcommand takes its policy through `-c sandbox_mode`
+and `sandbox_workspace_write.writable_roots`; passing only the outer `--sandbox`
+flag does not select that subcommand's effective policy. The probe therefore
+uses the effective legacy configuration equivalent to Relay's launcher policy
+and a default read-only negative control. It never calls a provider or model.
+This does not qualify outer Bubblewrap, native VibeVM projection, installed
+Relay launch/collection/publication or a production deployment. Those require
+their own actual evidence; see [Task 164 qualification](../qualification/task-164-step-1.md).
+
 ## Deferred capabilities
 
 #42 owns any Relay migration to persistent app-server/daemon processes or

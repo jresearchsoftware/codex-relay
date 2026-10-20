@@ -42,6 +42,13 @@ Legacy configurations retain their existing launcher behavior. Installed UID,
 sudo, namespace, process containment and concurrent isolation require separate
 host qualification; local source tests alone do not prove those properties.
 
+The inner Codex policy further protects workspace-root `.agents` even though
+the outer namespace binds the checkout writable. Keep that distinction when
+diagnosing `EROFS`; it is separate from a later collector UID's `EACCES` reading
+private worker-created source. See the
+[native filesystem probe](../docs/codex/cli-integration.md#native-filesystem-probe)
+and [collector contract](../controller/README.md#collector-identity-and-separate-host-qualification).
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching

@@ -164,7 +164,7 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Cause summary: ${cause}`,
     `Launcher diagnostic: ${safeCode(launcher.diagnosticCode)}; bytes: ${launcher.bytes ?? 'UNAVAILABLE'}; truncated: ${launcher.truncated === undefined ? 'UNAVAILABLE' : launcher.truncated}`,
     `Codex child: ${child.childState ?? 'unknown'}; exit code: ${child.childExitCode ?? 'UNAVAILABLE'}; signal: ${child.signal ?? 'UNAVAILABLE'}`,
-    ...(runtime.operation ? [`Failed operation: ${runtime.operation}${runtime.syscall ? `; syscall: ${runtime.syscall}` : ''}${runtime.pathContext ? `; path context: ${runtime.pathContext}` : ''}`] : []),
+    ...(runtime.operation ? [`Failed operation: ${runtime.operation}${runtime.syscall ? `; syscall: ${runtime.syscall}` : ''}${runtime.pathContext ? `; path context: ${runtime.pathContext}` : ''}${runtime.diagnosticCode ? `; OS code: ${runtime.diagnosticCode}` : ''}`] : []),
     ...(runtime.cleanup || runtime.persistence || runtime.retention ? [`Runtime state: cleanup=${runtime.cleanup ?? 'unknown'}; diagnostics=${runtime.persistence ?? 'unknown'}; artifacts=${runtime.retention ?? 'unknown'}`] : []),
     ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
     ...(store ? [`Primary diagnostics: ${store.status}; reference: ${store.executionId ?? 'UNAVAILABLE'}${store.storeCode ? `; store cause: ${store.storeCode}` : ''}`] : []),

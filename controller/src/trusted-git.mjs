@@ -14,6 +14,17 @@ export const REMOTE = `https://github.com/${REPOSITORY}.git`;
 const SECRET = /github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 const GIT_DIAGNOSTIC_BYTES = 2048;
 const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-parse', 'merge-base', 'update-ref', 'read-tree', 'diff', 'ls-files', 'check-ignore', 'ls-tree', 'bundle', 'cat-file', 'rev-list', 'show', 'diff-tree']);
+// Retain only trusted acquisition categories, never a worker-selected path or
+// the filesystem error message. Inner snapshot writes take precedence over an
+// enclosing source traversal when both share the same failure boundary.
+const acquisitionContexts = new WeakMap();
+async function acquire(context, action) {
+  try { return await action(); }
+  catch (error) {
+    if (error && typeof error === 'object' && !acquisitionContexts.has(error)) acquisitionContexts.set(error, context);
+    throw error;
+  }
+}
 export const secretFree = text => { if (SECRET.test(text)) fail('SECRET_PUBLICATION_SCAN_FAILED'); return text; };
 
 function gitOperation(args) {
@@ -24,7 +35,7 @@ export function classifyGitFailure(error) {
   const text = String(error?.stderr ?? error?.message ?? '').toLowerCase();
   const code = error?.code;
   if (code === 'ETIMEDOUT' || error?.timedOut === true || error?.signal === 'SIGTERM' && error?.killed === true) return 'GIT_TIMEOUT';
-  if (['ENOENT', 'EACCES', 'EPERM', 'EINVAL', 'ENOTDIR'].includes(code)) return 'GIT_LOCAL_FAILURE';
+  if (['ENOENT', 'EACCES', 'EPERM', 'EROFS', 'EINVAL', 'ENOTDIR'].includes(code)) return 'GIT_LOCAL_FAILURE';
   if (/(authentication failed|permission denied|write access to .* not granted|could not read username|403 forbidden|not authorized|access denied)/.test(text)) return 'GIT_AUTHORIZATION_REJECTED';
   if (/(non-fast-forward|failed to push some refs|rejected|fetch first|remote rejected|cannot lock ref|would clobber|ref .*conflict)/.test(text)) return 'GIT_REF_CONFLICT';
   if (/(could not resolve host|network is unreachable|connection timed out|connection reset|connection refused|unable to access|curl|proxy|tls handshake|temporary failure in name resolution)/.test(text)) return 'GIT_TRANSPORT_FAILED';
@@ -84,12 +95,12 @@ export async function git(cwd, args, { token, allowFailure = false, allowedExitC
   }
 }
 export async function temporaryRepo(fn, { root = tmpdir(), remote = REMOTE, token } = {}) {
-  const dir = await mkdtemp(join(root, 'relay-git-'));
+  const dir = await acquire('snapshot-write', () => mkdtemp(join(root, 'relay-git-')));
   try {
     await git(dir, ['init', '--bare', '.']);
     await git(dir, ['fetch', '--no-tags', remote, `refs/heads/${CONSUMER.baseBranch}:refs/remotes/main`], { token });
     return await fn(dir);
-  } finally { await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+  } finally { await acquire('snapshot-write', () => rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })); }
 }
 function sameObservedFile(a, b) {
   return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.size === b.size
@@ -142,18 +153,18 @@ async function copyObservedFile(source, destination, expected, device, max = 100
     const before = await handle.stat();
     checkRegular(before, device, max);
     if (!sameObservedFile(before, expected)) observationChanged();
-    if (destination) output = await open(destination, 'wx', before.mode & 0o100 ? 0o700 : 0o600);
+    if (destination) output = await acquire('snapshot-write', () => open(destination, 'wx', before.mode & 0o100 ? 0o700 : 0o600));
     const buffer = Buffer.alloc(64 * 1024); let bytes = 0;
     while (true) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (!bytesRead) break;
       bytes += bytesRead;
       if (bytes > before.size) observationChanged();
-      await output?.writeFile(buffer.subarray(0, bytesRead));
+      if (output) await acquire('snapshot-write', () => output.writeFile(buffer.subarray(0, bytesRead)));
     }
     if (bytes !== before.size || !sameObservedFile(before, await handle.stat())
       || !sameObservedFile(before, await lstat(source))) observationChanged();
-  } finally { await output?.close(); await handle.close(); }
+  } finally { if (output) await acquire('snapshot-write', () => output.close()); await handle.close(); }
 }
 async function boundedSourceText(parent, name, device) {
   const path = pinnedPath(parent, name); const expected = await lstat(path);
@@ -180,14 +191,20 @@ function sourceFailure(error, operation) {
     'WORKTREE_OBSERVATION_TOO_DEEP', 'WORKTREE_PATH_ENCODING_INVALID']);
   const reason = /^E[A-Z0-9]+$/.test(error.code ?? '') ? error.code
     : safeReasons.has(error.message) ? error.message : 'SOURCE_OBSERVATION_FAILED';
-  const preview = boundedDiagnosticText(`${reason}: complete checkout observation unavailable`, GIT_DIAGNOSTIC_BYTES);
+  const context = acquisitionContexts.get(error) ?? 'object-acquisition';
+  const syscall = typeof error.syscall === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(error.syscall) ? error.syscall : undefined;
+  const identity = [['collector-euid', process.geteuid?.()], ['collector-egid', process.getegid?.()]]
+    .filter(([, value]) => Number.isInteger(value) && value >= 0).map(([name, value]) => `${name}=${value}`);
+  const preview = boundedDiagnosticText(`${reason}: ${context}; syscall=${syscall ?? 'unavailable'}; ${identity.join('; ')}; complete checkout observation unavailable`, GIT_DIAGNOSTIC_BYTES);
   failure.details = { failureDiagnostic: { code: failure.code, classification: 'GIT_LOCAL_FAILURE',
-    primaryCause: 'GIT_LOCAL_FAILURE', operation, pathContext: 'checkout', preview: preview.text,
+    primaryCause: 'GIT_LOCAL_FAILURE', operation, pathContext: context === 'snapshot-write' ? 'unknown' : 'checkout',
+    ...(/^E[A-Z0-9]+$/.test(error.code ?? '') ? { diagnosticCode: error.code } : {}),
+    ...(syscall ? { syscall } : {}), preview: preview.text,
     bytes: preview.bytes, truncated: preview.truncated } };
   throw failure;
 }
 async function observeWorktree(dir, checkout, head, device) {
-  const snapshot = join(dir, 'observed-worktree'); await mkdir(snapshot);
+  const snapshot = join(dir, 'observed-worktree'); await acquire('snapshot-write', () => mkdir(snapshot));
   const tracked = new Map(); const trackedDirectories = new Set();
   for (const row of (await git(dir, ['ls-tree', '-r', '-z', head])).split('\0').filter(Boolean)) {
     const tab = row.indexOf('\t'); const [mode, , object] = row.slice(0, tab).split(' ');
@@ -200,7 +217,7 @@ async function observeWorktree(dir, checkout, head, device) {
   async function copySource(source, destination, stat) {
     bytes += stat.size;
     if (bytes > 100 * 1024 * 1024) throw new Error('WORKTREE_OBSERVATION_TOO_LARGE');
-    await copyObservedFile(source, destination, stat, device);
+    await acquire('source-read', () => copyObservedFile(source, destination, stat, device));
   }
   async function visit(handle, relative = '', destination = join(snapshot, relative), metadataOnly = false) {
     if (relative.split('/').length > 128) throw new Error('WORKTREE_OBSERVATION_TOO_DEEP');
@@ -235,9 +252,9 @@ async function observeWorktree(dir, checkout, head, device) {
         try {
           if (entry.name === '.git' && !metadataOnly) {
             specialResidue = true;
-            await visit(child, entry.path, await mkdtemp(join(dir, 'observed-metadata-')), true);
+            await visit(child, entry.path, await acquire('snapshot-write', () => mkdtemp(join(dir, 'observed-metadata-'))), true);
           } else {
-            await mkdir(to);
+            await acquire('snapshot-write', () => mkdir(to));
             await visit(child, entry.path, to, metadataOnly);
           }
           if (!sameObservedFile(entry.stat, await lstat(from))) observationChanged();
@@ -245,7 +262,7 @@ async function observeWorktree(dir, checkout, head, device) {
       } else if (entry.stat.isFile()) {
         if (entry.name === '.git' && !metadataOnly) {
           specialResidue = true;
-          const retained = await mkdtemp(join(dir, 'observed-metadata-'));
+          const retained = await acquire('snapshot-write', () => mkdtemp(join(dir, 'observed-metadata-')));
           await copySource(from, join(retained, 'gitfile'), entry.stat);
         } else if (entry !== ignore) await copySource(from, to, entry.stat);
       } else if (entry.stat.isSymbolicLink()) {
@@ -265,7 +282,7 @@ async function observeWorktree(dir, checkout, head, device) {
     if (!sameObservedFile(before, await handle.stat())) observationChanged();
   }
   try {
-    await visit(checkout);
+    await acquire('source-directory', () => visit(checkout));
   } catch (error) {
     sourceFailure(error, 'worktree-observation');
   }
@@ -282,7 +299,7 @@ export async function collectProgress(checkout, e, options = {}) {
   // hooks, alternates, replace refs, grafts, filters and remotes never cross.
   let source; let metadata;
   try {
-    source = await pinCheckout(checkout);
+    source = await acquire('source-directory', () => pinCheckout(checkout));
     const device = (await source.stat()).dev;
     metadata = await pinDirectory(pinnedPath(source, '.git'), device);
     const metadataStat = await metadata.stat();
@@ -319,7 +336,7 @@ export async function collectProgress(checkout, e, options = {}) {
           const objectsFolder = await pinDirectory(folderPath, device);
           try {
             const folderStat = await objectsFolder.stat();
-            await mkdir(join(dir, 'objects', folder), { recursive: true });
+            await acquire('snapshot-write', () => mkdir(join(dir, 'objects', folder), { recursive: true }));
             for await (const entry of await opendir(pinnedPath(objectsFolder))) {
               if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
               const name = entry.name;

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixture } from './fixture.mjs';
 import { collectProgress } from '../src/trusted-git.mjs';
+import { safeFailureDiagnosticReference } from '../src/diagnostics.mjs';
 
 const exec = promisify(execFile);
 
@@ -130,6 +131,8 @@ test('worktree observation rejects hardlinks and sanitizes inaccessible-path fai
     await assert.rejects(other.collect(other.envelope), error => {
       const diagnostic = error.details.failureDiagnostic;
       assert.equal(diagnostic.pathContext, 'checkout'); assert.match(diagnostic.preview, /EACCES/);
+      assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open');
+      assert.match(diagnostic.preview, /source-read/);
       assert.ok(!JSON.stringify(diagnostic).includes(other.cwd));
       assert.ok(!JSON.stringify(diagnostic).includes('private-filename'));
       return true;
@@ -154,7 +157,10 @@ test('distinct Linux worker/collector UIDs share 0640 access; 0600 fails while s
 }, async t => {
   const f = await fixture(t); await f.prepare(f.envelope);
   const artifact = join(f.cwd, 'package-lock.json');
-  const head = await f.commit('package-lock.json', '{"synthetic":"cross-uid"}\n');
+  await f.commit('package-lock.json', '{"synthetic":"cross-uid"}\n');
+  const head = await f.commit('.gitignore', '.pytest_cache/\n');
+  const ignored = join(f.cwd, '.pytest_cache'); await mkdir(ignored);
+  await writeFile(join(ignored, '.gitignore'), '*\n');
   const workerUid = 983; const collectorUid = 985; const sharedGid = 979;
   async function ownTree(path, uid) {
     const stat = await lstat(path);
@@ -166,6 +172,8 @@ test('distinct Linux worker/collector UIDs share 0640 access; 0600 fails while s
   }
   await chmod(f.root, 0o755); await chmod(join(f.root, 'work'), 0o755);
   await ownTree(f.cwd, workerUid);
+  await chmod(ignored, 0o700);
+  await chmod(join(ignored, '.gitignore'), 0o600);
   const scratch = join(f.root, 'collector'); await mkdir(scratch); await chown(scratch, collectorUid, sharedGid);
   const remote = join(scratch, 'remote.git'); await cp(f.remote, remote, { recursive: true }); await ownTree(remote, collectorUid);
   const config = join(scratch, 'consumer.json');
@@ -182,14 +190,88 @@ catch (error) { console.log(JSON.stringify({ error: { code: error.code, details:
   })).stdout);
   await chmod(artifact, 0o640);
   assert.deepEqual((await observe()).progress, { head, bundle: (await f.collect(f.envelope)).bundle, clean: true });
+  assert.equal((await lstat(ignored)).mode & 0o777, 0o700);
+  assert.equal((await lstat(join(ignored, '.gitignore'))).mode & 0o777, 0o600);
   await chmod(artifact, 0o600);
   const denied = (await observe()).error;
   assert.equal(denied.code, 'TRUSTED_GIT_FAILED');
   assert.equal(denied.details.failureDiagnostic.operation, 'worktree-observation');
   assert.match(denied.details.failureDiagnostic.preview, /EACCES/);
+  const diagnostic = denied.details.failureDiagnostic;
+  assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open');
+  assert.match(diagnostic.preview, /source-read; syscall=open; collector-euid=985; collector-egid=979/);
+  assert.deepEqual(safeFailureDiagnosticReference(diagnostic), diagnostic);
+  assert.ok(!JSON.stringify(diagnostic).includes(f.cwd));
+  assert.ok(!JSON.stringify(diagnostic).includes('package-lock.json'));
   const before = await lstat(artifact);
   assert.equal((await f.collect(f.envelope)).clean, true);
   const after = await lstat(artifact);
   assert.equal(after.uid, workerUid); assert.equal(after.gid, sharedGid);
   assert.equal(after.mode & 0o777, 0o600); assert.equal(after.ctimeMs, before.ctimeMs);
+
+  // Directory traversal, metadata acquisition and trusted scratch creation are
+  // separate causes even when every OS access denial uses the same errno.
+  await chmod(artifact, 0o640);
+  const docs = join(f.cwd, 'docs'); await chmod(docs, 0o700);
+  const directory = (await observe()).error.details.failureDiagnostic;
+  assert.equal(directory.diagnosticCode, 'EACCES'); assert.equal(directory.syscall, 'open');
+  assert.match(directory.preview, /source-directory/);
+  assert.equal((await lstat(docs)).mode & 0o777, 0o700);
+  await chmod(docs, 0o755);
+
+  const metadataHead = join(f.cwd, '.git', 'HEAD'); await chmod(metadataHead, 0o600);
+  const metadata = (await observe()).error.details.failureDiagnostic;
+  assert.equal(metadata.operation, 'object-import'); assert.equal(metadata.diagnosticCode, 'EACCES');
+  assert.equal(metadata.syscall, 'open'); assert.match(metadata.preview, /object-acquisition/);
+  assert.equal((await lstat(metadataHead)).mode & 0o777, 0o600);
+  await chmod(metadataHead, 0o644);
+
+  await chmod(scratch, 0o555);
+  const snapshot = (await observe()).error.details.failureDiagnostic;
+  assert.equal(snapshot.operation, 'object-import'); assert.equal(snapshot.diagnosticCode, 'EACCES');
+  assert.equal(snapshot.syscall, 'mkdtemp'); assert.match(snapshot.preview, /snapshot-write/);
+  assert.equal(snapshot.pathContext, 'unknown');
+  assert.equal((await lstat(scratch)).mode & 0o777, 0o555);
+  await chmod(scratch, 0o755);
+  assert.equal((await observe()).progress.clean, true);
+  assert.equal(f.pushes(), 0);
+});
+
+test('a read-only trusted scratch filesystem reports EROFS separately from source-read denial', {
+  skip: process.platform !== 'linux' || process.getuid?.() !== 0
+    ? 'requires native root and a disposable private mount namespace; no escalation attempted' : false
+}, async t => {
+  try { await exec('unshare', ['--mount', '--propagation', 'private', 'true']); }
+  catch { t.skip('private mount namespace unavailable; no read-only filesystem proof claimed'); return; }
+  const f = await fixture(t); await f.prepare(f.envelope); await f.commit();
+  const scratch = join(f.root, 'read-only-snapshot'); await mkdir(scratch);
+  const script = join(f.root, 'read-only-observer.mjs');
+  await writeFile(script, `import { spawnSync } from 'node:child_process';
+import { collectProgress } from ${JSON.stringify(new URL('../src/trusted-git.mjs', import.meta.url).href)};
+const scratch = ${JSON.stringify(scratch)};
+for (const args of [['--bind', scratch, scratch], ['-o', 'remount,bind,ro', scratch]]) {
+  const result = spawnSync('mount', args, { encoding: 'utf8' });
+  if (result.status !== 0) { console.log(JSON.stringify({ unavailable: true })); process.exit(0); }
+}
+try {
+  console.log(JSON.stringify({ progress: await collectProgress(${JSON.stringify(f.cwd)}, ${JSON.stringify(f.envelope)}, ${JSON.stringify({ root: scratch, remote: f.remote })}) }));
+} catch (error) { console.log(JSON.stringify({ error: { code: error.code, details: error.details } })); }
+finally { spawnSync('umount', [scratch], { encoding: 'utf8' }); }
+`);
+  const result = JSON.parse((await exec('unshare', ['--mount', '--propagation', 'private', process.execPath, script], {
+    env: { PATH: process.env.PATH, RELAY_CONSUMER_CONFIG: fileURLToPath(new URL('../../consumer/fixtures/example.json', import.meta.url)) }
+  })).stdout);
+  if (result.unavailable) { t.skip('private read-only bind unavailable; no EROFS proof claimed'); return; }
+  assert.equal(result.error.code, 'TRUSTED_GIT_FAILED');
+  const diagnostic = result.error.details.failureDiagnostic;
+  assert.equal(diagnostic.classification, 'GIT_LOCAL_FAILURE');
+  assert.equal(diagnostic.operation, 'object-import');
+  assert.equal(diagnostic.diagnosticCode, 'EROFS'); assert.equal(diagnostic.syscall, 'mkdtemp');
+  assert.equal(diagnostic.pathContext, 'unknown');
+  assert.match(diagnostic.preview, /snapshot-write; syscall=mkdtemp; collector-euid=0/);
+  assert.deepEqual(safeFailureDiagnosticReference(diagnostic), diagnostic);
+  assert.ok(!JSON.stringify(diagnostic).includes(f.root));
+  assert.ok(!JSON.stringify(diagnostic).includes('read-only-snapshot'));
+  assert.equal(await readFile(join(f.cwd, 'docs/work.md'), 'utf8'), 'changed\n');
+  assert.equal(f.pushes(), 0);
 });
