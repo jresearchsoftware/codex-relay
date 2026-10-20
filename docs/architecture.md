@@ -193,6 +193,16 @@ claimed operations. The worker's ordinary broker cannot invoke this capability;
 Reviewer never obtains Writer private credentials. Legacy/v3 transport stays
 readable and recoverable without rewriting any old owner or Bot record.
 
+Explicitly owner-authorized standalone source PRs use native source/review
+binding instead of the admitted manual-result transport. Reviewer binds the
+verified owner-created PR and exact current Task sources in its native approval;
+the existing owner continuation adapter verifies standalone permission,
+non-admitted provenance and warning disposition before exact-head squash.
+Native authorship and missing Outcomes alone do not establish these facts.
+No admission, Writer Outcome, Step, service or ordinary-comment authority is
+invented. Admitted executions and no-PR Task acceptance keep their original
+Writer and independent acceptance requirements.
+
 Schema-v4 result reporting verifies the original immutable admission and its
 native source integrity independently of current Task semantics. Valid later
 trusted Decisions are recorded as authority drift in the same Writer Outcome;

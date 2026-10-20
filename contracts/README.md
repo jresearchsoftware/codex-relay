@@ -596,9 +596,9 @@ of current checks, mergeability or independent review acceptance.
 This section specifies the native Relay continuation helper. Repository owner
 acceptance by verified merge and ordinary authorized standalone/manual work
 follow the [Task workflow policy](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
-Missing historical native receipts do not reverse that owner acceptance; they
-also do not manufacture the native evidence this helper requires for a new
-operation. No installed helper behavior changes through this policy distinction.
+Missing historical native receipts do not reverse that owner acceptance or
+manufacture execution evidence. The source-PR path below supports explicitly
+authorized standalone work without an execution receipt.
 
 The complete Request, authored Step and `task_complete` details below describe
 the retained schema 3.0 path. Schema 4.0 uses the exact authority/admission/Outcome
@@ -643,6 +643,46 @@ An explicitly required exact-base reconciliation policy is preserved; unknown
 base/readiness state or changed facts after reservation stops the action.
 No synthetic merge, stale-head approval or review fallback is supplied.
 
+For an owner-created **standalone manual source PR**, native source facts replace
+the execution-result binding only. Reviewer verifies the configured owner's
+native User identity, same repository, branch and exact head, resolves current
+charter/Decision authority, and binds both that authority and source-PR
+provenance in its native review. Its `source_pr` receipt contains repository,
+number, head SHA, branch and native author; it contains no admission or Writer
+Outcome. An exact retained manual Request can remain the compatibility source;
+fresh v4 work does not publish a new v3 Request or allocate a fictitious Step.
+An unrelated historical Request does not become current source authority.
+
+This is a conditional merge policy, not proof that source authorship or an
+absent Outcome authorizes standalone execution. The existing trusted owner
+`readCanonicalState` port must verify explicit standalone permission in the
+current canonical authority, establish that the result is not an admitted Relay
+attempt, and disposition warnings from the ordinary owner result and required
+native evidence. It supplies `standaloneAuthorization` with the exact
+`authority_sha256`, `pullRequest`, `headSha`, `authorized: true`,
+`admittedExecution: false` and `warningsDispositioned: true`. Missing, ambiguous
+or revoked facts stop before mutation. These are internal adapter facts, like
+the existing completion and protected-boundary facts, not a new owner prompt,
+comment, registry or service. `binding.trustedOwner` and the PR's native
+`author`, `headRepository` and `branch` must also match the receipt. Retained
+manual Requests additionally bind the Task/PR `step`.
+
+The tradeoff is deliberate: GitHub proves source/review identities; the trusted
+owner channel interprets existing explicit Task permission and execution
+provenance. Neither component upgrades an ordinary result comment to typed
+authority. Same-PR/current-Request/head Writer results or execution markers
+retain their admitted result/recovery path, including blocked or stale results;
+automatic and Relay-admitted manual executions still require a Writer Outcome.
+The helper rechecks these facts after reservation and keeps exact-head checks,
+warning disposition, holds, `closesTask: false`, neutral squash messages,
+completion/closure conditions and retry reconciliation. A receipt alone cannot
+downgrade an admitted approval into standalone provenance.
+If a retained Request names only another old Request as its next action, source
+acceptance does not silently drop it or launch a fresh v3 chain: the squash can
+complete, then follow-up stops with `CONTINUATION_NEXT_AUTHORITY_INVALID` until
+current v4 direction is available. A current trusted continuation Decision can
+explicitly replace or clear that old follow-up.
+
 An implemented no-PR result follows the same path through trusted native Task
 Approval and its exact Writer Outcome. Task Approval does not substitute for a
 PR review or authorize merging an artifact PR. Closure occurs only under the
@@ -681,7 +721,9 @@ const result = await continueAfterApproval(verifiedPublicationReceipt, ownerNati
 The publication receipt identifies repository, Task, exact native approval
 reference and, for PR acceptance, reviewed head. Schema 4.0 binds exact authority
 sources and execution admission; retained schema 3.0 binds the exact Request
-reference and charter digest. Legacy native PR acceptance retains its existing canonical
+reference and charter digest. Standalone source PR receipts carry exact
+authority and `source_pr` in place of admission/Outcome, plus the same verified
+native approval reference. Legacy native PR acceptance retains its existing canonical
 `authority_digest` with a null typed Request reference; it does not migrate
 implicitly. Required ports are `readCanonicalState`, `reserveAction` and
 `recordActionResult`. The relevant bounded action ports are `mergeSquash`,

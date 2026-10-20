@@ -2435,6 +2435,19 @@ pub(crate) async fn approved_continuation(
         return Ok(outcome);
     }
     let records = execution_records(app, &state, &hint).await?;
+    if let Some(source) = source_pr_continuation(
+        app,
+        &state,
+        &hint,
+        pr,
+        approved_head,
+        &records,
+        &native_outcomes,
+    )
+    .await?
+    {
+        return Ok(source);
+    }
     if v4_only {
         if has_v4_outcome || records.is_empty() {
             return Err("AUTHORITY_EXACT_OUTCOME_REQUIRED");
@@ -2488,4 +2501,163 @@ pub(crate) async fn approved_continuation(
         .cloned()
         .unwrap_or(json!({"hold":false,"task_complete":false,"next":null}));
     Ok(json!({"request":reference,"outcome":exact_outcomes[0],"continuation":continuation}))
+}
+
+// Native source facts are not an execution receipt or owner authorization.
+// The owner continuation adapter must independently establish explicit
+// standalone permission and exclude an admitted attempt before any effect.
+// Missing Writer evidence alone never selects this path.
+async fn source_pr_continuation(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    hint: &Value,
+    pr: &Value,
+    head: &Value,
+    records: &[(Value, Value)],
+    outcomes: &[Value],
+) -> Result<Option<Value>, &'static str> {
+    if !trusted_user(&pr["user"], &state.issue["user"]) {
+        return Ok(None);
+    }
+    if pr["head"]["repo"]["full_name"] != app.repository
+        || pr["base"]["repo"]["full_name"] != app.repository
+        || pr["head"]["sha"] != *head
+        || pr["head"]["ref"].as_str().is_none_or(str::is_empty)
+    {
+        return Err("AUTHORITY_SOURCE_PR_BINDING_INVALID");
+    }
+    let body = pr["body"]
+        .as_str()
+        .ok_or("AUTHORITY_SOURCE_PR_BINDING_INVALID")?;
+    if body.contains("<!-- relay:")
+        || body.lines().any(|line| {
+            let line = line.trim();
+            line.starts_with("Execution admission digest:")
+                || line.starts_with("Execution request digest:")
+                || line.starts_with("Attempt:")
+        })
+    {
+        return Ok(None);
+    }
+    // An unrelated historical Request is not authority for a fresh v4 source
+    // candidate. Retained Requests stay bound to their own PR/branch.
+    let selected = current(records)?.filter(|(_, request)| {
+        if request["existing_pr"].is_null() {
+            request["branch"] == pr["head"]["ref"]
+        } else {
+            request["existing_pr"] == pr["number"]
+        }
+    });
+    if let Some((_, request)) = selected {
+        if request["route"] != "manual"
+            || request["branch"] != pr["head"]["ref"]
+            || (!request["existing_pr"].is_null() && request["existing_pr"] != pr["number"])
+            || step_sync::current_step(&state.issue)? != request["step"].as_u64().unwrap()
+            || step_sync::current_step(pr)? != request["step"].as_u64().unwrap()
+        {
+            return Ok(None);
+        }
+    }
+    for native in outcomes {
+        if !trusted_user(&native["user"], &state.writer) {
+            continue;
+        }
+        let body = native["body"].as_str().ok_or("AUTHORITY_SOURCE_INVALID")?;
+        if native["issue_url"]
+            == format!(
+                "https://api.github.com/repos/{}/issues/{}",
+                app.repository, pr["number"]
+            )
+            && (body
+                .lines()
+                .any(|line| line.starts_with("## Codex Outcome"))
+                || body.contains("<!-- relay:"))
+        {
+            return Ok(None);
+        }
+        let Some(outcome) = parse(body)? else {
+            continue;
+        };
+        if outcome["kind"] == "outcome"
+            && outcome["repository"] == hint["repository"]
+            && outcome["task"] == hint["task"]
+            && ((outcome["parent"]["kind"] == "pull_request"
+                && outcome["parent"]["number"] == pr["number"])
+                || outcome["result"]["revision"] == *head
+                || selected.is_some_and(|(reference, _)| {
+                    outcome["request"] == *reference
+                        || outcome["authority"]["compatibility_request"] == *reference
+                })
+                || (outcome["authority"]["change_request"]["parent"]["kind"] == "pull_request"
+                    && outcome["authority"]["change_request"]["parent"]["number"] == pr["number"]))
+        {
+            // Includes blocked, stale-head and otherwise incomplete admitted
+            // results. They retain their original Writer recovery path.
+            return Ok(None);
+        }
+    }
+    let mut change = Value::Null;
+    // Retain originating CR lineage after APPROVE, just as an admitted Outcome
+    // does. A newer applicable CR changes the acceptance digest.
+    for native in app
+        .github
+        .authority_reviews(&app.repository, pr["number"].as_u64().unwrap())
+        .await?
+    {
+        if !trusted_user(&native["user"], &state.publisher)
+            || native["state"] != "CHANGES_REQUESTED"
+        {
+            continue;
+        }
+        let payload = parse(native["body"].as_str().ok_or("AUTHORITY_SOURCE_INVALID")?)?
+            .ok_or("AUTHORITY_REVIEW_INVALID")?;
+        if payload["kind"] != "change-request" || !belongs(&payload, hint) {
+            return Err("AUTHORITY_REVIEW_INVALID");
+        }
+        if payload["branch"] != pr["head"]["ref"] {
+            return Err("AUTHORITY_SOURCE_PR_BINDING_INVALID");
+        }
+        if change.is_null() || native["id"].as_u64() > change["id"].as_u64() {
+            change = native_ref(&native, "review", &payload["parent"])?;
+        }
+    }
+    let (authority, amendments, closure, warnings) = effective_authority(
+        app,
+        state,
+        hint,
+        pr["number"].as_u64(),
+        &change,
+        selected.is_some(),
+    )
+    .await?;
+    if let Some(branch) = amendments.get("branch") {
+        if *branch != pr["head"]["ref"] {
+            return Err("AUTHORITY_SOURCE_PR_BINDING_INVALID");
+        }
+    }
+    if let Some(number) = amendments.get("existing_pr") {
+        if !number.is_null() && *number != pr["number"] {
+            return Err("AUTHORITY_SOURCE_PR_BINDING_INVALID");
+        }
+    }
+    let old = selected
+        .map(|(_, request)| &request["continuation"])
+        .unwrap_or(&Value::Null);
+    let continuation = amendments.get("continuation").cloned().unwrap_or_else(|| {
+        json!({
+            "hold":old["hold"] == true,
+            "next":if old["next"]["direction"].is_object() {
+                json!({"task":old["next"]["task"],"direction":old["next"]["direction"]})
+            } else { old["next"].clone() }
+        })
+    });
+    Ok(Some(json!({
+        "schema_version":"4.0","authority":authority,"original_authority":authority,
+        "source_pr":{"repository":app.repository,"number":pr["number"],"head_sha":head,
+            "branch":pr["head"]["ref"],"author":{"login":pr["user"]["login"],
+                "id":pr["user"]["id"],"type":pr["user"]["type"]}},
+        "owner_authorization":"explicit-standalone-required",
+        "continuation":continuation,"issue_closure_policy":closure,"warnings":warnings,
+        "completion_conditions":"trusted-owner-canonical-state-required"
+    })))
 }

@@ -74,6 +74,45 @@ active Decisions accumulate in native comment-ID order. Apply the existing
 execution admission. Writer resolves and stores the current snapshot, allocates
 Step, and projects labels/title. No additional authoring form or Request is needed.
 
+## Standalone manual source PR continuation
+
+In a separate synthetic scenario, Issue #42 explicitly permits direct standalone
+manual Codex source work and owner-channel publication, prohibits Relay routing
+for that result, and keeps the Issue open for later closure disposition. The
+configured human owner opens PR #43 with `Related to #42` and publishes an
+ordinary result comment identifying candidate B, validation, warnings and
+limitations. That comment is evidence, not a typed Writer Outcome.
+
+Independent native `APPROVE` uses the normal `submit_pr_review` call. Reviewer
+returns current authority and a `source_pr` binding, with
+`owner_authorization: explicit-standalone-required`, without creating admission
+or Outcome records. The owner channel reads the existing Task permission and
+execution evidence before supplying these internal canonical facts:
+
+```js
+// Computed by the trusted owner adapter from verified native/current evidence.
+// Do not copy these booleans from a caller receipt or ordinary comment.
+state.standaloneAuthorization = {
+  authority_sha256: receipt.authority.sha256,
+  pullRequest: 43,
+  headSha: candidateB,
+  authorized: true,
+  admittedExecution: false,
+  warningsDispositioned: true
+};
+const result = await continueAfterApproval(receipt, ownerNativePorts);
+```
+
+The adapter also supplies verified owner and PR identity, current native review,
+`closesTask: false`, exact-head required checks, readiness and protected holds
+as described in the [continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+The helper reserves and rechecks before squash, verifies the merged result and
+does not repeat an uncertain or completed mutation. No extra owner confirmation
+is needed. A retained v3 manual Request can be bound for exact historical result
+acceptance; this does not publish a new v3 Request or route a Relay execution.
+An automatic/admitted manual result or a genuine no-PR Task result instead keeps
+its real Writer Outcome and acceptance path.
+
 ## Current v4 independent PR Change Request
 
 For a genuine PR #43 at candidate B, the independent reviewer compares the whole

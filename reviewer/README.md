@@ -276,6 +276,29 @@ canonical completion evidence. It does not infer Task completion from an
 implemented Step or absence of a next direction. Owner orchestration verifies
 remaining work and applicable qualification conditions before conditional closure.
 
+An owner-created standalone source PR can instead receive a `source_pr`
+continuation binding without admission/Outcome. The service verifies native
+owner ID/login/User type, repository, branch/head and current Task sources.
+The native review includes the reserved
+`jresearchsoftware-reviewer-source-pr:v1` marker alongside its authority digest;
+callers cannot inject either marker. The existing review operation journal
+retains this binding across retries. Exact retained manual Request acceptance
+is supported without publishing a fresh v3 record; current v4 work needs no
+Request or Step. Known same-result Writer evidence and execution markers retain
+the admitted path, not source fallback.
+
+`owner_authorization: explicit-standalone-required` makes the remaining trust
+condition visible. The conditional `automatic_continuation_authorized` policy
+does not assert that a missing Outcome proves no admission or that PR authorship
+proves permission. The existing owner adapter must verify those semantic facts
+from canonical authority and actual execution evidence, together with warning
+disposition, before any effect. There is no additional review input, owner
+confirmation or public result transport. Ordinary result comments never become
+Writer Outcomes or Task Approvals. See the
+[owner adapter contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+Synthetic publication/continuation tests do not qualify a live owner adapter,
+App permissions, installed service or GitHub merge.
+
 `submit_manual_outcome` accepts only `{repository, task, run_id, result}`;
 `task` and `run_id` are positive safe integers, and `result` is the canonical
 schema-v3 or schema-v4 Outcome claim for an already admitted manual attempt.

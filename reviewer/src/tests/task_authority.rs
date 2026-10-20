@@ -2876,3 +2876,559 @@ fn drift_shape_rejects_invalid_digest_flags_unsorted_or_overlapping_gaps() {
         );
     }
 }
+
+// An owner source PR is independent review evidence. It carries neither an
+// execution admission nor an inference of permission from result prose.
+fn source_pr_state(retained_manual: bool) -> MockState {
+    let state = admitted();
+    let mut pr = live_pr();
+    pr["user"] = json!({"login":"example-owner","id":1,"type":"User"});
+    if !retained_manual {
+        state.issue.lock().unwrap().as_mut().unwrap()["labels"] = json!([{"name":"task"}]);
+        pr["labels"] = json!([]);
+        pr["title"] = json!("Improve the bounded source behavior");
+    }
+    *state.pr.lock().unwrap() = Some(pr);
+    state
+}
+
+fn source_pr_record(state: &MockState, id: u64, record: &Value) -> Value {
+    let native = json!({"id":id,"body":crate::task_authority::render(record),
+        "html_url":format!("https://github.com/{TEST_REPOSITORY}/issues/24#issuecomment-{id}"),
+        "issue_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/issues/24"),
+        "user":{"login":"example-reviewer[bot]","id":2,"type":"Bot"}});
+    state
+        .authority_comments
+        .lock()
+        .unwrap()
+        .push(native.clone());
+    source_ref(&native)
+}
+
+fn source_pr_manual_request(state: &MockState) -> Value {
+    let mut manual = request();
+    manual["purpose"] = json!("Launch Codex directly to implement and validate this bounded source change; no Relay run is required.");
+    manual["branch"] = json!("codex/task-24");
+    manual["base_sha"] = json!("b".repeat(40));
+    manual["starting_head"] = json!(HEAD);
+    manual["existing_pr"] = json!(25);
+    crate::task_authority::validate_record(&manual).unwrap();
+    source_pr_record(state, 1000, &manual)
+}
+
+async fn source_pr_preview(http: &reqwest::Client, url: &str) -> Value {
+    rpc(
+        http,
+        url,
+        1,
+        "tools/call",
+        json!({"name":"check_pr_review_target","arguments":{
+        "repository":TEST_REPOSITORY,"pr_number":25,"expected_head_sha":HEAD}}),
+    )
+    .await
+}
+
+async fn source_pr_approve(http: &reqwest::Client, url: &str, args: &Value) -> Value {
+    rpc(
+        http,
+        url,
+        2,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":args}),
+    )
+    .await
+}
+
+fn assert_source_pr_receipt(receipt: &Value) {
+    assert_eq!(receipt["schema_version"], "4.0", "{receipt}");
+    assert_eq!(
+        receipt["owner_authorization"],
+        "explicit-standalone-required"
+    );
+    assert_eq!(
+        receipt["source_pr"],
+        json!({"repository":TEST_REPOSITORY,"number":25,
+        "head_sha":HEAD,"branch":"codex/task-24",
+        "author":{"login":"example-owner","id":1,"type":"User"}})
+    );
+    for field in ["admission", "outcome", "attempt", "step", "request"] {
+        assert!(receipt.get(field).is_none(), "invented {field}: {receipt}");
+    }
+}
+
+#[tokio::test]
+async fn source_pr_retained_direct_manual_result_approves_and_replays_without_inventing_execution()
+{
+    let state = source_pr_state(true);
+    let reference = source_pr_manual_request(&state);
+    state.authority_comments.lock().unwrap().push(json!({"id":1001,
+        "body":"Implemented and tested directly in Codex. Source changes are ready for independent review; no Relay run or Writer result exists.",
+        "issue_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/issues/24"),
+        "user":{"login":"example-owner","id":1,"type":"User"}}));
+    let original_issue = state.issue.lock().unwrap().clone();
+    let original_pr = state.pr.lock().unwrap().clone();
+    let original_comments = state.authority_comments.lock().unwrap().clone();
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let preview = source_pr_preview(&http, &url).await;
+    let receipt = &preview["result"]["structuredContent"]["task_acceptance"];
+    assert_source_pr_receipt(receipt);
+    assert_eq!(receipt["authority"]["compatibility_request"], reference);
+    for expected in ["PUBLISHED", "DUPLICATE_SUPPRESSED"] {
+        let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            approved["result"]["content"][0]["text"], expected,
+            "{approved}"
+        );
+        let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+        assert_source_pr_receipt(&plan["request_authority"]);
+        assert_eq!(plan["owner_authorization"], "explicit-standalone-required");
+        assert_eq!(plan["required_native_checks"], "must_pass_for_exact_head");
+        assert_eq!(plan["mergeability"], "must_be_verified");
+        assert_eq!(plan["unresolved_checks"], "block_continuation");
+        assert_eq!(plan["execution_supported"], false);
+        assert_eq!(plan["merge_performed"], false);
+        assert_eq!(plan["issue_closure_performed"], false);
+        assert!(plan.get("close_issue_authorized").is_none());
+    }
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+    let body = state.reviews.lock().unwrap()[0]["body"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(body.contains("<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256="));
+    assert!(body.contains("<!-- jresearchsoftware-reviewer-source-pr:v1 -->"));
+    assert_eq!(*state.issue.lock().unwrap(), original_issue);
+    assert_eq!(*state.pr.lock().unwrap(), original_pr);
+    assert_eq!(*state.authority_comments.lock().unwrap(), original_comments);
+    assert!(state.authority_pr_comments.lock().unwrap().is_empty());
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.starts_with("PATCH ")
+            || path.starts_with("PUT ")
+            || (path.starts_with("POST /repos/")
+                && !path.ends_with("/reviews")
+                && !path.ends_with("/check-runs"))));
+}
+
+#[tokio::test]
+async fn source_pr_current_charter_and_decisions_need_no_step_admission_or_result() {
+    for hold in [false, true] {
+        let state = source_pr_state(false);
+        let mut decision = decision_v4();
+        decision["amendments"] = json!({"issue_closure_policy":"close-authorized",
+            "continuation":{"hold":hold,"next":null}});
+        let reference = source_pr_record(&state, 1000, &decision);
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview = source_pr_preview(&http, &url).await;
+        let receipt = &preview["result"]["structuredContent"]["task_acceptance"];
+        assert_source_pr_receipt(receipt);
+        assert_eq!(receipt["authority"]["decisions"], json!([reference]));
+        assert!(receipt["authority"]["compatibility_request"].is_null());
+        let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            approved["result"]["content"][0]["text"], "PUBLISHED",
+            "{approved}"
+        );
+        let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+        assert_eq!(plan["automatic_continuation_authorized"], !hold, "{plan}");
+        assert_eq!(plan["hold"], hold);
+        assert_eq!(plan["issue_closure_policy"], "close-authorized");
+        assert!(plan.get("close_issue_authorized").is_none());
+        assert_eq!(
+            plan["completion_conditions"],
+            "trusted-owner-canonical-state-required"
+        );
+        assert_source_pr_receipt(&plan["request_authority"]);
+    }
+}
+
+#[tokio::test]
+async fn source_pr_changed_authority_refuses_stale_preview_and_published_replay() {
+    for defect in ["preview-decision", "replay-decision", "replay-charter"] {
+        let state = source_pr_state(false);
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview = source_pr_preview(&http, &url).await;
+        let mut args = base_args("APPROVE");
+        args["expected_task_authority_sha256"] = preview["result"]["structuredContent"]
+            ["task_acceptance"]["authority"]["sha256"]
+            .clone();
+        if defect.starts_with("replay") {
+            let first = source_pr_approve(&http, &url, &args).await;
+            assert_eq!(
+                first["result"]["content"][0]["text"], "PUBLISHED",
+                "{first}"
+            );
+        }
+        if defect.ends_with("charter") {
+            state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!(format!(
+                "{CHARTER}\nOwner correction: inspect the current source boundaries."
+            ));
+        } else {
+            let mut decision = decision_v4();
+            decision["amendments"] =
+                json!({"boundaries":["Preserve the corrected owner boundary."]});
+            source_pr_record(&state, 1000, &decision);
+        }
+        let before = state.requests.lock().unwrap().len();
+        let rejected = source_pr_approve(&http, &url, &args).await;
+        assert_eq!(rejected["result"]["isError"], true, "{defect}: {rejected}");
+        assert!(
+            !state.requests.lock().unwrap()[before..]
+                .iter()
+                .any(|path| path.starts_with("POST /repos/")
+                    || path.starts_with("PATCH ")
+                    || path.starts_with("PUT ")),
+            "{defect}: {rejected}"
+        );
+        assert_eq!(
+            state.reviews.lock().unwrap().len(),
+            usize::from(defect.starts_with("replay"))
+        );
+    }
+}
+
+#[tokio::test]
+async fn source_pr_requires_verified_owner_same_repository_and_exact_head() {
+    for defect in [
+        "owner-id",
+        "owner-type",
+        "owner-missing-id",
+        "owner-login",
+        "fork",
+        "base-repository",
+        "head",
+        "branch",
+    ] {
+        let state = source_pr_state(false);
+        {
+            let mut locked = state.pr.lock().unwrap();
+            let pr = locked.as_mut().unwrap();
+            match defect {
+                "owner-id" => pr["user"]["id"] = json!(999),
+                "owner-type" => pr["user"]["type"] = json!("Bot"),
+                "owner-missing-id" => {
+                    pr["user"].as_object_mut().unwrap().remove("id");
+                }
+                "owner-login" => pr["user"]["login"] = json!("contributor"),
+                "fork" => pr["head"]["repo"]["full_name"] = json!("another/project"),
+                "base-repository" => pr["base"]["repo"]["full_name"] = json!("another/project"),
+                "head" => pr["head"]["sha"] = json!("c".repeat(40)),
+                _ => pr["head"]["ref"] = json!(""),
+            }
+        }
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let rejected = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(rejected["result"]["isError"], true, "{defect}: {rejected}");
+        assert!(
+            state.reviews.lock().unwrap().is_empty(),
+            "{defect}: {rejected}"
+        );
+        assert!(state.check_runs.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn source_pr_never_falls_back_for_admission_markers_automatic_requests_or_writer_results() {
+    for defect in [
+        "admission-marker",
+        "request-marker",
+        "attempt-marker",
+        "legacy-relay-marker",
+        "automatic-request",
+        "writer-current-head",
+        "writer-stale-head",
+        "writer-request",
+    ] {
+        let state = source_pr_state(defect == "automatic-request" || defect == "writer-request");
+        match defect {
+            "admission-marker" | "request-marker" | "attempt-marker" | "legacy-relay-marker" => {
+                let marker = match defect {
+                    "admission-marker" => format!("Execution admission digest: {}", "a".repeat(64)),
+                    "request-marker" => format!("Execution request digest: {}", "a".repeat(64)),
+                    "legacy-relay-marker" => "<!-- relay:run-10 -->".into(),
+                    _ => "Attempt: run-10".into(),
+                };
+                state.pr.lock().unwrap().as_mut().unwrap()["body"] =
+                    json!(format!("Related to #24\n{marker}"));
+            }
+            "automatic-request" => {
+                let mut automatic = request();
+                automatic["route"] = json!("auto");
+                automatic["branch"] = json!("codex/task-24");
+                automatic["base_sha"] = json!("b".repeat(40));
+                automatic["starting_head"] = json!(HEAD);
+                automatic["existing_pr"] = json!(25);
+                source_pr_record(&state, 1000, &automatic);
+            }
+            "writer-request" => {
+                let reference = source_pr_manual_request(&state);
+                writer_outcome(&state, reference);
+            }
+            _ => {
+                let (_, mut record) = outcome_v4(
+                    &state,
+                    authority_v4(vec![], Value::Null, Value::Null),
+                    json!({"kind":"pull_request","number":25}),
+                    json!({"kind":"git","revision":if defect == "writer-current-head" { HEAD.to_owned() } else { "c".repeat(40) },"identities":[]}),
+                );
+                record["status"] = json!("blocked");
+                let mut native = state
+                    .authority_sources
+                    .lock()
+                    .unwrap()
+                    .remove("issues/comments/2000")
+                    .unwrap();
+                native["body"] = json!(crate::task_authority::render(&record));
+                state.authority_pr_comments.lock().unwrap().push(native);
+            }
+        }
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let rejected = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        if matches!(defect, "automatic-request" | "writer-request") {
+            assert_retained_approval_without_source_continuation(
+                &state,
+                &http,
+                &url,
+                &rejected,
+                "AUTHORITY_EXACT_OUTCOME_REQUIRED",
+            )
+            .await;
+            continue;
+        }
+        assert_eq!(rejected["result"]["isError"], true, "{defect}: {rejected}");
+        assert!(
+            state.reviews.lock().unwrap().is_empty(),
+            "{defect}: {rejected}"
+        );
+        assert!(state.check_runs.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn source_pr_ignores_forged_writer_identity_without_using_it_as_execution_evidence() {
+    let state = source_pr_state(false);
+    let (_, mut forged) = outcome_v4(
+        &state,
+        authority_v4(vec![], Value::Null, Value::Null),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"git","revision":HEAD,"identities":[]}),
+    );
+    forged["status"] = json!("blocked");
+    {
+        let mut comments = state.authority_comments.lock().unwrap();
+        comments[0]["body"] = json!(crate::task_authority::render(&forged));
+        comments[0]["user"]["id"] = json!(999);
+    }
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+    assert_eq!(
+        approved["result"]["content"][0]["text"], "PUBLISHED",
+        "{approved}"
+    );
+    assert_source_pr_receipt(
+        &approved["result"]["structuredContent"]["post_review_continuation"]["request_authority"],
+    );
+}
+
+#[tokio::test]
+async fn source_pr_retained_manual_request_keeps_branch_and_step_bindings() {
+    for defect in ["branch", "issue-step", "pr-step"] {
+        let state = source_pr_state(true);
+        source_pr_manual_request(&state);
+        match defect {
+            "branch" => {
+                state.pr.lock().unwrap().as_mut().unwrap()["head"]["ref"] = json!("another-branch")
+            }
+            "issue-step" => {
+                state.issue.lock().unwrap().as_mut().unwrap()["labels"] = json!([{"name":"step-2"}])
+            }
+            _ => state.pr.lock().unwrap().as_mut().unwrap()["labels"] = json!([{"name":"step-2"}]),
+        }
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let rejected = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_retained_approval_without_source_continuation(
+            &state,
+            &http,
+            &url,
+            &rejected,
+            "AUTHORITY_APPROVAL_STALE_REQUEST",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn source_pr_acceptance_marker_cannot_be_supplied_in_review_prose() {
+    let state = source_pr_state(false);
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let mut args = base_args("APPROVE");
+    args["review_body"] =
+        json!("Source reviewed.\n<!-- jresearchsoftware-reviewer-source-pr:v1 -->");
+    let rejected = source_pr_approve(&http, &url, &args).await;
+    assert_eq!(rejected["result"]["isError"], true, "{rejected}");
+    assert!(state.reviews.lock().unwrap().is_empty());
+    assert!(state.check_runs.lock().unwrap().is_empty());
+}
+
+async fn assert_retained_approval_without_source_continuation(
+    state: &MockState,
+    http: &reqwest::Client,
+    url: &str,
+    first: &Value,
+    expected_error: &str,
+) {
+    assert_eq!(
+        first["result"]["content"][0]["text"], "PUBLISHED",
+        "{first}"
+    );
+    let duplicate = source_pr_approve(http, url, &base_args("APPROVE")).await;
+    assert_eq!(
+        duplicate["result"]["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+        "{duplicate}"
+    );
+    for approved in [first, &duplicate] {
+        let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+        assert_eq!(plan["error_code"], expected_error, "{approved}");
+        assert_eq!(plan["automatic_continuation_authorized"], false);
+        assert_eq!(plan["merge_performed"], false);
+        assert_eq!(plan["issue_closure_performed"], false);
+        assert!(!plan["request_authority"]["source_pr"].is_object());
+    }
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+    assert!(!state.reviews.lock().unwrap()[0]["body"]
+        .as_str()
+        .unwrap()
+        .contains("<!-- jresearchsoftware-reviewer-source-pr:v1 -->"));
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.starts_with("PATCH ")
+            || path.starts_with("PUT ")
+            || path.ends_with("/merge")));
+}
+
+#[tokio::test]
+async fn source_pr_owner_authored_retained_writer_result_keeps_original_exact_result_path() {
+    for route in ["manual", "auto"] {
+        let state = source_pr_state(true);
+        let mut manual = request();
+        manual["route"] = json!(route);
+        manual["branch"] = json!("codex/task-24");
+        manual["base_sha"] = json!("b".repeat(40));
+        manual["starting_head"] = json!(HEAD);
+        manual["existing_pr"] = json!(25);
+        let reference = source_pr_record(&state, 1000, &manual);
+        let (outcome_reference, mut record) = writer_outcome(&state, reference.clone());
+        record["result"] = json!({"kind":"git","revision":HEAD,"identities":[]});
+        state.authority_comments.lock().unwrap().last_mut().unwrap()["body"] =
+            json!(crate::task_authority::render(&record));
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview = source_pr_preview(&http, &url).await;
+        assert!(
+            preview["result"]["structuredContent"]["task_acceptance"].is_null(),
+            "{preview}"
+        );
+        for expected in ["PUBLISHED", "DUPLICATE_SUPPRESSED"] {
+            let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+            assert_eq!(
+                approved["result"]["content"][0]["text"], expected,
+                "{approved}"
+            );
+            let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+            assert_eq!(plan["automatic_continuation_authorized"], true, "{plan}");
+            assert!(plan.get("error_code").is_none(), "{plan}");
+            assert_eq!(plan["request_authority"]["request"], reference);
+            assert_eq!(
+                plan["request_authority"]["outcome"]["id"],
+                outcome_reference["id"]
+            );
+            assert!(plan["request_authority"].get("source_pr").is_none());
+            assert_eq!(plan["merge_performed"], false);
+            assert_eq!(plan["issue_closure_performed"], false);
+        }
+        assert_eq!(state.reviews.lock().unwrap().len(), 1);
+        assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+        assert!(!state.reviews.lock().unwrap()[0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("<!-- jresearchsoftware-reviewer-source-pr:v1 -->"));
+    }
+}
+
+#[tokio::test]
+async fn source_pr_retained_manual_branch_binding_supports_original_null_existing_pr() {
+    let state = source_pr_state(true);
+    let mut manual = request();
+    manual["branch"] = json!("codex/task-24");
+    manual["base_sha"] = json!("b".repeat(40));
+    manual["starting_head"] = json!(HEAD);
+    manual["existing_pr"] = Value::Null;
+    let reference = source_pr_record(&state, 1000, &manual);
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let preview = source_pr_preview(&http, &url).await;
+    let receipt = &preview["result"]["structuredContent"]["task_acceptance"];
+    assert_source_pr_receipt(receipt);
+    assert_eq!(receipt["authority"]["compatibility_request"], reference);
+    for expected in ["PUBLISHED", "DUPLICATE_SUPPRESSED"] {
+        let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            approved["result"]["content"][0]["text"], expected,
+            "{approved}"
+        );
+        assert_source_pr_receipt(
+            &approved["result"]["structuredContent"]["post_review_continuation"]
+                ["request_authority"],
+        );
+    }
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn source_pr_current_v4_ignores_unrelated_historical_request_branch_and_pr() {
+    for existing_pr in [Value::Null, json!(26)] {
+        let state = source_pr_state(false);
+        let mut historical = request();
+        historical["branch"] = json!("codex/historical-work");
+        historical["base_sha"] = json!("b".repeat(40));
+        historical["starting_head"] = json!("c".repeat(40));
+        historical["existing_pr"] = existing_pr;
+        source_pr_record(&state, 1000, &historical);
+        if !historical["existing_pr"].is_null() {
+            let mut old_pr = live_pr();
+            old_pr["number"] = json!(26);
+            old_pr["head"]["ref"] = historical["branch"].clone();
+            state
+                .authority_sources
+                .lock()
+                .unwrap()
+                .insert("pulls/26".into(), old_pr);
+            state
+                .authority_sources
+                .lock()
+                .unwrap()
+                .insert("pulls/26/reviews".into(), json!([]));
+        }
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview = source_pr_preview(&http, &url).await;
+        let receipt = &preview["result"]["structuredContent"]["task_acceptance"];
+        assert_source_pr_receipt(receipt);
+        assert!(receipt["authority"]["compatibility_request"].is_null());
+        let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            approved["result"]["content"][0]["text"], "PUBLISHED",
+            "{approved}"
+        );
+        assert_source_pr_receipt(
+            &approved["result"]["structuredContent"]["post_review_continuation"]
+                ["request_authority"],
+        );
+        assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    }
+}
