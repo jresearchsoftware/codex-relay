@@ -121,5 +121,17 @@ report the exact missing deliverable and preserve useful source progress.
 Do not change protected directory permissions, install into another client scope
 or claim that a disposable fixture completed the governed checkout.
 
+The pinned Codex 0.160.0 `workspace-write` policy protects the workspace-root
+`.agents` path, including a missing path, while ordinary checkout files remain
+writable. `EROFS` from native Skill projection at that path is a sandbox
+limitation; it does not establish a read-only checkout or a collector permission
+failure. Preserve the boundary and report the missing actual projection. Use an
+authorized manual checkout for source maintenance that must change it; do not
+add writable roots or disable sandboxing as a workaround. Existing projected
+guidance remains readable during normal automatic work. A nested disposable
+fixture can qualify projection without claiming actual checkout adoption.
+The optional [native filesystem probe](codex/cli-integration.md#native-filesystem-probe)
+distinguishes these cases without a model call.
+
 No self-adoption command grants external publication, client-settings changes,
 deployment, merge, release, independent approval or Issue closure authority.

@@ -156,7 +156,9 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
     ...safeRuntimeLifecycle(detail) };
   const inheritedPublication = safeFailureDiagnosticReference(inherited.publication) ?? {};
   const inheritedRuntime = safeFailureDiagnosticReference(inherited.runtime) ?? {};
-  const launcher = { ...safeLauncherDiagnosticSummary(inherited.launcher), ...safeLauncherDiagnosticSummary(safeDiagnostic) };
+  const gitDiagnostic = safeDiagnostic.gitExitCode !== undefined || safeDiagnostic.classification?.startsWith('GIT_') === true;
+  const launcher = { ...safeLauncherDiagnosticSummary(inherited.launcher),
+    ...(!gitDiagnostic ? safeLauncherDiagnosticSummary(safeDiagnostic) : undefined) };
   const observed = safeDiagnostic.childState ?? inherited.observed?.child ?? (typeof safeDiagnostic.childStarted === 'boolean' ? (safeDiagnostic.childStarted ? 'started' : 'not_started') : child);
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
   const parserFailure = ['CODEX_JSON_INVALID', 'CODEX_RESULT_INVALID', 'CODEX_RESULT_MISSING'].includes(code);
@@ -168,12 +170,12 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const operation = safeDiagnostic.operation ?? inheritedPublication.operation;
   const priorCause = safeDiagnostic.priorCause ?? inheritedPublication.priorCause;
   const gitExitCode = safeDiagnostic.gitExitCode ?? inheritedPublication.gitExitCode;
-  const gitDiagnostic = safeDiagnostic.gitExitCode !== undefined || safeDiagnostic.classification?.startsWith('GIT_') === true;
   const childDiagnostic = safeDiagnostic.diagnosticCode !== undefined || safeDiagnostic.childExitCode !== undefined;
   const signal = (!gitDiagnostic && childDiagnostic ? safeDiagnostic.signal : undefined) ?? inherited.observed?.signal;
   const publicationSignal = (gitDiagnostic ? safeDiagnostic.signal : undefined) ?? inheritedPublication.signal;
   const runtime = {
     ...inheritedRuntime,
+    ...(gitDiagnostic && safeDiagnostic.diagnosticCode ? { diagnosticCode: safeDiagnostic.diagnosticCode } : {}),
     ...(safeDiagnostic.syscall ? { syscall: safeDiagnostic.syscall } : {}),
     ...(safeDiagnostic.pathContext ? { pathContext: safeDiagnostic.pathContext } : {}),
     ...safeRuntimeLifecycle(safeDiagnostic)

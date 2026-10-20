@@ -351,7 +351,7 @@ test('trusted Git failure classifies and bounds safe causal evidence', async () 
   assert.ok(!JSON.stringify(redacted).includes(`ghp_${'A'.repeat(24)}`));
 });
 test('local process permission failures take precedence over authorization text', () => {
-  for (const code of ['EACCES', 'EPERM', 'ENOENT', 'EINVAL', 'ENOTDIR']) {
+  for (const code of ['EACCES', 'EPERM', 'EROFS', 'ENOENT', 'EINVAL', 'ENOTDIR']) {
     assert.equal(classifyGitFailure({ code, stderr: 'Permission denied' }), 'GIT_LOCAL_FAILURE');
   }
   for (const stderr of [
@@ -391,6 +391,41 @@ test('publication process exit stays separate from Codex child exit in causal ev
   assert.equal(child.observed.exitCode, 7);
   assert.equal(child.publication, undefined);
 });
+
+for (const osCode of ['EACCES', 'EROFS']) {
+  test(`collector ${osCode} survives terminal publication and replay without becoming launcher evidence`, async t => {
+    const f = await fixture(t); let executions = 0; let observations = 0;
+    const args = { ...f, journal: f.journal,
+      execute: async () => {
+        executions++; await f.commit();
+        return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
+      },
+      collect: async () => {
+        observations++;
+        throw Object.assign(new Error('TRUSTED_GIT_FAILED'), { code: 'TRUSTED_GIT_FAILED', details: { failureDiagnostic: {
+          code: 'TRUSTED_GIT_FAILED', classification: 'GIT_LOCAL_FAILURE', primaryCause: 'GIT_LOCAL_FAILURE',
+          diagnosticCode: osCode, syscall: 'open', operation: 'worktree-observation', pathContext: 'checkout',
+          preview: 'protected collector detail'
+        } } });
+      }
+    };
+    await assert.rejects(runAttempt(args), { code: 'TRUSTED_GIT_FAILED' });
+    await assert.rejects(runAttempt(args));
+    const saved = await f.journal.get(99);
+    assert.equal(saved.collection, undefined);
+    assert.equal(saved.diagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
+    assert.equal(saved.diagnostic.runtime.diagnosticCode, osCode);
+    assert.equal(saved.diagnostic.runtime.syscall, 'open');
+    assert.equal(saved.diagnostic.launcher, undefined);
+    assert.equal(saved.diagnostic.observed.exitCode, null);
+    const body = terminalOutcomeBody(f.envelope, { terminalCode: 'TRUSTED_GIT_FAILED', diagnostic: saved.diagnostic });
+    assert.match(body, new RegExp(`Failed operation: worktree-observation; syscall: open; path context: checkout; OS code: ${osCode}`));
+    assert.match(body, /Launcher diagnostic: UNAVAILABLE/);
+    assert.doesNotMatch(body, /protected collector detail/);
+    assert.equal(executions, 1); assert.equal(observations, 1);
+    assert.equal(f.pushes(), 0); assert.equal(f.comments.length, 1);
+  });
+}
 test('publication cause survives broker, privileged helper, local adapter, and terminal diagnostics', async t => {
   const f = await fixture(t); const journal = f.journal;
   const headerValue = Buffer.from('x-access-token:synthetic-not-secret').toString('base64');

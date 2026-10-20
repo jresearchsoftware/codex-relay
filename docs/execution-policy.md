@@ -66,6 +66,17 @@ uncommitted/non-ignored work, its known cause and any reconciliation/access
 boundary in the terminal summary. Automatic workers hand commits to trusted
 Writer and retain no publication authority.
 
+The existing shared-group umask does not override a tool's explicit `0600`
+file or `0700` directory mode, including an atomic replacement. Newly created,
+known public task-owned source must remain readable through the existing work
+group for ordinary collection. A worker may correct only those owned public
+files within its admitted authority; unknown or private content requires an
+explicit access disposition. This is source reconciliation, not permission to
+recursively chmod a checkout or to run ordinary collection as root. An
+unreadable tracked file still blocks complete observation. The
+[collector contract](../controller/README.md#collector-identity-and-separate-host-qualification)
+explains the safe diagnostics and retained-evidence boundary.
+
 These worktree reconciliation and ownership requirements protect useful source,
 ordinary worker collection/publication and state outside disposable TEST.
 Disposable TEST state follows [TEST Environment Authority](#test-environment-authority)
