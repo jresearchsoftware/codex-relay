@@ -224,13 +224,13 @@ impl Github {
         .await
     }
 
-    pub(crate) async fn create_authority_comment(
+    pub(crate) async fn prepare_authority_comment(
         &self,
         repository: &str,
         issue: u64,
         body: &str,
-    ) -> Result<Value, &'static str> {
-        self.authority_request(
+    ) -> Result<PreparedMutation, MutationFailure> {
+        self.prepare_mutation(
             repository,
             self.client
                 .post(format!(
@@ -238,8 +238,8 @@ impl Github {
                     self.api
                 ))
                 .json(&json!({"body": body})),
+            "AUTHORITY_PUBLICATION_UNCERTAIN",
         )
         .await
-        .map_err(|_| "AUTHORITY_PUBLICATION_UNCERTAIN")
     }
 }

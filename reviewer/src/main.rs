@@ -20,6 +20,7 @@ mod executable_cr;
 mod github;
 mod manual_outcome;
 mod mtls_identity;
+mod publication;
 mod publication_rendering;
 mod step_sync;
 mod store;
@@ -756,326 +757,7 @@ async fn mcp(
                 tracing::info!(event = "review_attempt", outcome = "RELAY_DISABLED", repository = %arguments["repository"], pr_number = ?arguments["pr_number"]);
                 json!({"content":[{"type":"text","text":"RELAY_DISABLED"}],"isError":true})
             } else if name == "submit_pr_review" {
-                if app.policy.github_native_authority_enabled
-                    && arguments["action"] == "REQUEST_CHANGES"
-                {
-                    let known = app
-                        .store
-                        .lock()
-                        .expect("store lock")
-                        .known(&operation_id(&app.policy.validation_names, arguments));
-                    let rejection = match known {
-                        Ok(None) => Some("CURRENT_PROTOCOL_REQUIRED"),
-                        Err(_) => Some("INTERNAL_RELAY_ERROR"),
-                        Ok(Some(_)) => None,
-                    };
-                    if let Some(code) = rejection {
-                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
-                    }
-                }
-                let pr = match app.github.get_pr(arguments["repository"].as_str().unwrap_or(""),arguments["pr_number"].as_i64().unwrap_or(0)).await { Ok(value)=>value, Err(code)=>return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response() };
-                // Writer may already have drafted this exact published CR.
-                // Permit its own publication recovery, never a new review of
-                // an active Draft candidate or an approval of that candidate.
-                let mut publication_pr = pr.clone();
-                if arguments["action"] == "REQUEST_CHANGES"
-                    && pr["draft"] == true
-                    && app
-                        .store
-                        .lock()
-                        .expect("store lock")
-                        .known(&operation_id(&app.policy.validation_names, arguments))
-                        .ok()
-                        .flatten()
-                        .is_some_and(|state| state.review_id.is_some())
-                {
-                    publication_pr["draft"] = json!(false);
-                }
-                if let Some(outcome) = target_binding_rejection(&app.policy, &pr, arguments)
-                    .or_else(|| {
-                        publication_rejection(&publication_pr, &arguments["expected_head_sha"])
-                    })
-                {
-                    tracing::info!(event = "review_attempt", outcome, repository = %arguments["repository"], pr_number = ?arguments["pr_number"]);
-                    if outcome == "DRAFT_PR_NOT_READY" {
-                        json!({"content":[{"type":"text", "text":outcome}],"isError":true,"structuredContent":{"draft":true,"ready_for_review":false,"current_head_sha":pr.pointer("/head/sha")}})
-                    } else {
-                        json!({"content":[{"type":"text","text":outcome}],"isError":true})
-                    }
-                } else {
-                    match app.github.app_identity().await { Ok(x) if identity_matches(&app.policy, &x) => {}, Ok(_) => return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":"ACTOR_VERIFICATION_FAILED"}],"isError":true}}))).into_response(), Err(code) => return (StatusCode::OK,Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response() };
-                    let operation = operation_id(&app.policy.validation_names, arguments);
-                    let marker =
-                        format!("jresearchsoftware-reviewer-relay:v1 operation={operation}");
-                    let approval_binding = match current_approval_authority(&app, arguments).await {
-                        Ok(binding) => binding,
-                        Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response(),
-                    };
-                    if let Err(code) = verify_approval_authority(
-                        &app,
-                        &operation,
-                        approval_binding.as_ref(),
-                        false,
-                    ) {
-                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
-                    }
-                    let mut current_body =
-                        native_review_body(&app.policy.validation_names, arguments, &operation);
-                    if let Some(binding) = &approval_binding {
-                        current_body.push_str(&format!("\n<!-- jresearchsoftware-reviewer-acceptance:v1 authority_sha256={} -->", binding["authority"]["sha256"].as_str().unwrap()));
-                        if binding["source_pr"].is_object() {
-                            current_body
-                                .push_str("\n<!-- jresearchsoftware-reviewer-source-pr:v1 -->");
-                        }
-                    }
-                    let legacy_body = if arguments["action"] == "REQUEST_CHANGES" {
-                        format!("{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
-                            executable_cr::render_legacy(&app.policy.validation_names, arguments).expect("validated CR"))
-                    } else {
-                        current_body.clone()
-                    };
-                    let reservation = app.store.lock().expect("store lock").reserve_publication(
-                        &operation,
-                        &finding_digest(&app.policy.validation_names, arguments),
-                        &current_body,
-                        &legacy_body,
-                    );
-                    let body = reservation
-                        .as_ref()
-                        .map(|(_, body)| body.clone())
-                        .unwrap_or(current_body);
-                    let reserve = reservation.map(|(reserved, _)| reserved);
-                    if let Err(code) = verify_approval_authority(
-                        &app,
-                        &operation,
-                        approval_binding.as_ref(),
-                        reserve.as_ref().is_ok_and(|reserved| *reserved),
-                    ) {
-                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
-                    }
-                    match reserve {
-                        Ok(false) => {
-                            let known = app
-                                .store
-                                .lock()
-                                .expect("store lock")
-                                .known(&operation)
-                                .ok()
-                                .flatten();
-                            if known
-                                .as_ref()
-                                .and_then(|x| x.actor_login.as_deref())
-                                .is_some_and(|actor| actor != app.policy.actor)
-                            {
-                                return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"isError":true,"content":[{"type":"text","text":"ACTOR_VERIFICATION_FAILED"}]}}))).into_response();
-                            }
-                            if known
-                                .as_ref()
-                                .is_some_and(|x| x.status == "REVIEW_PUBLISHED")
-                            {
-                                match known.as_ref() {
-                                    Some(operation_state) => {
-                                        match (
-                                            operation_state.review_id,
-                                            operation_state.review_url.as_deref(),
-                                            operation_state.actor_login.as_deref(),
-                                        ) {
-                                            (Some(review_id), Some(review_url), Some(actor)) => {
-                                                complete_check(
-                                                    &app,
-                                                    &operation,
-                                                    review_id,
-                                                    review_url,
-                                                    actor,
-                                                    arguments,
-                                                    "CHECK_RECOVERED",
-                                                )
-                                                .await
-                                            }
-                                            _ => {
-                                                json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true})
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true})
-                                    }
-                                }
-                            } else if known.as_ref().is_some_and(|x| x.status == "RESERVED") {
-                                match app
-                                    .github
-                                    .find_review(
-                                        arguments["repository"].as_str().unwrap_or(""),
-                                        arguments["pr_number"].as_i64().unwrap_or(0),
-                                        &marker,
-                                    )
-                                    .await
-                                {
-                                    Ok(Some(review)) => {
-                                        record_review(
-                                            &app,
-                                            &operation,
-                                            &review,
-                                            "DUPLICATE_RECOVERED",
-                                            arguments,
-                                        )
-                                        .await
-                                    }
-                                    Ok(None) => {
-                                        json!({"content":[{"type":"text","text":"PUBLICATION_UNCERTAIN"}],"isError":true})
-                                    }
-                                    Err(code) => {
-                                        json!({"content":[{"type":"text","text":code}],"isError":true})
-                                    }
-                                }
-                            } else {
-                                if arguments["action"] == "APPROVE" {
-                                    if let Some(known) = &known {
-                                        if let (Some(review_id), Some(url), Some(actor)) = (
-                                            known.review_id,
-                                            known.review_url.as_deref(),
-                                            known.actor_login.as_deref(),
-                                        ) {
-                                            let result = complete_check(
-                                                &app,
-                                                &operation,
-                                                review_id,
-                                                url,
-                                                actor,
-                                                arguments,
-                                                "DUPLICATE_SUPPRESSED",
-                                            )
-                                            .await;
-                                            return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":result}))).into_response();
-                                        }
-                                    }
-                                }
-                                if arguments["action"] == "REQUEST_CHANGES" {
-                                    let synced = match known.as_ref().and_then(|x| x.review_id) {
-                                        Some(review_id) => {
-                                            step_sync::synchronize(
-                                                &app, &operation, review_id, arguments,
-                                            )
-                                            .await
-                                        }
-                                        None => Err("INTERNAL_RELAY_ERROR"),
-                                    };
-                                    if let Err(code) = synced {
-                                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":"REVIEW_PUBLISHED_METADATA_FAILED"}],"isError":true,"structuredContent":{"review_id":known.as_ref().and_then(|x| x.review_id),"error_code":code}}}))).into_response();
-                                    }
-                                }
-                                tracing::info!(event = "review_attempt", outcome = "DUPLICATE_SUPPRESSED", operation = %operation);
-                                json!({"content":[{"type":"text","text":"DUPLICATE_SUPPRESSED"}],"structuredContent":{"status":known.as_ref().map(|x| &x.status),"review_id":known.as_ref().and_then(|x| x.review_id),"review_url":known.as_ref().and_then(|x| x.review_url.as_ref()),"pr_lifecycle":remediation_lifecycle_action(arguments, known.as_ref().and_then(|x| x.review_id))}})
-                            }
-                        }
-                        Ok(true) => match app
-                            .github
-                            .find_review(
-                                arguments["repository"].as_str().unwrap_or(""),
-                                arguments["pr_number"].as_i64().unwrap_or(0),
-                                &marker,
-                            )
-                            .await
-                        {
-                            Ok(Some(review)) => {
-                                record_review(
-                                    &app,
-                                    &operation,
-                                    &review,
-                                    "DUPLICATE_RECOVERED",
-                                    arguments,
-                                )
-                                .await
-                            }
-                            Ok(None) => {
-                                // Existing review/transport recovery above preserves
-                                // its authorized Step. Only a genuinely new native
-                                // CR advances from synchronized Issue/PR metadata.
-                                if let Some(code) = new_cr_step_rejection(&pr, arguments) {
-                                    let _ = app
-                                        .store
-                                        .lock()
-                                        .expect("store lock")
-                                        .retryable_failure(&operation);
-                                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
-                                }
-                                if let Err(code) =
-                                    step_sync::prepare(&app, &operation, arguments).await
-                                {
-                                    let _ = app
-                                        .store
-                                        .lock()
-                                        .expect("store lock")
-                                        .retryable_failure(&operation);
-                                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
-                                }
-                                let latest = match current_approval_authority(&app, arguments).await
-                                {
-                                    Ok(binding) => binding,
-                                    Err(code) => {
-                                        let _ = app
-                                            .store
-                                            .lock()
-                                            .expect("store lock")
-                                            .retryable_failure(&operation);
-                                        return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
-                                    }
-                                };
-                                if let Err(code) = verify_approval_authority(
-                                    &app,
-                                    &operation,
-                                    latest.as_ref(),
-                                    false,
-                                ) {
-                                    let _ = app
-                                        .store
-                                        .lock()
-                                        .expect("store lock")
-                                        .retryable_failure(&operation);
-                                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":task_authority::error(code)}))).into_response();
-                                }
-                                let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":body});
-                                match app
-                                    .github
-                                    .create_review(
-                                        arguments["repository"].as_str().unwrap_or(""),
-                                        arguments["pr_number"].as_i64().unwrap_or(0),
-                                        &payload,
-                                    )
-                                    .await
-                                {
-                                    Ok(review) => {
-                                        record_review(
-                                            &app,
-                                            &operation,
-                                            &review,
-                                            "PUBLISHED",
-                                            arguments,
-                                        )
-                                        .await
-                                    }
-                                    Err(code) => {
-                                        if approval_binding.is_none() {
-                                            let _ = app
-                                                .store
-                                                .lock()
-                                                .expect("store lock")
-                                                .retryable_failure(&operation);
-                                        }
-                                        tracing::warn!(event = "review_attempt", outcome = "RETRYABLE_FAILURE", operation = %operation, error_code = code);
-                                        json!({"content":[{"type":"text","text":code}],"isError":true})
-                                    }
-                                }
-                            }
-                            Err(code) => {
-                                json!({"content":[{"type":"text","text":code}],"isError":true})
-                            }
-                        },
-                        Err(_) => {
-                            json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true})
-                        }
-                    }
-                }
+                publication::publish_review(&app, arguments).await
             } else {
                 json!({"content":[{"type":"text","text":"MOCK_ONLY_NOT_CONFIGURED"}],"isError":true})
             }
@@ -1099,7 +781,7 @@ async fn complete_check(
 ) -> Value {
     let repository = arguments["repository"].as_str().unwrap_or("");
     let sha = arguments["expected_head_sha"].as_str().unwrap_or("");
-    if arguments["action"] == "APPROVE" {
+    {
         let native = match app
             .github
             .authority_source(
@@ -1114,7 +796,12 @@ async fn complete_check(
             Err(code) => return task_authority::error(code),
         };
         if native["id"].as_i64() != Some(review_id)
-            || native["state"] != "APPROVED"
+            || native["state"]
+                != if arguments["action"] == "APPROVE" {
+                    "APPROVED"
+                } else {
+                    "CHANGES_REQUESTED"
+                }
             || native["commit_id"] != arguments["expected_head_sha"]
             || native["user"]["login"] != app.policy.actor
             || native["user"]["type"] != "Bot"
@@ -1135,130 +822,65 @@ async fn complete_check(
     if let Err(code) = verify_approval_authority(app, operation, binding.as_ref(), false) {
         return task_authority::error(code);
     }
+    match app
+        .github
+        .decisive_review(
+            repository,
+            arguments["pr_number"].as_i64().unwrap(),
+            &app.policy.actor,
+        )
+        .await
+    {
+        Ok(Some(review)) if review["id"].as_i64() == Some(review_id) => {}
+        Ok(_) => return task_authority::error("AUTHORITY_APPROVAL_STALE_REQUEST"),
+        Err(code) => return task_authority::error(code),
+    }
     if let Err(code) = step_sync::synchronize(app, operation, review_id, arguments).await {
         return json!({"content":[{"type":"text","text":"REVIEW_PUBLISHED_METADATA_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"error_code":code}});
     }
-    let check = match app.github.find_check(repository, sha, operation).await {
-        Ok(Some(check)) => check,
-        Ok(None) => {
-            if binding.is_some()
-                && !app
-                    .store
-                    .lock()
-                    .expect("store lock")
-                    .reserve_authority_check(operation)
-                    .unwrap_or(false)
-            {
-                return task_authority::error("CHECK_PUBLICATION_UNCERTAIN");
-            }
-            let action = arguments["action"].as_str().unwrap_or("");
-            let conclusion = if action == "APPROVE" {
-                "success"
-            } else {
-                "failure"
-            };
-            let title = if action == "APPROVE" {
-                "Review approved"
-            } else {
-                "Changes requested"
-            };
-            let payload = json!({
-                "name":app.policy.check_name,
-                "head_sha":sha,
-                "external_id":operation,
-                "status":"completed",
-                "conclusion":conclusion,
-                "output":{"title":title,"summary":"GitHub App review completed for this exact pull-request head."}
-            });
-            match app.github.create_check(repository, &payload).await {
-                Ok(value) => value,
-                Err(code) => {
-                    let _ = app
-                        .store
-                        .lock()
-                        .expect("store lock")
-                        .check_retryable_failure(operation, "CHECK_CREATION_RETRYABLE_FAILURE");
-                    return json!({"content":[{"type":"text","text":"REVIEW_PUBLISHED_CHECK_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"check_stage":"CHECK_CREATION_RETRYABLE_FAILURE","error_code":code}});
-                }
-            }
-        }
-        Err(code) => {
-            let _ = app
-                .store
-                .lock()
-                .expect("store lock")
-                .check_retryable_failure(operation, "CHECK_LOOKUP_RETRYABLE_FAILURE");
-            return json!({"content":[{"type":"text","text":"REVIEW_PUBLISHED_CHECK_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"check_stage":"CHECK_LOOKUP_RETRYABLE_FAILURE","error_code":code}});
+    let action = arguments["action"] == "APPROVE";
+    let payload = json!({"name":app.policy.check_name,"head_sha":sha,"external_id":operation,
+        "status":"completed","conclusion":if action {"success"} else {"failure"},
+        "output":{"title":if action {"Review approved"} else {"Changes requested"},
+        "summary":"GitHub App review completed for this exact pull-request head."}});
+    let evidence = match publication::ensure_check(app, operation, &payload, true).await {
+        Ok(evidence) => evidence,
+        Err(failure) => {
+            let mut result = failure.result(operation);
+            result["structuredContent"]["review_id"] = json!(review_id);
+            result["structuredContent"]["reviewed_sha"] = json!(sha);
+            return result;
         }
     };
-    let check_id = check.get("id").and_then(Value::as_i64);
-    let check_url = check.get("html_url").and_then(Value::as_str);
-    if app
-        .store
-        .lock()
-        .expect("store lock")
-        .known(operation)
-        .ok()
-        .flatten()
-        .and_then(|row| row.check_id)
-        .is_some_and(|id| check_id != Some(id))
+    let check = evidence.check;
+    let check_id = check["id"].as_i64();
+    let check_url = check["html_url"].as_str();
+    let latest_pr = match app
+        .github
+        .get_pr(repository, arguments["pr_number"].as_i64().unwrap())
+        .await
     {
-        return task_authority::error("CHECK_VERIFICATION_FAILED");
-    }
-    if check.get("name").and_then(Value::as_str) != Some(app.policy.check_name.as_str())
-        || check.get("head_sha").and_then(Value::as_str) != Some(sha)
-        || check.pointer("/app/slug").and_then(Value::as_str) != Some(app.policy.slug.as_str())
-        || check["app"]["id"]
-            .as_u64()
-            .map(|id| id.to_string())
-            .as_deref()
-            != Some(app.policy.app_id.as_str())
-        || check["external_id"] != operation
-        || check["status"] != "completed"
-        || check["conclusion"]
-            != if arguments["action"] == "APPROVE" {
-                "success"
-            } else {
-                "failure"
-            }
-        || check_id.is_none()
-        || check_url.is_none()
+        Ok(pr) => pr,
+        Err(code) => return task_authority::error(code),
+    };
+    if let Some(code) = target_binding_rejection(&app.policy, &latest_pr, arguments)
+        .or_else(|| (latest_pr["head"]["sha"] != sha).then_some("HEAD_MISMATCH"))
     {
-        let _ = app
-            .store
-            .lock()
-            .expect("store lock")
-            .check_retryable_failure(operation, "CHECK_VERIFICATION_RETRYABLE_FAILURE");
-        return json!({"content":[{"type":"text","text":"CHECK_VERIFICATION_FAILED"}],"isError":true,"structuredContent":{"review_id":review_id,"reviewed_sha":sha,"check_stage":"CHECK_VERIFICATION_RETRYABLE_FAILURE"}});
+        return task_authority::error(code);
     }
-    if binding.is_some() {
-        let latest = match current_approval_authority(app, arguments).await {
-            Ok(binding) => binding,
-            Err(code) => return task_authority::error(code),
-        };
-        if let Err(code) = verify_approval_authority(app, operation, latest.as_ref(), false) {
-            return task_authority::error(code);
-        }
-    }
-    if app
-        .store
-        .lock()
-        .expect("store lock")
-        .published(
-            operation,
-            check_id.unwrap_or_default(),
-            check_url.unwrap_or(""),
-        )
-        .is_err()
-    {
-        return json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true});
+    let latest = match current_approval_authority(app, arguments).await {
+        Ok(binding) => binding,
+        Err(code) => return task_authority::error(code),
+    };
+    if let Err(code) = verify_approval_authority(app, operation, latest.as_ref(), false) {
+        return task_authority::error(code);
     }
     let continuation = if arguments["action"] == "APPROVE" {
         approval_continuation_plan(app, arguments, review_id).await
     } else {
         Value::Null
     };
-    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha,"post_review_continuation":continuation,"pr_lifecycle":remediation_lifecycle_action(arguments, Some(review_id))}})
+    json!({"content":[{"type":"text","text":outcome}],"structuredContent":{"review_id":review_id,"review_url":url,"check_run_id":check_id,"check_run_url":check_url,"actor_login":actor,"reviewed_sha":sha,"warnings":evidence.warnings,"post_review_continuation":continuation,"pr_lifecycle":remediation_lifecycle_action(arguments, Some(review_id))}})
 }
 
 pub(crate) fn remediation_lifecycle_action(arguments: &Value, review_id: Option<i64>) -> Value {
@@ -1480,15 +1102,6 @@ async fn record_review(
     let review_id = review_id.unwrap_or_default();
     let url = url.unwrap_or("");
     let actor = actor.unwrap_or("");
-    if app
-        .store
-        .lock()
-        .expect("store lock")
-        .review_published(operation, review_id, url, actor)
-        .is_err()
-    {
-        return json!({"content":[{"type":"text","text":"INTERNAL_RELAY_ERROR"}],"isError":true});
-    }
     complete_check(app, operation, review_id, url, actor, arguments, outcome).await
 }
 async fn sse_not_supported() -> StatusCode {
@@ -2607,7 +2220,7 @@ mod tests {
             (Method::GET, value) if value.starts_with("pulls/25/reviews/") => {
                 let id = value.strip_prefix("pulls/25/reviews/").unwrap().parse::<usize>().unwrap_or(0);
                 match state.reviews.lock().unwrap().get(id.wrapping_sub(1)) {
-                    Some(payload) => { let mut review = native_review_for_repository(payload, &state.repository); review["id"] = json!(id); review },
+                    Some(payload) => { let mut review = native_review_for_repository(payload, &state.repository); review["id"] = json!(id); review["user"]["login"] = json!(state.policy.actor); review },
                     None => return StatusCode::NOT_FOUND.into_response(),
                 }
             },
@@ -3267,11 +2880,7 @@ mod tests {
                 json!({"name":"submit_pr_review","arguments":args}),
             )
             .await;
-            let expected = if mode == "transient" {
-                "REVIEW_PUBLISHED_CHECK_FAILED"
-            } else {
-                "CHECK_VERIFICATION_FAILED"
-            };
+            let expected = "CHECK_PUBLICATION_UNCERTAIN";
             assert_eq!(
                 first.pointer("/result/content/0/text"),
                 Some(&json!(expected))
@@ -3286,7 +2895,7 @@ mod tests {
             .await;
             assert_eq!(
                 second.pointer("/result/content/0/text"),
-                Some(&json!("CHECK_RECOVERED"))
+                Some(&json!("DUPLICATE_SUPPRESSED"))
             );
         }
     }

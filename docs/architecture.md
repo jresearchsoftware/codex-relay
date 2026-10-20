@@ -220,10 +220,16 @@ presentation cannot inject HTML/Markdown/links or change canonical JSON bytes.
 Size/integrity/copyability constraints may require an explicitly visible JSON
 fallback. Renderer versions are publication intent, not new Task authority.
 Typed Reviewer publication can resume a partially published authority operation
-through its original review, metadata, exact-operation SHA-bound check and
-journal completion. It revalidates native identity/body/head and current Task
-before resumed mutations. Lost responses or ambiguous foreign records cannot
-authorize another review POST or a new Step.
+through its original review, metadata and exact-operation SHA-bound check.
+Verified complete GitHub readback supplies the receipt, including when local
+completion data is stale or missing. SQLite retains decisive-POST reservations,
+original body/authority/legacy Step bindings and one bounded Check recovery
+grant; it no longer mirrors native IDs, URLs, actors or completion events.
+Recovery revalidates native identity/body/head and current Task before mutations.
+A lost decisive response cannot authorize another Review. An absent auxiliary
+Check permits one identical recovery send after complete `filter=all` readback;
+two identical late checks are visible warning evidence, while conflicting or
+excessive duplicates fail closed. See the [state and recovery contract](../reviewer/README.md#native-authority-and-publication).
 
 ## Durable state
 
@@ -253,7 +259,7 @@ permission and does not create a cancellation or negative-execution receipt.
 | Writer | Configured `paths.claimRoot/pr-lifecycle-v1/<review-id>.json` | Exact native CR/head Draft intent and reconciliation before an execution run exists; no Task or launch authority |
 | Writer | Configured `paths.claimRoot/pr-lifecycle-admission-v1/<run-id>.json` | Draft intent for a verified same-CR BLOCKED continuation at its Writer-proven starting head; retains the original review-ID receipt |
 | Root lifecycle admission | Configured `paths.claimRoot/admission-v1.json` | Automatic admission phase, operation/target/configuration binding, original service activity intent and verified installed revision |
-| Reviewer | Configured SQLite database | Review/check publication operation identity and deduplication/recovery |
+| Reviewer | Configured SQLite database | Atomic decisive-POST reservation, frozen original meaning, legacy projection anchor and bounded auxiliary Check recovery; GitHub owns completed publication receipts |
 
 Plural Writer configurations namespace each protected publication/PR store as
 `<store>/repositories/<owner>/<repository>/<id>.json`. Runner work, journals and

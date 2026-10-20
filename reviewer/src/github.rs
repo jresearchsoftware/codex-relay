@@ -1,15 +1,49 @@
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 pub mod authority;
 pub mod evidence;
-use reqwest::Client;
+use reqwest::{Client, Request, RequestBuilder};
 use serde_json::{json, Value};
 use std::{
     env, fs,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(any(not(feature = "synthetic-github"), test))]
 const API: &str = "https://api.github.com";
 pub const USER_AGENT: &str = "codex-relay-reviewer/0.1.0";
+
+/// Authentication and request construction have completed, but no mutation has
+/// been sent. Callers reserve the possible external effect after this boundary.
+pub(crate) struct PreparedMutation {
+    request: Request,
+    failure_code: &'static str,
+}
+
+#[derive(Debug)]
+pub(crate) struct MutationFailure {
+    pub code: &'static str,
+    pub safe_to_retry: bool,
+    pub phase: &'static str,
+    pub http_status: Option<u16>,
+    pub request_id: Option<String>,
+}
+
+impl MutationFailure {
+    fn new(code: &'static str, safe_to_retry: bool, phase: &'static str) -> Self {
+        Self {
+            code,
+            safe_to_retry,
+            phase,
+            http_status: None,
+            request_id: None,
+        }
+    }
+
+    pub(crate) fn diagnostics(&self) -> Value {
+        json!({"code":self.code,"safe_to_retry":self.safe_to_retry,"phase":self.phase,
+            "http_status":self.http_status,"request_id":self.request_id})
+    }
+}
 
 #[derive(Clone)]
 pub struct Github {
@@ -24,13 +58,26 @@ pub struct Github {
 }
 impl Github {
     pub fn new() -> Self {
+        #[cfg(all(feature = "synthetic-github", not(test)))]
+        let api = {
+            let supplied = env::var("REVIEWER_SYNTHETIC_GITHUB_API")
+                .expect("synthetic-github requires its loopback fixture endpoint");
+            let api = synthetic_endpoint(&supplied)
+                .expect("synthetic-github endpoint must be http://127.0.0.1:<port>");
+            eprintln!(
+                "SYNTHETIC_GITHUB_ONLY: loopback fixture transport; not a deployment artifact"
+            );
+            api
+        };
+        #[cfg(any(not(feature = "synthetic-github"), test))]
+        let api = API.into();
         Self {
             client: Client::builder()
                 .user_agent(USER_AGENT)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("HTTP client"),
-            api: API.into(),
+            api,
             #[cfg(test)]
             test_installation_id: None,
             #[cfg(test)]
@@ -106,6 +153,7 @@ impl Github {
         let response = self
             .client
             .post(format!("{}/app/installations/{id}/access_tokens", self.api))
+            .timeout(std::time::Duration::from_secs(5))
             .header("Authorization", format!("Bearer {jwt}"))
             .json(&json!({
                 "repositories": [name],
@@ -142,6 +190,7 @@ impl Github {
     ) -> Result<Value, &'static str> {
         let token = self.token(repository).await?;
         let response = request
+            .timeout(std::time::Duration::from_secs(5))
             .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
@@ -156,9 +205,128 @@ impl Github {
         response.json().await.map_err(|_| "GITHUB_REQUEST_FAILED")
     }
 
+    async fn prepare_mutation(
+        &self,
+        repository: &str,
+        request: RequestBuilder,
+        failure_code: &'static str,
+    ) -> Result<PreparedMutation, MutationFailure> {
+        let token = self
+            .token(repository)
+            .await
+            .map_err(|code| MutationFailure::new(code, true, "authorization"))?;
+        let request = request
+            .timeout(std::time::Duration::from_secs(5))
+            .header("Authorization", format!("Bearer {token}"))
+            .build()
+            .map_err(|_| MutationFailure::new(failure_code, true, "request-build"))?;
+        Ok(PreparedMutation {
+            request,
+            failure_code,
+        })
+    }
+
+    pub(crate) async fn send_mutation(
+        &self,
+        prepared: PreparedMutation,
+    ) -> Result<Value, MutationFailure> {
+        let mut response = self.client.execute(prepared.request).await.map_err(|_| {
+            // A transport failure does not prove that GitHub rejected the POST.
+            MutationFailure::new(prepared.failure_code, false, "request-send")
+        })?;
+        let status = response.status().as_u16();
+        let request_id = response
+            .headers()
+            .get("x-github-request-id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| {
+                !value.is_empty()
+                    && value.len() <= 128
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b":._-".contains(&byte))
+            })
+            .map(ToOwned::to_owned);
+        let failure = |phase, safe_to_retry| MutationFailure {
+            code: prepared.failure_code,
+            safe_to_retry,
+            phase,
+            http_status: Some(status),
+            request_id: request_id.clone(),
+        };
+        if !response.status().is_success() {
+            // Explicit rejection is different from a timeout or a server error
+            // after a possibly accepted mutation. Never retain response bodies.
+            return Err(failure(
+                "http-response",
+                (400..500).contains(&status) && status != 408,
+            ));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| failure("response-body", false))?
+        {
+            if bytes.len() + chunk.len() > 256 * 1024 {
+                return Err(failure("response-body", false));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice::<crate::strict_json::StrictJson>(&bytes)
+            .map(|value| value.0)
+            .map_err(|_| failure("response-body", false))
+    }
+
+    // Preserve pagination completion metadata without following GitHub URLs.
+    async fn collection_page(
+        &self,
+        repository: &str,
+        request: RequestBuilder,
+    ) -> Result<(Value, bool), &'static str> {
+        let token = self.token(repository).await?;
+        let mut response = request
+            .timeout(std::time::Duration::from_secs(5))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|_| "GITHUB_REQUEST_FAILED")?;
+        if !response.status().is_success() {
+            return Err("GITHUB_REQUEST_FAILED");
+        }
+        let has_next = response
+            .headers()
+            .get(reqwest::header::LINK)
+            .map(|value| value.to_str().map_err(|_| "GITHUB_RESPONSE_INVALID"))
+            .transpose()?
+            .is_some_and(|links| {
+                links.split(',').any(|link| {
+                    link.split(';')
+                        .skip(1)
+                        .any(|part| part.trim() == "rel=\"next\"")
+                })
+            });
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| "GITHUB_REQUEST_FAILED")?
+        {
+            if bytes.len() + chunk.len() > 256 * 1024 {
+                return Err("GITHUB_RESPONSE_TOO_LARGE");
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let payload = serde_json::from_slice::<crate::strict_json::StrictJson>(&bytes)
+            .map(|value| value.0)
+            .map_err(|_| "GITHUB_RESPONSE_INVALID")?;
+        Ok((payload, has_next))
+    }
+
     async fn app_request(&self, request: reqwest::RequestBuilder) -> Result<Value, &'static str> {
         let jwt = self.app_jwt().await?;
         let response = request
+            .timeout(std::time::Duration::from_secs(5))
             .header("Authorization", format!("Bearer {jwt}"))
             .send()
             .await
@@ -309,8 +477,8 @@ impl Github {
     ) -> Result<Option<Value>, &'static str> {
         let mut reviews = Vec::new();
         for page in 1..=20 {
-            let current = self
-                .request(
+            let (current, has_next) = self
+                .collection_page(
                     repository,
                     self.client.get(format!(
                         "{}/repos/{repository}/pulls/{number}/reviews?per_page=100&page={page}",
@@ -322,6 +490,9 @@ impl Github {
                 return Err("GITHUB_RESPONSE_INVALID");
             };
             let count = items.len();
+            if count > 100 || (count < 100 && has_next) {
+                return Err("GITHUB_RESPONSE_INVALID");
+            }
             reviews.extend(items.iter().cloned());
             if count < 100 {
                 break;
@@ -330,36 +501,45 @@ impl Github {
                 return Err("GITHUB_PAGINATION_LIMIT");
             }
         }
-        Ok(reviews
-            .iter()
-            .find(|r| {
+        let matches: Vec<_> = reviews
+            .into_iter()
+            .filter(|r| {
                 r.get("body")
                     .and_then(Value::as_str)
                     .is_some_and(|b| b.contains(marker))
             })
-            .cloned())
+            .collect();
+        if matches.len() > 1 {
+            return Err("REVIEW_PUBLICATION_AMBIGUOUS");
+        }
+        Ok(matches.into_iter().next())
     }
-    pub async fn find_check(
+    pub(crate) async fn find_checks(
         &self,
         repository: &str,
         sha: &str,
         operation: &str,
-    ) -> Result<Option<Value>, &'static str> {
+    ) -> Result<Vec<Value>, &'static str> {
         let mut checks = Vec::new();
         for page in 1..=20 {
-            let mut request = self.client.get(format!(
+            let request = self.client.get(format!(
                 "{}/repos/{repository}/commits/{sha}/check-runs?filter=all&per_page=100&page={page}",
                 self.api
             ));
             #[cfg(test)]
-            if let Some(mode) = &self.test_check_mode {
-                request = request.header("x-test-check-mode", mode);
-            }
-            let payload = self.request(repository, request).await?;
+            let request = if let Some(mode) = &self.test_check_mode {
+                request.header("x-test-check-mode", mode)
+            } else {
+                request
+            };
+            let (payload, has_next) = self.collection_page(repository, request).await?;
             let Some(items) = payload.get("check_runs").and_then(Value::as_array) else {
                 return Err("GITHUB_RESPONSE_INVALID");
             };
             let count = items.len();
+            if count > 100 || (count < 100 && has_next) {
+                return Err("GITHUB_RESPONSE_INVALID");
+            }
             checks.extend(items.iter().cloned());
             if count < 100 {
                 break;
@@ -368,22 +548,33 @@ impl Github {
                 return Err("GITHUB_PAGINATION_LIMIT");
             }
         }
-        let matches: Vec<_> = checks
-            .iter()
+        let mut matches: Vec<_> = checks
+            .into_iter()
             .filter(|check| check.get("external_id").and_then(Value::as_str) == Some(operation))
             .collect();
-        if matches.len() > 1 {
+        if matches.len() > 2
+            || matches
+                .iter()
+                .any(|check| check["id"].as_i64().is_none_or(|id| id <= 0))
+        {
             return Err("CHECK_PUBLICATION_AMBIGUOUS");
         }
-        Ok(matches.first().map(|check| (*check).clone()))
+        if matches.len() == 2
+            && (matches[0]["id"] == matches[1]["id"]
+                || !same_check_effect(&matches[0], &matches[1]))
+        {
+            return Err("CHECK_PUBLICATION_AMBIGUOUS");
+        }
+        matches.sort_by_key(|check| check["id"].as_i64().unwrap());
+        Ok(matches)
     }
-    pub async fn create_review(
+    pub(crate) async fn prepare_review(
         &self,
         repository: &str,
         number: i64,
         payload: &Value,
-    ) -> Result<Value, &'static str> {
-        self.request(
+    ) -> Result<PreparedMutation, MutationFailure> {
+        self.prepare_mutation(
             repository,
             self.client
                 .post(format!(
@@ -391,31 +582,66 @@ impl Github {
                     self.api
                 ))
                 .json(payload),
+            "GITHUB_PUBLICATION_FAILED",
         )
         .await
-        .map_err(|_| "GITHUB_PUBLICATION_FAILED")
     }
-    pub async fn create_check(
+    pub(crate) async fn prepare_check(
         &self,
         repository: &str,
         payload: &Value,
-    ) -> Result<Value, &'static str> {
-        let mut request = self
+    ) -> Result<PreparedMutation, MutationFailure> {
+        let request = self
             .client
             .post(format!("{}/repos/{repository}/check-runs", self.api))
             .json(payload);
         #[cfg(test)]
-        if let Some(mode) = &self.test_check_mode {
+        let request = if let Some(mode) = &self.test_check_mode {
             let attempt = self
                 .test_check_attempt
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
                 + 1;
-            request = request
+            request
                 .header("x-test-check-mode", mode)
-                .header("x-test-check-attempt", attempt.to_string());
-        }
-        self.request(repository, request)
+                .header("x-test-check-attempt", attempt.to_string())
+        } else {
+            request
+        };
+        self.prepare_mutation(repository, request, "GITHUB_CHECK_PUBLICATION_FAILED")
             .await
-            .map_err(|_| "GITHUB_CHECK_PUBLICATION_FAILED")
     }
 }
+
+fn same_check_effect(left: &Value, right: &Value) -> bool {
+    ["name", "head_sha", "external_id", "status", "conclusion"]
+        .iter()
+        .all(|key| left[*key] == right[*key])
+        && [
+            "title",
+            "summary",
+            "text",
+            "annotations_count",
+            "annotations",
+        ]
+        .iter()
+        .all(|key| left["output"][*key] == right["output"][*key])
+        && left["app"]["id"] == right["app"]["id"]
+        && left["app"]["slug"] == right["app"]["slug"]
+}
+
+#[cfg(feature = "synthetic-github")]
+fn synthetic_endpoint(value: &str) -> Option<String> {
+    let url = reqwest::Url::parse(value).ok()?;
+    (url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none())
+    .then(|| url.as_str().trim_end_matches('/').to_string())
+}
+
+#[cfg(test)]
+mod mutation_tests;

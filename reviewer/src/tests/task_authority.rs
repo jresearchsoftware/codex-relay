@@ -68,9 +68,7 @@ fn retain_older_publication(store: &Arc<Mutex<store::Store>>, record: &Value) {
                 "{}\n<!-- jresearchsoftware-task-authority:v1 operation={operation} -->",
                 crate::task_authority::render(record)
             );
-            store
-                .reserve_publication(&operation, "retained-publication", &body, &body)
-                .unwrap();
+            store.reserve_publication(&operation, &body, &body).unwrap();
             store.retryable_failure(&operation).unwrap();
         }
     }
@@ -91,7 +89,8 @@ async fn publish_fresh(http: &reqwest::Client, url: &str, record: &Value) -> Val
 }
 
 #[tokio::test]
-async fn current_protocol_refuses_fresh_older_execution_authority_without_github_or_reservation() {
+async fn current_protocol_refuses_fresh_older_execution_authority_without_publication_or_reservation(
+) {
     let state = admitted();
     let (http, url) = client_with_state(true, None, state.clone()).await;
     let mut cr = request();
@@ -156,14 +155,23 @@ async fn current_protocol_refuses_fresh_older_execution_authority_without_github
         .known(&operation_id(&[], &cr_fixture()))
         .unwrap()
         .is_none());
-    assert!(state.requests.lock().unwrap().is_empty());
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(
+            |path| (path.starts_with("POST ") && path.contains("/repos/"))
+                || path.starts_with("PUT ")
+                || path.starts_with("PATCH ")
+        ));
     assert!(state.authority_comments.lock().unwrap().is_empty());
     assert!(state.reviews.lock().unwrap().is_empty());
     let retained = publish_retained(&state, &http, &url, &old_decision).await;
     assert_ne!(retained["isError"], true, "{retained}");
     let duplicate = publish_fresh(&http, &url, &old_decision).await;
     assert_eq!(
-        duplicate["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+        duplicate["content"][0]["text"], "AUTHORITY_RECOVERED",
         "{duplicate}"
     );
 }
@@ -186,7 +194,16 @@ async fn current_protocol_refuses_new_legacy_chain_on_unmarked_task_and_preserve
         legacy["result"]["content"][0]["text"],
         "CURRENT_PROTOCOL_REQUIRED"
     );
-    assert!(state.requests.lock().unwrap().is_empty());
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(
+            |path| (path.starts_with("POST ") && path.contains("/repos/"))
+                || path.starts_with("PUT ")
+                || path.starts_with("PATCH ")
+        ));
     let accepted = rpc(
         &http,
         &url,
@@ -215,7 +232,7 @@ async fn enabled_current_protocol_preserves_exact_legacy_reserved_partial_and_co
                 .store
                 .lock()
                 .unwrap()
-                .reserve_publication(&operation, "retained-publication", &body, &body)
+                .reserve_publication(&operation, &body, &body)
                 .unwrap();
             let app = native_app(&state).await;
             step_sync::prepare(&app.target(&args).unwrap(), &operation, &args)
@@ -254,7 +271,7 @@ async fn enabled_current_protocol_preserves_exact_legacy_reserved_partial_and_co
                 .unwrap()
                 .unwrap()
                 .status,
-            phase
+            "RESERVED"
         );
         let original_body = state.reviews.lock().unwrap()[0]["body"].clone();
         state.policy.github_native_authority_enabled = true;
@@ -336,7 +353,7 @@ async fn no_pr_task_has_trusted_result_approval_and_idempotent_native_identity()
     let reference = first["structuredContent"]["reference"].clone();
     assert_eq!(reference["id"], 1000);
     let duplicate = publish_retained(&state, &http, &url, &request()).await;
-    assert_eq!(duplicate["content"][0]["text"], "DUPLICATE_SUPPRESSED");
+    assert_eq!(duplicate["content"][0]["text"], "AUTHORITY_RECOVERED");
     assert_eq!(state.authority_comments.lock().unwrap().len(), 1);
     let (outcome, result) = writer_outcome(&state, reference.clone());
     let accepted = publish_retained(
@@ -1578,9 +1595,7 @@ async fn fresh_v4_cr_omits_old_compatibility_but_reserved_original_binding_is_pr
                 crate::task_authority::render(&cr)
             );
             let store = state.store.lock().unwrap();
-            store
-                .reserve_publication(&operation, "retained-publication", &body, &body)
-                .unwrap();
+            store.reserve_publication(&operation, &body, &body).unwrap();
             store
                 .bind_authority(&operation, &original.to_string())
                 .unwrap();
@@ -1611,7 +1626,7 @@ async fn fresh_v4_cr_omits_old_compatibility_but_reserved_original_binding_is_pr
         );
         let replay = publish_fresh(&http, &url, &cr).await;
         assert_eq!(
-            replay["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+            replay["content"][0]["text"], "AUTHORITY_RECOVERED",
             "{replay}"
         );
         assert_eq!(state.reviews.lock().unwrap().len(), 1);
@@ -1651,7 +1666,7 @@ async fn v4_decisions_allocate_no_step_or_request_and_effective_closure_is_visib
         .all(|path| !path.contains("/labels") && !path.starts_with("PATCH ")));
     assert_eq!(state.authority_comments.lock().unwrap().len(), 2);
     let replay = publish_retained(&state, &http, &url, &second).await;
-    assert_eq!(replay["content"][0]["text"], "DUPLICATE_SUPPRESSED");
+    assert_eq!(replay["content"][0]["text"], "AUTHORITY_RECOVERED");
 }
 
 #[tokio::test]
@@ -1693,7 +1708,7 @@ async fn v4_native_cr_needs_no_request_or_step_projection_and_cannot_change_task
     state.pr.lock().unwrap().as_mut().unwrap()["draft"] = json!(true);
     assert_eq!(
         publish_retained(&state, &http, &url, &cr).await["content"][0]["text"],
-        "DUPLICATE_SUPPRESSED"
+        "AUTHORITY_RECOVERED"
     );
     assert_eq!(state.reviews.lock().unwrap().len(), 1);
 }
@@ -1724,12 +1739,7 @@ async fn v4_fresh_cr_binds_observed_base_but_recovers_reserved_body_after_base_m
     ));
     let store = store::Store::open(":memory:").unwrap();
     store
-        .reserve_publication(
-            &operation,
-            "existing",
-            native["body"].as_str().unwrap(),
-            "legacy",
-        )
+        .reserve_publication(&operation, native["body"].as_str().unwrap(), "legacy")
         .unwrap();
     state.pr.lock().unwrap().as_mut().unwrap()["base"]["sha"] = json!("d".repeat(40));
     let app = App {
@@ -1823,7 +1833,7 @@ async fn historical_authority_reservation_recovers_exact_original_body_across_re
     state.authority_comments.lock().unwrap().push(json!({"id":1000,"body":body,"html_url":format!("https://github.com/{TEST_REPOSITORY}/issues/24#issuecomment-1000"),
         "issue_url":format!("https://api.github.com/repos/{TEST_REPOSITORY}/issues/24"),"user":{"login":"example-reviewer[bot]","id":2,"type":"Bot"}}));
     let store = store::Store::open(":memory:").unwrap();
-    store.reserve(&operation, "old-body").unwrap();
+    store.reserve_publication(&operation, &body, &body).unwrap();
     let app = App {
         policy: state.policy.clone(),
         repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
@@ -1842,7 +1852,7 @@ async fn historical_authority_reservation_recovers_exact_original_body_across_re
     );
     let replay = crate::task_authority::publish(&target, &args).await;
     assert_eq!(
-        replay["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+        replay["content"][0]["text"], "AUTHORITY_RECOVERED",
         "{replay}"
     );
     assert_eq!(state.authority_comments.lock().unwrap().len(), 1);
@@ -2280,21 +2290,8 @@ async fn typed_cr_recovers_each_partial_publication_phase_without_duplicate_nati
                 _ => {}
             }
             let partial = native_publish(&app, &cr).await;
-            if phase == "completion" {
-                assert_ne!(partial["isError"], true, "{partial}");
-                let native = partial["structuredContent"]["reference"]["id"]
-                    .as_i64()
-                    .unwrap();
-                app.store
-                    .lock()
-                    .unwrap()
-                    .authority_published(
-                        &authority_operation(&cr),
-                        native,
-                        partial["structuredContent"]["native_url"].as_str().unwrap(),
-                        &state.policy.actor,
-                    )
-                    .unwrap();
+            if matches!(phase, "completion" | "check-response") {
+                assert_ne!(partial["isError"], true, "{version}/{phase}: {partial}");
             } else {
                 assert_eq!(partial["isError"], true, "{version}/{phase}: {partial}");
             }
@@ -2339,9 +2336,10 @@ async fn typed_cr_recovers_each_partial_publication_phase_without_duplicate_nati
                 .known(&authority_operation(&cr))
                 .unwrap()
                 .unwrap();
-            assert_eq!(row.status, "PUBLISHED");
-            assert_eq!(row.native_id, Some(1));
-            assert!(row.check_id.is_some());
+            // Local state protects the original intent; GitHub owns receipts.
+            assert_eq!(row.status, "RESERVED");
+            assert_eq!(recovered["structuredContent"]["reference"]["id"], 1);
+            assert!(recovered["structuredContent"]["check"]["id"].is_i64());
             assert_eq!(
                 crate::step_sync::current_step(state.issue.lock().unwrap().as_ref().unwrap())
                     .unwrap(),
@@ -2352,7 +2350,7 @@ async fn typed_cr_recovers_each_partial_publication_phase_without_duplicate_nati
 }
 
 #[tokio::test]
-async fn uncertain_absent_review_or_check_never_repeats_its_post() {
+async fn uncertain_absent_review_never_reposts_but_absent_check_has_one_recovery_send() {
     for stage in ["review", "check"] {
         let state = admitted();
         let mut pr = live_pr();
@@ -2367,20 +2365,406 @@ async fn uncertain_absent_review_or_check_never_repeats_its_post() {
         }
         assert_eq!(native_publish(&app, &cr).await["isError"], true);
         let before = state.requests.lock().unwrap().len();
-        let retry = native_publish(&app, &cr).await;
+        // A new service instance retains the original operation's send budget.
+        let restarted = App {
+            store: app.store.clone(),
+            github: github::Github::mock_api(mock_api(state.clone()).await),
+            ..app
+        };
+        if stage == "check" {
+            *state.authority_check_mode.lock().unwrap() = Some("missing".into());
+        }
+        let retry = native_publish(&restarted, &cr).await;
         assert_eq!(
             retry["content"][0]["text"],
             if stage == "review" {
                 "AUTHORITY_PUBLICATION_UNCERTAIN"
             } else {
-                "CHECK_PUBLICATION_UNCERTAIN"
+                "CHECK_RETRY_EXHAUSTED"
             },
             "{retry}"
         );
+        let requests = state.requests.lock().unwrap()[before..].to_vec();
+        assert!(!requests
+            .iter()
+            .any(|path| path.starts_with("POST ") && path.ends_with("/reviews")));
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+                .count(),
+            usize::from(stage == "check")
+        );
+        let before = state.requests.lock().unwrap().len();
+        let exhausted = native_publish(&restarted, &cr).await;
+        assert_eq!(exhausted["content"][0]["text"], retry["content"][0]["text"]);
         assert!(!state.requests.lock().unwrap()[before..]
             .iter()
             .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
     }
+}
+
+#[tokio::test]
+async fn typed_cr_recovers_verified_github_effects_after_complete_local_state_loss() {
+    for version in ["3.0", "4.0"] {
+        for missing_check in [false, true] {
+            let state = admitted();
+            let mut pr = live_pr();
+            pr["base"]["sha"] = json!("b".repeat(40));
+            *state.pr.lock().unwrap() = Some(pr);
+            let app = native_app(&state).await;
+            let cr = publication_cr(&app, version).await;
+            let completed = native_publish(&app, &cr).await;
+            assert_ne!(completed["isError"], true, "{completed}");
+            let original_review = state.reviews.lock().unwrap()[0].clone();
+            if missing_check {
+                state.check_runs.lock().unwrap().clear();
+            }
+            let recovered_app = App {
+                store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+                github: github::Github::mock_api(mock_api(state.clone()).await),
+                ..app
+            };
+            let arguments = json!({"repository":TEST_REPOSITORY,"record":cr});
+            let before = state.requests.lock().unwrap().len();
+            // Do not use the compatibility fixture helper: this store has no
+            // original local row, body, binding, ID or completion receipt.
+            let recovered = crate::task_authority::publish(
+                &recovered_app.target(&arguments).unwrap(),
+                &arguments,
+            )
+            .await;
+            assert_eq!(
+                recovered["content"][0]["text"], "AUTHORITY_RECOVERED",
+                "{version}/{missing_check}: {recovered}"
+            );
+            assert_eq!(
+                recovered["structuredContent"]["reference"],
+                completed["structuredContent"]["reference"]
+            );
+            assert_eq!(state.reviews.lock().unwrap().as_slice(), &[original_review]);
+            let requests = state.requests.lock().unwrap()[before..].to_vec();
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+                    .count(),
+                usize::from(missing_check)
+            );
+            assert!(!requests
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.ends_with("/reviews")));
+            if missing_check {
+                // Lost original send history gives one prospective recovery
+                // grant; it cannot be recreated as a fresh original send.
+                state.check_runs.lock().unwrap().clear();
+                let before = state.requests.lock().unwrap().len();
+                let exhausted = crate::task_authority::publish(
+                    &recovered_app.target(&arguments).unwrap(),
+                    &arguments,
+                )
+                .await;
+                assert_eq!(
+                    exhausted["content"][0]["text"], "CHECK_RETRY_EXHAUSTED",
+                    "{version}: {exhausted}"
+                );
+                assert!(!state.requests.lock().unwrap()[before..]
+                    .iter()
+                    .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn ordinary_review_uses_native_receipts_despite_missing_stale_or_historical_sqlite_receipts()
+{
+    static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    for status in [
+        "missing",
+        "RESERVED",
+        "RETRYABLE_FAILURE",
+        "REVIEW_PUBLISHED",
+        "PUBLISHED",
+    ] {
+        for missing_check in [false, true] {
+            let state = MockState::default();
+            let app = native_app(&state).await;
+            let args = base_args("APPROVE");
+            let target = app.target(&args).unwrap();
+            let completed = crate::publication::publish_review(&target, &args).await;
+            assert_eq!(completed["content"][0]["text"], "PUBLISHED", "{completed}");
+            let operation = operation_id(&[], &args);
+            let body = state.reviews.lock().unwrap()[0]["body"].clone();
+            let path = std::env::temp_dir().join(format!(
+                "relay-lost-receipts-{}-{}.sqlite3",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            let db = rusqlite::Connection::open(&path).unwrap();
+            db.execute_batch("CREATE TABLE operations(operation_id TEXT PRIMARY KEY,status TEXT NOT NULL,review_id INTEGER,review_url TEXT,actor_login TEXT,check_id INTEGER,check_url TEXT,finding_digest TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,publication_body TEXT);").unwrap();
+            if status != "missing" {
+                // Deliberately incorrect legacy IDs/URLs must not overrule
+                // verified exact-body GitHub records for this operation.
+                db.execute("INSERT INTO operations(operation_id,status,review_id,review_url,actor_login,check_id,check_url,created_at,publication_body) VALUES(?1,?2,999,'stale-review','stale-actor',888,'stale-check',0,?3)", rusqlite::params![operation, status, body.as_str().unwrap()]).unwrap();
+            }
+            drop(db);
+            if missing_check {
+                state.check_runs.lock().unwrap().clear();
+            }
+            let recovered_app = App {
+                store: Arc::new(Mutex::new(
+                    store::Store::open(path.to_str().unwrap()).unwrap(),
+                )),
+                github: github::Github::mock_api(mock_api(state.clone()).await),
+                ..app
+            };
+            let before = state.requests.lock().unwrap().len();
+            let recovered =
+                crate::publication::publish_review(&recovered_app.target(&args).unwrap(), &args)
+                    .await;
+            assert_eq!(
+                recovered["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+                "{status}/{missing_check}: {recovered}"
+            );
+            assert_eq!(recovered["structuredContent"]["review_id"], 1);
+            assert_eq!(recovered["structuredContent"]["check_run_id"], 2);
+            assert_eq!(state.reviews.lock().unwrap().len(), 1);
+            assert_eq!(state.reviews.lock().unwrap()[0]["body"], body);
+            let requests = state.requests.lock().unwrap()[before..].to_vec();
+            assert!(!requests
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.ends_with("/reviews")));
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+                    .count(),
+                usize::from(missing_check)
+            );
+            drop(recovered_app);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn missing_native_review_remains_uncertain_despite_prior_completion_and_existing_check() {
+    let state = MockState::default();
+    let app = native_app(&state).await;
+    let args = base_args("APPROVE");
+    let completed = crate::publication::publish_review(&app.target(&args).unwrap(), &args).await;
+    assert_eq!(completed["content"][0]["text"], "PUBLISHED", "{completed}");
+    state.reviews.lock().unwrap().clear();
+    let before = state.requests.lock().unwrap().len();
+    let missing = crate::publication::publish_review(&app.target(&args).unwrap(), &args).await;
+    assert_eq!(
+        missing["content"][0]["text"], "PUBLICATION_UNCERTAIN",
+        "{missing}"
+    );
+    assert!(!state.requests.lock().unwrap()[before..]
+        .iter()
+        .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+    assert!(state.reviews.lock().unwrap().is_empty());
+    assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn missing_v4_local_binding_cannot_reinterpret_original_cr_after_decision_drift() {
+    let state = admitted();
+    let mut pr = live_pr();
+    pr["base"]["sha"] = json!("b".repeat(40));
+    *state.pr.lock().unwrap() = Some(pr);
+    let app = native_app(&state).await;
+    let cr = v4_cr();
+    let completed = native_publish(&app, &cr).await;
+    assert_ne!(completed["isError"], true, "{completed}");
+    let mut direction = decision_v4();
+    direction["amendments"] = json!({"scope":["A materially changed current requirement"]});
+    let changed = native_publish(&app, &direction).await;
+    assert_ne!(changed["isError"], true, "{changed}");
+    state.check_runs.lock().unwrap().clear();
+    let recovered_app = App {
+        store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+        github: github::Github::mock_api(mock_api(state.clone()).await),
+        ..app
+    };
+    let arguments = json!({"repository":TEST_REPOSITORY,"record":cr});
+    let before = state.requests.lock().unwrap().len();
+    let rejected =
+        crate::task_authority::publish(&recovered_app.target(&arguments).unwrap(), &arguments)
+            .await;
+    assert_eq!(rejected["isError"], true, "{rejected}");
+    assert!(!state.requests.lock().unwrap()[before..]
+        .iter()
+        .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn lost_v3_projection_anchor_never_adopts_partial_step_or_title_state() {
+    for phase in ["issues/24/labels", "issues/25/labels", "pulls/25"] {
+        let state = admitted();
+        let mut pr = live_pr();
+        pr["base"]["sha"] = json!("b".repeat(40));
+        *state.pr.lock().unwrap() = Some(pr);
+        let app = native_app(&state).await;
+        let cr = publication_cr(&app, "3.0").await;
+        *state.metadata_failure.lock().unwrap() = Some(phase.into());
+        let partial = native_publish(&app, &cr).await;
+        assert_eq!(
+            partial["content"][0]["text"], "AUTHORITY_PUBLISHED_METADATA_FAILED",
+            "{phase}: {partial}"
+        );
+        let recovered_app = App {
+            store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+            github: github::Github::mock_api(mock_api(state.clone()).await),
+            ..app
+        };
+        let arguments = json!({"repository":TEST_REPOSITORY,"record":cr});
+        let before = state.requests.lock().unwrap().len();
+        let rejected =
+            crate::task_authority::publish(&recovered_app.target(&arguments).unwrap(), &arguments)
+                .await;
+        assert_eq!(rejected["isError"], true, "{phase}: {rejected}");
+        assert_eq!(
+            rejected["structuredContent"]["error_code"], "AUTHORITY_PROJECTION_BINDING_MISSING",
+            "{phase}: {rejected}"
+        );
+        assert!(!state.requests.lock().unwrap()[before..]
+            .iter()
+            .any(
+                |path| (path.starts_with("POST ") && path.contains("/repos/"))
+                    || path.starts_with("PUT ")
+                    || path.starts_with("PATCH ")
+            ));
+        assert_eq!(state.reviews.lock().unwrap().len(), 1);
+        assert!(state.check_runs.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn historical_v4_unmarked_cr_without_original_binding_observes_existing_check_but_cannot_send(
+) {
+    for retained_row in [false, true] {
+        for observed_check in [false, true] {
+            let state = admitted();
+            let mut pr = live_pr();
+            pr["base"]["sha"] = json!("b".repeat(40));
+            *state.pr.lock().unwrap() = Some(pr);
+            let original_app = native_app(&state).await;
+            let cr = v4_cr();
+            let completed = native_publish(&original_app, &cr).await;
+            assert_ne!(completed["isError"], true, "{completed}");
+            let operation = authority_operation(&cr);
+            let body = format!(
+                "{}\n<!-- jresearchsoftware-task-authority:v1 operation={operation} -->",
+                crate::task_authority::render_legacy(&cr)
+            );
+            state.reviews.lock().unwrap()[0]["body"] = json!(body);
+            if !observed_check {
+                state.check_runs.lock().unwrap().clear();
+            }
+            let app = App {
+                store: Arc::new(Mutex::new(store::Store::open(":memory:").unwrap())),
+                github: github::Github::mock_api(mock_api(state.clone()).await),
+                ..original_app
+            };
+            if retained_row {
+                app.store
+                    .lock()
+                    .unwrap()
+                    .reserve_publication(&operation, &body, &body)
+                    .unwrap();
+            }
+            let arguments = json!({"repository":TEST_REPOSITORY,"record":cr});
+            let before = state.requests.lock().unwrap().len();
+            let recovered =
+                crate::task_authority::publish(&app.target(&arguments).unwrap(), &arguments).await;
+            assert_eq!(
+                recovered["content"][0]["text"],
+                if observed_check {
+                    "AUTHORITY_RECOVERED"
+                } else {
+                    "AUTHORITY_ORIGINAL_BINDING_REQUIRED"
+                },
+                "{retained_row}/{observed_check}: {recovered}"
+            );
+            assert!(!state.requests.lock().unwrap()[before..]
+                .iter()
+                .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+            assert_eq!(state.reviews.lock().unwrap().len(), 1);
+            assert_eq!(
+                state.check_runs.lock().unwrap().len(),
+                usize::from(observed_check)
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_cr_accepts_one_identical_late_check_duplicate_and_bounds_further_ambiguity() {
+    let state = admitted();
+    let mut pr = live_pr();
+    pr["base"]["sha"] = json!("b".repeat(40));
+    *state.pr.lock().unwrap() = Some(pr);
+    let app = native_app(&state).await;
+    let cr = v4_cr();
+    *state.authority_check_mode.lock().unwrap() = Some("missing".into());
+    let first = native_publish(&app, &cr).await;
+    assert_eq!(
+        first["content"][0]["text"], "CHECK_PUBLICATION_UNCERTAIN",
+        "{first}"
+    );
+    let recovered = native_publish(&app, &cr).await;
+    assert_eq!(
+        recovered["content"][0]["text"], "AUTHORITY_RECOVERED",
+        "{recovered}"
+    );
+    let mut late = state.check_runs.lock().unwrap()[0].clone();
+    late["id"] = json!(3);
+    late["html_url"] = json!("https://example/check-runs/3");
+    state.check_runs.lock().unwrap().push(late.clone());
+    let before = state.requests.lock().unwrap().len();
+    let observed = native_publish(&app, &cr).await;
+    assert_eq!(
+        observed["content"][0]["text"], "AUTHORITY_RECOVERED",
+        "{observed}"
+    );
+    assert!(observed["structuredContent"]["warnings"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("IDENTICAL_CHECK_DUPLICATE_OBSERVED")));
+    assert_eq!(observed["structuredContent"]["check"]["id"], 2);
+    late["id"] = json!(4);
+    late["html_url"] = json!("https://example/check-runs/4");
+    state.check_runs.lock().unwrap().push(late);
+    let excessive = native_publish(&app, &cr).await;
+    assert_eq!(excessive["isError"], true, "{excessive}");
+    assert!(!state.requests.lock().unwrap()[before..]
+        .iter()
+        .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(
+        state
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|path| path.starts_with("POST ") && path.ends_with("/reviews"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        state
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -2404,8 +2788,7 @@ async fn typed_cr_recovery_rejects_native_tampering_authority_drift_and_ambiguou
         "wrong-check-head",
         "wrong-check-state",
         "wrong-conclusion",
-        "check-operation",
-        "check-id",
+        "invalid-check-id",
     ] {
         let state = admitted();
         let mut pr = live_pr();
@@ -2416,18 +2799,6 @@ async fn typed_cr_recovery_rejects_native_tampering_authority_drift_and_ambiguou
         let completed = native_publish(&app, &cr).await;
         assert_ne!(completed["isError"], true, "{completed}");
         let operation = authority_operation(&cr);
-        app.store
-            .lock()
-            .unwrap()
-            .authority_published(
-                &operation,
-                1,
-                completed["structuredContent"]["native_url"]
-                    .as_str()
-                    .unwrap(),
-                &state.policy.actor,
-            )
-            .unwrap();
         let mut native = native_review(&state.reviews.lock().unwrap()[0]);
         match defect {
             "body" => native["body"] = json!("Tampered authority"),
@@ -2477,10 +2848,7 @@ async fn typed_cr_recovery_rejects_native_tampering_authority_drift_and_ambiguou
             "wrong-conclusion" => {
                 state.check_runs.lock().unwrap()[0]["conclusion"] = json!("success")
             }
-            "check-operation" => {
-                state.check_runs.lock().unwrap()[0]["external_id"] = json!("another-operation")
-            }
-            "check-id" => state.check_runs.lock().unwrap()[0]["id"] = json!(999),
+            "invalid-check-id" => state.check_runs.lock().unwrap()[0]["id"] = json!(0),
             _ => unreachable!(),
         }
         if matches!(
@@ -2625,7 +2993,7 @@ async fn incomplete_task_link_inspection_refuses_governed_approval_and_preserves
 }
 
 #[tokio::test]
-async fn historical_cr_journal_observes_existing_check_but_cannot_invent_absent_post_intent() {
+async fn historical_cr_rows_keep_receipts_and_allow_one_prospective_absent_check_recovery() {
     static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     for version in ["3.0", "4.0"] {
         for observed_check in [false, true] {
@@ -2666,17 +3034,38 @@ async fn historical_cr_journal_observes_existing_check_but_cannot_invent_absent_
             let before = state.requests.lock().unwrap().len();
             let recovered = native_publish(&historical, &cr).await;
             assert_eq!(
-                recovered["content"][0]["text"],
-                if observed_check {
-                    "AUTHORITY_RECOVERED"
-                } else {
-                    "CHECK_PUBLICATION_UNCERTAIN"
-                },
+                recovered["content"][0]["text"], "AUTHORITY_RECOVERED",
                 "{version}/{observed_check}: {recovered}"
             );
             assert!(!state.requests.lock().unwrap()[before..]
                 .iter()
-                .any(|path| path.starts_with("POST ") && path.contains("/repos/")));
+                .any(|path| path.starts_with("POST ") && path.ends_with("/reviews")));
+            assert_eq!(
+                state.requests.lock().unwrap()[before..]
+                    .iter()
+                    .filter(|path| path.starts_with("POST ") && path.ends_with("/check-runs"))
+                    .count(),
+                usize::from(!observed_check)
+            );
+            let db = rusqlite::Connection::open(&path).unwrap();
+            let intent: Option<i64> = db
+                .query_row(
+                    "SELECT check_intent FROM operations WHERE operation_id=?1",
+                    [&operation],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(intent, if observed_check { None } else { Some(2) });
+            assert_eq!(
+                db.query_row(
+                    "SELECT status FROM operations WHERE operation_id=?1",
+                    [&operation],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+                "AUTHORITY_PUBLISHED"
+            );
+            drop(db);
             assert_eq!(state.reviews.lock().unwrap().len(), 1);
             drop(historical);
             std::fs::remove_file(path).unwrap();
