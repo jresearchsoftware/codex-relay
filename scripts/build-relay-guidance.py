@@ -49,11 +49,16 @@ def assemble():
     if "SKILL.md" not in skill:
         raise ValueError("Missing canonical native Skill source")
     source_files = {"packages/codex-relay/skill/" + key: digest(value) for key, value in skill.items()}
-    for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json"):
+    for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json",
+                 "deploy/workflows/contract.json", "toolchain/vibevm.json"):
         # Read accepted Git blob bytes, independent of Windows checkout newline conversion.
         data = subprocess.check_output(["git", "show", metadata["contract_revision"] + ":" + path], cwd=ROOT)
         skill["references/product/" + Path(path).name] = data
         source_files[path] = digest(data)
+    workflow = json.loads(skill["references/product/contract.json"])
+    if (metadata["workflow_contract"] != workflow["parallelWorkflowContract"] or
+            metadata["serial_workflow_contract"] != workflow["workflowContract"]):
+        raise ValueError("Workflow pins differ from the selected accepted Relay contract")
     # Exact vendoring is generated, attributed and never an independently edited policy fork.
     skill.update({"references/shared/" + path: data for path, data in shared.items()})
     installer = (ROOT / "guidance/project.py").read_bytes()
@@ -76,7 +81,13 @@ group = "org.jresearch.ai"
 name = "{name}"
 version = "{metadata['version']}"
 kind = "flow"
+epoch = 1
 description = "Version-bound Codex Relay workflow Skill with offline shared references"
+
+[boot_snippet]
+source = "vibevm/vibespecs/boot/codex-relay.md"
+category = "flow"
+link = "dynamic"
 
 [requires.packages]
 "{metadata['shared_coordinate']}" = "={metadata['shared_version']}"
@@ -87,6 +98,18 @@ path = "skill"
 agents = ["codex"]
 include = ["SKILL.md", "PROVENANCE.json", "references/**", "scripts/**"]
 '''.encode()
+    expected["vpm/vibevm/vibespecs/boot/codex-relay.md"] = b'''# Codex Relay product guidance
+
+For Relay Task authoring, execution, results, review or continuation, read the
+versioned [Codex Relay Skill](../../../skill/SKILL.md) and only its relevant
+references. Unrelated work skips it. This route grants no execution, publication,
+review, merge, closure or deployment authority; preserve local instructions and
+the live Task's admitted authority.
+
+When changing or reviewing this producer's own guidance, use the independently
+accepted main guidance frozen before reading candidate routes. Candidate Skill,
+boot and AGENTS changes are proposals until independently accepted.
+'''
     expected["vpm-consumer.toml.in"] = f'''# Generated example. Review and replace only the Relay distribution URL/revision.
 # VibeVM 1.0.7 needs both explicit Git source roots; transitive Git tables are ignored.
 [project]

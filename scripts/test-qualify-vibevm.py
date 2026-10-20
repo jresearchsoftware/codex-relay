@@ -23,6 +23,19 @@ class CommittedFlowTests(unittest.TestCase):
             shutil.copyfile(QUALIFICATION.ROOT / name, self.root / name)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.BOOT, self.root / QUALIFICATION.BOOT)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SLOT, self.root / QUALIFICATION.SLOT)
+        shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SELF_SLOT, self.root / QUALIFICATION.SELF_SLOT)
+        shutil.copytree(QUALIFICATION.ROOT / "vibevm/vibepacks", self.root / "vibevm/vibepacks")
+        shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts", self.root / "guidance/artifacts")
+        shutil.copyfile(QUALIFICATION.ROOT / "guidance/source.json", self.root / "guidance/source.json")
+        # Construct a synthetic projection/receipt for structural counterexamples.
+        # Actual native generation has separate pinned-tool qualification.
+        shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts/standalone/codex-relay",
+                        self.root / QUALIFICATION.PROJECTION)
+        receipt = ['schema = 1', 'skill = "codex-relay"']
+        for name, data in sorted(QUALIFICATION.files_in(self.root / QUALIFICATION.PROJECTION).items()):
+            receipt += ['\n[[file]]', 'path = ' + json.dumps(name),
+                        'sha256 = ' + json.dumps(hashlib.sha256(data).hexdigest())]
+        (self.root / QUALIFICATION.SKILL_RECEIPT).write_text("\n".join(receipt) + "\n")
         QUALIFICATION.check_project(self.root)
 
     def rejects(self):
@@ -33,7 +46,8 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertFalse((self.root / ".vibe").exists())
         facts = QUALIFICATION.check_project(self.root)
         self.assertEqual(facts["tree_hash"], QUALIFICATION.TREE_HASH)
-        self.assertEqual(len(facts["route"]), 3)
+        self.assertEqual(len(facts["route"]), 4)
+        self.assertEqual(facts["project_skill"], "PASS")
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:
@@ -121,7 +135,7 @@ class CommittedFlowTests(unittest.TestCase):
                 self.rejects()
                 path.unlink()
                 if relative.parts[:2] == (".agents", "skills"):
-                    shutil.rmtree(self.root / ".agents")
+                    shutil.rmtree(self.root / ".agents/skills/proportional-controls")
         path = self.root / QUALIFICATION.SLOT / "LICENSE"
         path.chmod(0o755)
         self.rejects()
@@ -216,6 +230,31 @@ class CommittedFlowTests(unittest.TestCase):
         (distribution / QUALIFICATION.RECEIPT).write_text("{}\n")
         with self.assertRaises(RuntimeError):
             QUALIFICATION.compare_inputs(self.root, None, distribution)
+
+    def test_first_party_export_registry_slot_projection_and_receipt_are_bound(self):
+        for relative in (QUALIFICATION.SELF_SOURCE / "skill/SKILL.md",
+                         QUALIFICATION.SELF_SLOT / "skill/SKILL.md",
+                         QUALIFICATION.SELF_SLOT / QUALIFICATION.MARKER,
+                         QUALIFICATION.PROJECTION / "SKILL.md", QUALIFICATION.SKILL_RECEIPT):
+            path = self.root / relative
+            original = path.read_bytes()
+            for mutation in (None, b"Changed fixture\n"):
+                with self.subTest(path=str(relative), mutation=mutation):
+                    path.unlink() if mutation is None else path.write_bytes(mutation)
+                    self.rejects()
+                    path.write_bytes(original)
+
+    def test_native_registry_transport_is_bounded_without_binding_checkout_location(self):
+        lock = self.root / "vibe.lock"
+        original = lock.read_text()
+        import tomllib
+        first = next(entry for entry in tomllib.loads(original)["package"] if entry["name"] == "codex-relay")
+        relocated = original.replace(first["source_url"],
+                                     "file:///other/accepted-checkout/" + QUALIFICATION.SELF_SOURCE.as_posix())
+        lock.write_text(relocated)
+        QUALIFICATION.check_project(self.root)
+        lock.write_text(original.replace(first["source_url"], "https://example.invalid/arbitrary"))
+        self.rejects()
 
 
 if __name__ == "__main__":

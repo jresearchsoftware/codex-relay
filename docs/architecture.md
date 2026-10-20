@@ -49,7 +49,8 @@ already-admitted attempts. Fresh work on them cannot enter the qualified v4
 installation until the owner explicitly migrates authority. Native schema-v3
 records remain valid historical/in-flight inputs; compatibility does not permit
 fresh v3 execution chains or conflicting authority paths for one launch.
-The [Task workflow guide](task-workflow.md) explains the current human path.
+The [product user manual](../packages/codex-relay/skill/references/workflow.md)
+explains the current human path.
 
 | Component | Owns | Does not own |
 | --- | --- | --- |

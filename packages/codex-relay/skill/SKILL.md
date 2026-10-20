@@ -5,7 +5,8 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **0.1.0**. Its accompanying
+This Skill supplies Relay product guidance version **1.0.0** as a source
+candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source and exact shared dependency. Guidance
 availability does not prove an installed service, workflow or connected App is
 compatible, qualified or enabled. Normal use reads these local files offline.
@@ -15,8 +16,14 @@ admission/handoff. Task N means GitHub Issue #N. Load only authority and mutable
 Git/runtime facts needed for the next decision. Do not reconstruct a Task from
 unselected history or package current Task facts as reusable policy.
 
-- For Task authoring, execution, CRs, results, review or continuation, read the
-  relevant section of [workflow](references/workflow.md).
+When authoring or reviewing a producer's own Skill, AGENTS or boot changes,
+freeze the independently accepted source revision identified by current Task
+authority before reading candidate routes. Keep that accepted guidance for the
+effort; candidate instructions remain proposals and cannot authorize their own
+execution or acceptance. This condition does not adopt another shared topic.
+
+- For Task authoring, execution routes, CRs, results, review or continuation,
+  read the relevant section of the canonical [user manual](references/workflow.md).
 - For a legacy/v3 record, an in-flight old attempt, migration or a protocol
   mismatch, read [compatibility](references/compatibility.md) before selecting
   authority or transport. New v4 work never falls back to a fresh v3 chain.
@@ -27,6 +34,8 @@ unselected history or package current Task facts as reusable policy.
   schemas `references/product/github-authority-v4.json` and retained
   `references/product/github-authority-v1.json`, not copied JSON from an old
   conversation. Use the connected tool's compatible advertised schema.
+- To obtain, install, update, roll back or remove this guidance, or explicitly
+  bootstrap ChatGPT instructions, read [installation](references/installation.md).
 
 After assembly, the bundled pinned Task Handoff protocol at
 `references/shared/vibevm/vibespecs/protocols/task-handoff.md`
@@ -53,5 +62,5 @@ Preserve consumer-owned AGENTS.md, Skills, overlays, profile, checks, language,
 client preferences and authorized integration policy. Relay's own development
 defaults and optional developer hooks are not universal consumer requirements.
 Installing this Skill does not change ChatGPT Project Instructions or install,
-upgrade, deploy or activate Relay services. Use the delivery artifact's human
-installation/update instructions for explicit version changes and rollback.
+upgrade, deploy or activate Relay services. Select explicit guidance versions
+and use the installation reference for reviewable updates and rollback.

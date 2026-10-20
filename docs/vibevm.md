@@ -1,4 +1,4 @@
-# Pinned passive governance consumer
+# Pinned governance and first-party Skill consumption
 
 The Task [#91](https://github.com/jresearchsoftware/codex-relay/issues/91)
 source proposal upgrades the exact `org.jresearch.ai/development-governance`
@@ -26,8 +26,10 @@ merge, external publication, consumer adoption and Issue closure remain separate
 Ordinary manual Codex and automatic Relay workers read committed plain files.
 They need no VibeVM binary, network, registry, cache, resolution or new owner
 command. Worker prompts, optional hooks and client instruction precedence are
-unchanged. This is an ordinary passive flow, with no native Skill projection,
-WAL, executable capability, stock specification precedence or new boot hierarchy.
+unchanged. The existing passive Shared Governance flow stays pinned. The
+[first-party Relay 1.0.0 flow](self-adoption.md) adds its native project Skill and
+conditional product-manual route, with no WAL, executable capability, stock
+specification precedence or new authority hierarchy.
 
 ## Route and semantic ownership
 
@@ -43,10 +45,11 @@ vibevm/vibespecs/boot/INDEX.md      native generated file
                   |       +--> proportional-controls     when relevant
                   |       +--> requirement-authority     when relevant
                   |       +--> other four topics         unadopted; skip
+                  +--> Relay product Skill pointer       when relevant
                   +--> 90-user.md          local routing/adoption bindings
 ```
 
-The package pointer is a short unconditional INDEX entry; the full protocols
+Each package pointer is a short unconditional INDEX entry; full protocols
 are conditional Markdown reads. VibeVM 1.0.7 emits `kind = "static"` for this
 pointer even though the package declares `boot_snippet.link = "dynamic"`.
 Neither that declaration nor conditional reading selectively installs clauses.
@@ -71,13 +74,15 @@ File-route checks do not prove actual model traversal or compliance.
 
 ## Reviewed identity
 
-The [manifest](../vibe.toml) declares exact `=2.1.0`, the public distribution Git
-URL and full immutable revision, with anonymous authentication. There is one
-root dependency and no transitive dependency. The schema-7 [lock](../vibe.lock),
+The [manifest](../vibe.toml) retains exact `=2.1.0`, the public distribution Git
+URL and full immutable revision, with anonymous authentication. Alongside it,
+the native local registry supplies first-party Relay `=1.0.0`; its shared version
+edge resolves to that same explicit immutable Git root. The schema-7 [lock](../vibe.lock),
 complete [slot](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/README.md),
 [DISTRIBUTION receipt](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/DISTRIBUTION.json)
-and native slot inventory are committed together. Project version `0.0.0` is
-not a Relay release.
+and native slot inventory stay unchanged for Shared Governance. First-party
+registry, slot, boot and projection travel with the source proposal described
+in [self-adoption](self-adoption.md). Project version `0.0.0` is not a Relay release.
 
 | Identity | Accepted value |
 | --- | --- |
@@ -200,7 +205,8 @@ of weakening passive-payload mode checks.
 ## Drift, missing files and recovery
 
 The local verifier checks the exact graph, source/lock/tree hashes, complete
-passive slot inventory, receipt and generated file route. Refuse a source
+Shared slot inventory, receipts and generated file route, plus first-party
+export, registry, slot and native Skill equality. Refuse a source
 proposal with drift or a collision; preserve reviewed overlays and investigate.
 Malformed managed markers are refused by the pinned generator. Ordinary missing
 file recovery restores accepted Git content; do not bootstrap stock core policy,

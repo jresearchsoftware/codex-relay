@@ -69,6 +69,14 @@ missing response or re-execute Codex. A replay retains the attempt and Step.
 A genuinely new execution after terminal BLOCKED needs new owner admission and
 receives a new v4 Step.
 
+Missing automation stops only the operation requiring that capability; any
+otherwise authorized standalone route still follows the
+[manual's route and continuation rules](workflow.md#owner-acceptance-and-execution-routes).
+It cannot resolve unknown execution, conflicting refs or external effects, or
+substitute for an admitted attempt's result/recovery. Owner continuation also
+reconciles reserved merge/closure/launch operations from exact native readback;
+an uncertain response never authorizes a repeated mutation or another launch.
+
 Report a blocker with established facts, eliminated material hypotheses,
 remaining uncertainty, preserved work, available safe actions, the exact
 authority/capability boundary and the next owner action. Relay repository-only

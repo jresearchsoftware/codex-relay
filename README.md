@@ -11,8 +11,9 @@ and whether publication actually happened. GitHub is the durable authority;
 Relay supplies execution and publication mechanics.
 
 For practical human examples and an independently installable native Codex
-Skill, see the [versioned guidance bundle](docs/relay-guidance.md). Its standalone
-and VibeVM forms share one source; ordinary use reads committed files offline.
+Skill, start with the [product user manual](packages/codex-relay/skill/SKILL.md).
+Its [standalone and VibeVM delivery forms](packages/codex-relay/skill/references/installation.md)
+share one source; ordinary use reads committed files offline.
 
 It is for a **single human owner of a GitHub repository** who wants explicitly
 launched Codex implementation, an external ChatGPT review conversation, and an
@@ -119,9 +120,10 @@ needed to contribute. [SECURITY](SECURITY.md) explains reporting boundaries.
    Supply consumer configuration, trusted workflows, target properties and separate
    Writer/Reviewer App references. Relay installs the isolated runtime, fixed
    wrappers and services. Qualify the installed system before enabling launch commands.
-4. Follow the [Task workflow guide](docs/task-workflow.md) for the current
-   charter → trusted Request → Outcome → independent review → completion path,
-   including Decisions, PR remediation and supported legacy compatibility.
+4. Follow the [product user manual](packages/codex-relay/skill/references/workflow.md)
+   for the current charter → trusted Decisions → Writer admission → Outcome →
+   independent review → authorized continuation path, explicitly authorized
+   standalone source PRs, remediation and retained-attempt compatibility.
    The [authority](contracts/README.md), [routing](controller/README.md) and
    [Reviewer](reviewer/README.md) contracts retain the detailed rules.
 

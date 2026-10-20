@@ -1,0 +1,21 @@
+{
+  "package": "org.jresearch.ai/development-governance",
+  "payload_sha256": "1d6e4098ee557319dc04d21defc33260aee1ce21e82b502f8e60726b2b68e955",
+  "schema": 1,
+  "sha256": {
+    "LICENSE": "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853",
+    "README.md": "a769714f767ad972030225ba29d9bc476cba484be6e7e347a65fa6e59f179414",
+    "vibe.toml": "bfcceaed6af61b02ae489b3c1e49094ec3a23309de209809d7c4a7c3f9297165",
+    "vibevm/vibespecs/boot/development-governance.md": "8e932a4ae27a9efa440acb59488f3687fa5e2e8f1b9f19cef63e8670b2216e8d",
+    "vibevm/vibespecs/protocols/github-repository-governance.md": "335cbc73ecb355919d5ca5bd8d4a525d8371aedaf92381e6c8244f41ebe5d45b",
+    "vibevm/vibespecs/protocols/package-versioning.md": "14c48fcc25bae6c7dee9b0a6c2e6310fa8df2917c6e17c4553fdefb461fec652",
+    "vibevm/vibespecs/protocols/proportional-controls.md": "6fbd1dc55bd40ee67c442614cd3d71fda45f4ebdba7012b976e72857c0eacfed",
+    "vibevm/vibespecs/protocols/requirement-authority.md": "9e5af613383c2c1492325338d9c37933bc83e1175ae809055718fc354a5532ca",
+    "vibevm/vibespecs/protocols/self-adoption.md": "43d56c78d4d12803ad28eef24afaa809e5941b19727da9f30274600e95d5be53",
+    "vibevm/vibespecs/protocols/task-handoff.md": "b3e9058f8ff80bc7c57854ef97a71e57983d4c3f18d538ead66cb8e4ebca9ac2"
+  },
+  "source_path": "packages/development-governance",
+  "source_repository": "https://github.com/jresearchsoftware/shared-governance",
+  "source_revision": "c3fbc8c2d10982889bea526161f810902def4289",
+  "version": "2.1.0"
+}

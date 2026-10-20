@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
   "name": "codex-relay",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "4847c368ae5ea956fd6370bee207c8e4a176e8e0",
-  "workflow_contract": "relay-workflows-v3",
+  "contract_revision": "9057a2b6a21d33c4d6778b0211e1c68d097c64fc",
+  "workflow_contract": "relay-workflows-v4",
+  "serial_workflow_contract": "relay-workflows-v3",
   "authority_schema": "4.0",
   "retained_authority_schema": "3.0",
   "shared_coordinate": "org.jresearch.ai/development-governance",
@@ -12,5 +13,5 @@
   "shared_source_revision": "c3fbc8c2d10982889bea526161f810902def4289",
   "shared_distribution_revision": "4211f55dcaeb3077d6abdbfba53a42ed848351b2",
   "shared_distribution_tree_hash": "sha256:df90ef1a287c2ce5a70aff4443a0782410b628459722792ed326bde5aaf86ecc",
-  "publication": "source candidate; external publication and consumer adoption require separate authority"
+  "publication": "1.0.0 source release only upon independent acceptance and squash merge; repository self-adoption travels with that accepted source; no external publication"
 }

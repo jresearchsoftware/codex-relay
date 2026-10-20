@@ -1,8 +1,23 @@
 [meta]
 generated_by = "vibe 1.0.7"
-generated_at = "2026-10-14T05:49:28Z"
+generated_at = "2026-10-20T13:55:20Z"
 schema_version = 7
-root_dependencies = ["org.jresearch.ai/development-governance"]
+root_dependencies = [
+    "flow:org.jresearch.ai/codex-relay@=1.0.0",
+    "org.jresearch.ai/development-governance",
+]
+
+[[package]]
+kind = "flow"
+name = "codex-relay"
+group = "org.jresearch.ai"
+version = "1.0.0"
+source_url = "file:///home/hortonolite/codex-task-106-recovery/vibevm/vibepacks/org.jresearch.ai/codex-relay/v1.0.0"
+content_hash = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
+files_written = []
+dependencies = ["org.jresearch.ai/development-governance@=2.1.0"]
+admitted_by = "root-edge"
+source_kind = "local"
 
 [[package]]
 kind = "flow"
