@@ -65,7 +65,7 @@ it. A review finding cannot enlarge Task scope by itself.
 
 The executor preserves a substantive candidate commit on the admitted branch,
 reports affected checks and distinguishes local test claims from native CI.
-A manual session submits the complete admitted Outcome claim using
+A Relay-admitted manual session submits the complete Outcome claim using
 `submit_manual_outcome`; automatic workers hand commits/claims to Writer.
 
 Useful visible result prose says what changed, identifies the exact full head,
@@ -88,6 +88,32 @@ Issue `task-approval` accepts the exact Writer Outcome, authority/admission and
 immutable result, preserving warnings and limitations. It grants no PR merge
 permission. Unavailable installation/production evidence remains unavailable.
 
+## Explicitly authorized standalone source PR
+
+Suppose Issue #42 explicitly authorizes standalone manual implementation and
+its owner-created PR #43, and no Relay attempt was admitted for that result.
+The executor publishes the exact source head, validation evidence, ordinary
+owner Outcome and limitations through the authorized owner channel. It invents
+no admission, Step, ready event or Writer receipt.
+
+An independent evaluator reviews the full candidate against current canonical
+authority and warning evidence. The qualified Reviewer publishes native
+exact-head `APPROVE`, binding the verified owner-created source PR and current
+authority. An owner-account review or copied assessment does not replace that
+native proof. The trusted owner channel verifies explicit standalone permission,
+absence of an admitted attempt for this result, warnings, passing required
+checks, mergeability, holds and `closesTask: false`, then can perform the
+already-authorized squash without another confirmation. It uses neutral merge
+text and verifies the native merged result. No ordinary owner result becomes a
+Writer Outcome or Task Approval.
+
+If execution markers instead show that PR #43 is a Relay-admitted result, retain
+its original Writer publication/recovery requirements. Missing automation does
+not turn it into standalone work. If the merge response is uncertain, reconcile
+the reserved action with native readback before dependent work. Do not repeat
+the merge or launch another execution. Issue #42 remains open while its stated
+qualification work remains.
+
 ## Review, continuation and closure
 
 An independent evaluator reviews the complete PR #43 candidate against current
@@ -109,7 +135,7 @@ completion or merge alone cannot authorize closure.
 
 ## Capability mismatch and retained history
 
-If a new manual v4 session cannot see `submit_manual_outcome`, preserve its work
+If a new Relay-admitted manual v4 session cannot see `submit_manual_outcome`, preserve its work
 and report the missing connected capability and qualified installation needed.
 Do not substitute an owner result comment or a new v3 Request.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in qualification of Relay's committed passive VibeVM flow; never downloads tools."""
+"""Opt-in qualification of Relay's committed native flows; never downloads tools."""
 import argparse
 import hashlib
 import json
@@ -20,6 +20,13 @@ SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "2.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
+SELF_COORDINATE = "org.jresearch.ai/codex-relay"
+SELF_VERSION = "1.0.0"
+SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
+SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
+SELF_BOOT = "vibevm/vibespecs/boot/codex-relay.md"
+PROJECTION = Path(".agents/skills/codex-relay")
+SKILL_RECEIPT = Path(".agents/skills/.codex-relay.vibe-skill-receipt.toml")
 PACKAGE_BOOT = "vibevm/vibespecs/boot/development-governance.md"
 PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
                   ("package-versioning", "proportional-controls", "requirement-authority",
@@ -142,28 +149,83 @@ def check_package(directory):
     return files
 
 
+def check_first_party(root):
+    metadata = json.loads(read_file(root, "guidance/source.json"))
+    require(metadata["name"] == "codex-relay" and metadata["version"] == SELF_VERSION,
+            "First-party source must retain owner-selected 1.0.0 identity")
+    expected = files_in(root / "guidance/artifacts/vpm")
+    require(expected and files_in(root / SELF_SOURCE) == expected,
+            "First-party registry differs from generated package export")
+    require(files_in(root / "vibevm/vibepacks") == {
+        str(SELF_SOURCE.relative_to("vibevm/vibepacks") / name): data for name, data in expected.items()},
+        "Unexpected first-party registry package or file")
+    installed = files_in(root / SELF_SLOT)
+    require(MARKER in installed, "Missing first-party slot metadata")
+    marker = tomllib.loads(installed.pop(MARKER).decode())
+    source_hash = tree_hash(expected)
+    require(installed == expected, "First-party slot differs from generated package export")
+    require(type(marker.get("schema")) is int and marker == {
+        "schema": 1, "source_hash": source_hash, "spec_format": "mixed",
+        "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+                 for name, data in sorted(expected.items())]}, "First-party slot metadata differs")
+    skill = {name.removeprefix("skill/"): data for name, data in expected.items()
+             if name.startswith("skill/")}
+    require(skill == files_in(root / "guidance/artifacts/standalone/codex-relay"),
+            "Standalone and native first-party Skill bytes differ")
+    require(files_in(root / PROJECTION) == skill, "Codex project Skill differs from native package")
+    receipt = tomllib.loads(read_file(root, SKILL_RECEIPT).decode())
+    require(type(receipt.get("schema")) is int and receipt == {
+        "schema": 1, "skill": "codex-relay",
+        "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+                 for name, data in sorted(skill.items())]}, "Native Codex Skill receipt differs")
+    return expected, source_hash
+
+
 def check_project(root):
     manifest = tomllib.loads(read_file(root, "vibe.toml").decode())
     require(manifest == {"project": {"name": "codex-relay", "version": "0.0.0", "spec_format": "mixed"},
                          "requires": {"packages": {COORDINATE: {"version": "=" + VERSION,
                                      "git": DISTRIBUTION_REPOSITORY, "rev": DISTRIBUTION_REVISION,
-                                     "auth": "none"}}}}, "Consumer must retain the exact anonymous Git requirement")
+                                     "auth": "none"}, "flow:" + SELF_COORDINATE: {
+                                     "version": "=" + SELF_VERSION, "link": "dynamic"}}},
+                         "registry": [{"name": "producer", "url": "vibevm/vibepacks", "auth": "none"}]},
+            "Consumer must retain exact Shared Git and native first-party requirements")
     files = check_package(root / SLOT)
+    first_party, source_hash = check_first_party(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
+    packages = lock.get("package", [])
+    require(len(packages) == 2, "Expected exactly Shared and first-party native packages")
+    require(len({(entry.get("group"), entry.get("name")) for entry in packages}) == 2,
+            "Duplicate native package identity")
+    shared = next((entry for entry in packages if entry.get("name") == "development-governance"), None)
+    first = next((entry for entry in packages if entry.get("name") == "codex-relay"), None)
     require(set(lock) == {"meta", "package"} and set(lock["meta"]) == {
         "generated_by", "generated_at", "schema_version", "root_dependencies"}
         and lock["meta"]["generated_by"] == "vibe 1.0.7"
         and type(lock["meta"]["schema_version"]) is int and lock["meta"]["schema_version"] == 7
         and isinstance(lock["meta"]["generated_at"], str)
         and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["meta"]["generated_at"])
-        and lock["meta"]["root_dependencies"] == [COORDINATE]
-        and lock["package"] == [{"kind": "flow", "name": "development-governance", "group": "org.jresearch.ai",
+        and lock["meta"]["root_dependencies"] == ["flow:" + SELF_COORDINATE + "@=" + SELF_VERSION, COORDINATE]
+        and shared == {"kind": "flow", "name": "development-governance", "group": "org.jresearch.ai",
                                  "version": VERSION, "source_url": DISTRIBUTION_REPOSITORY,
                                  "source_ref": DISTRIBUTION_REVISION, "content_hash": TREE_HASH,
-                                 "files_written": [], "admitted_by": "root-edge", "source_kind": "git"}],
+                                 "files_written": [], "admitted_by": "root-edge", "source_kind": "git"},
         "Schema-7 lock differs from the admitted graph/source/content identity")
+    require(first is not None, "Missing first-party native lock entry")
+    # Native absolute location metadata can come from another supported checkout.
+    # Exact export/registry/slot equality above supplies portable content identity.
+    source_url = first.get("source_url", "")
+    require(source_url.startswith("file://") and
+            unquote(source_url).endswith("/" + SELF_SOURCE.as_posix()),
+            "First-party source is not a generated in-tree registry location")
+    require(first == {"kind": "flow", "group": "org.jresearch.ai", "name": "codex-relay",
+                      "version": SELF_VERSION, "source_url": source_url, "content_hash": source_hash,
+                      "files_written": [], "dependencies": [COORDINATE + "@=" + VERSION],
+                      "admitted_by": "root-edge", "source_kind": "local"},
+            "First-party lock differs from native content/dependency identity")
     index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
-    paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(), (BOOT / SOURCES[1]).as_posix()]
+    paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(),
+             (SELF_SLOT / SELF_BOOT).as_posix(), (BOOT / SOURCES[1]).as_posix()]
     # Native v1.0.7 emits static here despite boot_snippet.link = "dynamic".
     require(type(index.get("schema")) is int
             and index == {"schema": 1, "entry": [{"path": name, "kind": "static"} for name in paths]},
@@ -176,7 +238,8 @@ def check_project(root):
     require(len(set(blocks)) == 1 and hashlib.sha256(blocks[0]).hexdigest() == NATIVE_BLOCK_HASH,
             "Native redirects differ from the accepted generated block")
     require(set(files_in(root / "vibevm/vibedeps")) == {
-        (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files},
+        (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files} | {
+        (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}},
             "Unexpected materialized dependency graph")
     for relative in ("vibevm/vibespecs/WAL.md", "vibevm/vibespecs/WAL.xml",
                      ".agents/skills/proportional-controls", ".agents/skills/.proportional-controls.vibe-skill-receipt.toml"):
@@ -184,7 +247,9 @@ def check_project(root):
                 "Unexpected WAL or projected governance Skill: " + relative)
     return {"route": paths, "boot_bytes": sum(len(read_file(root, path)) for path in paths),
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
-            "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION}
+            "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
+            "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
+            "project_skill": "PASS"}
 
 
 def compare_inputs(root, source, distribution):
@@ -199,16 +264,22 @@ def compare_inputs(root, source, distribution):
                 "Supplied public distribution differs from the committed whole payload/receipt")
 
 
-def copy_tracked(destination):
-    names = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
-    for name in filter(None, names):
-        data = read_file(ROOT, name)
+def copy_project(source, destination):
+    """Copy only ordinary ready files, without credentials or lifecycle state."""
+    files = {name: read_file(source, name) for name in (
+        "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT)}
+    for relative in ("guidance/artifacts", "vibevm/vibedeps", "vibevm/vibepacks",
+                     "vibevm/vibespecs/boot", PROJECTION):
+        files.update({str(Path(relative) / name): data
+                      for name, data in files_in(source / relative).items()
+                      if name != ".vibe-boot-artifacts.lock"})
+    for name, data in files.items():
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
 
 
-def probe(vibe, pin):
+def probe(vibe, pin, project_root=ROOT):
     require(hashlib.sha256(vibe.read_bytes()).hexdigest() ==
             pin["linux_x86_64_musl_binary"]["sha256"], "VibeVM binary differs from the pinned release")
     with tempfile.TemporaryDirectory(prefix="relay-vibevm-") as temporary:
@@ -247,10 +318,13 @@ def probe(vibe, pin):
         version = subprocess.check_output([str(vibe), "--version"], cwd=root, env=env, text=True).strip()
         require(version == "vibe " + pin["version"], "Unexpected tool version")
         project = root / "project"
-        copy_tracked(project)
+        copy_project(project_root, project)
         facts = check_project(project)
         route_paths = ["vibe.toml", "vibe.lock", *AGENTS, *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
         route_paths += [(SLOT / name).as_posix() for name in PAYLOAD | {RECEIPT, MARKER}]
+        route_paths += [(SELF_SLOT / name).as_posix() for name in files_in(project / SELF_SLOT)]
+        route_paths += [(PROJECTION / name).as_posix() for name in files_in(project / PROJECTION)]
+        route_paths += [SKILL_RECEIPT.as_posix()]
         original = {name: read_file(project, name) for name in route_paths}
 
         def unchanged(expected):
@@ -334,20 +408,23 @@ def probe(vibe, pin):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-root", type=Path, default=ROOT,
+                        help="complete ready checkout/isolated fixture to verify (default: this checkout)")
     parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.7 binary")
     parser.add_argument("--source-dir", type=Path, help="optional accepted source package directory for whole-payload byte comparison")
     parser.add_argument("--distribution-dir", type=Path, help="optional acquired public distribution directory for whole-payload/receipt byte comparison")
     args = parser.parse_args()
-    facts = check_project(ROOT)
+    project_root = args.project_root.resolve()
+    facts = check_project(project_root)
     if args.source_dir or args.distribution_dir:
-        compare_inputs(ROOT, args.source_dir, args.distribution_dir)
+        compare_inputs(project_root, args.source_dir, args.distribution_dir)
     print(json.dumps({"passive_package_route": "PASS", **facts,
                       "source_byte_comparison": "PASS" if args.source_dir else "not requested",
                       "distribution_byte_comparison": "PASS" if args.distribution_dir else "not requested",
                       "tool_probe": "pending" if args.vibe else "not requested", "model_behavior": "UNVERIFIED"}))
     if args.vibe:
         pin = json.loads((ROOT / "toolchain/vibevm.json").read_text())
-        probe(args.vibe.resolve(), pin)
+        probe(args.vibe.resolve(), pin, project_root)
 
 
 if __name__ == "__main__":

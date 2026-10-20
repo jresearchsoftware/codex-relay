@@ -117,3 +117,19 @@ deterministic reviewable diff, and support explicit version choice/rollback.
 Native discovery, VibeVM authoring/build, authentic client behavior, source
 acceptance, external package publication and production installation remain
 separate evidence. No Skill text can substitute for those qualifications.
+
+Task #106 extends this packaging to **1.0.0**, bound to accepted Relay contract
+`9057a2b6a21d33c4d6778b0211e1c68d097c64fc`. The
+[canonical manual](../packages/codex-relay/skill/references/workflow.md) now owns
+the user-facing instructions formerly repeated in `docs/task-workflow.md`;
+that document retains developer/contract navigation. The standalone source-PR
+exception changes only the result binding: explicit owner permission and
+native `source_pr` approval evidence replace a fictitious Writer receipt.
+Admitted Writer provenance and typed no-PR Task Approval stay mandatory.
+
+The [native producer flow](self-adoption.md) adds first-party repository-local
+Skill consumption without modifying Shared Governance 2.1.0 or adopting its
+self-adoption topic. Freeze accepted-main guidance before authoring/reviewing
+candidate routing. The first-party source release requires independent
+acceptance and squash merge; external publication and consumer adoption remain
+separate.

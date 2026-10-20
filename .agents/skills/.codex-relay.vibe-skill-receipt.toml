@@ -1,0 +1,94 @@
+schema = 1
+skill = "codex-relay"
+
+[[file]]
+path = "PROVENANCE.json"
+sha256 = "0b28e4fa245a6f7f74ee8f5243fdd9f6985231ec93b15c87bbfe56e0d29a6671"
+
+[[file]]
+path = "SKILL.md"
+sha256 = "ca5e509e7727df4f8d2e732eedc8f5f0fd150ad32022b4a561b6fdb8e87fe7e1"
+
+[[file]]
+path = "references/compatibility.md"
+sha256 = "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace"
+
+[[file]]
+path = "references/diagnostics.md"
+sha256 = "bf19df9455f589ea16e296c378379e5b5ff896bcb80321b8af651ea466942839"
+
+[[file]]
+path = "references/examples.md"
+sha256 = "6e244e1d826c9198fb667193f4a52b369396ba95dd3152bba34d011447214373"
+
+[[file]]
+path = "references/installation.md"
+sha256 = "ac62c687153e430af3a2360ce2139183729d890a984e15deb953e956718fd975"
+
+[[file]]
+path = "references/product/contract.json"
+sha256 = "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c"
+
+[[file]]
+path = "references/product/github-authority-v1.json"
+sha256 = "b4a7c7561ca8697e3b00df21c8c624d59d6cb5f3f2f56bde35d7ed6bdd161874"
+
+[[file]]
+path = "references/product/github-authority-v4.json"
+sha256 = "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5"
+
+[[file]]
+path = "references/product/vibevm.json"
+sha256 = "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
+
+[[file]]
+path = "references/shared/DISTRIBUTION.json"
+sha256 = "a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc"
+
+[[file]]
+path = "references/shared/LICENSE"
+sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
+
+[[file]]
+path = "references/shared/README.md"
+sha256 = "a769714f767ad972030225ba29d9bc476cba484be6e7e347a65fa6e59f179414"
+
+[[file]]
+path = "references/shared/vibe.toml"
+sha256 = "bfcceaed6af61b02ae489b3c1e49094ec3a23309de209809d7c4a7c3f9297165"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/boot/development-governance.md"
+sha256 = "8e932a4ae27a9efa440acb59488f3687fa5e2e8f1b9f19cef63e8670b2216e8d"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/github-repository-governance.md"
+sha256 = "335cbc73ecb355919d5ca5bd8d4a525d8371aedaf92381e6c8244f41ebe5d45b"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/package-versioning.md"
+sha256 = "14c48fcc25bae6c7dee9b0a6c2e6310fa8df2917c6e17c4553fdefb461fec652"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/proportional-controls.md"
+sha256 = "6fbd1dc55bd40ee67c442614cd3d71fda45f4ebdba7012b976e72857c0eacfed"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/requirement-authority.md"
+sha256 = "9e5af613383c2c1492325338d9c37933bc83e1175ae809055718fc354a5532ca"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/self-adoption.md"
+sha256 = "43d56c78d4d12803ad28eef24afaa809e5941b19727da9f30274600e95d5be53"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/task-handoff.md"
+sha256 = "b3e9058f8ff80bc7c57854ef97a71e57983d4c3f18d538ead66cb8e4ebca9ac2"
+
+[[file]]
+path = "references/workflow.md"
+sha256 = "191dc49325e48cd1eef786d6394eed67105ac552e534c7cefeee17f97a238322"
+
+[[file]]
+path = "scripts/project.py"
+sha256 = "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b"

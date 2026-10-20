@@ -1,4 +1,4 @@
-# Pinned passive flow; resolution is deliberate maintenance only.
+# Native first-party source; ordinary use reads the committed ready files offline.
 [project]
 name = "codex-relay"
 version = "0.0.0"
@@ -6,3 +6,12 @@ spec_format = "mixed"
 
 [requires.packages]
 "org.jresearch.ai/development-governance" = { version = "=2.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "4211f55dcaeb3077d6abdbfba53a42ed848351b2", auth = "none" }
+
+[requires.packages."flow:org.jresearch.ai/codex-relay"]
+version = "=1.0.0"
+link = "dynamic"
+
+[[registry]]
+name = "producer"
+url = "vibevm/vibepacks"
+auth = "none"

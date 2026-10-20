@@ -48,6 +48,19 @@ Rerun against the final generated candidate after any content change.
 
 ## Observed Codex evidence
 
+The final 1.0.0 continuation candidate was checked on Linux and Windows on
+2026-10-20 with the same hash-verified 0.162.1 executables below. Both platforms
+reported the identical 23-file artifact digest
+`aa5a45590b847987a1ab5f1897a4d1b475e9e11366b638ad8653574d02fc1969`.
+Root/nested discovery, unrelated-directory exclusion and malformed-fixture
+reporting passed, with zero model calls. Windows returned no diagnostics or
+warnings. Linux reported the bundled-bubblewrap fallback because bubblewrap
+was absent from PATH; this metadata-only probe ran no sandboxed commands and
+does not qualify process isolation. No host package or privileges were changed.
+The fresh manual source checkout also completed actual native project Skill
+projection and structural verification; the original blocked worker checkout
+and its incomplete projection were preserved separately.
+
 On 2026-10-14 the generated 20-file standalone artifact passed the native probe
 with both binaries below. Root and nested discovery succeeded; the unrelated
 directory excluded Relay; the deliberately malformed fixture produced its
@@ -80,7 +93,19 @@ the version-specific evidence here.
 
 ## Forward workflow evaluation
 
-A separate Codex helper received only the assembled Skill and eight synthetic
+For the 1.0.0 continuation, a separate read-only helper evaluated ten synthetic
+requests using the Skill without the author's intended answers. Cases covered
+approved standalone continuation, automatic Writer isolation, missing manual
+transport, retained-v3 completion, candidate self-authorization, offline reads,
+warnings, external publication, local collisions and stale exact-head approval.
+The evaluation found one portable-entrypoint routing gap: producer guidance
+changes needed an explicit accepted-source binding before candidate routes.
+The Skill now states that conditional rule directly without adopting the whole
+shared self-adoption protocol. The other nine cases preserved their authority
+and provenance boundaries. This is bounded implementation evidence, not native
+independent acceptance or automatic client-selection proof.
+
+For the historical 0.1.0 qualification, a separate Codex helper received only the assembled Skill and eight synthetic
 requests, without the author's intended answers or implementation/tests. It
 read workflow, compatibility and diagnostics references as needed. Its returned
 actions preserved these boundaries: labels without admission; unavailable v4
@@ -92,6 +117,19 @@ these cases. This is bounded guidance evaluation, not installed-client automatic
 selection proof, a live Task execution or independent product acceptance.
 
 ## Observed VibeVM capabilities
+
+The 1.0.0 candidate's generated two-root consumer graph and full native Skill
+projection passed the existing update, rollback, repeat, fresh-cache offline
+reinstall, drift, collision and removal probes. Standalone and VPM Skill bytes
+matched. The native package tree hash was
+`sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454`;
+Shared Governance retained its exact 2.1.0 Git revision and tree hash.
+The separate [producer self-adoption](self-adoption.md) probe resolved the
+in-tree first-party flow with that unchanged Shared Git root and verified
+offline regeneration and human-overlay preservation in a complete isolated
+project. Actual source adoption still requires all committed ready files and
+independent acceptance; fixture success cannot substitute a missing project
+projection.
 
 The repository's [tool pin](../toolchain/vibevm.json) identifies VibeVM 1.0.7,
 source `b6659978453f50e6d1d4d99626d70b980a2c5847`, Linux x86_64 musl SHA-256

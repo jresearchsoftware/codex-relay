@@ -1,7 +1,7 @@
 # Developing Codex Relay
 
 These instructions govern **owner-admitted Relay/Codex development**. The
-[Task workflow](docs/task-workflow.md#owner-acceptance-and-execution-routes)
+[product user manual](packages/codex-relay/skill/references/workflow.md#owner-acceptance-and-execution-routes)
 also defines owner acceptance and ordinary authorized standalone/manual work;
 native admission and publication rules apply to the Relay route. Ordinary
 human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
@@ -24,6 +24,16 @@ before changing its API, [CONTRIBUTING.md](CONTRIBUTING.md) when environment or
 validation detail is needed, and deployment/hook/subagent documentation only
 when those surfaces are active. Prefer a targeted section, path, diff or exact
 live fact over a broad reread.
+
+The canonical authored user manual is the
+[product Skill](packages/codex-relay/skill/SKILL.md); developer/component
+contracts supply implementation details, not a second user workflow.
+Its [native producer self-adoption](docs/self-adoption.md) carries versioned
+ready files with source. Before authoring or independently reviewing changes to
+this project's Skill, boot or agent routing, freeze the independently accepted
+main guidance and use it throughout that attempt. Candidate instructions remain
+proposals until accepted; they cannot authorize their own execution or review.
+This first-party technique does not adopt additional Shared Governance topics.
 
 Keep this file limited to durable cross-task invariants and stable routing
 pointers. Component mechanics, platform detail, deployment procedures and tool

@@ -23,7 +23,9 @@ examples against the implemented behavior and governing component contracts;
 keep consumer policy distinct from Relay protocol and qualify legacy behavior.
 Use the existing PR description and review process, without a separate
 documentation approval, CI gate or policy registry. Start the owner workflow at
-the [Task workflow guide](docs/task-workflow.md).
+the [product user manual](packages/codex-relay/skill/references/workflow.md).
+Keep user instructions in that authored Skill; [developer navigation](docs/task-workflow.md)
+points to it and the implementation contracts.
 
 ## Execution environment and shell routing
 

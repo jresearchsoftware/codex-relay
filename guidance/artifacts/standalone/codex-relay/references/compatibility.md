@@ -10,7 +10,7 @@ discovery are distinct facts. An upgrade of one does not establish the others.
 | Fresh unmarked/legacy Task or new v3 Request/CR chain on that installation | `CURRENT_PROTOCOL_REQUIRED`; stop before admission reservation, command consumption, Step projection, worker launch or fabricated blocked Outcome. Use current v4 authority or explicitly owner-authorized migration. |
 | Marked Task with v3 Request history, now seeking new v4 admission | Active trusted Task-scoped v4 Decision newer than the latest v3 Request must explicitly amend purpose or scope. Closure/profile-only amendments do not suffice. Replace a latest applicable v3 CR with current v4 CR. Do not inherit old execution fields. |
 | Exact old attempt already admitted | Preserve its original selected Request/native references, complete body hashes, Step, transport, projection and replay/currentness rules. Safe completion, Outcome publication/recovery and result acceptance remain supported. No fresh old-style execution. |
-| Older qualified installation | Its accepted installed contract remains authoritative. Do not claim a source-only/partial upgrade activates v4 or rewrite old history. A current connected capability gap is a boundary, not permission for an alternate transport. |
+| Older qualified installation | Its accepted installed contract remains authoritative. Do not claim a source-only/partial upgrade activates v4 or rewrite old history. A connected capability gap stops the affected native operation; it grants no replacement result transport for an admitted attempt. |
 
 Never combine legacy mutable-Issue authority with marked stable-charter authority.
 The marker is exactly one standalone `Authority model: github-native-v1` line;
@@ -18,6 +18,12 @@ unknown/malformed/multiple markers fail closed. Typed comments, labels or a
 Skill do not migrate a Task. Migration requires owner authority and a qualified
 paired Reviewer/controller plus compatible workflow projection. Do not migrate
 a charter while its old admitted execution remains in flight.
+
+Explicitly owner-authorized standalone/manual work follows the
+[manual's route policy](workflow.md#owner-acceptance-and-execution-routes).
+It neither fabricates native admission nor replaces an existing attempt's
+publication/recovery. Source-PR acceptance of an exact retained manual Request
+does not publish a new v3 record or authorize a fresh old-style execution.
 
 ## Retained schema v3 details
 
@@ -42,7 +48,7 @@ also matter. Writer identity remains separate. Prose or a copied fence never
 establishes identity. Preserve original bytes, source currentness and Step
 through recovery; do not fabricate old admission snapshots.
 
-Retained v3 result acceptance binds the exact selected Request, Step, trusted
+Retained v3 admitted-result acceptance binds the exact selected Request, Step, trusted
 Writer Outcome and identical immutable result. Closure remains the charter's
 effective policy; a Decision alone cannot override it. Retained continuation
 may carry `{hold, task_complete, next}` under its exact original contract;
