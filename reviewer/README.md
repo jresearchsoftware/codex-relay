@@ -198,32 +198,81 @@ fences render as literal text. Canonical JSON bytes remain unchanged. If the
 complete summary would exceed native size limits, canonical JSON opens with a
 visible presentation-limit explanation; material facts are never truncated.
 The shared Node/Rust fixtures cover both schema generations and malicious text.
-The publisher reserves the existing SQLite operation journal before mutation.
-Operation identity retains the historical canonical record identity across
-renderer versions. New reservations retain the exact publication body; old rows
-without it recover the original legacy rendering. A returned publication is
-re-read by its native ID before being reported durable. An uncertain POST can
-recover only one exact native body and trusted author; an absent or ambiguous
-match stops without another POST. Partial Step projection resumes the same
-native identity and requires the reserved PR title or its canonical projection;
-changed authority stops recovery. The same reserved typed operation resumes
-`AUTHORITY_PUBLISHED` through metadata reconciliation, check publication and
-journal completion. Recovery verifies one original trusted native body,
-parent, review state and reviewed SHA before further mutations. It reconciles
-the exact-operation check by external ID, SHA and configured App identity;
-duplicate, conflicting or uncertain check state fails closed. Check creation
-intent is reserved before POST, so a lost response can recover by read-back
-without creating a second check. A durable receipt requires the completed
-journal, original review and verified check. Recovery allocates no Step and
-does not launch execution. Historical journal rows without a recorded check
-intent may recover an already observed exact check. If no check can be observed,
-the old row cannot prove that a prior POST was never attempted; it remains
-`CHECK_PUBLICATION_UNCERTAIN` without another POST. The migration does not invent
-an earlier authority or check-intent observation. Newly reserved v3 and v4
-operations retain that intent before creation. For retained schema-v3 publication, Task
-Request/CR Step labels and the bounded
-existing PR title are deterministic projections, preserving unrelated labels.
-This is one trusted publisher, not a second ordinary owner metadata workflow.
+GitHub is authoritative for completed publication. SQLite retains only the
+original publication intent and the coordination that GitHub cannot supply.
+Fresh databases contain six operation fields:
+
+| Local state | Before | Retained purpose or replacement |
+| --- | --- | --- |
+| `operation_id` | Publication/deduplication key | Keep the historical deterministic identity and atomic primary-key reservation; native operation markers bind GitHub readback to that same operation. |
+| `status` | Reservation plus local completion stages | Keep `RESERVED` and `RETRYABLE_FAILURE` only as decisive-POST permission. No local completion transition establishes or negates publication. Historical completed statuses never permit another decisive POST. |
+| `publication_body` | Frozen rendered body | Keep exact original bytes for unresolved intent, renderer drift and historical verification. A missing old body uses its original legacy renderer. |
+| `authority_binding` | Original authority/acceptance snapshot | Keep the acceptance-time authority, admission/Outcome lineage and immutable compatibility selection where a public review cannot reconstruct them. Changed authority stops resumed mutations. |
+| `step_binding` | Legacy/v3 metadata anchor | Keep original Issue/PR binding and initial PR title for partial legacy/v3 projection; v4 publication allocates no Step and projects no Step metadata. |
+| `check_intent` | Irreversible one-POST guard | Keep only a bounded possible-send budget: `0` before the first send, `1` after its reservation, `2` after the recovery-send reservation. Historical `NULL` receives one prospective recovery send to `2`, without inventing an earlier observation. |
+| Review/native/check IDs, URLs and actor receipt fields | Mirrored GitHub receipts used as recovery gates | Remove active receipt storage and its vetoes. Discover and verify native identity, author, body, parent, state, exact SHA and check properties on GitHub. |
+| `finding_digest`, `created_at`, `events` | Unused digest/timestamp mirrors and append-only event history | Remove new diagnostic journal writes. Existing columns, values and event rows remain intact; old required INSERT columns receive inert compatibility defaults. |
+
+The short SQLite transaction and primary key elect one decisive publisher
+across concurrent processes and restarts. They never span a network request or
+hold unrelated operations. The original reservation survives an ambiguous
+Review or authority-comment POST; neither missing readback nor a missing local
+receipt authorizes another decisive POST. Complete, bounded native readback
+must identify exactly one trusted original operation, including its body,
+parent, actor and reviewed SHA. Re-read its native identity and current
+authority before further mutations. Verified GitHub evidence recovers the
+publication even when the local completion receipt is stale or absent.
+Recovery with no local row retains an unknown Check history, allowing only one
+prospective recovery send. Fresh v4 CR bodies carry the original effective
+authority digest beside the operation marker. A historical CR missing both that
+digest and its original protected authority binding may report already verified
+Review/Check effects, but cannot create a missing Check using newer Decisions.
+
+Acquire Check credentials and prepare its request before reserving a possible send.
+A proven pre-POST failure or definite rejection atomically refunds exactly
+that single-use send grant, preserving any concurrent sender; an already-sent request with an unknown outcome
+retains its reservation and must reconcile against GitHub. Diagnostics identify
+the failure phase without another durable event history. A local lock alone
+does not replace the persistent decisive-POST reservation.
+
+The auxiliary Check Run has a proportionate recovery policy. Bounded complete
+paginated `filter=all` readback verifies the exact operation `external_id`, SHA,
+configured App ID/slug, name, status and conclusion. Reuse an existing valid
+check. When adequate readback finds none, allow at most the original possible
+send and one identical recovery send, each reserved by the atomic budget. A late
+first response may leave two distinct-ID identical checks: report that visible
+duplicate warning and treat them as the same logical auxiliary effect. More
+than two, conflicting properties, incomplete readback or exhausted send budget
+fail safely with a concrete operator action. Check repair never republishes
+the Review or typed authority record. Native publication is not a complete
+review/check result while required check evidence remains unverified.
+
+Partial legacy/v3 Step projection resumes the original native identity and
+requires the reserved initial PR title or its canonical projection. Task
+Request/CR Step labels and the bounded existing PR title remain deterministic
+projections, preserving unrelated labels. Missing historical anchors retain
+the existing bounded migration boundary. Recovery changes no original body or
+authority, allocates no Step and launches no execution. Reviewer/Writer
+identity separation, App authorization and exact-head/current-authority gates
+remain binding. An unresolved operation holds only its own operation identity,
+not independent Tasks, PRs or repositories.
+
+The staged synthetic installation check is:
+
+```sh
+python3 scripts/qualify-reviewer-publication.py
+```
+
+It builds the actual service main with the explicit `synthetic-github` feature,
+stages disposable configuration, fake App RSA material and a test mTLS chain,
+and exercises publication, two-process concurrency and crash/restart against
+loopback GitHub. That feature accepts only an explicit loopback fixture URL,
+emits `SYNTHETIC_GITHUB_ONLY`, and is not a deployment artifact. Default builds
+do not read the fixture override. Use `--binary` and `--default-binary` to reuse
+separately built artifacts. This qualifies the staged installation-to-operation
+path; it does not qualify root/Ansible/systemd, real GitHub/App permissions,
+shared TEST or PROD. The ordinary candidate/qualification checks remain required.
+
 Each source response is limited to 256 KiB and five seconds. Comments, reviews
 and branch/base-filtered PR artifacts share a complete collection reader. It
 starts with 100 records per page and reduces an oversized page to 50, 25, 5,

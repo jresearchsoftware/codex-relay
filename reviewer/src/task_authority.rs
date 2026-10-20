@@ -1742,8 +1742,10 @@ async fn bind_projection(
         return Ok(());
     };
     let pr = app.github.get_pr(&app.repository, pr_number).await?;
-    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
-    let previous = store
+    let previous = app
+        .store
+        .lock()
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
         .step_binding(operation)
         .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     let identity = json!({"charter":record["charter_sha256"],"pr_body_sha256":hash(pr["body"].as_str().ok_or("AUTHORITY_PR_BINDING_MISMATCH")?),
@@ -1756,16 +1758,34 @@ async fn bind_projection(
         {
             return Err("AUTHORITY_CHANGED");
         }
-    } else if prepare {
+    } else {
+        // With no original anchor, only an already complete deterministic
+        // projection can be adopted. A partial title/label transition cannot
+        // reconstruct its original initial title or authorize another write.
+        if !prepare {
+            let issue = app
+                .github
+                .get_issue(&app.repository, record["task"].as_u64().unwrap())
+                .await?;
+            let step = record["step"]
+                .as_u64()
+                .ok_or("AUTHORITY_PROJECTION_BINDING_MISSING")?;
+            if crate::step_sync::current_step(&pr)? != step
+                || crate::step_sync::current_step(&issue)? != step
+                || pr["title"] != projection_title(record)
+            {
+                return Err("AUTHORITY_PROJECTION_BINDING_MISSING");
+            }
+        }
         let initial_title = pr["title"].as_str().ok_or("STEP_DISPLAY_MISMATCH")?;
-        store
+        app.store
+            .lock()
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?
             .bind_step(
                 operation,
                 &json!({"identity":identity,"initial_title":initial_title}).to_string(),
             )
             .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-    } else {
-        return Err("AUTHORITY_PROJECTION_BINDING_MISSING");
     }
     Ok(())
 }
@@ -1862,9 +1882,9 @@ async fn verify_publication_authority(
     record: &Value,
     operation: &str,
     prepare: bool,
-) -> Result<(), &'static str> {
+) -> Result<Value, &'static str> {
     if record["schema_version"] != "4.0" || record["kind"] != "change-request" {
-        return Ok(());
+        return Ok(Value::Null);
     }
     // New v4 publication never infers an old execution chain. A recorded
     // publication binding retains its original compatibility policy on recovery.
@@ -1888,6 +1908,20 @@ async fn verify_publication_authority(
     .await?
     .0;
     let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    if let Some(body) = store
+        .publication_body(operation)
+        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+    {
+        let prefix = "<!-- jresearchsoftware-reviewer-task-binding:v1 authority_sha256=";
+        if body.contains(prefix)
+            && !body.ends_with(&format!(
+                "{prefix}{} -->",
+                authority["sha256"].as_str().ok_or("AUTHORITY_CHANGED")?
+            ))
+        {
+            return Err("AUTHORITY_CHANGED");
+        }
+    }
     if let Some(binding) = store
         .authority_binding(operation)
         .map_err(|_| "INTERNAL_RELAY_ERROR")?
@@ -1903,7 +1937,7 @@ async fn verify_publication_authority(
     }
     // Pre-upgrade reservations retain their original source/body checks. Never
     // fabricate an earlier effective-authority observation for a historical row.
-    Ok(())
+    Ok(authority)
 }
 
 async fn published_native(
@@ -1990,16 +2024,6 @@ async fn published_native(
     let url = reread["html_url"]
         .as_str()
         .ok_or("AUTHORITY_PUBLICATION_VERIFICATION_FAILED")?;
-    app.store
-        .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        .authority_published(
-            operation,
-            reference["id"].as_i64().unwrap(),
-            url,
-            &app.policy.actor,
-        )
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     if let Err(code) = project(app, record, &reference, operation).await {
         return Ok(
             json!({"content":[{"type":"text","text":"AUTHORITY_PUBLISHED_METADATA_FAILED"}],"isError":true,
@@ -2007,97 +2031,43 @@ async fn published_native(
         );
     }
     let mut check_reference = Value::Null;
+    let mut check_warnings = Vec::new();
     if record["kind"] == "change-request" {
         let sha = record["reviewed_head_sha"].as_str().unwrap();
-        let check = match app
-            .github
-            .find_check(&app.repository, sha, operation)
-            .await?
-        {
-            Some(check) => check,
-            None => {
-                let reserved = app
-                    .store
-                    .lock()
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                    .reserve_authority_check(operation)
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-                if !reserved {
-                    return Err("CHECK_PUBLICATION_UNCERTAIN");
-                }
-                app.github.create_check(&app.repository, &json!({
-                    "name":app.policy.check_name,"head_sha":sha,"external_id":operation,
-                    "status":"completed","conclusion":"failure",
-                    "output":{"title":"Changes requested","summary":"Typed GitHub-native PR Change Request published for this exact head."}
-                })).await?
-            }
-        };
-        if check["name"] != app.policy.check_name
-            || check["head_sha"] != sha
-            || check["app"]["slug"] != app.policy.slug
-            || check["app"]["id"]
-                .as_u64()
-                .map(|id| id.to_string())
-                .as_deref()
-                != Some(app.policy.app_id.as_str())
-            || check["external_id"] != operation
-            || check["status"] != "completed"
-            || check["conclusion"] != "failure"
-            || check["id"].as_i64().is_none_or(|id| id <= 0)
-            || !check["html_url"].is_string()
-        {
-            return Err("CHECK_VERIFICATION_FAILED");
-        }
-        let retained = app
+        let payload = json!({"name":app.policy.check_name,"head_sha":sha,"external_id":operation,
+            "status":"completed","conclusion":"failure",
+            "output":{"title":"Changes requested","summary":"Typed GitHub-native PR Change Request published for this exact head."}});
+        let original_binding = app
             .store
             .lock()
             .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .known(operation)
+            .authority_binding(operation)
             .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-        if retained
-            .and_then(|row| row.check_id)
-            .is_some_and(|id| check["id"].as_i64() != Some(id))
-        {
-            return Err("CHECK_VERIFICATION_FAILED");
-        }
-        let observed = app
-            .github
-            .find_check(&app.repository, sha, operation)
-            .await?
-            .ok_or("CHECK_PUBLICATION_UNCERTAIN")?;
-        if [
-            "id",
-            "html_url",
-            "name",
-            "head_sha",
-            "external_id",
-            "status",
-            "conclusion",
-            "app",
-        ]
-        .iter()
-        .any(|key| observed[*key] != check[*key])
-        {
-            return Err("CHECK_VERIFICATION_FAILED");
-        }
-        app.store
-            .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .authority_check_published(
-                operation,
-                check["id"].as_i64().unwrap(),
-                check["html_url"].as_str().unwrap(),
-            )
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let allow_send = record["schema_version"] != "4.0"
+            || original_binding.is_some()
+            || body.contains("<!-- jresearchsoftware-reviewer-task-binding:v1 authority_sha256=");
+        let evidence =
+            match crate::publication::ensure_check(app, operation, &payload, allow_send).await {
+                Ok(evidence) => evidence,
+                Err(failure) => {
+                    let mut result = failure.result(operation);
+                    result["structuredContent"]["reference"] = reference;
+                    result["structuredContent"]["native_url"] = json!(url);
+                    return Ok(result);
+                }
+            };
+        check_warnings = evidence.warnings;
+        let check = evidence.check;
         check_reference = json!({"id":check["id"],"url":check["html_url"],"head_sha":sha});
     }
     let fresh = load(app, record).await?;
     let provenance = validate_live(app, &fresh, record, Some(&reference)).await?;
     verify_publication_authority(app, &fresh, record, operation, false).await?;
-    let (mut closure, warnings) = {
+    let (mut closure, mut warnings) = {
         let (closure, warnings) = closure_policy(fresh.issue["body"].as_str().unwrap());
         (closure.to_string(), warnings)
     };
+    warnings.extend(check_warnings);
     let mut acceptance = Value::Null;
     if record["schema_version"] == "4.0"
         && matches!(
@@ -2132,11 +2102,6 @@ async fn published_native(
             .await?
             .2;
     }
-    app.store
-        .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        .authority_complete(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
     Ok(
         json!({"content":[{"type":"text","text":outcome}],"structuredContent":{
         "reference":reference,"native_url":url,"actor":normalized_author(&reread["user"]),"record":record,
@@ -2169,23 +2134,98 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         render_legacy(record)
     );
     let future = async {
-        let (known, body) = {
-            let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
-            let known = store
-                .known(&operation)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-            let body = store
-                .publication_body(&operation)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                .unwrap_or_else(|| {
-                    if known.is_some() {
-                        legacy_body.clone()
-                    } else {
-                        current_body.clone()
-                    }
-                });
-            (known, body)
+        let known = app
+            .store
+            .lock()
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .known(&operation)
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let state = load(app, record).await?;
+        let original_authority =
+            verify_publication_authority(app, &state, record, &operation, false).await?;
+        let unmarked_body = current_body.clone();
+        let mut current_body = current_body.clone();
+        if !original_authority.is_null() {
+            current_body.push_str(&format!(
+                "\n<!-- jresearchsoftware-reviewer-task-binding:v1 authority_sha256={} -->",
+                original_authority["sha256"]
+                    .as_str()
+                    .ok_or("AUTHORITY_CHANGED")?
+            ));
+        }
+        let retained = app
+            .store
+            .lock()
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .publication_body(&operation)
+            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let body = retained.unwrap_or_else(|| {
+            if known.is_some() {
+                legacy_body.clone()
+            } else {
+                current_body.clone()
+            }
+        });
+        // Always observe GitHub first: stale or absent local receipts cannot
+        // negate an independently verified publication, including old schemas.
+        let natives = if record["kind"] == "change-request" {
+            app.github
+                .authority_reviews(
+                    &app.repository,
+                    record["parent"]["number"].as_u64().unwrap(),
+                )
+                .await?
+        } else if record["parent"]["kind"] == "pull_request" {
+            app.github
+                .authority_comments(
+                    &app.repository,
+                    record["parent"]["number"].as_u64().unwrap(),
+                )
+                .await?
+        } else {
+            state.comments.clone()
         };
+        let marker = format!("jresearchsoftware-task-authority:v1 operation={operation}");
+        let matches: Vec<_> = natives
+            .iter()
+            .filter(|native| {
+                native["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains(&marker))
+            })
+            .collect();
+        if matches.len() > 1 {
+            return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
+        }
+        if let Some(native) = matches.first() {
+            let original = native["body"]
+                .as_str()
+                .ok_or("AUTHORITY_PUBLICATION_VERIFICATION_FAILED")?;
+            if original != body
+                && !(known.is_none() && (original == legacy_body || original == unmarked_body))
+            {
+                return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
+            }
+            let (_, frozen) = app
+                .store
+                .lock()
+                .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                .recover_publication(&operation, original, &legacy_body)
+                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            if frozen != original {
+                return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
+            }
+            return published_native(
+                app,
+                &state,
+                record,
+                &operation,
+                original,
+                (*native).clone(),
+                "AUTHORITY_RECOVERED",
+            )
+            .await;
+        }
         if known.is_none()
             && record["schema_version"] == "3.0"
             && matches!(
@@ -2195,100 +2235,33 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         {
             return Err("CURRENT_PROTOCOL_REQUIRED");
         }
-        let state = load(app, record).await?;
-        if let Some(known) = &known {
-            if known
-                .actor_login
-                .as_deref()
-                .is_some_and(|actor| actor != app.policy.actor)
-            {
-                return Err("AUTHORITY_ACTOR_UNVERIFIED");
-            }
-            if let Some(id) = known.native_id {
-                let kind = if record["kind"] == "change-request" {
-                    "review"
-                } else {
-                    "issue-comment"
-                };
-                let native = app
-                    .github
-                    .authority_source(
-                        &app.repository,
-                        kind,
-                        record["parent"]["number"].as_u64().unwrap(),
-                        id as u64,
-                    )
-                    .await?;
-                return published_native(
-                    app,
-                    &state,
-                    record,
-                    &operation,
-                    &body,
-                    native,
-                    if known.status == "PUBLISHED" {
-                        "DUPLICATE_SUPPRESSED"
-                    } else {
-                        "AUTHORITY_RECOVERED"
-                    },
-                )
-                .await;
-            }
-            if known.status == "RESERVED" {
-                let natives = if record["kind"] == "change-request" {
-                    app.github
-                        .authority_reviews(
-                            &app.repository,
-                            record["parent"]["number"].as_u64().unwrap(),
-                        )
-                        .await?
-                } else if record["parent"]["kind"] == "pull_request" {
-                    app.github
-                        .authority_comments(
-                            &app.repository,
-                            record["parent"]["number"].as_u64().unwrap(),
-                        )
-                        .await?
-                } else {
-                    state.comments.clone()
-                };
-                let marker = format!("jresearchsoftware-task-authority:v1 operation={operation}");
-                let matches: Vec<_> = natives
-                    .iter()
-                    .filter(|native| {
-                        native["body"]
-                            .as_str()
-                            .is_some_and(|body| body.contains(&marker))
-                    })
-                    .collect();
-                if matches.len() != 1 {
-                    return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
-                }
-                return published_native(
-                    app,
-                    &state,
-                    record,
-                    &operation,
-                    &body,
-                    matches[0].clone(),
-                    "AUTHORITY_RECOVERED",
-                )
-                .await;
-            }
-        }
         validate_live(app, &state, record, None).await?;
         let (reserved, body) = app
             .store
             .lock()
             .map_err(|_| "INTERNAL_RELAY_ERROR")?
-            .reserve_publication(&operation, &hash(&body), &current_body, &legacy_body)
+            .reserve_publication(&operation, &current_body, &legacy_body)
             .map_err(|_| "INTERNAL_RELAY_ERROR")?;
         if !reserved {
             return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
         }
-        verify_publication_authority(app, &state, record, &operation, true).await?;
-        // Reservation precedes the final source re-read and every non-idempotent POST.
-        let final_state = match load(app, record).await {
+        let before_post = async {
+            verify_publication_authority(app, &state, record, &operation, true).await?;
+            let final_state = load(app, record).await?;
+            validate_live(app, &final_state, record, None).await?;
+            verify_publication_authority(app, &final_state, record, &operation, false).await?;
+            if record["schema_version"] == "3.0"
+                && matches!(
+                    record["kind"].as_str(),
+                    Some("task-request" | "change-request")
+                )
+            {
+                bind_projection(app, record, &operation, true).await?;
+            }
+            Ok::<_, &'static str>(final_state)
+        }
+        .await;
+        let final_state = match before_post {
             Ok(state) => state,
             Err(code) => {
                 app.store
@@ -2299,51 +2272,49 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 return Err(code);
             }
         };
-        if let Err(code) = validate_live(app, &final_state, record, None).await {
-            app.store
-                .lock()
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                .retryable_failure(&operation)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-            return Err(code);
-        }
-        if record["schema_version"] == "3.0"
-            && matches!(
-                record["kind"].as_str(),
-                Some("task-request" | "change-request")
-            )
-        {
-            if let Err(code) = bind_projection(app, record, &operation, true).await {
-                app.store
-                    .lock()
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                    .retryable_failure(&operation)
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-                return Err(code);
-            }
-        }
-        let native = if record["kind"] == "change-request" {
-            app.github.create_review(&app.repository, record["parent"]["number"].as_i64().unwrap(),
-                &json!({"commit_id":record["reviewed_head_sha"],"body":body,"event":"REQUEST_CHANGES"})).await?
+        let prepared = if record["kind"] == "change-request" {
+            app.github.prepare_review(&app.repository, record["parent"]["number"].as_i64().unwrap(),
+                &json!({"commit_id":record["reviewed_head_sha"],"body":body,"event":"REQUEST_CHANGES"})).await
         } else {
             app.github
-                .create_authority_comment(
+                .prepare_authority_comment(
                     &app.repository,
                     record["parent"]["number"].as_u64().unwrap(),
                     &body,
                 )
-                .await?
+                .await
         };
-        published_native(
-            app,
-            &final_state,
-            record,
-            &operation,
-            &body,
-            native,
-            "AUTHORITY_PUBLISHED",
-        )
-        .await
+        let mutation = match prepared {
+            Ok(prepared) => app.github.send_mutation(prepared).await,
+            Err(failure) => Err(failure),
+        };
+        match mutation {
+            Ok(native) => {
+                published_native(
+                    app,
+                    &final_state,
+                    record,
+                    &operation,
+                    &body,
+                    native,
+                    "AUTHORITY_PUBLISHED",
+                )
+                .await
+            }
+            Err(failure) => {
+                if failure.safe_to_retry {
+                    app.store
+                        .lock()
+                        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                        .retryable_failure(&operation)
+                        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                }
+                let mut result = error(failure.code);
+                result["structuredContent"] = json!({"operation":operation,"diagnostics":failure.diagnostics(),
+                    "operator_action":"Repeat the identical input to reconcile the original publication; an uncertain decisive POST is never repeated."});
+                Ok(result)
+            }
+        }
     };
     let result: Result<Value, &'static str> =
         tokio::time::timeout(std::time::Duration::from_secs(60), future)

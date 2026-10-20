@@ -336,8 +336,7 @@ async fn verified_state(
     if review["id"].as_i64() != Some(review_id)
         || review["commit_id"] != args["expected_head_sha"]
         || review["state"] != "CHANGES_REQUESTED"
-        || review["body"].as_str()
-            != Some(native_review_body(&app.policy.validation_names, args, operation).as_str())
+        || review["body"].as_str() != Some(retained_review_body(app, args, operation).as_str())
     {
         return Err("AUTHORITY_CHANGED");
     }

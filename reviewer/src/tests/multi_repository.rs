@@ -313,12 +313,16 @@ async fn review_evidence_publication_and_recovery_use_one_service_without_pr_or_
             assert!(states[1].requests.lock().unwrap().is_empty());
         }
         let duplicate = call(&http, &url, "submit_pr_review", &approval).await;
-        assert_eq!(duplicate["content"][0]["text"], "DUPLICATE_SUPPRESSED");
+        assert_eq!(
+            duplicate["content"][0]["text"],
+            "AUTHORITY_APPROVAL_STALE_REQUEST"
+        );
+        assert_eq!(states[index].reviews.lock().unwrap().len(), 2);
     }
     assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 4);
     let store = store.lock().unwrap();
     for id in &ids {
-        assert_eq!(store.known(id).unwrap().unwrap().status, "PUBLISHED");
+        assert_eq!(store.known(id).unwrap().unwrap().status, "RESERVED");
     }
     for id in [&ids[1], &ids[3]] {
         assert!(store.step_binding(id).unwrap().is_some());
@@ -335,7 +339,7 @@ async fn typed_authority_retains_repository_identity_in_the_shared_journal_and_n
             "parent":{"kind":"issue","number":24},"charter_sha256":crate::task_authority::hash(CHARTER),
             "purpose":"Clarify the bounded validation","amendments":{"validation":["diff-check"]},"supersedes":null,"context":[]});
         let arguments = json!({"repository":repository,"record":record});
-        for expected in ["AUTHORITY_PUBLISHED", "DUPLICATE_SUPPRESSED"] {
+        for expected in ["AUTHORITY_PUBLISHED", "AUTHORITY_RECOVERED"] {
             let result = call(&http, &url, "publish_task_authority", &arguments).await;
             assert_eq!(
                 result["content"][0]["text"], expected,
@@ -365,8 +369,7 @@ async fn typed_authority_retains_repository_identity_in_the_shared_journal_and_n
     assert_ne!(ids[0], ids[1]);
     for id in ids {
         let operation = store.lock().unwrap().known(&id).unwrap().unwrap();
-        assert_eq!(operation.status, "PUBLISHED");
-        assert_eq!(operation.native_id, Some(1000));
+        assert_eq!(operation.status, "RESERVED");
     }
     assert_targeted_requests(&states);
 }

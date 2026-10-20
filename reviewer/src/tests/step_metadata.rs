@@ -65,7 +65,7 @@ async fn partial_metadata_recovery_preserves_native_review_and_step_at_every_sta
         let recovered = publish(&http, &url, &args).await;
         assert_eq!(
             recovered.pointer("/result/content/0/text"),
-            Some(&json!("CHECK_RECOVERED")),
+            Some(&json!("DUPLICATE_SUPPRESSED")),
             "{stage}: {recovered}"
         );
         assert_eq!(state.reviews.lock().unwrap().len(), 1);
@@ -296,18 +296,8 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
     let operation = operation_id(&[], &args);
     state.reviews.lock().unwrap().push(json!({"commit_id":HEAD,"event":"REQUEST_CHANGES","body":native_review_body(&[], &args, &operation)}));
     let store = store::Store::open(":memory:").unwrap();
-    store.reserve(&operation, "digest").unwrap();
-    store
-        .review_published(
-            &operation,
-            1,
-            "https://example/reviews/1",
-            "example-reviewer[bot]",
-        )
-        .unwrap();
-    store
-        .published(&operation, 2, "https://example/check/2")
-        .unwrap();
+    let body = native_review_body(&[], &args, &operation);
+    store.reserve_publication(&operation, &body, &body).unwrap();
     let app = App {
         policy: test_policy(),
         repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
@@ -369,7 +359,8 @@ async fn historical_anchor_without_exact_title_only_upgrades_complete_unchanged_
             "body":native_review_body(&[], &args, &operation)
         }));
         let store = store::Store::open(":memory:").unwrap();
-        store.reserve(&operation, "digest").unwrap();
+        let body = native_review_body(&[], &args, &operation);
+        store.reserve_publication(&operation, &body, &body).unwrap();
         let app = App {
             policy: test_policy(),
             repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
