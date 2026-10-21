@@ -48,7 +48,6 @@ def assemble():
     skill = inventory(ROOT / "packages/codex-relay/skill")
     if "SKILL.md" not in skill:
         raise ValueError("Missing canonical native Skill source")
-    skill["LICENSE"] = (ROOT / "LICENSE").read_bytes()
     source_files = {"packages/codex-relay/skill/" + key: digest(value) for key, value in skill.items()}
     for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json",
                  "deploy/workflows/contract.json", "toolchain/vibevm.json"):

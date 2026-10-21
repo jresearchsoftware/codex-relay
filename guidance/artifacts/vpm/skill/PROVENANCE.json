@@ -61,7 +61,7 @@
     "packages/codex-relay/skill/references/examples.md": "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171",
     "packages/codex-relay/skill/references/installation.md": "4d781d4e97d092440e0d7a5a86b116a89a14f9e440871c43671e5eb6045ca7d4",
     "packages/codex-relay/skill/references/workflow.md": "ebb35ad082e2923c558ef8c3195c8646cc096b1631546ac9de371d41fd0a159b",
-    "scripts/build-relay-guidance.py": "b9a7edf04f89468bee0382735aac393330cb6b0a0d21d6fca144b8d00e3a1a66",
+    "scripts/build-relay-guidance.py": "c3bbd9fcdedb4f31f6f0a52f51ceb9b0b950cb20565be2bef1c1d29d2c42cb7e",
     "toolchain/vibevm.json": "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
   },
   "version": "2.0.1",

@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:f9a3473c1bb813fcc2d9783a1fdaf7537ee39f69e4d1a55259c4733e873e4e76"
+source_hash = "sha256:9a39f5460c75947bc7c814786d170c2d3180380843c6bd2839e19e20102e53bc"
 spec_format = "mixed"
 
 [[file]]
@@ -20,7 +20,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "f20a6629d40ca5f871707fda18ac339ccafb8c731492fe60e63ae3444ac20790"
+sha256 = "79540a3e80d220da8d96ab92226979e094f55e5807b642a4ce5bc9d415763f95"
 
 [[file]]
 path = "skill/SKILL.md"
