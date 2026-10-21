@@ -563,6 +563,13 @@ an active implementation/remediation PR Draft. Blocked, incomplete, failed and
 unconfirmed execution stays Draft, including a domain `BLOCKED` Outcome and a
 controller/journal failure after a successful worker return.
 
+Immediately after its verified non-force progress push, Writer tolerates PR
+list/detail head propagation only between that exact predecessor and published
+candidate, for the already bound PR. Branch, repository, base, linkage and
+Step/title checks remain unchanged. Other reads retain strict observation
+agreement, and successful Outcome/Ready handoff still requires the exact
+published head. A stale PR read never authorizes another push or a new head.
+
 Successful `finish` publishes and reads back one successful exact-candidate
 Outcome while the PR is still Draft. `complete-handoff` then reads the protected
 runner journal: returned successful execution, containment, complete collection,

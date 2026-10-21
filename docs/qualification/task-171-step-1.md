@@ -85,9 +85,35 @@ unreadable content still blocks complete observation. The separate native root
 `.agents` read-only boundary is unchanged. Original consumer recovery remains
 independently owner-gated and is not replayed by this Task.
 
-The later owner-requested shared default-profile correction is governed by the
-[Task Decision](https://github.com/jresearchsoftware/codex-relay/issues/171#issuecomment-6316160265).
-It targets future omitted-profile admissions in all configured repositories;
-the current Step retains its admitted profile. PROD configuration writes and
-Apply require separate explicit authorization and installed readback. Neither
-this source change nor TEST proof completes that protected correction.
+The latest [Task Decision](https://github.com/jresearchsoftware/codex-relay/issues/171#issuecomment-6322918653)
+limits the incidental default-profile proposal to the two existing configuration
+string replacements (`gpt-6.1-sol` and `medium`). The owner controls later Apply;
+profile transition implementation and installed PROD readback are outside this
+execution. This does not change an immutable admitted profile.
+
+## Step 2 continuation qualification
+
+Step 2, `run-39648905968`, starts from `c4963906a9ebc6017e8bb19140e0a4efaabc0b66`
+on the same PR. Retained TEST run `39607717441` has a verified Writer published
+head `60afec689134eede1b98a72827cf7714f20ee6b0`, no pending publication intent,
+and a contained successful worker; its runner journal stopped before recording
+progress. The historical generic `PR_AUTHORITY_CHANGED` diagnostic does not
+retain the original list/detail operands, so their exact historical values
+cannot be recovered from that record.
+
+The post-push PR lookup required identical heads from independently propagating
+GitHub list and detail responses. A real-Git broker regression reproduces the
+failure with either response lagging at the exact predecessor after Writer's
+single verified push. Both tests fail against the starting source and pass
+with the bounded transition allowance. Foreign heads, base/identity/linkage
+changes and Step/title disagreement remain blocked; Outcome and Ready retain
+their exact published-head checks. The canonical Outcome records the installed
+candidate and new genuine automatic TEST admission/publication evidence.
+
+The previous executor also treated the disposable fixture's cross-mount rename
+failure as requiring a new owner layout permission. Existing TEST authority
+already allowed changing its owned fixture staging; no product sandbox change
+was required. The subsequent stop on an undiagnosed post-push failure left safe
+source diagnosis unfinished. These are execution-policy misapplications, not a
+missing shared protocol or a demonstrated need for new governance machinery.
+Historical attempts and Outcomes remain unchanged.

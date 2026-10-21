@@ -27,6 +27,26 @@ test('unique Issue PR discovery returns fresh detail including native mergeabili
   assert.equal(pr.mergeable, true);
 });
 
+test('only a verified Writer transition permits known predecessor/candidate propagation', async () => {
+  const transition = { previous: 'a'.repeat(40), head: 'c'.repeat(40) };
+  const api = nativeApi(pr => { pr.head.sha = transition.head; });
+  await assert.rejects(findCurrentIssuePullRequest(api, envelope, 43), { code: 'PR_AUTHORITY_CHANGED' });
+  assert.equal((await findCurrentIssuePullRequest(api, envelope, 43, transition)).head.sha, transition.head);
+  await assert.rejects(findCurrentIssuePullRequest(api, envelope, null, transition), { code: 'PR_AUTHORITY_CHANGED' });
+  await assert.rejects(findCurrentIssuePullRequest(api, envelope, 43,
+    { previous: 'b'.repeat(40), head: transition.head }), { code: 'PR_AUTHORITY_CHANGED' });
+});
+
+for (const [name, mutate, code] of [
+  ['foreign head', pr => { pr.head.sha = 'd'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
+  ['base movement', pr => { pr.head.sha = 'c'.repeat(40); pr.base.sha = 'd'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
+  ['foreign linkage', pr => { pr.head.sha = 'c'.repeat(40); pr.body = 'Related to #99'; }, 'PR_AUTHORITY_CHANGED'],
+  ['Step movement', pr => { pr.head.sha = 'c'.repeat(40); pr.labels = [{ name: 'step-2' }]; }, 'STEP_LABEL_MISMATCH']
+]) test(`Writer transition still rejects ${name}`, async () => {
+  await assert.rejects(findCurrentIssuePullRequest(nativeApi(mutate), envelope, 43,
+    { previous: 'a'.repeat(40), head: 'c'.repeat(40) }), { code });
+});
+
 for (const [name, mutate, code] of [
   ['head', pr => { pr.head.sha = 'c'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
   ['branch', pr => { pr.head.ref = `${CONSUMER.taskBranchPrefix}other`; }, 'PR_AUTHORITY_CHANGED'],

@@ -11,6 +11,36 @@ import { CONSUMER } from '../../consumer/consumer.mjs';
 const preflight = f => ({ operation: 'preflight', runId: 99, attemptId: f.envelope.attemptId });
 const publication = (f, progress) => ({ operation: 'publish-progress', runId: 99,
   attemptId: f.envelope.attemptId, bundle: progress.bundle });
+
+for (const staleSurface of ['list', 'detail']) {
+  test(`Writer's own push survives a lagging PR ${staleSurface} response without another push`, async t => {
+    const f = await fixture(t, { continuation: true });
+    const list = f.api.list.bind(f.api); const get = f.api.get.bind(f.api);
+    let lagged = false; let listing = false;
+    const lag = pr => { lagged = true; pr.head.sha = f.envelope.startHead; return pr; };
+    f.api.list = async path => {
+      let rows;
+      listing = true;
+      try { rows = await list(path); } finally { listing = false; }
+      if (staleSurface === 'list' && path.startsWith('/pulls?') && f.pushes() === 1 && !lagged)
+        return rows.map(lag);
+      return rows;
+    };
+    f.api.get = async path => {
+      const pr = await get(path);
+      return staleSurface === 'detail' && !listing && path === '/pulls/43' && f.pushes() === 1 && !lagged ? lag(pr) : pr;
+    };
+    const result = await runAttempt({ ...f, execute: async () => {
+      await f.commit();
+      return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
+    } });
+    assert.equal(lagged, true);
+    assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(f.pushes(), 1);
+    assert.equal(f.comments.length, 1);
+    assert.equal((await f.api.get('/pulls/43')).draft, false);
+  });
+}
 async function candidate(f) {
   await f.prepare(f.envelope); await f.commit(); return f.collect(f.envelope);
 }
