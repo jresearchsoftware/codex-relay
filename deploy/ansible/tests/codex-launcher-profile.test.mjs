@@ -57,10 +57,18 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   const template = await readFile(new URL('../roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2', import.meta.url), 'utf8');
   const launcher = join(root, 'launcher.mjs');
   await writeFile(join(root, 'relay-codex-isolation.mjs'), await readFile(new URL('../roles/relay_codex_runtime/files/relay-codex-isolation.mjs', import.meta.url)));
-  const singleton = template.replace(/{% if relay_github_repositories is defined %}[\s\S]*?{% endif %}/g, '');
-  await writeFile(launcher, singleton.replace(/{{\s*(\w+)(\s*\|\s*to_json)?\s*}}/g, (_, key, json) => {
+  // This profile fixture retains the legacy single-repository configuration
+  // without an explicit launch group. Native group enforcement is covered by
+  // test_codex_launch_group.py using the actual Ansible renderer.
+  const singleton = template.replace(/{% if relay_github_repositories is defined %}[\s\S]*?{% endif %}/g, '')
+    .replace(/{% if relay_execution_slots is defined or relay_codex_launch_work_group is defined %}[\s\S]*?{% else %}([\s\S]*?){% endif %}/g,
+      (_, legacy) => legacy);
+  assert.match(singleton, /const WORK_GROUP = null;/);
+  const rendered = singleton.replace(/{{\s*(\w+)(\s*\|\s*to_json)?\s*}}/g, (_, key, json) => {
     assert.ok(variables[key], key); return json ? JSON.stringify(variables[key]) : variables[key];
-  }));
+  });
+  assert.doesNotMatch(rendered, /{%|{{/, 'Fixture rendering must resolve every template directive');
+  await writeFile(launcher, rendered);
   let invocation = 0;
   return { cwd, input, schema, sandbox, token, record, rust,
     run: async (model, effort, remediation = false, taskRoot = cwd) => {
