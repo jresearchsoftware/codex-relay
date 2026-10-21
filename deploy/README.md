@@ -271,6 +271,18 @@ The array is bounded to 32 entries. `environment.instance` is required, and
 every slot inherits the existing general runner registration scope/group and
 consumer labels. The production runner remains outside this pool.
 
+Slot workers launch through `sudo -u <runtimeUser> -g <workGroup>`; the fixed
+sudoers permits only the configured runtime users and that slot's work group.
+The launcher verifies the actual primary group before reading credentials or
+starting Codex. Account primary groups, collector identity and private modes
+remain unchanged. This covers public trees created outside setgid checkout
+parents and then renamed into them. A serial configuration may select this
+behavior with `consumer.workGroup`, equal to `environment.codexWorkGroup`.
+Old serial configurations omitting it retain the old launch ABI; explicit
+private modes, imported foreign ownership or a tool's explicit group change
+still require bounded source/access reconciliation. Installed source and real
+cross-UID qualification remain necessary; TEST evidence does not install PROD.
+
 The source installer prepares private slot roots, runtime identities, fixed
 sudo/dispatch/diagnostic/launcher bindings and runner services. It preserves
 registration and activity; it does not mint registration permission or activate

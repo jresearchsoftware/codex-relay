@@ -1,6 +1,6 @@
 import { lstat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
+import { buildCodexProcessSpec } from './codex-process.mjs';
 import { createBoundedUtf8Capture } from '../../controller/src/utf8-capture.mjs';
 
 export async function captureSandboxIdentity(sandboxRoot) {
@@ -17,8 +17,9 @@ export async function cleanupCodexSandbox({ cwd, sandboxIdentity, spawnImpl = sp
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 40000) throw new Error('Invalid cleanup timeout');
   let child;
-  try { child = spawnImpl('/usr/bin/sudo', ['-n', '-u', CONSUMER.runtimeUser, CONSUMER.paths.launcher,
-    'cleanup', '--cwd', cwd, '--sandbox-identity', `${sandboxIdentity.device}:${sandboxIdentity.inode}`], {
+  const spec = buildCodexProcessSpec({ args: ['cleanup', '--cwd', cwd,
+    '--sandbox-identity', `${sandboxIdentity.device}:${sandboxIdentity.inode}`] });
+  try { child = spawnImpl(spec.command, spec.args, {
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true
   }); } catch (error) { error.cleanupContainment = 'not_required'; throw error; }
   const stdout = createBoundedUtf8Capture(4096);

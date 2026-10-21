@@ -23,7 +23,7 @@ const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v)
 function freeze(v) { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; }
 
 export function validateConsumer(c) {
-  const { validationNames, executionSlots, generalRunnerPool, repositories, repositoryRuntimeUsers, ...required } = c ?? {};
+  const { validationNames, executionSlots, generalRunnerPool, repositories, repositoryRuntimeUsers, workGroup, ...required } = c ?? {};
   const multiple = Object.hasOwn(c ?? {}, 'repositories');
   if (!keys(required, ['version', ...(multiple ? [] : ['repository']), 'owner', 'baseBranch', 'taskBranchPrefix', 'routingWorkflow', 'recoveryWorkflow', 'validationWorkflow',
     'writerApp', 'reviewerApp', 'writerIdentity', 'remediationIdentity', 'defaultProfile', 'paths', 'runtimeUser'])) reject();
@@ -31,6 +31,7 @@ export function validateConsumer(c) {
     || repositories.some(value => !repositoryName(value))
     || new Set(repositories.map(value => value.toLowerCase())).size !== repositories.length)) reject();
   if (!multiple && !repositoryName(c.repository)) reject();
+  if (Object.hasOwn(c, 'workGroup') && !unixIdentity(workGroup)) reject();
   if (Object.hasOwn(c, 'repositoryRuntimeUsers') && (!multiple || !repositoryRuntimeUsers
     || typeof repositoryRuntimeUsers !== 'object' || Array.isArray(repositoryRuntimeUsers)
     || Object.entries(repositoryRuntimeUsers).some(([repository, user]) => !repositories.includes(repository) || !unixIdentity(user)))) reject();
@@ -87,7 +88,9 @@ export function validateConsumer(c) {
     const runnerUsers = new Set(executionSlots.map(slot => slot.runnerUser));
     if (executionSlots.some(slot => runnerUsers.has(slot.runtimeUser))) reject();
     const primary = executionSlots.find(slot => slot.id === 'primary');
-    if (!primary || primary.runtimeUser !== c.runtimeUser || EXECUTION_PATH_NAMES.some(name => primary.paths[name] !== c.paths[name])) reject();
+    if (!primary || primary.runtimeUser !== c.runtimeUser
+      || (workGroup !== undefined && primary.workGroup !== workGroup)
+      || EXECUTION_PATH_NAMES.some(name => primary.paths[name] !== c.paths[name])) reject();
     for (let i = 0; i < executionSlots.length; i++) {
       const slotPaths = Object.values(executionSlots[i].paths);
       for (const protectedName of ['writerHelper', 'credentialEnv', 'credentialKeyFile', 'claimRoot']) {
@@ -187,7 +190,7 @@ export function resolveExecutionConsumer(c, slotId) {
   }
   const slot = c.executionSlots.find(value => value.id === (slotId ?? 'primary'));
   if (!slot) reject();
-  return freeze({ ...c, runtimeUser: slot.runtimeUser, paths: { ...c.paths, ...slot.paths } });
+  return freeze({ ...c, runtimeUser: slot.runtimeUser, workGroup: slot.workGroup, paths: { ...c.paths, ...slot.paths } });
 }
 
 export function selectExecutionSlot(c, { runnerName, uid, uidForUser }) {

@@ -127,6 +127,8 @@ def validate(c, product_root):
         input=json.dumps(c['consumer']), text=True, cwd=product_root, capture_output=True)
     require(validation.returncode == 0, 'consumer')
     e = c['environment']
+    require('workGroup' not in c['consumer'] or c['consumer']['workGroup'] == e.get('codexWorkGroup'),
+            'consumer.workGroup')
     require(object_keys(e, ['namespace', 'serviceUser', 'reviewerUser', 'codexWorkGroup', 'runner',
         'generalRunner', 'reviewerBind', 'ingress', 'localApply', 'codexTokenRequired', 'compatibilityLinks'],
         ['repository', 'reviewCheckName', 'reviewerRepositories', 'instance', 'tls', 'reviewerCredential', 'writerCredential', 'codexCredential']), 'environment')
@@ -479,6 +481,8 @@ def compile_inputs(c):
         result['relay_' + variable] = consumer[field]
     if 'repositories' in consumer:
         result['relay_github_repositories'] = consumer['repositories']
+    if 'workGroup' in consumer:
+        result['relay_codex_launch_work_group'] = consumer['workGroup']
     if 'repositoryRuntimeUsers' in consumer:
         result['relay_repository_runtime_users'] = consumer['repositoryRuntimeUsers']
         result['relay_additional_runtime_users'] = sorted(set(consumer['repositoryRuntimeUsers'].values())

@@ -384,13 +384,16 @@ def test_current_node_digest_resolves_defaults_and_preserves_capacity_only_diges
 
 @pytest.mark.parametrize('effort', [None, 'high'])
 @pytest.mark.parametrize('reordered', [False, True])
-def test_owner_target_digest_matches_actual_backend_consumer_template(tmp_path, monkeypatch, effort, reordered):
+@pytest.mark.parametrize('work_group', [False, True])
+def test_owner_target_digest_matches_actual_backend_consumer_template(tmp_path, monkeypatch, effort, reordered, work_group):
     import yaml
     from ansible.parsing.dataloader import DataLoader
     from ansible.template import Templar
     import config as deployment_config
 
     value = inputs(1)
+    if work_group:
+        value['consumer']['workGroup'] = value['environment']['codexWorkGroup']
     if effort is not None:
         value['consumer']['defaultProfile']['effort'] = effort
     if reordered:

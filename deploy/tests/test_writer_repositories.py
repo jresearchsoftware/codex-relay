@@ -30,8 +30,11 @@ def shared():
     return value
 
 
-def test_explicit_installation_anchor_and_shared_rendered_consumer():
+@pytest.mark.parametrize('work_group', [False, True])
+def test_explicit_installation_anchor_and_shared_rendered_consumer(work_group):
     value = shared()
+    if work_group:
+        value['consumer']['workGroup'] = value['environment']['codexWorkGroup']
     value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': 'second-runtime'}
     config.validate(value, ROOT)
     compiled = config.compile_inputs(value)
@@ -180,11 +183,11 @@ def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_ide
         (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex.sudoers.j2').read_text(),
         convert_data=False)
     if topology == 'independent':
-        assert f'ALL=({runtime})' in sudoers
+        assert f'ALL=({runtime}:{variables["relay_codex_work_group"]})' in sudoers
         assert 'second-runtime' not in sudoers
         assert 'const TOKEN_FILE = "' + variables['relay_codex_access_token_file'] + '";' in launcher
     else:
-        assert f'ALL=({runtime},second-runtime)' in sudoers
+        assert f'ALL=({runtime},second-runtime:{variables["relay_codex_work_group"]})' in sudoers
 
 
 def test_repository_runtime_users_keep_all_explicit_slot_work_groups_separate():
@@ -218,12 +221,14 @@ def test_optional_repository_runtime_account_preserves_existing_owner_settings(e
 
 @pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() == 0, reason='non-root native Linux runtime identity')
 def test_installed_launcher_binds_actual_user_to_repository_before_credential_access(tmp_path):
+    import grp
     value = shared()
     actual_user = subprocess.check_output(['/usr/bin/id', '-un'], text=True).strip()
     value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': actual_user}
     compiled = yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text())
     compiled.update(config.compile_inputs(value))
     compiled.update(relay_dispatch_work_root=str(tmp_path / 'work'), relay_config_root=str(tmp_path / 'config'),
+                    relay_codex_work_group=grp.getgrgid(os.getgid()).gr_name,
                     relay_diagnostics_config_path=str(tmp_path / 'diagnostics.json'),
                     relay_codex_diagnostic_path=str(ROOT / 'deploy/ansible/roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs'))
     (tmp_path / 'diagnostics.json').write_text('{"schemaVersion":"1.0","mode":"normal"}')
