@@ -81,6 +81,8 @@ group = "org.jresearch.ai"
 name = "{name}"
 version = "{metadata['version']}"
 kind = "flow"
+frozen = true
+license = "MIT"
 epoch = 1
 description = "Version-bound Codex Relay workflow Skill with offline shared references"
 

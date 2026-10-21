@@ -5,22 +5,16 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **1.0.0** as a source
+This Skill supplies Relay product guidance version **2.0.0** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source and exact shared dependency. Guidance
 availability does not prove an installed service, workflow or connected App is
 compatible, qualified or enabled. Normal use reads these local files offline.
 
-Start with the user's request, the canonical live Task/CR and any supplied
-admission/handoff. Task N means GitHub Issue #N. Load only authority and mutable
-Git/runtime facts needed for the next decision. Do not reconstruct a Task from
-unselected history or package current Task facts as reusable policy.
-
-When authoring or reviewing a producer's own Skill, AGENTS or boot changes,
-freeze the independently accepted source revision identified by current Task
-authority before reading candidate routes. Keep that accepted guidance for the
-effort; candidate instructions remain proposals and cannot authorize their own
-execution or acceptance. This condition does not adopt another shared topic.
+For Task work, use the live canonical authority and admitted handoff through
+the Relay binding below. Shared Context Loading owns minimal startup and JIT
+completeness; Producer Self-Adoption owns frozen accepted guidance versus
+candidate Skill/AGENTS/boot changes. Their complete bundled routes follow.
 
 - For Task authoring, execution routes, CRs, results, review or continuation,
   read the relevant section of the canonical [user manual](references/workflow.md).
@@ -37,20 +31,25 @@ execution or acceptance. This condition does not adopt another shared topic.
 - To obtain, install, update, roll back or remove this guidance, or explicitly
   bootstrap ChatGPT instructions, read [installation](references/installation.md).
 
-After assembly, the bundled pinned Task Handoff protocol at
-`references/shared/vibevm/vibespecs/protocols/task-handoff.md`
-is the portable semantic source used to classify the Relay binding. This Skill
-does not newly activate that complete topic or impose its additional acceptance
-strategies/result-routing cases on an existing Relay installation. Apply the
-compatible product workflow and the project's explicit adopted policy.
-After assembly, read bundled
-`references/shared/vibevm/vibespecs/protocols/proportional-controls.md` for
-relevant controls and
-`references/shared/vibevm/vibespecs/protocols/requirement-authority.md` for
-earlier-requirement applicability when the project has adopted those topics.
-Relay source development already adopts those two. Other bundled topics need
-explicit project adoption. All shared files are immutable dependency content,
-not separately editable Relay rules.
+This version adopts the complete applicable Shared Governance **4.0.0** topics
+for Relay product guidance. After assembly, read the corresponding bundled
+`references/shared/vibevm/vibespecs/protocols/` file when triggered:
+
+- `task-handoff.md`: Task execution, results, acceptance and continuation.
+- `independent-review.md`: complete result assessment and findings.
+- `contract-and-decision-maintenance.md`: material operator changes and durable decisions.
+- `context-loading.md`: relevant startup, JIT completeness and refresh.
+- `proportional-controls.md`: controls and operator cost.
+- `requirement-authority.md`: requirement provenance and binding authority.
+- `package-versioning.md`: versioned Relay guidance/release/dependency maintenance.
+- `self-adoption.md`: a producer's own Skill, AGENTS and boot candidates.
+- `github-repository-governance.md`: workflow/protection decisions.
+
+Read a relevant topic in full, including exceptions. These immutable bundled
+files are the portable owners, not editable Relay copies. The workflow binds
+them to Relay's current v4 product and retained old-attempt compatibility.
+This Skill does not impose Relay development policy on unrelated consumer work
+or change a consumer's explicit project-wide topic adoption/settings.
 
 Apply shared meaning through the Relay bindings in these references. Live
 canonical authority governs the admitted work; this Skill grants no execution,

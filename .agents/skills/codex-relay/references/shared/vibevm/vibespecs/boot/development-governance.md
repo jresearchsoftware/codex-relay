@@ -1,5 +1,8 @@
 # Development governance
 
+<a id="DG-002"></a>
+**DG-002 — Conditional topic routing.**
+
 For proposed security, validation or operator controls, read the full
 [proportional-controls protocol](../protocols/proportional-controls.md),
 including when assessing behaviorally free security hardening. Unrelated tasks
@@ -43,3 +46,37 @@ only when the owning project explicitly adopts that topic. Preserve its accepted
 PR, direct-main, publication and mixed paths; installing/updating guidance neither
 applies settings nor grants permission to change them. Existing local policy
 remains authoritative until reviewed adoption. Unrelated tasks skip this topic.
+
+For independent assessment, read
+[full independent-review methodology](../protocols/independent-review.md) only when
+the owning project explicitly adopts that topic. Inspect the actual result and
+primary evidence; disclose review gaps before a positive verdict. Package updates
+and Task Handoff adoption do not activate this additional topic. Local acceptance
+authority, specialist methods and stronger identity requirements remain intact;
+unrelated tasks skip it.
+
+For material user/operator contract changes, accepted decision promotion or
+affected workflow documentation, read
+[contract and decision maintenance](../protocols/contract-and-decision-maintenance.md)
+only when the owning project explicitly adopts this topic. Existing local rules
+and the other topics' applicability remain intact; installation/update does not
+activate it. Unrelated tasks skip it.
+
+For selecting, loading or refreshing work context, read
+[context loading and JIT discipline](../protocols/context-loading.md) only when
+the owning project explicitly adopts this topic. Start with decision-relevant
+authority, load canonical detail when triggered and refresh affected mutable
+facts without weakening required completeness. Existing topic adoption,
+entrypoints, contributor paths and client instruction hierarchy remain intact;
+installation/update does not activate it. It adds no runtime retrieval or boot
+command and grants no new authority.
+
+When a person explicitly requests project onboarding, for example “Onboard this
+project to Shared Governance,” read the [onboarding procedure](../guides/onboarding.md).
+Skip that detail in ordinary sessions and on package install/update alone.
+This operator aid adopts no topic and grants no configuration-change authority.
+
+When external engineering or reasoning methods would materially help the current
+work, you may consult the [optional FPF guide](../guides/engineering-methods.md).
+Skip it when existing methods/evidence suffice; startup or install/update alone
+never require the guide, FPF access or MCP. FPF advice grants no project authority.

@@ -3,11 +3,11 @@ skill = "codex-relay"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "0b28e4fa245a6f7f74ee8f5243fdd9f6985231ec93b15c87bbfe56e0d29a6671"
+sha256 = "e59aa4b8eb56775e4e98ce09318e918c99e92119d05f0ff9cf4e51f7183ce897"
 
 [[file]]
 path = "SKILL.md"
-sha256 = "ca5e509e7727df4f8d2e732eedc8f5f0fd150ad32022b4a561b6fdb8e87fe7e1"
+sha256 = "77f4864b5d9a5a3afcb67e890ca259bdb337d2ab8ba8516dcaed3f8cd19513bb"
 
 [[file]]
 path = "references/compatibility.md"
@@ -19,11 +19,11 @@ sha256 = "bf19df9455f589ea16e296c378379e5b5ff896bcb80321b8af651ea466942839"
 
 [[file]]
 path = "references/examples.md"
-sha256 = "6e244e1d826c9198fb667193f4a52b369396ba95dd3152bba34d011447214373"
+sha256 = "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171"
 
 [[file]]
 path = "references/installation.md"
-sha256 = "ac62c687153e430af3a2360ce2139183729d890a984e15deb953e956718fd975"
+sha256 = "4d781d4e97d092440e0d7a5a86b116a89a14f9e440871c43671e5eb6045ca7d4"
 
 [[file]]
 path = "references/product/contract.json"
@@ -42,8 +42,12 @@ path = "references/product/vibevm.json"
 sha256 = "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
 
 [[file]]
+path = "references/shared/CHANGELOG.md"
+sha256 = "af41decd495c1e131cdaefa8615a029739313a6edac4e06dbd3fcff46143f083"
+
+[[file]]
 path = "references/shared/DISTRIBUTION.json"
-sha256 = "a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc"
+sha256 = "140d72044071c589a1740efd3177444f8359e675c7569ee5f744c9ba55307774"
 
 [[file]]
 path = "references/shared/LICENSE"
@@ -51,43 +55,79 @@ sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
 
 [[file]]
 path = "references/shared/README.md"
-sha256 = "a769714f767ad972030225ba29d9bc476cba484be6e7e347a65fa6e59f179414"
+sha256 = "2ac7b1be94aeff96a4b7622df0c62636c06d3f0112823f3337df3fd5bdc8dccb"
+
+[[file]]
+path = "references/shared/tools/chatgpt/README.md"
+sha256 = "3298d623b620cd06549baa0efa4d3feeb916aafa8648182e147c14f62ad5bd55"
+
+[[file]]
+path = "references/shared/tools/chatgpt/base.md"
+sha256 = "54ce6885766a45f3fea4d058a9b5ac38f28fd73f59bcd9303ec69aeb2fdd2bbc"
+
+[[file]]
+path = "references/shared/tools/chatgpt/project.py"
+sha256 = "12bef6998acb7f2215b6b23f44dd2e9549e5bc9d49bce88af9d2da248c4f00cb"
 
 [[file]]
 path = "references/shared/vibe.toml"
-sha256 = "bfcceaed6af61b02ae489b3c1e49094ec3a23309de209809d7c4a7c3f9297165"
+sha256 = "53fd62513338f0bff59c7472323445c89564fd85aa6e19a61a6e5aef8e1513ee"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/boot/development-governance.md"
-sha256 = "8e932a4ae27a9efa440acb59488f3687fa5e2e8f1b9f19cef63e8670b2216e8d"
+sha256 = "a3ee86004a8edb978f9f53b193f606c2899993e25d33906db46b3b74cee9cb9c"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/guides/engineering-methods.md"
+sha256 = "01103c8d52ab6ebd1acfecbce35e7b425db4d747094c6a2ac76289b875906248"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/guides/onboarding-examples.md"
+sha256 = "bdda88da4bfaa797493f008d23b6593788aef9db25c8029eff8be6cac954ee99"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/guides/onboarding.md"
+sha256 = "a2e738cb5f10605272e623bb7730d35a6511dcb45d7c71857aff51b40f96e72f"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/context-loading.md"
+sha256 = "b45a2a73017e3cee690e1b030094c8c237527604f0321ba4f431cbd4e3cc123a"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md"
+sha256 = "9ebf6f5760e7368d1091f6033e8d5c4d1d6d64bc82c3537b8f9af1c28cafdd3b"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/github-repository-governance.md"
-sha256 = "335cbc73ecb355919d5ca5bd8d4a525d8371aedaf92381e6c8244f41ebe5d45b"
+sha256 = "d65dc2acd6bacdacd06f47e010b210ce046384998f73ebfe3b0e7842f885a016"
+
+[[file]]
+path = "references/shared/vibevm/vibespecs/protocols/independent-review.md"
+sha256 = "95e564a7b1b30224e675396c5eab6cad84850018f78dfd7c0221bf63ce41034b"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/package-versioning.md"
-sha256 = "14c48fcc25bae6c7dee9b0a6c2e6310fa8df2917c6e17c4553fdefb461fec652"
+sha256 = "47d97b3a8f59b7a8e477eadee58c571d5512290fc3c241493f7d3c6c52adbef6"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/proportional-controls.md"
-sha256 = "6fbd1dc55bd40ee67c442614cd3d71fda45f4ebdba7012b976e72857c0eacfed"
+sha256 = "9d4995184b84665c3e1a8912d53438cdaa6e0b4fcef2af1f04e9111021e729ab"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/requirement-authority.md"
-sha256 = "9e5af613383c2c1492325338d9c37933bc83e1175ae809055718fc354a5532ca"
+sha256 = "0596f2de179429eee9e2212fa6fad0ba603095ba5d918e807f1dfd1490c7990b"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/self-adoption.md"
-sha256 = "43d56c78d4d12803ad28eef24afaa809e5941b19727da9f30274600e95d5be53"
+sha256 = "d49a3a8bdb648cfbc24a823e7f6e9abb6315f71ded6677453c0260849255ece4"
 
 [[file]]
 path = "references/shared/vibevm/vibespecs/protocols/task-handoff.md"
-sha256 = "b3e9058f8ff80bc7c57854ef97a71e57983d4c3f18d538ead66cb8e4ebca9ac2"
+sha256 = "1f0544cc177c538adb435dd905ea65fcc94a96f7fe582fe3abe2d9aebfdb2a02"
 
 [[file]]
 path = "references/workflow.md"
-sha256 = "191dc49325e48cd1eef786d6394eed67105ac552e534c7cefeee17f97a238322"
+sha256 = "ebb35ad082e2923c558ef8c3195c8646cc096b1631546ac9de371d41fd0a159b"
 
 [[file]]
 path = "scripts/project.py"

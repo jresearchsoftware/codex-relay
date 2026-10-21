@@ -6,11 +6,15 @@ user manual for the Relay product workflow; [compatibility](compatibility.md),
 detail. It describes the current schema-v4 source contract for a paired,
 qualified Reviewer/controller installation, without claiming an installed
 service or connected App has been upgraded or qualified. These are product
-contract rules, not a fixed number of execution Steps. After assembly, the bundled
-portable semantic source is `shared/vibevm/vibespecs/protocols/task-handoff.md`;
-this manual preserves the current Relay contract without newly activating that
-full topic. Read [compatibility](compatibility.md) for retained old attempts
-rather than applying current rules retrospectively.
+contract bindings. The complete applicable common topics are adopted by this
+Skill and supplied after assembly under `shared/vibevm/vibespecs/protocols/`.
+Read the full relevant protocol through the [Skill routes](../SKILL.md); below,
+TH, IR, CD and CL refer respectively to `task-handoff.md`,
+`independent-review.md`, `contract-and-decision-maintenance.md` and
+`context-loading.md` in that pinned bundled directory. They own portable
+lifecycle, assessment, contract and context semantics; this manual owns Relay's
+native mechanisms and supported paths. Read [compatibility](compatibility.md)
+for retained old attempts rather than applying current rules retrospectively.
 
 ## Owner acceptance and execution routes
 
@@ -60,10 +64,15 @@ standalone `Authority model: github-native-v1` line and remains the stable
 charter. It states problem, goal, scope, protected boundaries and one initial
 `Issue closure policy: keep-open` or `Issue closure policy: close-authorized`.
 Missing, malformed or conflicting closure metadata means `keep-open` with a
-visible warning. Explain concrete remaining work near `keep-open`.
+visible warning. Next to that field state concrete human-readable completion
+and closure conditions, separating development, independent acceptance, merge,
+any required authorized Apply/deployment and original-operation proof, and
+unresolved owner choices. Use the closure binding below; no additional field
+or validator is required.
 Issue creation does not admit or launch execution.
 
-Trusted, active Task Decisions amend durable semantics. Independent amendments
+TH-002–TH-005 own stable-charter and chronological authority semantics. Relay
+implements amendments through trusted, active Task Decisions. Independent amendments
 accumulate in native comment-ID order; an explicit same-scope supersession
 replaces its predecessor. Native references bind kind, ID, parent and the hash
 of the entire original published body, including markers. Edited sources,
@@ -113,11 +122,11 @@ durably creates the sole immutable admission snapshot, including sources,
 profile, scope, boundaries, validation, exact starting state, route, attempt/run
 and Step. Rejected routing does not allocate Step.
 
-First execution is Step 1. Each genuinely new admitted execution, including
-after terminal BLOCKED, gets the next Step. Inner corrections, tests, replay
-and recovery of the same attempt retain its Step and never launch another
-worker. Approval, charter/Decision/CR publication and ready-label display do
-not allocate Step. Native Task/Step titles and `step-N` labels project protected
+TH-006–TH-009 own execution-cycle and navigation semantics. Relay's protected
+Writer allocates Step 1 at first admission and the next Step for each genuinely
+new execution, including after BLOCKED. Same-attempt replay/recovery cannot
+launch another worker. Approval, charter/Decision/CR publication and ready-label
+display allocate no Step. Native titles and `step-N` labels project protected
 admission state; never infer identity from the largest historical number.
 
 Profile resolution is applicable CR overrides, trusted Decisions, consumer
@@ -147,20 +156,20 @@ model again.
 
 ## Execute and preserve progress
 
-Refresh mutable authority and starting facts after interruption. Load affected
-contracts just in time. Before an existing-PR starting-head gate, inspect its
+Use complete TH-012/TH-013 and CL for refresh, JIT completeness, correction and
+stop semantics. Relay's existing-PR starting-head gate inspects its
 live repository/branch/base/required SHA and local checkout/worktrees, dirty
 state and unpublished work. Safely fetch and normalize to the canonical branch
 only with local work preserved, then compare local and remote heads. Never
 reset, replace the branch/PR, force-push or absorb unrelated work to pass a gate.
 
-Continue evidence-backed correction within the admitted goal while each next
-action is clear, safe and authorized. Stop for a material owner choice, missing
-authority, unknown prior execution/containment or uncertain external mutation.
-Preserve useful work even when blocked. Before a terminal return reconcile
-task-owned changes into substantive commits or the applicable durable artifact;
-leave unrelated work intact and disclose any local residue/publication boundary.
-No empty commit or artificial PR is required for legitimate no-change work.
+Relay implements TH's useful-work preservation through substantive task commits
+or the applicable durable artifact before terminal return, including BLOCKED;
+the result reports local residue and publication boundaries. Unknown prior
+worker execution/containment or an uncertain external mutation prevents
+dependent execution or publication. Consumer-local component contracts bind
+CD's material operator-change and durable-decision rules to canonical native
+Task/Decision authority; candidate code or guidance cannot amend that authority.
 
 Permission for every action must remain within admitted and current protected
 boundaries. A later Decision may allow truthful reporting of the original work
@@ -170,8 +179,7 @@ authority must be explicit; the Skill creates none.
 
 ## Change Request and remediation
 
-Independently assess the complete exact candidate against effective Task
-authority and aggregate material findings. A v4 native `CHANGES_REQUESTED`
+Apply complete IR methodology to assessment and findings. A v4 native `CHANGES_REQUESTED`
 review/`change-request` binds repository, PR, branch/base, reviewed head, stable
 CR ID and actionable findings with bounded overrides. It has no Step and needs
 no successor public Task Request. Task-level `task-review` findings are evidence
@@ -217,13 +225,17 @@ Writer verifies admission, native sources, Task/Step, exact result, unique
 artifact, replay and current authority; reserves the digest; publishes one
 Writer-Bot Outcome; and reads back its native identity and exact bytes. The
 unique durably known result PR receives it; legitimate no-PR/no-change work
-uses the Issue. An uncertain PR-creation intent or ambiguous artifact stops
-surface selection. Do not duplicate the report or invent a PR/SHA for a
-non-source result. A disposed qualification PR stays disposed.
+uses the Issue. This is Relay's supported single-artifact product binding of
+TH-014–TH-017, not a multi-artifact publisher. A known multiple-source-artifact
+result needs separately authorized product support; do not silently route it
+through a no-PR Issue result. An uncertain PR-creation intent or ambiguous
+artifact stops surface selection and never permits an Issue fallback.
+A disposed qualification PR stays disposed.
 
-Results identify an exact full Git SHA, immutable named native result/run/check
-identities, or both. Keep checked bindings distinct from executor claims.
-Include material warnings, limitations and unavailable proof visibly before one
+TH-018 owns result disclosure and warning semantics. Relay binds results to an
+exact full Git SHA, immutable named native result/run/check identities, or both,
+and separates checked bindings from executor claims. Keep material warnings,
+limitations and unavailable proof visibly before one
 folded canonical `relay-authority` block; never truncate material facts or
 create another authority block. Use native checks for reconstructible CI
 status instead of posting a PASS-only Outcome update.
@@ -236,8 +248,9 @@ and duplicate delivery still fail closed.
 
 ## Independent acceptance and authorized continuation
 
-An open implementation PR requires native exact-head `APPROVE` or
-`REQUEST_CHANGES`; another Task Approval for that PR is unnecessary. Genuine
+For an implementation PR, independent acceptance uses native exact-head
+`APPROVE`; genuine remediation findings use `REQUEST_CHANGES`. Another Task
+Approval for that PR is unnecessary. Genuine
 no-PR work uses one Issue `task-approval` bound to the exact Writer Outcome,
 authority/admission and immutable result. A closed disposable PR may supply
 context without being reopened. A copied assessment, another thread or a
@@ -251,12 +264,35 @@ Material authority changes after acceptance require fresh acceptance before
 protected continuation. Dispose of every material warning and retain evidence
 gaps; see [diagnostics](diagnostics.md).
 
-Compare each material finding with the exact starting/base SHA. State whether
-it was introduced, pre-existing, newly exposed/made blocking, or undetermined.
-Only established introduction is a regression. Baseline debt needs current
-scope or a material dependency before demanding remediation. On rereview assess
-prior findings, changed behavior, adjacent risks and new findings together;
-explain the missed invariant or evidence gap when a blocker survives.
+The full IR protocol owns affected-result completeness, finding evidence and
+provenance, binding-obligation sources, defect/gap/debt/optional-change
+classification, and rereview. Relay binds its candidate/comparison identity to
+the exact head and starting/base SHA, and publishes the assessment through
+the qualified independent native Reviewer, with existing review/CR records.
+
+### Direct and Deliberative acceptance
+
+Apply complete TH-022–TH-025 and IR-019. The evaluator resolves the applicable
+strategy from explicit owner-authorized Task/Decision selection, then the
+adopting project's accepted rules, then TH's defaults. This is an assessment
+binding; Relay adds no runtime classifier, admission field or new tool schema.
+
+For Direct work, the qualified independent evaluator may publish the genuine
+native exact-head verdict once authority, substantive assessment and applicable
+checks permit it. For Deliberative work, the evaluator first provides a
+substantive non-approving assessment with findings and warnings through the
+existing owner discussion channel. Withhold native `APPROVE` and its dependent
+continuation until the intended owner discussion and explicit trusted Task
+Decision authorize final acceptance. Genuine defects may use the existing CR;
+do not manufacture `REQUEST_CHANGES` merely to represent the deliberation hold.
+
+If acceptance of the unchanged result is authorized, refresh effective native
+authority and exact head, retain required checks/actor identity and reuse
+sufficient independent evidence before the final verdict. Changed results need
+fresh applicable review. Acceptance of research/report quality does not adopt
+its recommendation or authorize implementation, deployment or release. Owner
+discussion or a Decision alone does not allocate Step. After genuine approval,
+only already-authorized continuation below may proceed.
 
 The owner continuation path re-reads effective authority, exact acceptance/head,
 required checks, readiness, completion, holds and protected boundaries. Only
@@ -319,18 +355,31 @@ owner ports without a new public Request or preallocated Step.
 
 ## Decisions, closure and subsequent work
 
+TH-002/TH-026 own completion and continuation semantics; Relay implements them
+through its closure-policy field, native Task Decisions and owner continuation.
+For an owner-authorized finite Task, choose `close-authorized` at charter
+creation when closure is already authorized upon meeting its stated conditions,
+including a later expressly authorized Apply. Keep the Issue open through
+development, independent acceptance and merge until all required deployment
+and verification conditions pass; a finite required Apply is a completion gate,
+not itself a reason to request closure permission again.
+
+Use `keep-open` when concrete additional work, an explicit hold or an unresolved
+owner choice remains outside the authorized completion path. Name that condition
+and its needed disposition. Reassess effective policy at new authorized
+Steps/Decisions and meaningful completion transitions. After first admission,
+change Task-wide closure conditions or authorization only through a trusted
+Task-scoped v4 Decision; a CR cannot change them. Do not publish redundant
+per-Step Decisions when nothing changed. If required deployment is deferred,
+combined or cancelled by the owner, reconcile conditions and closure authority
+through that Decision without claiming the original Apply occurred.
+
 Closure requires effective `close-authorized`, trusted completion evidence,
 independent exact-result acceptance, no remaining work/hold and satisfied
-protected boundaries. A Task-scoped trusted v4 Decision can amend effective
-closure in either direction; a CR cannot. If no work remains but `keep-open`
-persists, surface the mismatch for owner disposition. Approval, merge, Step
-completion, installation, deployment and release remain separate facts.
-Before a substantive Decision, reassess the concrete work or evidence that
-still justifies `keep-open`, within the existing authoring action. Retain that
-policy with the remaining condition and needed owner disposition, or apply
-explicit owner authority to change it. This adds no structured field or
-separate closure workflow. For retained v3/legacy work preserve the original
-charter and successor-Request rules in [compatibility](compatibility.md).
+protected boundaries. The owner continuation can then close without another
+permission request. If no work remains but `keep-open` persists, surface the
+mismatch for canonical owner disposition. For retained v3/legacy work preserve
+the original charter and successor-Request rules in [compatibility](compatibility.md).
 
 Genuine no-PR acceptance remains typed independent Task Approval bound to its
 exact Writer Outcome and immutable result. It does not authorize merging an
@@ -343,9 +392,8 @@ requires current completion/acceptance and no remaining work or hold.
 Consumers own profile defaults, checks, credentials, runners, operational
 permissions, publication language, optional client renaming and merge/approval
 policy beyond Relay's mandatory native trust/exact-head boundaries. Preserve
-explicit local material-contract-change gates and protected operations. New
-user obligations or behavior outside authority need owner disposition; shared
-guidance or this package cannot silently change them. Relay development-only
+explicit local material-contract-change bindings and protected operations under
+complete CD. Relay development-only
 test commands and optional hooks do not become consumer admission requirements.
 
 ## Prepare a Relay installation

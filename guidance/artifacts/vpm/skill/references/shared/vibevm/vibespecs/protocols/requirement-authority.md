@@ -1,11 +1,17 @@
 # Requirement origin and authority
 
+<a id="RA-001"></a>
+**RA-001 — Applicability and authority.**
+
 Apply this interpretive guidance when a task depends on whether a requirement
 is binding or an earlier implementation constraint can be revised, within the
 owning project's adopted guidance, current scope and authority. Read it only
 when that distinction matters; installation or an update does not replace local
 canonical policy or adopt a new topic. This protocol grants no permissions and
 creates no second authority hierarchy.
+
+<a id="RA-002"></a>
+**RA-002 — Binding authority versus engineering choice.**
 
 An owner-stated requirement, an external proposal accepted through the owning
 project's authority, or an agent/architect proposal explicitly ratified by the
@@ -16,11 +22,17 @@ owner-mandated merely because they were authored, committed, documented,
 reviewed or merged. PR acceptance does not explicitly ratify every internal
 constraint as an enduring requirement.
 
+<a id="RA-003"></a>
+**RA-003 — Protected behavior survives origin analysis.**
+
 Origin is evidence, not permission to discard protections. Established
 externally observable user/operator behavior, accepted project authority and
 material protected invariants remain binding regardless of the implementation's
 original motivation. An agent-written control may protect a real credential,
 trust or security boundary.
+
+<a id="RA-004"></a>
+**RA-004 — Proportionate provenance and correction.**
 
 When an earlier self-imposed restriction obstructs newly authorized work, use
 the relevant Issue/PR/Git provenance and concrete risk evidence to distinguish
@@ -29,6 +41,9 @@ the latter within the admitted scope, preserving real protections, rather than
 making the owner diagnose or reauthorize avoidable implementation friction.
 Scale the investigation to the decision; no provenance registry, annotation on
 every requirement or recurring user confirmation is required.
+
+<a id="RA-005"></a>
+**RA-005 — Resolve material authority conflicts.**
 
 If binding canonical authority actually requires an incompatible choice,
 reconcile it through the owning project's authorized mechanism before overriding

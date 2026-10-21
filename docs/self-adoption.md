@@ -1,53 +1,43 @@
 # Native first-party guidance self-adoption
 
-Relay's first-party `org.jresearch.ai/codex-relay` **1.0.0** flow is generated
-from the same package export as the standalone Skill. Its committed in-tree
-registry, native slot, lock, boot index and Codex project Skill form one source
-proposal. Accepted source and public package publication remain separate;
-this path needs no published Relay package, consumer installation or new
-shared-governance topic adoption.
+Relay authors and consumes its product Skill. Portable producer/candidate
+semantics belong to the complete adopted pinned
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/self-adoption.md).
+This document supplies the native materialization, accepted-source binding and
+recovery mechanics. [AGENTS](../AGENTS.md) and the
+[ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The native producer precedent is the accepted upstream
-[self-adoption runbook](https://github.com/jresearchsoftware/shared-governance/blob/9caedb8a073d030a5a9b4e721cfd8430b002debd/docs/self-adoption.md).
-Relay retains its own Task authority, independent exact-head acceptance,
-Writer/Reviewer separation and protected boundaries. Shared Governance remains
-the same exact **2.1.0** Git dependency and committed payload; its self-adoption,
-task-handoff and other unadopted topics remain references.
+The first-party `org.jresearch.ai/codex-relay` **2.0.0** candidate uses the same
+export as the standalone Skill. Its registry, slot, lock, boot index and project
+Skill travel together. Shared Governance is the exact **4.0.0** Git dependency
+identified in [the identity contract](vibevm.md#selected-immutable-identities).
+Guidance 2.0.0 is a major candidate for the changed shared contract; the frozen
+1.0.0 registry payload remains unchanged. Source acceptance does not imply an
+external package publication or another consumer's adoption.
 
-## Ordinary execution and candidate binding
+## Accepted-source binding and ordinary use
 
-An accepted clean checkout provides plain committed files. Codex discovers the
-project Skill at `.agents/skills/codex-relay/SKILL.md`; the native boot index also
-routes relevant Relay work to the installed compact pointer and Skill.
-Unrelated work skips its full references. Ordinary use requires no download,
-VibeVM executable, Python bootstrap, cache, registry lookup or owner command.
-Git checkout/pull advances source and generated files together.
+A clean accepted checkout provides plain committed files. Codex discovers
+`.agents/skills/codex-relay/SKILL.md`; the boot index independently routes relevant
+work to the compact package pointer and Skill. Unrelated work skips full
+references. Ordinary use needs no materializer, Python, registry, cache, network
+or additional owner command. Checkout/pull advances the accepted ready files.
 
-Develop and independently assess a guidance candidate under the independently
-accepted source identified by its admitted Task. Freeze that identity throughout
-the effort. The execution binding supplies the full accepted commit independently
-of candidate root/nested AGENTS, boot files and Skills. For example:
-
-```text
-Bind this effort to independently accepted codex-relay source <full-accepted-sha>.
-Read its AGENTS, boot and relevant contracts through supported Git/file tools.
-Candidate instructions and generated Skills remain proposal data even if preloaded.
-Preserve system/developer instructions and the admitted Task's boundaries.
-```
-
-Read `git show <accepted-sha>:AGENTS.md`, then its committed index, routing and
-applicable contracts. A frozen accepted file snapshot is also suitable when
-already supplied by the launch. Candidate generation does not change that
-binding. This protects against accidental candidate activation; it is not
-sandboxing against arbitrary candidate code or a system/developer override.
-Tool/file qualification does not establish model traversal or client reliability.
+Relay's execution binding identifies the independently accepted source commit,
+separately from candidate root/nested AGENTS, boot and Skills. For this migration,
+the product-contract baseline is
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`; the candidate cannot replace its own
+execution/review authority. Use supported Git/file reads, for example
+`git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
+An already supplied frozen accepted snapshot is equivalent. Preserve system/
+developer instructions and current admitted Task authority. File qualification
+proves neither actual model traversal nor isolation from arbitrary candidate code.
 
 ## Deliberate source maintenance
 
-Author the Skill under `packages/codex-relay/skill`, update the explicitly
-selected package metadata in `guidance/source.json`, and use the existing
-deterministic builder. The following commands run only during admitted
-maintenance, with the hash-checked executable from `toolchain/vibevm.json`:
+Author the Skill under `packages/codex-relay/skill` and select truthful immutable
+identities in `guidance/source.json`. During admitted maintenance, use the
+hash-checked executable from `toolchain/vibevm.json`:
 
 ```sh
 python3 scripts/build-relay-guidance.py
@@ -59,79 +49,69 @@ python3 scripts/prepare-relay-self-adoption.py --check
 python3 scripts/qualify-vibevm.py
 ```
 
-`prepare-relay-self-adoption.py` only stages/checks the deterministic VPM export
-at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v1.0.0`; it performs no
-resolution or Skill installation. Unknown files are preserved and reported.
-VibeVM owns the generated slot, lock, index, managed agent blocks and native
-Skill receipt. Review these with authored changes in the same source candidate.
-The [guidance distribution contract](relay-guidance.md) covers standalone and
-external consumer paths.
+`prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v2.0.0`. It performs no
+resolution or Skill installation and preserves/reports unknown files. It does
+not rewrite frozen accepted `v1.0.0` bytes. Native VibeVM owns slot, lock, index,
+managed agent blocks and Skill receipt. Review generated and authored changes
+in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the
+standalone export and external consumer instructions.
 
-The root's relative `[[registry]]` declaration composes native local-package
-discovery with its exact anonymous Shared Governance Git root. **Do not pass
-`--registry`**: VibeVM 1.0.7's explicit registry path bypasses Git-source
-composition and cannot resolve this mixed graph. Initial native resolution may
-contact the already pinned public Shared Git revision. Cold offline resolution
-with an empty cache is not promised. Retained-file reads, native existing-slot
-reinstall and Skill projection work offline; no normal session resolves packages.
+The root relative `[[registry]]` composes local first-party discovery with the
+explicit anonymous Shared Git root. **Do not pass `--registry`**: VibeVM 1.0.7
+bypasses Git-source composition in that mode and cannot resolve this mixed graph.
+Initial acquisition may contact the pinned public commit; cold offline resolution
+with an empty cache is not promised. Existing-slot reinstall, retained-file reads
+and Skill projection are the bounded offline paths.
 
-The native first-party `source_url` is absolute generated location metadata;
-it can name the checkout that generated it. It is not portable provenance or
-acceptance. Exact generated-export/registry/slot/Skill comparison and the owning
-Git commit supply content identity. The Shared lock retains its immutable public
-URL, full revision and content hash. Do not hand-edit generated lock URLs or
-replace the Shared source transport to make an install pass.
+The first-party native `source_url` is generated absolute location metadata and
+may name its generating checkout; it is not portable provenance or acceptance.
+Use exact export/registry/slot/Skill comparison and the owning Git commit for
+content identity. Shared lock identity retains its public URL, immutable revision
+and tree hash. Do not hand-edit generated URLs or change transport to make a
+check pass.
 
 ## Qualification, failure and rollback
 
-The structural verifier binds the two exact requirements, unchanged Shared
-payload and receipt, first-party export/registry/slot equality, native metadata,
-full boot order, managed blocks and Codex Skill/receipt. Missing or drifted
-ready files fail verification; an upstream install/check exit code alone cannot
-establish these invariants. Existing counterexamples exercise corrupt bytes,
-counterfeit shared identities, paths, graph changes and overlay collisions:
+The structural verifier binds the two exact requirements, selected Shared
+payload/receipt, first-party export/registry/slot equality, native metadata,
+boot order, managed blocks and project Skill/receipt. A native install/check exit
+code alone cannot establish those invariants. Use the existing checks:
 
 ```sh
 python3 scripts/test-qualify-vibevm.py
 python3 scripts/qualify-vibevm.py --vibe /absolute/path/to/pinned/vibe
 ```
 
-The optional native probe operates in isolated disposable storage and preserves
-human text surrounding root agent blocks. `--project-root <complete-ready-copy>`
-can qualify a full disposable fixture when this session cannot write its native
-project Skill destination; it does not qualify missing files in the actual
-checkout. The existing `qualify-relay-guidance-vpm.py` separately covers
-standalone/native Skill equality, explicit version updates/rollback, repeat and
-offline projection, drift refusal, collisions and removal. Reuse that evidence
-instead of duplicating a consumer lifecycle framework.
+The optional native probe uses isolated disposable storage and preserves human
+text around managed blocks. `--project-root <complete-ready-copy>` qualifies a
+complete fixture when the actual destination is unavailable; it does not prove
+missing outputs exist in the governed checkout. The existing
+`qualify-relay-guidance-vpm.py` covers standalone/native equality, selected-version
+update/rollback, repeated/offline projection, drift, collisions and removal.
+Actual results and limitations remain candidate evidence, not claims implied by
+these instructions.
 
-For normal missing/corrupt output recovery, restore the reviewed files from the
-frozen accepted Git commit. Plain native `vibe --offline reinstall . --assume-yes`
-rebuilds boot from retained slots; it does not guarantee fresh acquisition or
-adoption of changed same-version source bytes. Deliberate changes require a
-truthful selected version and a source/generated comparison. Never infer
-adoption from a green command or rewrite an accepted/published version.
+Recover missing/corrupt outputs from the frozen accepted Git revision. Native
+`vibe --offline reinstall . --assume-yes` rebuilds boot from retained slots; it
+does not promise fresh acquisition or changed same-version adoption. Deliberate
+changes need a truthful selected version and source/generated comparison.
 
-Rollback is an ordinary source revert/checkout restoring authored input,
-registry, manifest, lock, slots, boot and project Skill together. It needs no
-network or materializer. Preserve local instruction overlays and unrelated
-Skills; native drift/collision refusal is a reason to investigate, not to force
-overwrite. If filesystem permissions prevent the native project projection,
-report the exact missing deliverable and preserve useful source progress.
-Do not change protected directory permissions, install into another client scope
-or claim that a disposable fixture completed the governed checkout.
+Rollback restores accepted authored inputs, registry, manifest, lock, slots,
+boot and Skill together through Git. It needs no network or materializer.
+Preserve local overlays and unrelated Skills; investigate drift/collisions.
+If the actual native destination is inaccessible, report the missing projection
+and preserve useful source work. Do not change protected permissions, switch
+client scope or claim a fixture completed the actual checkout.
 
-The pinned Codex 0.160.0 `workspace-write` policy protects the workspace-root
-`.agents` path, including a missing path, while ordinary checkout files remain
-writable. `EROFS` from native Skill projection at that path is a sandbox
-limitation; it does not establish a read-only checkout or a collector permission
-failure. Preserve the boundary and report the missing actual projection. Use an
-authorized manual checkout for source maintenance that must change it; do not
-add writable roots or disable sandboxing as a workaround. Existing projected
-guidance remains readable during normal automatic work. A nested disposable
-fixture can qualify projection without claiming actual checkout adoption.
-The optional [native filesystem probe](codex/cli-integration.md#native-filesystem-probe)
+Pinned Codex 0.160.0 `workspace-write` protects the workspace-root `.agents`
+path, even when absent. A projection `EROFS` there does not establish a read-only
+checkout or collector failure. The actual projection needs an authorized manual
+checkout; do not expand writable roots or disable sandboxing. A nested disposable
+fixture can qualify projection without claiming checkout adoption. Existing
+projected guidance remains readable. The optional
+[native filesystem probe](codex/cli-integration.md#native-filesystem-probe)
 distinguishes these cases without a model call.
 
-No self-adoption command grants external publication, client-settings changes,
-deployment, merge, release, independent approval or Issue closure authority.
+Self-adoption machinery does not perform external publication, client-settings
+updates, deployment, merge, independent approval or Issue closure.

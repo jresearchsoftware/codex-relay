@@ -18,9 +18,10 @@ Goal: A repeated export preserves exactly one completed record.
 Scope: Correct retry bookkeeping and test the affected export behavior.
 Boundaries: No deployment, credentials, settings or consumer repository changes.
 
-Issue closure policy: keep-open
-Keep open until independent source acceptance and the separately authorized
-representative consumer qualification are complete.
+Issue closure policy: close-authorized
+Completion and closure require development, independent exact-head source
+acceptance, merge and explicitly authorized read-only representative consumer
+qualification, with no remaining work or hold. No consumer mutation is authorized.
 ```
 
 Issue creation supplies no Step and starts no worker. If the owner accepts a
@@ -127,11 +128,17 @@ holds, current authority and protected boundaries before any already-authorized
 integration. A source merge does not complete the consumer qualification in
 Issue #42's remaining-work condition. Keep it open.
 
-When the qualification and all other work are independently accepted, an
-explicitly owner-authorized Task Decision can change effective closure to
-`close-authorized`. The owner continuation still verifies completion,
-acceptance, no remaining work and no hold before closing. A CR, Outcome, Step
-completion or merge alone cannot authorize closure.
+After the specified qualification and all other completion conditions pass,
+the existing owner continuation verifies acceptance, no remaining work/hold
+and protected boundaries, then closes under the charter's `close-authorized`.
+No second closure permission or redundant Decision is needed. A CR, Outcome,
+Step completion or merge alone cannot establish Task completion.
+
+Use `keep-open` instead when a concrete qualification choice, extra work or
+closure hold remains outside the authorized path; state that condition. If the
+owner later defers, combines or cancels a required qualification/Apply, amend
+completion conditions and closure authority through a trusted Task-scoped
+Decision without rewriting the admitted charter or claiming it happened.
 
 ## Capability mismatch and retained history
 

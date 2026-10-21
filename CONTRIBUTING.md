@@ -14,18 +14,13 @@ describe the owner's optional Codex workflow, not human contribution gates.
 
 ## Keep workflow documentation current
 
-A Task that changes an operator/user-visible Relay workflow or its Task Request,
-Decision, CR, Step, Outcome, admission, review or continuation contract must
-update the relevant human documentation and examples in the same Task and PR,
-or explicitly explain in that Task/PR why no documentation change is needed.
-This includes remediation that changes those surfaces. Check instructions and
-examples against the implemented behavior and governing component contracts;
-keep consumer policy distinct from Relay protocol and qualify legacy behavior.
-Use the existing PR description and review process, without a separate
-documentation approval, CI gate or policy registry. Start the owner workflow at
-the [product user manual](packages/codex-relay/skill/references/workflow.md).
-Keep user instructions in that authored Skill; [developer navigation](docs/task-workflow.md)
-points to it and the implementation contracts.
+For governed Relay changes, the complete adopted shared
+[Contract/Decision Maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+owns same-change human guidance (CD-007). Keep the authored
+[product manual](packages/codex-relay/skill/references/workflow.md) and its
+examples aligned with affected native Task/Decision/CR/Outcome/continuation
+contracts, including retained compatibility. [Developer navigation](docs/task-workflow.md)
+points to these owners rather than carrying a second user workflow.
 
 ## Execution environment and shell routing
 

@@ -549,28 +549,42 @@ contract creates no authority registry or parallel Task ledger.
 
 ### Closure policy authoring
 
-Before every new Task Decision or complete Task Request, consciously reassess
-the known work or evidence expected after implementation that justifies
-`keep-open`; do not carry it forward by habit. Use the stable charter, applicable
-trusted Decisions and relevant current evidence within the existing authoring action.
+Portable charter, chronological amendment and completion semantics belong to
+pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md).
+Relay binds them to one explicit `Issue closure policy` field and the current
+v4 charter/Task-scoped trusted Decision mechanism; a native CR cannot change
+Task-wide closure semantics. Preserve retained schema-v3/legacy charter,
+digest and successor-Request rules for already-admitted attempts.
 
-- When work or evidence remains, retain `keep-open` and explain the concrete
-  remaining condition and owner disposition in the existing charter or trusted
-  Decision that supplies the effective policy.
-- When that rationale no longer applies, seek explicit owner authorization, or
-  apply existing explicit owner authorization. For schema 4.0, publish the
-  Task-scoped trusted Decision changing effective policy to `close-authorized`;
-  the stable charter needs no rewrite or complete successor Request. For retained
-  schema 3.0 or legacy authority, reconcile the canonical charter and preserve
-  its policy until then, using the existing digest and successor Request rules.
-  A native CR cannot change Task closure policy in either model.
+For every new or materially revised Task, explain concrete human-readable Task
+completion and closure conditions next to that field. Distinguish development,
+independent exact-result acceptance, merge, any required explicitly authorized
+installed Apply/deployment, original-operation evidence and unresolved owner
+choices. Source acceptance does not establish installed or operational proof.
 
-`close-authorized` permits closure only after Task completion, verified
-independent acceptance and no remaining work through the existing authorized
-continuation. Approval, merge and Step completion alone grant no closure
-authority. This is prose authoring guidance: no additional structured field,
-parser or validator gate, separate workflow or automation, and no blanket
-rewriting of historical Issues.
+- Choose `close-authorized` at charter creation when the owner authorizes a
+  finite Task and closure upon meeting its stated conditions, even if a later
+  explicitly authorized Apply is required. Keep the Issue open until all those
+  conditions pass. Successful verification then permits closure through the
+  existing owner continuation without a second Decision or permission request.
+- Choose `keep-open` only for concrete additional work, a closure hold or an
+  unresolved owner decision outside the authorized completion path. Name that
+  condition and needed owner disposition. A finite required Apply alone is a
+  completion gate, not a reason to demand another closure permission.
+- At each new authorized Step/Decision and meaningful completion transition,
+  reassess the effective policy and remaining conditions. After first admitted
+  execution, amend Task-wide completion/closure semantics only through a trusted
+  Task-scoped Decision. No redundant per-Step Decision is needed when unchanged.
+- If the owner defers, combines or cancels a previously required deployment,
+  reconcile completion conditions and closure authorization through that trusted
+  Decision. Do not claim an Apply occurred. Close only when the revised accepted
+  Task has no remaining work/hold and all protected boundaries are satisfied.
+
+`close-authorized` still requires trusted completion evidence and verified
+independent exact-result acceptance before the authorized owner continuation.
+Approval, merge or Step completion alone supplies no closure authority. This
+binding adds no `Close when:` field, parser/validator gate, daemon, ledger,
+separate workflow or retrospective rewrite of historical Issues.
 
 ### Continuation after changes requested
 

@@ -1,5 +1,8 @@
 # Workflow-aware GitHub repository governance
 
+<a id="GH-001"></a>
+**GH-001 — Explicit workflow adoption.**
+
 Apply this protocol when selecting, adopting or changing GitHub repository
 workflow and protection guidance, only if the owning project explicitly adopts
 this topic in human-owned AGENTS or equivalent accepted policy. Installation,
@@ -10,11 +13,17 @@ credential, execution, merge, publication, migration or closure permission.
 
 ## Start from the working model
 
+<a id="GH-002"></a>
+**GH-002 — Discover actual working paths.**
+
 Read the project's accepted instructions, relevant owner decisions and actual
 source/publication workflow. Identify important branches and published refs,
 authorized human/automation writers, review and validation already in use, and
 legitimate exceptions. Use existing project records; no new repository-type
 field, registry, provisioning service, daemon or Relay dependency is needed.
+
+<a id="GH-003"></a>
+**GH-003 — Select by change and ref.**
 
 These paths can coexist in one repository; choose by the change and ref:
 
@@ -24,6 +33,9 @@ These paths can coexist in one repository; choose by the change and ref:
 | Living reference/evidence maintenance | Preserve explicit owner-authorized routine direct-to-main updates. Keep sources, dates, uncertainty and a useful commit explanation; validate the changed evidence. No Task Request or PR is required merely for a factual refresh. |
 | Published/generated distribution | Follow the owner's release path from accepted source to identifiable artifact/version. Protect published identity separately from source-development merge choices. Generated publication can legitimately push directly. |
 | Mixed workflow | State which changes use each path in existing instructions. Assess both ordinary human updates and supported automation; a repository-wide PR rule cannot distinguish materiality or file ownership by itself. |
+
+<a id="GH-004"></a>
+**GH-004 — Routine evidence versus material changes.**
 
 A corrected date, source link or measurement under an unchanged interpretation
 can be routine evidence maintenance. A changed general recommendation, supported
@@ -35,6 +47,9 @@ invent a universal threshold, require PRs for every refresh, or silently change
 downstream consumer decisions when shared evidence changes.
 
 ## Select proportionate protections
+
+<a id="GH-005"></a>
+**GH-005 — Proportionate protection choices.**
 
 Before making a control mandatory, apply [proportional-controls](proportional-controls.md):
 identify the concrete harm, current protection, operator/maintenance cost and
@@ -51,6 +66,9 @@ owner adoption, not an already authorized configuration or universal gate.
 | Changed head after review or integration conflict | Requalify affected checks and independent assessment for the changed result. Native stale-review dismissal or latest-push review may help where identity/workflow supports it. Strict up-to-date checks, merge queues, signed commits, deployments and extra reviews require their own risk/cost justification; they are not this protocol's baseline. |
 | Frozen publication ref overwritten or removed | Preserve existing version/commit/tag identity using the accepted release boundary and authorized writers. Where appropriate, tag rulesets can restrict updates/deletion while permitting new release refs. Do not block the supported publisher's new-tag/default-branch transaction or broadly exempt it from immutability without examining the existing no-overwrite mechanism. |
 
+<a id="GH-006"></a>
+**GH-006 — Authority and supported writer exceptions.**
+
 Merge settings do not enforce independent acceptance. Successful checks do not
 grant merge authority. A PR-only rule can obstruct authorized direct writers;
 prefer separate branches or an existing narrowly authorized publisher path when
@@ -58,6 +76,9 @@ that preserves both contracts. A broad PR bypass can also bypass other rules;
 inspect the affected rules and identity rather than treating the exception as
 harmless. Do not install a new bot or obtain broader credentials to satisfy a
 suggested profile. Product-specific provisioning and enforcement remain local.
+
+<a id="GH-007"></a>
+**GH-007 — Separately owned release policy.**
 
 For publication lifecycle, use [package-versioning](package-versioning.md) only
 if separately adopted, otherwise the project's accepted release policy. Keep
@@ -69,6 +90,9 @@ release cadence, publisher, registry or maintenance-line arrangement.
 
 ## Verify what GitHub actually enforces
 
+<a id="GH-008"></a>
+**GH-008 — Verify actual host capability.**
+
 Use the repository's current GitHub host/version, visibility, plan and existing
 authorized access. Branch protection and branch/tag rulesets are available on
 GitHub.com public Free repositories and on qualifying paid private repositories;
@@ -77,6 +101,9 @@ Read current feature documentation before depending on a capability. Rule
 editing needs repository admin or an applicable custom permission; merge-option
 and auto-delete editing also need appropriate settings access. Capability is
 not owner authorization. No upgrade or privilege acquisition is required here.
+
+<a id="GH-009"></a>
+**GH-009 — Inspect effective layered protection.**
 
 Inspect Settings / General for merge options and auto-delete; Settings / Branches
 and Rules / Rulesets (including inherited rules) for protected refs. Check ref
@@ -98,6 +125,9 @@ gh api --paginate 'repos/OWNER/REPO/rulesets?includes_parents=true&per_page=100'
 gh api --paginate 'repos/OWNER/REPO/rules/branches/main?per_page=100'
 ```
 
+<a id="GH-010"></a>
+**GH-010 — Evidence and access limits.**
+
 The branch-rules endpoint reports active ruleset rules, including inherited
 ones, not the complete classic-protection configuration. Inspect each applicable
 ruleset's details through its returned API/UI link, including tag targeting and
@@ -110,6 +140,9 @@ the gap and whether the concrete risk blocks adoption. Do not change identity,
 scopes, plan or settings as a verification workaround. See the [rules API](https://docs.github.com/en/rest/repos/rules)
 and [branch-protection API](https://docs.github.com/en/rest/branches/branch-protection).
 
+<a id="GH-011"></a>
+**GH-011 — Ordinary path and check compatibility.**
+
 Check that the chosen merge method and linear-history setting are compatible,
 that retained branches survive auto-delete, and that required check names,
 triggers and reporting identity support ordinary changes. Inspect existing run
@@ -118,6 +151,9 @@ required check does not prove that meaningful validation ran. See [merge methods
 and [automatic branch deletion](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches).
 
 ## Verification timing
+
+<a id="GH-012"></a>
+**GH-012 — Event-directed verification timing.**
 
 | Occasion | Sufficient work |
 | --- | --- |
@@ -133,6 +169,9 @@ project instructions; mutable configuration observations and decisions belong
 in the existing onboarding/task/PR/release records with date and evidence scope.
 
 ## Short new/existing-repository checklist
+
+<a id="GH-013"></a>
+**GH-013 — Bounded onboarding sequence.**
 
 1. Read current project authority. Identify normal update/publication paths,
    important refs, supported writers and material-change exceptions.

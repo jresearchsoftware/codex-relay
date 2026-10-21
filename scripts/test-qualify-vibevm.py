@@ -48,6 +48,9 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["tree_hash"], QUALIFICATION.TREE_HASH)
         self.assertEqual(len(facts["route"]), 4)
         self.assertEqual(facts["project_skill"], "PASS")
+        self.assertEqual(facts["payload_files"], 20)
+        self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
+        self.assertEqual(facts["first_party_version"], "2.0.0")
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:
@@ -103,7 +106,9 @@ class CommittedFlowTests(unittest.TestCase):
                                 'version = ">=' + QUALIFICATION.VERSION + '"'),
                                ('auth = "none"', 'auth = "github"'),
                                (QUALIFICATION.DISTRIBUTION_REVISION, "0" * 40),
-                               (QUALIFICATION.DISTRIBUTION_REPOSITORY, "https://example.invalid/package.git")]),
+                               (QUALIFICATION.DISTRIBUTION_REPOSITORY, "https://example.invalid/package.git"),
+                               ('version = "=' + QUALIFICATION.SELF_VERSION + '"',
+                                'version = "=1.0.0"')]),
                 ("vibe.lock", [(QUALIFICATION.TREE_HASH, "sha256:" + "0" * 64),
                                (QUALIFICATION.DISTRIBUTION_REVISION, "0" * 40),
                                ('source_kind = "git"', 'source_kind = "registry"'),
@@ -243,6 +248,25 @@ class CommittedFlowTests(unittest.TestCase):
                     path.unlink() if mutation is None else path.write_bytes(mutation)
                     self.rejects()
                     path.write_bytes(original)
+
+    def test_historical_registry_is_preserved_but_not_selected_or_mutable(self):
+        historical = self.root / QUALIFICATION.HISTORICAL_SELF_SOURCE
+        self.assertEqual(QUALIFICATION.tree_hash(QUALIFICATION.files_in(historical)),
+                         QUALIFICATION.HISTORICAL_SELF_HASH)
+        path = historical / "skill/SKILL.md"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\nRewritten history\n")
+        self.rejects()
+        path.write_bytes(original)
+        QUALIFICATION.check_project(self.root)
+        shutil.rmtree(historical)
+        self.rejects()
+
+    def test_unselected_registry_version_is_rejected(self):
+        path = self.root / "vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.0.0/vibe.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text("Unexpected package version\n")
+        self.rejects()
 
     def test_native_registry_transport_is_bounded_without_binding_checkout_location(self):
         lock = self.root / "vibe.lock"
