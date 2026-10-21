@@ -5,7 +5,7 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **2.0.0** as a source
+This Skill supplies Relay product guidance version **2.0.1** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source and exact shared dependency. Guidance
 availability does not prove an installed service, workflow or connected App is

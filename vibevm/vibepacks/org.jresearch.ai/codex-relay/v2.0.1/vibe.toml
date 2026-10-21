@@ -1,0 +1,24 @@
+# Generated from guidance/source.json; candidate content, no external publication.
+[package]
+group = "org.jresearch.ai"
+name = "codex-relay"
+version = "2.0.1"
+kind = "flow"
+frozen = true
+license = "MIT"
+epoch = 1
+description = "Version-bound Codex Relay workflow Skill with offline shared references"
+
+[boot_snippet]
+source = "vibevm/vibespecs/boot/codex-relay.md"
+category = "flow"
+link = "dynamic"
+
+[requires.packages]
+"org.jresearch.ai/development-governance" = "=4.0.0"
+
+[[skill]]
+name = "codex-relay"
+path = "skill"
+agents = ["codex"]
+include = ["SKILL.md", "LICENSE", "PROVENANCE.json", "references/**", "scripts/**"]

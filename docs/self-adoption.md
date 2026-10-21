@@ -7,12 +7,12 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **2.0.0** candidate uses the same
+The first-party `org.jresearch.ai/codex-relay` **2.0.1** candidate uses the same
 export as the standalone Skill. Its registry, slot, lock, boot index and project
 Skill travel together. Shared Governance is the exact **4.0.0** Git dependency
 identified in [the identity contract](vibevm.md#selected-immutable-identities).
-Guidance 2.0.0 is a major candidate for the changed shared contract; the frozen
-1.0.0 registry payload remains unchanged. Source acceptance does not imply an
+Guidance 2.0.1 is a patch candidate completing native release closure; the frozen
+1.0.0 and 2.0.0 registry payloads remain unchanged. Source acceptance does not imply an
 external package publication or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
@@ -50,9 +50,9 @@ python3 scripts/qualify-vibevm.py
 ```
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v2.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v2.0.1`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0` bytes. Native VibeVM owns slot, lock, index,
+not rewrite frozen accepted `v1.0.0` or `v2.0.0` bytes. Native VibeVM owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the
 standalone export and external consumer instructions.

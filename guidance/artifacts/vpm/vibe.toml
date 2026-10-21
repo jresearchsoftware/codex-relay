@@ -2,7 +2,7 @@
 [package]
 group = "org.jresearch.ai"
 name = "codex-relay"
-version = "2.0.0"
+version = "2.0.1"
 kind = "flow"
 frozen = true
 license = "MIT"
@@ -21,4 +21,4 @@ link = "dynamic"
 name = "codex-relay"
 path = "skill"
 agents = ["codex"]
-include = ["SKILL.md", "PROVENANCE.json", "references/**", "scripts/**"]
+include = ["SKILL.md", "LICENSE", "PROVENANCE.json", "references/**", "scripts/**"]

@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "package": "org.jresearch.ai/codex-relay",
+  "version": "2.0.1",
+  "license": "MIT",
+  "redistribution_authority": "https://github.com/jresearchsoftware/codex-relay/issues/169#issuecomment-6314092881",
+  "components": [
+    {
+      "paths": [
+        "LICENSE",
+        "README.md",
+        "vibe.toml",
+        "skill/**",
+        "vibevm/vibespecs/boot/codex-relay.md"
+      ],
+      "copyright": "Copyright (c) 2026 Codex Relay contributors",
+      "license_file": "LICENSE",
+      "source": "https://github.com/jresearchsoftware/codex-relay",
+      "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
+      "exceptions": [
+        "skill/references/shared/**"
+      ]
+    },
+    {
+      "paths": [
+        "skill/references/shared/**",
+        "vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/**"
+      ],
+      "copyright": [
+        "Copyright (c) 2026 shared-governance contributors",
+        "Copyright (c) 2026 Codex Relay contributors (derived governance text)"
+      ],
+      "license_files": [
+        "skill/references/shared/LICENSE",
+        "vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/LICENSE"
+      ],
+      "source": "https://github.com/jresearchsoftware/shared-governance",
+      "source_revision": "99034dd708e5d0201060986b561ada4d2cffd453",
+      "distribution_revision": "f14da40725cd35fb3117ae84a506256505340787"
+    }
+  ],
+  "external_references": "Links to GitHub, OpenAI, VibeVM and optional FPF are references. No external binary, FPF corpus or third-party library is included."
+}
