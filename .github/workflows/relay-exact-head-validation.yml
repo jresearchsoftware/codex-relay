@@ -135,7 +135,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: >-
           python3 .publisher/tooling/vibe-publisher/publisher.py check
-          --source . --source-sha "$SOURCE_SHA" --base "$BASE_SHA"
+          --source . --source-sha "$SOURCE_SHA" --base "$BASE_SHA" --main "$BASE_SHA"
           --binding vibe-publisher.json --package org.jresearch.ai/codex-relay
           --report "$RUNNER_TEMP/guidance-readiness.json"
           --summary "$GITHUB_STEP_SUMMARY"
