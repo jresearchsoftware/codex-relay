@@ -3,11 +3,11 @@ skill = "codex-relay"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "e59aa4b8eb56775e4e98ce09318e918c99e92119d05f0ff9cf4e51f7183ce897"
+sha256 = "2def0aff70359f0e284ef37172e03ca0ebcdc13b3b64d4dba9d7e5d0ec784d10"
 
 [[file]]
 path = "SKILL.md"
-sha256 = "77f4864b5d9a5a3afcb67e890ca259bdb337d2ab8ba8516dcaed3f8cd19513bb"
+sha256 = "ddc3d678f4f4b770da29e64c48b50aa7629650657d3d9930ba94a24059a314ff"
 
 [[file]]
 path = "references/compatibility.md"

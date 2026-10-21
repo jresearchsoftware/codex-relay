@@ -112,3 +112,30 @@ jobs:
             deploy.ansible.tests.test_production_codex_launcher_binding \
             deploy.ansible.tests.test_production_diagnostic
           node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tests/codex-launcher-*.test.mjs deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
+
+  publisher-readiness:
+    name: Guidance publisher readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jresearchsoftware/shared-governance
+          ref: 5a1e5de66388501235fc9ffd23d45efb34df2b85
+          path: .publisher
+          persist-credentials: false
+      - name: Check exact candidate export without publication credentials
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: >-
+          python3 .publisher/tooling/vibe-publisher/publisher.py check
+          --source . --source-sha "$SOURCE_SHA" --base "$BASE_SHA"
+          --binding vibe-publisher.json --package org.jresearch.ai/codex-relay
+          --report "$RUNNER_TEMP/guidance-readiness.json"
+          --summary "$GITHUB_STEP_SUMMARY"

@@ -123,6 +123,7 @@ spec_format = "mixed"
 "org.jresearch.ai/{name}" = {{ version = "={metadata['version']}", git = "REPLACE_WITH_SELECTED_RELAY_DISTRIBUTION_GIT_URL", rev = "REPLACE_WITH_IMMUTABLE_RELAY_DISTRIBUTION_COMMIT", auth = "none" }}
 "{metadata['shared_coordinate']}" = {{ version = "={metadata['shared_version']}", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "{metadata['shared_distribution_revision']}", auth = "none" }}
 '''.encode()
+    expected.update({"vpm/" + path: data for path, data in inventory(ROOT / "guidance/dependency-closure").items()})
     expected["vpm/LICENSE"] = (ROOT / "LICENSE").read_bytes()
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 

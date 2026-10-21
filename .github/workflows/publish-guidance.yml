@@ -1,0 +1,36 @@
+name: Publish accepted Relay guidance
+on:
+  workflow_run:
+    workflows: [Public CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact accepted main SHA to retry with this same publisher pin
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: relay-guidance-publication-${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.repository == 'jresearchsoftware/codex-relay' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    uses: jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@5a1e5de66388501235fc9ffd23d45efb34df2b85
+    with:
+      mode: publish
+      source_sha: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+      binding: vibe-publisher.json
+      package: org.jresearch.ai/codex-relay
+    secrets:
+      publish_token: ${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}
