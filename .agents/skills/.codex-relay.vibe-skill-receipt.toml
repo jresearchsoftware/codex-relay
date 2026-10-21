@@ -2,8 +2,12 @@ schema = 1
 skill = "codex-relay"
 
 [[file]]
+path = "LICENSE"
+sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
+
+[[file]]
 path = "PROVENANCE.json"
-sha256 = "2def0aff70359f0e284ef37172e03ca0ebcdc13b3b64d4dba9d7e5d0ec784d10"
+sha256 = "f20a6629d40ca5f871707fda18ac339ccafb8c731492fe60e63ae3444ac20790"
 
 [[file]]
 path = "SKILL.md"

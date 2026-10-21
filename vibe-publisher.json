@@ -11,7 +11,9 @@
       "adapter": "tree-v1",
       "files": [
         "LICENSE",
+        "LICENSES.json",
         "README.md",
+        "skill/LICENSE",
         "skill/PROVENANCE.json",
         "skill/SKILL.md",
         "skill/references/compatibility.md",

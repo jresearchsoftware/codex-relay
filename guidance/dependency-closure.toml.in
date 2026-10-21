@@ -1,0 +1,6 @@
+[project]
+name = "relay-release-dependencies"
+version = "0.0.0"
+spec_format = "mixed"
+[requires.packages]
+"org.jresearch.ai/development-governance" = { version = "=4.0.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "f14da40725cd35fb3117ae84a506256505340787", auth = "none" }

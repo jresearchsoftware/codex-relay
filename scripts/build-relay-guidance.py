@@ -48,6 +48,7 @@ def assemble():
     skill = inventory(ROOT / "packages/codex-relay/skill")
     if "SKILL.md" not in skill:
         raise ValueError("Missing canonical native Skill source")
+    skill["LICENSE"] = (ROOT / "LICENSE").read_bytes()
     source_files = {"packages/codex-relay/skill/" + key: digest(value) for key, value in skill.items()}
     for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json",
                  "deploy/workflows/contract.json", "toolchain/vibevm.json"):
@@ -98,7 +99,7 @@ link = "dynamic"
 name = "{name}"
 path = "skill"
 agents = ["codex"]
-include = ["SKILL.md", "PROVENANCE.json", "references/**", "scripts/**"]
+include = ["SKILL.md", "LICENSE", "PROVENANCE.json", "references/**", "scripts/**"]
 '''.encode()
     expected["vpm/vibevm/vibespecs/boot/codex-relay.md"] = b'''# Codex Relay product guidance
 
@@ -124,6 +125,7 @@ spec_format = "mixed"
 "{metadata['shared_coordinate']}" = {{ version = "={metadata['shared_version']}", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "{metadata['shared_distribution_revision']}", auth = "none" }}
 '''.encode()
     expected.update({"vpm/" + path: data for path, data in inventory(ROOT / "guidance/dependency-closure").items()})
+    expected["vpm/LICENSES.json"] = (ROOT / "guidance/licenses.json").read_bytes()
     expected["vpm/LICENSE"] = (ROOT / "LICENSE").read_bytes()
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 

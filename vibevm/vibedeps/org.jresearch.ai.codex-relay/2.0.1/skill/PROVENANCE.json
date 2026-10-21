@@ -3,6 +3,7 @@
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
   "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
   "files": {
+    "LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
     "SKILL.md": "ddc3d678f4f4b770da29e64c48b50aa7629650657d3d9930ba94a24059a314ff",
     "references/compatibility.md": "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace",
     "references/diagnostics.md": "bf19df9455f589ea16e296c378379e5b5ff896bcb80321b8af651ea466942839",
@@ -53,13 +54,14 @@
     "deploy/workflows/contract.json": "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c",
     "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
     "guidance/source.json": "e4a24587cd0fdd5278d7a405ae9187ba272fe8e0a5ba49f7aaa8d16f1122ce3c",
+    "packages/codex-relay/skill/LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
     "packages/codex-relay/skill/SKILL.md": "ddc3d678f4f4b770da29e64c48b50aa7629650657d3d9930ba94a24059a314ff",
     "packages/codex-relay/skill/references/compatibility.md": "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace",
     "packages/codex-relay/skill/references/diagnostics.md": "bf19df9455f589ea16e296c378379e5b5ff896bcb80321b8af651ea466942839",
     "packages/codex-relay/skill/references/examples.md": "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171",
     "packages/codex-relay/skill/references/installation.md": "4d781d4e97d092440e0d7a5a86b116a89a14f9e440871c43671e5eb6045ca7d4",
     "packages/codex-relay/skill/references/workflow.md": "ebb35ad082e2923c558ef8c3195c8646cc096b1631546ac9de371d41fd0a159b",
-    "scripts/build-relay-guidance.py": "8fc29b615171f8823a122ae1be50f977fbc4e0152d0c65065fb4fd8d302807cf",
+    "scripts/build-relay-guidance.py": "b9a7edf04f89468bee0382735aac393330cb6b0a0d21d6fca144b8d00e3a1a66",
     "toolchain/vibevm.json": "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
   },
   "version": "2.0.1",

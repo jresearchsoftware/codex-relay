@@ -185,6 +185,7 @@ class GeneratedTests(unittest.TestCase):
         _, files = project.manifest_files(standalone)
         _, native = project.manifest_files(package)
         self.assertEqual(files, native)
+        self.assertEqual(files["LICENSE"], (ROOT / "LICENSE").read_bytes())
         for path in (ROOT / "packages/codex-relay/skill").rglob("*"):
             if path.is_file():
                 self.assertEqual(path.read_bytes(), (standalone / path.relative_to(ROOT / "packages/codex-relay/skill")).read_bytes())
