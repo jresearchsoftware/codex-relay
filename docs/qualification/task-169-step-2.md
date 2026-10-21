@@ -79,3 +79,18 @@ Final checks, exact candidate head, native Actions links, execution warnings and
 local qualification results belong in the one canonical Writer Outcome and PR.
 Source acceptance, real publication/readback, external consumer acquisition and
 closure remain separate. Stop after this source handoff for independent review.
+
+The reproducible actual-export fixture imports that exact upstream implementation:
+
+```sh
+python3 scripts/qualify-relay-publisher.py --publisher /path/to/pinned/shared-governance \
+  --vibe /absolute/path/to/verified/vibe --source-ref FULL_CANDIDATE_SHA
+```
+
+It substitutes a synthetic READY decision and disposable local destination,
+checks every native staged/tagged/installed byte, finalizes only into local Git,
+then checks retry/no-op and a cold consumer using the supported two immutable
+Git roots. It never verifies source-main CI or live publishing permissions.
+Local `uploadArchive.allowUnreachable` belongs only to the disposable bare
+fixture so the file transport can retrieve the exact commit. Use the peeled
+release commit, not an annotated tag object, as the consumer immutable revision.
