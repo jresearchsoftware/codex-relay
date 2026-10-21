@@ -8,42 +8,32 @@ human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
 Task/Step admission, an installed Relay consumer, Codex UI tools or these
 optional developer hooks to propose a change.
 
-## Context loading and governance layering
+## Shared governance and Relay routing
 
-Start owner-admitted work with only this file, the live canonical Issue or
-Change Request (including trusted Decisions and the immutable admitted snapshot
-for a streamlined Task, or the selected Request for retained schema-v3 work),
-the current PR when one exists, and the exact Git/check facts
-needed for the current decision. The live authority identifies the active goal;
-do not preload broad repository history, status documents, component manuals or
-old task artifacts merely because they may become relevant.
+Relay explicitly adopts all nine complete applicable Shared Governance **4.0.0**
+protocols, accepted source `99034dd708e5d0201060986b561ada4d2cffd453`,
+distribution `f14da40725cd35fb3117ae84a506256505340787`.
+Read each complete topic when triggered; conditional loading excludes no clauses:
 
-Load detail just in time. Read [architecture](docs/architecture.md) before a
-change to orchestration or a trust boundary, the affected component contract
-before changing its API, [CONTRIBUTING.md](CONTRIBUTING.md) when environment or
-validation detail is needed, and deployment/hook/subagent documentation only
-when those surfaces are active. Prefer a targeted section, path, diff or exact
-live fact over a broad reread.
+- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
+- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
+- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
+- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
+- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
+- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
+- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
+- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
+- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow/protection decisions, one-time adoption inspection and event-driven rechecks.
 
-The canonical authored user manual is the
-[product Skill](packages/codex-relay/skill/SKILL.md); developer/component
-contracts supply implementation details, not a second user workflow.
-Its [native producer self-adoption](docs/self-adoption.md) carries versioned
-ready files with source. Before authoring or independently reviewing changes to
-this project's Skill, boot or agent routing, freeze the independently accepted
-main guidance and use it throughout that attempt. Candidate instructions remain
-proposals until accepted; they cannot authorize their own execution or review.
-This first-party technique does not adopt additional Shared Governance topics.
-
-Keep this file limited to durable cross-task invariants and stable routing
-pointers. Component mechanics, platform detail, deployment procedures and tool
-qualification belong in their canonical component documents. A lower-level
-document may specialize an explicit extension point but cannot weaken Task/CR
-authority, security, publication, review or protected-boundary rules.
-
-After a mutation, recovery or compaction, refresh only mutable authority and
-facts that could have changed. Do not restart broad discovery or treat cached
-history as current truth.
+These are the single portable rule owners. The
+[Relay bindings](docs/relay-guidance-ownership.md) retain native authority,
+actors and supported product behavior. Read [architecture](docs/architecture.md)
+for orchestration/trust changes, the affected component contract for API changes,
+[CONTRIBUTING](CONTRIBUTING.md) for validation, and deployment/hook/subagent
+contracts when those surfaces are active. The canonical authored user manual is
+[the product Skill](packages/codex-relay/skill/SKILL.md).
+[Native self-adoption](docs/self-adoption.md) supplies committed ready files;
+freeze accepted source guidance independently of candidate routes.
 
 For legacy Tasks, the live Issue body is the mutable canonical Task contract. Keep current
 requirements, owner corrections, scope/boundary decisions and task status in
@@ -69,24 +59,13 @@ field in the live Issue body, using `close-authorized` only with owner authority
 CR producers preserve that Issue decision when updating canonical authority;
 a CR does not independently authorize closure. Missing, malformed or conflicting
 closure metadata remains `keep-open` with a visible warning.
-`keep-open` means known work or evidence is still expected after implementation.
-Nearby prose should explain why the Issue stays open and what outcome would make closure
-appropriate. This is ordinary Task prose, not another required structured field
-or an automatic closure rule.
-Before every new Task Decision (or compatibility Task Request), consciously reassess
-the known post-implementation work or evidence that justifies `keep-open`.
-Retain it with adjacent concrete remaining conditions and the owner disposition
-needed to change it, or seek or apply existing explicit owner authorization to
-record `close-authorized` in a trusted owner-authorized Task Decision. For new
-schema-v4 work, initial charter plus that Decision determines the effective
-policy; a CR cannot independently authorize closure. Retained schema-v3 work
-keeps its original charter/Request rules. Close only after trusted owner
-completion evidence, verified independent acceptance at the exact result/head,
-no remaining work or continuation hold, and satisfied protected boundaries.
-An Outcome's completion claim alone is insufficient. Approval, merge or Step
-completion alone grants no closure authority. Use the
-[closure authoring guidance](contracts/README.md#closure-policy-authoring)
-within the existing authoring action, without another field or workflow.
+Author concrete completion/closure conditions beside that single field through
+[Relay closure authoring](contracts/README.md#closure-policy-authoring), binding
+TH-002/003/026 to trusted v4 Decisions. Finite owner-authorized work may select
+`close-authorized` before its required Apply; it stays open until all conditions
+verify. A native CR cannot change Task-wide closure authority. Retained v3 keeps
+its original charter/Request rules; exact result acceptance and protected owner
+continuation remain mandatory.
 After an explicit `Authority model: github-native-v1` migration, the Issue is
 the stable charter. In the current schema-v4 source contract, trusted Decisions
 amend durable semantics and Writer creates the sole immutable
@@ -108,13 +87,9 @@ fresh-execution boundary, not a blanket support cutoff for older installations.
 Fresh durable Decision/Request/CR publication also uses current v4 authority;
 exact reserved old publication recovery and old admitted-result acceptance remain
 supported without creating a new old-schema governance chain.
-Steps are execution-time decomposition of progress toward that Task.
-A Task does not predefine, own, or constrain the number, numbering, or scope of
-its Steps. Steps may be introduced as work evolves; a Task may require one Step
-or arbitrarily many. Completing a Step does not imply completing the Task.
-Codex thread continuity is independent of Step boundaries: one physical thread
-may execute multiple successive Steps when useful. Step descriptions embedded
-in historical Task text are not authority over future Step decomposition.
+Shared TH-006–009 owns Step and thread semantics. Writer's execution-time
+allocation below implements it; historical embedded Step descriptions supply
+no future admission authority.
 
 Use these complete titles, with a concise purpose:
 
@@ -277,28 +252,13 @@ an automatic worker delegates publication to Writer.
 
 ## Material User/Operator Contract Change Gate
 
-Removing, replacing, renaming, disabling or materially changing an existing
-user/operator capability or workflow requires explicit owner authorization in
-canonical Task authority. Legacy Tasks record it in the live Issue body;
-migrated schema-v4 Tasks use the stable charter and applicable trusted Decision
-resolved into the next admission snapshot. Retained schema-v3 Tasks keep their
-complete Request compatibility path. Preserve the charter's protected boundaries and
-closure decision. Material surfaces include commands and entry points, required
-inputs, visible surfaces, actor responsibilities, automated/manual transitions,
-additional required actions, ChatGPT/GitHub paths, and material status, Outcome
-or recovery behavior. Internal refactoring with equivalent observable behavior
-needs no separate owner decision.
-
-If implementation, security work, tests, Reviewer feedback or remediation
-discovers preferable behavior outside that authority, preserve the existing
-behavior when safe or stop and surface an owner decision. A technical, security
-or test preference is not authorization for a material contract change.
-
-Before independent `APPROVE`, compare the material old and new behavior in every
-changed surface as well as the functional and security requirements. An
-unauthorized material delta is `OWNER_DECISION_REQUIRED` and blocks approval
-until canonical Task authority records explicit owner disposition. Never normalize
-an implementation-originated behavior change into policy after the fact.
+Apply the complete shared Contract/Decision Maintenance protocol. Relay records
+explicit material owner authorization in the live legacy Issue/CR, or the stable
+v4 charter and trusted Decision resolved into admission; retained v3 keeps its
+complete Request. Unauthorized material behavior is `OWNER_DECISION_REQUIRED`
+and blocks native approval. Review changed supported Relay commands,
+manual/automatic routes, actors, statuses, Outcomes and recovery through
+CD-003/004 and the native authority binding.
 
 ## Independent review and finding provenance
 
@@ -314,22 +274,10 @@ Follow the [same-Task documentation-maintenance rule](CONTRIBUTING.md#keep-workf
 when changing human-visible workflows or authority contracts. Use the existing
 Task/PR and review; do not introduce a separate documentation approval process.
 
-Before introducing or enforcing a new security, validation, privilege,
-filesystem/platform, or operator gate, read
-[the pinned proportional-controls protocol](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md)
-and its [Relay bindings](docs/execution-policy.md#proportional-controls-and-operator-usability).
-
-Apply the shared protocol's [existing-proof rule](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md#existing-proof-before-another-step)
-when considering another process step. Relay's evidence stays in the live
-Issue/CR, PR diff, exact Git facts, native checks and one Writer Outcome.
-When deciding whether an earlier requirement binds newly authorized work, read
-[requirement-authority](vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/requirement-authority.md)
-on demand within the current Task/CR authority. These remain the only adopted
-shared topics. The other bundled topics, including task-handoff's additional
-acceptance strategies and multi-result routing, are references pending separate
-owner reconciliation, not activated policy. See the
-[ownership mapping](docs/relay-guidance-ownership.md). The full
-material user/operator contract-change gate above remains Relay-owned.
+Use complete shared PC/RA/CD/IR for control proposals, existing proof,
+requirement origin, durable decisions and documentation maintenance. Concrete
+[Relay control bindings](docs/execution-policy.md#proportional-controls-and-operator-usability)
+retain required candidate checks and protected operations.
 
 Wait for required native CI, but leave reconstructible CI/status results in
 their native records instead of posting another PASS comment or Outcome update.
@@ -344,21 +292,9 @@ entrypoint, identifier, shell or execution context. Deterministic PASS does not
 replace independent judgment. Keep inner corrections within the admitted goal
 and the progress-bounded stops above.
 
-An accepted reusable architecture, process, governance, security,
-qualification or operational decision from owner/ChatGPT discussion must not
-remain chat-only. Before the next related execution, carry a decision that
-changes executable authority into the live legacy Issue/CR or a trusted Decision
-for a schema-v4 Task (plus the complete successor Request for retained schema-v3
-work); promote an independently
-reusable rule through the next suitable authorized bounded Task/CR into its
-existing policy, architecture, runbook or component contract. If it is not
-durable policy, classify it explicitly as task-local, temporary, experimental
-or rejected when that distinction matters to later execution.
-
-Do not promote casual observations, unaccepted speculation or one-off diagnostic
-facts, and do not create a decision ledger or ceremony-only task. A bounded
-reusable correction may be promoted without completing the unrelated remainder
-of a later backlog item.
+CD-005–007 owns promotion and same-change documentation. Relay executable
+Task authority uses its trusted Decision/legacy compatibility mechanisms;
+component policy belongs in the existing owning contract.
 
 Optional [developer hooks](.codex/hooks/README.md) provide bounded diagnostic
 reads, session-owned recovery and a bounded Stop reminder. They are not Relay

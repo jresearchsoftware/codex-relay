@@ -18,11 +18,13 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "2.1.0"
+VERSION = "4.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "1.0.0"
+SELF_VERSION = "2.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
+HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
+HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
 SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
 SELF_BOOT = "vibevm/vibespecs/boot/codex-relay.md"
 PROJECTION = Path(".agents/skills/codex-relay")
@@ -30,20 +32,25 @@ SKILL_RECEIPT = Path(".agents/skills/.codex-relay.vibe-skill-receipt.toml")
 PACKAGE_BOOT = "vibevm/vibespecs/boot/development-governance.md"
 PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
                   ("package-versioning", "proportional-controls", "requirement-authority",
-                   "task-handoff", "self-adoption", "github-repository-governance"))
-PAYLOAD = {"LICENSE", "README.md", "vibe.toml", PACKAGE_BOOT, *PROTOCOLS}
+                   "task-handoff", "self-adoption", "github-repository-governance",
+                   "independent-review", "contract-and-decision-maintenance", "context-loading"))
+GUIDES = tuple("vibevm/vibespecs/guides/" + name + ".md" for name in
+               ("engineering-methods", "onboarding", "onboarding-examples"))
+PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
+           "tools/chatgpt/README.md", "tools/chatgpt/base.md", "tools/chatgpt/project.py",
+           *PROTOCOLS, *GUIDES}
 # Accepted producer exports omit only their generated local client routes.
 SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/INDEX.md",
                "vibevm/vibespecs/boot/.vibe-boot-artifacts.lock"}
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "4211f55dcaeb3077d6abdbfba53a42ed848351b2"
+DISTRIBUTION_REVISION = "f14da40725cd35fb3117ae84a506256505340787"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "c3fbc8c2d10982889bea526161f810902def4289"
-PAYLOAD_HASH = "1d6e4098ee557319dc04d21defc33260aee1ce21e82b502f8e60726b2b68e955"
-RECEIPT_HASH = "a20f074a317f5e725d77b5b510e3e4c129f41fa266b5a9d3d4dae3ddf554dadc"
-TREE_HASH = "sha256:df90ef1a287c2ce5a70aff4443a0782410b628459722792ed326bde5aaf86ecc"
+SOURCE_REVISION = "99034dd708e5d0201060986b561ada4d2cffd453"
+PAYLOAD_HASH = "8af5b949fd0f5ebeb435d838b41f5a21fad09a5b005ea267fecba20b7c2440cf"
+RECEIPT_HASH = "140d72044071c589a1740efd3177444f8359e675c7569ee5f744c9ba55307774"
+TREE_HASH = "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -140,7 +147,8 @@ def check_package(directory):
             url = urlsplit(target.strip("<>"))
             if url.scheme or url.netloc:
                 continue
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), unquote(url.path)))
+            resolved = (posixpath.normpath(posixpath.join(posixpath.dirname(name), unquote(url.path)))
+                        if url.path else name)
             require(resolved in materialized, "Missing or escaping passive reference: " + name)
     pointer = files[PACKAGE_BOOT].decode()
     require(all("../protocols/" + Path(name).name in pointer for name in PROTOCOLS)
@@ -149,16 +157,25 @@ def check_package(directory):
     return files
 
 
+def check_first_party_registry(root, expected):
+    historical = files_in(root / HISTORICAL_SELF_SOURCE)
+    require(tree_hash(historical) == HISTORICAL_SELF_HASH,
+            "Historical accepted first-party registry changed")
+    require(files_in(root / "vibevm/vibepacks") == {
+        (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (SELF_SOURCE, expected))
+        for name, data in files.items()},
+        "Unexpected first-party registry package or file")
+
+
 def check_first_party(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
     require(metadata["name"] == "codex-relay" and metadata["version"] == SELF_VERSION,
-            "First-party source must retain owner-selected 1.0.0 identity")
+            "First-party source must retain owner-selected " + SELF_VERSION + " identity")
     expected = files_in(root / "guidance/artifacts/vpm")
     require(expected and files_in(root / SELF_SOURCE) == expected,
             "First-party registry differs from generated package export")
-    require(files_in(root / "vibevm/vibepacks") == {
-        str(SELF_SOURCE.relative_to("vibevm/vibepacks") / name): data for name, data in expected.items()},
-        "Unexpected first-party registry package or file")
+    check_first_party_registry(root, expected)
     installed = files_in(root / SELF_SLOT)
     require(MARKER in installed, "Missing first-party slot metadata")
     marker = tomllib.loads(installed.pop(MARKER).decode())

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { parseIssueAuthority } from '../src/issue-authority.mjs';
+import { createAdmissionSnapshot, resolveTaskAuthority } from '../../contracts/src/github-authority.mjs';
 
 const parse = body => parseIssueAuthority(body, { issueNumber: 42, step: 1, targetBaseSha: 'a'.repeat(40) });
 const closureWarnings = authority => authority.warnings.filter(warning => warning.field === 'closure');
@@ -31,13 +32,41 @@ test('continuation never guesses a missing, malformed or conflicting branch/head
   ]) assert.throws(() => parse(body), { code: 'ISSUE_CONTINUATION_INVALID' }, body);
 });
 
-test('canonical Task producer supplies an explicit valid closure decision', async () => {
+test('canonical v4 Task producer requires a deliberate closure choice and allocates Step only at admission', async () => {
   const template = await readFile(new URL('../../.github/ISSUE_TEMPLATE/codex-task.md', import.meta.url), 'utf8');
-  const authority = parse(template);
-  assert.equal(authority.closurePolicy, 'keep-open');
-  assert.equal(authority.closingReference, 'Related to #42');
-  assert.deepEqual(closureWarnings(authority), []);
-  assert.equal(authority.resolutions.find(resolution => resolution.field === 'closure').source, 'authoring-normalized');
+  assert.match(template, /^labels: ''$/m);
+  assert.throws(() => parse(template), { code: 'TYPED_REQUEST_REQUIRED' });
+  const placeholder = 'Issue closure policy: <!-- choose keep-open or close-authorized with owner authority -->';
+  assert.equal(template.split(placeholder).length, 2);
+
+  const repository = 'example-org/sample-project';
+  const parent = { kind: 'issue', number: 42 };
+  const resolve = charterBody => resolveTaskAuthority([{
+    kind: 'issue-body', repository, id: 4200, parent, body: charterBody,
+    author: { login: 'owner', id: 9, type: 'User' }
+  }], {
+    repository, task: 42, charterBody, charterId: 4200,
+    trustedAuthor: { login: 'reviewer-app[bot]', id: 7, type: 'Bot' },
+    route: 'manual', purpose: 'Implement the authorized Task',
+    projectDefaults: { model: 'project-model', effort: 'high', subagents: false },
+    startingState: { branch: 'codex/task-42', base_sha: 'a'.repeat(40), starting_head: 'a'.repeat(40), existing_pr: null }
+  });
+  assert.deepEqual(resolve(template).warnings, ['ISSUE_CLOSURE_POLICY_INVALID']);
+
+  for (const policy of ['keep-open', 'close-authorized']) {
+    const conditions = policy === 'close-authorized'
+      ? 'Complete implementation, independent exact-head acceptance, merge and the explicitly authorized Apply; close after verification with no remaining work or hold.'
+      : 'Keep open for the unresolved owner choice about additional consumer qualification outside this authorized implementation path.';
+    const charter = template.replace(placeholder, `Issue closure policy: ${policy}\n${conditions}`);
+    const resolved = resolve(charter);
+    assert.equal(resolved.request.issue_closure_policy, policy);
+    assert.deepEqual(resolved.warnings, []);
+    assert.equal(resolved.authority.compatibility_request, null);
+    assert.equal(Object.hasOwn(resolved.request, 'step'), false);
+    const snapshot = createAdmissionSnapshot(resolved, { step: 1, attempt: '123', runId: '123' });
+    assert.equal(snapshot.step, 1);
+    assert.equal(snapshot.issue_closure_policy, policy);
+  }
 });
 
 test('explicit Issue closure choices determine linkage without default warnings', () => {

@@ -7,21 +7,27 @@ contract and shared dependency plus hashes of the authored and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **1.0.0** becomes a first-party source release only on independent
+Version **2.0.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
-that another consumer adopted it. An unmerged artifact remains a candidate.
+that another consumer adopted it. An unmerged artifact remains a candidate. The 2.0.0 major reflects changed
+shared governance semantics. Frozen accepted 1.0.0 registry bytes remain
+unchanged for identity and rollback. The selected product-contract baseline is
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`; it is separate from the
+enclosing accepted guidance release.
 
 ## Choose a delivery form
 
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `1.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `2.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both contain identical Skill/reference/schema/provenance files, including the
-exact Shared Governance 2.1.0 payload. Package availability does not activate
-new shared topics, install services or synchronize client settings.
+exact Shared Governance 4.0.0 payload. Relay source adopts all nine applicable
+complete topics through its accepted policy and product bindings. Another
+consumer selects its own adoption through accepted local guidance; installing
+files alone neither adopts topics nor installs services or changes settings.
 Live GitHub operations still require their ordinary authorized access.
 
 ## Standalone install, update and rollback
@@ -71,7 +77,7 @@ Use the hash-checked VibeVM 1.0.7 binary identified in the assembled
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
 Preserve its explicit Shared Governance Git root at
-`4211f55dcaeb3077d6abdbfba53a42ed848351b2`, version `=2.1.0`.
+`f14da40725cd35fb3117ae84a506256505340787`, version `=4.0.0`.
 
 VibeVM 1.0.7 follows string version edges but ignores transitive Git-table source
 declarations. Both explicit immutable Git source roots in the consumer template

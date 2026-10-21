@@ -16,7 +16,8 @@ CANDIDATE_EXTRA_MARKERS = re.compile(rb'(?:AKIA[0-9A-Z]{16}|sk-(?:proj-)?[A-Za-z
 
 
 def anchors(text):
-    result, counts = set(), {}
+    result = set(re.findall(r'(?i)<a\s+id=["\']([^"\']+)["\']\s*>', text))
+    counts = {}
     for title in re.findall(r'^#{1,6}\s+(.+?)\s*#*$', text, re.M):
         name = re.sub(r'[^\w\- ]', '', title.lower()).replace(' ', '-')
         count = counts.get(name, 0)

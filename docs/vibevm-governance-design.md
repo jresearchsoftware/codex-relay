@@ -73,7 +73,7 @@ Classification applies to semantic slices, not whole files.
 
 | Existing surface and rule slice | Class and canonical owner | Distribution decision |
 | --- | --- | --- |
-| [AGENTS: context loading](../AGENTS.md#context-loading-and-governance-layering): small startup context, targeted reads, refresh mutable facts after recovery | G candidate; neutral owner still to be selected | Context-discipline flow; keep Relay paths and authority-model distinctions local |
+| [AGENTS: context loading](../AGENTS.md#shared-governance-and-relay-routing): small startup context, targeted reads, refresh mutable facts after recovery | G candidate; neutral owner still to be selected | Context-discipline flow; keep Relay paths and authority-model distinctions local |
 | Same section: live legacy Issue body, native request authority, publication language | P for authority semantics; L for English publication convention; D for current records | No extraction of the current Task contract or GitHub state |
 | [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename): Task/Step, closure, labels, CR title synchronization, manual versus automatic title handling | P, Relay | Travel with Relay; titles, labels and closure decisions themselves are D |
 | [Canonical checkout and safe Git handoff](../AGENTS.md#canonical-checkout-and-safe-git-handoff): exact starting head, continuation branch/PR binding, worker/Writer import | P, Relay | Product contract; branch, worktree, head and publication observations are D |

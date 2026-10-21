@@ -1,7 +1,7 @@
-# Codex Relay 1.0.0 guidance package
+# Codex Relay 2.0.0 guidance package
 
 Generated source candidate for `org.jresearch.ai/codex-relay`. It describes accepted
-Relay contract `9057a2b6a21d33c4d6778b0211e1c68d097c64fc` with the exact pinned shared
+Relay contract `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` with the exact pinned shared
 dependency. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 

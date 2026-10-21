@@ -1,10 +1,11 @@
 # Progress-bounded execution
 
-An authorized Codex execution, Relay-admitted or standalone/manual, may inspect, diagnose, make bounded corrections
-and rerun relevant validation until its goal is complete, while each next
-action has concrete evidence and remains within admitted authority. There is
-no fixed correction-count default. Repeating the same failed action without
-new evidence is not progress.
+The complete common execution-cycle, correction, preservation and stop semantics
+are owned by the adopted pinned
+[Shared Governance 4.0.0 Task Handoff protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md),
+especially TH-006–TH-013 and TH-026. Read the complete protocol when executing,
+handing off or continuing governed work. This document binds it to Relay's
+admitted invocation and supported standalone/manual route.
 
 One bounded repair owns reproduction, directly related corrections, regression
 checks, representative installed-to-target deployment and the original operation
@@ -17,14 +18,9 @@ correction, without repeating unrelated historical proof. The
 execution routes and owner acceptance. Deployment remains limited to the
 environment and effects actually authorized.
 
-Stop and preserve useful work when:
-
-- a human decision or additional authority is required;
-- the next material correction is ambiguous or no justified next action remains;
-- the same failure repeats without new evidence;
-- prior execution state is unknown, prior execution is uncontained, or an
-  external mutation has an ambiguous result;
-- repository, credential, security or production authority is uncertain.
+For Relay's TH-012/TH-013 prior-state and authority checks, an uncontained worker,
+unknown prior execution, ambiguous external mutation or uncertain repository,
+credential, security or production authority remains a concrete stop boundary.
 
 For state wholly inside an explicitly isolated disposable TEST sandbox, apply
 [TEST Environment Authority](#test-environment-authority): uncertain or failed
@@ -50,21 +46,19 @@ automatically passing full conversation or execution history. Include broader
 history only when materially necessary, preserving relevant prior decisions,
 constraints, prohibitions and protected boundaries. Delegation never expands
 Task/CR scope, external authority, credential access, publication or production
-rights. Completion requires applicable validation;
-report unavailable checks honestly and never replace independent acceptance
-with a worker's success claim.
+rights. Validation and independent acceptance follow the adopted
+[Independent Review methodology](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md)
+and [native Reviewer binding](../reviewer/README.md#independent-review-and-finding-provenance).
 
-Before every terminal return, including BLOCKED, reconcile task-owned worktree
-state when safe. Preserve useful changes in ordinary task commits and leave
-unrelated work untouched. Remove only confirmed disposable generated residue;
-ignore repeatable artifacts only when doing so does not hide useful work.
-Determine the distinction from the actual work, ownership and permissions, not
-from a filename or a clean status claim. The worker and collector can have
-different filesystem access. Do not widen permissions, reset, blindly commit,
-publish or retry arbitrary residue to make a check green. Report remaining
-uncommitted/non-ignored work, its known cause and any reconciliation/access
-boundary in the terminal summary. Automatic workers hand commits to trusted
-Writer and retain no publication authority.
+Relay implements TH-012/TH-013 preservation through ordinary task commits and
+terminal worktree reconciliation, including BLOCKED results. Its worker and
+collector may have different filesystem access: classify residue from actual
+work, ownership and permissions, rather than its filename or a clean-status
+claim. Do not widen permissions, reset, blindly commit, publish or retry
+arbitrary residue to make collection green. The terminal result identifies
+remaining uncommitted/non-ignored work, cause and reconciliation/access boundary.
+Automatic workers hand commits to trusted Writer and retain no publication
+authority.
 
 The existing shared-group umask does not override a tool's explicit `0600`
 file or `0700` directory mode, including an atomic replacement. Newly created,
@@ -198,16 +192,12 @@ preservation or recovery requirements.
 
 ## Proportional controls and operator usability
 
-The complete reusable procedure now has one semantic owner: the committed
-[development-governance 2.1.0 proportional-controls protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/proportional-controls.md).
-Read it in full for relevant controls, including behaviorally free hardening,
-and use its existing-proof rule when considering another process step. For a
-relevant requirement-origin decision, read its
-[requirement-authority protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/2.1.0/vibevm/vibespecs/protocols/requirement-authority.md).
-Root AGENTS adopts these two unchanged topics; other bundled procedures remain
-unactivated references, as recorded in the [ownership mapping](relay-guidance-ownership.md).
-Normal execution reads these committed files
-without VibeVM, resolution, networking or another owner action.
+The complete common control and requirement-origin procedures are the adopted
+pinned [Shared Governance 4.0.0 Proportional Controls](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/proportional-controls.md)
+and [Requirement Authority](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/requirement-authority.md)
+protocols. Read each complete topic when its trigger applies, through the
+[root adoption and routing](../AGENTS.md). Ordinary execution reads committed
+files offline; maintenance uses the pinned lock and materialized content.
 
 ### Relay bindings
 
@@ -219,18 +209,17 @@ recovery, deployment, merge or closure permission. Keep worker, Writer and
 independent Reviewer responsibilities separate and retain all existing
 credential, trust, runtime and production boundaries.
 
-The full [material user/operator contract-change gate](../AGENTS.md#material-useroperator-contract-change-gate)
-remains operative and Relay-owned, including implementation-time safe
-preservation/stop, comparison of changed surfaces before independent approval,
-and prohibition of retrospective authority normalization. An unauthorized
-material delta remains `OWNER_DECISION_REQUIRED` until canonical owner
-amendment. The shared control protocol does not replace that broader gate.
+The adopted [Contract and Decision Maintenance protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+owns material contract-change and durable-decision semantics. Relay's
+[Task/Decision binding](../AGENTS.md#material-useroperator-contract-change-gate)
+retains `OWNER_DECISION_REQUIRED` until canonical owner amendment; consumer
+adoption does not alter native authority or authorize a runtime change.
 
 Use Relay's existing Task/PR, native checks, independent exact-head review and
 one Writer Outcome for evidence and disposition. Required full candidate
-checks, warning acquisition below, finding provenance and the simplest
-owner-facing path required by canonical authority remain binding. Existing
-proof about an earlier head does not qualify a changed candidate.
+checks and warning acquisition below remain product requirements. Shared IR
+owns finding provenance and exact-result evidence; shared PC owns assessment
+of the simplest authorized operator path.
 
 [Consumer maintenance and rollback](vibevm.md) describe the reviewed source,
 lock and slot identity path. A missing or drifted shared file is an evidence
@@ -239,39 +228,32 @@ content; do not invent a substitute procedure or resolve policy at session time.
 
 ## Execution warning disposition
 
-Execution warnings remain decision inputs even after a successful run. Before
-review, continuation, merge, closure or an owner decision, inspect the primary
-warning surfaces that are applicable to the execution and exposed through
-supported GitHub/runtime APIs after actual job, check or runtime execution has
-begun:
+The adopted [Independent Review protocol, IR-008](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md#IR-008)
+and [Task Handoff protocol, TH-018/TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md#TH-018)
+own common warning disclosure, evidence gaps and continuation semantics. Relay
+requires that inspection before review, continuation, merge, closure or an owner
+decision. Its supported primary acquisition surfaces, after actual job, check
+or runtime execution has begun, are:
 
 - Relay/Codex Outcomes, including explicit warning fields and
   `COMPLETED_WITH_WARNINGS`;
 - GitHub job/check execution annotations; and
 - Relay/controller/Actions execution annotations associated with the attempt.
 
-Do not replace inspection of those primary surfaces with a text search for the
-word `warning` in job logs. Compiler, test, installer, Git and similar warnings
+Compiler, test, installer, Git and similar warnings
 are secondary unless they are surfaced as execution warnings or materially
 affect authority, security, correctness, acceptance or operability.
 
-Disposition every material warning with its source/provenance, impact, relation
-to current scope, resolution or remaining limitation, next action/owner/deadline
-when applicable, and effect on the current verdict or continuation decision.
-Green status is not a disposition. If a required primary warning or annotation
-surface cannot be inspected, state the evidence gap and do not claim that no
-warnings were observed within the required supported scope.
+Relay's disposition also records the action's owner/deadline when applicable
+and its effect on the current native verdict or continuation decision.
 
 GitHub service-level or pre-execution workflow annotations and platform policy
 banners visible only in the UI are outside mandatory automated acquisition until
 a supported API suitable for public and private repositories exists. Do not
 scrape rendered HTML or use browser cookies/session state as a fallback. The
-excluded surface alone does not block independent review or make supported
-execution evidence incomplete. Completeness describes acquisition within the
-required supported scope; `none_observed` means no warning was observed within
-that scope. Neither proves that no UI-only warning exists. An out-of-scope
-acquisition limit does not dispose of a material warning already known from
-other evidence.
+acquisition scope defines the native completeness claim; `none_observed` means
+no warning was observed within that supported scope. Apply IR-008 to known
+warnings and excluded-surface limits.
 
 ## Developer stop evidence
 

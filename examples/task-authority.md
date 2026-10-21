@@ -29,7 +29,7 @@ authorization described in the [Reviewer contract](../reviewer/README.md).
 
 The stable Issue body in this synthetic scenario is exactly the following UTF-8
 text, including its final newline. Its hash is
-`397f0e98f0271fafc4daca0933202fc68ba87a2d489001f5e1110092fe3127b6`:
+`ff6c49571547cfc76623dd16b4939892a0a22ffbf5a126be27689bba8449db06`:
 
 ```text
 Authority model: github-native-v1
@@ -38,6 +38,7 @@ Goal: Document local validation and completion.
 Scope: Repository documentation only.
 Protected boundaries: No runtime changes or deployment.
 Issue closure policy: close-authorized
+Completion and closure require the documentation changes, independent exact-head acceptance, merge and no remaining Task-specific work or hold. No installed Apply is required.
 ```
 
 The fictional owner has authorized this closure policy. It permits closure only
@@ -57,7 +58,7 @@ defaults. Ordinary selected evidence remains context, rather than Task authority
   "repository": "example-org/sample-project",
   "task": 42,
   "parent": {"kind": "issue", "number": 42},
-  "charter_sha256": "397f0e98f0271fafc4daca0933202fc68ba87a2d489001f5e1110092fe3127b6",
+  "charter_sha256": "ff6c49571547cfc76623dd16b4939892a0a22ffbf5a126be27689bba8449db06",
   "purpose": "Include no-change completion in the documentation",
   "amendments": {
     "scope": ["Document the local validation workflow.", "Explain no-change completion."]
@@ -73,6 +74,24 @@ active Decisions accumulate in native comment-ID order. Apply the existing
 `codex-ready-auto` or `codex-ready-manual` command when the Task is ready for an
 execution admission. Writer resolves and stores the current snapshot, allocates
 Step, and projects labels/title. No additional authoring form or Request is needed.
+
+### Finite Apply and closure choices
+
+In a separate synthetic v4 charter, the owner authorizes a bounded source fix,
+independent exact-head acceptance, merge, an explicit installed Apply and
+original-operation verification. With `Issue closure policy: close-authorized`,
+those adjacent completion conditions keep the Issue open through merge and
+Apply. After verified success with no remaining work/hold, the existing owner
+continuation closes it without another closure Decision. Source PASS, merge or
+an unrelated deployment does not satisfy the original-operation evidence.
+
+If the owner instead leaves a concrete unresolved deployment choice or later
+qualification outside the authorized path, use `keep-open` and name that hold.
+If the owner later defers, combines or cancels the required Apply, publish a
+trusted Task-scoped v4 Decision reconciling completion conditions and closure
+policy; do not rewrite the admitted charter or pretend deployment occurred.
+No CR, Step label, successful Outcome or per-Step Decision substitutes for that
+owner change. Reassessing unchanged conditions creates no additional Decision.
 
 ## Standalone manual source PR continuation
 
@@ -126,7 +145,7 @@ This CR has no `step`, `supersedes`, complete Request or Task closure policy:
   "repository": "example-org/sample-project",
   "task": 42,
   "parent": {"kind": "pull_request", "number": 43},
-  "charter_sha256": "397f0e98f0271fafc4daca0933202fc68ba87a2d489001f5e1110092fe3127b6",
+  "charter_sha256": "ff6c49571547cfc76623dd16b4939892a0a22ffbf5a126be27689bba8449db06",
   "purpose": "Correct no-change completion instructions",
   "change_request_id": "CR-42-001",
   "branch": "codex/task-42",
@@ -176,9 +195,9 @@ The complete Outcome claim is:
   "repository": "example-org/sample-project",
   "task": 42,
   "parent": {"kind": "issue", "number": 42},
-  "charter_sha256": "397f0e98f0271fafc4daca0933202fc68ba87a2d489001f5e1110092fe3127b6",
+  "charter_sha256": "ff6c49571547cfc76623dd16b4939892a0a22ffbf5a126be27689bba8449db06",
   "authority": {
-    "charter": {"kind": "issue-body", "id": 4200, "parent": {"kind": "issue", "number": 42}, "sha256": "397f0e98f0271fafc4daca0933202fc68ba87a2d489001f5e1110092fe3127b6"},
+    "charter": {"kind": "issue-body", "id": 4200, "parent": {"kind": "issue", "number": 42}, "sha256": "ff6c49571547cfc76623dd16b4939892a0a22ffbf5a126be27689bba8449db06"},
     "decisions": [{"kind": "issue-comment", "id": 4102, "parent": {"kind": "issue", "number": 42}, "sha256": "a95f0946b4c423897c7e351680bc08e5ae159ced950b9f28c998125befad1a20"}],
     "change_request": null,
     "compatibility_request": null,

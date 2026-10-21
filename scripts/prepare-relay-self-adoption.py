@@ -16,7 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = Path("vibevm/vibepacks")
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "1.0.0"
+SELF_VERSION = "2.0.0"
 SELF_SOURCE = REGISTRY / SELF_COORDINATE / ("v" + SELF_VERSION)
 SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
 PROJECTION = Path(".agents/skills/codex-relay")
@@ -35,7 +35,7 @@ def expected(root=ROOT):
     qualification = load("qualify-vibevm")
     metadata = json.loads(qualification.read_file(root, "guidance/source.json"))
     qualification.require(metadata["name"] == "codex-relay" and metadata["version"] == SELF_VERSION,
-                          "Self-adoption requires the owner-selected first-party 1.0.0 identity")
+                          "Self-adoption requires the owner-selected first-party " + SELF_VERSION + " identity")
     qualification.check_package(root / qualification.SLOT)
     artifact = qualification.files_in(root / "guidance/artifacts/vpm")
     qualification.require(artifact, "Build Relay guidance artifacts before native source staging")
@@ -48,9 +48,7 @@ def stage(root=ROOT, check=False):
     expected_files = {str(package.relative_to(REGISTRY) / name): data
                       for package, files in packages.items() for name, data in files.items()}
     if check:
-        actual = qualification.files_in(root / REGISTRY)
-        qualification.require(actual == expected_files,
-                              "Native registry differs from generated first-party payload")
+        qualification.check_first_party_registry(root, packages[SELF_SOURCE])
         return {"native_registry": "PASS", "files": len(expected_files)}
     # Do not delete unknown files or version history to make a candidate pass.
     # Repeated edits of this unpublished candidate may replace known export files.
