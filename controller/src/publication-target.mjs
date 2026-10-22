@@ -6,7 +6,7 @@ import { labelNames, stepLike } from './step-metadata.mjs';
 // Branch reuse makes closed/merged PRs history, not current publication targets.
 // Count current candidates before checking compatibility; never select one by
 // silently discarding another open PR with conflicting authority.
-export async function findCurrentIssuePullRequest(api, envelope, expectedNumber = null) {
+export async function findCurrentIssuePullRequest(api, envelope, expectedNumber = null, publishedTransition = null) {
   // Continuation must also see wrong-base candidates rather than treating an
   // existing PR as absent and manufacturing a replacement.
   const base = envelope.continuation ? '' : `&base=${encodeURIComponent(CONSUMER.baseBranch)}`;
@@ -24,8 +24,15 @@ export async function findCurrentIssuePullRequest(api, envelope, expectedNumber 
   // any readiness decision, without adopting movement between observations.
   const pr = await api.get(`/pulls/${summary.number}`);
   assertPr(pr, summary.number);
+  // Only the immediate read following Writer's verified non-force push may
+  // observe either end of that exact transition. List/detail propagation is
+  // independent; neither response authorizes a new head or a Ready mutation.
+  const knownTransition = publishedTransition && expectedNumber
+    && [publishedTransition.previous, publishedTransition.head].every(head => /^[0-9a-f]{40}$/.test(head ?? ''))
+    && [summary.head.sha, pr.head.sha].every(head => [publishedTransition.previous, publishedTransition.head].includes(head));
   if (pr.head.ref !== envelope.branch || linkedIssue(pr.body) !== envelope.issueNumber
-    || pr.head.sha !== summary.head.sha || pr.base.sha !== summary.base.sha) fail('PR_AUTHORITY_CHANGED');
+    || pr.head.sha !== summary.head.sha && !knownTransition
+    || pr.base.sha !== summary.base.sha) fail('PR_AUTHORITY_CHANGED');
   // Hydration must not erase a conflicting admission Step/title observation.
   if (pr.title !== summary.title) fail('STEP_DISPLAY_MISMATCH');
   if (JSON.stringify(labelNames(pr.labels).filter(stepLike).sort())

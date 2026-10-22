@@ -40,6 +40,9 @@
 {% endif %}
   },
   "runtimeUser": {{ (relay_codex_user) | to_json }},
+{% if relay_codex_launch_work_group is defined %}
+  "workGroup": {{ relay_codex_launch_work_group | to_json }},
+{% endif %}
 {% if relay_repository_runtime_users is defined %}
   "repositoryRuntimeUsers": {{ relay_repository_runtime_users | to_json }},
 {% endif %}

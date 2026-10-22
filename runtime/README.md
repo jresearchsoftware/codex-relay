@@ -49,6 +49,17 @@ private worker-created source. See the
 [native filesystem probe](../docs/codex/cli-integration.md#native-filesystem-probe)
 and [collector contract](../controller/README.md#collector-identity-and-separate-host-qualification).
 
+The fixed launcher uses the configured slot work group as the process primary
+group, including through the user namespace. Serial installations may configure
+top-level `workGroup`; old serial configurations without it retain their launch
+ABI. The launcher checks the configured group's actual numeric identity before
+reading the token or starting a child; `WORK_GROUP_UNAVAILABLE` and
+`WORK_GROUP_MISMATCH` identify an incomplete or incorrect installed launch binding.
+The credential-free runtime probe and bounded cleanup remain available before
+that execution check. Execution and cleanup share one fixed sudo argument builder.
+This changes process credentials only, without changing account settings or
+repairing source metadata. Explicit private modes remain private.
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching

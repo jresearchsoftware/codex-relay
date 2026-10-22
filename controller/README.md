@@ -563,6 +563,13 @@ an active implementation/remediation PR Draft. Blocked, incomplete, failed and
 unconfirmed execution stays Draft, including a domain `BLOCKED` Outcome and a
 controller/journal failure after a successful worker return.
 
+Immediately after its verified non-force progress push, Writer tolerates PR
+list/detail head propagation only between that exact predecessor and published
+candidate, for the already bound PR. Branch, repository, base, linkage and
+Step/title checks remain unchanged. Other reads retain strict observation
+agreement, and successful Outcome/Ready handoff still requires the exact
+published head. A stale PR read never authorizes another push or a new head.
+
 Successful `finish` publishes and reads back one successful exact-candidate
 Outcome while the PR is still Draft. `complete-handoff` then reads the protected
 runner journal: returned successful execution, containment, complete collection,
@@ -843,6 +850,16 @@ Reconcile only known public, task-owned source through the existing work group
 before handoff, or report the precise access blocker. Never skip unreadable
 tracked/non-ignored content, broaden private access or elevate ordinary collection.
 Ignored private caches remain excluded when they contain no tracked content.
+
+Group inheritance also has a boundary: a package tree staged outside a setgid
+parent and renamed into the checkout retains its original group. Slot workers
+therefore launch with their configured work group as primary through the fixed
+sudo interface, so ordinary new public inodes use the collector-readable group
+even outside a setgid directory. Serial installations can select top-level
+`workGroup` through the deployment contract. This does not override explicit
+`0600`/`0700`, imported ownership or a tool's explicit group change. Those cases
+still fail complete observation when non-ignored and require a bounded access
+disposition; ordinary collection never changes their metadata.
 
 Filesystem acquisition failures retain `TRUSTED_GIT_FAILED` /
 `GIT_LOCAL_FAILURE`, plus allowlisted OS `diagnosticCode` and `syscall`. The

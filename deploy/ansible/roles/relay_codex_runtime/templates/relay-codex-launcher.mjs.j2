@@ -11,6 +11,11 @@ const CODEX_BINARY = "{{ relay_codex_binary_path }}";
 const CODEX_PACKAGE_ROOT = "{{ relay_codex_package_home }}/packages";
 const TOKEN_FILE = "{{ relay_codex_access_token_file }}";
 const WORK_ROOT = "{{ relay_dispatch_work_root }}";
+{% if relay_execution_slots is defined or relay_codex_launch_work_group is defined %}
+const WORK_GROUP = {{ relay_codex_work_group | to_json }};
+{% else %}
+const WORK_GROUP = null;
+{% endif %}
 {% if relay_github_repositories is defined %}
 // Only protected installation settings select runtime users and repository roots.
 const REPOSITORY_PROFILES = [
@@ -107,6 +112,14 @@ async function main() {
     tokenFile = {{ (relay_config_root ~ '/runtime-users/') | to_json }} + runtimeUser + '/codex-credentials/access-token';
   }
 {% endif %}
+  if (WORK_GROUP !== null) {
+    const group = spawnSync('/usr/bin/getent', ['group', WORK_GROUP], {
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }, encoding: 'utf8', timeout: 5000, maxBuffer: 4096
+    });
+    const fields = group.stdout?.trim().split(':') ?? [];
+    if (group.status !== 0 || fields[0] !== WORK_GROUP || !/^[1-9][0-9]*$/.test(fields[2] ?? '')) fail('WORK_GROUP_UNAVAILABLE');
+    if (process.getgid() !== Number(fields[2]) || process.getegid() !== Number(fields[2])) fail('WORK_GROUP_MISMATCH');
+  }
   const cwd = await resolveBoundedPath(cwdArg, workRoot);
   const input = await resolveBoundedPath(inputArg, cwd);
   const sandbox = ".codex-sandbox";

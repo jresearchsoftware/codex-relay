@@ -44,6 +44,7 @@ checks the request's configured target before importing repository-bound code.
 | `routingWorkflow`, `recoveryWorkflow`, `validationWorkflow` | Exact native workflow identity checks and lookups |
 | `defaultProfile` | Required consumer-owned model; optional effort override for omitted authoring fields |
 | `paths`, `runtimeUser` | Installed helpers, state/credential locations and non-root worker identity |
+| Optional `workGroup` | Primary launch group for a serial worker; must match deployment `environment.codexWorkGroup` |
 | Optional `validationNames` | Up to 32 unique bounded consumer check IDs; declare the same list in Reviewer config |
 | Optional `executionSlots` | Bounded resource slots with checkout/journal/diagnostic roots and fixed helper bindings; explicit legacy slots keep independent identities |
 | Optional `generalRunnerPool` | Managed physical `desiredCapacity` (1–32), with derived stable slots and shared trusted runner/default non-root runtime identity |
@@ -95,6 +96,15 @@ Writer/Reviewer identities and App installations across configured repositories;
 managed pool members share the General Runner identity and repository views may
 select their own configured runtime user. A slot is a physical execution resource,
 independent of repository selection; adding a repository does not add pool capacity.
+
+Each slot's configured `workGroup` is also the worker process's primary group,
+selected through the fixed `sudo -g` launch and cleanup interface. This leaves
+the Unix account's primary group unchanged and preserves the installation digest
+and slot authority. A serial configuration without slots may select the same
+behavior with top-level `workGroup`; omission retains its old launch ABI and
+digest. A top-level group with slots must match the primary slot. Changing a
+serial group requires existing installation/admission reconciliation; it cannot
+rebind retained attempts.
 
 The complete installation configuration has one digest, independent of which
 slot runs a Task. A fresh automatic admission verifies the configured runner

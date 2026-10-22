@@ -32,6 +32,8 @@ test('finite slots preserve one full config digest and explicit primary legacy p
   const c = validateConsumer(pool()); const digest = consumerDigest(c);
   const second = resolveExecutionConsumer(c, 'second');
   assert.equal(second.runtimeUser, 'relay-worker-two');
+  assert.equal(second.workGroup, 'relay-work-two');
+  assert.equal(resolveExecutionConsumer(c).workGroup, 'relay-work');
   assert.equal(second.paths.writerHelper, c.paths.writerHelper);
   assert.equal(second.paths.claimRoot, c.paths.claimRoot);
   assert.equal(second.paths.workRoot, c.executionSlots[1].paths.workRoot);
@@ -40,6 +42,18 @@ test('finite slots preserve one full config digest and explicit primary legacy p
   assert.equal(resolveExecutionConsumer(c).paths.workRoot, c.paths.workRoot);
   assert.ok(Object.isFrozen(second.paths));
   assert.throws(() => resolveExecutionConsumer(c, 'foreign'));
+});
+
+test('serial workGroup is optional, explicit and bound to the installation digest', () => {
+  const original = structuredClone(CONSUMER); delete original.executionSlots; delete original.workGroup;
+  const fixed = validateConsumer({ ...original, workGroup: 'relay-work' });
+  assert.equal(resolveExecutionConsumer(fixed).workGroup, 'relay-work');
+  assert.equal(resolveExecutionConsumer(original).workGroup, undefined);
+  assert.notEqual(consumerDigest(fixed), consumerDigest(original));
+  for (const workGroup of [null, '', 'root', 'shared;id', 979]) {
+    assert.throws(() => validateConsumer({ ...original, workGroup }), { code: 'CONSUMER_CONFIG_INVALID' });
+  }
+  assert.throws(() => validateConsumer({ ...pool(), workGroup: 'foreign-group' }), { code: 'CONSUMER_CONFIG_INVALID' });
 });
 
 test('slot admission requires both configured runner name and actual UID', () => {

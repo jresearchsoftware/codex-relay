@@ -1,7 +1,8 @@
 # managed-by: codex-relay
 Defaults:{{ relay_runner_user }} !setenv
+{% set runas_group = (':' ~ relay_codex_work_group) if (relay_execution_slots is defined or relay_codex_launch_work_group is defined) else '' %}
 {% if relay_additional_runtime_users | default([]) %}
-{{ relay_runner_user }} ALL=({{ ([relay_codex_user] + relay_additional_runtime_users) | unique | join(',') }}) NOPASSWD: {{ relay_codex_launcher_path }}
+{{ relay_runner_user }} ALL=({{ ([relay_codex_user] + relay_additional_runtime_users) | unique | join(',') }}{{ runas_group }}) NOPASSWD: {{ relay_codex_launcher_path }}
 {% else %}
-{{ relay_runner_user }} ALL=({{ relay_codex_user }}) NOPASSWD: {{ relay_codex_launcher_path }}
+{{ relay_runner_user }} ALL=({{ relay_codex_user }}{{ runas_group }}) NOPASSWD: {{ relay_codex_launcher_path }}
 {% endif %}

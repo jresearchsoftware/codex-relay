@@ -14,10 +14,10 @@ import { WriterBlockedError } from "./contracts.mjs";
 import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig } from "../../controller/src/diagnostics.mjs";
 import { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
 import { normalizeCodexUsage, usageFromCodexJsonLines } from "../../controller/src/codex-usage.mjs";
+import { buildCodexProcessSpec } from './codex-process.mjs';
+export { buildCodexProcessSpec, CODEX_SUDO_PATH, CODEX_RUNTIME_USER, CODEX_LAUNCHER_PATH } from './codex-process.mjs';
+import { CODEX_LAUNCHER_PATH } from './codex-process.mjs';
 
-export const CODEX_SUDO_PATH = "/usr/bin/sudo";
-export const CODEX_RUNTIME_USER = CONSUMER.runtimeUser;
-export const CODEX_LAUNCHER_PATH = CONSUMER.paths.launcher;
 export const CODEX_SANDBOX_NAME = ".codex-sandbox";
 export const CODEX_INPUT_NAME = "task-input.md";
 export const CODEX_SCHEMA_NAME = "codex-result-schema.json";
@@ -33,17 +33,6 @@ export const CODEX_WRITER_IDENTITY = CONSUMER.writerIdentity;
 export const CODEX_REMEDIATION_IDENTITY = CONSUMER.remediationIdentity;
 
 const RUNTIME_DIRECTORIES = Object.freeze(["home", "config", "cache", "data", "state", "tmp"]);
-
-export function buildCodexProcessSpec({ args, executable = CODEX_LAUNCHER_PATH } = {}) {
-  if (executable !== CODEX_LAUNCHER_PATH) {
-    throw new Error("Codex execution must use the fixed governed launcher");
-  }
-  if (!Array.isArray(args)) throw new Error("Codex process arguments are required");
-  return {
-    command: CODEX_SUDO_PATH,
-    args: ["-n", "-u", CODEX_RUNTIME_USER, executable, ...args]
-  };
-}
 
 function identityValues(identity = CODEX_WRITER_IDENTITY) {
   const value = typeof identity === "string" ? { name: identity, email: undefined } : identity;

@@ -221,9 +221,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     r.commentIntent = null; await store.put(r.envelope.runId, r);
     return comment;
   }
-  async function pullRequest(r) {
+  async function pullRequest(r, publishedTransition = null) {
     const e = r.envelope;
-    const existing = await existingPullRequest(r, { allowStepMirror: true });
+    const existing = await existingPullRequest(r, { allowStepMirror: true, publishedTransition });
     if (existing) return mirrorStep(r, existing);
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
@@ -305,14 +305,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     // and its current title, Step labels, ref and readiness remain untouched.
     return null;
   }
-  async function existingPullRequest(r, { allowStepMirror = false, attemptOnly = false } = {}) {
+  async function existingPullRequest(r, { allowStepMirror = false, attemptOnly = false, publishedTransition = null } = {}) {
     if (attemptOnly) return historicalManualPullRequest(r);
     const e = r.envelope;
     const projection = await projectionFor(e, { sameBranch: true });
     if (e.target === 'pull_request') {
       const pr = await api.get(`/pulls/${e.number}`); assertPr(pr, e.number); return pr;
     }
-    const pr = await findCurrentIssuePullRequest(api, e, r.prNumber ?? e.continuation?.pullRequest);
+    const pr = await findCurrentIssuePullRequest(api, e, r.prNumber ?? e.continuation?.pullRequest, publishedTransition);
     if (!pr && r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     if (!pr && (await publicationRecords(e)).some(other => other.envelope?.attemptId !== e.attemptId
       && other.envelope?.repository === e.repository && other.envelope?.branch === e.branch
@@ -729,7 +729,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             }
           }
           r.publishedHead = g.head; r.publicationIntent = null; await store.put(e.runId, r);
-          const pr = await pullRequest(r);
+          const pr = await pullRequest(r, { previous, head: g.head });
           // A lagging PR API cannot erase a successful Git ref observation.
           return receipt({ publishedHead: g.head, prNumber: pr.number, prObservedHead: pr.head.sha, ready: false });
         });

@@ -137,7 +137,7 @@ class CodexRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", self.launcher)
         self.assertIn("!setenv", self.sudoers)
         self.assertIn(
-            "ALL=({{ relay_codex_user }}) NOPASSWD: {{ relay_codex_launcher_path }}",
+            "ALL=({{ relay_codex_user }}{{ runas_group }}) NOPASSWD: {{ relay_codex_launcher_path }}",
             self.sudoers,
         )
         self.assertNotIn("relay_writer_credential_root", self.launcher)
