@@ -14,5 +14,5 @@
   "shared_distribution_revision": "f14da40725cd35fb3117ae84a506256505340787",
   "shared_distribution_tree_hash": "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746",
   "publication": "Frozen 3.0.0 candidate; native consumer-locked protocol routing and standalone immutable snapshot; publication requires independent integration and successful main CI",
-  "shared_requirement": ">=4.0.0"
+  "shared_requirement": ">=2.5.0"
 }

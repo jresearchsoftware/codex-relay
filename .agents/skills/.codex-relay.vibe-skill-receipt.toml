@@ -7,7 +7,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "c5ebf50ba8ac6a4376cd73ad7ac7cb438ee01ba5d02e80a4281906838d2e0716"
+sha256 = "4bbb1113cac45fcda3638bdeb53b36b1f2dcf2f8cf6d66d719243dbe91ec0b9e"
 
 [[file]]
 path = "SKILL.md"
@@ -47,8 +47,8 @@ sha256 = "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
 
 [[file]]
 path = "references/shared-protocols.md"
-sha256 = "c02df0f9a537e5c24623aee7e71d56903e4632be58f25ac3caf6a6d50847fa52"
+sha256 = "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f"
 
 [[file]]
 path = "references/workflow.md"
-sha256 = "903768adda1b937a4f71f38280f2e9daac0784aeef8372aa6080e8b6390bc7c7"
+sha256 = "2d6db00136446000f7ee589977f99193d71cedc3c0f23f695303751688c2e82b"

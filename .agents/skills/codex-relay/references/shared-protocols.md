@@ -29,6 +29,12 @@ remain in SKILL.md and local adoption remains consumer-owned:
 - `vibevm/vibespecs/protocols/self-adoption.md`
 - `vibevm/vibespecs/protocols/github-repository-governance.md`
 
+The minimum compatible layout is Shared Governance 2.5.0. The manual uses
+protocol section names available there and in later assessed versions rather
+than numeric clause anchors first added in 3.0.0. Read the selected complete
+text and its applicable local Relay bindings; newer governance wording alone
+does not require selecting a newer dependency or replacing product authority.
+
 The package's nested `vibe.lock` and `vibevm/vibedeps` are frozen publisher
 release-closure evidence. They are not the consuming project's lock or active
 protocol route. Never read their snapshot as a fallback or apply its boot as a

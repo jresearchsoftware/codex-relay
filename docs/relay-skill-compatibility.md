@@ -1,9 +1,9 @@
 # Relay Skill compatibility with Shared Governance
 
-The Relay Skill requires Shared Governance **`>=4.0.0`** for its adopted
-protocol semantics. This lower bound comes from the rules used by Relay, not
-the current Shared Governance major number. It admits the assessed 4.0.0 and
-5.0.0 contracts without an artificial next-major upper bound. It does not
+The native Relay Skill requires Shared Governance **`>=2.5.0`** for the actual
+protocol layout and behavior it consumes. This is the first accepted version
+providing all nine routed protocol files. It admits the assessed 2.5.0, 3.0.0,
+4.0.0 and 5.0.0 contracts without an artificial next-major upper bound. It does not
 promise compatibility with unknown future changes.
 
 Shared Governance owns the complete reusable protocols. Relay owns its product
@@ -14,7 +14,8 @@ new Shared release nor a package range automatically updates those decisions.
 ## Required protocol semantics
 
 The Skill adopts these complete applicable topics for Relay product guidance.
-The rule groups identify why they are needed; they are not a selective subset
+The rule groups below use the repository's adopted 4.0.0 addresses for comparison;
+they are not minimum-version requirements or a selective subset
 of an adopted protocol. Read the full relevant topic, including applicability,
 exceptions and stronger local boundaries. Installing the Skill does not adopt
 these topics for unrelated consumer work.
@@ -37,7 +38,7 @@ Concrete product exceptions and mechanisms remain in
 [retained-attempt compatibility](../packages/codex-relay/skill/references/compatibility.md).
 Shared package versions are independent of Relay authority schema versions.
 
-## Why the lower bound is 4.0.0
+## Why the lower bound is 2.5.0
 
 The accepted Shared source history supplies the following progression. Versions
 come from each source commit's `packages/development-governance/vibe.toml`;
@@ -58,23 +59,50 @@ older semantic addresses are mapped by the
 | 3.0.0 | TH-028 executor Draft/Ready duties, PV-006/007 preparation/source freeze, and the explicit TH/IR methodology split: [9caedb8](https://github.com/jresearchsoftware/shared-governance/commit/9caedb8a073d030a5a9b4e721cfd8430b002debd). |
 | 4.0.0 | New PC-013 and strengthened IR-012–015: [99034dd](https://github.com/jresearchsoftware/shared-governance/commit/99034dd708e5d0201060986b561ada4d2cffd453). |
 
-The latest necessary change is the final row. Relay's accepted
-[review binding](relay-guidance-ownership.md#result-and-acceptance-bindings)
-requires a blocker's violated obligation and source, and separates proven
-defects, required evidence gaps, baseline debt and proposed requirements.
-Shared 3.0.0 contained related authority and optional-improvement principles,
-but did not require every blocker's explicit obligation binding or the complete
-prepublication classification now required by PC-013 and IR-012–015. The
-[3.0.0-to-4.0.0 protocol diff](https://github.com/jresearchsoftware/shared-governance/compare/9caedb8a073d030a5a9b4e721cfd8430b002debd...99034dd708e5d0201060986b561ada4d2cffd453)
-shows those exact additions. Choosing an earlier floor would lose semantics
-that the existing Relay contract expressly uses; no inspected older version
-provides that complete behavior. Choosing 5.0.0 would exclude a sufficient
-4.0.0 contract without a Relay requirement that needs the exclusion.
+The initial Step 1 rationale selected 4.0.0 from stricter review obligations.
+[Owner Decision 6364617205](https://github.com/jresearchsoftware/codex-relay/issues/174#issuecomment-6364617205)
+requires technical and behavioral compatibility instead. The stricter PC-013
+and IR-012–015 wording does not prevent the Skill from consuming older selected
+rules. Relay's own project-wide adoption remains 4.0.0; it does not impose that
+producer policy as every consumer's dependency floor.
+
+| Accepted Shared version | Actual Skill compatibility |
+| --- | --- |
+| 2.4.0 | The immediately preceding release has eight protocol files and lacks `vibevm/vibespecs/protocols/context-loading.md`. The Skill's explicitly routed ninth topic would be missing. Its immutable distribution is `5b33f826f0a9dbba5f61f5524060027dba9e02de`. |
+| 2.5.0 | First complete nine-file layout, including Context Loading. Task Handoff already supplies chronological authority, execution-cycle Step, canonical Outcome routing, Direct/Deliberative acceptance, warning disclosure and protected continuation. Independent Review already supplies evidence, provenance, rereview, independence and Deliberative judgment. Its immutable distribution is `d691c1b9ad8c1bdababbf15da4ec7c69399e1e02`. |
+| 3.0.0 | Adds stable numeric anchors, TH-028 Draft/Ready duties, preparation-before-freeze and the TH/IR methodology split. Relay independently retains Writer-owned Draft/Ready and publication safeguards; adopting both complete TH and IR preserves the methodology. No missing implementation capability requires excluding 2.5.0. |
+| 4.0.0 | Strengthens finding classification and scope preservation. These selected governance obligations require reading/application, not different Skill interfaces, layout or Relay schemas. |
+| 5.0.0 | Retains the layout and required behavior; the scoped changes below need no Relay implementation change. |
+
+The authored manual previously referred to numeric TH/IR clauses introduced in
+3.0.0. It now names the existing sections of the complete selected protocols:
+Task Handoff's "Stable charter and chronological authority", "Step as an
+authorized execution cycle", "Canonical Outcome publication target", "Exact
+result and independent assessment", "Result acceptance strategies" and
+"Authorized continuation and completion", plus Independent Review's "Judgment,
+independence and publication". These exact headings exist in every assessed
+version from 2.5.0 through 5.0.0. No invented clause mapping, copied replacement
+protocol, numeric-anchor lookup or newer-version fallback is needed.
+
+This navigation correction changes no Relay v4 or retained v3/legacy behavior.
+The Skill keeps the stronger explicit native actor, authority, exact-head,
+Writer, review, protected-operation and publication bindings in its manual and
+bundled product schemas. It reads each consumer-selected protocol completely,
+including its applicability and exceptions. Later mandatory governance wording
+does not make earlier package layouts technically unusable. The adjacent 2.4.0
+file gap, rather than a resolver rejection caused by our own range, establishes
+the lower boundary. Earlier releases cannot supply the ninth topic introduced
+in 2.5.0. Candidate 3.0.0 may still change before its first independent source
+acceptance; frozen 2.0.1 and earlier payloads remain unchanged.
 
 The immutable 4.0.0 distribution is
 [`f14da40725cd35fb3117ae84a506256505340787`](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/tree/f14da40725cd35fb3117ae84a506256505340787).
-The source-history argument and a native resolver fixture are distinct evidence:
-native qualification must exercise the actual lower bound as well as 5.0.0.
+It remains the deliberate standalone snapshot and producer release-closure
+evidence, independently of the native minimum. Source history and native fixture
+evidence are distinct: qualification exercises 2.5.0, 3.0.0, 4.0.0 and 5.0.0,
+checks the shared section names used by the manual, and separately acquires
+2.4.0 without Relay to prove the missing Context Loading file before checking
+native range refusal. See [Step 2 qualification](qualification/task-174-step-2.md).
 
 ## Actual 4.0.0-to-5.0.0 impact
 
@@ -104,7 +132,7 @@ contract; it is not, by itself, a Relay compatibility failure.
 
 ## Delivery-specific protocol authority
 
-The native VibeVM package declares a real `>=4.0.0` dependency. The consumer
+The native VibeVM package declares a real `>=2.5.0` dependency. The consumer
 provides supported explicit immutable source roots, resolves the graph and
 commits its exact lock, slots and generated routes. The native Skill routes to
 the consumer's resolved `org.jresearch.ai/development-governance` slot from that

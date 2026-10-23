@@ -24,11 +24,29 @@ SHARED_FIVE = {
     "revision": "30a23f467c30c41fec918204cbbf2ecfffd7bef5",
     "tree_hash": "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
 }
-SHARED_BELOW_FOUR = {"version": "3.0.0", "revision": "b6fefd51c2c34e4001e1709c9c157dfa2296ad60"}
+SHARED_TWO_FIVE = {
+    "version": "2.5.0", "revision": "d691c1b9ad8c1bdababbf15da4ec7c69399e1e02",
+    "tree_hash": "sha256:ea95bc042f78ce2dc830f70e1656777ffdb4c6c40be944a4d1cd4b32ed236c88",
+}
+SHARED_THREE = {
+    "version": "3.0.0", "revision": "b6fefd51c2c34e4001e1709c9c157dfa2296ad60",
+    "tree_hash": "sha256:e6bebee92981594554cf3be735ac9f0d331d57ee66dd033e2b639a609cf145de",
+}
+SHARED_BELOW_BOUND = {
+    "version": "2.4.0", "revision": "5b33f826f0a9dbba5f61f5524060027dba9e02de",
+    "tree_hash": "sha256:351533789a03787ab4b911aa4222cd25556e15f70520f0a6600200e411ad58af",
+}
 SHARED_GIT = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
 PROTOCOLS = ("context-loading", "task-handoff", "independent-review", "contract-and-decision-maintenance",
              "proportional-controls", "requirement-authority", "package-versioning", "self-adoption",
              "github-repository-governance")
+# Stable section names predate the numbered clause anchors introduced in 3.0.0.
+WORKFLOW_SECTIONS = {
+    "task-handoff": ("Stable charter and chronological authority", "Step as an authorized execution cycle",
+                     "Canonical Outcome publication target", "Exact result and independent assessment",
+                     "Result acceptance strategies", "Authorized continuation and completion"),
+    "independent-review": ("Judgment, independence and publication",),
+}
 
 
 def require(condition, message):
@@ -112,8 +130,9 @@ def qualify(vibe):
     require(any(key.startswith("references/shared/") for key in standalone),
             "Standalone Skill lost its offline immutable shared snapshot")
     require(expected_skill != standalone, "Delivery forms must retain their distinct shared-source packaging")
-    lower_fixture = {"version": metadata["shared_version"], "revision": metadata["shared_distribution_revision"],
-                     "tree_hash": metadata["shared_distribution_tree_hash"]}
+    snapshot_fixture = {"version": metadata["shared_version"], "revision": metadata["shared_distribution_revision"],
+                        "tree_hash": metadata["shared_distribution_tree_hash"]}
+    lower_fixture = SHARED_TWO_FIVE
     require(lower_fixture["version"] == lower_bound.group(1),
             "Select an immutable fixture for the authored minimum version before qualification")
     sandbox = Path(tempfile.mkdtemp(prefix="relay-guidance-vpm-", dir="/tmp"))
@@ -238,6 +257,13 @@ def qualify(vibe):
         for topic in PROTOCOLS:
             require((shared_slot / "vibevm/vibespecs/protocols" / (topic + ".md")).is_file(),
                     "Locked shared package is missing adopted protocol " + topic)
+        workflow = expected_skill["references/workflow.md"].decode()
+        require(not re.search(r"\b(?:TH|IR|CL)-\d{3}", workflow),
+                "Portable workflow must not require post-2.5.0 numbered clause anchors")
+        for topic, sections in WORKFLOW_SECTIONS.items():
+            text = (shared_slot / "vibevm/vibespecs/protocols" / (topic + ".md")).read_text()
+            require(all("## " + section + "\n" in text and section in workflow for section in sections),
+                    "Portable workflow names a missing shared section in " + topic)
         require(inventory(target / ".agents/skills" / name) == expected_skill,
                 "Native projection differs from native artifact")
         return packages
@@ -293,21 +319,59 @@ def qualify(vibe):
     run("lower-bound-projection", lower_consumer, ["skill", "install", "--skill", name, "--agent", "codex",
         "--scope", "project", "--yes"], native=True)
     lower_packages = installed_graph(lower_consumer, lower_fixture, revision)
-    lower_shared = inventory(lower_consumer / "vibevm/vibedeps" /
-                             metadata["shared_coordinate"].replace("/", ".") / lower_fixture["version"])
-    lower_shared.pop(".vibe-slot.toml")
-    require(lower_shared == {key.removeprefix("references/shared/"): value for key, value in standalone.items()
-                             if key.startswith("references/shared/")},
-            "Standalone snapshot differs from the qualified immutable lower-bound package")
     run("lower-bound-check", lower_consumer, ["check", "--path", "."], native=True)
     run("lower-bound-validate", lower_consumer, ["validate", "--path", ".", "--no-default-registry"], native=True)
-    # The pinned preceding release is genuinely outside the authored >=4.0.0
-    # window. Let the native resolver prove refusal, rather than a local solver.
-    require(lower_fixture["version"] == "4.0.0", "Select a preceding immutable negative fixture for the changed bound")
+    compatibility_graphs = {}
+    for fixture in (SHARED_THREE, snapshot_fixture):
+        target = sandbox / ("consumer-shared-" + fixture["version"])
+        target.mkdir()
+        select(version, revision, shared_fixture=fixture, target=target)
+        label = "shared-" + fixture["version"]
+        run(label + "-install", target, ["install", "--no-default-registry", "--assume-yes"],
+            native=True, offline=False)
+        run(label + "-projection", target, ["skill", "install", "--skill", name, "--agent", "codex",
+            "--scope", "project", "--yes"], native=True)
+        compatibility_graphs[fixture["version"]] = installed_graph(target, fixture, revision)
+        run(label + "-check", target, ["check", "--path", "."], native=True)
+        run(label + "-validate", target, ["validate", "--path", ".", "--no-default-registry"], native=True)
+        if fixture == snapshot_fixture:
+            snapshot = inventory(target / "vibevm/vibedeps" /
+                                 metadata["shared_coordinate"].replace("/", ".") / fixture["version"])
+            snapshot.pop(".vibe-slot.toml")
+            require(snapshot == {key.removeprefix("references/shared/"): value for key, value in standalone.items()
+                                 if key.startswith("references/shared/")},
+                    "Standalone snapshot differs from the qualified immutable snapshot package")
+            # A deliberate Shared update/rollback must not change Relay's version or Skill bytes.
+            for selected in (SHARED_FIVE, snapshot_fixture):
+                select(version, revision, shared_fixture=selected, target=target)
+                label = "shared-only-update-" + selected["version"]
+                run(label, target, ["install", "--no-default-registry", "--assume-yes"], native=True, offline=False)
+                run(label + "-projection", target, ["skill", "install", "--skill", name, "--agent", "codex",
+                    "--scope", "project", "--yes"], native=True)
+                installed_graph(target, selected, revision)
+    # Prove the adjacent release's real missing file independently of the range.
+    adjacent = sandbox / "adjacent-shared-only"
+    adjacent.mkdir()
+    select(version, revision, shared_fixture=SHARED_BELOW_BOUND, target=adjacent)
+    lines = (adjacent / "vibe.toml").read_text().splitlines(keepends=True)
+    (adjacent / "vibe.toml").write_text("".join(line for line in lines if not line.startswith('"' + coordinate + '"')))
+    run("adjacent-layout-install", adjacent, ["install", "--no-default-registry", "--assume-yes"],
+        native=True, offline=False)
+    adjacent_lock = tomllib.loads((adjacent / "vibe.lock").read_text())["package"]
+    require(len(adjacent_lock) == 1 and adjacent_lock[0]["version"] == SHARED_BELOW_BOUND["version"] and
+            adjacent_lock[0]["source_ref"] == SHARED_BELOW_BOUND["revision"] and
+            adjacent_lock[0]["content_hash"] == SHARED_BELOW_BOUND["tree_hash"],
+            "Adjacent layout fixture must bind the exact immutable package")
+    adjacent_protocols = adjacent / "vibevm/vibedeps" / metadata["shared_coordinate"].replace("/", ".") / \
+        SHARED_BELOW_BOUND["version"] / "vibevm/vibespecs/protocols"
+    require(not (adjacent_protocols / "context-loading.md").exists() and
+            all((adjacent_protocols / (topic + ".md")).is_file() for topic in PROTOCOLS if topic != "context-loading"),
+            "Adjacent release no longer demonstrates the required Context Loading layout gap")
+    # Native refusal verifies range enforcement, not the semantic incompatibility.
     below_consumer = sandbox / "consumer-below-bound"
     below_consumer.mkdir()
     (below_consumer / "AGENTS.md").write_bytes(policy)
-    select(version, revision, shared_fixture=SHARED_BELOW_FOUR, target=below_consumer)
+    select(version, revision, shared_fixture=SHARED_BELOW_BOUND, target=below_consumer)
     run("below-bound-refused", below_consumer, ["install", "--no-default-registry", "--assume-yes"],
         native=True, offline=False, refusal=True, expected_error="unsatisfiable")
     require(not (below_consumer / "vibe.lock").exists() and
@@ -342,7 +406,10 @@ def qualify(vibe):
               "shared_requirement": requirement,
               "lower_bound_graph": {key: {field: value[field] for field in ("version", "content_hash", "source_ref")}
                                     for key, value in lower_packages.items()},
-              "below_bound": {**SHARED_BELOW_FOUR, "result": "native resolver unsatisfiable"},
+              "compatibility_graphs": {selected: {key: {field: value[field] for field in
+                  ("version", "content_hash", "source_ref")} for key, value in graph.items()}
+                  for selected, graph in compatibility_graphs.items()},
+              "below_bound": {**SHARED_BELOW_BOUND, "result": "missing context-loading.md; native resolver unsatisfiable"},
               "delivery_forms": "same Relay contract; native locked dependency and standalone immutable snapshot",
               "native_protocol_routing": "consumer lock/slot and sole selected shared boot route verified",
               "update_rollback_repeat_offline_drift_removal": "PASS",

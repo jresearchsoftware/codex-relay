@@ -71,7 +71,7 @@ unresolved owner choices. Use the closure binding below; no additional field
 or validator is required.
 Issue creation does not admit or launch execution.
 
-TH-002–TH-005 own stable-charter and chronological authority semantics. Relay
+Task Handoff's "Stable charter and chronological authority" section owns those semantics. Relay
 implements amendments through trusted, active Task Decisions. Independent amendments
 accumulate in native comment-ID order; an explicit same-scope supersession
 replaces its predecessor. Native references bind kind, ID, parent and the hash
@@ -122,7 +122,7 @@ durably creates the sole immutable admission snapshot, including sources,
 profile, scope, boundaries, validation, exact starting state, route, attempt/run
 and Step. Rejected routing does not allocate Step.
 
-TH-006–TH-009 own execution-cycle and navigation semantics. Relay's protected
+Task Handoff's "Step as an authorized execution cycle" section owns cycle and navigation semantics. Relay's protected
 Writer allocates Step 1 at first admission and the next Step for each genuinely
 new execution, including after BLOCKED. Same-attempt replay/recovery cannot
 launch another worker. Approval, charter/Decision/CR publication and ready-label
@@ -156,7 +156,7 @@ model again.
 
 ## Execute and preserve progress
 
-Use complete TH-012/TH-013 and CL for refresh, JIT completeness, correction and
+Use complete Task Handoff and Context Loading for refresh, JIT completeness, correction and
 stop semantics. Relay's existing-PR starting-head gate inspects its
 live repository/branch/base/required SHA and local checkout/worktrees, dirty
 state and unpublished work. Safely fetch and normalize to the canonical branch
@@ -226,13 +226,13 @@ artifact, replay and current authority; reserves the digest; publishes one
 Writer-Bot Outcome; and reads back its native identity and exact bytes. The
 unique durably known result PR receives it; legitimate no-PR/no-change work
 uses the Issue. This is Relay's supported single-artifact product binding of
-TH-014–TH-017, not a multi-artifact publisher. A known multiple-source-artifact
+Task Handoff's "Canonical Outcome publication target", not a multi-artifact publisher. A known multiple-source-artifact
 result needs separately authorized product support; do not silently route it
 through a no-PR Issue result. An uncertain PR-creation intent or ambiguous
 artifact stops surface selection and never permits an Issue fallback.
 A disposed qualification PR stays disposed.
 
-TH-018 owns result disclosure and warning semantics. Relay binds results to an
+Task Handoff's "Exact result and independent assessment" section owns result disclosure and warning semantics. Relay binds results to an
 exact full Git SHA, immutable named native result/run/check identities, or both,
 and separates checked bindings from executor claims. Keep material warnings,
 limitations and unavailable proof visibly before one
@@ -272,7 +272,9 @@ the qualified independent native Reviewer, with existing review/CR records.
 
 ### Direct and Deliberative acceptance
 
-Apply complete TH-022–TH-025 and IR-019. The evaluator resolves the applicable
+Apply Task Handoff's complete "Result acceptance strategies" section and
+Independent Review's complete "Judgment, independence and publication" section.
+The evaluator resolves the applicable
 strategy from explicit owner-authorized Task/Decision selection, then the
 adopting project's accepted rules, then TH's defaults. This is an assessment
 binding; Relay adds no runtime classifier, admission field or new tool schema.
@@ -355,7 +357,8 @@ owner ports without a new public Request or preallocated Step.
 
 ## Decisions, closure and subsequent work
 
-TH-002/TH-026 own completion and continuation semantics; Relay implements them
+Task Handoff's "Stable charter and chronological authority" and "Authorized continuation and completion"
+sections own completion and continuation semantics; Relay implements them
 through its closure-policy field, native Task Decisions and owner continuation.
 For an owner-authorized finite Task, choose `close-authorized` at charter
 creation when closure is already authorized upon meeting its stated conditions,

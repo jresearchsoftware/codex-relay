@@ -2,7 +2,7 @@
 
 Generated source candidate for `org.jresearch.ai/codex-relay`. It describes accepted
 Relay contract `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` with native shared requirement
-`>=4.0.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
+`>=2.5.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 
 Acquire this package by an explicitly selected immutable revision through the
