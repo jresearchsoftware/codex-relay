@@ -1,12 +1,15 @@
 # Pinned governance and first-party Skill consumption
 
-Task [#166](https://github.com/jresearchsoftware/codex-relay/issues/166) selects
-Shared Governance **4.0.0** and first-party Relay guidance **2.0.0** as one
-consumer migration candidate. Human-owned [AGENTS](../AGENTS.md) adopts all nine
-applicable complete shared topics. The
-[ownership mapping](relay-guidance-ownership.md) identifies their Relay bindings;
-package installation alone does not adopt topics for another consumer.
-Candidate guidance remains proposal data until independently accepted.
+Relay deliberately retains its project-wide Shared Governance **4.0.0**
+adoption. Task [#174](https://github.com/jresearchsoftware/codex-relay/issues/174)
+changes first-party Relay guidance to **3.0.0** and separates the native Skill's
+Shared dependency requirement from the standalone snapshot. It does not migrate
+this project's adopted Shared version. Human-owned [AGENTS](../AGENTS.md) adopts
+all nine applicable complete shared topics. The
+[ownership mapping](relay-guidance-ownership.md)
+identifies their Relay bindings; package installation alone does not adopt
+topics for another consumer. Candidate guidance remains proposal data until
+independently accepted.
 
 ## Native route and conditional reading
 
@@ -41,15 +44,20 @@ managed-block traversal loop. The authored
 
 Ordinary manual Codex and automatic workers read committed plain files offline.
 No VibeVM binary, registry, cache, network or new owner command is required.
-The [native first-party route](self-adoption.md) supplies the same product Skill
-as the standalone export. File-route checks prove reachability and content,
+The [native first-party route](self-adoption.md) supplies the same Relay product
+contract as the standalone export. Native `references/shared-protocols.md` routes
+to the reviewed consumer lock and its selected Shared slot; standalone carries
+its own immutable attributed snapshot. Complete Skill trees need not match.
+File-route checks prove reachability and content,
 not actual model traversal or compliance.
 
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=4.0.0` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=2.0.0`,
-whose shared edge resolves to that same explicit Git root. The schema-7
+source and exact commit. The native local registry supplies Relay `=3.0.0`,
+whose supported Shared lower-bound edge resolves to that same explicit Git root.
+The root exact selection is project policy; it is not imposed on other consumers
+by Relay's lower bound. The schema-7
 [lock](../vibe.lock), complete versioned slots, distribution receipt, generated
 index and projected Skill belong to the same reviewable source change.
 
@@ -68,11 +76,22 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 2.0.0 is a major source candidate because adopting the complete shared
-contract changes guidance semantics. The frozen first-party 1.0.0 registry
-payload remains intact for historical identity and rollback; it is not the
-active requirement. Historical Shared versions remain in Git history, not
-parallel active slots. Project version `0.0.0` does not identify a Relay release.
+Guidance 3.0.0 is a major source candidate because it removes the native
+Skill's bundled Shared protocol paths and changes its packaging/routing
+contract, independently of Shared version arithmetic. Frozen first-party
+1.0.0, 2.0.0 and 2.0.1 registry payloads remain intact for historical identity
+and rollback; they are not active requirements. Historical Shared versions
+remain in Git history, not parallel active root slots. Project version `0.0.0`
+does not identify a Relay release.
+
+Another consumer can deliberately select a compatible Shared version, including
+5.0.0, with its own exact source root and reviewed lock. Assess changes to used
+protocol semantics, applicability, exceptions and Relay bindings on intentional
+updates. Compatible or irrelevant updates need no new Relay version or unrelated
+producer release gate; material Relay behavior/interface/packaging changes do.
+See the [compatibility assessment](relay-skill-compatibility.md). Native execution
+reads locked committed files without resolving `latest`; an open-ended lower
+bound does not guarantee arbitrary future compatibility.
 
 The [tool pin](../toolchain/vibevm.json) remains VibeVM 1.0.7, source
 `b6659978453f50e6d1d4d99626d70b980a2c5847`, Linux x86_64 musl binary SHA-256
@@ -139,8 +158,9 @@ reinstall. Cold offline acquisition of a remote dependency without a slot/cache
 is not promised. Normal startup never resolves or upgrades packages.
 
 Rollback restores the previous accepted manifest, lock, slot, authored routing,
-first-party registry and projected Skill as one reviewed Git change. The frozen
-1.0.0 registry bytes are preserved. Restore the corresponding accepted local
+first-party registry and projected Skill as one reviewed Git change. Frozen
+previous registry versions, including 2.0.1, are preserved. Restore the
+corresponding accepted local
 bindings as well as package files; `vibe clean` alone is not policy rollback.
 Preserve human overlays and unrelated work. This maintenance path performs no
 external publication, service deployment, client-settings change or protected

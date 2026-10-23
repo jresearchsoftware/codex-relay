@@ -10,27 +10,33 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **2.0.1** is a contract-preserving patch completing the native dependency closure of the complete applicable
-Shared Governance 4.0.0 contract. The selected independently accepted Relay
-product-contract baseline is
+Guidance **3.0.0** changes the native packaging contract: it removes the
+bundled `references/shared` protocol tree and routes to the consuming project's
+resolved Shared dependency instead. This removed path and changed routing make
+it a major Relay release; the Shared package's major number does not determine
+Relay's version. The standalone form retains its immutable Shared 4.0.0
+snapshot. Both forms retain the same Relay product behavior.
+
+The selected independently accepted Relay product-contract baseline is
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Exact schema/workflow/tool contract
 files come from that immutable revision rather than candidate copies. Managed
 pool ABI remains `relay-workflows-v4`; SERIAL remains `relay-workflows-v3`.
 Current authority v4 and retained admitted v3/legacy attempts stay distinct.
-This governance migration does not change deployed runtime semantics.
+This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 2.0.1 is a candidate. Native source self-adoption travels
-with the accepted commit; it is neither external package/tag publication nor
-another consumer's adoption. The frozen accepted 1.0.0 registry payload remains
-unchanged. New 2.0.1 output does not rewrite historical admission, Outcome,
-review or publication identities.
+release. Before independent acceptance, 3.0.0 is a candidate. Native source
+self-adoption travels with the accepted commit; it is neither external package
+publication nor another consumer's adoption. Frozen accepted registry payloads,
+including 2.0.1, remain unchanged. New output does not rewrite historical
+admission, Outcome, review or publication identities.
 
-[guidance/source.json](../guidance/source.json) selects exact identities:
+[guidance/source.json](../guidance/source.json) separates the native Shared
+SemVer requirement from the standalone snapshot and its exact identities:
 
 | Identity | Selected value |
 | --- | --- |
-| Shared coordinate/version | `org.jresearch.ai/development-governance` `4.0.0` |
+| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `4.0.0` |
 | Accepted producer source | `99034dd708e5d0201060986b561ada4d2cffd453` |
 | Public distribution commit | `f14da40725cd35fb3117ae84a506256505340787` |
 | Complete native distribution tree hash | `sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746` |
@@ -44,19 +50,30 @@ pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.develop
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
-Both delivery forms contain byte-identical Skill files, exact schemas and the
-complete attributed Shared payload/receipt. `PROVENANCE.json` binds the accepted
-contract, authored input hashes and each generated Skill file. The enclosing
-selected Git commit identifies the guidance artifact; the receipt does not
-assert that its enclosing candidate is already accepted.
+Both delivery forms derive from one authored manual and contain the same
+product schemas and contract baseline. Their complete trees differ deliberately.
+Standalone includes the attributed immutable Shared payload/receipt. Native
+contains `references/shared-protocols.md`, which directs readers to the
+consumer's reviewed `vibe.lock`, resolved versioned Shared slot and complete
+required protocols. Native has no competing fixed protocol bundle or fixed
+4.0.0 JIT route. This is local file navigation, not a runtime resolver.
+
+`PROVENANCE.json` identifies its delivery form and binds the accepted product
+contract, authored input hashes and generated files. Standalone provenance
+identifies its included snapshot; native provenance identifies the dependency
+requirement without pretending that the producer selected every consumer's
+lock. The consumer's own native lock and installed metadata identify its actual
+selection. The enclosing Git commit identifies the guidance artifact; the
+receipt does not assert that its enclosing candidate is already accepted.
 
 ## Authoring and qualification
 
 Edit `packages/codex-relay/skill` for user wording and `guidance/source.json` for
-selected versions/identities. The deterministic builder copies exact accepted
-schemas, workflow/tool contracts, Shared payload and the optional standalone
-projector into `guidance/artifacts/standalone/codex-relay` and
-`guidance/artifacts/vpm`. Do not hand-edit those outputs. Native VibeVM remains
+selected versions/identities and native compatibility requirement. The
+deterministic builder copies exact accepted schemas and workflow/tool contracts
+into `guidance/artifacts/standalone/codex-relay` and `guidance/artifacts/vpm`.
+It adds the Shared snapshot and optional projector only to standalone, and
+emits delivery-specific `references/shared-protocols.md` routes. Do not hand-edit those outputs. Native VibeVM remains
 the resolver and Skill projector.
 
 The manual's installation-preparation path binds the accepted
@@ -90,13 +107,31 @@ Unsupported clients, missing actual projection and installed-runtime behavior
 remain evidence gaps until qualified; source acceptance supplies no deployed
 runtime or external publication proof.
 
-## Shared Publisher and first external release
+## Deliberate Shared dependency updates
 
-Task #169's [owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/169#issuecomment-6314092881)
-selects new frozen **2.0.1** to complete native dependency closure; accepted
-1.0.0 and 2.0.0 registry payloads remain immutable. 2.0.0 was not externally
-published. This patch preserves the Skill/operator contract and Shared 4.0.0
-selection; it adds native release evidence, not a new consumer obligation.
+The [compatibility assessment](relay-skill-compatibility.md) justifies the native
+lower bound from required protocol semantics and their accepted history, not a
+package major number. The supported VibeVM SemVer
+requirement permits one resolved dependency to satisfy the consumer and Relay.
+It does not silently adopt topics or guarantee compatibility with unknown
+future releases. Relay's own root policy deliberately remains on Shared 4.0.0;
+a consumer that has deliberately adopted Shared 5.0.0 keeps its own selection.
+
+On an intentional Shared update, assess changes in actually used protocols,
+including applicability, exceptions and Relay bindings. A compatible or
+irrelevant change updates the consumer's manifest/lock as needed; it does not
+require a new Relay Skill version or a release decision in the Shared producer.
+A material change requiring different Relay behavior, guidance, interfaces or
+packaging needs a corresponding Relay correction and version. Keep exact
+source/lock/slot identity for rollback and read committed files during execution.
+Do not resolve `latest`. The standalone snapshot changes only through a new
+immutable Relay artifact with its own provenance.
+
+## Shared Publisher and immutable publication
+
+Task #169 owns the historical 2.0.1 publisher integration and publication
+evidence. This change reuses that accepted mechanism for a new immutable
+version; it neither replays that Task nor rewrites earlier versions.
 
 `vibe-publisher.json` binds the explicit public export inventory, MIT rights
 reference, source repository ID, Public CI workflow and sole destination
@@ -110,28 +145,34 @@ only to the shared publisher's isolated finalization. No local release engine,
 selector or duplicate publisher is installed. Unprivileged Public CI uses that
 same pinned implementation to check candidate source before acceptance.
 
-This is the package's first real publication, but it introduces genuinely new
-2.0.1 bytes together with onboarding. It therefore uses the ordinary immediate
-source-transition path. `initial_publication` is not selected: that opt-in is
-for an old already accepted identity, not permission to rewrite 2.0.0.
+A reviewed, owner-authorized merge uses the existing successful-main source
+transition path. `initial_publication` is not selected for this new payload.
 An unchanged/non-package commit is a strict `NO_PACKAGE_CHANGE`, including
 later binding-only edits; it cannot opportunistically publish old source.
+A consumer-only Shared update creates no Relay release or new publisher gate.
 
 The deterministic builder includes `guidance/dependency-closure`'s native
-schema-7 lock and complete frozen Shared slot in the public VPM export. These
+schema-7 lock and complete frozen Shared slot in the public VPM export solely
+as release-closure evidence required by the accepted publisher. These nested
+files are not the consumer's root lock, an active boot route or a fallback
+protocol source. The projected native Skill includes no Shared protocol tree. These
 were generated by pinned VibeVM 1.0.7 from
 `guidance/dependency-closure.toml.in` in isolated storage with
 `vibe --json install --no-default-registry --assume-yes`. For deliberate
 maintenance, use that template as the isolated project's `vibe.toml`, inspect
 its resolved source/hash and slot, then copy only native `vibe.lock` and
-`vibevm/vibedeps` into the closure input. Preserve the selected immutable
-Shared identity and review the input/export diff together. Native timestamps
+`vibevm/vibedeps` into the closure input. Preserve the deliberately selected immutable
+closure identity and review the input/export diff together. This producer
+release evidence is separate from another consumer's selected Shared lock; the
+native Skill reads that consumer's authoritative slot. Native timestamps
 are retained provenance; ordinary offline builds copy the committed input
 bytes reproducibly. Native publication neither resolves nor repairs closure.
-The standalone Skill and VPM `skill/` remain byte-identical.
+The standalone Skill and VPM `skill/` differ in shared routing, included
+snapshot and delivery-specific provenance; product contract parity remains
+required.
 
 After independent exact-head approval and owner-authorized squash merge,
-verify the main-push CI and publisher run, immutable `v2.0.1` tag, public
+verify the main-push CI and publisher run, immutable `v3.0.0` tag, public
 `DISTRIBUTION.json`, package files/digests and a native external consumer
 acquisition using `vpm-consumer.toml.in` with the confirmed URL and immutable
 distribution commit. Source acceptance and local fixture success do not prove

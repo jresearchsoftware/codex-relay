@@ -3,16 +3,20 @@
 Guidance, an installed Relay service and live Task authority are separate.
 Select an independently accepted immutable Relay Git revision containing the
 desired guidance version. `PROVENANCE.json` records the accepted product
-contract and shared dependency plus hashes of the authored and generated files.
+contract, delivery form and shared source selection plus hashes of the authored
+and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **2.0.0** becomes a first-party source release only on independent
+Version **3.0.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
-that another consumer adopted it. An unmerged artifact remains a candidate. The 2.0.0 major reflects changed
-shared governance semantics. Frozen accepted 1.0.0 registry bytes remain
-unchanged for identity and rollback. The selected product-contract baseline is
+that another consumer adopted it. An unmerged artifact remains a candidate.
+The major version removes the native Skill's bundled Shared protocol paths and
+changes its supported dependency routing and packaging contract. It is not
+caused by the Shared package's major number. Frozen accepted earlier registry
+bytes, including 2.0.1, remain unchanged for identity and rollback. The selected
+product-contract baseline is
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`; it is separate from the
 enclosing accepted guidance release.
 
@@ -21,13 +25,21 @@ enclosing accepted guidance release.
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `2.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `3.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
-Both contain identical Skill/reference/schema/provenance files, including the
-exact Shared Governance 4.0.0 payload. Relay source adopts all nine applicable
-complete topics through its accepted policy and product bindings. Another
-consumer selects its own adoption through accepted local guidance; installing
-files alone neither adopts topics nor installs services or changes settings.
+Both retain the same Relay product contract and exact product schemas. The
+standalone form includes an immutable, attributed Shared Governance 4.0.0
+snapshot for offline use. The native Skill has a real Shared dependency and no
+second protocol bundle: its generated `references/shared-protocols.md` directs
+reading through the consumer's reviewed `vibe.lock` and selected Shared slot.
+The complete trees and provenance therefore differ by delivery form.
+The native package retains a nested frozen lock/slot only as publisher release
+closure evidence. It is not the consumer's lock, an active boot route or a
+protocol fallback; read only the consumer-selected Shared slot.
+Relay source adopts all nine applicable complete topics through its accepted
+policy and product bindings. Another consumer selects its own adoption through
+accepted local guidance; installing files alone neither adopts topics nor
+installs services or changes settings.
 Live GitHub operations still require their ordinary authorized access.
 
 ## Standalone install, update and rollback
@@ -76,12 +88,17 @@ Use the hash-checked VibeVM 1.0.7 binary identified in the assembled
 `product/vibevm.json`. Start from the generated `vpm-consumer.toml.in`; replace
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
-Preserve its explicit Shared Governance Git root at
-`f14da40725cd35fb3117ae84a506256505340787`, version `=4.0.0`.
+Select an explicit immutable Shared Governance Git source root and a compatible
+consumer requirement under local authority. The template's Shared 4.0.0 source
+is a reproducible example; a consumer with deliberately selected Shared 5.0.0
+keeps its own reviewed source and lock. Relay's supported SemVer lower bound is
+declared in the native manifest; it does not pin consumers to the standalone
+snapshot or impose an upper bound from the Shared major number.
 
 VibeVM 1.0.7 follows string version edges but ignores transitive Git-table source
-declarations. Both explicit immutable Git source roots in the consumer template
-are necessary for the supported external acquisition path. The source project
+declarations. Explicit immutable Relay and Shared Git source roots in the consumer
+project are necessary for the supported external acquisition path. The source
+project
 uses a committed first-party registry with the same package and its existing
 Shared Git root; it does not replace another consumer's configuration.
 
@@ -104,8 +121,23 @@ standalone writers over the same folder.
 
 For update or rollback, explicitly select the compatible package version and
 revision, resolve in staging, inspect lock/slot/Skill changes and project using
-the same native command. Native removal verifies its receipt and preserves
-unowned additions:
+the same native command. Read the generated shared-protocol route against the
+consumer's actual lock and selected `development-governance` slot, including
+the required complete protocol files. Missing or conflicting lock/slot evidence
+requires reconciliation; ordinary execution does not run a resolver or fetch
+`latest`.
+
+A deliberate Shared update includes assessment of changes in the protocols
+actually used, their applicability, exceptions and Relay bindings. A compatible
+or irrelevant update changes the consumer's dependency/lock as needed without
+a new Relay release or an unrelated shared-producer release gate. A material
+change requiring different Relay behavior, guidance, interfaces or packaging
+needs a corresponding new Relay version. An open-ended lower bound is not a
+promise that arbitrary future Shared releases are compatible. Preserve exact
+previous source/lock/slots for reproducible rollback. Updating the native
+dependency does not change the standalone artifact's immutable snapshot.
+
+Native removal verifies its receipt and preserves unowned additions:
 
 ```sh
 vibe --offline --json skill uninstall --skill codex-relay --agent codex --scope project --yes
@@ -126,8 +158,10 @@ provenance or authority; compare complete materialized bytes and receipts.
 Codex discovers repository `.agents/skills` from the current directory through
 the Git root. Invoke `$codex-relay` or let its description select relevant work.
 Initially only metadata is loaded; read SKILL.md and the reference relevant to
-the current action. Generated `product` and `shared` references are ordinary
-local files in both delivery forms. A repository Skill does not itself
+the current action. Generated product references are ordinary local files in
+both forms. Shared references are local snapshot files in standalone and the
+consumer's locked package files in native VibeVM. A repository Skill does not
+itself
 synchronize ChatGPT Project Instructions or install an MCP connection.
 
 Preserve consumer instruction precedence, required checks, execution profiles,

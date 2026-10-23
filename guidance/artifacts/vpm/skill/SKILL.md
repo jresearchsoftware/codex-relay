@@ -5,16 +5,16 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **2.0.1** as a source
+This Skill supplies Relay product guidance version **3.0.0** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
-provenance identifies the product source and exact shared dependency. Guidance
+provenance identifies the product source, delivery form and shared protocol source. Guidance
 availability does not prove an installed service, workflow or connected App is
 compatible, qualified or enabled. Normal use reads these local files offline.
 
 For Task work, use the live canonical authority and admitted handoff through
 the Relay binding below. Shared Context Loading owns minimal startup and JIT
 completeness; Producer Self-Adoption owns frozen accepted guidance versus
-candidate Skill/AGENTS/boot changes. Their complete bundled routes follow.
+candidate Skill/AGENTS/boot changes. Their complete protocol routes follow.
 
 - For Task authoring, execution routes, CRs, results, review or continuation,
   read the relevant section of the canonical [user manual](references/workflow.md).
@@ -31,9 +31,9 @@ candidate Skill/AGENTS/boot changes. Their complete bundled routes follow.
 - To obtain, install, update, roll back or remove this guidance, or explicitly
   bootstrap ChatGPT instructions, read [installation](references/installation.md).
 
-This version adopts the complete applicable Shared Governance **4.0.0** topics
-for Relay product guidance. After assembly, read the corresponding bundled
-`references/shared/vibevm/vibespecs/protocols/` file when triggered:
+This Skill explicitly adopts the following complete applicable Shared Governance
+topics for Relay product guidance. Read the corresponding full protocol through
+the assembled [shared protocol source](references/shared-protocols.md) when triggered:
 
 - `task-handoff.md`: Task execution, results, acceptance and continuation.
 - `independent-review.md`: complete result assessment and findings.
@@ -45,8 +45,8 @@ for Relay product guidance. After assembly, read the corresponding bundled
 - `self-adoption.md`: a producer's own Skill, AGENTS and boot candidates.
 - `github-repository-governance.md`: workflow/protection decisions.
 
-Read a relevant topic in full, including exceptions. These immutable bundled
-files are the portable owners, not editable Relay copies. The workflow binds
+Read a relevant topic in full, including exceptions. The selected shared
+protocols are the portable owners, not editable Relay copies. The workflow binds
 them to Relay's current v4 product and retained old-attempt compatibility.
 This Skill does not impose Relay development policy on unrelated consumer work
 or change a consumer's explicit project-wide topic adoption/settings.

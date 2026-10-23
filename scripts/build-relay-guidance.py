@@ -59,22 +59,43 @@ def assemble():
     if (metadata["workflow_contract"] != workflow["parallelWorkflowContract"] or
             metadata["serial_workflow_contract"] != workflow["workflowContract"]):
         raise ValueError("Workflow pins differ from the selected accepted Relay contract")
-    # Exact vendoring is generated, attributed and never an independently edited policy fork.
-    skill.update({"references/shared/" + path: data for path, data in shared.items()})
     installer = (ROOT / "guidance/project.py").read_bytes()
-    skill["scripts/project.py"] = installer
     source_files["guidance/project.py"] = digest(installer)
     source_files["guidance/source.json"] = digest((ROOT / "guidance/source.json").read_bytes())
     source_files["scripts/build-relay-guidance.py"] = digest(Path(__file__).read_bytes())
-    provenance = {
-        **metadata,
-        "generator": "scripts/build-relay-guidance.py",
-        "source_files": source_files,
-        "files": {path: digest(data) for path, data in sorted(skill.items())},
-    }
-    skill["PROVENANCE.json"] = json_bytes(provenance)
-    expected = {"standalone/" + name + "/" + path: data for path, data in skill.items()}
-    expected.update({"vpm/skill/" + path: data for path, data in skill.items()})
+    protocols = ("task-handoff", "independent-review", "contract-and-decision-maintenance",
+                 "context-loading", "proportional-controls", "requirement-authority",
+                 "package-versioning", "self-adoption", "github-repository-governance")
+    native_route = skill["references/shared-protocols.md"].decode()
+    standalone_route = f"""# Shared protocol source: immutable standalone snapshot
+
+This standalone Skill deliberately includes Shared Governance {metadata['shared_version']}.
+Its immutable producer is `{metadata['shared_source_revision']}`, distribution
+`{metadata['shared_distribution_revision']}`, tree `{metadata['shared_distribution_tree_hash']}`.
+Read the complete triggered protocols below offline. These generated exact bytes
+are a snapshot of the shared producer, never an independently authored fork.
+Local topic adoption and product authority retain their boundaries. A different
+VibeVM dependency in another delivery form does not alter this standalone artifact.
+"""
+    standalone_route += "".join(f"- [{name}](shared/vibevm/vibespecs/protocols/{name}.md)\n" for name in protocols)
+    standalone_route += "\nUpdate and rollback deliberately through complete immutable Skill artifacts.\n"
+    standalone = {**skill, "references/shared-protocols.md": standalone_route.encode(),
+                  "scripts/project.py": installer}
+    standalone.update({"references/shared/" + path: data for path, data in shared.items()})
+    native = {**skill, "references/shared-protocols.md": native_route.encode()}
+
+    def with_provenance(files, form):
+        provenance = {**metadata, "delivery_form": form,
+                      "protocol_source": "consumer-vibe-lock" if form == "vpm" else "immutable-bundled-snapshot",
+                      "generator": "scripts/build-relay-guidance.py", "source_files": source_files,
+                      "files": {path: digest(data) for path, data in sorted(files.items())}}
+        # Shared snapshot identities describe bundled standalone/release evidence;
+        # they never override the native consumer's resolved dependency.
+        return {**files, "PROVENANCE.json": json_bytes(provenance)}
+
+    expected = {"standalone/" + name + "/" + path: data
+                for path, data in with_provenance(standalone, "standalone").items()}
+    expected.update({"vpm/skill/" + path: data for path, data in with_provenance(native, "vpm").items()})
     expected["vpm/vibe.toml"] = f'''# Generated from guidance/source.json; candidate content, no external publication.
 [package]
 group = "org.jresearch.ai"
@@ -84,7 +105,7 @@ kind = "flow"
 frozen = true
 license = "MIT"
 epoch = 1
-description = "Version-bound Codex Relay workflow Skill with offline shared references"
+description = "Codex Relay workflow Skill using consumer-locked shared protocols"
 
 [boot_snippet]
 source = "vibevm/vibespecs/boot/codex-relay.md"
@@ -92,7 +113,7 @@ category = "flow"
 link = "dynamic"
 
 [requires.packages]
-"{metadata['shared_coordinate']}" = "={metadata['shared_version']}"
+"{metadata['shared_coordinate']}" = "{metadata['shared_requirement']}"
 
 [[skill]]
 name = "{name}"
@@ -129,16 +150,19 @@ spec_format = "mixed"
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 
 Generated source candidate for `org.jresearch.ai/{name}`. It describes accepted
-Relay contract `{metadata['contract_revision']}` with the exact pinned shared
-dependency. `skill/PROVENANCE.json` binds every projected byte and authoring input.
+Relay contract `{metadata['contract_revision']}` with native shared requirement
+`{metadata['shared_requirement']}`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 
 Acquire this package by an explicitly selected immutable revision through the
 supported VibeVM 1.0.7 package interface. The generated sibling
 `vpm-consumer.toml.in` shows both required immutable Git source roots; the native
-package declares the shared version edge, while 1.0.7 ignores transitive Git
+package declares the semantic lower-bound edge, while 1.0.7 ignores transitive Git
 source tables. Then explicitly project its Skill with
 `vibe skill install --skill codex-relay --agent codex --scope project --yes`.
+Read shared protocols from the consuming project lock and selected slot, as
+described by `skill/references/shared-protocols.md`. Nested dependency slots are
+frozen publisher closure evidence only; they never select consumer policy.
 Ordinary Codex use reads the resulting files offline. See the source repository's
 `docs/relay-guidance.md` for install, drift, update, rollback and removal evidence.
 '''.encode()

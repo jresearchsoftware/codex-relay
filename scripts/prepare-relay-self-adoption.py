@@ -16,7 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = Path("vibevm/vibepacks")
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "2.0.1"
+SELF_VERSION = "3.0.0"
 SELF_SOURCE = REGISTRY / SELF_COORDINATE / ("v" + SELF_VERSION)
 SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
 PROJECTION = Path(".agents/skills/codex-relay")

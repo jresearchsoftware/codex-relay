@@ -7,11 +7,11 @@ detail. It describes the current schema-v4 source contract for a paired,
 qualified Reviewer/controller installation, without claiming an installed
 service or connected App has been upgraded or qualified. These are product
 contract bindings. The complete applicable common topics are adopted by this
-Skill and supplied after assembly under `shared/vibevm/vibespecs/protocols/`.
+Skill and reached through the assembled [shared protocol source](shared-protocols.md).
 Read the full relevant protocol through the [Skill routes](../SKILL.md); below,
 TH, IR, CD and CL refer respectively to `task-handoff.md`,
 `independent-review.md`, `contract-and-decision-maintenance.md` and
-`context-loading.md` in that pinned bundled directory. They own portable
+`context-loading.md` in that selected source. They own portable
 lifecycle, assessment, contract and context semantics; this manual owns Relay's
 native mechanisms and supported paths. Read [compatibility](compatibility.md)
 for retained old attempts rather than applying current rules retrospectively.
