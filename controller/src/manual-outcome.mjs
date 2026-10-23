@@ -1,4 +1,4 @@
-import { REPOSITORY, WRITER, positive, exactSha, fail } from './execution-contract.mjs';
+import { REPOSITORY, WRITER, BASE_BRANCH, positive, exactSha, fail } from './execution-contract.mjs';
 import { canonicalAuthorityJson, validateAuthorityRecord, extractAuthorityRecord, sha256Body, renderAuthorityRecord, admissionBinding } from '../../contracts/src/github-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
 
@@ -11,6 +11,39 @@ export function validateManualSubmission(value) {
     || !value.result || typeof value.result !== 'object' || Array.isArray(value.result)
     || Buffer.byteLength(JSON.stringify(value), 'utf8') > 100 * 1024) fail('MANUAL_SUBMISSION_INVALID');
   return value;
+}
+
+export async function assertManualPullRequestBinding(api, e, pr, { unique = true } = {}) {
+  const existing = e.request.kind === 'admission' && e.request.schema_version === '4.0'
+    && positive(e.request.existing_pr);
+  const references = taskReferences(pr.body, REPOSITORY);
+  if (pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
+    || references.length !== 1 || references[0] !== e.issueNumber
+    || (e.branch && pr.head.ref !== e.branch)) fail('PR_AUTHORITY_CHANGED');
+  const marker = e.request.schema_version === '4.0'
+    ? `Execution admission digest: ${admissionBinding(e.request).sha256}` : `Execution request digest: ${e.requestReference.sha256}`;
+  // A v4 CR or Issue continuation admits one existing PR by immutable number.
+  // Its body retains the earlier execution's provenance; it cannot carry the
+  // digest of every future remediation. Fresh PR discovery still needs its
+  // own exact marker, and retained v3 bindings keep their original contract.
+  if (existing) {
+    const number = e.target === 'pull_request' ? e.number : e.continuation?.pullRequest;
+    if (number !== e.request.existing_pr || pr.number !== number || pr.base?.ref !== BASE_BRANCH
+      || !exactSha(pr.head.sha) || !exactSha(pr.base.sha)) fail('PR_AUTHORITY_CHANGED');
+  } else if (!pr.body?.split(/\r?\n/).includes(marker)) fail('PR_AUTHORITY_CHANGED');
+  if (!existing && !unique) return;
+  const artifacts = (await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(pr.head.ref)}`))
+    .filter(candidate => existing ? candidate.number === pr.number || candidate.state === 'open'
+      : candidate.body?.split(/\r?\n/).includes(marker));
+  if (artifacts.length !== 1 || artifacts[0].number !== pr.number) fail('PR_AMBIGUOUS');
+  if (existing) {
+    const observed = artifacts[0];
+    const observedReferences = taskReferences(observed.body, REPOSITORY);
+    if (observed.head?.repo?.full_name !== REPOSITORY || observed.base?.repo?.full_name !== REPOSITORY
+      || observed.head?.ref !== e.branch || observed.base?.ref !== BASE_BRANCH
+      || observed.head?.sha !== pr.head.sha || observed.base?.sha !== pr.base.sha
+      || observedReferences.length !== 1 || observedReferences[0] !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
+  }
 }
 
 export async function publishManualOutcome({ api, store, record: r, submission,
@@ -39,15 +72,9 @@ export async function publishManualOutcome({ api, store, record: r, submission,
   let pr = null;
   if (result.parent.kind === 'pull_request') {
     pr = await api.get(`/pulls/${result.parent.number}`);
-    const marker = e.request.schema_version === '4.0'
-      ? `Execution admission digest: ${admissionBinding(e.request).sha256}` : `Execution request digest: ${e.requestReference.sha256}`;
-    if (pr.number !== result.parent.number || pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
-      || taskReferences(pr.body, REPOSITORY).length !== 1 || taskReferences(pr.body, REPOSITORY)[0] !== e.issueNumber
-      || (e.branch && pr.head.ref !== e.branch) || (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
-      || !pr.body?.split(/\r?\n/).includes(marker) || (r.prNumber && r.prNumber !== pr.number)) fail('PR_AUTHORITY_CHANGED');
-    const artifacts = (await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(pr.head.ref)}`))
-      .filter(candidate => candidate.body?.split(/\r?\n/).includes(marker));
-    if (artifacts.length !== 1 || artifacts[0].number !== pr.number) fail('PR_AMBIGUOUS');
+    if (pr.number !== result.parent.number || (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
+      || (r.prNumber && r.prNumber !== pr.number)) fail('PR_AUTHORITY_CHANGED');
+    await assertManualPullRequestBinding(api, e, pr);
     if (historicalResult && result.result.kind === 'git' && result.result.revision !== pr.head.sha) {
       const commit = await api.get(`/git/commits/${result.result.revision}`);
       if (commit.sha !== result.result.revision) fail('PUBLISHED_HEAD_REQUIRED');

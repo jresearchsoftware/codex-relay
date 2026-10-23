@@ -14,7 +14,7 @@ import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
 import { nonClosingTaskBody } from './task-relationship.mjs';
 import { transitionPr, beginRemediation } from './pr-lifecycle.mjs';
 import { prepublicationState, recoverPrepublication } from './prepublication-recovery.mjs';
-import { publishManualOutcome } from './manual-outcome.mjs';
+import { publishManualOutcome, assertManualPullRequestBinding } from './manual-outcome.mjs';
 import { nextAdmissionStep, latestAdmissionRecord } from './admission-step.mjs';
 import { foldManualHandoff, safePublicationText, PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
 import { executionConsumer } from '../../consumer/consumer.mjs';
@@ -745,10 +745,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
             await transitionPr({ api, store, key: e.runId, record, head: pr.head.sha, draft,
               readPr: async () => { await revalidateAuthority(api, e); const current = await api.get(`/pulls/${pr.number}`);
-                const marker = e.request.schema_version === '4.0'
-                  ? `Execution admission digest: ${admissionBinding(e.request).sha256}` : `Execution request digest: ${e.requestReference.sha256}`;
-                assertPr(current, pr.number); if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber
-                  || !current.body?.split(/\r?\n/).includes(marker)) fail('PR_AUTHORITY_CHANGED'); return current; } });
+                assertPr(current, pr.number); if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
+                await assertManualPullRequestBinding(api, e, current, { unique: false }); return current; } });
           } }));
       }
       if (request.operation === 'manual-outcome') {
