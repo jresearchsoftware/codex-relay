@@ -383,9 +383,16 @@ Requests and attempts keep their strict historical currentness and bindings;
 neither ordinary recovery nor new source code rebinds them.
 
 A PR result must be uniquely bound to the Task, including a disposable PR already
-closed without merge; Writer does not reopen it. Schema `4.0` PR bodies retain
-`Related to #N` and the exact standalone line `Execution admission digest:
-<admission.sha256>`. Schema `3.0` branch discovery retains both standalone lines:
+closed without merge; Writer does not reopen it. Fresh schema `4.0` manual PRs
+retain `Related to #N` and the exact standalone line `Execution admission digest:
+<admission.sha256>`. A v4 CR or Issue continuation instead binds the existing PR
+number in its immutable admission; its PR body keeps the original execution's
+provenance without adding or replacing a digest for the new Step. Writer verifies
+the admitted PR number, repository, branch, configured base, single Task linkage,
+exact result head and unique current PR before reporting and again at lifecycle
+boundaries. A different open PR on that branch is ambiguous even without a
+matching admission marker. This grants no new publication or review authority.
+Schema `3.0` branch discovery retains both standalone lines:
 
 ```text
 Execution request native ID: <reference.id>
