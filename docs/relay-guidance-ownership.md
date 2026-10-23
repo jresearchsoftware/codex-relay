@@ -1,13 +1,19 @@
 # Shared governance and Relay product bindings
 
-Shared Governance **4.0.0** is the single canonical owner of portable development
-governance used by Relay. The immutable producer is
+This repository deliberately adopts Shared Governance **4.0.0** as the single
+canonical source of its portable development governance. The immutable
+producer is
 `99034dd708e5d0201060986b561ada4d2cffd453`; the distribution is
 `f14da40725cd35fb3117ae84a506256505340787`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all nine complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
-[product Skill](../packages/codex-relay/skill/SKILL.md) supplies the same shared
-semantics with the product bindings below. The historical
+[product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
+bindings below. Native delivery reads complete shared protocols from the
+consuming project's reviewed lock and selected Shared slot through its generated
+`references/shared-protocols.md`; standalone includes the attributed immutable
+4.0.0 snapshot. Consumers deliberately select and adopt their own compatible
+Shared dependency. No fixed bundled native route supersedes that selection.
+The historical
 [Task #108 analysis](task-handoff-methodology-analysis.md) and earlier
 [2.1.0 assessment](vibevm-semantic-coverage.md) remain evidence, not active policy.
 The one-time migration comparison belongs in its PR/review, not a new ledger.
@@ -82,11 +88,19 @@ remain in the [deployment contract](../deploy/README.md).
 Shared Package Versioning owns lifecycle classification, first accepted frozen
 identity and actual dependency closure. Guidance uses the stable authoring root
 `packages/codex-relay/skill` and selected identities in `guidance/source.json`.
-Version **2.0.0** declares the changed shared-topic guidance contract; accepted
-1.0.0 registry payload remains immutable. The native VibeVM resolver/projector,
+Version **3.0.0** removes native bundled Shared protocol paths and changes
+dependency routing/packaging; its major is independent of Shared major numbers.
+Accepted earlier registry payloads, including 2.0.1, remain immutable. The native
+VibeVM resolver/projector,
 exact schema/workflow pins, generator, source release and external publication
 mechanics remain [Relay delivery](relay-guidance.md) responsibilities.
-No external publisher, tag or automatic package publication is selected here.
+The accepted Shared Publisher and successful-main flow retain their existing
+authority; this mapping introduces no additional release gate. A consumer-only
+compatible or irrelevant Shared update needs no Relay release. Assess actually
+used protocol semantics, applicability, exceptions and product bindings; only
+a material required Relay behavior, guidance, interface or packaging change
+justifies a new Relay version. See the
+[compatibility assessment](relay-skill-compatibility.md).
 
 Shared Producer Self-Adoption owns accepted-source/candidate separation and
 committed ready state. The [native runbook](self-adoption.md) retains exact

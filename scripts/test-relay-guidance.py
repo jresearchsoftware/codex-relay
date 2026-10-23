@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -51,10 +52,10 @@ class ProjectionTests(unittest.TestCase):
         return {path.relative_to(self.consumer).as_posix(): path.read_bytes()
                 for path in self.consumer.rglob("*") if path.is_file()}
 
-    def call(self, command="install", source=None, flags=(), success=True):
-        completed = subprocess.run([sys.executable, str(ROOT / "guidance/project.py"), command,
+    def call(self, command="install", source=None, flags=(), success=True, installer=None, environment=None):
+        completed = subprocess.run([sys.executable, str(installer or ROOT / "guidance/project.py"), command,
             "--source", str(source or self.source), "--target", str(self.consumer), *flags],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=environment)
         self.assertEqual(completed.returncode == 0, success, completed.stdout + completed.stderr)
         return completed
 
@@ -174,21 +175,74 @@ class ProjectionTests(unittest.TestCase):
         self.install(success=False)
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_committed_standalone_installs_offline_updates_rolls_back_and_preserves_drift(self):
+        metadata = json.loads((ROOT / "guidance/source.json").read_bytes())
+        source = ROOT / "guidance/artifacts/standalone" / metadata["name"]
+        info, expected = project.manifest_files(source)
+        self.assertEqual(info["version"], metadata["version"])
+        installer = source / "scripts/project.py"
+        # The exported installer runs with no VibeVM or other executable on PATH.
+        environment = dict(os.environ, PATH=str(self.root / "empty-executable-path"))
+        self.install()
+        overlay = self.destination / "local-overlay.md"
+        overlay.write_bytes(b"Owner overlay\n")
+        self.install(source=source, installer=installer, environment=environment)
+        for name, data in expected.items():
+            self.assertEqual((self.destination / name).read_bytes(), data, name)
+        self.assertEqual(json.loads(self.install(source=source, installer=installer,
+                                               environment=environment).stdout)["changes"], [])
+        self.install(installer=installer, environment=environment)
+        self.assertEqual((self.destination / "SKILL.md").read_bytes(), (self.source / "SKILL.md").read_bytes())
+        self.assertFalse((self.destination / "references/shared").exists())
+        self.install(source=source, installer=installer, environment=environment)
+        protocol = self.destination / "references/shared/vibevm/vibespecs/protocols/task-handoff.md"
+        self.assertTrue(protocol.is_file())
+        original = protocol.read_bytes()
+        protocol.write_bytes(original + b"\nLocal protocol edit to preserve.\n")
+        before = self.snapshot()
+        self.install(installer=installer, environment=environment, success=False)
+        self.call("remove", installer=installer, environment=environment, flags=("--apply",), success=False)
+        self.assertEqual(before, self.snapshot())
+        protocol.write_bytes(original)
+        self.call("remove", installer=installer, environment=environment, flags=("--apply",))
+        self.assertEqual((self.consumer / "AGENTS.md").read_bytes(), self.agents)
+        self.assertEqual(overlay.read_bytes(), b"Owner overlay\n")
+        self.assertEqual((self.consumer / ".agents/skills/local-skill/SKILL.md").read_text(), "local skill")
+
 
 class GeneratedTests(unittest.TestCase):
-    def test_generated_forms_and_canonical_bytes_match(self):
+    def test_generated_forms_preserve_product_bytes_and_distinct_protocol_sources(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-relay-guidance.py"), "--check"],
                                    capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         standalone = ROOT / "guidance/artifacts/standalone/codex-relay"
         package = ROOT / "guidance/artifacts/vpm/skill"
-        _, files = project.manifest_files(standalone)
-        _, native = project.manifest_files(package)
-        self.assertEqual(files, native)
+        standalone_info, files = project.manifest_files(standalone)
+        native_info = json.loads((package / "PROVENANCE.json").read_bytes())
+        native = {name: (package / name).read_bytes() for name in native_info["files"]}
+        for name, data in native.items():
+            self.assertEqual(hashlib.sha256(data).hexdigest(), native_info["files"][name], name)
+        self.assertEqual(standalone_info["delivery_form"], "standalone")
+        self.assertEqual(native_info["delivery_form"], "vpm")
+        self.assertEqual(native_info["protocol_source"], "consumer-vibe-lock")
+        self.assertFalse(any(name.startswith("references/shared/") for name in native))
+        shared = {name: data for name, data in files.items() if name.startswith("references/shared/")}
+        self.assertTrue(shared)
+        expected_native_names = set(files) - set(shared) - {"PROVENANCE.json", "scripts/project.py"}
+        self.assertEqual(set(native), expected_native_names)
+        for name in expected_native_names - {"references/shared-protocols.md"}:
+            self.assertEqual(files[name], native[name], name)
+        native_route = native["references/shared-protocols.md"].decode()
+        self.assertIn("vibe.lock", native_route)
+        self.assertIn("<locked-version>", native_route)
+        self.assertNotIn("references/shared/", native_route)
+        self.assertIn("shared/vibevm/vibespecs/protocols/", files["references/shared-protocols.md"].decode())
         self.assertEqual(files["LICENSE"], (ROOT / "LICENSE").read_bytes())
         for path in (ROOT / "packages/codex-relay/skill").rglob("*"):
             if path.is_file():
-                self.assertEqual(path.read_bytes(), (standalone / path.relative_to(ROOT / "packages/codex-relay/skill")).read_bytes())
+                relative = path.relative_to(ROOT / "packages/codex-relay/skill")
+                artifact = package if relative.as_posix() == "references/shared-protocols.md" else standalone
+                self.assertEqual(path.read_bytes(), (artifact / relative).read_bytes())
 
 
 if __name__ == "__main__":

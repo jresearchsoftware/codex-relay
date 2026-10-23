@@ -29,7 +29,7 @@ class CommittedFlowTests(unittest.TestCase):
         shutil.copyfile(QUALIFICATION.ROOT / "guidance/source.json", self.root / "guidance/source.json")
         # Construct a synthetic projection/receipt for structural counterexamples.
         # Actual native generation has separate pinned-tool qualification.
-        shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts/standalone/codex-relay",
+        shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts/vpm/skill",
                         self.root / QUALIFICATION.PROJECTION)
         receipt = ['schema = 1', 'skill = "codex-relay"']
         for name, data in sorted(QUALIFICATION.files_in(self.root / QUALIFICATION.PROJECTION).items()):
@@ -50,7 +50,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 20)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "2.0.1")
+        self.assertEqual(facts["first_party_version"], "3.0.0")
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:
@@ -263,7 +263,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.rejects()
 
     def test_unselected_registry_version_is_rejected(self):
-        path = self.root / "vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.0.0/vibe.toml"
+        path = self.root / "vibevm/vibepacks/org.jresearch.ai/codex-relay/v99.0.0/vibe.toml"
         path.parent.mkdir(parents=True)
         path.write_text("Unexpected package version\n")
         self.rejects()

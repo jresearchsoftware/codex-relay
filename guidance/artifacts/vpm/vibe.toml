@@ -2,12 +2,12 @@
 [package]
 group = "org.jresearch.ai"
 name = "codex-relay"
-version = "2.0.1"
+version = "3.0.0"
 kind = "flow"
 frozen = true
 license = "MIT"
 epoch = 1
-description = "Version-bound Codex Relay workflow Skill with offline shared references"
+description = "Codex Relay workflow Skill using consumer-locked shared protocols"
 
 [boot_snippet]
 source = "vibevm/vibespecs/boot/codex-relay.md"
@@ -15,7 +15,7 @@ category = "flow"
 link = "dynamic"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = "=4.0.0"
+"org.jresearch.ai/development-governance" = ">=2.5.0"
 
 [[skill]]
 name = "codex-relay"

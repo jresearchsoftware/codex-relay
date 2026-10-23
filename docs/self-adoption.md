@@ -7,13 +7,21 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **2.0.1** candidate uses the same
-export as the standalone Skill. Its registry, slot, lock, boot index and project
-Skill travel together. Shared Governance is the exact **4.0.0** Git dependency
-identified in [the identity contract](vibevm.md#selected-immutable-identities).
-Guidance 2.0.1 is a patch candidate completing native release closure; the frozen
-1.0.0 and 2.0.0 registry payloads remain unchanged. Source acceptance does not imply an
-external package publication or another consumer's adoption.
+The first-party `org.jresearch.ai/codex-relay` **3.0.0** candidate uses the
+native export. Its registry, slot, lock, boot index and projected native Skill
+travel together. Its Shared dependency requirement is separate from the
+standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
+continues to adopt Shared **4.0.0**, with the exact Git identity in
+[the identity contract](vibevm.md#selected-immutable-identities); this delivery
+change does not migrate the project to Shared 5.0.0.
+
+The new major removes the native Skill's bundled Shared protocol paths and
+changes dependency routing. Native readers use this project's reviewed lock
+and selected Shared slot through `references/shared-protocols.md`. Standalone
+retains a self-contained immutable Shared 4.0.0 snapshot, so the complete
+Skill trees differ while retaining the same product contract. Frozen accepted
+1.0.0, 2.0.0 and 2.0.1 registry payloads remain unchanged. Source acceptance does
+not imply external publication or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
 
@@ -50,9 +58,10 @@ python3 scripts/qualify-vibevm.py
 ```
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v2.0.1`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0` or `v2.0.0` bytes. Native VibeVM owns slot, lock, index,
+not rewrite frozen accepted `v1.0.0`, `v2.0.0` or `v2.0.1` bytes. Native VibeVM
+owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the
 standalone export and external consumer instructions.
@@ -73,9 +82,11 @@ check pass.
 
 ## Qualification, failure and rollback
 
-The structural verifier binds the two exact requirements, selected Shared
-payload/receipt, first-party export/registry/slot equality, native metadata,
-boot order, managed blocks and project Skill/receipt. A native install/check exit
+The structural verifier binds the exact project requirements, the native
+Shared lower bound, selected Shared payload/receipt, first-party native
+export/registry/slot equality, native metadata, boot order, managed blocks and
+project Skill/receipt. It checks that native shared routing reads this project's
+selected dependency rather than a standalone bundle. A native install/check exit
 code alone cannot establish those invariants. Use the existing checks:
 
 ```sh
@@ -87,8 +98,9 @@ The optional native probe uses isolated disposable storage and preserves human
 text around managed blocks. `--project-root <complete-ready-copy>` qualifies a
 complete fixture when the actual destination is unavailable; it does not prove
 missing outputs exist in the governed checkout. The existing
-`qualify-relay-guidance-vpm.py` covers standalone/native equality, selected-version
-update/rollback, repeated/offline projection, drift, collisions and removal.
+`qualify-relay-guidance-vpm.py` covers delivery-specific content and shared
+routing, product contract parity, selected-version update/rollback, repeated/
+offline projection, drift, collisions and removal.
 Actual results and limitations remain candidate evidence, not claims implied by
 these instructions.
 
@@ -112,6 +124,12 @@ fixture can qualify projection without claiming checkout adoption. Existing
 projected guidance remains readable. The optional
 [native filesystem probe](codex/cli-integration.md#native-filesystem-probe)
 distinguishes these cases without a model call.
+
+Intentional Shared dependency updates require assessment of the used protocol
+semantics, applicability, exceptions and Relay bindings. Compatible or irrelevant
+updates do not require a Relay Skill release; a new Shared major alone does not
+change that. See the [compatibility assessment](relay-skill-compatibility.md) and
+[delivery contract](relay-guidance.md).
 
 Self-adoption machinery does not perform external publication, client-settings
 updates, deployment, merge, independent approval or Issue closure.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "codex-relay",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
   "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
   "workflow_contract": "relay-workflows-v4",
@@ -13,5 +13,6 @@
   "shared_source_revision": "99034dd708e5d0201060986b561ada4d2cffd453",
   "shared_distribution_revision": "f14da40725cd35fb3117ae84a506256505340787",
   "shared_distribution_tree_hash": "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746",
-  "publication": "Frozen 2.0.1 source candidate with native Shared 4.0.0 dependency closure; no external publication"
+  "publication": "Frozen 3.0.0 candidate; native consumer-locked protocol routing and standalone immutable snapshot; publication requires independent integration and successful main CI",
+  "shared_requirement": ">=2.5.0"
 }
