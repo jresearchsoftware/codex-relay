@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, chown, lstat, mkdir, readFile, symlink, link, writeFile } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, readFile, symlink, link, unlink, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -85,6 +85,14 @@ test('root Writer collects worker-private atomic replacements without changing m
   await link(outside, join(f.cwd, 'outside-hardlink'));
   await assert.rejects(f.collect(e), { code: 'UNTRUSTED_GIT_FILE_INVALID' });
   assert.equal(await readFile(outside, 'utf8'), 'outside sentinel');
+  await unlink(join(f.cwd, 'outside-hardlink'));
+  let deep = join(f.cwd, 'depth-limit');
+  for (let i = 0; i < 129; i++) { await mkdir(deep, { mode: 0o700 }); deep = join(deep, 'd'); }
+  await assert.rejects(f.collect(e), error => {
+    assert.equal(error.code, 'TRUSTED_GIT_FAILED');
+    assert.match(error.details.failureDiagnostic.preview, /WORKTREE_OBSERVATION_TOO_DEEP/);
+    return true;
+  });
 });
 
 test('private-mode source survives failed publication and explicit same-attempt recovery without worker replay', {
