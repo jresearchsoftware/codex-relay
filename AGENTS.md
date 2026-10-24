@@ -51,15 +51,9 @@ when necessary.
 
 ## Task identity and startup rename
 
-Until [Task #177](https://github.com/jresearchsoftware/codex-relay/issues/177)
-selects the permanent procedure, Codex creating a new Relay-admitted manual PR
-adds the exact `step-S` label from trusted Writer admission. If that new PR
-reaches independent review without the label, the reviewer may add it through
-supported GitHub tools only after verifying the canonical Issue, protected
-admitted Step, PR binding and exact current head, then recheck the native
-Reviewer target. Stop on mismatched or uncertain metadata; never infer or
-allocate a Step, override a conflicting label, require retrospective cleanup
-of older PRs, or restrict PR authors beyond GitHub's permissions.
+Follow the canonical [manual result PR Step-label procedure](packages/codex-relay/skill/references/workflow.md#manual-result-pr-step-labels)
+for manual Codex responsibility, Issue/admission consistency checks and the
+narrowly verified Reviewer fallback. Task #177 retains automatic projection work.
 
 `Task N` is canonical GitHub Issue `#N`, not a separately allocated number.
 A Task/Issue defines the authorized goal, boundaries, and completion/closure
