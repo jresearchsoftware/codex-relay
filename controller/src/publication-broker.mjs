@@ -7,7 +7,7 @@ import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary, boundOutcomeBody } from './outcome.mjs';
 import { boundedThreadCorrelationIdentity, threadCorrelationIdentity } from './run-name.mjs';
-import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody } from './publication-recovery.mjs';
+import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection } from './publication-recovery.mjs';
 import { assertStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
@@ -676,6 +676,30 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         return receipt({ envelope: e, publishedHead: r.publishedHead, finalHead: r.finalHead,
           ...(r.finalHead ? { outcome: receipt(r.outcome) } : {}) });
+      }
+      if (request.operation === 'collect-progress') {
+        // The fixed root Writer derives both checkout and journal from its
+        // immutable admission. Caller JSON cannot select a path or assert that
+        // the worker is contained. Reuse the bounded retained-source reader;
+        // private worker modes are not a reason to alter source permissions.
+        if (Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'workflowReadToken', 'executionSlot', 'authorizationId'].includes(key))) fail('COLLECTION_REQUEST_INVALID');
+        const recovery = Object.hasOwn(request, 'authorizationId');
+        const saved = await journal?.get(e.runId);
+        if (e.route !== 'auto' || !recovery && (r.finalHead || r.outcome)
+          || !saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)
+          || !recovery && (saved.outcome || saved.diagnostic)
+          || saved.execution?.reserved !== true || saved.execution.returned !== true
+          || !['started', 'not_started'].includes(saved.execution.child)
+          || !(saved.execution.containment === 'reaped'
+            || saved.execution.child === 'not_started' && saved.execution.containment === 'not_required')) fail('COLLECTION_NOT_ADMITTED');
+        await guardPublication(e);
+        const expected = recovery ? await authorizeRecoveryCollection({ api, record: r, authorizationId: request.authorizationId }) : null;
+        if (recovery && (saved.execution.child !== 'started' || saved.execution.result?.status !== 'success'
+          || saved.collection?.head !== expected)) fail('RECOVERY_EXECUTION_NOT_PROVEN');
+        if (!collectRetained) fail('RETAINED_COLLECTOR_UNAVAILABLE');
+        const progress = await collectRetained(e);
+        if (expected && progress.head !== expected) fail('RECOVERY_CANDIDATE_CHANGED');
+        return receipt(progress);
       }
       if (request.operation === 'publish-progress') {
         if (e.route !== 'auto' || r.finalHead) fail('PROGRESS_NOT_ADMITTED');
