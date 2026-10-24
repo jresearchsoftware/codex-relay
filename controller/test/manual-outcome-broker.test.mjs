@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { fixture } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { REPOSITORY, WRITER } from '../src/execution-contract.mjs';
-import { admissionBinding, createAdmissionSnapshot, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { REPOSITORY, WRITER, REVIEWER } from '../src/execution-contract.mjs';
+import { admissionBinding, canonicalAuthorityJson, createAdmissionSnapshot, extractAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
 
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement the admitted repository change through manual Codex; independent acceptance remains required.';
 const copy = value => structuredClone(value);
 
 async function manualBroker(t, race) {
+  const decisions = [];
   const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true });
   const e = f.envelope;
   const pr = { number: 43, node_id: 'PR_manual', state: 'open', merged: false, draft: true,
@@ -29,7 +30,8 @@ async function manualBroker(t, race) {
   const originalPut = f.store.put.bind(f.store);
   f.api.get = path => path === '/pulls/43' ? Promise.resolve(copy(pr)) : originalGet(path);
   f.api.list = path => path.startsWith('/pulls?') ? assert.fail('An explicit new v4 PR must not scan unrelated PRs')
-    : path === '/pulls/43/reviews' ? Promise.resolve([]) : originalList(path);
+    : path === '/pulls/43/reviews' ? Promise.resolve([])
+    : path === '/issues/42/comments' ? originalList(path).then(values => [...decisions, ...values]) : originalList(path);
   f.api.userIdentity = login => login === WRITER ? Promise.resolve({ login, type: 'Bot', id: 702 }) : originalIdentity(login);
   f.api.post = async (path, body) => {
     assert.equal(path, '/issues/43/comments');
@@ -54,7 +56,12 @@ async function manualBroker(t, race) {
   const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal, allowManualOutcome: true });
   const invoke = () => broker.dispatch({ operation: 'manual-outcome-direct', runId: e.runId, attemptId: e.attemptId,
     submission: { repository: REPOSITORY, task: 42, run_id: e.runId, result } });
-  return { ...f, pr, result, invoke, posts: () => posts, ready: () => ready,
+  const amend = amendments => decisions.push({ id: 900 + decisions.length,
+    user: { login: REVIEWER, type: 'Bot', id: 701 }, body: '```relay-authority\n' + canonicalAuthorityJson({
+      schema_version: '4.0', kind: 'decision', repository: REPOSITORY, task: 42,
+      parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(charter),
+      purpose: 'Require owner discussion before approval', amendments, supersedes: null, context: [] }) + '\n```\n' });
+  return { ...f, pr, result, invoke, amend, posts: () => posts, ready: () => ready,
     reservedBeforeChange: () => reservedBeforeChange };
 }
 
@@ -65,6 +72,35 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
   assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
+});
+
+test('manual successful Outcome remains review-ready under new Deliberative approval constraints, including replay', async t => {
+  const f = await manualBroker(t);
+  f.amend({ purpose: 'Discuss this exact result before APPROVE',
+    boundaries: [...f.envelope.request.boundaries, 'No APPROVE before owner discussion'] });
+  await f.invoke();
+  assert.equal(f.pr.draft, false); assert.equal(f.ready(), 1);
+  const body = f.comments[0].body;
+  const outcome = extractAuthorityRecord(body);
+  assert.equal(outcome.authority_drift.review_required, true);
+  assert.deepEqual(outcome.authority_drift.changed_fields, ['boundaries', 'purpose']);
+  await f.invoke(); await f.invoke();
+  assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.comments[0].body, body);
+});
+
+test('manual blocked Outcome stays Draft under amended authority', async t => {
+  const f = await manualBroker(t);
+  f.result.status = 'blocked';
+  f.amend({ boundaries: [...f.envelope.request.boundaries, 'No APPROVE before owner discussion'] });
+  await f.invoke(); await f.invoke();
+  assert.equal(f.pr.draft, true); assert.equal(f.ready(), 0); assert.equal(f.posts(), 1);
+});
+
+test('handoff still rejects changed starting pins after publishing one manual Outcome', async t => {
+  const f = await manualBroker(t);
+  f.amend({ starting_head: 'f'.repeat(40) });
+  await assert.rejects(f.invoke(), { code: 'AUTHORITY_CHANGED' });
+  assert.equal(f.pr.draft, true); assert.equal(f.ready(), 0); assert.equal(f.posts(), 1);
 });
 
 for (const [name, mutate, code] of [

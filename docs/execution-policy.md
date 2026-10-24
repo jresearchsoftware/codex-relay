@@ -61,7 +61,11 @@ Automatic workers hand commits to trusted Writer and retain no publication
 authority.
 
 The existing shared-group umask does not override a tool's explicit `0600`
-file or `0700` directory mode, including an atomic replacement. Newly created,
+file or `0700` directory mode, including an atomic replacement. After package
+generation or atomic replacement, check the actual group and mode of known
+public task-owned outputs, including generated boot indexes, before claiming
+collector readiness; readability by the owning worker alone is insufficient.
+Newly created,
 known public task-owned source must remain readable through the existing work
 group for ordinary collection. A worker may correct only those owned public
 files within its admitted authority; unknown or private content requires an

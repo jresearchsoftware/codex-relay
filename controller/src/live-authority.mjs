@@ -324,7 +324,7 @@ export async function revalidateReadyEvent(api, e) {
     run: await api.getRun(e.runId), subject, rejectAmbiguous: e.request?.kind === 'admission' });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
 }
-export async function revalidateAuthority(api, e, { reporting = false, verifyStartingBase = false, publicationTarget } = {}) {
+export async function revalidateAuthority(api, e, { reporting = false, handoff = false, verifyStartingBase = false, publicationTarget } = {}) {
   if (e.request?.kind === 'admission') validateEnvelope(e);
   // A missing authoring base was resolved once, before worker mutation. Main
   // advancement cannot silently rebind that immutable admission resolution.
@@ -342,7 +342,10 @@ export async function revalidateAuthority(api, e, { reporting = false, verifySta
     const old = a.originalRequest; const current = a.currentRequest;
     if (!reporting && ['branch', 'base_sha', 'starting_head', 'existing_pr'].some(field =>
       canonicalAuthorityJson(old[field]) !== canonicalAuthorityJson(current[field]))) fail('AUTHORITY_CHANGED');
-    if (!reporting && (old.scope.some(value => !current.scope.includes(value))
+    // Preparing an already published result for independent review neither
+    // executes amended scope nor accepts it. Keep exact artifact pins above;
+    // current review/approval constraints still govern independent acceptance.
+    if (!reporting && !handoff && (old.scope.some(value => !current.scope.includes(value))
       || current.boundaries.some(value => !old.boundaries.includes(value))
       || current.validation.some(value => !old.validation.includes(value))
       || current.continuation.hold && !old.continuation.hold)) fail('AUTHORITY_CHANGED');

@@ -18,10 +18,13 @@ const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-
 // the filesystem error message. Inner snapshot writes take precedence over an
 // enclosing source traversal when both share the same failure boundary.
 const acquisitionContexts = new WeakMap();
-async function acquire(context, action) {
+const acquisitionFacts = new WeakMap();
+async function acquire(context, action, facts) {
   try { return await action(); }
   catch (error) {
     if (error && typeof error === 'object' && !acquisitionContexts.has(error)) acquisitionContexts.set(error, context);
+    if (error && typeof error === 'object' && facts && !acquisitionFacts.has(error)
+      && acquisitionContexts.get(error) === context) acquisitionFacts.set(error, facts);
     throw error;
   }
 }
@@ -184,7 +187,7 @@ async function boundedSourceText(parent, name, device) {
     return bytes.subarray(0, size).toString('utf8').trim();
   } finally { await handle.close(); }
 }
-function sourceFailure(error, operation) {
+function sourceFailure(error, operation, observedHead) {
   if (error.code === 'TRUSTED_GIT_FAILED' || error.code && !/^E[A-Z0-9]+$/.test(error.code)) throw error;
   const failure = new Error('TRUSTED_GIT_FAILED'); failure.code = 'TRUSTED_GIT_FAILED';
   const safeReasons = new Set(['WORKTREE_CHANGED_DURING_OBSERVATION', 'WORKTREE_OBSERVATION_TOO_LARGE',
@@ -195,7 +198,13 @@ function sourceFailure(error, operation) {
   const syscall = typeof error.syscall === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(error.syscall) ? error.syscall : undefined;
   const identity = [['collector-euid', process.geteuid?.()], ['collector-egid', process.getegid?.()]]
     .filter(([, value]) => Number.isInteger(value) && value >= 0).map(([name, value]) => `${name}=${value}`);
-  const preview = boundedDiagnosticText(`${reason}: ${context}; syscall=${syscall ?? 'unavailable'}; ${identity.join('; ')}; complete checkout observation unavailable`, GIT_DIAGNOSTIC_BYTES);
+  // Only numeric lstat facts and a path fingerprint cross this boundary. The
+  // path and its bytes may be private. A head read/import is a diagnostic lead,
+  // never a validated candidate, clean observation or publication authority.
+  const facts = acquisitionFacts.get(error);
+  const frontier = [exactSha(observedHead) ? `observed-head-unaccepted=${observedHead}` : '',
+    facts ? `source-facts=${JSON.stringify(facts)}` : ''].filter(Boolean).join('; ');
+  const preview = boundedDiagnosticText(`${reason}: ${context}; syscall=${syscall ?? 'unavailable'}; ${identity.join('; ')}; complete checkout observation unavailable${frontier ? '; ' + frontier : ''}`, GIT_DIAGNOSTIC_BYTES);
   failure.details = { failureDiagnostic: { code: failure.code, classification: 'GIT_LOCAL_FAILURE',
     primaryCause: 'GIT_LOCAL_FAILURE', operation, pathContext: context === 'snapshot-write' ? 'unknown' : 'checkout',
     ...(/^E[A-Z0-9]+$/.test(error.code ?? '') ? { diagnosticCode: error.code } : {}),
@@ -214,10 +223,15 @@ async function observeWorktree(dir, checkout, head, device) {
   }
   const matchingSymlinks = new Set(); let specialResidue = false;
   let bytes = 0; let entriesObserved = 0;
-  async function copySource(source, destination, stat) {
+  function sourceFacts(path, stat) {
+    return { path_sha256: createHash('sha256').update(path).digest('hex'),
+      uid: stat.uid, gid: stat.gid, mode: stat.mode & 0o7777, dev: stat.dev, ino: stat.ino,
+      tracked: tracked.has(path) || trackedDirectories.has(path) };
+  }
+  async function copySource(source, destination, stat, relative) {
     bytes += stat.size;
     if (bytes > 100 * 1024 * 1024) throw new Error('WORKTREE_OBSERVATION_TOO_LARGE');
-    await acquire('source-read', () => copyObservedFile(source, destination, stat, device));
+    await acquire('source-read', () => copyObservedFile(source, destination, stat, device), sourceFacts(relative, stat));
   }
   async function visit(handle, relative = '', destination = join(snapshot, relative), metadataOnly = false) {
     if (relative.split('/').length > 128) throw new Error('WORKTREE_OBSERVATION_TOO_DEEP');
@@ -236,7 +250,7 @@ async function observeWorktree(dir, checkout, head, device) {
     // Git sees only copies of regular ignore files; it never opens a worker
     // path or follows a worker-owned .gitignore symlink to decide exclusion.
     const ignore = entries.find(entry => entry.name === '.gitignore' && entry.stat.isFile());
-    if (ignore) await copySource(pinnedPath(handle, ignore.name), join(destination, ignore.name), ignore.stat);
+    if (ignore) await copySource(pinnedPath(handle, ignore.name), join(destination, ignore.name), ignore.stat, ignore.path);
     const candidates = entries.map(entry => entry.path + (entry.stat.isDirectory() ? '/' : ''));
     const ignored = new Set(entries.length && !metadataOnly ? (await git(dir,
       [`--work-tree=${snapshot}`, 'check-ignore', '--no-index', '--stdin', '-z'],
@@ -248,7 +262,7 @@ async function observeWorktree(dir, checkout, head, device) {
       if (entry.stat.isDirectory()) {
         // Nested Git metadata is observed as raw bytes outside the observation
         // worktree, so Git cannot discover or interpret it as another repo.
-        const child = await pinDirectory(from, device, entry.stat);
+        const child = await acquire('source-directory', () => pinDirectory(from, device, entry.stat), sourceFacts(entry.path, entry.stat));
         try {
           if (entry.name === '.git' && !metadataOnly) {
             specialResidue = true;
@@ -263,8 +277,8 @@ async function observeWorktree(dir, checkout, head, device) {
         if (entry.name === '.git' && !metadataOnly) {
           specialResidue = true;
           const retained = await acquire('snapshot-write', () => mkdtemp(join(dir, 'observed-metadata-')));
-          await copySource(from, join(retained, 'gitfile'), entry.stat);
-        } else if (entry !== ignore) await copySource(from, to, entry.stat);
+          await copySource(from, join(retained, 'gitfile'), entry.stat, entry.path);
+        } else if (entry !== ignore) await copySource(from, to, entry.stat, entry.path);
       } else if (entry.stat.isSymbolicLink()) {
         const target = await readlink(from, { encoding: 'buffer' });
         if (!sameObservedFile(entry.stat, await lstat(from))) observationChanged();
@@ -284,7 +298,7 @@ async function observeWorktree(dir, checkout, head, device) {
   try {
     await acquire('source-directory', () => visit(checkout));
   } catch (error) {
-    sourceFailure(error, 'worktree-observation');
+    sourceFailure(error, 'worktree-observation', head);
   }
   // The snapshot is owned/readable by this collector. Attribute normalization
   // is preserved, with no worker config, hook, filter command, or metadata.
