@@ -131,10 +131,10 @@ def qualify_execution(binary, root):
 
             # These production flags intentionally remain explicit. --ephemeral,
             # --worktree, resume, and config/rule suppression are not adopted.
-            argv = [str(binary), "exec", "--json", "--sandbox", "workspace-write",
-                    "--add-dir", str(work / ".git"), "--output-schema", str(schema_path),
+            argv = [str(binary), "exec", "--json", "--sandbox", "danger-full-access",
+                    "--output-schema", str(schema_path),
                     "--model", "gpt-6-astra", "-c", f"model_reasoning_effort={effort}",
-                    "-c", "sandbox_workspace_write.network_access=true", "--cd", str(work),
+                    "--cd", str(work),
                     "-c", 'model_provider="qualification"', "-c",
                     f'model_providers.qualification={{name="qualification",base_url="http://127.0.0.1:{server.server_port}/v1",'
                     'wire_api="responses",requires_openai_auth=false,supports_websockets=false}',
@@ -201,9 +201,7 @@ catch { process.exitCode = 2; }
             assert context["cwd"] == str(work)
             assert context["model"] == "gpt-6-astra" and context["effort"] == effort
             assert context["approval_policy"] == "never"
-            assert context["sandbox_policy"]["type"] == "workspace-write"
-            assert context["sandbox_policy"]["network_access"] is True
-            assert context["sandbox_policy"]["writable_roots"] == [str(work / ".git")]
+            assert context["sandbox_policy"] == {"type": "danger-full-access"}
             assert work.joinpath(".git").is_dir()  # no native worktree adoption
             assert not (work / ".codex").exists()
     finally:
@@ -263,9 +261,9 @@ def qualify():
         for model, effort in [("gpt-6-astra", "max"), ("future-model", "future-effort"),
                               ("gpt-6-astra", "xhigh"), ("gpt-6-astra", "ultra")]:
             # --help terminates before config/auth/session startup.
-            run("exec", "--json", "--sandbox", "workspace-write", "--add-dir", str(root / ".git"),
+            run("exec", "--json", "--sandbox", "danger-full-access",
                 "--output-schema", str(root / "schema.json"), "--model", model,
-                "-c", f"model_reasoning_effort={effort}", "-c", "sandbox_workspace_write.network_access=true",
+                "-c", f"model_reasoning_effort={effort}",
                 "--cd", str(root), "-", "--help")
         # A poisonous installed-user config must not enter the task's new home.
         # No existing user configuration or credentials are read or modified.

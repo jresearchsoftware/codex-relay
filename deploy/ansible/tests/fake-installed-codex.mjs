@@ -36,9 +36,9 @@ for (const [key, directory] of Object.entries({ XDG_CONFIG_HOME: 'config', XDG_C
 assert.equal(process.env.TMPDIR, `${cwd}/.codex-sandbox/tmp`);
 assert.equal(process.env.GIT_SSH_COMMAND, 'false');
 const [, model = smoke ? 'gpt-6-astra' : 'gpt-5.6-luna', effort = smoke ? 'low' : 'high'] = input.match(/fixture-profile=([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)/) ?? [];
-assert.deepEqual(process.argv.slice(2), ['exec', '--json', '--sandbox', 'workspace-write', '--add-dir', `${cwd}/.git`,
+assert.deepEqual(process.argv.slice(2), ['exec', '--json', '--sandbox', 'danger-full-access',
   '--output-schema', `${cwd}/.codex-sandbox/codex-result-schema.json`, '--model', model, '-c', `model_reasoning_effort=${effort}`,
-  '-c', 'sandbox_workspace_write.network_access=true', '--cd', cwd, '-']);
+  '--cd', cwd, '-']);
 assert.equal(JSON.parse(readFileSync(`${cwd}/.codex-sandbox/codex-result-schema.json`)).properties.status.enum[0], 'success');
 if (/fixture-mode=cancel-(?:term|ignoreterm);/.test(input)) {
   if (input.includes('fixture-mode=cancel-ignoreterm;')) process.on('SIGTERM', () => {});

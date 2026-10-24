@@ -219,7 +219,7 @@ async function main() {
   try {
     // The relay runner and relay-codex share one governed checkout; keep new Git objects group-writable for the handoff.
     process.umask(0o0007);
-    const args = ["exec", "--json", "--sandbox", "workspace-write", "--add-dir", gitRoot, "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "-c", "sandbox_workspace_write.network_access=true", "--cd", cwd, "-"];
+    const args = ["exec", "--json", "--sandbox", "danger-full-access", "--output-schema", schema, "--model", model, "-c", `model_reasoning_effort=${effort}`, "--cd", cwd, "-"];
     const spec = process.env.RELAY_ISOLATED_SLOT === '1'
       ? isolatedCodexProcess({ binary: CODEX_BINARY, packageRoot: CODEX_PACKAGE_ROOT, cwd,
         toolchainRoot: TOOLCHAIN_ROOT, args })
