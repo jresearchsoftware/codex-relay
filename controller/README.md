@@ -905,6 +905,23 @@ journal. If safe access requires a live-host permission/helper change, stop for
 that separate owner admission. This source Step does not inspect, alter or
 publish the Task 97 retained candidate or mutate its original authority.
 
+After a worktree acquisition failure, the protected preview also retains the
+already imported `observed-head-unaccepted` and bounded numeric source facts
+(UID/GID, mode, device/inode, tracked category and SHA-256 of the relative path).
+The fingerprint lets an authorized host investigator locate the object without
+publishing its path or contents. This is a diagnostic lead, not a clean-tree,
+candidate-validation or recovery authorization. Public Outcome projections keep
+excluding the preview. Original historical records are never backfilled.
+
+For a durable successful manual Outcome, and automatic `complete-handoff`,
+readiness revalidates authentic authority and exact artifact pins independently
+of amended scope, validation and approval constraints. Such amendments still
+govern source publication and independent acceptance. A Deliberative approval
+hold therefore does not prevent preparing the already published result for
+review. Changed starting pins, wrong target/head, sibling publication, altered
+authority sources and superseded Steps retain their existing stops. BLOCKED
+results remain Draft; replay retains the same Outcome bytes and result.
+
 ## Runtime diagnostic retention
 
 Primary diagnostic writes and oldest-record eviction share a short Linux kernel

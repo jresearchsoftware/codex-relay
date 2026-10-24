@@ -73,6 +73,24 @@ test('unused expanded permissions preserve original restrictions and allow sourc
   assert.deepEqual((await f.store.get(99)).envelope.request.boundaries, originalBoundaries);
 });
 
+test('automatic durable handoff becomes Ready when an approval hold arrives after Outcome publication', async t => {
+  const f = await driftFixture(t);
+  const post = f.api.post.bind(f.api);
+  f.api.post = async (path, body) => {
+    const value = await post(path, body);
+    if (path.endsWith('/comments') && extractAuthorityRecord(body.body)?.kind === 'outcome')
+      f.amend({ boundaries: [...originalBoundaries, 'No APPROVE until owner discussion'] });
+    return value;
+  };
+  const result = await runAttempt({ ...f, execute: async e => { await f.commit(); return f.execute(e); } });
+  assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.equal((await f.api.get('/pulls/43')).draft, false);
+  const body = f.comments.find(c => extractAuthorityRecord(c.body)?.kind === 'outcome').body;
+  await runAttempt({ ...f, admissionResumed: true, execute: () => assert.fail('handoff replay executed') });
+  assert.equal(f.comments.filter(c => extractAuthorityRecord(c.body)?.kind === 'outcome').length, 1);
+  assert.equal(f.comments.find(c => extractAuthorityRecord(c.body)?.kind === 'outcome').body, body);
+});
+
 for (const amendments of [{ boundaries: [...originalBoundaries, 'Source publication is revoked'] },
   { scope: ['Different replacement work'] }, { validation: ['diff-check', 'secret-scan'] }]) {
   test(`changed action-time constraint ${Object.keys(amendments)[0]} blocks source publication while one truthful Outcome remains available`, async t => {
