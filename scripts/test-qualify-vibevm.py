@@ -50,7 +50,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 20)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "3.1.0")
+        self.assertEqual(facts["first_party_version"], "3.1.1")
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:

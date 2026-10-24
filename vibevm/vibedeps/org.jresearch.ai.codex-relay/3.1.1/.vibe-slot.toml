@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:5bd96c600aaecec732981b8c45c82854493d34fa2597a01fdabe033735aac772"
+source_hash = "sha256:7e0a590456e661e1cb0dd37f8be8687ef2d4754638abc3d97ef80f2c879feab3"
 spec_format = "mixed"
 
 [[file]]
@@ -8,11 +8,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "LICENSES.json"
-sha256 = "ac905b92c2ca00ded1c67d0c67426dc74e5604164ec431316ee4347b8710fc26"
+sha256 = "552414857e21e90d2e2640d5c88cec1473b8454455951afdc1357f8b9caca7e9"
 
 [[file]]
 path = "README.md"
-sha256 = "d8767c6cf08cc8014144a509d2f6ae05739df14cf4cd22cc13b3a068d8e3038e"
+sha256 = "1c281b006133791faaaef621735e26426314e9fdcaf7e094ad01b98b36568298"
 
 [[file]]
 path = "skill/LICENSE"
@@ -20,11 +20,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "bf6f41d69d073a1a8e9ac85758838c3ef32f967c2bf121a634da0df1f26ae0c2"
+sha256 = "e30773cf75baf1a588f8b153dd8368612fd06327c88bd716142e82e2a5dac886"
 
 [[file]]
 path = "skill/SKILL.md"
-sha256 = "0936e041c2bbe34d71ef3aae123876592a55c7abe0c3eb3923ebfde6e86d6ca6"
+sha256 = "08d7b1e2c136d4cacefbe4e47771aab032dc32d506d3154f10cac4101f6ece3d"
 
 [[file]]
 path = "skill/references/compatibility.md"
@@ -40,7 +40,7 @@ sha256 = "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171"
 
 [[file]]
 path = "skill/references/installation.md"
-sha256 = "678802e75d5d66abc5b959537309b0eab765accb9de610ae386bd138887c0f90"
+sha256 = "da7993bba5879b0333174efa1156d007a921b8e5fa098dcbe227226b447149e5"
 
 [[file]]
 path = "skill/references/product/contract.json"
@@ -64,7 +64,7 @@ sha256 = "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f"
 
 [[file]]
 path = "skill/references/workflow.md"
-sha256 = "c08c67913ca8e64e3304966ca61e460c7d3853b13b7dc1d05cfc297e860d1b83"
+sha256 = "55553925d70e0f99fda60256c494c91fb1e656e1f6a5a6381a42ada4aaa7a4a1"
 
 [[file]]
 path = "vibe.lock"
@@ -72,7 +72,7 @@ sha256 = "58fa63f446004379ec5bbafbcfa1c84bae8f977a18f9ed075a04ee3156ad3566"
 
 [[file]]
 path = "vibe.toml"
-sha256 = "f5376d7a21f1db267d30d2a3f41f46d62b7abbf9bc08336ed5222325489f3001"
+sha256 = "bdeb6a9564504f49490ea9ff29061c30c969ab03668fbbde63b3c9e553abf1c7"
 
 [[file]]
 path = "vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/.vibe-slot.toml"

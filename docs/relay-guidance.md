@@ -10,7 +10,15 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **3.1.0** adds the compatible explicit v4 manual publication path: no
+Guidance **3.1.1** clarifies the existing
+[manual result PR Step-label procedure](../packages/codex-relay/skill/references/workflow.md#manual-result-pr-step-labels).
+Under PV-002 this is a **patch**: it carries the accepted interim manual
+executor responsibility into the canonical product manual, including timing
+and Issue/admission consistency, without adding a runtime gate, permission or
+materially new mandatory operator work. Automatic Step/title projection remains
+Task #177's separate work. The frozen 3.1.0 payload remains unchanged.
+
+Guidance **3.1.0** added the compatible explicit v4 manual publication path: no
 PR-body admission digest or unrelated-PR scan. This is a minor expansion of the
 supported workflow, with no new mandatory owner action. The accepted 3.0.0
 registry remains immutable. Source acceptance does not deploy Writer.
@@ -30,7 +38,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 3.1.0 is a candidate. Native source
+release. Before independent acceptance, 3.1.1 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

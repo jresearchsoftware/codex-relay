@@ -149,9 +149,9 @@ information but do not preallocate Step.
 
 Automatic Step-label/title projection remains deferred to
 [Task #177](https://github.com/jresearchsoftware/codex-relay/issues/177).
-Manual Codex creating a new Relay-admitted result PR must add the exact `step-S` label already present on
-the canonical Task Issue. Set it during PR creation where supported, or
-immediately afterward and before result handoff. Verify the Issue and PR labels
+Manual Codex creating a new Relay-admitted result PR must add the exact `step-S`
+label already present on the canonical Task Issue. Set it during PR creation
+where supported, or immediately afterward and before result handoff. Verify the Issue and PR labels
 against the trusted admitted Step; never infer or allocate Step from a label,
 title or history. Missing, conflicting or mismatched Issue/admission metadata
 must be reported and reconciled before proceeding, not guessed. A manual Codex

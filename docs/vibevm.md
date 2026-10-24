@@ -54,7 +54,7 @@ not actual model traversal or compliance.
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=4.0.0` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=3.1.0`,
+source and exact commit. The native local registry supplies Relay `=3.1.1`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -76,11 +76,13 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 3.1.0 adds compatible explicit manual publication to accepted 3.0.0.
+Guidance 3.1.1 clarifies the existing manual Step-label procedure; see its
+[patch classification](relay-guidance.md#version-and-provenance). Guidance 3.1.0
+added compatible explicit manual publication to accepted 3.0.0.
 The earlier 3.0.0 was a major release because it removes the native
 Skill's bundled Shared protocol paths and changes its packaging/routing
 contract, independently of Shared version arithmetic. Frozen first-party
-1.0.0, 2.0.0, 2.0.1 and 3.0.0 registry payloads remain intact for historical identity
+1.0.0, 2.0.0, 2.0.1, 3.0.0 and 3.1.0 registry payloads remain intact for historical identity
 and rollback; they are not active requirements. Historical Shared versions
 remain in Git history, not parallel active root slots. Project version `0.0.0`
 does not identify a Relay release.

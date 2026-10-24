@@ -8,12 +8,12 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **3.0.0** becomes a first-party source release only on independent
+Version **3.1.1** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
 that another consumer adopted it. An unmerged artifact remains a candidate.
-The major version removes the native Skill's bundled Shared protocol paths and
-changes its supported dependency routing and packaging contract. It is not
+The 3.0.0 major removed the native Skill's bundled Shared protocol paths and
+changed its supported dependency routing and packaging contract. It was not
 caused by the Shared package's major number. Frozen accepted earlier registry
 bytes, including 2.0.1, remain unchanged for identity and rollback. The selected
 product-contract baseline is
@@ -25,7 +25,7 @@ enclosing accepted guidance release.
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `3.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `3.1.1` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 4.0.0
