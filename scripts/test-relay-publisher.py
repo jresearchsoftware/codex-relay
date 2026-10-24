@@ -184,17 +184,21 @@ class RelayPublisherTests(unittest.TestCase):
 
     def test_selected_reusable_workflow_keeps_independent_immutable_checkouts(self):
         # Inspect the caller-selected upstream workflow, not a copied local fixture.
-        steps = re.split(r"(?m)^      - ", PUBLISHER_WORKFLOW)
-        publisher_step = next(step for step in steps if "id: publisher_checkout\n" in step)
-        producer_step = next(step for step in steps if "id: producer_checkout\n" in step)
+        # Step IDs, directory names and shell commands remain upstream-owned.
+        def context_value(key, expression):
+            return (r"(?m)^\s*" + key + r":\s*['\"]?\$\{\{\s*"
+                    + re.escape(expression) + r"\s*\}\}['\"]?\s*$")
+
+        steps = re.split(r"(?m)^\s+- ", PUBLISHER_WORKFLOW)
+        publisher_step = next(step for step in steps
+                              if re.search(context_value("repository", "job.workflow_repository"), step))
+        producer_step = next(step for step in steps
+                             if re.search(context_value("ref", "inputs.source_sha"), step))
+        self.assertNotEqual(publisher_step, producer_step)
         for step in (publisher_step, producer_step):
-            self.assertRegex(step, r"(?m)^        uses: actions/checkout@[0-9a-f]{40}\b")
-            self.assertRegex(step, r"(?m)^          persist-credentials: false$")
-        self.assertRegex(publisher_step, r"(?m)^          repository: \$\{\{ job\.workflow_repository \}\}$")
-        self.assertRegex(publisher_step, r"(?m)^          ref: \$\{\{ job\.workflow_sha \}\}$")
-        self.assertRegex(producer_step, r"(?m)^          ref: \$\{\{ inputs\.source_sha \}\}$")
-        self.assertIn('test "$(git -C publisher rev-parse HEAD)" = "$PUBLISHER_SHA"', PUBLISHER_WORKFLOW)
-        self.assertIn('test "$(git -C producer rev-parse HEAD)" = "$SOURCE_SHA"', PUBLISHER_WORKFLOW)
+            self.assertRegex(step, r"(?m)^\s*uses: actions/checkout@[0-9a-f]{40}\b")
+            self.assertRegex(step, r"(?m)^\s*persist-credentials: false\s*$")
+        self.assertRegex(publisher_step, context_value("ref", "job.workflow_sha"))
         inputs = PUBLISHER_WORKFLOW.split("    inputs:\n", 1)[1].split("    secrets:\n", 1)[0]
         self.assertNotRegex(inputs, r"(?m)^      (publisher_sha|policy_sha):")
 
