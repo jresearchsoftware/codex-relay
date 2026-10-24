@@ -382,16 +382,32 @@ PR/head mismatches and duplicate delivery still fail closed. Retained schema-v3
 Requests and attempts keep their strict historical currentness and bindings;
 neither ordinary recovery nor new source code rebinds them.
 
-A PR result must be uniquely bound to the Task, including a disposable PR already
-closed without merge; Writer does not reopen it. Fresh schema `4.0` manual PRs
-retain `Related to #N` and the exact standalone line `Execution admission digest:
-<admission.sha256>`. A v4 CR or Issue continuation instead binds the existing PR
-number in its immutable admission; its PR body keeps the original execution's
-provenance without adding or replacing a digest for the new Step. Writer verifies
-the admitted PR number, repository, branch, configured base, single Task linkage,
-exact result head and unique current PR before reporting and again at lifecycle
-boundaries. A different open PR on that branch is ambiguous even without a
-matching admission marker. This grants no new publication or review authority.
+A schema-v4 manual result explicitly names its target PR in `result.parent`.
+Writer checks the authenticated capability and protected admission, repository,
+admitted branch, configured base, single Task link (for example `Related to #N`)
+and exact Git result head. An existing-PR admission also fixes the PR number.
+No PR-body admission digest or PR-author identity is required. Explicit target
+publication reads that PR and its trusted authority records; unrelated open or
+historical PRs on the same branch do not disqualify it. This is publication of
+an execution claim, not a new admission or a judgment of work quality.
+
+Wrong target, repository, Task link, branch, base or head returns respectively
+`MANUAL_PR_TARGET_MISMATCH`, `MANUAL_PR_REPOSITORY_MISMATCH`,
+`MANUAL_PR_TASK_MISMATCH`, `MANUAL_PR_BRANCH_MISMATCH`, `MANUAL_PR_BASE_MISMATCH`
+or `MANUAL_PR_HEAD_MISMATCH` before freezing a new claim. Correct an unreserved
+input and resubmit in the same attempt. After reservation the exact claim stays
+immutable; duplicate delivery recovers the original Outcome or reports the
+specific conflicting/uncertain effect. Relevant unresolved sibling effects
+remain protected. Historical reporting does not mutate successor lifecycle.
+
+Writer publishes and reads back one Bot Outcome before making the same exact
+open PR Ready; BLOCKED keeps Draft and a disposed PR is never reopened.
+Authority, head and target are rechecked at lifecycle boundaries. Source CI and
+Writer publication do not establish independent exact-head acceptance or a
+deployed capability. Implicit automatic PR discovery/recovery still reconciles
+its own creation intents and native provenance; it is not a caller-selected
+manual target.
+
 Schema `3.0` branch discovery retains both standalone lines:
 
 ```text

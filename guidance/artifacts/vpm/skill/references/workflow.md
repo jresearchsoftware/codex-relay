@@ -214,6 +214,18 @@ admitted handoff/schema. No owner result-copy comment or second approval is
 required merely to transport a new v4 result. It neither imports Git nor
 launches, approves, deploys, merges or closes anything.
 
+For a v4 PR result set `result.parent` to the intended PR and
+`result.result.revision` to its exact published Git head. Keep one ordinary Task
+link in the PR, such as `Related to #N`. Writer checks the admitted repository,
+branch and configured base, and any admitted existing-PR number. No admission
+digest line, PR-author restriction or scan of unrelated same-branch PRs is
+required. Writer publishes one verified Outcome then makes that exact open PR
+Ready for independent review. BLOCKED remains Draft; disposed PRs stay disposed.
+A target input error can be corrected before claim reservation in the same
+attempt. Once reserved, retry the same result for publication recovery; changed
+claims cannot overwrite it. Retained v3 keeps its original request binding.
+
+
 Competing candidates retain the canonical Task branch. The first authorized
 publication may advance its exact predecessor; another candidate stops if that
 predecessor changed. An unknown push/PR operation holds its publication target

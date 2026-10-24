@@ -65,7 +65,7 @@ export function assertPr(pr, number) {
     || !exactSha(pr.head?.sha) || !exactSha(pr.base?.sha)) fail('PR_NOT_ADMITTED');
   branchName(pr.head.ref);
 }
-export async function readAuthority(api, target, number, { targetBase, step, streamlined = false, route, runId, lineage, snapshot, previousRecord, resolution } = {}) {
+export async function readAuthority(api, target, number, { targetBase, step, streamlined = false, route, runId, lineage, snapshot, previousRecord, resolution, publicationTarget } = {}) {
   const pr = target === 'pull_request' ? await api.get(`/pulls/${number}`) : null;
   if (pr) assertPr(pr, number);
   const issueNumber = pr ? linkedIssue(pr.body) : number;
@@ -80,7 +80,7 @@ export async function readAuthority(api, target, number, { targetBase, step, str
       subagents: true, validation: [...NATIVE_VALIDATIONS] },
     startingState: { branch: `${CONSUMER.taskBranchPrefix}task-${issueNumber}`, base_sha: targetBase,
       starting_head: targetBase, existing_pr: null }, pullRequest: pr?.number,
-    ...(snapshot ? { admittedAuthority: snapshot.authority } : {}),
+    ...(snapshot ? { admittedAuthority: snapshot.authority, publicationTarget } : {}),
     ...(resolution ? { projectDefaults: resolution.project_defaults, startingState: resolution.starting_state } : {}),
   } : {});
   if (typed) {
@@ -324,14 +324,14 @@ export async function revalidateReadyEvent(api, e) {
     run: await api.getRun(e.runId), subject, rejectAmbiguous: e.request?.kind === 'admission' });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
 }
-export async function revalidateAuthority(api, e, { reporting = false, verifyStartingBase = false } = {}) {
+export async function revalidateAuthority(api, e, { reporting = false, verifyStartingBase = false, publicationTarget } = {}) {
   if (e.request?.kind === 'admission') validateEnvelope(e);
   // A missing authoring base was resolved once, before worker mutation. Main
   // advancement cannot silently rebind that immutable admission resolution.
   const a = await readAuthority(api, e.target, e.number, { targetBase: e.targetBase, step: e.step,
     streamlined: e.request?.kind === 'admission', route: e.route, runId: e.runId,
     lineage: e.request?.lineage, snapshot: e.request?.kind === 'admission' ? e.request : undefined,
-    resolution: e.request?.authority_resolution });
+    resolution: e.request?.authority_resolution, publicationTarget });
   if ((e.request?.kind !== 'admission' && a.authorityDigest !== e.authorityDigest) || a.branch !== e.branch || a.startHead !== e.startHead
     || a.issueNumber !== e.issueNumber || (a.review?.id ?? null) !== e.reviewId) fail('AUTHORITY_CHANGED');
   if (a.request && a.request.route !== e.route) fail('AUTHORITY_CHANGED');

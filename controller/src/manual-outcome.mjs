@@ -14,41 +14,36 @@ export function validateManualSubmission(value) {
 }
 
 export async function assertManualPullRequestBinding(api, e, pr, { unique = true } = {}) {
-  const existing = e.request.kind === 'admission' && e.request.schema_version === '4.0'
-    && positive(e.request.existing_pr);
+  // The authenticated v4 call names its target. Admission binds the attempt,
+  // not a manually copied PR-body token or the PR author's identity.
+  if (e.request.kind === 'admission' && e.request.schema_version === '4.0') {
+    if (pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY)
+      fail('MANUAL_PR_REPOSITORY_MISMATCH');
+    const number = e.request.existing_pr ?? (e.target === 'pull_request' ? e.number : e.continuation?.pullRequest);
+    if (number && pr.number !== number) fail('MANUAL_PR_TARGET_MISMATCH');
+    if (!e.branch || pr.head.ref !== e.branch) fail('MANUAL_PR_BRANCH_MISMATCH');
+    if (pr.base.ref !== BASE_BRANCH) fail('MANUAL_PR_BASE_MISMATCH');
+    const references = taskReferences(pr.body, REPOSITORY);
+    if (references.length !== 1 || references[0] !== e.issueNumber) fail('MANUAL_PR_TASK_MISMATCH');
+    if (!exactSha(pr.head.sha) || !exactSha(pr.base.sha)) fail('MANUAL_PR_HEAD_MISMATCH');
+    return;
+  }
+  // Retained v3 discovery keeps its exact request marker and uniqueness rule.
   const references = taskReferences(pr.body, REPOSITORY);
   if (pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
     || references.length !== 1 || references[0] !== e.issueNumber
     || (e.branch && pr.head.ref !== e.branch)) fail('PR_AUTHORITY_CHANGED');
-  const marker = e.request.schema_version === '4.0'
-    ? `Execution admission digest: ${admissionBinding(e.request).sha256}` : `Execution request digest: ${e.requestReference.sha256}`;
-  // A v4 CR or Issue continuation admits one existing PR by immutable number.
-  // Its body retains the earlier execution's provenance; it cannot carry the
-  // digest of every future remediation. Fresh PR discovery still needs its
-  // own exact marker, and retained v3 bindings keep their original contract.
-  if (existing) {
-    const number = e.target === 'pull_request' ? e.number : e.continuation?.pullRequest;
-    if (number !== e.request.existing_pr || pr.number !== number || pr.base?.ref !== BASE_BRANCH
-      || !exactSha(pr.head.sha) || !exactSha(pr.base.sha)) fail('PR_AUTHORITY_CHANGED');
-  } else if (!pr.body?.split(/\r?\n/).includes(marker)) fail('PR_AUTHORITY_CHANGED');
-  if (!existing && !unique) return;
+  const marker = `Execution request digest: ${e.requestReference.sha256}`;
+  if (!pr.body?.split(/\r?\n/).includes(marker)) fail('PR_AUTHORITY_CHANGED');
+  if (!unique) return;
   const artifacts = (await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(pr.head.ref)}`))
-    .filter(candidate => existing ? candidate.number === pr.number || candidate.state === 'open'
-      : candidate.body?.split(/\r?\n/).includes(marker));
+    .filter(candidate => candidate.body?.split(/\r?\n/).includes(marker));
   if (artifacts.length !== 1 || artifacts[0].number !== pr.number) fail('PR_AMBIGUOUS');
-  if (existing) {
-    const observed = artifacts[0];
-    const observedReferences = taskReferences(observed.body, REPOSITORY);
-    if (observed.head?.repo?.full_name !== REPOSITORY || observed.base?.repo?.full_name !== REPOSITORY
-      || observed.head?.ref !== e.branch || observed.base?.ref !== BASE_BRANCH
-      || observed.head?.sha !== pr.head.sha || observed.base?.sha !== pr.base.sha
-      || observedReferences.length !== 1 || observedReferences[0] !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
-  }
 }
 
 export async function publishManualOutcome({ api, store, record: r, submission,
   commentOnce, rememberPullRequest, transitionManual, revalidate, existingPullRequest,
-  historical = async () => false }) {
+  historical = async () => false, checkPublication = async () => {} }) {
   validateManualSubmission(submission);
   const e = r.envelope; const result = submission.result;
   if (e.route !== 'manual' || e.issueNumber !== submission.task || e.runId !== submission.run_id
@@ -72,8 +67,9 @@ export async function publishManualOutcome({ api, store, record: r, submission,
   let pr = null;
   if (result.parent.kind === 'pull_request') {
     pr = await api.get(`/pulls/${result.parent.number}`);
-    if (pr.number !== result.parent.number || (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
-      || (r.prNumber && r.prNumber !== pr.number)) fail('PR_AUTHORITY_CHANGED');
+    if (pr.number !== result.parent.number || (r.prNumber && r.prNumber !== pr.number)) fail('MANUAL_PR_TARGET_MISMATCH');
+    if (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
+      fail('MANUAL_PR_HEAD_MISMATCH');
     await assertManualPullRequestBinding(api, e, pr);
     if (historicalResult && result.result.kind === 'git' && result.result.revision !== pr.head.sha) {
       const commit = await api.get(`/git/commits/${result.result.revision}`);
@@ -83,9 +79,13 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     // Reject this existing lifecycle incompatibility before reserving claims or
     // posting a successful Outcome that no replay could finish.
     if (result.status === 'implemented' && pr.state === 'open' && result.result.kind !== 'git') fail('PUBLISHED_HEAD_REQUIRED');
-    await rememberPullRequest(r, pr);
   } else if (result.parent.number !== e.issueNumber || r.prNumber || r.prIntent
     || (e.branch || historicalResult) && await existingPullRequest(r, { attemptOnly: historicalResult })) fail('PR_AUTHORITY_CHANGED');
+  // Do not freeze a correctable target/head mistake or post before discovering
+  // an unresolved sibling effect on this exact target.
+  if (!historicalResult) await checkPublication(e, pr);
+  const current = await revalidate(e);
+  if (pr) await rememberPullRequest(r, pr);
   const writer = await api.userIdentity(WRITER);
   if (writer.login !== WRITER || writer.type !== 'Bot' || !positive(writer.id)) fail('WRITER_IDENTITY_CHANGED');
   if (r.outcome) {
@@ -98,7 +98,6 @@ export async function publishManualOutcome({ api, store, record: r, submission,
   }
   r.manualSubmission = { ...r.manualSubmission, sha256: resultDigest, parent: result.parent, rendererVersion: 'human-v1' };
   await store.put(e.runId, r);
-  const current = await revalidate(e);
   const frozenResult = r.manualSubmission.publishedResult
     ?? (r.commentIntent?.key === 'outcome' && r.commentIntent.body ? extractAuthorityRecord(r.commentIntent.body) : null);
   let publishedResult = frozenResult ?? result;

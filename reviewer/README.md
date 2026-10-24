@@ -355,6 +355,13 @@ are separate from Reviewer Bot credentials and SQLite review state. Foreign
 repositories, invalid/currentness-changing authority, automatic/unadmitted
 attempts, incorrect Step or result, duplicates and uncertain publication are
 validated or recovered by Writer under its existing publication lock/journal.
+For v4 the explicit `result.parent` PR needs no admission-digest body line or
+PR-author identity. Writer validates repository, Task link, admitted branch,
+configured base and exact result head, plus the existing PR number when pinned.
+It reads that target's authority records without scanning unrelated branch PRs.
+The `MANUAL_PR_*_MISMATCH` errors identify correctable target inputs and include
+specific guidance; no replacement Step, PR or approval is needed. A reserved
+claim remains immutable and uncertain effects require exact recovery.
 There is no owner-authored manual-result precursor, identity-proof comment,
 second dispatch transport or owner approval step for delivering the claim.
 

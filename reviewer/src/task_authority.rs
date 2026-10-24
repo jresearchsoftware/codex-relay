@@ -1865,6 +1865,12 @@ async fn project(
 pub(crate) fn error(code: &str) -> Value {
     let mut result = json!({"content":[{"type":"text","text":code}],"isError":true});
     let guidance = match code {
+        "MANUAL_PR_TARGET_MISMATCH" => Some("Check result.parent.number against the intended PR and any immutable existing-PR admission. Correct an unreserved input in the same attempt; do not create a replacement PR or Step."),
+        "MANUAL_PR_REPOSITORY_MISMATCH" => Some("The target PR must have both head and base in the admitted repository. Check repository and result.parent before resubmitting."),
+        "MANUAL_PR_TASK_MISMATCH" => Some("The target PR needs one unambiguous link to the admitted Task, such as Related to #N. Check the intended target and Task link; no PR-body admission digest is required for v4."),
+        "MANUAL_PR_BRANCH_MISMATCH" => Some("The target PR head branch must match the admitted branch. Check the intended PR and immutable admission; do not reset or replace the branch."),
+        "MANUAL_PR_BASE_MISMATCH" => Some("The target PR must use the configured base branch. Check the intended PR and base before resubmitting."),
+        "MANUAL_PR_HEAD_MISMATCH" => Some("Check result.result.revision against the exact published target PR head. Preserve uncertain or already reserved result claims; inspect publication state before any recovery."),
         "CURRENT_PROTOCOL_REQUIRED" => Some("Use publish_task_authority with a schema_version 4.0 Decision or Change Request for new work. Do not create a schema-v3 Decision/Request/CR or legacy CR as a fallback. Preserve the original payload for an already reserved operation."),
         "CURRENT_PROTOCOL_CAPABILITY_REQUIRED" => Some("Stop new authority publication until the paired Reviewer/controller installation is qualified and githubNativeAuthorityEnabled is enabled. Refresh the supported typed capability; do not fall back to schema-v3 or legacy publication."),
         "MANUAL_OUTCOME_CAPABILITY_DISABLED" | "WRITER_CAPABILITY_UNAVAILABLE" => Some("For a new schema-v4 result, stop publication until the qualified owner-connected submit_manual_outcome Writer capability is available. Preserve the admitted result and original operation; do not replace it with an owner-authored result comment or a legacy transport fallback. Already-admitted older attempts retain their exact original qualified transport and bindings."),

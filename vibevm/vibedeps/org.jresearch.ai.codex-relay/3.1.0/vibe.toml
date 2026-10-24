@@ -2,7 +2,7 @@
 [package]
 group = "org.jresearch.ai"
 name = "codex-relay"
-version = "3.0.0"
+version = "3.1.0"
 kind = "flow"
 frozen = true
 license = "MIT"

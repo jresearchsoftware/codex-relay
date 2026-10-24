@@ -12,9 +12,8 @@ const copy = value => structuredClone(value);
 async function manualBroker(t, race) {
   const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true });
   const e = f.envelope;
-  const marker = `Execution admission digest: ${admissionBinding(e.request).sha256}`;
   const pr = { number: 43, node_id: 'PR_manual', state: 'open', merged: false, draft: true,
-    body: `Related to #42\n${marker}`, base: { ref: CONSUMER.baseBranch, sha: e.historicalBase, repo: { full_name: REPOSITORY } },
+    body: 'Related to #42', base: { ref: CONSUMER.baseBranch, sha: e.historicalBase, repo: { full_name: REPOSITORY } },
     head: { ref: e.branch, sha: e.startHead, repo: { full_name: REPOSITORY } } };
   const result = { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: { kind: 'pull_request', number: pr.number }, charter_sha256: e.request.charter_sha256,
@@ -29,7 +28,7 @@ async function manualBroker(t, race) {
   const originalIdentity = f.api.userIdentity.bind(f.api);
   const originalPut = f.store.put.bind(f.store);
   f.api.get = path => path === '/pulls/43' ? Promise.resolve(copy(pr)) : originalGet(path);
-  f.api.list = path => path.startsWith('/pulls?') ? Promise.resolve([copy(pr)])
+  f.api.list = path => path.startsWith('/pulls?') ? assert.fail('An explicit new v4 PR must not scan unrelated PRs')
     : path === '/pulls/43/reviews' ? Promise.resolve([]) : originalList(path);
   f.api.userIdentity = login => login === WRITER ? Promise.resolve({ login, type: 'Bot', id: 702 }) : originalIdentity(login);
   f.api.post = async (path, body) => {
@@ -68,6 +67,37 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
 });
 
+for (const [name, mutate, code] of [
+  ['repository', f => { f.pr.head.repo.full_name = 'foreign/repo'; }, 'MANUAL_PR_REPOSITORY_MISMATCH'],
+  ['Task', f => { f.pr.body = 'Related to #41'; }, 'MANUAL_PR_TASK_MISMATCH'],
+  ['branch', f => { f.pr.head.ref += '-wrong'; }, 'MANUAL_PR_BRANCH_MISMATCH'],
+  ['base', f => { f.pr.base.ref = 'wrong'; }, 'MANUAL_PR_BASE_MISMATCH'],
+  ['head', f => { f.pr.head.sha = 'b'.repeat(40); }, 'MANUAL_PR_HEAD_MISMATCH'],
+  ['PR number', f => { f.pr.number = 44; }, 'MANUAL_PR_TARGET_MISMATCH'],
+]) test(`explicit manual ${name} input error is specific and correctable before reservation`, async t => {
+  const f = await manualBroker(t); const before = copy(f.pr); mutate(f);
+  await assert.rejects(f.invoke(), { code });
+  assert.equal(f.posts(), 0); assert.equal(f.ready(), 0);
+  assert.equal((await f.store.get(f.envelope.runId)).manualSubmission, undefined);
+  Object.assign(f.pr, before);
+  await f.invoke(); assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
+});
+
+test('explicit manual target is author-neutral and ignores historical or unrelated open branch PRs', async t => {
+  const f = await manualBroker(t);
+  f.pr.user = { login: 'another-contributor', type: 'User', id: 900 };
+  await f.invoke(); assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
+});
+
+test('unresolved sibling publication blocks explicit manual reporting before a claim or Outcome is reserved', async t => {
+  const f = await manualBroker(t);
+  await f.store.put(100, { envelope: { ...f.envelope, runId: 100, attemptId: 'run-100' },
+    publicationIntent: { previous: null, head: f.pr.head.sha } });
+  await assert.rejects(f.invoke(), { code: 'PUBLICATION_TARGET_HELD' });
+  assert.equal(f.posts(), 0); assert.equal(f.ready(), 0);
+  assert.equal((await f.store.get(f.envelope.runId)).manualSubmission, undefined);
+});
+
 test('lost manual Outcome POST followed by a later Step replays the exact original result twice without another POST or Ready', async t => {
   const f = await manualBroker(t, 'lost-outcome-response');
   await assert.rejects(f.invoke(), { code: 'POST_UNCERTAIN' });
@@ -97,18 +127,18 @@ test('lost manual Outcome POST followed by a later Step replays the exact origin
 });
 
 for (const race of ['after-outcome', 'after-reservation']) {
-  test(`real broker rejects an admission marker removed ${race} without native Ready mutation`, async t => {
+  test(`real broker ignores optional admission marker edits ${race} and completes native Ready`, async t => {
     const f = await manualBroker(t, race);
-    await assert.rejects(f.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
-    assert.equal(f.posts(), 1); assert.equal(f.ready(), 0); assert.equal(f.pr.draft, true);
+    await f.invoke();
+    assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
     assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
     const durable = await f.store.get(f.envelope.runId);
     assert.equal(durable.outcome.outcomeId, f.comments[0].id);
     if (race === 'after-reservation') {
       assert.equal(f.reservedBeforeChange(), true);
-      assert.deepEqual(durable.lifecycleIntent, { number: f.pr.number, head: f.pr.head.sha, draft: false });
+      assert.equal(durable.lifecycleIntent, null);
     }
-    await assert.rejects(f.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
-    assert.equal(f.posts(), 1); assert.equal(f.ready(), 0);
+    await f.invoke();
+    assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
   });
 }

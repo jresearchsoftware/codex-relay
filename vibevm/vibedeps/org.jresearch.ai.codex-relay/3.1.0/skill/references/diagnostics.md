@@ -88,3 +88,14 @@ protected operational entrypoints and owner authority. No arbitrary diagnostic
 read/delete or cleanup is granted here. An explicitly isolated disposable TEST
 sandbox follows its admitted TEST policy; uncertainty about its boundary stops
 outside effects and does not grant production control.
+
+## Manual publication target errors
+
+`MANUAL_PR_TARGET_MISMATCH`, `MANUAL_PR_REPOSITORY_MISMATCH`,
+`MANUAL_PR_TASK_MISMATCH`, `MANUAL_PR_BRANCH_MISMATCH`, `MANUAL_PR_BASE_MISMATCH`
+and `MANUAL_PR_HEAD_MISMATCH` identify the failing target field. Verify the
+intended PR number, admitted repository/branch, configured base, single Task
+link and exact published result SHA. Correct an unreserved submission in the
+same attempt. No PR-body admission digest is needed for an explicit v4 result.
+Preserve already reserved claims and inspect unknown publication before
+recovery; do not create another Step or PR solely to repair delivery.

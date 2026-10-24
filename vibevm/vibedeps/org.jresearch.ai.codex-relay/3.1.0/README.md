@@ -1,4 +1,4 @@
-# Codex Relay 3.0.0 guidance package
+# Codex Relay 3.1.0 guidance package
 
 Generated source candidate for `org.jresearch.ai/codex-relay`. It describes accepted
 Relay contract `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` with native shared requirement

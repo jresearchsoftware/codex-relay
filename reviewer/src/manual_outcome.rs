@@ -66,7 +66,7 @@ fn receipt(args: &Value, writer_actor: &str, bytes: &[u8]) -> Result<Value, &'st
                 .bytes()
                 .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == b'_')
     }) {
-        return Ok(json!({"content":[{"type":"text","text":code}],"isError":true}));
+        return Ok(task_authority::error(code));
     }
     let status = response["status"]
         .as_str()
@@ -247,6 +247,26 @@ mod tests {
         )
         .unwrap();
         assert!(!error.to_string().contains("secret"));
+        for code in [
+            "MANUAL_PR_TARGET_MISMATCH",
+            "MANUAL_PR_REPOSITORY_MISMATCH",
+            "MANUAL_PR_TASK_MISMATCH",
+            "MANUAL_PR_BRANCH_MISMATCH",
+            "MANUAL_PR_BASE_MISMATCH",
+            "MANUAL_PR_HEAD_MISMATCH",
+        ] {
+            let bytes = serde_json::to_vec(&json!({"error_code":code,"private":"secret"})).unwrap();
+            let error = receipt(&args, "writer[bot]", &bytes).unwrap();
+            assert_eq!(error["structuredContent"]["error_code"], code);
+            assert!(
+                error["structuredContent"]["guidance"]
+                    .as_str()
+                    .unwrap()
+                    .len()
+                    > 30
+            );
+            assert!(!error.to_string().contains("secret"));
+        }
     }
 
     #[test]
