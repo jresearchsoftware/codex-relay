@@ -138,6 +138,78 @@ class ConsumerWorkflowTests(unittest.TestCase):
                 checked = subprocess.run(['bash', '-n'], input=command, text=True, capture_output=True)
                 self.assertEqual(checked.returncode, 0, checked.stderr)
 
+    def test_guidance_publisher_uses_accepted_upstream_and_exact_producer(self):
+        publication = workflow('publish-guidance.yml')
+        self.assertEqual(publication['on']['workflow_run'], {
+            'workflows': ['Public CI'], 'types': ['completed'], 'branches': ['main']})
+        self.assertEqual(set(publication['on']), {'workflow_run', 'workflow_dispatch'})
+        self.assertEqual(set(publication['on']['workflow_dispatch']['inputs']), {'source_sha'})
+        self.assertEqual(publication['permissions'], {'contents': 'read', 'actions': 'read'})
+        self.assertIs(publication['concurrency']['cancel-in-progress'], False)
+        job, = publication['jobs'].values()
+        self.assertEqual(job['uses'],
+                         'jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@main')
+        self.assertEqual(job['with'], {
+            'mode': 'publish',
+            'source_sha': '${{ github.event.workflow_run.head_sha || inputs.source_sha }}',
+            'binding': 'vibe-publisher.json', 'package': 'org.jresearch.ai/codex-relay'})
+        self.assertEqual(job['secrets'], {
+            'DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN': '${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}'})
+
+        steps = self.validation['jobs']['publisher-readiness']['steps']
+        publisher = next(step for step in steps if step.get('id') == 'publisher')
+        self.assertEqual(publisher['with'], {
+            'repository': 'jresearchsoftware/shared-governance', 'ref': 'main',
+            'path': '.publisher', 'persist-credentials': False})
+        integration = next(step for step in steps if 'scripts/test-relay-publisher.py' in step.get('run', ''))
+        self.assertEqual(integration['env'], {
+            'PUBLISHER_SHA': '${{ steps.publisher.outputs.commit }}',
+            'SOURCE_SHA': '${{ github.event.pull_request.head.sha || github.sha }}'})
+        self.assertIn('--publisher-sha "$PUBLISHER_SHA" --source-sha "$SOURCE_SHA"', integration['run'])
+        self.assertIn('GITHUB_STEP_SUMMARY', integration['run'])
+        check = next(step for step in steps if 'publisher.py check' in step.get('run', ''))
+        self.assertEqual(check['env']['SOURCE_SHA'], integration['env']['SOURCE_SHA'])
+        self.assertIn('--source . --source-sha "$SOURCE_SHA" --base "$BASE_SHA" --main "$BASE_SHA"', check['run'])
+        self.assertIn('.publisher/tooling/vibe-publisher/publisher.py', check['run'])
+        for step in (integration, check):
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('if', step)
+            self.assertNotIn('secrets.', json.dumps(step))
+
+    @unittest.skipUnless(NODE, 'Node is required to exercise the publication event filter')
+    def test_guidance_publisher_accepts_only_bound_main_push_or_main_retry(self):
+        job = workflow('publish-guidance.yml')['jobs']['publish']
+        script = r"""
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const job = JSON.parse(readFileSync(0, 'utf8'));
+const evaluate = (source, github, inputs) =>
+  Function('github', 'inputs', `return (${source.replace(/^\$\{\{/, '').replace(/\}\}$/, '')});`)(github, inputs);
+const source = 'a'.repeat(40), retry = 'b'.repeat(40);
+const original = { repository: 'jresearchsoftware/codex-relay', ref: 'refs/heads/main',
+  event_name: 'workflow_run', event: { workflow_run: { conclusion: 'success', event: 'push',
+  head_branch: 'main', head_sha: source, head_repository: { full_name: 'jresearchsoftware/codex-relay' } } } };
+const cases = [
+  [g => {}, true, source],
+  [g => { g.repository = 'foreign/repo'; }, false],
+  [g => { g.event.workflow_run.conclusion = 'failure'; }, false],
+  [g => { g.event.workflow_run.event = 'pull_request'; }, false],
+  [g => { g.event.workflow_run.head_branch = 'topic'; }, false],
+  [g => { g.event.workflow_run.head_repository.full_name = 'foreign/repo'; }, false],
+  [g => { g.event_name = 'push'; }, false],
+  [g => { g.event_name = 'workflow_dispatch'; g.event.workflow_run = {}; }, true, retry],
+  [g => { g.event_name = 'workflow_dispatch'; g.ref = 'refs/heads/topic'; }, false],
+];
+for (const [change, expected, sha] of cases) {
+  const github = structuredClone(original); change(github);
+  assert.equal(evaluate(job.if, github, {source_sha: retry}), expected);
+  if (expected) assert.equal(evaluate(job.with.source_sha, github, {source_sha: retry}), sha);
+}
+"""
+        checked = subprocess.run([NODE, '--input-type=module', '-e', script], cwd=ROOT,
+                                 input=json.dumps(job), text=True, capture_output=True)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')
     def test_native_names_and_owner_event_conditions(self):
         # Evaluate the small GitHub expression subset actually used by these

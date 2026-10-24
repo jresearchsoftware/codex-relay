@@ -95,7 +95,18 @@ VibeVM resolver/projector,
 exact schema/workflow pins, generator, source release and external publication
 mechanics remain [Relay delivery](relay-guidance.md) responsibilities.
 The accepted Shared Publisher and successful-main flow retain their existing
-authority; this mapping introduces no additional release gate. A consumer-only
+authority. The external caller follows publisher `@main`, while each execution
+binds its own exact implementation through `job.workflow_repository` and
+`job.workflow_sha` and keeps the producer at the exact triggering accepted SHA.
+The publisher reports both immutable identities; callers do not select a
+separate publisher revision. Current tree-v1 closure qualification can use
+source-time lock/slots beneath the package root without exporting them.
+Existing frozen Relay payloads retain their deliberately exported evidence;
+a future thin-package change needs separate authorization and a new version.
+See [Relay delivery](relay-guidance.md#shared-publisher-and-immutable-publication)
+for retry identity, native/offline limits and immutable-tag safeguards.
+This integration changes no Shared protocol adoption or release authority and
+introduces no additional release gate. A consumer-only
 compatible or irrelevant Shared update needs no Relay release. Assess actually
 used protocol semantics, applicability, exceptions and product bindings; only
 a material required Relay behavior, guidance, interface or packaging change

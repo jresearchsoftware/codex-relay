@@ -148,18 +148,31 @@ source, not a second authored implementation. The two forms share the Relay
 product contract and authored manual but may have different protocol routes,
 inventories and provenance. Whole-tree byte identity is not their parity rule.
 
-The accepted Shared Publisher additionally requires exported native dependency
-closure evidence for a required package edge: a schema-7 lock and matching
-frozen versioned slots. Its
-[supported tree-v1 interface](https://github.com/jresearchsoftware/shared-governance/blob/5a1e5de66388501235fc9ffd23d45efb34df2b85/docs/shared-publisher.md#export-and-readiness)
-does not allow omitting that evidence. Such immutable producer release evidence
-can remain inside the Relay distribution without becoming consumer protocol
-authority. It is not a consumer lock or an alternate reading route. Qualification
-must establish one selected Shared identity in the consumer's graph and routes,
-no Shared bundle in the native Skill, and no active route to the nested release
-evidence. Disclose any retained nested snapshot bytes explicitly; do not claim
-the distribution contains no older Shared files. Removing or relabeling required
-dependencies merely to bypass closure qualification is not supported.
+The current accepted Shared Publisher qualifies required dependency closure
+using the schema-7 lock and matching frozen versioned slots committed beneath
+the package source root at the exact accepted source SHA. Its
+[supported tree-v1 interface](https://github.com/jresearchsoftware/shared-governance/blob/414077e956aa47b18ddc436f68c3245b508baf46/docs/shared-publisher.md#export-and-readiness)
+permits this source-time evidence to remain outside the explicit export inventory.
+Deliberate vendoring also remains supported: any exported slot must carry its
+complete shipped inventory. Removing or relabeling a required dependency to
+bypass closure qualification remains unsupported.
+
+Relay's existing frozen distributions retain their nested producer lock and
+Shared slot unchanged. The earlier mandatory-export statement describes the
+historical publisher restriction, not the current interface. Omitting those
+bytes from a future thin Relay package requires separately authorized packaging
+work and an appropriately classified new version. The publisher integration
+migration changes no frozen payload, native dependency requirement or protocol
+selection. Retained nested evidence is neither a consumer lock nor an alternate
+reading route. Qualification must establish one selected Shared identity in the
+consumer graph and routes, no Shared bundle in the native Skill, and no active
+route to the nested evidence. Disclose retained snapshot bytes explicitly.
+
+Thin publication does not promise offline acquisition: native consumers need
+configured registries or explicit Git roots, and offline use needs retained
+consumer evidence/cache or a supported local source. VibeVM 1.0.7 still rejects
+`dev-requires` and inline `optional=true`; source-time publisher qualification
+does not establish broader native schema support.
 
 ## Deliberate updates and Relay versioning
 
