@@ -7,7 +7,7 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **3.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **3.1.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
@@ -15,12 +15,12 @@ continues to adopt Shared **4.0.0**, with the exact Git identity in
 [the identity contract](vibevm.md#selected-immutable-identities); this delivery
 change does not migrate the project to Shared 5.0.0.
 
-The new major removes the native Skill's bundled Shared protocol paths and
-changes dependency routing. Native readers use this project's reviewed lock
+The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
+changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4 manual publication. Native readers use this project's reviewed lock
 and selected Shared slot through `references/shared-protocols.md`. Standalone
 retains a self-contained immutable Shared 4.0.0 snapshot, so the complete
 Skill trees differ while retaining the same product contract. Frozen accepted
-1.0.0, 2.0.0 and 2.0.1 registry payloads remain unchanged. Source acceptance does
+1.0.0, 2.0.0, 2.0.1 and 3.0.0 registry payloads remain unchanged. Source acceptance does
 not imply external publication or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
@@ -58,9 +58,9 @@ python3 scripts/qualify-vibevm.py
 ```
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.1.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0` or `v2.0.1` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1` or `v3.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

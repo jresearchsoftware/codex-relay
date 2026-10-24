@@ -10,7 +10,12 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **3.0.0** changes the native packaging contract: it removes the
+Guidance **3.1.0** adds the compatible explicit v4 manual publication path: no
+PR-body admission digest or unrelated-PR scan. This is a minor expansion of the
+supported workflow, with no new mandatory owner action. The accepted 3.0.0
+registry remains immutable. Source acceptance does not deploy Writer.
+
+Guidance **3.0.0** changed the native packaging contract: it removes the
 bundled `references/shared` protocol tree and routes to the consuming project's
 resolved Shared dependency instead. This removed path and changed routing make
 it a major Relay release; the Shared package's major number does not determine
@@ -25,7 +30,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 3.0.0 is a candidate. Native source
+release. Before independent acceptance, 3.1.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

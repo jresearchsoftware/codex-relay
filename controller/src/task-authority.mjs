@@ -160,6 +160,9 @@ export async function readStreamlinedTaskAuthority(api, issue, pr, options = {})
     if (trusted(comment) && /^```relay-authority/m.test(comment.body ?? '')) add(native(comment, 'issue-comment', { kind: 'issue', number: issue.number }));
   }
   if (pr) await addPrRecords(pr.number);
+  // A validated explicit manual result selects one publication target. Read
+  // that target's trusted records without rediscovering unrelated branch PRs.
+  if (!pr && options.admittedAuthority && options.publicationTarget) await addPrRecords(options.publicationTarget);
   const branches = new Set(options.startingState?.branch ? [branchName(options.startingState.branch)] : []);
   for (const record of records.values()) {
     if (record.author?.id !== author.id || record.author?.type !== 'Bot') continue;
@@ -167,7 +170,7 @@ export async function readStreamlinedTaskAuthority(api, issue, pr, options = {})
     const branch = payload?.kind === 'decision' ? payload.amendments.branch : payload?.branch;
     if (branch) branches.add(branchName(branch));
   }
-  if (!pr) for (const branch of branches) {
+  if (!pr && !(options.admittedAuthority && options.publicationTarget)) for (const branch of branches) {
     const artifacts = await api.list(`/pulls?state=open&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(branch)}`);
     if (artifacts.length > 1) fail('PR_AMBIGUOUS');
     for (const artifact of artifacts) {

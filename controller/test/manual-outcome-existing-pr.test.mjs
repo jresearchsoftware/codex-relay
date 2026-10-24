@@ -156,18 +156,17 @@ const invalid = [
     const get = f.api.get.bind(f.api);
     f.api.get = path => path === '/pulls/44' ? Promise.resolve({ ...copy(f.pr), number: 44,
       body: `Related to #42\nExecution admission digest: ${f.result.admission.sha256}` }) : get(path);
-  }, ['PR_AUTHORITY_CHANGED']],
+  }, ['PR_AUTHORITY_CHANGED', 'MANUAL_PR_TARGET_MISMATCH', 'MANUAL_PR_HEAD_MISMATCH']],
   ['different Task linkage', f => { f.pr.body = f.pr.body.replaceAll('#42', '#41').replaceAll('/issues/42', '/issues/41'); },
-    ['CANONICAL_ISSUE_AMBIGUOUS', 'AUTHORITY_CHANGED', 'AUTHORITY_TARGET_MISMATCH', 'PR_AUTHORITY_CHANGED']],
-  ['different branch', f => { f.pr.head.ref += '-other'; }, ['STARTING_STATE_MISMATCH', 'PR_AUTHORITY_CHANGED']],
-  ['different base branch', f => { f.pr.base.ref = 'other'; }, ['PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
-  ['foreign head repository', f => { f.pr.head.repo.full_name = 'foreign/repository'; }, ['PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
-  ['foreign base repository', f => { f.pr.base.repo.full_name = 'foreign/repository'; }, ['PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
-  ['different exact result head', f => { f.result.result.revision = f.envelope.startHead; }, ['PR_AUTHORITY_CHANGED']],
+    ['MANUAL_PR_TASK_MISMATCH', 'CANONICAL_ISSUE_AMBIGUOUS', 'AUTHORITY_CHANGED', 'AUTHORITY_TARGET_MISMATCH', 'PR_AUTHORITY_CHANGED']],
+  ['different branch', f => { f.pr.head.ref += '-other'; }, ['MANUAL_PR_BRANCH_MISMATCH', 'STARTING_STATE_MISMATCH', 'PR_AUTHORITY_CHANGED']],
+  ['different base branch', f => { f.pr.base.ref = 'other'; }, ['MANUAL_PR_REPOSITORY_MISMATCH', 'MANUAL_PR_BASE_MISMATCH', 'PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
+  ['foreign head repository', f => { f.pr.head.repo.full_name = 'foreign/repository'; }, ['MANUAL_PR_REPOSITORY_MISMATCH', 'MANUAL_PR_BASE_MISMATCH', 'PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
+  ['foreign base repository', f => { f.pr.base.repo.full_name = 'foreign/repository'; }, ['MANUAL_PR_REPOSITORY_MISMATCH', 'MANUAL_PR_BASE_MISMATCH', 'PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
+  ['different exact result head', f => { f.result.result.revision = f.envelope.startHead; }, ['PR_AUTHORITY_CHANGED', 'MANUAL_PR_TARGET_MISMATCH', 'MANUAL_PR_HEAD_MISMATCH']],
   ['different admission digest', f => { f.result.admission.sha256 = 'b'.repeat(64); }, ['MANUAL_OUTCOME_BINDING_INVALID']],
   ['different authority digest', f => { f.result.authority.sha256 = 'b'.repeat(64); },
     ['AUTHORITY_SOURCE_MISMATCH']],
-  ['another open PR without the new admission marker', f => { f.duplicates.push({ ...copy(f.pr), number: 44 }); }, ['PR_AMBIGUOUS']],
   ['changed trusted CR source', f => { f.reviews[0].body += '\nChanged after admission.'; },
     ['AUTHORITY_SOURCE_MISMATCH', 'AUTHORITY_CHANGED']],
 ];
@@ -188,9 +187,8 @@ for (const [name, mutate, codes] of invalid) {
 
 for (const when of ['after-outcome', 'after-reservation']) for (const [name, mutate, codes] of [
   ['changed exact PR head', ({ pr }) => { pr.head.sha = 'b'.repeat(40); }, ['PR_AUTHORITY_CHANGED', 'PR_HEAD_OBSERVATION_STALE']],
-  ['changed branch', ({ pr }) => { pr.head.ref += '-other'; }, ['STARTING_STATE_MISMATCH', 'PR_AUTHORITY_CHANGED']],
-  ['changed configured base', ({ pr }) => { pr.base.ref = 'other'; }, ['PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
-  ['duplicate current PR', ({ pr, duplicates }) => { duplicates.push({ ...copy(pr), number: 44 }); }, ['PR_AMBIGUOUS']],
+  ['changed branch', ({ pr }) => { pr.head.ref += '-other'; }, ['MANUAL_PR_BRANCH_MISMATCH', 'STARTING_STATE_MISMATCH', 'PR_AUTHORITY_CHANGED']],
+  ['changed configured base', ({ pr }) => { pr.base.ref = 'other'; }, ['MANUAL_PR_REPOSITORY_MISMATCH', 'MANUAL_PR_BASE_MISMATCH', 'PR_NOT_ADMITTED', 'PR_AUTHORITY_CHANGED']],
   ['changed CR source', ({ reviews }) => { reviews[0].body += '\nConcurrent source change.'; }, ['AUTHORITY_SOURCE_MISMATCH', 'AUTHORITY_CHANGED']],
 ]) {
   test(`manual existing-PR lifecycle rejects ${name} ${when} without a Ready mutation`, async t => {
@@ -212,3 +210,13 @@ test('lost manual existing-PR Outcome response recovers its exact original claim
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
   assert.equal(f.comments.at(-1).body, original); assert.equal(f.pr.body, f.originalBody);
 });
+
+for (const when of [undefined, 'after-outcome', 'after-reservation']) {
+  test(`explicit existing PR ignores another branch PR at ${when ?? 'submission'}`, async t => {
+    const f = await existingPr(t, 'cr', when ? { when, mutate: ({ pr, duplicates }) => {
+      duplicates.push({ ...copy(pr), number: 44 });
+    } } : undefined);
+    if (!when) f.duplicates.push({ ...copy(f.pr), number: 44 });
+    await f.invoke(); assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
+  });
+}

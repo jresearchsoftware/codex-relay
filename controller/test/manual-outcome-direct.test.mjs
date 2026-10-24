@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { publishManualOutcome, validateManualSubmission } from '../src/manual-outcome.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
-import { REPOSITORY, WRITER } from '../src/execution-contract.mjs';
+import { BASE_BRANCH, REPOSITORY, WRITER } from '../src/execution-contract.mjs';
 import { admissionBinding, authoritySourceDigest, canonicalAuthorityJson, createAdmissionSnapshot, extractAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
 
 const copy = value => structuredClone(value);
@@ -27,7 +27,7 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
   const marker = version === '4.0' ? `Execution admission digest: ${admissionBinding(snapshot).sha256}`
     : `Execution request digest: ${requestReference.sha256}`;
   const pr = prState ? { number: 55, state: prState, merged: false, draft: true,
-    body: `Related to #42\n${marker}`, base: { repo: { full_name: REPOSITORY } },
+    body: `Related to #42\n${marker}`, base: { ref: BASE_BRANCH, sha: head, repo: { full_name: REPOSITORY } },
     head: { ref: q.branch, sha: head, repo: { full_name: REPOSITORY } } } : null;
   const result = { schema_version: version, kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: pr ? { kind: 'pull_request', number: 55 } : copy(parent), charter_sha256: sha256Body(charter),
@@ -123,8 +123,21 @@ test('manual exact Git head is independently bound to the admitted PR before Out
   assert.deepEqual(f.transitions, [{ number: 55, draft: false, outcomeAlreadyDurable: true, status: 'implemented' }]);
   assert.equal(f.posted(), 1);
   f.pr.head.sha = 'c'.repeat(40);
-  await assert.rejects(f.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
+  await assert.rejects(f.invoke(), { code: 'MANUAL_PR_HEAD_MISMATCH' });
   assert.equal(f.posted(), 1);
+});
+
+test('v4 explicit PR ignores absent or stale optional digest; retained v3 still requires its selected marker', async () => {
+  for (const marker of ['', '\nExecution admission digest: stale']) {
+    const f = fixture({ prState: 'open', resultKind: 'git' });
+    f.pr.body = `Related to #42${marker}`;
+    await f.invoke(); assert.equal(f.posted(), 1);
+    assert.equal(f.calls.some(([method, path]) => method === 'list' && path.startsWith('/pulls?')), false);
+  }
+  const legacy = fixture({ version: '3.0', prState: 'open', resultKind: 'git' });
+  legacy.pr.body = 'Related to #42';
+  await assert.rejects(legacy.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
+  assert.equal(legacy.posted(), 0);
 });
 
 test('blocked manual Git outcome drafts before publishing and never marks Ready', async () => {
@@ -186,11 +199,11 @@ test('uncertain POST with no discoverable native record stops instead of repeati
   assert.equal(f.posted(), 1); assert.equal(f.comments.length, 0);
 });
 
-test('live authority failure before publication retains submission identity and publishes nothing', async () => {
+test('live authority failure before publication leaves the claim correctable and publishes nothing', async () => {
   const f = fixture(); f.stale('AUTHORITY_SOURCE_MISMATCH');
   await assert.rejects(f.invoke(), { code: 'AUTHORITY_SOURCE_MISMATCH' });
   assert.equal(f.posted(), 0);
-  assert.equal((await f.store.get(123)).manualSubmission.sha256, sha256Body(canonicalAuthorityJson(f.result)));
+  assert.equal((await f.store.get(123)).manualSubmission, undefined);
 });
 
 test('canonical result target, charter, attempt and admission bindings reject tampering before POST', async () => {

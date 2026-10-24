@@ -520,9 +520,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         return receipt({ envelope });
       }
-      const r = await bound(request, request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
+      const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
+        : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
         : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false }
-          : { reporting: ['finish', 'finish-no-change', 'manual-outcome-direct'].includes(request.operation),
+          : { reporting: ['finish', 'finish-no-change'].includes(request.operation),
             verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
       if (r.prepublicationRecovery && !['prepublication-state', 'recover-prepublication'].includes(request.operation)) fail('PREPUBLICATION_RECOVERY_RESERVED');
       if (['prepublication-state', 'recover-prepublication'].includes(request.operation)
@@ -736,7 +737,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'manual-outcome-direct') {
         return receipt(await publishManualOutcome({ api, store, record: r, submission: request.submission,
-          commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope, { reporting: true }),
+          checkPublication: (envelope, pr) => guardPublication(pr
+            ? { ...envelope, target: 'pull_request', number: pr.number } : envelope),
+          commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope,
+            { reporting: true, publicationTarget: request.submission.result.parent.kind === 'pull_request' ? request.submission.result.parent.number : undefined }),
           historical: async envelope => !await isCurrentProjection(envelope),
           transitionManual: async (record, pr, result, draft) => {
             if (!pr || pr.state !== 'open' || pr.merged) return;
@@ -744,7 +748,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             await guardPublication(e);
             if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
             await transitionPr({ api, store, key: e.runId, record, head: pr.head.sha, draft,
-              readPr: async () => { await revalidateAuthority(api, e); const current = await api.get(`/pulls/${pr.number}`);
+              readPr: async () => { await revalidateAuthority(api, e, { publicationTarget: pr.number }); const current = await api.get(`/pulls/${pr.number}`);
                 assertPr(current, pr.number); if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
                 await assertManualPullRequestBinding(api, e, current, { unique: false }); return current; } });
           } }));
