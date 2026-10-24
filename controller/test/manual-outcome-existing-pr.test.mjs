@@ -118,13 +118,19 @@ async function existingPr(t, route, race) {
   assert.equal(e.step, 2); assert.equal(e.request.existing_pr, pr.number);
   assert.equal(pr.body, originalBody);
   assert.ok(!pr.body.includes(`Execution admission digest: ${admissionBinding(e.request).sha256}`));
+  if (route === 'continuation') {
+    const handoff = await broker.dispatch({ operation: 'handoff', runId: e.runId, attemptId: e.attemptId });
+    assert.equal(handoff.status, 'handed-off');
+    assert.equal((await f.store.get(e.runId)).lifecycleIntent, null);
+  }
+  assert.equal(pr.draft, true, 'existing PR must be Draft before any manual source modification');
   // Manual execution publishes source through its admitted owner channel.
   await f.command(f.source, ['fetch', f.remote, e.branch]);
   await f.command(f.source, ['switch', '-c', e.branch, e.startHead]);
   await writeFile(join(f.source, 'docs/work.md'), 'manual correction\n');
   await f.command(f.source, ['commit', '-am', 'manual correction']);
   await f.command(f.source, ['push', f.remote, e.branch]);
-  pr.head.sha = await f.remoteHead(); pr.draft = true;
+  pr.head.sha = await f.remoteHead();
   const result = { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: { kind: 'pull_request', number: pr.number }, charter_sha256: sha256Body(charter), step: e.step,
     authority: copy(e.request.authority), admission: admissionBinding(e.request), attempt: e.attemptId,

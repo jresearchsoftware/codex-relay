@@ -841,9 +841,21 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'handoff') {
         if (e.route !== 'manual') fail('MANUAL_ROUTE_REQUIRED');
-        // Manual routing skips worker preflight. Revalidate the native CR/head
-        // and verified Draft state here, including admission/handoff replay.
-        if (!r.outcome) await prepareRemediation(e);
+        // Manual routing skips worker preflight. Both CR remediation and Issue
+        // continuation must verify Draft before exposing an executable handoff.
+        if (!r.outcome) {
+          await prepareRemediation(e);
+          if (e.target === 'issue' && e.continuation?.pullRequest && await isCurrentProjection(e)) {
+            await guardPublication(e);
+            await transitionPr({ api, store, key: e.runId, record: r, head: e.startHead, draft: true,
+              readPr: async () => {
+                await revalidateAuthority(api, e);
+                const pr = await existingPullRequest(r);
+                if (!pr || pr.number !== e.continuation.pullRequest) fail('PR_AUTHORITY_CHANGED');
+                return pr;
+              } });
+          }
+        }
         const url = e.reviewId ? `https://github.com/${REPOSITORY}/pull/${e.number}#pullrequestreview-${e.reviewId}` : `https://github.com/${REPOSITORY}/issues/${e.issueNumber}`;
         const continuationBinding = e.request?.kind === 'admission' && e.reviewId && e.startHead !== e.request.reviewed_head_sha
           ? `Admitted source PR: https://github.com/${REPOSITORY}/pull/${e.number}\nAdmitted branch: ${e.branch}\nRequired starting head: ${e.startHead}\nOriginal CR reviewed head (finding provenance): ${e.request.reviewed_head_sha}\nUse the admitted starting head above; the original CR reviewed head remains finding provenance.\n` : '';

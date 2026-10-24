@@ -344,7 +344,7 @@ export async function revalidateAuthority(api, e, { reporting = false, handoff =
       canonicalAuthorityJson(old[field]) !== canonicalAuthorityJson(current[field]))) fail('AUTHORITY_CHANGED');
     // Preparing an already published result for independent review neither
     // executes amended scope nor accepts it. Keep exact artifact pins above;
-    // changed review/approval constraints remain visible in the frozen Outcome.
+    // current review/approval constraints still govern independent acceptance.
     if (!reporting && !handoff && (old.scope.some(value => !current.scope.includes(value))
       || current.boundaries.some(value => !old.boundaries.includes(value))
       || current.validation.some(value => !old.validation.includes(value))

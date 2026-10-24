@@ -921,6 +921,10 @@ hold therefore does not prevent preparing the already published result for
 review. Changed starting pins, wrong target/head, sibling publication, altered
 authority sources and superseded Steps retain their existing stops. BLOCKED
 results remain Draft; replay retains the same Outcome bytes and result.
+Manual Issue-based continuation also verifies the existing exact PR/head is
+Draft before publishing its executable handoff. It cannot rely on worker
+preflight, which the manual route does not run. Completed and superseded
+attempts do not redraft a newer result on handoff replay.
 
 ## Runtime diagnostic retention
 
