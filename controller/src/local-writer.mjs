@@ -25,7 +25,9 @@ export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "
     let child;
     try { child = spawnImpl(sudo, ["-n", helperPath], { env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (error) { throw requestError(error); }
-    const stdoutCapture = createBoundedUtf8Capture(1024 * 1024);
+    // Collection returns the same bounded base64 bundle accepted by Writer
+    // publication. Ordinary receipts retain their existing small output limit.
+    const stdoutCapture = createBoundedUtf8Capture(request.operation === 'collect-progress' ? 145 * 1024 * 1024 : 1024 * 1024);
     const stderrCapture = createBoundedUtf8Capture(1024 * 1024);
     let stdout = "";
     let stderr = "";

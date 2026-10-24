@@ -50,7 +50,8 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 20)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "3.1.1")
+        self.assertEqual(facts["first_party_version"], "4.0.0")
+        self.assertEqual(facts["standalone_snapshot"], "5.0.0")
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:
@@ -260,6 +261,22 @@ class CommittedFlowTests(unittest.TestCase):
         path.write_bytes(original)
         QUALIFICATION.check_project(self.root)
         shutil.rmtree(historical)
+        self.rejects()
+
+    def test_standalone_snapshot_cannot_drift_or_become_an_active_native_route(self):
+        snapshot = Path("guidance/artifacts/standalone/codex-relay/references/shared")
+        path = self.root / snapshot / "vibevm/vibespecs/protocols/task-handoff.md"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\nChanged standalone snapshot\n")
+        self.rejects()
+        path.write_bytes(original)
+        QUALIFICATION.check_project(self.root)
+        path.unlink()
+        self.rejects()
+        path.write_bytes(original)
+        index = self.root / QUALIFICATION.BOOT / "INDEX.md"
+        index.write_text(index.read_text().replace(QUALIFICATION.SLOT.as_posix(),
+                                                   snapshot.as_posix()))
         self.rejects()
 
     def test_unselected_registry_version_is_rejected(self):

@@ -18,10 +18,10 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "4.0.0"
+VERSION = "5.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "3.1.1"
+SELF_VERSION = "4.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -45,12 +45,12 @@ SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/IND
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "f14da40725cd35fb3117ae84a506256505340787"
+DISTRIBUTION_REVISION = "30a23f467c30c41fec918204cbbf2ecfffd7bef5"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "99034dd708e5d0201060986b561ada4d2cffd453"
-PAYLOAD_HASH = "8af5b949fd0f5ebeb435d838b41f5a21fad09a5b005ea267fecba20b7c2440cf"
-RECEIPT_HASH = "140d72044071c589a1740efd3177444f8359e675c7569ee5f744c9ba55307774"
-TREE_HASH = "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746"
+SOURCE_REVISION = "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9"
+PAYLOAD_HASH = "f4ad03a0137bd0d4c8cab58fa7d42ccbe0bb3aba2315cb9c96f5f93c7ea86275"
+RECEIPT_HASH = "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9"
+TREE_HASH = "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -184,6 +184,19 @@ def check_first_party_registry(root, expected):
         "Unexpected first-party registry package or file")
 
 
+def check_standalone_snapshot(root):
+    metadata = json.loads(read_file(root, "guidance/source.json"))
+    require(metadata["shared_version"] == VERSION
+            and metadata["shared_source_revision"] == SOURCE_REVISION
+            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
+            and metadata["shared_distribution_tree_hash"] == TREE_HASH,
+            "Standalone selection differs from the accepted immutable Shared snapshot")
+    files = check_package(root / SLOT)
+    files.pop(MARKER)
+    standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
+    require(files == standalone, "Standalone payload differs from the accepted immutable Shared snapshot")
+
+
 def check_first_party(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
     require(metadata["name"] == "codex-relay" and metadata["version"] == SELF_VERSION,
@@ -233,6 +246,7 @@ def check_project(root):
             "Consumer must retain exact Shared Git and native first-party requirements")
     files = check_package(root / SLOT)
     first_party, source_hash = check_first_party(root)
+    check_standalone_snapshot(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
     packages = lock.get("package", [])
     require(len(packages) == 2, "Expected exactly Shared and first-party native packages")
@@ -290,7 +304,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS"}
+            "project_skill": "PASS", "standalone_snapshot": VERSION}
 
 
 def compare_inputs(root, source, distribution):
@@ -351,8 +365,9 @@ def probe(vibe, pin, project_root=ROOT):
             require(documents and not any(d.get("ok") is False for d in documents), label + " failed")
             for document in documents:
                 if document.get("command") == "check":
-                    require(document["summary"]["error"] == document["summary"]["warning"] == 0
-                            and not document["findings"], label + " has findings: " + result.stdout)
+                    require(document["summary"]["error"] == 0 and document["summary"]["warning"] == 0
+                            and document["findings"] == [],
+                            label + " has unexpected findings: " + result.stdout)
             require(not result.stderr.strip(), label + " emitted diagnostics: " + result.stderr)
             reports[label] = documents
 

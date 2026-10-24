@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { chmod, chown, cp, link, lstat, mkdir, readFile, readdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixture } from './fixture.mjs';
 import { collectProgress } from '../src/trusted-git.mjs';
@@ -151,13 +152,15 @@ test('symlink residue is observed without opening its external target', async t 
   } finally { await chmod(outside, 0o700); }
 });
 
-test('distinct Linux worker/collector UIDs share 0640 access; 0600 fails while scoped root observation preserves it', {
+for (const artifactName of ['package-lock.json', 'vibevm/vibespecs/boot/INDEX.md'])
+test(`distinct Linux UIDs preserve private ${artifactName} while recording an actionable collection frontier`, {
   skip: process.platform !== 'linux' || process.getuid?.() !== 0
     ? 'requires native root test identity for disposable synthetic UID separation; no escalation attempted' : false
 }, async t => {
   const f = await fixture(t); await f.prepare(f.envelope);
-  const artifact = join(f.cwd, 'package-lock.json');
-  await f.commit('package-lock.json', '{"synthetic":"cross-uid"}\n');
+  const artifact = join(f.cwd, artifactName);
+  await mkdir(dirname(artifact), { recursive: true });
+  await f.commit(artifactName, 'synthetic public generated source\n');
   const head = await f.commit('.gitignore', '.pytest_cache/\n');
   const ignored = join(f.cwd, '.pytest_cache'); await mkdir(ignored);
   await writeFile(join(ignored, '.gitignore'), '*\n');
@@ -202,7 +205,13 @@ catch (error) { console.log(JSON.stringify({ error: { code: error.code, details:
   assert.match(diagnostic.preview, /source-read; syscall=open; collector-euid=985; collector-egid=979/);
   assert.deepEqual(safeFailureDiagnosticReference(diagnostic), diagnostic);
   assert.ok(!JSON.stringify(diagnostic).includes(f.cwd));
-  assert.ok(!JSON.stringify(diagnostic).includes('package-lock.json'));
+  assert.ok(!JSON.stringify(diagnostic).includes(artifactName));
+  assert.match(diagnostic.preview, new RegExp(`observed-head-unaccepted=${head}`));
+  const facts = JSON.parse(diagnostic.preview.split('source-facts=')[1]);
+  assert.equal(facts.path_sha256, createHash('sha256').update(artifactName).digest('hex'));
+  assert.equal(facts.uid, workerUid); assert.equal(facts.gid, sharedGid);
+  assert.equal(facts.mode, 0o600); assert.equal(facts.tracked, true);
+  assert.equal(facts.ino, (await lstat(artifact)).ino);
   const before = await lstat(artifact);
   assert.equal((await f.collect(f.envelope)).clean, true);
   const after = await lstat(artifact);

@@ -1,7 +1,7 @@
 [package]
 group = "org.jresearch.ai"
 name = "development-governance"
-version = "4.0.0"
+version = "5.0.0"
 kind = "flow"
 format = "simple"
 epoch = 1

@@ -1,7 +1,7 @@
 # Local routing conventions
 
 Apply human-owned root AGENTS once. It explicitly adopts all nine complete
-Shared Governance 4.0.0 protocols, each under its own conditional trigger.
+Shared Governance 5.0.0 protocols, each under its own conditional trigger.
 The immutable package boot pointer supplies full protocol routes; product
 mechanisms and supported exceptions are in docs/relay-guidance-ownership.md.
 Read the canonical Relay Skill for relevant product workflows, architecture or

@@ -849,11 +849,19 @@ release, Task retry or Issue closure follows automatically.
 
 ### Collector identity and separate host qualification
 
-Ordinary collection retains the collector UID. The observer copies readable
-non-ignored regular bytes into a collector-owned temporary snapshot and only
-runs trusted Git there. Ignore syntax and attributes use that snapshot, never
-worker config, hooks, index or filters. Ignored artifacts remain excluded;
-unreadable tracked or non-ignored untracked files are incomplete observation.
+Automatic routing requests `collect-progress` through the existing fixed root
+Writer. Writer reads the exact admitted runner journal and requires returned,
+contained execution, matching admission and no terminal result before reading
+the checkout derived from that admission. An existing publication intent permits
+read-only recollection; publication still reconciles it without another push. Caller
+paths, identity overrides and containment assertions are rejected. This reuses
+the bounded retained-source collector rather than adding a privileged command
+or modifying worker permissions. The runner receives a bounded bundle and
+observation; ordinary publication still validates every introduced blob.
+The observer copies non-ignored regular bytes into its own temporary snapshot
+and only runs trusted Git there. Ignore syntax and attributes use that snapshot,
+never worker config, hooks, index or filters. Ignored artifacts remain excluded;
+an incomplete read still fails rather than claiming a clean/dirty result.
 Linux acquisition pins directories and regular reads without following worker
 symlinks; source permissions and ownership are unchanged. Snapshot traversal
 and object import have explicit byte/entry/depth bounds. Paths in diagnostics
@@ -862,16 +870,19 @@ remain bounded and sanitized, not raw protected evidence for publication.
 For worker UID 983 and collector UID 985 sharing GID 979, a worker-owned 0640 file
 is readable through group access; 0600 is not. Git mode 100644 says nothing about
 filesystem readability. This source adds no chmod/chown/ACL or world-readable
-shortcut. The opt-in operation uses the existing fixed root Writer as a bounded
-read-only observer of the authorized retained attempt, so it can read 0600 bytes
-without transferring permissions or trusting a worker observation claim.
+shortcut. Both automatic collection and explicitly authorized retained recovery
+use the existing fixed root Writer as a bounded read-only observer, so it can
+read 0600 files, 0700 directories and ACL-restricted task source without
+transferring permissions or trusting a worker observation claim. Recovery keeps
+its separate authorization and historical-attempt guards.
 
 For new source work, the shared-group umask is insufficient when a tool writes
 an explicit private mode. VibeVM's `.vibe-slot.toml` is one observed example:
 its Git mode `100644` can coexist with worker-owned filesystem mode `0600`.
-Reconcile only known public, task-owned source through the existing work group
-before handoff, or report the precise access blocker. Never skip unreadable
-tracked/non-ignored content, broaden private access or elevate ordinary collection.
+Private filesystem mode alone does not block authorized task-source collection.
+Never skip tracked/non-ignored source or broaden its access. Symlinks are
+observed without dereferencing their targets, hard links and cross-device reads
+are rejected, and no worker-selected path can direct Writer to host credentials.
 Ignored private caches remain excluded when they contain no tracked content.
 
 Group inheritance also has a boundary: a package tree staged outside a setgid
@@ -881,8 +892,7 @@ sudo interface, so ordinary new public inodes use the collector-readable group
 even outside a setgid directory. Serial installations can select top-level
 `workGroup` through the deployment contract. This does not override explicit
 `0600`/`0700`, imported ownership or a tool's explicit group change. Those cases
-still fail complete observation when non-ignored and require a bounded access
-disposition; ordinary collection never changes their metadata.
+are handled by bounded Writer reads; collection never changes their metadata.
 
 Filesystem acquisition failures retain `TRUSTED_GIT_FAILED` /
 `GIT_LOCAL_FAILURE`, plus allowlisted OS `diagnosticCode` and `syscall`. The
@@ -904,6 +914,27 @@ retained attempt; historical inode continuity is not claimed by the source
 journal. If safe access requires a live-host permission/helper change, stop for
 that separate owner admission. This source Step does not inspect, alter or
 publish the Task 97 retained candidate or mutate its original authority.
+
+After a worktree acquisition failure, the protected preview also retains the
+already imported `observed-head-unaccepted` and bounded numeric source facts
+(UID/GID, mode, device/inode, tracked category and SHA-256 of the relative path).
+The fingerprint lets an authorized host investigator locate the object without
+publishing its path or contents. This is a diagnostic lead, not a clean-tree,
+candidate-validation or recovery authorization. Public Outcome projections keep
+excluding the preview. Original historical records are never backfilled.
+
+For a durable successful manual Outcome, and automatic `complete-handoff`,
+readiness revalidates authentic authority and exact artifact pins independently
+of amended scope, validation and approval constraints. Such amendments still
+govern source publication and independent acceptance. A Deliberative approval
+hold therefore does not prevent preparing the already published result for
+review. Changed starting pins, wrong target/head, sibling publication, altered
+authority sources and superseded Steps retain their existing stops. BLOCKED
+results remain Draft; replay retains the same Outcome bytes and result.
+Manual Issue-based continuation also verifies the existing exact PR/head is
+Draft before publishing its executable handoff. It cannot rely on worker
+preflight, which the manual route does not run. Completed and superseded
+attempts do not redraft a newer result on handoff replay.
 
 ## Runtime diagnostic retention
 

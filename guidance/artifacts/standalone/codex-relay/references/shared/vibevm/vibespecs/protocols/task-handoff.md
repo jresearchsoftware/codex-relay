@@ -18,6 +18,9 @@ installation, consumer-adoption or closure permission.
 <a id="TH-002"></a>
 **TH-002 — Canonical charter and pre-execution refinement.**
 
+Apply [RA-006](requirement-authority.md#RA-006) when authoring the Task and its
+acceptance/completion criteria; agent-written gates cannot authorize themselves.
+
 Keep one current canonical Task reference: its goal, scope, completion conditions,
 boundaries and authorized decisions. For governed GitHub-repository work, use
 the Issue and its explicitly linked canonical records as the durable primary
@@ -390,7 +393,8 @@ closure are distinct. Continue only when current authority permits the next
 action and applicable checks, acceptance and protected boundaries are satisfied.
 Already authorized actions need no ceremonial reconfirmation; new scope needs
 its owner. A completed or accepted Step does not prove the whole Task complete,
-and accepted source does not prove deployment or release. Reassess concrete
+and accepted source does not prove deployment or release. Apply [RA-006](requirement-authority.md#RA-006) before admitting continuation;
+reconcile apparent self-expansion through existing Decisions. Reassess concrete
 completion conditions, remaining work and holds at meaningful transitions; do
 not close with known remaining work or copy a stale disposition indefinitely.
 
@@ -404,3 +408,19 @@ product fields can evolve without changing shared meaning; changes to authority,
 warning disclosure or mandatory operator work need the applicable owner decision.
 Shared-protocol adoption, a product upgrade and client-adapter compatibility are
 separate project-owned decisions; none implies the others.
+
+<a id="TH-029"></a>
+**TH-029 — Conditional generated client settings reconciliation.**
+
+When a Task includes applying changed generated client instructions, integration
+of desired-state files alone does not complete that obligation. For ChatGPT
+Project Instructions, compare the accepted desired complete text with live project
+settings through supported evidence. If different, surface the complete updated
+text for owner manual application, preserving/reconciling unknown live rules,
+and obtain supported confirmation/readback before claiming application or closing
+the Task. Disclose unavailable live reads or uncertain confirmation as an evidence
+gap; source files, receipt metadata and merge never prove settings synchronization.
+When effective text is unchanged and no application gap remains, no manual settings
+action is needed. Tasks that do not include application acquire no such obligation.
+Use the existing client binding and Task records; no automatic settings access,
+new approval loop or recurring hash-only update is required.

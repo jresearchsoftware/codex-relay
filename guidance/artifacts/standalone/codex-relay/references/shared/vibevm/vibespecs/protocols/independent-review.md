@@ -161,6 +161,10 @@ waiting period or universal preview gate. Local publication permissions and
 [Task Handoff's verdict lifecycle](task-handoff.md#result-acceptance-strategies)
 remain unchanged.
 
+Apply [RA-006](requirement-authority.md#RA-006) to finding classification, blocker
+decisions and recommendations, preserving initiative and explicit per-finding
+owner dispositions without turning proposals into obligations.
+
 Before an owner receives a negative assessment or proposed Task amendment,
 classify each finding under [IR-014](#IR-014) and include each blocker's binding
 obligation and source from [IR-012](#IR-012). Label a newly proposed guarantee,

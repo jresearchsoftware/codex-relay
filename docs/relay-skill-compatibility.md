@@ -14,7 +14,7 @@ new Shared release nor a package range automatically updates those decisions.
 ## Required protocol semantics
 
 The Skill adopts these complete applicable topics for Relay product guidance.
-The rule groups below use the repository's adopted 4.0.0 addresses for comparison;
+The rule groups below use the repository's adopted 5.0.0 addresses for comparison;
 they are not minimum-version requirements or a selective subset
 of an adopted protocol. Read the full relevant topic, including applicability,
 exceptions and stronger local boundaries. Installing the Skill does not adopt
@@ -23,11 +23,11 @@ these topics for unrelated consumer work.
 | Protocol | Rules used by Relay | Relay binding |
 | --- | --- | --- |
 | Context Loading | CL-001–008: accepted startup, triggered detail, completeness and mutable refresh | Accepted source is frozen independently of candidate guidance; live Task and result facts are refreshed. |
-| Task Handoff | TH-001–013: charter, Decisions, Step, startable handoff, correction and recovery; TH-014–021: one attributable exact result and independent assessment; TH-022–027: acceptance and continuation; TH-028: Draft/Ready handoff | Trusted v4 Decisions and Writer admission implement current authority and Step; retained attempts keep their original bindings. Writer owns supported PR state transitions. |
+| Task Handoff | TH-001–013: charter, Decisions, Step, startable handoff, correction and recovery; TH-014–021: one attributable exact result and independent assessment; TH-022–027: acceptance and continuation; TH-028: Draft/Ready handoff; TH-029: conditional settings application | Trusted v4 Decisions and Writer admission implement current authority and Step; retained attempts keep their original bindings. Writer owns supported PR state transitions. Settings application requires separately authorized scope. |
 | Independent Review | IR-001–011: full affected result and primary evidence; IR-012–016: finding provenance, obligation binding, classifications and rereview; IR-017–021: substantive independence and qualified publication | A separate qualified Reviewer, complete exact SHA, native checks, typed CR or Task Approval and protected owner continuation remain mandatory where the installed product contract requires them. |
 | Contract and Decision Maintenance | CD-001–007: material contract authority, durable decisions and same-change guidance | Trusted owner Decisions or retained authority authorize material behavior; implementation/review preferences cannot supply that permission. |
 | Proportional Controls | PC-001–012: concrete risk, operator cost, sufficient proof and protected requirements; PC-013: preserve scope before blockers and Task amendments | Existing execution safeguards and candidate checks remain; optional controls do not silently become remediation or new gates. |
-| Requirement Authority | RA-001–005: accepted obligations versus revisable implementation choices, protected behavior and actual conflicts | Canonical Task scope and protected invariants bind work; comments, an implementer's plan or a CR cannot enlarge Task authority. |
+| Requirement Authority | RA-001–006: accepted obligations versus revisable implementation choices, protected behavior, actual conflicts and initiative without silent obligation creation | Canonical Task scope and protected invariants bind work; comments, an implementer's plan or a CR cannot enlarge Task authority. |
 | Package Versioning | PV-001–004: actual contract impact; PV-005–012: producer cadence, source freeze and immutable publication; PV-013–017: included closure, consumer requirements and lock | Relay owns its release and delivery; a consumer's compatible Shared update does not require a Relay release. |
 | Producer Self-Adoption | SA-001–009: independently accepted guidance, candidate separation, native ready state and recovery | Source, lock, slots and generated routes travel together in one candidate; ordinary execution reads accepted committed files offline. |
 | GitHub Repository Governance | GH-001–013: explicit adoption, actual writer/ref paths, proportionate protections and event-directed verification | Existing source PR, human contribution and publisher paths remain; guidance acquisition grants no settings or credential authority. |
@@ -63,8 +63,8 @@ The initial Step 1 rationale selected 4.0.0 from stricter review obligations.
 [Owner Decision 6364617205](https://github.com/jresearchsoftware/codex-relay/issues/174#issuecomment-6364617205)
 requires technical and behavioral compatibility instead. The stricter PC-013
 and IR-012–015 wording does not prevent the Skill from consuming older selected
-rules. Relay's own project-wide adoption remains 4.0.0; it does not impose that
-producer policy as every consumer's dependency floor.
+rules. Relay's own project-wide adoption now selects 5.0.0 under Task #186; it
+does not impose that producer policy as every consumer's dependency floor.
 
 | Accepted Shared version | Actual Skill compatibility |
 | --- | --- |
@@ -97,8 +97,9 @@ acceptance; frozen 2.0.1 and earlier payloads remain unchanged.
 
 The immutable 4.0.0 distribution is
 [`f14da40725cd35fb3117ae84a506256505340787`](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/tree/f14da40725cd35fb3117ae84a506256505340787).
-It remains the deliberate standalone snapshot and producer release-closure
-evidence, independently of the native minimum. Source history and native fixture
+It remains in frozen Relay 3.1.0 and earlier releases. Relay 4.0.0 selects
+Shared 5.0.0 for standalone and publisher closure evidence, independently of
+the native minimum. Source history and native fixture
 evidence are distinct: qualification exercises 2.5.0, 3.0.0, 4.0.0 and 5.0.0,
 checks the shared section names used by the manual, and separately acquires
 2.4.0 without Relay to prove the missing Context Loading file before checking
@@ -120,9 +121,13 @@ Six of the nine protocol files are unchanged. The three affected topics are:
 Shared 5.0.0 also changes its ChatGPT projection tools and receipt contract.
 Relay's VibeVM Skill uses the selected package's protocols and ordinary native
 Skill projection; it does not depend on those Shared ChatGPT projection tools
-or their removed receipts. That unrelated tool change therefore requires no
-Relay adaptation. Relay's standalone projector receipts and native VibeVM slot
-receipts retain their own contracts. See the
+or their removed receipts. Native protocol consumption therefore requires no
+adaptation. The complete standalone payload does ship that helper and its
+documented interfaces: replacing it changes receipt generation, status schema
+and handling of edited generated outputs. That whole-package change determines
+Relay 4.0.0's [major classification](relay-guidance.md#version-and-provenance),
+while Relay's own standalone projector receipts and native VibeVM slot receipts
+retain their contracts. See the
 [5.0.0 changelog](https://github.com/jresearchsoftware/shared-governance/blob/d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9/packages/development-governance/CHANGELOG.md).
 
 The immutable 5.0.0 distribution is
@@ -136,7 +141,7 @@ The native VibeVM package declares a real `>=2.5.0` dependency. The consumer
 provides supported explicit immutable source roots, resolves the graph and
 commits its exact lock, slots and generated routes. The native Skill routes to
 the consumer's resolved `org.jresearch.ai/development-governance` slot from that
-lock. It must not route to a fixed 4.0.0 path, a separate Skill protocol bundle,
+lock. It must not route to a producer-fixed version path, a separate Skill protocol bundle,
 the Relay producer's root policy or a moving network lookup. A missing or
 inconsistent lock/slot is a maintenance error to reconcile through normal
 reviewed installation, not permission to fall back to another protocol copy.

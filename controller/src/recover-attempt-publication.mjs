@@ -2,7 +2,6 @@ import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, executionConsumer, runner
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
-import { collectCheckout } from './attempt-runtime.mjs';
 import { createLocalWriterAdapter } from './local-writer.mjs';
 import { reportRoutingResult } from './entrypoint.mjs';
 import { causalEvidence, digest, fail, positive, validateEnvelope } from './execution-contract.mjs';
@@ -135,7 +134,8 @@ export async function main() {
   }
   if (Object.keys(request).sort().join(',') !== 'attemptId,authorizationId,runId') fail('RECOVERY_REQUEST_INVALID');
   return recoverAttemptPublication({ ...request, broker,
-    journal: await publicationRecoveryJournal(request, broker), collect: collectCheckout });
+    journal: await publicationRecoveryJournal(request, broker), collect: e => broker.invoke({
+      operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId, authorizationId: request.authorizationId }) });
 }
 
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }

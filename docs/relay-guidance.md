@@ -10,13 +10,27 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **3.1.1** clarifies the existing
+Guidance **4.0.0** ships the immutable Shared Governance 5.0.0 standalone
+snapshot and clarifies the existing
 [manual result PR Step-label procedure](../packages/codex-relay/skill/references/workflow.md#manual-result-pr-step-labels).
-Under PV-002 this is a **patch**: it carries the accepted interim manual
-executor responsibility into the canonical product manual, including timing
-and Issue/admission consistency, without adding a runtime gate, permission or
-materially new mandatory operator work. Automatic Step/title projection remains
-Task #177's separate work. The frozen 3.1.0 payload remains unchanged.
+Under PV-002/PV-004 the whole package is **MAJOR** against frozen 3.1.0:
+the shipped `references/shared/tools/chatgpt/project.py` no longer writes or
+uses ownership receipts, changes its status schema from 2 to 4 and replaces
+the old refusal of edited generated outputs with source-reviewed regeneration.
+Those documented bundled helper interfaces change even though native Relay
+protocol consumption remains compatible. This classification follows the actual
+payload contract, not Shared's major number. The optional helper's
+[upstream instructions](../guidance/artifacts/standalone/codex-relay/references/shared/tools/chatgpt/README.md)
+describe its changed maintenance path. Relay's own standalone installer and
+native Skill receipts retain their contracts; no live settings are applied.
+
+The Step-label clarification itself is a patch: it carries the accepted interim
+manual executor responsibility into the canonical manual without a runtime gate,
+new permission or materially new mandatory operator work. Automatic Step/title
+projection remains Task #177's separate work. Native Shared compatibility stays
+`>=2.5.0` with consumer-owned exact selection. The standalone snapshot and nested
+publisher closure evidence use Shared 5.0.0. Frozen accepted 3.1.0 and earlier
+payloads remain unchanged; the unaccepted 3.1.1 candidate is replaced by 4.0.0.
 
 Guidance **3.1.0** added the compatible explicit v4 manual publication path: no
 PR-body admission digest or unrelated-PR scan. This is a minor expansion of the
@@ -27,8 +41,8 @@ Guidance **3.0.0** changed the native packaging contract: it removes the
 bundled `references/shared` protocol tree and routes to the consuming project's
 resolved Shared dependency instead. This removed path and changed routing make
 it a major Relay release; the Shared package's major number does not determine
-Relay's version. The standalone form retains its immutable Shared 4.0.0
-snapshot. Both forms retain the same Relay product behavior.
+Relay's version. That release's standalone form retains its immutable Shared
+4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The selected independently accepted Relay product-contract baseline is
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Exact schema/workflow/tool contract
@@ -38,7 +52,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 3.1.1 is a candidate. Native source
+release. Before independent acceptance, 4.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -49,17 +63,17 @@ SemVer requirement from the standalone snapshot and its exact identities:
 
 | Identity | Selected value |
 | --- | --- |
-| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `4.0.0` |
-| Accepted producer source | `99034dd708e5d0201060986b561ada4d2cffd453` |
-| Public distribution commit | `f14da40725cd35fb3117ae84a506256505340787` |
-| Complete native distribution tree hash | `sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746` |
+| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `5.0.0` |
+| Accepted producer source | `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9` |
+| Public distribution commit | `30a23f467c30c41fec918204cbbf2ecfffd7bef5` |
+| Complete native distribution tree hash | `sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9` |
 
 [AGENTS](../AGENTS.md) adopts all nine applicable complete topics;
 [ownership bindings](relay-guidance-ownership.md) retain product-specific
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -68,8 +82,8 @@ product schemas and contract baseline. Their complete trees differ deliberately.
 Standalone includes the attributed immutable Shared payload/receipt. Native
 contains `references/shared-protocols.md`, which directs readers to the
 consumer's reviewed `vibe.lock`, resolved versioned Shared slot and complete
-required protocols. Native has no competing fixed protocol bundle or fixed
-4.0.0 JIT route. This is local file navigation, not a runtime resolver.
+required protocols. Native has no competing fixed protocol bundle or producer-pinned
+JIT route. This is local file navigation, not a runtime resolver.
 
 `PROVENANCE.json` identifies its delivery form and binds the accepted product
 contract, authored input hashes and generated files. Standalone provenance
@@ -96,7 +110,7 @@ separate generation, authorized publication and activation. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -127,8 +141,9 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's own root policy deliberately remains on Shared 4.0.0;
-a consumer that has deliberately adopted Shared 5.0.0 keeps its own selection.
+future releases. Relay's own root policy, new standalone snapshot and
+release-closure evidence select Shared 5.0.0. Other consumers
+retain their own deliberate selections.
 
 On an intentional Shared update, assess changes in actually used protocols,
 including applicability, exceptions and Relay bindings. A compatible or

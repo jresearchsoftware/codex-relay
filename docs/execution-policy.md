@@ -2,7 +2,7 @@
 
 The complete common execution-cycle, correction, preservation and stop semantics
 are owned by the adopted pinned
-[Shared Governance 4.0.0 Task Handoff protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md),
+[Shared Governance 5.0.0 Task Handoff protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/task-handoff.md),
 especially TH-006–TH-013 and TH-026. Read the complete protocol when executing,
 handing off or continuing governed work. This document binds it to Relay's
 admitted invocation and supported standalone/manual route.
@@ -47,7 +47,7 @@ history only when materially necessary, preserving relevant prior decisions,
 constraints, prohibitions and protected boundaries. Delegation never expands
 Task/CR scope, external authority, credential access, publication or production
 rights. Validation and independent acceptance follow the adopted
-[Independent Review methodology](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md)
+[Independent Review methodology](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/independent-review.md)
 and [native Reviewer binding](../reviewer/README.md#independent-review-and-finding-provenance).
 
 Relay implements TH-012/TH-013 preservation through ordinary task commits and
@@ -60,14 +60,14 @@ remaining uncommitted/non-ignored work, cause and reconciliation/access boundary
 Automatic workers hand commits to trusted Writer and retain no publication
 authority.
 
-The existing shared-group umask does not override a tool's explicit `0600`
-file or `0700` directory mode, including an atomic replacement. Newly created,
-known public task-owned source must remain readable through the existing work
-group for ordinary collection. A worker may correct only those owned public
-files within its admitted authority; unknown or private content requires an
-explicit access disposition. This is source reconciliation, not permission to
-recursively chmod a checkout or to run ordinary collection as root. An
-unreadable tracked file still blocks complete observation. The
+The shared-group umask does not override explicit `0600` files, `0700`
+directories, ACLs or atomic replacement modes. Automatic collection therefore
+uses the fixed trusted Writer after checking the exact admitted journal and
+containment. Its bounded reader can read authorized task-owned checkout source
+without broadening worker file permissions. The worker need not chmod generated
+source to satisfy the collector. Missing bytes, unsafe paths, cross-device or
+hard-link acquisition and truly inaccessible objects still fail complete
+observation; private mode alone does not. The
 [collector contract](../controller/README.md#collector-identity-and-separate-host-qualification)
 explains the safe diagnostics and retained-evidence boundary.
 
@@ -193,8 +193,8 @@ preservation or recovery requirements.
 ## Proportional controls and operator usability
 
 The complete common control and requirement-origin procedures are the adopted
-pinned [Shared Governance 4.0.0 Proportional Controls](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/proportional-controls.md)
-and [Requirement Authority](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/requirement-authority.md)
+pinned [Shared Governance 5.0.0 Proportional Controls](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/proportional-controls.md)
+and [Requirement Authority](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/requirement-authority.md)
 protocols. Read each complete topic when its trigger applies, through the
 [root adoption and routing](../AGENTS.md). Ordinary execution reads committed
 files offline; maintenance uses the pinned lock and materialized content.
@@ -209,7 +209,7 @@ recovery, deployment, merge or closure permission. Keep worker, Writer and
 independent Reviewer responsibilities separate and retain all existing
 credential, trust, runtime and production boundaries.
 
-The adopted [Contract and Decision Maintenance protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+The adopted [Contract and Decision Maintenance protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
 owns material contract-change and durable-decision semantics. Relay's
 [Task/Decision binding](../AGENTS.md#material-useroperator-contract-change-gate)
 retains `OWNER_DECISION_REQUIRED` until canonical owner amendment; consumer
@@ -228,8 +228,8 @@ content; do not invent a substitute procedure or resolve policy at session time.
 
 ## Execution warning disposition
 
-The adopted [Independent Review protocol, IR-008](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md#IR-008)
-and [Task Handoff protocol, TH-018/TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md#TH-018)
+The adopted [Independent Review protocol, IR-008](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/independent-review.md#IR-008)
+and [Task Handoff protocol, TH-018/TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/task-handoff.md#TH-018)
 own common warning disclosure, evidence gaps and continuation semantics. Relay
 requires that inspection before review, continuation, merge, closure or an owner
 decision. Its supported primary acquisition surfaces, after actual job, check

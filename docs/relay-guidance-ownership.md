@@ -1,17 +1,17 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **4.0.0** as the single
+This repository deliberately adopts Shared Governance **5.0.0** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`99034dd708e5d0201060986b561ada4d2cffd453`; the distribution is
-`f14da40725cd35fb3117ae84a506256505340787`. Root [AGENTS](../AGENTS.md)
+`d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9`; the distribution is
+`30a23f467c30c41fec918204cbbf2ecfffd7bef5`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all nine complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
 bindings below. Native delivery reads complete shared protocols from the
 consuming project's reviewed lock and selected Shared slot through its generated
 `references/shared-protocols.md`; standalone includes the attributed immutable
-4.0.0 snapshot. Consumers deliberately select and adopt their own compatible
+5.0.0 snapshot. Consumers deliberately select and adopt their own compatible
 Shared dependency. No fixed bundled native route supersedes that selection.
 The historical
 [Task #108 analysis](task-handoff-methodology-analysis.md) and earlier
@@ -68,6 +68,22 @@ and Task Handoff own warning meaning/disposition; supported API completeness,
 original-run binding and the UI-only access limit remain Relay-specific.
 The complete candidate commands in AGENTS are this product's qualification set,
 not a new consumer prerequisite.
+
+RA-006 governs obligation origin when authoring Tasks, defining acceptance,
+classifying findings or considering continuation (TH-002/026 and IR-013).
+Reconcile material scope discrepancies through existing trusted Decisions;
+routine in-scope implementation/testing needs no new permission. Proposals
+cannot create required proof or completion gates, and existing protected
+obligations cannot be discarded as proposals. Make consequential per-finding
+dispositions explicit; a general request to fix findings does not accept a
+hidden deferral or new requirement.
+
+TH-029 applies only to a Task that actually includes applying generated client
+instructions. Such work needs supported live comparison and application
+confirmation through its authorized client binding. This project's Shared
+dependency update includes no live ChatGPT settings action, receipt migration
+or replacement ledger. Guidance generation and source acceptance alone supply
+no settings-application proof.
 
 Shared Contract/Decision Maintenance owns material-contract authorization,
 durable accepted decisions and same-change human guidance. Relay binds this to
