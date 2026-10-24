@@ -60,18 +60,14 @@ remaining uncommitted/non-ignored work, cause and reconciliation/access boundary
 Automatic workers hand commits to trusted Writer and retain no publication
 authority.
 
-The existing shared-group umask does not override a tool's explicit `0600`
-file or `0700` directory mode, including an atomic replacement. After package
-generation or atomic replacement, check the actual group and mode of known
-public task-owned outputs, including generated boot indexes, before claiming
-collector readiness; readability by the owning worker alone is insufficient.
-Newly created,
-known public task-owned source must remain readable through the existing work
-group for ordinary collection. A worker may correct only those owned public
-files within its admitted authority; unknown or private content requires an
-explicit access disposition. This is source reconciliation, not permission to
-recursively chmod a checkout or to run ordinary collection as root. An
-unreadable tracked file still blocks complete observation. The
+The shared-group umask does not override explicit `0600` files, `0700`
+directories, ACLs or atomic replacement modes. Automatic collection therefore
+uses the fixed trusted Writer after checking the exact admitted journal and
+containment. Its bounded reader can read authorized task-owned checkout source
+without broadening worker file permissions. The worker need not chmod generated
+source to satisfy the collector. Missing bytes, unsafe paths, cross-device or
+hard-link acquisition and truly inaccessible objects still fail complete
+observation; private mode alone does not. The
 [collector contract](../controller/README.md#collector-identity-and-separate-host-qualification)
 explains the safe diagnostics and retained-evidence boundary.
 
