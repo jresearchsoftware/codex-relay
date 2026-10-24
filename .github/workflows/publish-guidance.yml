@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact accepted main SHA to retry with this same publisher pin
+        description: Exact accepted producer SHA to retry with the selected accepted publisher
         required: true
         type: string
 permissions:
@@ -26,11 +26,13 @@ jobs:
         github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository) ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-    uses: jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@5a1e5de66388501235fc9ffd23d45efb34df2b85
+    # Select accepted upstream fixes for future runs. The reusable workflow checks
+    # out its own job.workflow_sha independently of this exact producer source.
+    uses: jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@main
     with:
       mode: publish
       source_sha: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
       binding: vibe-publisher.json
       package: org.jresearch.ai/codex-relay
     secrets:
-      publish_token: ${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}
+      DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN: ${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}
