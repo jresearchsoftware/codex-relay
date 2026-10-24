@@ -51,7 +51,7 @@ SemVer requirement from the standalone snapshot and its exact identities:
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -88,7 +88,7 @@ separate generation, authorized publication and activation. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -119,8 +119,9 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's own root policy deliberately remains on Shared 4.0.0;
-a consumer that has deliberately adopted Shared 5.0.0 keeps its own selection.
+future releases. Relay's own root policy selects Shared 5.0.0; the frozen
+standalone snapshot and release-closure evidence remain 4.0.0. Other consumers
+retain their own deliberate selections.
 
 On an intentional Shared update, assess changes in actually used protocols,
 including applicability, exceptions and Relay bindings. A compatible or

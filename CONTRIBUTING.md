@@ -15,7 +15,7 @@ describe the owner's optional Codex workflow, not human contribution gates.
 ## Keep workflow documentation current
 
 For governed Relay changes, the complete adopted shared
-[Contract/Decision Maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+[Contract/Decision Maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
 owns same-change human guidance (CD-007). Keep the authored
 [product manual](packages/codex-relay/skill/references/workflow.md) and its
 examples aligned with affected native Task/Decision/CR/Outcome/continuation

@@ -75,7 +75,7 @@ acceptance for an old admitted attempt remains supported.
 ## Independent review and finding provenance
 
 The complete assessment methodology is the adopted pinned
-[Shared Governance 4.0.0 Independent Review protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md).
+[Shared Governance 5.0.0 Independent Review protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/independent-review.md).
 Read it in full for independent assessment, including finding provenance,
 binding-obligation evidence, defect/gap/debt/optional-change classification and
 rereview. The shared protocol owns those rules; this component owns their native
