@@ -10,20 +10,20 @@ optional developer hooks to propose a change.
 
 ## Shared governance and Relay routing
 
-Relay explicitly adopts all nine complete applicable Shared Governance **4.0.0**
-protocols, accepted source `99034dd708e5d0201060986b561ada4d2cffd453`,
-distribution `f14da40725cd35fb3117ae84a506256505340787`.
+Relay explicitly adopts all nine complete applicable Shared Governance **5.0.0**
+protocols, accepted source `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9`,
+distribution `30a23f467c30c41fec918204cbbf2ecfffd7bef5`.
 Read each complete topic when triggered; conditional loading excludes no clauses:
 
-- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
-- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
-- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
-- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
-- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
-- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
-- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
-- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
-- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow/protection decisions, one-time adoption inspection and event-driven rechecks.
+- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
+- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
+- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
+- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
+- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
+- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
+- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
+- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
+- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow/protection decisions, one-time adoption inspection and event-driven rechecks.
 
 These are the single portable rule owners. The
 [Relay bindings](docs/relay-guidance-ownership.md) retain native authority,

@@ -23,6 +23,7 @@ class CommittedFlowTests(unittest.TestCase):
             shutil.copyfile(QUALIFICATION.ROOT / name, self.root / name)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.BOOT, self.root / QUALIFICATION.BOOT)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SLOT, self.root / QUALIFICATION.SLOT)
+        shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.RETAINED_SLOT, self.root / QUALIFICATION.RETAINED_SLOT)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SELF_SLOT, self.root / QUALIFICATION.SELF_SLOT)
         shutil.copytree(QUALIFICATION.ROOT / "vibevm/vibepacks", self.root / "vibevm/vibepacks")
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts", self.root / "guidance/artifacts")
@@ -260,6 +261,21 @@ class CommittedFlowTests(unittest.TestCase):
         path.write_bytes(original)
         QUALIFICATION.check_project(self.root)
         shutil.rmtree(historical)
+        self.rejects()
+
+    def test_retained_standalone_snapshot_cannot_drift_or_become_an_active_route(self):
+        path = self.root / QUALIFICATION.RETAINED_SLOT / "vibevm/vibespecs/protocols/task-handoff.md"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\nChanged historical build input\n")
+        self.rejects()
+        path.write_bytes(original)
+        QUALIFICATION.check_project(self.root)
+        path.unlink()
+        self.rejects()
+        path.write_bytes(original)
+        index = self.root / QUALIFICATION.BOOT / "INDEX.md"
+        index.write_text(index.read_text().replace(QUALIFICATION.SLOT.as_posix(),
+                                                   QUALIFICATION.RETAINED_SLOT.as_posix()))
         self.rejects()
 
     def test_unselected_registry_version_is_rejected(self):
