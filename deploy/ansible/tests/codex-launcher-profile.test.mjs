@@ -102,11 +102,11 @@ test('rendered launcher passes unknown safe profiles and native efforts unchange
       const child = JSON.parse(await readFile(f.record, 'utf8'));
       assert.equal(child.args[child.args.indexOf('--model') + 1], model);
       assert.equal(child.args[child.args.indexOf('-c') + 1], `model_reasoning_effort=${effort}`);
-      assert.equal(child.args[child.args.indexOf('--sandbox') + 1], 'workspace-write');
-      assert.equal(child.args[child.args.indexOf('--add-dir') + 1], join(f.cwd, '.git'));
+      assert.equal(child.args[child.args.indexOf('--sandbox') + 1], 'danger-full-access');
+      assert.ok(!child.args.includes('--add-dir'));
       assert.deepEqual(child.args.filter((_, i, args) => args[i - 1] === '-c'),
-        [`model_reasoning_effort=${effort}`, 'sandbox_workspace_write.network_access=true']);
-      assert.deepEqual(child.args.filter((_, i, args) => args[i - 1] === '--add-dir'), [join(f.cwd, '.git')]);
+        [`model_reasoning_effort=${effort}`]);
+      assert.deepEqual(child.args.filter((_, i, args) => args[i - 1] === '--add-dir'), []);
       assert.equal(child.path, `${f.rust}/bin:/usr/bin:/bin`);
       assert.equal(child.cargoHome, join(f.sandbox, 'cache/cargo'));
       assert.deepEqual(child.tools, ['managed cargo', 'managed rustc', 'managed rustfmt']);

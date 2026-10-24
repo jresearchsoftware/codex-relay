@@ -42,9 +42,19 @@ Legacy configurations retain their existing launcher behavior. Installed UID,
 sudo, namespace, process containment and concurrent isolation require separate
 host qualification; local source tests alone do not prove those properties.
 
-The inner Codex policy further protects workspace-root `.agents` even though
-the outer namespace binds the checkout writable. Keep that distinction when
-diagnosing `EROFS`; it is separate from a later collector UID's `EACCES` reading
+New automatic invocations use native `--sandbox danger-full-access`; the
+noninteractive approval policy remains `never`. This removes the inner native
+filesystem/network sandbox, including its workspace-root `.agents` restriction.
+It does not change the selected Unix UID/GID, outer Bubblewrap, isolated homes,
+credentials, publication or TEST/PROD authority. Serial/legacy launchers without
+slots have no outer Bubblewrap: their remaining host boundary is the existing
+Unix permissions, not a checkout-only filesystem guarantee. Managed/admin
+restrictions remain effective. Source acceptance alone does not install this
+default; existing admitted attempts retain their captured launch identity.
+
+Previously installed `workspace-write` launchers still protect root `.agents`
+even when the outer namespace binds the checkout writable. Keep that distinction
+when diagnosing `EROFS`; it is separate from a collector UID's `EACCES` reading
 private worker-created source. See the
 [native filesystem probe](../docs/codex/cli-integration.md#native-filesystem-probe)
 and [collector contract](../controller/README.md#collector-identity-and-separate-host-qualification).

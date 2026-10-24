@@ -1458,6 +1458,21 @@ sudo python3 deploy/ansible/tests/installed_runtime_proof.py
 ```
 
 The governed standalone CLI is pinned to **0.160.0**. The credential-free
+launcher default for new automatic invocations is native
+`--sandbox danger-full-access`, with the existing noninteractive approval policy
+`never`. No consumer permission fields or per-Task grant hierarchy are required.
+The selected non-root UID/GID, task-local HOME/CODEX_HOME and credential
+separation remain unchanged. Slots retain outer Bubblewrap; serial/legacy
+configurations without slots rely on their existing Unix host permissions and
+do not provide a checkout-only namespace. Full Access does not grant sudo,
+Writer/Reviewer credentials, GitHub publication, TEST deployments or PROD rights.
+Managed native policy still applies. Source acceptance does not change an
+installed launcher's default: owner-controlled adoption and host qualification
+remain separate, and old admitted attempts must not be relaunched with new
+permissions. Keep the manual root `.agents` route until that installation has
+qualified and adopted the mode.
+
+The credential-free
 release qualifier downloads that exact official release into a temporary home
 and exercises the real binary against a deterministic loopback Responses
 service. It verifies JSONL events, native thread IDs and usage counters,

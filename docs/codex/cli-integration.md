@@ -37,7 +37,7 @@ introduced those counters.
 | Model and effort | Relay passes the explicit admitted `--model` and `model_reasoning_effort` unchanged. Codex accepts `ultra` but resolves its provider-facing effort through model metadata; the local fixture resolves it to `xhigh`. The public event stream does not expose authoritative actual model/effort; requested values remain separate from `UNAVAILABLE` actual values. A mock provider does not prove account/backend model access. |
 | Subagents | The resolved On/Off permission is in exact task input. Native `multi_agent` is enabled by default in 0.160.0, including when the input says Off. Off remains an instruction boundary, not a native tool-disable or OS containment claim. This upgrade does not change that contract or launch agents to qualify it. |
 | Input | The launcher validates the bounded task/schema paths and sends the exact UTF-8 task through stdin. Unicode, newlines and shell metacharacters remain data. |
-| Sandbox and network | Effective native policy remains workspace-write, approval never, the admitted checkout, `.git` writable, and network enabled. Policy observation does not replace the installed Unix/namespace containment proof. |
+| Sandbox and network | New automatic launches select native `danger-full-access`, with approval `never`. The CLI no longer adds an inner filesystem/network sandbox; `.git` needs no extra writable root. Existing Unix permissions, managed requirements and applicable outer Bubblewrap remain independent. Serial/legacy launchers without slots do not gain outer isolation. Policy observation does not replace installed Unix/namespace proof. |
 | Home/config/cache/state | The launcher recreates task-local HOME, CODEX_HOME, XDG and temporary paths after sudo. Native session files remain inside this disposable home. Native config/rule suppression and ephemeral mode are not substitutes for environment or filesystem isolation. |
 | Git | Relay keeps checkout ownership, configured commit identity, bounded object import, every-introduced-blob scanning and ordinary non-force Writer publication. No native worktree is requested. |
 | Lifecycle | Relay still reserves one execution, owns/reaps its process group, bounds capture/timeouts, persists diagnostics before cleanup and uses the fixed inode-bound cleanup helper. Native CLI process exit does not prove containment. |
@@ -84,6 +84,32 @@ reporting requested by #24; Issue closure remains an owner action. No billing,
 rate-card equivalent or subscription allowance is inferred.
 
 ## Qualification and limits
+
+Task #96 Phase 1 changes only the native launch default, without a new Relay
+permission profile, Task override engine, Unix identity or TEST capability.
+Source acceptance does not upgrade installed launchers. Owner-controlled adoption
+must preserve already-admitted attempts and qualify the actual host/launcher;
+do not replay an old attempt with the new mode. Existing `workspace-write`
+installations retain the root `.agents` limitation below until qualified adoption.
+`danger-full-access` is the native sandbox option, not the separate
+`--dangerously-bypass-approvals-and-sandbox` flag; managed restrictions remain
+effective. See [native permissions](https://learn.chatgpt.com/docs/sandboxing).
+The slot namespace mounts `/etc/codex/requirements.toml` and legacy
+`managed_config.toml` read-only when present, so native administrator restrictions
+are not hidden by outer isolation. No other `/etc/codex` content is mounted.
+
+The optional installed permission qualifier is
+`deploy/ansible/tests/qualify_installed_native_permissions.py`. On an explicitly
+authorized Linux qualification host, invoke it as root with `--installation`
+and `--consumer` paths. It runs inside private mount/PID namespaces, overlays
+only the candidate native argv/isolation delta, replaces the token with a
+synthetic value, and drives the actual installed CLI through a loopback provider.
+It uses a source checkout at the actual configured work-root path, tests root
+`.agents` present/absent, source/Git writes, runtime identity, outer isolation,
+denied foreign/credential access and a managed policy refusal. It changes no
+installed configuration or service and makes no model/GitHub call. This qualifies
+that installed launch mechanism, not an adopted default, live model behavior or
+an end-to-end admitted Relay execution. See [Task 96 evidence](../qualification/task-96-step-1.md).
 
 `deploy/ansible/tests/qualify_codex_cli.py` downloads the exact official release
 into temporary storage. It checks installer/version truth and parser flags,

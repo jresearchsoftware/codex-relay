@@ -145,6 +145,11 @@ test('isolated child sees the complete immutable package payload and its admitte
   assert.ok(!spec.args.includes('/opt/sample/codex-runtime/package-home'));
   assert.ok(!spec.args.includes('/var/lib/sample/codex-home'));
   assert.ok(!spec.args.includes('/etc'));
+  for (const policy of ['/etc/codex/requirements.toml', '/etc/codex/managed_config.toml']) {
+    const index = spec.args.indexOf(policy);
+    assert.equal(spec.args[index - 1], '--ro-bind-try');
+    assert.equal(spec.args[index + 1], policy);
+  }
   assert.ok(!spec.args.includes('/var/lib'));
   assert.ok(!spec.args.includes('/opt/sample'));
   assert.ok(!spec.args.includes('/opt/sample/runner'));

@@ -118,8 +118,10 @@ client scope or claim a fixture completed the actual checkout.
 
 Pinned Codex 0.160.0 `workspace-write` protects the workspace-root `.agents`
 path, even when absent. A projection `EROFS` there does not establish a read-only
-checkout or collector failure. The actual projection needs an authorized manual
-checkout; do not expand writable roots or disable sandboxing. A nested disposable
+checkout or collector failure. Until the owner-selected native Full Access
+launcher is qualified and adopted on the installation, actual projection needs
+an authorized manual checkout. Do not change a retained attempt's permissions
+to bypass the failure. A nested disposable
 fixture can qualify projection without claiming checkout adoption. Existing
 projected guidance remains readable. The optional
 [native filesystem probe](codex/cli-integration.md#native-filesystem-probe)
