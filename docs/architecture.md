@@ -129,7 +129,13 @@ commits and returns semantic status, summary, validation claims and a blocked
 reason. Within that single invocation it follows the
 [progress-bounded policy](execution-policy.md).
 
-After containment, trusted code imports only bounded regular Git object bytes
+After containment, the routing controller asks the fixed root Writer to collect
+the admission-derived checkout. Writer independently reads the matching runner
+journal before source access. This grants bounded reads of task-owned private-mode
+source without chmod/chown, worker elevation or a new sudo command. Symlinks,
+hard links, devices and traversal outside the checkout retain their existing
+guards. Publication, source scanning and independent acceptance stay separate.
+Trusted code imports only bounded regular Git object bytes
 and the admitted ref into a fresh repository. It never uses the worker's Git
 config, hooks, filters, index, replacement refs or alternates. Writer validates
 the task chain, expected identity, safe paths and regular modes, scans all

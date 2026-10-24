@@ -6,7 +6,7 @@ import { createLocalWriterAdapter } from './local-writer.mjs';
 import { createOnDemandDispatchAdapter } from './github.mjs';
 import { createAttemptStore } from './attempt-store.mjs';
 import { runAttempt } from './attempt.mjs';
-import { prepareCheckout, collectCheckout } from './attempt-runtime.mjs';
+import { prepareCheckout } from './attempt-runtime.mjs';
 import { REPOSITORY, OWNER, causalEvidence, fail } from './execution-contract.mjs';
 import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
@@ -25,7 +25,7 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   createWriter = createLocalWriterAdapter, createDispatcher = createOnDemandDispatchAdapter,
   createJournal = () => createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot),
   resolveSlot = runnerExecutionSlot,
-  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect = collectCheckout, signal } = {}) {
+  persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect, signal } = {}) {
   const event = JSON.parse(await readEvent(env.GITHUB_EVENT_PATH));
   if (event.repository?.full_name !== REPOSITORY || !['workflow_dispatch', 'issues', 'pull_request_target'].includes(env.GITHUB_EVENT_NAME)
     || event.sender?.login !== OWNER || env.GITHUB_REF !== `refs/heads/${CONSUMER.baseBranch}`) return { status: 'BLOCKED', code: 'OWNER_EVENT_REQUIRED' };
@@ -52,7 +52,8 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   try {
     return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
       journal: createJournal(), persistFailure,
-      prepare, execute: e => dispatcher.dispatch(e), collect });
+      prepare, execute: e => dispatcher.dispatch(e), collect: collect ?? (e => broker.invoke({
+        operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId })) });
   } catch (error) {
     failure = error;
     // The contender never owned this attempt. Its error cannot mutate the

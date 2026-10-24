@@ -49,7 +49,8 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
   const originalSlot = record.envelope.executionSlot ?? 'primary';
   const poolRecovery = CONSUMER.generalRunnerPool && (['recover-publication', 'complete-handoff'].includes(request.operation)
-    || (request.operation === 'finish' && request.recoveryAuthorizationId !== undefined));
+    || (request.operation === 'finish' && request.recoveryAuthorizationId !== undefined)
+    || (request.operation === 'collect-progress' && request.authorizationId !== undefined));
   const original = CONSUMER.executionSlots.find(value => value.id === originalSlot);
   const current = CONSUMER.executionSlots.find(value => value.id === slot);
   // Managed runner retirement does not retire its attempt evidence. A current

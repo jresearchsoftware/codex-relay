@@ -62,6 +62,40 @@ function replay(recovery) {
   } });
 }
 
+// Read-only access uses the existing exact recovery authorization. It neither
+// consumes that authorization nor permits another publication attempt.
+export async function authorizeRecoveryCollection({ api, record: r, authorizationId }) {
+  if (!positive(authorizationId)) fail('RECOVERY_OWNER_AUTHORIZATION_REQUIRED');
+  const e = r.envelope;
+  const recoveries = r.publicationRecoveries ?? [];
+  const index = recoveries.findIndex(value => value.authorizationId === authorizationId);
+  const consumed = index < 0 ? null : recoveries[index];
+  if (consumed) {
+    const result = replay(consumed);
+    const intent = consumed.binding;
+    const previous = index > 0 ? recoveries[index - 1] : null;
+    if (e.route !== 'auto' || r.publicationIntent || !exactSha(intent?.head)
+      || (intent.previous !== null && !exactSha(intent.previous)) || intent.head === intent.previous
+      || result.recoveryAuthorizationId !== authorizationId
+      || result.publishedHead !== intent.head || r.publishedHead !== intent.head) fail('RECOVERY_CANDIDATE_CHANGED');
+    const binding = recoveryAuthorization(e, intent, previous?.authorizationId ?? null);
+    if (Object.keys(intent).length !== Object.keys(binding).length
+      || Object.entries(binding).some(([key, value]) => intent[key] !== value)) fail('RECOVERY_CANDIDATE_CHANGED');
+    await authorize(api, e, authorizationId, binding, previous);
+    await revalidateAuthority(api, e);
+    return binding.head;
+  }
+  const intent = r.publicationIntent;
+  if (e.route !== 'auto' || r.finalHead || !intent || !exactSha(intent.head)
+    || (intent.previous !== null && !exactSha(intent.previous)) || intent.head === intent.previous
+    || intent.previous !== (r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null))) fail('RECOVERY_INTENT_REQUIRED');
+  const last = recoveries.at(-1);
+  const binding = recoveryAuthorization(e, intent, last?.authorizationId ?? null);
+  await authorize(api, e, authorizationId, binding, last);
+  await revalidateAuthority(api, e);
+  return intent.head;
+}
+
 // Runs under the existing root Writer flock. Reservations and receipts share
 // the existing bounded atomic record; a crash after reservation consumes the
 // authorization even if no push happened. No automatic mutation retry exists.
