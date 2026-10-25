@@ -145,6 +145,16 @@ def _peer_refs(config, namespace, contract):
                 and branch == 'main' and LIFECYCLE_WORKFLOW not in workflows,
                 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
         result[anchor].append(anchor + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branch)
+    elif isinstance(local_apply, dict) and local_apply.get('source') == 'git':
+        deployment = local_apply.get('repository')
+        require(set(local_apply) == {'source', 'repository', 'configPath'}
+                and _repository(deployment) and deployment not in repositories
+                and deployment.split('/')[0] == contract['organization'] and branch == 'main'
+                and isinstance(local_apply.get('configPath'), str)
+                and re.fullmatch(r'[A-Za-z0-9_./-]+\.json', local_apply['configPath'])
+                and all(part not in ['', '.', '..'] for part in local_apply['configPath'].split('/')),
+                'ELIGIBILITY_WORKFLOWS_UNPROVEN')
+        result[deployment] = [deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main']
     return result
 
 
@@ -220,11 +230,14 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             and _repository(contract['repository']), 'ELIGIBILITY_CONTRACT_INVALID')
     targets = contract.get('repositories', [contract['repository']])
     result = contract.get('workflowRefsByRepository', {contract['repository']: contract['workflowRefs']})
-    require(isinstance(targets, list) and targets and set(result) == set(targets)
+    deployment = contract.get('deploymentRepository')
+    expected = set(targets) | ({deployment} if isinstance(deployment, str) else set())
+    require(isinstance(targets, list) and targets and set(result) == expected
+            and (deployment is None or _repository(deployment) and deployment not in targets)
             and contract['repository'] in result, 'ELIGIBILITY_CONTRACT_INVALID')
     for repository, refs in result.items():
         require(_repository(repository) and repository.split('/')[0] == contract['organization']
-                and isinstance(refs, list) and len(refs) in [2, 3]
+                and isinstance(refs, list) and len(refs) in ([1] if repository == deployment else [2, 3])
                 and all(isinstance(value, str) for value in refs) and len(set(refs)) == len(refs),
                 'ELIGIBILITY_CONTRACT_INVALID')
         branches = []
@@ -236,6 +249,9 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             require(WORKFLOW.fullmatch(workflow) and _branch(branch), 'ELIGIBILITY_CONTRACT_INVALID')
             branches.append(branch)
         require(len(set(branches)) == 1, 'ELIGIBILITY_CONTRACT_INVALID')
+        if repository == deployment:
+            require(refs == [repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main'],
+                    'ELIGIBILITY_CONTRACT_INVALID')
         if len(refs) == 3:
             require(repository == contract['repository']
                     and refs[2] == repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branches[0],

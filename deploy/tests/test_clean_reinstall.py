@@ -129,6 +129,209 @@ def run(value):
                                  owner_uid=os.getuid(), user_ids=value.user_ids, runner=value.systemd)
 
 
+def git_installation_snapshot(value):
+    """Protected old intent and actual target consumer, independently observed."""
+    release = value.paths['install'] / 'current'
+    raw = (json.dumps(value.config, sort_keys=True) + '\n').encode()
+    snapshot = release / 'deployment-config.json'
+    snapshot.write_bytes(raw)
+    snapshot.chmod(0o600)
+    manifest = release / 'artifact-manifest.json'
+    contents = json.loads(manifest.read_text())
+    contents['deploymentConfigSha256'] = hashlib.sha256(raw).hexdigest()
+    manifest.write_text(json.dumps(contents))
+    (value.paths['config'] / 'consumer.json').write_text(json.dumps(value.config['consumer']))
+    value.report['configuration'] = {'consumer': 'different', 'deployment': 'different'}
+
+
+def run_git(value):
+    return reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                                 owner_uid=os.getuid(), user_ids=value.user_ids,
+                                 runner=value.systemd, git_desired=True)
+
+
+def test_git_replacement_accepts_profile_and_reviewer_target_changes(installation):
+    value = installation
+    git_installation_snapshot(value)
+    value.config['consumer']['defaultProfile'] = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
+    value.config['environment']['reviewerRepositories'] = ['example/new-reviewed-repository']
+    result = run_git(value)
+    assert result['state'] == 'DECOMMISSIONED'
+    journal = json.loads(value.paths['journal'].read_text())
+    assert journal['previousEnvironmentComparison'] == 'different'
+    assert journal['configurationSha256'] == hashlib.sha256(
+        json.dumps(value.config, sort_keys=True).encode()).hexdigest()
+
+
+@pytest.mark.parametrize('field', ['paths', 'runtimeUser', 'writerApp', 'writerIdentity',
+                                  'runner'])
+def test_git_replacement_refuses_resource_relocation_before_mutation(installation, field):
+    value = installation
+    git_installation_snapshot(value)
+    if field == 'paths':
+        value.config['consumer']['paths']['claimRoot'] += '-relocated'
+    elif field in ['runtimeUser', 'writerIdentity']:
+        value.config['consumer'][field] = 'different-protected-identity'
+    elif field == 'writerApp':
+        value.config['consumer']['writerApp']['installationId'] = '9999'
+    elif field == 'runner':
+        value.config['environment']['runner']['user'] = 'different-runner'
+    with pytest.raises(ValueError, match='RESOURCE_MIGRATION_UNSUPPORTED'):
+        run_git(value)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert value.paths['install'].joinpath('current').is_symlink()
+    assert value.systemd.calls == []
+
+
+def test_git_replacement_refuses_actual_writer_identity_drift_even_with_clean_report(installation):
+    value = installation
+    git_installation_snapshot(value)
+    path = value.paths['config'] / 'consumer.json'
+    actual = json.loads(path.read_text())
+    actual['writerApp']['installationId'] = '9999'
+    path.write_text(json.dumps(actual))
+    value.report['configuration'] = {'consumer': 'equivalent', 'deployment': 'equivalent'}
+    with pytest.raises(ValueError, match='RESOURCE_MIGRATION_UNSUPPORTED'):
+        run_git(value)
+    assert not value.paths['journal'].exists() and value.systemd.calls == []
+
+
+@pytest.mark.parametrize('old_snapshot', ['absent', 'corrupt', 'digest-mismatch', 'different-resources'])
+def test_git_replacement_uses_live_resource_proof_despite_historical_snapshot(installation, old_snapshot):
+    value = installation
+    git_installation_snapshot(value)
+    path = value.paths['install'] / 'current/deployment-config.json'
+    if old_snapshot == 'absent':
+        path.unlink()
+    elif old_snapshot == 'corrupt':
+        path.write_text('not-json historical bytes')
+        value.report['configuration']['deployment'] = 'invalid'
+    elif old_snapshot == 'digest-mismatch':
+        path.write_text('{}')
+        value.report['configuration']['deployment'] = 'invalid'
+    else:
+        old = json.loads(path.read_text())
+        old['environment']['namespace'] = 'unrelated-historical-namespace'
+        old['consumer']['runtimeUser'] = 'obsolete-user'
+        path.write_text(json.dumps(old))
+    value.config['consumer']['defaultProfile']['effort'] = 'medium'
+    assert run_git(value)['state'] == 'DECOMMISSIONED'
+
+
+def test_git_replacement_rechecks_actual_resource_identity_under_lock(installation, monkeypatch):
+    value = installation
+    git_installation_snapshot(value)
+    original = reinstall.operation_lock
+    @contextmanager
+    def replaced_writer(*args, **kwargs):
+        with original(*args, **kwargs):
+            actual = json.loads((value.paths['config'] / 'consumer.json').read_text())
+            actual['paths']['claimRoot'] += '-changed-after-preflight'
+            (value.paths['config'] / 'consumer.json').write_text(json.dumps(actual))
+            yield
+    monkeypatch.setattr(reinstall, 'operation_lock', replaced_writer)
+    with pytest.raises(ValueError, match='RESOURCE_MIGRATION_UNSUPPORTED'):
+        run_git(value)
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+    assert all(action in ['show', 'list-units'] for action, _ in value.systemd.calls)
+
+
+def test_expert_replacement_keeps_intent_equivalence_gate(installation):
+    value = installation
+    git_installation_snapshot(value)
+    with pytest.raises(ValueError, match='INVENTORY_NOT_PROVEN'):
+        run(value)
+    assert value.systemd.calls == []
+
+
+def legacy_operation_directory(value):
+    directory = value.paths['lock'].parent
+    directory.chmod(0o770)
+    value.paths['lock'].write_bytes(b'preserved existing operation lock\n')
+    value.paths['lock'].chmod(0o644)
+    return directory, value.paths['lock']
+
+
+def harden(value):
+    return reinstall.harden_operation_directory(value.config, root=value.root,
+                                                owner_uid=os.getuid(), reviewer_gid=os.getgid())
+
+
+def test_known_legacy_runtime_directory_is_hardened_without_replacing_lock(installation):
+    value = installation
+    directory, lock = legacy_operation_directory(value)
+    before, data = lock.stat(), lock.read_bytes()
+    assert harden(value) is True
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o750
+    assert (lock.stat().st_dev, lock.stat().st_ino) == (before.st_dev, before.st_ino)
+    assert stat.S_IMODE(lock.stat().st_mode) == 0o644 and lock.read_bytes() == data
+    assert harden(value) is False
+    assert not value.paths['journal'].exists() and not value.paths['operation'].exists()
+
+
+@pytest.mark.parametrize('damage', ['directory-symlink', 'symlink', 'hardlink', 'lock-mode', 'missing-lock',
+                                  'unknown-entry', 'writable-parent', 'wrong-group'])
+def test_malformed_legacy_directory_is_never_hardened(installation, damage):
+    value = installation
+    directory, lock = legacy_operation_directory(value)
+    if damage == 'directory-symlink':
+        retained = directory.with_name(directory.name + '-untrusted-alias')
+        directory.rename(retained)
+        directory.symlink_to(retained)
+    elif damage == 'symlink':
+        lock.rename(directory / 'other')
+        lock.symlink_to(directory / 'other')
+    elif damage == 'hardlink':
+        os.link(lock, directory / 'other')
+    elif damage == 'lock-mode':
+        lock.chmod(0o664)
+    elif damage == 'missing-lock':
+        lock.unlink()
+    elif damage == 'unknown-entry':
+        (directory / 'unknown').write_text('unclassified state')
+    elif damage == 'writable-parent':
+        directory.parent.chmod(0o777)
+    before = directory.stat()
+    with pytest.raises((ValueError, OSError)):
+        if damage == 'wrong-group':
+            reinstall.harden_operation_directory(value.config, root=value.root,
+                owner_uid=os.getuid(), reviewer_gid=os.getgid() + 1)
+        else:
+            harden(value)
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o770
+    assert directory.stat().st_ino == before.st_ino
+    assert not value.paths['journal'].exists() and value.systemd.calls == []
+
+
+def test_busy_legacy_lock_prevents_directory_mutation(installation):
+    value = installation
+    directory, lock = legacy_operation_directory(value)
+    with lock.open('r') as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(ValueError, match='OPERATION_BUSY'):
+            harden(value)
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o770
+
+
+def test_legacy_directory_replacement_before_chmod_is_rejected(installation, monkeypatch):
+    value = installation
+    directory, lock = legacy_operation_directory(value)
+    retained = directory.with_name(directory.name + '-original')
+    original = fcntl.flock
+    def replace_after_lock(fd, operation):
+        original(fd, operation)
+        directory.rename(retained)
+        directory.mkdir(mode=0o770)
+        directory.chmod(0o770)
+        (directory / lock.name).write_text('replacement lock')
+        (directory / lock.name).chmod(0o644)
+    monkeypatch.setattr(fcntl, 'flock', replace_after_lock)
+    with pytest.raises(ValueError, match='OPERATION_DIRECTORY_CHANGED'):
+        harden(value)
+    assert stat.S_IMODE(retained.stat().st_mode) == 0o770
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o770
+
+
 def add_execution_slot(value):
     from test_execution_slots import inputs
     old_names = reinstall.unit_names(value.config)

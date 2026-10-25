@@ -10,6 +10,23 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
+Guidance **4.1.0** is a compatible additive candidate for the Task #63 ordinary
+intent-driven installation and private Git-pair Apply guidance. Existing expert
+phases and other consumers' owner-file/checkout paths remain supported. No
+mandatory private repository is imposed on public consumers. The new wording
+adds post-install integration artifacts, same-operation config changes and safe
+cutover boundaries without granting deployment or external policy authority.
+Source support still needs independently accepted compatible product installation
+and qualification; this guidance candidate does not claim PROD cutover.
+
+Frozen accepted **4.0.0** registry bytes remain unchanged. The bundled Task
+authority schemas and SERIAL/parallel workflow identities retain their exact
+accepted `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` contract pin; Task #63 changes
+installer composition rather than those protocol identities. Candidate
+installation wording is not a claim that the older pinned product already
+implements the new installer. Native source self-adoption uses a new 4.1.0
+identity and does not publish a package or activate any service.
+
 Guidance **4.0.0** ships the immutable Shared Governance 5.0.0 standalone
 snapshot and clarifies the existing
 [manual result PR Step-label procedure](../packages/codex-relay/skill/references/workflow.md#manual-result-pr-step-labels).
@@ -52,7 +69,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 4.0.0 is a candidate. Native source
+release. Before independent acceptance, 4.1.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -103,10 +120,11 @@ It adds the Shared snapshot and optional projector only to standalone, and
 emits delivery-specific `references/shared-protocols.md` routes. Do not hand-edit those outputs. Native VibeVM remains
 the resolver and Skill projector.
 
-The manual's installation-preparation path binds the accepted
+The manual's installation-preparation path binds the selected
 [deployment contract](../deploy/README.md#per-repository-installation-preparation):
-per-owner-managed-target proposals, actual managed-pool configuration and
-separate generation, authorized publication and activation. Maintain these
+actual managed-pool configuration, complete consumer/private deployment output
+trees, and separate authorized publication and activation. The ordinary
+installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete

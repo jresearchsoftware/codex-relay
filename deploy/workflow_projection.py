@@ -78,12 +78,17 @@ def _path(root, relative):
     return path
 
 
-def render(config, revision, source_root, repository=None):
+def render(config, revision, source_root, repository=None, *, deployment=False):
     """Return deterministic managed bytes; config must have passed config.load."""
     require(isinstance(revision, str) and REVISION.fullmatch(revision), 'workflow-exact-revision')
     source_root = Path(source_root)
     consumer, environment = config['consumer'], config['environment']
-    repository = deployment_repository(config, repository)
+    if deployment:
+        require(environment['localApply'].get('source') == 'git' and repository is None,
+                'deployment-workflow-source')
+        repository = environment['localApply']['repository']
+    else:
+        repository = deployment_repository(config, repository)
     general, production = environment['generalRunner'], environment['runner']
     slots = consumer.get('executionSlots')
     managed_pool = consumer.get('generalRunnerPool')
@@ -159,7 +164,9 @@ def render(config, revision, source_root, repository=None):
             values['RECOVERY_SLOT_ENV'] = ''
             values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
-    if environment['localApply'].get('source') == 'installed' and repository == deployment_repository(config):
+    if deployment:
+        templates = {PRODUCTION: 'deployment'}
+    elif environment['localApply'].get('source') == 'installed' and repository == deployment_repository(config):
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],
                 'workflow-production-path-conflict')
         templates[PRODUCTION] = 'production'
@@ -174,6 +181,56 @@ def render(config, revision, source_root, repository=None):
         require('@@' not in text, 'workflow-unresolved-token')
         result[path] = text.encode('utf-8')
     return result
+
+
+def render_deployment(config, revision, source_root):
+    return render(config, revision, source_root, deployment=True)
+
+
+def integration(config, revision, source_root, consumer_root, output_root):
+    """Produce a complete integration tree without gating host installation.
+
+    Existing managed files must still match their own committed drift baseline.
+    Compatibility is a supported ABI check; current template equality determines
+    whether the owner should publish an updated artifact after installation.
+    """
+    root = Path(consumer_root)
+    rendered = render(config, revision, source_root)
+    expected = _manifest(config, source_root, rendered)
+    previous, observed = _existing(root)
+    if previous is None:
+        compatibility = 'missing'
+    else:
+        require(previous['sourceRepository'] == expected['sourceRepository']
+                and previous['consumerRepository'] == expected['consumerRepository'], 'workflow-consumer-binding')
+        compatibility = ('incompatible' if previous.get('workflowContract') != expected['workflowContract'] else
+                         'compatible' if previous == expected else 'stale-compatible')
+    destination = Path(output_root).absolute()
+    for checkout in [Path(source_root).resolve(), root.resolve()]:
+        require(not destination.resolve().is_relative_to(checkout), 'projection-output-outside-checkouts')
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for path, content in {**rendered, MANIFEST: _json(expected)}.items():
+        target = _path(destination, path)
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if target.exists() or target.is_symlink():
+            require(_read(target) == content, 'integration-artifact-changed')
+        else:
+            _write(target, content)
+    deployment_directory = None
+    if config['environment']['localApply'].get('source') == 'git':
+        deployment_directory = destination.parent / (destination.name + '-deployment')
+        deployment_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for path, content in render_deployment(config, revision, source_root).items():
+            target = _path(deployment_directory, path)
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if target.exists() or target.is_symlink():
+                require(_read(target) == content, 'deployment-artifact-changed')
+            else:
+                _write(target, content)
+    return {'directory': str(destination), 'files': [*rendered, MANIFEST], 'compatibility': compatibility,
+            'deploymentDirectory': str(deployment_directory) if deployment_directory else None,
+            'next': 'Publish the generated directory through the receiving repository normal change process. '
+                    'The completed host installation does not need another installer run.'}
 
 
 def _manifest(config, source_root, rendered, repository=None):

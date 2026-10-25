@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "epoch": 1,
+  "capabilities": [
+    "lifecycle-v1",
+    "git-desired-v1",
+    "integration-artifact-v1"
+  ]
+}

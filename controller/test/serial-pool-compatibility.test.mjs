@@ -81,6 +81,7 @@ test('plural compatibility permits an empty new store but never a selected-view 
   await mkdir(join(ctx.current.storeRoot, 'repositories'), { recursive: true, mode: 0o700 });
   const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore, currentStore: f.currentStore });
   assert.equal((await store.all()).length, f.records.length);
+  await f.write(join(dirname(f.consumerPath), 'serial-pool-target-consumer-v1.json'), f.installationConsumer, 0o644);
   f.receipt.target.consumerDigest = consumerDigest(f.currentConsumer);
   await f.write(f.receiptPath, f.receipt, 0o644);
   await assert.rejects(f.load(), { code: 'SERIAL_POOL_COMPATIBILITY_RECEIPT_INVALID' });

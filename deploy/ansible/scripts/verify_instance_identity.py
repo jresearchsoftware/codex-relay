@@ -59,7 +59,7 @@ def parse_pool_argument(units):
 
 
 def verify(install_root, config_root, repositories, units, systemd_root=Path('/etc/systemd/system'),
-           reviewer_user=None, general_pool=None):
+           reviewer_user=None, general_pool=None, git_desired=False):
     pool = general_pool_identity(general_pool)
     if pool is not None and pool['service'] not in units:
         raise ValueError('RELAY_INSTANCE_POOL_BINDING_INVALID')
@@ -72,7 +72,8 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
         config = json.loads(config_path.read_text())
         # Preserve the existing binding while permitting additional Reviewer
         # targets on the same instance, including legacy singleton upgrades.
-        if not repository_set(config) <= expected:
+        actual_repositories = repository_set(config)
+        if not git_desired and not actual_repositories <= expected:
             raise ValueError('RELAY_INSTANCE_REPOSITORY_COLLISION')
     for name in units:
         path = systemd_root / name
@@ -118,8 +119,12 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
 if __name__ == '__main__':
     try:
         repositories = json.loads(sys.argv[3]) if sys.argv[3].startswith('[') else sys.argv[3]
-        units, general_pool = parse_pool_argument(sys.argv[5:])
-        verify(*sys.argv[1:3], repositories, units, reviewer_user=sys.argv[4], general_pool=general_pool)
+        unit_args = sys.argv[5:]
+        git_desired = '--git-desired' in unit_args
+        unit_args = [value for value in unit_args if value not in ['--git-desired', '--retained-desired']]
+        units, general_pool = parse_pool_argument(unit_args)
+        verify(*sys.argv[1:3], repositories, units, reviewer_user=sys.argv[4], general_pool=general_pool,
+               git_desired=git_desired)
     except (OSError, ValueError, TypeError):
         # Config/unit contents can contain private data; never print them.
         print('RELAY_INSTANCE_IDENTITY_REJECTED', file=sys.stderr)

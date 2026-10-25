@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
-import { configuredRepositories, consumerDigest, parseConsumerJson, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
+import { configuredRepositories, consumerDigest, parseConsumerJson, resolveExecutionConsumer, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -70,6 +70,29 @@ function frozen(value) {
 function canonical(value) {
   return JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+}
+function resources(consumer) {
+  return { paths: consumer.paths, runtimeUser: consumer.runtimeUser, workGroup: consumer.workGroup,
+    executionSlots: consumer.executionSlots };
+}
+async function currentGate(context, options, transition) {
+  const value = json(await protectedRead(context.current.gatePath, options, [0o600], 4096));
+  const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
+  require(exactKeys(value, fields) && value.version === 1 && sha(value.consumerDigest)
+    && ['open', 'quiesced', 'drained', 'applying', 'verified', 'recovery-required'].includes(value.phase)
+    && (value.phase === 'open' ? value.operationId === null && value.target === null && value.previousActive === null
+      : /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.operationId ?? '') && revision(value.target))
+    && (value.phase === 'verified' ? value.verifiedRevision === value.target : value.verifiedRevision === null),
+  'SERIAL_POOL_COMPATIBILITY_CURRENT_GATE_INVALID');
+  if (transition !== null) require(options.privateChecks
+    && exactKeys(transition, ['operationId', 'previousDigest', 'target'])
+    && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(transition.operationId ?? '')
+    && sha(transition.previousDigest) && revision(transition.target),
+  'SERIAL_POOL_COMPATIBILITY_TRANSITION_INVALID');
+  if (value.consumerDigest !== context.currentConsumerDigest) require(transition !== null
+    && value.consumerDigest === transition.previousDigest && value.operationId === transition.operationId
+    && value.target === transition.target && ['drained', 'applying'].includes(value.phase),
+  'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
 }
 function validSourceLinks(value, { nonempty = false } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -243,8 +266,10 @@ function validateReceipt(value, namespace, currentConsumer, { allowSerialSibling
 // Public loading permits recovery context selection. Root revalidates private
 // original evidence before inventory or any publication operation.
 export async function loadSerialPoolCompatibility({ consumerPath = process.env.RELAY_CONSUMER_CONFIG,
-  consumer, root = '/', ownerUid = 0, privateChecks = process.getuid?.() === ownerUid } = {}) {
-  const options = { root: resolve(root), ownerUid, privateChecks, consumerPath, consumer };
+  consumer, root = '/', ownerUid = 0, privateChecks = process.getuid?.() === ownerUid,
+  consumerTransition = null } = {}) {
+  const options = { root: resolve(root), ownerUid, privateChecks, consumerPath, consumer,
+    consumerTransition: consumerTransition === null ? null : structuredClone(consumerTransition) };
   require(isAbsolute(consumerPath ?? '') && Number.isSafeInteger(ownerUid) && ownerUid >= 0,
     'SERIAL_POOL_COMPATIBILITY_CONFIG_INVALID');
   const receiptPath = join(dirname(consumerPath), 'serial-pool-compat-v1.json');
@@ -264,7 +289,19 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
   require(currentConsumer.generalRunnerPool || historicalContext, 'SERIAL_POOL_COMPATIBILITY_CONFIG_INVALID');
   const receiptBytes = await protectedRead(receiptPath, options, [0o644]); const receipt = json(receiptBytes);
   const serialSibling = historicalContext && !currentConsumer.generalRunnerPool;
-  validateReceipt(receipt, namespace, currentConsumer, { allowSerialSibling: serialSibling });
+  const targetConsumerPath = physical(options.root, `/etc/${namespace}/serial-pool-target-consumer-v1.json`);
+  let targetConsumer = currentConsumer;
+  try { targetConsumer = validateConsumer(json(await protectedRead(targetConsumerPath, options, [0o644]))); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    // Old installations need no new artifact while their original target is
+    // still live. The root publisher freezes it before its first Git update.
+    require(serialSibling || receipt.target?.consumerDigest === consumerDigest(currentConsumer),
+      'SERIAL_POOL_COMPATIBILITY_TARGET_SNAPSHOT_REQUIRED');
+  }
+  validateReceipt(receipt, namespace, targetConsumer, { allowSerialSibling: serialSibling });
+  require(serialSibling || canonical(resources(currentConsumer)) === canonical(resources(targetConsumer)),
+    'SERIAL_POOL_COMPATIBILITY_IDENTITY_CHANGED');
   const old = receipt.original;
   const oldConsumerPath = physical(options.root, old.consumerPath);
   const sourceRoot = physical(options.root, old.sourceRoot);
@@ -281,7 +318,8 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
     'SERIAL_POOL_COMPATIBILITY_SOURCE_CHANGED');
   const source = json(await protectedRead(join(sourceRoot, '.relay-source.json'), options, [0o644, 0o640, 0o600]));
   require(source.revision === old.revision, 'SERIAL_POOL_COMPATIBILITY_SOURCE_CHANGED');
-  const context = { receipt, consumerPath, receiptPath, currentConsumer, selectedRepository: selectedRepository ?? receipt.repository,
+  const context = { receipt, consumerPath, receiptPath, currentConsumer, targetConsumer,
+    currentConsumerDigest: consumerDigest(currentConsumer), selectedRepository: selectedRepository ?? receipt.repository,
     originalConsumer: json(originalBytes), root: options.root, ownerUid, privateChecks,
     original: { sourceRoot, consumerPath: oldConsumerPath, runnerUser: old.runnerUser, runnerUid: old.runnerUid } };
   // Original module/default resolution belongs to the original source process.
@@ -292,7 +330,7 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
   require(!historicalContext || consumer === undefined || consumerDigest(consumer) === old.consumerDigest,
     'SERIAL_POOL_COMPATIBILITY_CONSUMER_CHANGED');
   context.originalConsumer = resolved.consumer;
-  const { generalRunnerPool, executionSlots, repositories, ...base } = currentConsumer;
+  const { generalRunnerPool, executionSlots, repositories, ...base } = targetConsumer;
   if (repositories) base.repository = receipt.repository;
   require(!resolved.consumer.generalRunnerPool && !resolved.consumer.executionSlots
     && canonical(base) === canonical(resolved.consumer), 'SERIAL_POOL_COMPATIBILITY_CONFIG_CHANGED');
@@ -320,7 +358,9 @@ export async function loadSerialPoolCompatibility({ consumerPath = process.env.R
     'SERIAL_POOL_COMPATIBILITY_ORIGINAL_CHANGED');
     require(gate.consumerDigest === old.consumerDigest && gate.operationId === receipt.operationId && gate.phase !== 'open',
       'SERIAL_POOL_COMPATIBILITY_GATE_CHANGED');
+    if (!historicalContext) await currentGate(context, options, options.consumerTransition);
   }
+  require(consumerTransition === null || privateChecks, 'SERIAL_POOL_COMPATIBILITY_TRANSITION_INVALID');
   if (historicalContext) return null;
   const result = frozen(context); settings.set(result, { ...options, receiptSha256: hash(receiptBytes) }); return result;
 }
@@ -337,7 +377,7 @@ export async function verifySerialPoolCompatibility(context, { privateChecks = c
 export function historicalOperationContext(context, record, operation) {
   require(settings.has(context), 'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
   const e = record?.envelope;
-  if (e?.consumerDigest === context.receipt.target.consumerDigest) return { kind: 'current', ...context.current };
+  if (e?.consumerDigest === context.currentConsumerDigest) return { kind: 'current', ...context.current };
   const run = context.receipt.original.runs.find(run => run.runId === e?.runId);
   require(run && e.repository === context.receipt.repository
     && e.consumerDigest === context.receipt.original.consumerDigest && e.attemptId === run.attemptId
@@ -491,11 +531,21 @@ export function createCompatibilityStore({ compatibility, currentStore, original
   const sealed = compatibility.receipt.original.runs;
   const historical = (runId, repository) => repository === compatibility.receipt.repository
     && sealed.some(run => run.runId === runId);
-  function validateCurrent(record, runId, repository) {
+  async function validateCurrent(record, runId, repository, { writing = false } = {}) {
     const e = record?.envelope;
     require(e && e.runId === runId && e.repository === repository && typeof e.attemptId === 'string'
-      && e.consumerDigest === compatibility.receipt.target.consumerDigest
+      && sha(e.consumerDigest)
       && !historical(runId, repository), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+    if (e.consumerDigest !== compatibility.currentConsumerDigest) {
+      require(!writing, 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
+      // Completion proof is needed only when reading a retained pool row.
+      const { completedAdmissionRecord } = await import('./admission-control.mjs');
+      const selected = resolveExecutionConsumer(selectRepositoryConsumer(compatibility.currentConsumer, e.repository),
+        e.executionSlot);
+      const journal = createAttemptStore(physical(compatibility.root, selected.paths.attemptRoot),
+        { repository: e.repository });
+      require(await completedAdmissionRecord(record, journal), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+    }
     return record;
   }
   async function verifiedContext() {
@@ -540,9 +590,7 @@ export function createCompatibilityStore({ compatibility, currentStore, original
       require(historical ? e.repository === compatibility.receipt.repository
         : configuredRepositories(verified.currentConsumer).includes(e.repository), 'SERIAL_POOL_COMPATIBILITY_REPOSITORY_CHANGED');
       if (historical) historicalOperationContext(compatibility, record, 'inventory');
-      else require(e.consumerDigest === compatibility.receipt.target.consumerDigest
-        && !(e.repository === compatibility.receipt.repository && sealed.some(run => run.runId === e.runId)),
-      'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      else await validateCurrent(record, e.runId, e.repository);
       runIds.add(key); attempts.add(attemptKey);
     }
     // Full classification proves immutable ownership and envelope provenance.
@@ -577,7 +625,7 @@ export function createCompatibilityStore({ compatibility, currentStore, original
             historicalOperationContext(compatibility, row.record, 'inventory');
             if (!row.record.admissionBlock) await originalCall(verified,
               { operation: 'validate-envelope', envelope: row.record.envelope }, settings.get(verified));
-          } else validateCurrent(row.record, row.runId, row.repository);
+          } else await validateCurrent(row.record, row.runId, row.repository);
         } catch (error) {
           row.error = error.code ?? 'SERIAL_POOL_COMPATIBILITY_RECORD_UNREADABLE';
           if (old) {
@@ -599,20 +647,23 @@ export function createCompatibilityStore({ compatibility, currentStore, original
       require(positive(runId), 'RUN_ID_INVALID');
       require(compatibility.selectedRepository !== compatibility.receipt.repository
         || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
-      await selected(runId, compatibility.selectedRepository);
-      validateCurrent(value, runId, compatibility.selectedRepository);
+      const previous = await selected(runId, compatibility.selectedRepository);
+      if (previous) await validateCurrent(previous, runId, compatibility.selectedRepository, { writing: true });
+      await validateCurrent(value, runId, compatibility.selectedRepository, { writing: true });
       return currentStore.put(runId, value);
     },
     async reserve(runId, value) {
       require(positive(runId), 'RUN_ID_INVALID');
       require(compatibility.selectedRepository !== compatibility.receipt.repository
         || !compatibility.receipt.original.runs.some(run => run.runId === runId), 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_EXECUTION_FORBIDDEN');
-      await selected(runId, compatibility.selectedRepository);
-      validateCurrent(value, runId, compatibility.selectedRepository);
+      const previous = await selected(runId, compatibility.selectedRepository);
+      if (previous) await validateCurrent(previous, runId, compatibility.selectedRepository, { writing: true });
+      await validateCurrent(value, runId, compatibility.selectedRepository, { writing: true });
       return currentStore.reserve(runId, value);
     },
     async withLock(runId, action) {
-      await selected(runId, compatibility.selectedRepository);
+      const previous = await selected(runId, compatibility.selectedRepository);
+      if (previous) await validateCurrent(previous, runId, compatibility.selectedRepository, { writing: true });
       return currentStore.withLock(runId, action);
     }
   };

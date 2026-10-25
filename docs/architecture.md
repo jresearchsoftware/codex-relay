@@ -427,14 +427,20 @@ preserve their respective host identity and root authorization checks.
 A selector resolves once and the exact installed identity
 is reported. Selecting a version does not grant deployment authority.
 
-Product source revision, installed product revision, consumer authority revision
-and latest accepted product revision are independent. Routing and recovery use
+Product source revision, installed product revision, desired private-config
+revision, consumer authority revision and latest accepted product revision are
+independent. Routing and recovery use
 the exact installed revision with the reviewed workflow compatibility contract; advancing
 either repository does not upgrade or invalidate it. An owner selects one exact
-accepted target, reviews any changed generated workflow bytes, and uses the public upgrade
-primitive to apply and verify that same target under the existing host lock.
-The owner lifecycle coordinator quiesces and drains automatic admission before
-applying that primitive. Registered runners remain online. Only explicit
+accepted product/config pair and uses the public intent-driven installation
+composition to choose fresh install, reconciliation, compatible lifecycle upgrade
+or protected replacement. In private Git mode the workflow dispatch SHA belongs
+to reviewed configuration main; the public product revision is frozen
+independently. Installed snapshots attest the result rather than selecting
+desired configuration. The existing host/pool and Writer publication locks bind
+the operation and any consumer-digest transition to its exact UUID. The
+coordinator quiesces and drains admission before managed updates. Registered
+runners remain online. Only explicit
 same-operation verification of the installed revision permits resume; a
 restart, failed or unknown transition retains quiesce and recovery evidence.
 Graceful stop retains quiesced admission without stopping registered runners.
@@ -442,16 +448,26 @@ Manual handoff and publication-only recovery keep their existing authority.
 Without authoritative latest-release information no update note is
 emitted, and availability of a newer revision is never itself a warning or gate.
 
-Fresh bootstrap derives workflow proposals from that exact accepted source and
-one durable owner configuration. A missing projection is an explicit consumer
-review/publication transition in the supported bootstrap UX, not a separate
-pre-existing installation input. Read-only inventory distinguishes reusable
+Ordinary installation derives complete repository integration directories from
+the same product/config pair, including a separate private owner-lifecycle tree
+in Git mode. Publishing those files follows the receiving repository's normal
+change process after installation and needs no second installer run. Existing
+managed drift remains an integrity failure; compatible stale workflows can
+continue and incompatible invocations fail with an outdated-integration
+diagnostic. Expert projection-bound primitives keep their retained behavior.
+Read-only inventory distinguishes reusable
 protected state, missing ephemeral inputs, invalid state and unavailable admin
 verification. An authorized clean reinstall may retire a proven pre-current
 runtime while retaining runner registrations, protected credentials and durable
 publication/review state. Retirement, fresh apply and post-check share the host
 deployment lock; uncertain transitions retain recovery evidence. Service
 activation and external consumer qualification keep their separate authority.
+The [Git-managed installation contract](git-managed-installation.md) owns
+source selection, scoped token transport, compatibility metadata, protected
+receipt/history handling, failure/recovery and safe private PROD cutover.
+That source interface does not prove adoption of the private workflow or
+authorize a live PROD Apply; the working public entrypoint remains until the
+replacement is independently qualified and the owner completes cutover.
 
 The [Reviewer](../reviewer/README.md) is a narrow MCP HTTP service behind a
 trusted mTLS terminator. It verifies forwarded client identity and binds every

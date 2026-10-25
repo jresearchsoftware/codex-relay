@@ -229,3 +229,25 @@ def test_apply_cannot_bypass_owner_upgrade_and_accepts_first_install(installatio
     with pytest.raises(ValueError, match='REQUIRES_EXPLICIT_UPGRADE'):
         upgrade.verify_apply(install, 'b' * 40, **kwargs)
     assert upgrade.verify_apply(boundary / 'fresh', 'b' * 40, **kwargs) == 'none'
+
+
+def test_git_intent_upgrade_does_not_use_old_snapshot_or_consumer_values_as_desired_state(installation):
+    install, config_root, release, _, boundary = installation
+    # A manual/stale host edit is overwritten by the selected Git Apply. Its
+    # content hash is not authority for the next operation's desired values.
+    (release / 'deployment-config.json').write_text('{"stale":true}')
+    (config_root / 'consumer.json').write_text('{"defaultProfile":{"model":"old-model"}}')
+    assert upgrade.verify_desired(install, config_root, 'b' * 40, 'a' * 40,
+                                 owner_uid=os.getuid(), boundary=boundary) == 'a' * 40
+
+
+def test_git_intent_preflight_binds_planned_identity_and_rejects_aliases(installation):
+    install, config_root, _, _, boundary = installation
+    kwargs = {'owner_uid': os.getuid(), 'boundary': boundary}
+    with pytest.raises(ValueError, match='PLANNED_IDENTITY_CHANGED'):
+        upgrade.verify_desired(install, config_root, 'b' * 40, 'c' * 40, **kwargs)
+    consumer = config_root / 'consumer.json'
+    consumer.unlink()
+    consumer.symlink_to(installation[2] / 'artifact-manifest.json')
+    with pytest.raises(ValueError, match='UNSAFE_PATH'):
+        upgrade.verify_desired(install, config_root, 'b' * 40, 'a' * 40, **kwargs)

@@ -76,6 +76,9 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   const gateSha256 = await write(gatePath, { version: 1, consumerDigest: oldDigest, phase: 'applying', operationId,
     target: 'c'.repeat(40), verifiedRevision: null,
     previousActive: { reviewer: service, production: service, general: { active: true, enabled: 'enabled', load: 'loaded' } } });
+  const poolGatePath = join(claimRoot, 'admission-pool-v1.json');
+  await write(poolGatePath, { version: 1, consumerDigest: currentDigest, phase: 'open', operationId: null,
+    target: null, verifiedRevision: null, previousActive: null });
   const envelope = (runId, overrides = {}) => ({ version: 2, repository: originalConsumer.repository, consumerDigest: oldDigest,
     runId, attemptId: `run-${runId}`, step: 1, target: 'issue', number: 42, issueNumber: 42, route: 'auto',
     branch: originalConsumer.taskBranchPrefix + 'test-42', startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40), targetBase: 'a'.repeat(40),
@@ -109,6 +112,6 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   await write(receiptPath, receipt, 0o644);
   const options = { root, ownerUid, consumerPath, consumer: currentConsumer, privateChecks: true };
   const load = () => loadSerialPoolCompatibility(options);
-  return { root, at, write, options, load, receipt, receiptPath, sourceRoot, gatePath, oldConsumerPath: at(oldConsumerPath),
+  return { root, at, write, options, load, receipt, receiptPath, sourceRoot, gatePath, poolGatePath, oldConsumerPath: at(oldConsumerPath),
     currentConsumer, installationConsumer, consumerPath, originalStore, currentStore, records, current, envelope, journal, originalSourceRoot };
 }

@@ -77,9 +77,12 @@ jobs:
           const identity = JSON.parse(await readFile(`${release}/reviewed-source/.relay-source.json`, 'utf8'));
           const head = identity.revision;
           const compatibility = JSON.parse(await readFile(`${release}/reviewed-source/deploy/workflows/contract.json`, 'utf8'));
-          if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/@@NAMESPACE@@/releases/${head}` ||
-              compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+          if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/@@NAMESPACE@@/releases/${head}`) {
             throw new Error('INSTALLED_RELAY_IDENTITY_MISMATCH');
+          }
+          if (compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract ||
+              !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+            throw new Error('RELAY_REPOSITORY_INTEGRATION_OUTDATED: publish the generated repository integration directory');
           }
           console.log(JSON.stringify({ installedRelayHead: head, workflowHead: process.env.GITHUB_SHA }));
           const positive = value => /^[1-9][0-9]*$/.test(value ?? '') && Number.isSafeInteger(Number(value));

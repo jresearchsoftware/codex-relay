@@ -3,7 +3,8 @@ set -euo pipefail
 umask 077
 export PATH=/usr/bin:/bin
 unset BASH_ENV CDPATH ENV
-[[ "$#" -eq 1 && "$1" =~ ^(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}$ ]] || exit 64
+[[ "$#" -eq 1 ]] || exit 64
+[[ "$1" =~ ^(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}$ || "$1" =~ ^git:(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}:[1-9][0-9]{0,19}$ ]] || exit 64
 [[ "$(/usr/bin/id -u)" == 0 ]] || exit 64
 # Never use runner-controlled Git, Python environment or executable paths.
 PRODUCT_ROOT="$(/usr/bin/python3 -I - '{{ relay_install_root }}' <<'PY'
@@ -16,7 +17,7 @@ assert stat.S_ISLNK(info.st_mode) and info.st_uid == 0
 release = Path(os.readlink(current))
 assert re.fullmatch('[0-9a-f]{40}', release.name) and release == install / 'releases' / release.name
 root = release / 'reviewed-source'
-for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py']:
+for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py']:
     path = root / 'deploy' / name
     for entry in [path, *path.parents]:
         info = entry.lstat()

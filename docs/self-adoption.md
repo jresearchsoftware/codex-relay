@@ -7,7 +7,7 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **4.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **4.1.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
@@ -25,7 +25,9 @@ Native readers use this project's reviewed lock
 and selected Shared slot through `references/shared-protocols.md`. Standalone
 includes a self-contained immutable Shared 5.0.0 snapshot, so the complete
 Skill trees differ while retaining the same product contract. Frozen accepted
-1.0.0, 2.0.0, 2.0.1, 3.0.0 and 3.1.0 registry payloads remain unchanged. Source acceptance does
+1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain unchanged.
+The compatible 4.1.0 candidate adds Task #63 installation guidance with retained
+expert paths; it does not claim that private PROD cutover has occurred. Source acceptance does
 not imply external publication or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
@@ -37,9 +39,9 @@ references. Ordinary use needs no materializer, Python, registry, cache, network
 or additional owner command. Checkout/pull advances the accepted ready files.
 
 Relay's execution binding identifies the independently accepted source commit,
-separately from candidate root/nested AGENTS, boot and Skills. Task #182's
-remediation freezes accepted Relay source
-`f91178cadc73f27b406ad0ac6fa9dc58577db069` for this execution;
+separately from candidate root/nested AGENTS, boot and Skills. Task #63's
+execution freezes accepted Relay source
+`b92d7f551b7f95be76e5f64587c40f9bd5d69f14` for this execution;
 the unchanged Skill product-contract baseline remains
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
@@ -73,9 +75,9 @@ verifier compares the complete standalone snapshot with the accepted 5.0.0
 distribution and validates consumer routing separately.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0` or `v3.1.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0` or `v4.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

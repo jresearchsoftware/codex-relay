@@ -437,19 +437,49 @@ test commands and optional hooks do not become consumer admission requirements.
 
 ## Prepare a Relay installation
 
-Installation is separately owner-authorized. Use the selected exact accepted
-product revision and validated target configuration through Relay's public
-deployment interface. For every explicitly owner-managed configured repository,
-including inactive targets, authorized orchestration prepares and publishes a
-separate reviewable routing/recovery workflow and manifest PR. A central product
-PR, local projection or read-only proposal does not complete that publication.
-Report missing access and the affected target rather than claiming completion.
+Installation is separately owner-authorized. The ordinary public
+`deploy/relay-deploy.py --phase install` selects fresh install, same-revision
+reconciliation, compatible upgrade or supported protected replacement from
+observed host state. Expert phases remain available. This 4.1.0 guidance
+candidate describes Task #63 source support; installing the Skill alone does
+not install or qualify the compatible product or activate a private PROD route.
+
+For the owner's Git-managed installation, freeze accepted public product and
+private desired-config Git commits together at Apply start. The private
+configuration repository owns the single trusted owner `apply/stop/resume`
+workflow; its `GITHUB_SHA` is the configuration SHA, while product source is
+selected and verified independently. The scoped ephemeral workflow token reaches
+the fixed protected helper through stdin, without private access for candidate
+CI/workers or a new static credential. Merge alone does not deploy.
+
+Git configuration is desired state for code-only, config-only and combined
+changes. Previous installed intent is not an equality gate; snapshots/manifests
+attest installation and recovery rather than select desired values. Actual
+protected identity, schema, credential, runtime and external permissions still
+apply. Other consumers retain their supported owner-file/checkout integrations.
+
+The same operation returns complete repository-relative integration directories
+for consumer routing/recovery and, in Git mode, the separate private lifecycle
+workflow. Publish each directory's contents through its receiving repository's
+normal change process; no fixed workflow count or second installer run is
+required to finish the already-successful host installation. Compatible stale
+workflows can continue; incompatible invocation fails with an actionable
+outdated-integration diagnostic. Actual managed-workflow drift still fails
+integrity validation. Separately authorized target-PR preparation/publication
+remains distinct from installation.
 
 Derive each proposal from that target's actual trusted branch, runner/pool
 identities and installation namespace. Managed-pool projections use
 `relay-workflows-v4`; a SERIAL v3 example does not qualify a managed installation.
 The assembled `product/contract.json` records both supported workflow ABIs.
-The target owner retains acceptance, merge, activation and governance; proposal
-publication does not grant App access, runner ACLs or settings changes. Inactive
-configured targets do not block a safe Apply, while enabling routing/recovery
-requires the accepted configured refs and their separate operational proof.
+The target owner retains acceptance, merge, activation and governance; artifact
+publication grants no App access, runner ACL or settings changes. Report precise
+external prerequisites and retained recovery evidence instead of inventing
+permissions or blind replay. Inactive configured targets do not block a safe
+Apply; enabling routing/recovery requires accepted configured refs and their
+separate operational proof. A private PROD cutover must qualify the replacement
+and its external policy before retiring the working public entrypoint, with no
+dual active privileged dispatcher. Source acceptance and TEST proof authorize no
+live PROD Apply. The source repository's
+[installation contract](https://github.com/jresearchsoftware/codex-relay/blob/main/docs/git-managed-installation.md)
+provides the detailed strategy, readback and cutover procedure.

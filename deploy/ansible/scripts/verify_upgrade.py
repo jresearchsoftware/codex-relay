@@ -67,6 +67,52 @@ def verify_apply(install_root, target_revision, *, owner_uid=0, boundary=Path('/
     return release.name
 
 
+def verify_desired(install_root, config_root, target_revision, expected_installed, *,
+                   owner_uid=0, boundary=Path('/'), expected_config=None, resource_probe=None):
+    """Bind the planner's observed installation without comparing desired intent.
+
+    A reviewed Git change may replace an old profile, target set or snapshot.
+    Current/source/manifest identity and actual filesystem protection still
+    establish which installation this operation may reconcile or replace.
+    """
+    if (not re.fullmatch('[0-9a-f]{40}', target_revision or '')
+            or expected_installed != 'none' and not re.fullmatch('[0-9a-f]{40}', expected_installed or '')):
+        raise ValueError('RELAY_INSTALL_PLAN_INVALID')
+    protection = {'owner_uid': owner_uid, 'boundary': boundary}
+    install = Path(install_root)
+    if not install.exists() and not install.is_symlink():
+        protected(install.parent, directory=True, **protection)
+        actual = 'none'
+    else:
+        protected(install, directory=True, **protection)
+        current = install / 'current'
+        if not current.exists() and not current.is_symlink():
+            actual = 'none'
+        else:
+            release, _ = installed_identity(install, **protection)
+            actual = release.name
+    if actual != expected_installed:
+        raise ValueError('RELAY_INSTALL_PLANNED_IDENTITY_CHANGED')
+    if actual != 'none' and expected_config is not None:
+        namespace = expected_config['environment']['namespace']
+        if (install != boundary / 'opt' / namespace
+                or Path(config_root) != boundary / 'etc' / namespace):
+            raise ValueError('REINSTALL_RESOURCE_MIGRATION_UNSUPPORTED')
+        proof = resource_probe or globals().get('prove_git_resources')
+        if not callable(proof):
+            raise ValueError('RELAY_INSTALL_RESOURCE_PROOF_UNAVAILABLE')
+        proof(expected_config, root=boundary, owner_uid=owner_uid)
+    config_root = Path(config_root)
+    if config_root.exists() or config_root.is_symlink():
+        protected(config_root, directory=True, **protection)
+        consumer = config_root / 'consumer.json'
+        if consumer.exists() or consumer.is_symlink():
+            protected(consumer, **protection)
+            if not isinstance(json.loads(consumer.read_text()), dict):
+                raise ValueError('RELAY_INSTALL_ACTUAL_CONSUMER_INVALID')
+    return actual
+
+
 def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=Path('/')):
     protection = {'owner_uid': owner_uid, 'boundary': boundary}
     config_root = Path(config_root)
@@ -119,10 +165,13 @@ def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) not in [3, 4]:
+        if len(sys.argv) == 6 and sys.argv[1] == '--git-desired':
+            revision = verify_desired(*sys.argv[2:], expected_config=json.load(sys.stdin))
+        elif len(sys.argv) in [3, 4]:
+            revision = (verify_apply(sys.argv[1], sys.argv[3]) if len(sys.argv) == 4 else
+                        verify(sys.argv[1], sys.argv[2], json.load(sys.stdin)))
+        else:
             raise ValueError('RELAY_UPGRADE_INPUT_INVALID')
-        revision = (verify_apply(sys.argv[1], sys.argv[3]) if len(sys.argv) == 4 else
-                    verify(sys.argv[1], sys.argv[2], json.load(sys.stdin)))
     except (ValueError, OSError, TypeError, KeyError, AttributeError):
         # Never include private configuration, credentials or remote content.
         print('RELAY_UPGRADE_PREFLIGHT_BLOCKED;inspect-installed-identity-and-owner-intent', file=sys.stderr)

@@ -64,6 +64,7 @@
     - config.py
     - installed_config.py
     - deployment_lock.py
+    - git_intent.py
   when: not ansible_check_mode | bool
 
 - name: Record the acquired Git identity for installed product reconciliation

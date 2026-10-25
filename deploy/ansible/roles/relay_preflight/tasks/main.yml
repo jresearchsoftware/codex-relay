@@ -18,6 +18,7 @@
       - '{{ relay_superseded_proxy_service_name }}'
       - '{{ relay_namespace }}-relay-manual-outcome.socket'
       - '{{ relay_namespace }}-relay-manual-outcome@.service'
+      - "{{ '--git-desired' if relay_git_desired_state | default(false) | bool else '--retained-desired' }}"
       - --general-pool
       - >-
         {{ ({'name': relay_general_runner_pool.name, 'runnerUser': relay_general_runner_pool.runnerUser,

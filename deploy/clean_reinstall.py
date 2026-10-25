@@ -513,14 +513,111 @@ def operation_lock(path, root, owner_uid):
         os.close(fd)
 
 
+def harden_operation_directory(config, *, root=Path('/'), owner_uid=0, reviewer_gid=None):
+    """Repair only the known legacy runtime directory before admission changes.
+
+    No lock is created or replaced. Unknown directory contents, ownership and
+    aliases remain a diagnostic boundary rather than an invitation to chmod.
+    """
+    root = Path(root)
+    path = namespace_paths(config, root)['lock']
+    if not present(path.parent):
+        return False
+    protected(path.parent.parent, root, owner_uid, directory=True)
+    parent = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    directory = lock = None
+    try:
+        before = os.stat(path.parent.name, dir_fd=parent, follow_symlinks=False)
+        require(stat.S_ISDIR(before.st_mode) and before.st_uid == owner_uid,
+                'OPERATION_DIRECTORY_UNSAFE')
+        if stat.S_IMODE(before.st_mode) != 0o770:
+            protected(path.parent, root, owner_uid, directory=True)
+            return False
+        reviewer_gid = (grp.getgrnam(config['environment']['reviewerUser']).gr_gid
+                        if reviewer_gid is None else reviewer_gid)
+        require(before.st_gid == reviewer_gid, 'OPERATION_DIRECTORY_UNSAFE')
+        directory = os.open(path.parent.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=parent)
+        stamp = lambda info: (info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+                              info.st_mode, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
+        require(stamp(os.fstat(directory)) == stamp(before)
+                and set(os.listdir(directory)) == {path.name}, 'OPERATION_DIRECTORY_UNSAFE')
+        lock_before = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        require(stat.S_ISREG(lock_before.st_mode) and lock_before.st_uid == owner_uid
+                and lock_before.st_nlink == 1 and stat.S_IMODE(lock_before.st_mode) == 0o644
+                and lock_before.st_dev == before.st_dev, 'OPERATION_LOCK_UNSAFE')
+        lock = os.open(path.name, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        require(stamp(os.fstat(lock)) == stamp(lock_before), 'OPERATION_LOCK_CHANGED')
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('REINSTALL_OPERATION_BUSY') from None
+        require(stamp(os.stat(path.name, dir_fd=directory, follow_symlinks=False)) == stamp(lock_before)
+                and stamp(os.fstat(lock)) == stamp(lock_before)
+                and stamp(os.stat(path.parent.name, dir_fd=parent, follow_symlinks=False)) == stamp(before)
+                and stamp(os.fstat(directory)) == stamp(before)
+                and set(os.listdir(directory)) == {path.name}, 'OPERATION_DIRECTORY_CHANGED')
+        os.fchmod(directory, 0o750)
+        os.fsync(directory)
+        return True
+    finally:
+        for descriptor in [lock, directory, parent]:
+            if descriptor is not None:
+                os.close(descriptor)
+
+
+def resource_boundary(config):
+    """Physical and privileged identities retained by a replacement install.
+
+    Desired model profiles, repository allowlists and reviewer targets are not
+    resource identity. Their normal config validation and capability checks
+    remain the installer's responsibility.
+    """
+    consumer = config['consumer']
+    return {
+        'consumer': {key: consumer.get(key) for key in [
+            'paths', 'runtimeUser', 'writerApp', 'writerIdentity', 'remediationIdentity',
+            'executionSlots']},
+        'managedPool': 'generalRunnerPool' in consumer,
+    }
+
+
+def prove_git_resource_boundary(config, *, root=Path('/'), owner_uid=0):
+    """Prove live resource identities without consulting historical intent.
+
+    An old deployment snapshot is diagnostic evidence, not a prerequisite. The
+    live consumer and protected unit identities establish what can be retained;
+    the remaining runner/process/credential checks still run independently.
+    """
+    paths = namespace_paths(config, Path(root))
+    actual = _recovery_json(_recovery_bytes(paths['config'] / 'consumer.json', Path(root),
+                                           owner_uid, owner_uid))
+    desired_boundary = resource_boundary(config)
+    require(resource_boundary({'consumer': actual}) == desired_boundary,
+            'RESOURCE_MIGRATION_UNSUPPORTED')
+    names = unit_names(config)
+    identities = {names[2]: config['environment']['reviewerUser'],
+                  **{unit: identity for _, identity, unit in runner_specs(config)}}
+    for name, identity in identities.items():
+        path = Path(root) / 'etc/systemd/system' / name
+        try:
+            raw = _recovery_bytes(path, Path(root), owner_uid, owner_uid)
+        except FileNotFoundError:
+            raise ValueError('REINSTALL_RESOURCE_MIGRATION_UNSUPPORTED') from None
+        require('User=' + identity in raw.decode().splitlines(), 'RESOURCE_MIGRATION_UNSUPPORTED')
+
+
 def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
-                 runner=subprocess.run, user_ids=None, operation_id=None, admission_probe=None):
+                 runner=subprocess.run, user_ids=None, operation_id=None, admission_probe=None,
+                 git_desired=False):
     """Retire runtime under an already-held public host deployment mutex."""
     root = Path(root)
+    require(type(git_desired) is bool, 'GIT_DESIRED_INVALID')
     require(re.fullmatch('[0-9a-f]{40}', revision or ''), 'TARGET_INVALID')
-    require(not report.get('blockers') and report.get('configuration', {}).get('consumer') == 'equivalent'
-            and report.get('configuration', {}).get('deployment') in ['equivalent', 'unavailable']
-            and report.get('installed', {}).get('status') == 'present', 'INVENTORY_NOT_PROVEN')
+    require(not report.get('blockers') and report.get('installed', {}).get('status') == 'present'
+            and (git_desired or (report.get('configuration', {}).get('consumer') == 'equivalent'
+            and report.get('configuration', {}).get('deployment') in ['equivalent', 'unavailable'])),
+            'INVENTORY_NOT_PROVEN')
     paths = namespace_paths(config, root)
     for key in ['install', 'config', 'state']:
         protected(paths[key], root, owner_uid, directory=True)
@@ -548,6 +645,8 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
     require(report['installed'].get('revision') == release.name and identity.get('revision') == release.name
             and isinstance(manifest.get('gitTree'), str) and re.fullmatch('[0-9a-f]{40}', manifest['gitTree'])
             and identity.get('tree') == manifest['gitTree'], 'INSTALLED_IDENTITY_UNPROVEN')
+    if git_desired:
+        prove_git_resource_boundary(config, root=root, owner_uid=owner_uid)
     require(release.name != revision, 'CURRENT_INSTALLATION_USE_APPLY')
     if 'generalRunnerPool' in config['consumer']:
         pool_admission_status(config, release, revision, operation_id, {'applying'},
@@ -591,6 +690,8 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
         require(inspect_units(config, paths, root, owner_uid, runner, listeners=listeners, warnings=warnings) == units,
                 'UNIT_STATE_CHANGED')
         workers_quiescent(config, root, user_ids, listeners=listeners)
+        if git_desired:
+            prove_git_resource_boundary(config, root=root, owner_uid=owner_uid)
         if 'generalRunnerPool' in config['consumer']:
             pool_admission_status(config, release, revision, operation_id, {'applying'},
                                   root=root, owner_uid=owner_uid, probe=admission_probe)
@@ -916,7 +1017,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
                 and isinstance(journal['sourceRevision'], str)
                 and re.fullmatch('[0-9a-f]{40}', journal['sourceRevision'])
                 and journal['sourceRevision'] != revision
-                and journal['previousEnvironmentComparison'] in ['equivalent', 'unavailable']
+                and journal['previousEnvironmentComparison'] in ['equivalent', 'unavailable', 'different', 'invalid']
                 and journal['configurationSha256'] == hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
                 'RECOVERY_BINDING_CHANGED')
         require(operation == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
@@ -1039,7 +1140,11 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
 def validate_remote_result(result, config, revision, report, action, operation_id=None):
     require(isinstance(result, dict), 'REMOTE_RESULT_INVALID')
     namespace = config['environment']['namespace']
-    if action == 'decommission':
+    if action == 'prepare':
+        require(result.keys() == {'state', 'namespace', 'hardened'}
+                and result['state'] == 'PREPARED' and result['namespace'] == namespace
+                and type(result['hardened']) is bool, 'REMOTE_RESULT_INVALID')
+    elif action == 'decommission':
         require(result.keys() == {'state', 'sourceRevision', 'targetRevision', 'recoveryPath', 'journalSha256'}
                 and result['state'] == 'DECOMMISSIONED' and result['targetRevision'] == revision
                 and isinstance(report, dict) and report.get('installed', {}).get('status') == 'present'
@@ -1210,13 +1315,15 @@ def recovery_admission_program(config, *, source_base=None):
     return source
 
 
-def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None, operation_id=None):
+def remote_action(target, key, config, revision, report=None, *, action='decommission', guard=None,
+                  operation_id=None, git_desired=False):
     """Transport config references only; helper never receives token material."""
-    require(action in ['decommission', 'complete', 'recover', 'continuation', 'continue'], 'ACTION_INVALID')
+    require(type(git_desired) is bool, 'GIT_DESIRED_INVALID')
+    require(action in ['prepare', 'decommission', 'complete', 'recover', 'continuation', 'continue'], 'ACTION_INVALID')
     source = Path(__file__).read_text()
     inventory_source = Path(__file__).with_name('inventory.py').read_text()
     program = source + '\nimport sys\ntry:\n'
-    program += '    value = json.load(sys.stdin)\n'
+    program += '    value = __relay_payload\n'
     if 'generalRunnerPool' in config.get('consumer', {}):
         adapter = recovery_admission_program(config, source_base='__REINSTALL_SOURCE_BASE__/')
         adapter = adapter.rsplit("process.stdout.write(JSON.stringify(await admission.status())", 1)[0]
@@ -1233,11 +1340,17 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         pool_arguments = ', operation_id=value["operation_id"], admission_probe=pool_admission_probe'
     else:
         pool_arguments = ''
-    if action == 'decommission':
+    if action == 'prepare':
+        program += '    paths = namespace_paths(value["config"], Path("/"))\n'
+        program += '    if value["git_desired"] and present(paths["install"] / "current"):\n'
+        program += '        prove_git_resource_boundary(value["config"])\n'
+        program += '    result = {"state": "PREPARED", "namespace": value["config"]["environment"]["namespace"], "hardened": harden_operation_directory(value["config"])}\n'
+    elif action == 'decommission':
         program += '    probe = {"__name__": "relay_inventory"}\n'
         program += '    exec(' + repr(inventory_source) + ', probe)\n'
-        program += '    current_report = probe["inspect"](value["config"])\n'
-        program += '    result = decommission(value["config"], value["revision"], current_report' + pool_arguments + ')\n'
+        desired_argument = ', git_desired=True' if git_desired else ''
+        program += '    current_report = probe["inspect"](value["config"]' + desired_argument + ')\n'
+        program += '    result = decommission(value["config"], value["revision"], current_report' + desired_argument + pool_arguments + ')\n'
     elif action in ['continuation', 'continue']:
         require('generalRunnerPool' in config['consumer'], 'POOL_CONTINUATION_ONLY')
         program += '    result = continuation(value["config"], value["revision"], value["operation_id"], admission_probe=pool_admission_probe)\n'
@@ -1265,8 +1378,19 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
                 '    print(diagnostic, file=sys.stderr)\n'
                 '    raise SystemExit(1)\n')
     from ansible_transport import TargetProcess
-    process = TargetProcess(target, key, ['/usr/bin/python3', '-I', '-c', program])
-    payload = json.dumps({'config': config, 'revision': revision, 'report': report, 'operation_id': operation_id})
+    # Source plus retained admission code can exceed Linux's per-argument
+    # MAX_ARG_STRLEN. Keep argv fixed and carry selected source through the same
+    # private bounded stdin transport as its input, without a persistent file.
+    bootstrap = ('import json,sys\nraw=sys.stdin.buffer.read(524289)\n'
+        'if len(raw)>524288: raise SystemExit(1)\n'
+        'payload=json.loads(raw);source=payload.pop("__relay_source")\n'
+        'if not isinstance(source,str) or len(source.encode())>393216: raise SystemExit(1)\n'
+        'exec(compile(source,"<relay-selected-retirement>","exec"),'
+        '{"__name__":"relay_target_retirement","__relay_payload":payload})\n')
+    process = TargetProcess(target, key, ['/usr/bin/python3', '-I', '-c', bootstrap])
+    payload = json.dumps({'config': config, 'revision': revision, 'report': report,
+                          'operation_id': operation_id, 'git_desired': git_desired,
+                          '__relay_source': program})
     try:
         while True:
             if guard is not None and guard.poll() is not None:

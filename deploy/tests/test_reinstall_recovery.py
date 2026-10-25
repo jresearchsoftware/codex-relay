@@ -68,6 +68,31 @@ def evidence(value):
     return value.paths['journal'].read_bytes(), value.paths['operation'].read_bytes()
 
 
+@pytest.mark.parametrize('comparison', ['different', 'invalid'])
+def test_git_configuration_delta_diagnostic_preserves_exact_recovery_binding(installation, comparison):
+    value = partial(installation)
+    journal = json.loads(value.paths['journal'].read_bytes())
+    journal['previousEnvironmentComparison'] = comparison
+    value.paths['journal'].write_text(json.dumps(journal))
+    result = recover(value)
+    assert result['state'] == 'DISPOSITIONED'
+    retained = json.loads((value.archive / 'recovery-journal.json').read_bytes())
+    assert retained['previousEnvironmentComparison'] == comparison
+    assert retained['configurationSha256'] == hashlib.sha256(
+        json.dumps(value.config, sort_keys=True).encode()).hexdigest()
+
+
+def test_git_delta_recovery_still_rejects_changed_desired_profile(installation):
+    value = partial(installation)
+    journal = json.loads(value.paths['journal'].read_bytes())
+    journal['previousEnvironmentComparison'] = 'different'
+    value.paths['journal'].write_text(json.dumps(journal))
+    value.config['consumer']['defaultProfile']['effort'] = 'medium'
+    with pytest.raises(ValueError, match='RECOVERY_BINDING_CHANGED'):
+        recover(value)
+    assert value.paths['journal'].exists() and value.paths['operation'].exists()
+
+
 def test_disposition_preserves_original_bytes_state_and_activation_authority(installation):
     value = partial(installation)
     journal_raw, operation_raw = evidence(value)

@@ -2,6 +2,7 @@
 """Relay's owner-operated Debian deployment entrypoint (backend is private)."""
 import argparse
 from contextlib import ExitStack
+from types import SimpleNamespace
 import fcntl
 import hashlib
 import json
@@ -173,7 +174,7 @@ def arguments():
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--connection', choices=['ssh', 'local'],
                    help='Ansible connection override; preserves the exact deployment configuration binding')
-    p.add_argument('--phase', choices=[*PHASES, 'validate'], required=True)
+    p.add_argument('--phase', choices=[*PHASES, 'validate', 'install'], required=True)
     p.add_argument('--requested-revision', help='selector already resolved by the trusted acquisition/bootstrap')
     p.add_argument('--resolved-revision', help='exact acquisition result; must equal this clean checkout')
     p.add_argument('--consumer-root', type=Path, help='consumer Git checkout when durable config is stored separately')
@@ -201,6 +202,7 @@ def arguments():
     p.add_argument('--lifecycle-recovery-operation', help='Exact retained admission operation UUID')
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
+    p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
     p.add_argument('--workflow-consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--authorize-apply-recovery', action='store_true',
                    help='Owner-authorized matching installed-config apply recovery after diagnosis')
@@ -228,6 +230,17 @@ def arguments():
 
 def run(args):
     os.umask(0o077)
+    if args.phase == 'install':
+        from intent_install import run as install
+        return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
+    intent_install = getattr(args, 'intent_install', False)
+    inherited_guard = getattr(args, '_intent_host_guard', None)
+    inherited_pool_guard = getattr(args, '_intent_pool_guard', None)
+    require(inherited_guard is None or (intent_install and inherited_guard.poll() is None
+            and not args.local_reconcile and not args.local_lifecycle), 'intent-host-lock-unproven')
+    require(inherited_pool_guard is None or (inherited_guard is not None
+            and inherited_pool_guard.poll() is None), 'intent-pool-lock-unproven')
+    require(getattr(args, 'git_config_receipt', None) is None, 'git-receipt-install-only')
     require(getattr(args, 'repository', None) is None or args.phase in ['workflow-project', 'workflow-verify'],
             'repository-projection-only')
     require(args.authorize_upgrade == (args.phase == 'upgrade'), 'explicit-upgrade')
@@ -268,7 +281,12 @@ def run(args):
         from installed_config import verify
         config, installed_digest, installed_consumer_revision = verify(ROOT, args.expected_installed_head)
     else:
-        config = load(config_path, ROOT)
+        if intent_install:
+            raw = config_path.read_bytes()
+            require(hashlib.sha256(raw).hexdigest() == args.git_intent['config_sha256'], 'frozen-git-config-changed')
+            config = loads(raw.decode('utf-8'), ROOT)
+        else:
+            config = load(config_path, ROOT)
     if 'generalRunnerPool' in config['consumer']:
         # Bind new managed target policy in the same order that the protected
         # canonical snapshot and installed reader produce, including derived slots.
@@ -277,6 +295,12 @@ def run(args):
     require(not (args.phase == 'reinstall' and args.authorize_lifecycle_recovery) or pool_reinstall,
             'pool-reinstall-recovery-only')
     values = compile_inputs(config)
+    deployment_contract = {}
+    contract_path = ROOT / 'deploy/installation-contract.json'
+    if contract_path.exists():
+        from intent_install import contract
+        deployment_contract = contract(json.loads(contract_path.read_text()))
+    require(not intent_install or deployment_contract, 'intent-deployment-contract-required')
     require(args.execution_slot == 'primary' or args.phase in ['general-runner-register', 'general-runner-enable'],
             'execution-slot-phase')
     selected_slot = select_execution_slot(config, args.execution_slot)
@@ -367,7 +391,7 @@ def run(args):
     else:
         require(not any([args.issue_number, args.issue_body_sha256, args.pull_request, args.review_id,
             args.reviewed_head, args.change_request_id, args.branch, args.base_branch_sha]), 'diagnostic-flags')
-    if args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile):
+    if not intent_install and (args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile)):
         from workflow_projection import project, verify
         if args.phase == 'workflow-project':
             project(config, revision, ROOT, consumer_root, getattr(args, 'repository', None))
@@ -403,7 +427,7 @@ def run(args):
     pool_reinstall_proof = None
     if args.phase == 'inventory' or install_flow:
         from inventory import remote_inventory
-        observed = remote_inventory(target, key, config)
+        observed = remote_inventory(target, key, config, **({'git_desired': True} if intent_install else {}))
         print('RELAY_INVENTORY=' + json.dumps(observed, sort_keys=True), flush=True)
         if args.phase == 'inventory':
             print('RELAY_DEPLOYMENT_RESULT=PASS;phase=inventory;authority=read-only', flush=True)
@@ -414,29 +438,32 @@ def run(args):
                                                 operation_id=args.lifecycle_recovery_operation)
             observed = continuation_inventory(observed, pool_reinstall_proof)
         require(not observed['blockers'], 'inventory-blocked;inspect-reported-prerequisites')
-        from workflow_projection import prepare, render
-        proposal_key = hashlib.sha256(b''.join(path.encode() + b'\0' + content
-            for path, content in render(config, revision, ROOT).items())).hexdigest()[:16]
-        output = args.projection_output or (args.log_root / ('workflows-' + revision + '-' +
-                  deployment_repository(config).replace('/', '-') + '-' + proposal_key))
-        proposal = prepare(config, revision, ROOT, consumer_root, output)
-        print('RELAY_BOOTSTRAP_PROJECTION=' + json.dumps(proposal, sort_keys=True), flush=True)
-        if proposal['state'] != 'ready':
-            print('RELAY_DEPLOYMENT_PENDING=WORKFLOW_REVIEW_REQUIRED;target_unchanged=true', flush=True)
-            return
-        committed_projection(config, revision, ROOT, consumer_root, consumer_revision)
+        if not intent_install:
+            from workflow_projection import prepare, render
+            proposal_key = hashlib.sha256(b''.join(path.encode() + b'\0' + content
+                for path, content in render(config, revision, ROOT).items())).hexdigest()[:16]
+            output = args.projection_output or (args.log_root / ('workflows-' + revision + '-' +
+                      deployment_repository(config).replace('/', '-') + '-' + proposal_key))
+            proposal = prepare(config, revision, ROOT, consumer_root, output)
+            print('RELAY_BOOTSTRAP_PROJECTION=' + json.dumps(proposal, sort_keys=True), flush=True)
+            if proposal['state'] != 'ready':
+                print('RELAY_DEPLOYMENT_PENDING=WORKFLOW_REVIEW_REQUIRED;target_unchanged=true', flush=True)
+                return
+            committed_projection(config, revision, ROOT, consumer_root, consumer_revision)
         if args.phase == 'bootstrap' and not args.authorize_bootstrap:
             print('RELAY_DEPLOYMENT_PENDING=INSTALL_AUTHORIZATION_REQUIRED;flag=--authorize-bootstrap;target_unchanged=true')
             return
+    lifecycle_required = (args.phase == 'upgrade' or (intent_install and args.phase == 'apply'
+                          and args.intent_expected_installed_revision != 'none'))
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
-        (args.lifecycle_recovery_operation or str(uuid.uuid4()) if args.phase == 'upgrade' or pool_reinstall else ''))
+        (args.lifecycle_recovery_operation or str(uuid.uuid4()) if lifecycle_required or pool_reinstall else ''))
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
         'relay_deployment_profile': 'production',
         'relay_production_operation_phase': 'apply' if args.phase == 'upgrade' or install_flow else args.phase,
         'relay_upgrade_requested': args.phase == 'upgrade',
-        'relay_upgrade_lifecycle_managed': args.phase == 'upgrade' or (args.local_lifecycle and args.phase == 'apply'),
+        'relay_upgrade_lifecycle_managed': lifecycle_required or (args.local_lifecycle and args.phase == 'apply'),
         'relay_admission_operation_id': admission_operation_id,
         'relay_admission_recovery_authorized': args.authorize_lifecycle_recovery,
         'relay_owner_apply_requested': (args.phase == 'apply' or install_flow) and not args.local_reconcile,
@@ -447,6 +474,14 @@ def run(args):
         'relay_workflow_consumer_revision': args.workflow_consumer_revision or '',
         'relay_installed_config_recovery_authorized': args.authorize_apply_recovery or args.phase == 'reinstall',
         'relay_clean_reinstall_journal_sha256': '',
+        'relay_git_desired_state': intent_install,
+        # Reinstall independently proves the old identity under the host mutex,
+        # then retires current before the fresh backend starts.
+        'relay_intent_expected_installed_revision': ('none' if intent_install and args.phase == 'reinstall'
+            else getattr(args, 'intent_expected_installed_revision', '')),
+        'relay_git_config_receipt': getattr(args, 'git_intent', {}),
+        'relay_deployment_contract': deployment_contract,
+        'relay_installation_state': getattr(args, '_intent_installation_state', {}),
         'relay_production_runner_enable_exact_head': revision,
         'relay_service_state_management': 'preserve',
         'relay_service_activation_authorized': args.authorize_reviewer_activation,
@@ -482,6 +517,13 @@ def run(args):
         'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
                            'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
     })
+    if getattr(args, '_intent_fresh_bootstrap', False):
+        require(intent_install and args.phase == 'bootstrap'
+                and args.intent_expected_installed_revision == 'none' and inherited_guard is not None,
+                'intent-fresh-bootstrap-unproven')
+        # Install inactive runtime first, then the existing bounded credential
+        # phases. The same frozen config is enforced by the following apply.
+        values['relay_codex_token_required'] = False
     # Preserve complete owner intent for upgrades for every consumer. These
     # literal references never contain credential bytes or bootstrap tokens.
     snapshot = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
@@ -501,7 +543,13 @@ def run(args):
                  else args.general_runner_registration_token)
         guard = ingress_guard(target, key, values, revision)
         try:
-            proof = register_runner(target, key, values, revision, token, guard)
+            def registration_poll():
+                for holder in [guard, inherited_guard, inherited_pool_guard]:
+                    if holder is not None and holder.poll() is not None:
+                        return holder.poll()
+                return None
+            proof = register_runner(target, key, values, revision, token,
+                                    SimpleNamespace(poll=registration_poll))
         finally:
             guard.stdin.close()
             require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
@@ -510,6 +558,8 @@ def run(args):
         return
     args.log_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     log_fd, log_name = tempfile.mkstemp(prefix=f'relay-{revision[:12]}-{args.phase}-', suffix='.log', dir=args.log_root)
+    if intent_install:
+        args._intent_log_path = log_name
     print(f'requested_revision={requested}\nresolved_revision={revision}\nconsumer_revision={consumer_revision}', flush=True)
     lock_name = hashlib.sha256((target['host'] + values['relay_install_root']).encode()).hexdigest()[:24]
     lock_path = (Path(values['relay_state_root']) if args.local_reconcile else Path(tempfile.gettempdir())) / ('relay-deploy-' + lock_name + '.lock')
@@ -553,25 +603,41 @@ def run(args):
             log.write(f'requested_revision={requested};resolved_revision={revision};consumer_revision={consumer_revision}\n')
             log.flush()
             with ExitStack() as host_locks:
-                guard = None
-                pool_guard = None
+                guard = inherited_guard
+                pool_guard = inherited_pool_guard
+                owns_guard = False
                 if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
                     if args.local_lifecycle:
                         pass  # inherited, validated host lock covers the complete lifecycle
                     elif args.local_reconcile:
                         from deployment_lock import acquire
                         host_locks.enter_context(acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock'))
-                    else:
+                    elif guard is None:
                         guard = apply_guard(target, key, values['relay_namespace'])
+                        owns_guard = True
                 elif args.phase == 'ingress':
-                    guard = ingress_guard(target, key, values, revision)
+                    if inherited_guard is None:
+                        guard = ingress_guard(target, key, values, revision)
+                        owns_guard = True
+                    else:
+                        ingress_holder = ingress_guard(target, key, values, revision)
+                        host_locks.callback(lambda: (ingress_holder.stdin.close(),
+                            require(ingress_holder.wait(timeout=30) == 0, 'ingress-operation-guard-final-check')))
+                        # Ingress has no pool operation; retain both its own
+                        # installed operation lock and the inherited host lock.
+                        def ingress_poll():
+                            for holder in [ingress_holder, inherited_pool_guard]:
+                                if holder is not None and holder.poll() is not None:
+                                    return holder.poll()
+                            return None
+                        pool_guard = SimpleNamespace(poll=ingress_poll)
                 if ('generalRunnerPool' in config['consumer']
                         and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
                     pool_lock_namespace = 'codex-relay-pool-' + config['environment']['generalRunner']['name']
                     if args.local_reconcile or args.local_lifecycle:
                         from deployment_lock import acquire
                         host_locks.enter_context(acquire('/var/lib/' + pool_lock_namespace + '-deployment.lock'))
-                    else:
+                    elif pool_guard is None:
                         pool_guard = apply_guard(target, key, pool_lock_namespace)
                         def release_pool_guard():
                             pool_guard.stdin.close()
@@ -581,12 +647,35 @@ def run(args):
                     lifecycle_operation = None
                     serial_transition = False
                     new_gate_installed = False
+                    if intent_install:
+                        # The first observation chose a strategy. Revalidate its
+                        # installation under the same host mutex before even a
+                        # quiesce/reservation may change protected state.
+                        from inventory import remote_inventory
+                        locked_inventory = remote_inventory(target, key, config, git_desired=True)
+                        locked_installed = locked_inventory['installed']
+                        locked_revision = (locked_installed.get('revision')
+                            if locked_installed.get('status') == 'present' else 'none'
+                            if locked_installed.get('status') == 'missing' else 'invalid')
+                        require(not locked_inventory['blockers']
+                                and locked_revision == args.intent_expected_installed_revision,
+                                'intent-installation-changed-before-reservation')
+                        from intent_install import prepare_target
+                        if (args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
+                                and prepare_target(target, key, config, revision, guard)):
+                            args._intent_mutation_started = True
+                            print('RELAY_INSTALL_HARDENING=legacy-operation-directory;mode=0750', flush=True)
                     if ('generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
                         from managed_pool_transport import preflight_pool
                         pool_preflight_proof = preflight_pool(target, key, config, guard,
                             local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
                         serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
+                    if intent_install:
+                        # From here a lifecycle reservation, retirement or backend
+                        # may mutate the host. A failure reports uncertainty rather
+                        # than claiming that an unsuccessful backend changed none.
+                        args._intent_mutation_started = True
                     if serial_transition:
                         from lifecycle import progress
                         require(not args.local_lifecycle and not args.local_reconcile,
@@ -663,7 +752,7 @@ def run(args):
                         (work / 'inventory.json').write_text(json.dumps(inventory))
                     completed_pool_reinstall = False
                     retirement_report = None
-                    if args.phase == 'upgrade' and not args.local_lifecycle and not serial_transition:
+                    if lifecycle_required and not args.local_lifecycle and not serial_transition:
                         from lifecycle import progress
                         lifecycle_operation = admission_operation_id
                         if not args.authorize_lifecycle_recovery:
@@ -706,7 +795,7 @@ def run(args):
                     if install_flow:
                         # Re-observe under the host mutex; a read-only report is
                         # never itself a destructive or installation capability.
-                        observed = remote_inventory(target, key, config)
+                        observed = remote_inventory(target, key, config, **({'git_desired': True} if intent_install else {}))
                         if pool_reinstall_proof is not None:
                             observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
@@ -715,6 +804,7 @@ def run(args):
                             if pool_reinstall_proof is None:
                                 retired = remote_action(target, key, config, revision, observed,
                                     action='decommission', guard=guard,
+                                    **({'git_desired': True} if intent_install else {}),
                                     **({'operation_id': lifecycle_operation} if pool_reinstall else {}))
                                 values['relay_clean_reinstall_journal_sha256'] = retired['journalSha256']
                                 retirement_report = observed
@@ -728,7 +818,8 @@ def run(args):
                         log.flush()
                         new_gate_installed = f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in Path(log_name).read_text()
                     if (returncode == 0 and 'generalRunnerPool' in config['consumer']
-                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not completed_pool_reinstall):
+                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
+                            and not completed_pool_reinstall and not getattr(args, '_intent_defer_pool_reconcile', False)):
                         from managed_pool_transport import reconcile_pool
                         proof = reconcile_pool(target, key, config, revision, guard,
                                                local=args.local_reconcile or args.local_lifecycle,
@@ -736,7 +827,7 @@ def run(args):
                         log.write(proof + '\n')
                         log.flush()
                         print(proof, flush=True)
-                    if (args.phase == 'upgrade' or install_flow or serial_transition) and not completed_pool_reinstall:
+                    if (lifecycle_required or install_flow or serial_transition) and not completed_pool_reinstall:
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
@@ -745,7 +836,7 @@ def run(args):
                                 args.phase + '-final-runtime-proof')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
                                 args.phase + '-installed-identity-proof')
-                        if args.phase == 'upgrade' or serial_transition:
+                        if lifecycle_required or serial_transition:
                             require(f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in apply_evidence,
                                     'upgrade-same-operation-activation-proof')
                         # Bootstrap/reinstall keep their independent qualification
@@ -802,7 +893,7 @@ def run(args):
                             pass  # the last durable state remains closed
                     raise
                 finally:
-                    if guard is not None:
+                    if guard is not None and owns_guard:
                         guard.stdin.close()
                         require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
             log.flush()
