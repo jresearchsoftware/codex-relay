@@ -69,6 +69,10 @@ class GitOwnerLifecycleTests(unittest.TestCase):
             self.parser_inputs.append((source, raw))
             return copy.deepcopy(self.desired), dict(self.values)
 
+        @contextmanager
+        def consumer_access(config, repository):
+            yield SimpleNamespace(head=self.receipt['product_sha'], token=None)
+
         def backend(argv, **kwargs):
             if argv[0].endswith('relay-admission'):
                 return SimpleNamespace(stdout=json.dumps(self.gate(*argv[1:])), returncode=0)
@@ -85,10 +89,12 @@ class GitOwnerLifecycleTests(unittest.TestCase):
 
         for name, value in [('git_anchor', lambda revision: (self.install, dict(self.binding), self.previous_manifest)),
             ('protected_parents', lambda path: None), ('selected_config', parse),
-            ('acquire_source', lambda directory, repository, revision: self.source),
+            ('acquire_source', lambda directory, repository, revision, **kwargs: self.source),
             ('public_main', lambda repository: self.receipt['product_sha']), ('acquire', lock),
             ('git_result', lambda *args: self.readbacks.append(args))]:
             mocked = patch.object(owner, name, value); mocked.start(); self.addCleanup(mocked.stop)
+        mocked = patch.object(owner.repository_source, 'consumer_access', consumer_access)
+        mocked.start(); self.addCleanup(mocked.stop)
         for mocked in [patch.object(owner.os, 'geteuid', return_value=0),
                        patch.object(owner.subprocess, 'run', side_effect=backend),
                        patch('git_intent.resolve_pair', side_effect=lambda *args: {'config_bytes': self.raw, 'receipt': self.receipt}),
@@ -223,6 +229,33 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         legacy.assert_called_once_with(request)
         token_reader.assert_not_called()
 
+    def test_private_consumer_clone_uses_distinct_writer_read_token_and_revokes_before_install(self):
+        private_token = 'synthetic_writer_read_token'
+        self.desired['consumer']['repository'] = 'example/private-consumer'
+        revoked = []
+        fetches = []
+
+        @contextmanager
+        def private_access(config, repository):
+            self.assertEqual(repository, 'example/private-consumer')
+            try:
+                yield SimpleNamespace(head=HEAD, token=private_token)
+            finally:
+                revoked.append(True)
+
+        def acquire(directory, repository, head, **kwargs):
+            fetches.append((repository, head, kwargs))
+            return self.source
+
+        with patch.object(owner.repository_source, 'consumer_access', private_access), \
+             patch.object(owner, 'acquire_source', side_effect=acquire):
+            self.invoke()
+        self.assertEqual(fetches[-1], ('example/private-consumer', HEAD, {'read_token': private_token}))
+        self.assertNotEqual(private_token, TOKEN)
+        self.assertTrue(revoked)
+        self.assertEqual(len(self.primitive), 1)
+        self.assertNotIn(private_token, str(self.primitive))
+
 
 class SelectedTargetConfigTests(unittest.TestCase):
     def test_parser_executes_target_schema_in_isolated_process(self):
@@ -275,9 +308,13 @@ class SelectedTargetConfigTests(unittest.TestCase):
             actual['defaultProfile']['effort'] = 'xhigh'
             desired = {'consumer': consumer}
             raw = json.dumps(desired).encode()
-            receipt = {'config_sha': CONFIG_SHA, 'product_sha': HEAD}
+            receipt = {'config_sha': CONFIG_SHA, 'product_sha': HEAD,
+                'product_repository': 'example/product', 'product_repository_id': 1,
+                'config_repository': 'example/private', 'config_repository_id': 2,
+                'config_blob_sha': 'e' * 40, 'config_path': 'prod/relay.json',
+                'config_sha256': hashlib.sha256(raw).hexdigest(), 'workflow_run_id': 31, 'action': 'apply'}
             manifest = {'commit': HEAD, 'resolvedRevision': HEAD, 'installedRevision': HEAD,
-                'gitTree': 'f' * 40, 'gitConfigReceipt': receipt,
+                'gitTree': 'f' * 40, 'gitConfigReceipt': copy.deepcopy(receipt),
                 'deploymentConfigSha256': hashlib.sha256(raw).hexdigest()}
             records = {source / '.relay-source.json': {'revision': HEAD, 'tree': 'f' * 40},
                 release / 'artifact-manifest.json': manifest, release / 'deployment-config.json': raw,
@@ -292,6 +329,8 @@ class SelectedTargetConfigTests(unittest.TestCase):
                  patch.object(owner.os, 'readlink', return_value=str(release)), \
                  patch.object(owner, 'selected_config', return_value=(desired, {})):
                 owner.git_result(install, HEAD, receipt, desired)
+                owner.git_result(install, HEAD, {**receipt, 'workflow_run_id': 32}, desired)
+                self.assertEqual(manifest['gitConfigReceipt']['workflow_run_id'], 31)
                 actual['defaultProfile']['effort'] = 'low'
                 with self.assertRaisesRegex(ValueError, '^git-consumer-readback-mismatch$'):
                     owner.git_result(install, HEAD, receipt, desired)

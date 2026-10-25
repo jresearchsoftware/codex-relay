@@ -16,6 +16,8 @@ from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
 from lifecycle import execute, require
+import git_intent
+import repository_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -117,21 +119,32 @@ def clean_environment():
             'GIT_TERMINAL_PROMPT': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
-def git(root, *arguments):
+def git(root, *arguments, environment=None):
     return subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'core.attributesfile=/dev/null',
-        '-C', str(root), *arguments], env=clean_environment(), text=True,
+        '-C', str(root), *arguments], env=clean_environment() if environment is None else environment, text=True,
         stderr=subprocess.DEVNULL, timeout=120).strip()
 
 
-def acquire_source(directory, repository, head):
+def acquire_source(directory, repository, head, *, read_token=None):
     """Fresh protected Git only; never consume the runner's checkout/metadata."""
     require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
             and re.fullmatch('[0-9a-f]{40}', head), 'source-binding')
     directory.mkdir(mode=0o700)
     git(directory, 'init', '--quiet', '--template=')
-    git(directory, 'fetch', '--quiet', '--no-tags', '--depth=1',
-        'https://github.com/' + repository + '.git', head)
+    read_environment = repository_source.git_read_environment(clean_environment(), repository, read_token)
+    # curl must not discover an unrelated root .netrc or XDG credential state.
+    # The fresh checkout contains no repository-controlled files before fetch.
+    read_environment['HOME'] = str(directory)
+    read_environment['XDG_CONFIG_HOME'] = str(directory / '.xdg-unused')
+    try:
+        git(directory, 'fetch', '--quiet', '--no-tags', '--depth=1',
+            'https://github.com/' + repository + '.git', head,
+            environment=read_environment)
+    except (OSError, subprocess.SubprocessError):
+        if read_token is not None:
+            raise repository_source.ConsumerSourceError('CONSUMER_SOURCE_FETCH_FAILED') from None
+        raise
     require(git(directory, 'rev-parse', 'FETCH_HEAD^{commit}') == head, 'source-head-mismatch')
     entries = git(directory, 'ls-tree', '-r', '--name-only', head).splitlines()
     require(entries and all(not p.startswith('/') and '..' not in p.split('/')
@@ -196,7 +209,11 @@ def git_result(install, target, receipt, desired):
     identity = json.loads(read_protected(source / '.relay-source.json', {0o644, 0o640, 0o600})[0])
     manifest = json.loads(read_protected(release / 'artifact-manifest.json', {0o640, 0o600})[0])
     raw = read_protected(release / 'deployment-config.json', {0o600}, group=0)[0]
-    require(isinstance(identity, dict) and isinstance(manifest, dict) and manifest.get('gitConfigReceipt') == receipt
+    pair_keys = ['product_repository', 'product_repository_id', 'product_sha', 'config_repository',
+                 'config_repository_id', 'config_sha', 'config_blob_sha', 'config_path', 'config_sha256']
+    attested = manifest.get('gitConfigReceipt') if isinstance(manifest, dict) else None
+    require(isinstance(identity, dict) and isinstance(manifest, dict) and isinstance(attested, dict)
+            and all(key in receipt and attested.get(key) == receipt[key] for key in pair_keys)
             and all(manifest.get(key) == target for key in ['commit', 'resolvedRevision', 'installedRevision'])
             and identity.get('revision') == target
             and isinstance(identity.get('tree'), str) and re.fullmatch('[0-9a-f]{40}', identity['tree'])
@@ -286,12 +303,11 @@ def git_target_capability(source):
 
 
 def run_git(request, token):
-    from git_intent import resolve_pair
     match = re.fullmatch(r'git:(apply|stop|resume):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
     install, binding, previous_manifest = git_anchor(installed)
-    frozen = resolve_pair(binding, {'action': action, 'configSha': config_sha, 'runId': int(run_id)}, token)
+    frozen = git_intent.resolve_pair(binding, {'action': action, 'configSha': config_sha, 'runId': int(run_id)}, token)
     # The private native token is used only by resolve_pair; public Git is anonymous.
     token = None
     receipt = frozen['receipt']
@@ -323,9 +339,10 @@ def run_git(request, token):
         receipt_path.write_text(json.dumps(receipt) + '\n')
         receipt_path.chmod(0o600)
         repository = deployment_repository(desired)
-        consumer_head = public_main(repository)
-        consumer = source if repository == binding['productRepository'] and consumer_head == target else acquire_source(
-            work / 'consumer', repository, consumer_head)
+        with repository_source.consumer_access(desired, repository) as access:
+            consumer_head = access.head
+            consumer = source if repository == binding['productRepository'] and consumer_head == target else acquire_source(
+                work / 'consumer', repository, consumer_head, read_token=access.token)
         gate_path = str(install / 'relay-admission')
 
         def gate(*arguments):
@@ -464,8 +481,7 @@ def main(arguments=None, token_stream=None):
     try:
         require(len(arguments) == 1, 'argument-contract')
         if arguments[0].startswith('git:'):
-            from git_intent import read_token
-            run_git(arguments[0], read_token(sys.stdin.buffer if token_stream is None else token_stream))
+            run_git(arguments[0], git_intent.read_token(sys.stdin.buffer if token_stream is None else token_stream))
         else:
             run(arguments[0])
         return 0
@@ -474,8 +490,8 @@ def main(arguments=None, token_stream=None):
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
         from git_intent import GitIntentError
-        code = str(error).split(';')[0] if type(error) is ValueError or isinstance(error, GitIntentError) else 'input-or-io'
-        if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED|MANAGED_POOL_[A-Z_]{1,100}|GIT_INTENT_[A-Z_]{1,100}', code):
+        code = str(error).split(';')[0] if type(error) is ValueError or isinstance(error, (GitIntentError, repository_source.ConsumerSourceError)) else 'input-or-io'
+        if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED|MANAGED_POOL_[A-Z_]{1,100}|GIT_INTENT_[A-Z_]{1,100}|CONSUMER_SOURCE_[A-Z0-9_]{1,100}', code):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)
         return 1

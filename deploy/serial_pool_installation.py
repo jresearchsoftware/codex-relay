@@ -16,7 +16,8 @@ import subprocess
 from managed_pool import Host, State, binding, pool_contract, require
 from config import deployment_repository
 from serial_pool_host import SerialPoolHost, SerialPoolGitHub
-from serial_pool_transition import ProtectedFiles, encoded, inspect, prepare, advance, write_new_gate
+from serial_pool_transition import (MAX_SOURCE_FILES, ProtectedFiles, encoded, inspect,
+                                    prepare, advance, write_new_gate)
 
 
 def _node(source, consumer_path, code, payload=None, repository=None):
@@ -218,7 +219,39 @@ def pool_ready(config, github):
     return True
 
 
-def current_source(config):
+def _current_source_links(files, source):
+    """Observe only protected aliases to this release's canonical components.
+
+    A later Git Apply must not need the mutable deployment snapshot to select
+    the installed reader. The complete tree walk below still revalidates every
+    alias, directory and file before any installed code executes.
+    """
+    components = {'controller', 'consumer', 'contracts', 'runtime', 'reviewer'}
+    links = {}
+    count = 0
+
+    def visit(directory, prefix=''):
+        nonlocal count
+        with files.parent(directory + '/.source-links') as (descriptor, _):
+            for name in os.listdir(descriptor):
+                count += 1
+                require(count <= MAX_SOURCE_FILES, 'SERIAL_TRANSITION_SOURCE_LIMIT')
+                info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                relative = prefix + name
+                if stat.S_ISLNK(info.st_mode):
+                    target = os.readlink(name, dir_fd=descriptor)
+                    component = target.removeprefix(source + '/')
+                    require(component in components and target == source + '/' + component
+                            and len(links) < 8, 'SERIAL_TRANSITION_SOURCE_LINK_UNPROVEN')
+                    links[relative] = component
+                elif stat.S_ISDIR(info.st_mode):
+                    visit(directory + '/' + name, relative + '/')
+
+    visit(source)
+    return links
+
+
+def current_source(config, *, git_desired=False):
     """Select a protected canonical installed graph before invoking its code."""
     namespace = config['environment']['namespace']
     install = '/opt/' + namespace
@@ -232,20 +265,24 @@ def current_source(config):
     require(matched is not None, 'SERIAL_TRANSITION_CURRENT_UNPROVEN')
     revision = matched[1]
     release = install + '/releases/' + revision
-    raw = files.read(release + '/deployment-config.json', modes={0o600})
-    installed = json.loads(raw)
     manifest = json.loads(files.read(release + '/artifact-manifest.json', modes={0o600, 0o640}))
     source = release + '/reviewed-source'
     identity = json.loads(files.read(source + '/.relay-source.json', modes={0o600, 0o640, 0o644}))
-    require(installed['environment']['namespace'] == namespace
-            and deployment_repository(installed) == deployment_repository(config)
-            and manifest.get('deploymentConfigSha256') == hashlib.sha256(raw).hexdigest()
-            and all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision'])
+    require(all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision'])
             and identity.get('revision') == revision and identity.get('tree') == manifest.get('gitTree')
             and re.fullmatch('[0-9a-f]{40}', identity.get('tree', '')),
             'SERIAL_TRANSITION_CURRENT_UNPROVEN')
-    files.tree_sha256(source, source_links=installed['environment'].get('compatibilityLinks', {}),
-                      original_source_root=source)
+    if git_desired:
+        links = _current_source_links(files, source)
+    else:
+        raw = files.read(release + '/deployment-config.json', modes={0o600})
+        installed = json.loads(raw)
+        require(installed['environment']['namespace'] == namespace
+                and deployment_repository(installed) == deployment_repository(config)
+                and manifest.get('deploymentConfigSha256') == hashlib.sha256(raw).hexdigest(),
+                'SERIAL_TRANSITION_CURRENT_UNPROVEN')
+        links = installed['environment'].get('compatibilityLinks', {})
+    files.tree_sha256(source, source_links=links, original_source_root=source)
     return source
 
 
@@ -283,8 +320,23 @@ def target_installed(config, revision, target_digest):
     return True
 
 
+def _current_admission(config, *, git_desired=False):
+    """Use the protected installed validator and gate, independently of intent."""
+    namespace = config['environment']['namespace']
+    consumer_path = '/etc/' + namespace + '/consumer.json'
+    ProtectedFiles().read(consumer_path, modes={0o644})
+    source = current_source(config, git_desired=git_desired)
+    return _node(source, consumer_path,
+        'import {CONSUMER_DIGEST,INSTALLATION_CONSUMER} from "./consumer/consumer.mjs";'
+        'import {installedAdmissionControl} from "./controller/src/admission-cli.mjs";'
+        'console.log(JSON.stringify({gate:await installedAdmissionControl().read(),digest:CONSUMER_DIGEST,'
+        'managed:Boolean(INSTALLATION_CONSUMER.generalRunnerPool)}));',
+        repository=deployment_repository(config))
+
+
 def preflight(config, github, target_digest):
     namespace = config['environment']['namespace']
+    git_desired = config['environment']['localApply'].get('source') == 'git'
     receipt_path = '/etc/' + namespace + '/serial-pool-compat-v1.json'
     receipt_raw = ProtectedFiles().read(receipt_path, modes={0o644}, optional=True)
     current = Path('/opt') / namespace / 'current'
@@ -293,6 +345,21 @@ def preflight(config, github, target_digest):
             from pool_migration import reject_serial_transition
             reject_serial_transition(pool_contract(config))
             return None
+        if git_desired:
+            # The live protected consumer identifies an already-managed host.
+            # Its mutable deployment snapshot is neither desired authority nor
+            # sealed SERIAL history. A real SERIAL origin still takes the exact
+            # original-installation path below before any migration is allowed.
+            live = json.loads(ProtectedFiles().read('/etc/' + namespace + '/consumer.json', modes={0o644}))
+            if isinstance(live, dict) and 'generalRunnerPool' in live:
+                observed = _current_admission(config, git_desired=True)
+                require(observed.get('managed') is True
+                        and re.fullmatch('[0-9a-f]{64}', observed.get('digest', ''))
+                        and observed.get('gate', {}).get('consumerDigest') == observed['digest'],
+                        'SERIAL_TRANSITION_NEW_GATE_UNPROVEN')
+                from pool_migration import reject_serial_transition
+                reject_serial_transition(pool_contract(config))
+                return None
         # An ordinary already-managed installation has no SERIAL transition.
         # Keep its existing complete protected peer/pool preflight unchanged.
         original, _ = original_installation(config)
@@ -309,10 +376,11 @@ def preflight(config, github, target_digest):
         state = json.loads(ProtectedFiles().read(
             original['consumer']['paths']['claimRoot'] + '/serial-pool-transition-v1.json', modes={0o600}))
         if state.get('phase') == 'retired':
-            from serial_pool_transition import validate_delta
-            validate_delta(original, config)
+            if not git_desired:
+                from serial_pool_transition import validate_delta
+                validate_delta(original, config)
             current_binding = host.inspect_legacy(original)
-            require(receipt['target']['consumerDigest'] == target_digest
+            require((git_desired or receipt['target']['consumerDigest'] == target_digest)
                     and hashlib.sha256(receipt_raw).hexdigest() == state.get('receiptSha256')
                     and receipt['original']['sourceTreeSha256'] == ProtectedFiles().tree_sha256(evidence['sourceRoot'],
                         source_links=original['environment'].get('compatibilityLinks', {}),
@@ -326,17 +394,16 @@ def preflight(config, github, target_digest):
                     'SERIAL_TRANSITION_RETIRED_BINDING_UNPROVEN')
             new_gate = json.loads(ProtectedFiles().read(
                 original['consumer']['paths']['claimRoot'] + '/admission-pool-v1.json', modes={0o600}))
-            installed_source = current_source(config)
-            validated_gate = _node(installed_source, '/etc/' + namespace + '/consumer.json',
-                'import {installedAdmissionControl} from "./controller/src/admission-cli.mjs";'
-                'console.log(JSON.stringify(await installedAdmissionControl().read()));',
-                repository=deployment_repository(config))
-            require(validated_gate == new_gate and new_gate.get('consumerDigest') == target_digest,
+            observed = _current_admission(config, git_desired=git_desired)
+            require(observed.get('gate') == new_gate
+                    and new_gate.get('consumerDigest') == observed.get('digest')
+                    and (git_desired or observed.get('digest') == target_digest),
                     'SERIAL_TRANSITION_NEW_GATE_UNPROVEN')
             # Later qualified lifecycle operations have their own UUID/target.
             # Only the original migration operation denotes unfinished cutover.
             completion = new_gate.get('phase') != 'open' and new_gate.get('operationId') == state['operationId']
             require(not completion or (new_gate.get('target') == state['targetRevision']
+                    and receipt['target']['consumerDigest'] == target_digest
                     and state['plan']['targetConfigSha256'] == hashlib.sha256(encoded(config)).hexdigest()),
                     'SERIAL_TRANSITION_NEW_GATE_UNPROVEN')
             return {'phase': 'retired', 'operationId': state['operationId'], 'targetRevision': state['targetRevision'],

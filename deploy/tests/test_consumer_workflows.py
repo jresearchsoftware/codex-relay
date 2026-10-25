@@ -366,7 +366,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 for invalid in ({'EXPECTED_WORKFLOW_CONTRACT': 'b' * 40}, {'EXPECTED_WORKFLOW_CONTRACT': '../../candidate'}):
                     blocked = execute(value, invalid)
                     self.assertNotEqual(blocked.returncode, 0)
-                    self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
+                    self.assertIn('RELAY_REPOSITORY_INTEGRATION_OUTDATED', blocked.stderr)
                     self.assertNotIn('FIXTURE_ROUTING_STARTED', blocked.stdout)
                     self.assertNotIn('fixtureRequest', blocked.stdout)
                 identity.write_text(json.dumps({'revision': 'b' * 40}))
@@ -421,7 +421,7 @@ for (const value of [condition, recovery.jobs.recover.if]) {
             for value in (self.routing, self.recovery):
                 blocked = execute(value)
                 self.assertNotEqual(blocked.returncode, 0)
-                self.assertIn('INSTALLED_RELAY_IDENTITY_MISMATCH', blocked.stderr)
+                self.assertIn('RELAY_REPOSITORY_INTEGRATION_OUTDATED', blocked.stderr)
             compatibility.unlink()
             self.assertNotEqual(execute(self.routing).returncode, 0)
             compatibility.write_text(json.dumps({'workflowContract': 'relay-workflows-v1'}))

@@ -141,7 +141,7 @@ class GitIntentTests(unittest.TestCase):
                 intent.resolve_pair(binding, dispatch, TOKEN, api=api)
 
     def test_obvious_secrets_never_return(self):
-        for raw in (b'-----BEGIN PRIVATE KEY-----', b'ghp_' + b'a' * 30, TOKEN.encode()):
+        for raw in (b'-----BEGIN ' + b'PRIVATE KEY-----', b'ghp_' + b'a' * 30, TOKEN.encode()):
             binding, dispatch, _, _, api = fixture(raw)
             with self.assertRaisesRegex(intent.GitIntentError, '^GIT_INTENT_SECRET_CONTENT$') as caught:
                 intent.resolve_pair(binding, dispatch, TOKEN, api=api)

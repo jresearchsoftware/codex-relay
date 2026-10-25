@@ -17,7 +17,7 @@ assert stat.S_ISLNK(info.st_mode) and info.st_uid == 0
 release = Path(os.readlink(current))
 assert re.fullmatch('[0-9a-f]{40}', release.name) and release == install / 'releases' / release.name
 root = release / 'reviewed-source'
-for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py']:
+for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
     path = root / 'deploy' / name
     for entry in [path, *path.parents]:
         info = entry.lstat()

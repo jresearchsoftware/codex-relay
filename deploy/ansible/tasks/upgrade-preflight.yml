@@ -3,9 +3,9 @@
   ansible.builtin.command:
     argv: >-
       {{ ['/usr/bin/python3', '-c',
-          ('resource_globals = {"__name__": "relay_selected_resource_proof"}\nexec(' ~
+          ('resource_globals = {"__name__": "relay_selected_resource_proof"};exec(' ~
            (lookup('file', playbook_dir + '/../clean_reinstall.py') | to_json) ~
-           ', resource_globals)\nprove_git_resources = resource_globals["prove_git_resource_boundary"]\n'
+           ', resource_globals);prove_git_resources = resource_globals["prove_git_resource_boundary"];'
            if relay_git_desired_state | default(false) | bool else '') ~
           lookup('file', playbook_dir + '/scripts/verify_upgrade.py')] +
          (['--git-desired', relay_install_root, relay_config_root,

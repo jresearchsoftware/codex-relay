@@ -315,7 +315,9 @@ def test_normalized_v4_transports_reject_stale_installed_v3_contract(installed_r
     for workflow in workflows(value).values():
         result = execute(step(workflow), member['runnerName'], member['runnerUser'])
         assert result.returncode != 0
-        assert 'INSTALLED_RELAY_IDENTITY_MISMATCH' in result.stderr
+        expected = ('INSTALLED_RELAY_IDENTITY_MISMATCH' if 'lifecycle' in workflow['jobs']
+                    else 'RELAY_REPOSITORY_INTEGRATION_OUTDATED')
+        assert expected in result.stderr
         assert not calls(result)
 
 

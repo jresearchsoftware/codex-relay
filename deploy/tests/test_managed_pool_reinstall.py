@@ -174,13 +174,22 @@ def test_generated_pool_wrapper_and_admission_adapter_parse_without_execution(mo
     captured = []
     class Prepared(Exception):
         pass
-    def capture(_target, _key, command, **kwargs):
-        captured.append(command[-1])
-        raise Prepared
+    class Capture:
+        def __init__(self, _target, _key, command, **kwargs):
+            compile(command[-1], '<bounded-retirement-loader>', 'exec')
+            assert len(command[-1].encode()) < 32768
+
+        def communicate(self, input=None, **kwargs):
+            payload = json.loads(input)
+            captured.append(payload['__relay_source'])
+            raise Prepared
+
+        def poll(self):
+            return 0
     config = {'consumer': {'generalRunnerPool': {'desiredCapacity': 2}, 'paths': {'claimRoot': '/var/lib/codex-relay/claims'}},
               'environment': {'namespace': 'codex-relay'}}
     with monkeypatch.context() as local:
-        local.setattr(ansible_transport, 'TargetProcess', capture)
+        local.setattr(ansible_transport, 'TargetProcess', Capture)
         for action in ['decommission', 'continuation', 'continue', 'complete']:
             with pytest.raises(Prepared):
                 reinstall.remote_action({'user': 'owner', 'host': 'test.invalid'}, '/private/key', config, TARGET,
