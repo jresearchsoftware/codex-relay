@@ -592,6 +592,16 @@ def prove_git_resource_boundary(config, *, root=Path('/'), owner_uid=0):
     paths = namespace_paths(config, Path(root))
     actual = _recovery_json(_recovery_bytes(paths['config'] / 'consumer.json', Path(root),
                                            owner_uid, owner_uid))
+    prove_consumer_resources(config, actual, root=root, owner_uid=owner_uid)
+
+
+def prove_consumer_resources(config, actual, *, root=Path('/'), owner_uid=0):
+    """Check retained identities/units against a target-verified context.
+
+    Ordinary callers read the live consumer above. Drift recovery can use only
+    original bytes independently authenticated against the protected gate by the
+    actual installed validator, while malformed live bytes remain preserved.
+    """
     desired_boundary = resource_boundary(config)
     require(resource_boundary({'consumer': actual}) == desired_boundary,
             'RESOURCE_MIGRATION_UNSUPPORTED')

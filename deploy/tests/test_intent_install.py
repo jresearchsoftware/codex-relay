@@ -66,6 +66,35 @@ def test_same_product_config_change_selects_reconciliation():
     assert planned(observed(TARGET))['strategy'] == 'reconcile'
 
 
+@pytest.mark.parametrize('configuration', ['different', 'invalid', 'consumer-equivalent', 'unavailable'])
+def test_effective_drift_or_missing_historical_snapshot_selects_reconcile(invocation, configuration):
+    _, _, receipt, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
+    report['configuration']['status'] = configuration
+    result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=receipt)
+    assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
+
+
+def test_new_config_commit_with_identical_content_is_a_new_git_pair(invocation):
+    _, _, receipt, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
+    selected = {**receipt, 'config_sha': 'e' * 40}
+    result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=selected)
+    assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
+
+
+def test_code_only_new_product_revision_still_selects_upgrade(invocation):
+    _, _, receipt, _ = invocation
+    report = observed(PREVIOUS, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = {**receipt, 'product_sha': PREVIOUS}
+    result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=receipt)
+    assert result['strategy'] == 'upgrade' and result['phase'] == 'upgrade'
+
+
 def test_epoch_metadata_selects_upgrade_without_per_commit_entries():
     assert planned(observed(metadata=CONTRACT))['strategy'] == 'upgrade'
     older = copy.deepcopy(CONTRACT)
@@ -93,6 +122,22 @@ def test_blocker_strings_are_not_recovery_proof(blocker):
         planned(report)
 
 
+def test_invalid_effective_json_is_only_provisional_strategy_input():
+    report = observed(TARGET, CONTRACT)
+    report['blockers'] = ['installed-consumer-configuration-invalid']
+    report['configuration'] = {'status': 'invalid', 'consumer': 'invalid'}
+    original = copy.deepcopy(report)
+    assert planned(report)['strategy'] == 'reconcile'
+    assert report == original
+    for additional in ['runner-general-ambiguous', 'installed-identity-invalid']:
+        report['blockers'] = [*original['blockers'], additional]
+        with pytest.raises(ValueError, match='TARGET_UNSAFE'):
+            planned(report)
+    report = {**original, 'installed': {'status': 'missing'}}
+    with pytest.raises(ValueError, match='TARGET_UNSAFE'):
+        planned(report)
+
+
 def test_legacy_lineage_is_a_single_classifier_not_a_sha_pair_table():
     calls = []
     def legacy(root, repository, revision):
@@ -100,6 +145,31 @@ def test_legacy_lineage_is_a_single_classifier_not_a_sha_pair_table():
         return 'reinstall'
     assert planned(observed(), legacy)['strategy'] == 'reinstall'
     assert calls == [(ROOT, 'example/product', PREVIOUS)]
+
+
+@pytest.mark.parametrize('status,merge_base,expected', [
+    ('ahead', install.LEGACY_LIFECYCLE_BOUNDARY, 'upgrade'), ('behind', PREVIOUS, 'reinstall')])
+def test_legacy_compare_uses_metadata_page_without_unbounded_first_page_files(monkeypatch, status, merge_base, expected):
+    requested = []
+    monkeypatch.setattr(install.subprocess, 'run', lambda *_args, **_options: SimpleNamespace(returncode=1))
+    class Response:
+        status = 200
+        def read(self, limit):
+            assert limit == 1048577
+            return json.dumps({'base_commit': {'sha': install.LEGACY_LIFECYCLE_BOUNDARY},
+                'status': status, 'merge_base_commit': {'sha': merge_base}, 'files': []}).encode()
+    class Connection:
+        def request(self, method, url, headers):
+            assert method == 'GET' and url.endswith('?per_page=1&page=2')
+            requested.append(url)
+        def getresponse(self):
+            return Response()
+        def close(self):
+            pass
+    monkeypatch.setattr(install.http.client, 'HTTPSConnection', lambda *_args, **_options: Connection())
+    assert install.legacy_strategy(ROOT, 'example/product', PREVIOUS) == expected
+    assert requested == ['/repos/example/product/compare/' + install.LEGACY_LIFECYCLE_BOUNDARY
+                         + '...' + PREVIOUS + '?per_page=1&page=2']
 
 
 @pytest.fixture
@@ -123,6 +193,8 @@ def invocation(tmp_path, monkeypatch):
         authorize_bootstrap=False, authorize_reinstall=False)
     monkeypatch.setattr(install, 'qualify_target', lambda *_: None)
     monkeypatch.setattr(install, 'loads', lambda text, _: json.loads(text))
+    import install_recovery
+    monkeypatch.setattr(install_recovery, 'remote_probe', lambda *_args: None)
     artifact = {'directory': str(tmp_path / 'integration'), 'files': ['.github/workflows/route.yml'],
                 'compatibility': 'missing'}
     monkeypatch.setattr(workflow_projection, 'integration', lambda *_: artifact, raising=False)
@@ -175,6 +247,50 @@ def test_one_operation_binds_git_pair_and_produces_post_install_artifact(invocat
     assert 'no installer rerun is required' in output
 
 
+@pytest.mark.parametrize('old_revision', [PREVIOUS, TARGET])
+@pytest.mark.parametrize('backend_record', [False, True])
+def test_ordinary_install_uses_original_uuid_for_proven_same_target_recovery(
+        invocation, monkeypatch, old_revision, backend_record):
+    import install_recovery
+    args, _, receipt, _ = invocation
+    before = observed(old_revision, CONTRACT)
+    if backend_record:
+        before['blockers'] = [install_recovery.OPERATION_BLOCKER]
+    after = observed(TARGET, CONTRACT)
+    after['configuration']['status'] = 'equivalent'
+    after['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
+    calls = []
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_kwargs: after if calls else before)
+    operation = '12345678-1234-4234-8234-123456789abc'
+    def recovery_probe(_target, _key, _config, target, expected, guard, pool_guard):
+        assert target == TARGET and expected == old_revision and guard.poll() is None
+        assert pool_guard is None
+        assert not calls, 'the held-lock proof must precede every mutation'
+        return {'operationId': operation, 'target': target, 'installedRevision': expected}
+    monkeypatch.setattr(install_recovery, 'remote_probe', recovery_probe)
+    install.run(args, calls.append, ROOT, {'revision': TARGET})
+    assert len(calls) == 1
+    inner = calls[0]
+    assert inner.phase == 'upgrade' and inner.authorize_upgrade
+    assert inner.authorize_lifecycle_recovery and inner.lifecycle_recovery_operation == operation
+    assert inner._intent_recovery_proof == {'operationId': operation, 'target': TARGET,
+                                          'installedRevision': old_revision}
+    assert before['blockers'] == ([install_recovery.OPERATION_BLOCKER] if backend_record else [])
+
+
+def test_provisional_backend_record_without_locked_recovery_proof_stops(invocation, monkeypatch):
+    import install_recovery
+    args, _, _, _ = invocation
+    before = observed(PREVIOUS, CONTRACT)
+    before['blockers'] = [install_recovery.OPERATION_BLOCKER]
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_kwargs: before)
+    calls = []
+    with pytest.raises(RuntimeError, match='RELAY_INSTALL_FAILED;stage=lifecycle-recovery-proof;cause=RELAY_INSTALL_RECOVERY_REQUIRES_DIAGNOSIS'):
+        install.run(args, calls.append, ROOT, {'revision': TARGET})
+    assert not calls
+    assert before['blockers'] == [install_recovery.OPERATION_BLOCKER]
+
+
 @pytest.mark.parametrize('damage', ['product', 'bytes', 'repository', 'secret'])
 def test_wrong_pair_fails_before_target_access(invocation, monkeypatch, capsys, damage):
     args, _, receipt, _ = invocation
@@ -210,6 +326,69 @@ def test_missing_post_apply_pair_proof_never_reports_success(invocation, monkeyp
     assert '"automaticRetrySafe": false' in output
     assert '/tmp/protected-install.log' in output
     assert 'RELAY_INSTALL_RESULT=' not in output
+
+
+def test_planner_failure_retains_proven_installed_revision(invocation, monkeypatch, capsys):
+    args, _, _, _ = invocation
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_options: observed(PREVIOUS))
+    monkeypatch.setattr(install, 'plan', lambda *_args, **_options: (_ for _ in ()).throw(
+        ValueError('RELAY_INSTALL_LEGACY_COMPATIBILITY_UNPROVEN')))
+    with pytest.raises(RuntimeError, match='LEGACY_COMPATIBILITY_UNPROVEN'):
+        install.run(args, lambda *_: pytest.fail('mutation before strategy proof'), ROOT, {'revision': TARGET})
+    failure = json.loads(capsys.readouterr().out.split('RELAY_INSTALL_FAILURE=')[1])
+    assert failure['installed'] == PREVIOUS and failure['hostMutation'] is False
+
+
+def test_backend_failure_uses_runtime_cause_and_preserves_mutation_stage_log(invocation, monkeypatch, capsys):
+    from config import InvalidConfig
+    args, _, _, _ = invocation
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_options: observed(PREVIOUS, CONTRACT))
+    def primitive(inner):
+        inner._intent_mutation_started = True
+        inner._intent_log_path = '/tmp/protected-upgrade.log'
+        raise InvalidConfig('INVALID_DEPLOYMENT_CONFIG:upgrade-apply-failed')
+    with pytest.raises(RuntimeError, match='RELAY_INSTALL_UPGRADE_APPLY_FAILED'):
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+    failure = json.loads(capsys.readouterr().out.split('RELAY_INSTALL_FAILURE=')[1])
+    assert failure['cause'] == 'RELAY_INSTALL_UPGRADE_APPLY_FAILED'
+    assert failure['stage'] == 'upgrade' and failure['installed'] == PREVIOUS
+    assert failure['hostMutation'] == 'unknown' and failure['log'] == '/tmp/protected-upgrade.log'
+
+
+@pytest.mark.parametrize('health_failure', [False, True])
+def test_identical_git_pair_verifies_read_only_and_retains_original_attestation(
+        invocation, monkeypatch, capsys, health_failure):
+    args, _, receipt, _ = invocation
+    attested = {**receipt, 'workflow_run_id': 5, 'action': 'original-apply'}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = attested
+    original = copy.deepcopy(report)
+    config_bytes = args.config.read_bytes()
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_kwargs: copy.deepcopy(report))
+    calls = []
+    def primitive(inner):
+        calls.append(inner)
+        assert inner.phase == 'post-check'
+        assert inner.git_intent == attested
+        assert inner._intent_host_guard.poll() is None
+        assert not any(value for name, value in vars(inner).items() if name.startswith('authorize_'))
+        if health_failure:
+            raise RuntimeError('POST_CHECK_HEALTH_UNPROVEN')
+    if health_failure:
+        with pytest.raises(RuntimeError, match='POST_CHECK_HEALTH_UNPROVEN'):
+            install.run(args, primitive, ROOT, {'revision': TARGET})
+    else:
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+    assert len(calls) == 1 and args.config.read_bytes() == config_bytes and report == original
+    assert not args._test_completed and args._test_guards[0].releases == 1
+    output = capsys.readouterr().out
+    plan = json.loads(next(line.split('=', 1)[1] for line in output.splitlines()
+                           if line.startswith('RELAY_INSTALL_PLAN=')))
+    assert plan['strategy'] == 'verify' and plan['dispatch_run_id'] == 7 and plan['attested_run_id'] == 5
+    if health_failure:
+        failure = json.loads(output.split('RELAY_INSTALL_FAILURE=')[1])
+        assert failure['hostMutation'] is False and 'RELAY_INSTALL_RESULT=' not in output
 
 
 def test_historical_additive_product_metadata_does_not_change_active_serial_contract():

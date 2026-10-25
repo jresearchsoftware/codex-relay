@@ -52,6 +52,10 @@ or its environment. Public product acquisition is anonymous. There is no new
 static private-config credential or access granted to candidate CI/workers.
 The coordinator verifies private repository identity/visibility, main, workflow
 path, run/head identity and original/triggering owner before using the bytes.
+If the consumer repository is private, its configured Writer App supplies a
+separate short-lived token scoped to that one repository with read permissions.
+The protected key stays within the installation namespace; the token is revoked
+after acquisition. The private configuration token is not reused for this read.
 
 Both exact commits, the config blob/content hash and dispatch provenance are
 frozen together. A code-only, config-only or combined change uses the same
@@ -60,6 +64,9 @@ intent; old installed values are not retained merely because they differ.
 Manual host config edits are overwritten by the next Apply. The protected
 deployment snapshot and `gitConfigReceipt` in the artifact manifest attest the
 result and support diagnosis/recovery; they never select desired values.
+An unchanged exact Git pair with equivalent installed configuration takes the
+read-only verification path. It retains the original installation attestation
+and does not restart services merely because a new workflow run requested it.
 
 The protected `deployment-source.json` is a fixed source locator and owner
 binding. It is not another configuration store. Actual target identity,
@@ -72,7 +79,13 @@ equality precondition or separate config-reconciliation ceremony.
 The installer distinguishes absent state, same-product reconciliation,
 compatible lifecycle upgrade and supported protected replacement. A known
 unfinished fresh installation can continue only with the same proven frozen
-pair and its retained pending marker. Other uncertain or unsupported recovery
+pair and its retained pending marker. A failed lifecycle operation can continue
+through the same ordinary command when the installed reader proves its original
+UUID, the same frozen product target, authentic current consumer and empty
+active/unknown inventory. The installer rechecks source, physical resources and
+any matching backend record under the existing host and pool locks, then uses
+the existing recovery engine with that UUID. It never silently retargets the
+operation or clears a gate. Other uncertain or unsupported recovery
 states stop with preserved evidence and one supported next action; a blocker
 string or repeated invocation alone is not proof that replay is safe.
 

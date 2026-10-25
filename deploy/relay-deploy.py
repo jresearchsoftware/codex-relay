@@ -437,6 +437,9 @@ def run(args):
             pool_reinstall_proof = remote_action(target, key, config, revision, action='continuation',
                                                 operation_id=args.lifecycle_recovery_operation)
             observed = continuation_inventory(observed, pool_reinstall_proof)
+        if intent_install:
+            from intent_install import strategy_inventory
+            observed = strategy_inventory(observed)
         require(not observed['blockers'], 'inventory-blocked;inspect-reported-prerequisites')
         if not intent_install:
             from workflow_projection import prepare, render
@@ -657,8 +660,52 @@ def run(args):
                         locked_revision = (locked_installed.get('revision')
                             if locked_installed.get('status') == 'present' else 'none'
                             if locked_installed.get('status') == 'missing' else 'invalid')
-                        require(not locked_inventory['blockers']
+                        from intent_install import strategy_inventory
+                        intent_recovery = getattr(args, '_intent_recovery_proof', None)
+                        if intent_recovery is not None:
+                            from install_recovery import revalidate as revalidate_recovery, proved_inventory
+                            require(args.authorize_lifecycle_recovery
+                                    and args.lifecycle_recovery_operation == intent_recovery['operationId'],
+                                    'intent-recovery-arguments-changed')
+                            repeated = revalidate_recovery(intent_recovery, target, key, config, revision,
+                                args.intent_expected_installed_revision, guard, pool_guard)
+                            locked_inventory = proved_inventory(locked_inventory, repeated, revision,
+                                args.intent_expected_installed_revision)
+                        require(not strategy_inventory(locked_inventory)['blockers']
                                 and locked_revision == args.intent_expected_installed_revision,
+                                'intent-installation-changed-before-reservation')
+                    if (intent_install and (lifecycle_required or pool_reinstall)
+                            and not args.authorize_lifecycle_recovery):
+                        from consumer_drift import prepare as restore_consumer_drift
+                        previous_mutation = getattr(args, '_intent_mutation_started', False)
+                        args._intent_mutation_started = True
+                        # The helper may quiesce before a transport failure. Keep
+                        # that SAME UUID for diagnosis and normal continuation.
+                        lifecycle_operation = admission_operation_id
+                        restored = restore_consumer_drift(target, key, config, revision,
+                            admission_operation_id, guard, pool_guard)
+                        if restored['status'] == 'restored':
+                            require(restored['operationId'] == admission_operation_id,
+                                    'consumer-drift-operation-mismatch')
+                            print('RELAY_INSTALL_CONSUMER_DRIFT=restored;operation=' + admission_operation_id,
+                                  flush=True)
+                        else:
+                            args._intent_mutation_started = previous_mutation
+                            lifecycle_operation = None
+                    if intent_install:
+                        # An invalid effective consumer was provisional strategy
+                        # input only. The target proof must restore/authenticate it
+                        # before the ordinary resource/preflight/backend checks.
+                        strict_inventory = remote_inventory(target, key, config, git_desired=True)
+                        strict_installed = strict_inventory['installed']
+                        strict_revision = (strict_installed.get('revision')
+                            if strict_installed.get('status') == 'present' else 'none'
+                            if strict_installed.get('status') == 'missing' else 'invalid')
+                        if getattr(args, '_intent_recovery_proof', None) is not None:
+                            strict_inventory = proved_inventory(strict_inventory, repeated, revision,
+                                args.intent_expected_installed_revision)
+                        require(not strict_inventory['blockers']
+                                and strict_revision == args.intent_expected_installed_revision,
                                 'intent-installation-changed-before-reservation')
                         from intent_install import prepare_target
                         if (args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
@@ -671,7 +718,7 @@ def run(args):
                         pool_preflight_proof = preflight_pool(target, key, config, guard,
                             local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
                         serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
-                    if intent_install:
+                    if intent_install and args.phase not in ['post-check', 'check', 'tls-check']:
                         # From here a lifecycle reservation, retirement or backend
                         # may mutate the host. A failure reports uncertainty rather
                         # than claiming that an unsuccessful backend changed none.

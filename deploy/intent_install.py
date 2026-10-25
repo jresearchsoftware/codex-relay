@@ -114,7 +114,10 @@ def legacy_strategy(root, repository, installed):
                                               context=ssl.create_default_context())
     try:
         connection.request('GET', '/repos/' + repository + '/compare/' + LEGACY_LIFECYCLE_BOUNDARY
-            + '...' + installed + '?per_page=1', headers={
+            # GitHub includes the entire changed-file list only on page one.
+            # Later pages retain the exact comparison identities/status without
+            # making this bounded lineage proof depend on source-diff size.
+            + '...' + installed + '?per_page=1&page=2', headers={
                 'Accept': 'application/vnd.github+json', 'User-Agent': 'codex-relay-install',
                 'Cache-Control': 'no-cache'})
         response = connection.getresponse()
@@ -155,12 +158,29 @@ def installation_state(value, receipt=None):
     return value
 
 
+def strategy_inventory(report):
+    """Allow strategy selection, never admission, for bounded consumer repair.
+
+    Invalid effective JSON can be restored only by the target helper's installed
+    validator/gate proof. Every other inventory blocker stays binding, and core
+    re-inventories strictly after that helper before any backend or retirement.
+    """
+    if (isinstance(report, dict)
+            and report.get('blockers') == ['installed-consumer-configuration-invalid']
+            and report.get('installed', {}).get('status') == 'present'
+            and REVISION.fullmatch(report['installed'].get('revision', ''))
+            and report.get('configuration', {}).get('consumer') == 'invalid'):
+        return {**report, 'blockers': []}
+    return report
+
+
 def plan(report, target, target_contract, *, root, repository, legacy=legacy_strategy, receipt=None):
     require(REVISION.fullmatch(target or ''), 'TARGET_INVALID')
     target_contract = contract(target_contract)
     require(target_contract['epoch'] == 1 and CAPABILITIES <= set(target_contract['capabilities']),
             'TARGET_CONTRACT_UNSUPPORTED')
     require(isinstance(report, dict) and isinstance(report.get('blockers'), list), 'INVENTORY_UNPROVEN')
+    report = strategy_inventory(report)
     if report['blockers']:
         # A blocker string proves neither containment nor a safe recovery. Exact
         # existing classifiers must supply continuation proof before it can run.
@@ -183,6 +203,11 @@ def plan(report, target, target_contract, *, root, repository, legacy=legacy_str
             require(previous == target, 'INCOMPLETE_FRESH_PRODUCT_CHANGED')
             return {'strategy': 'fresh-continuation', 'phase': 'apply', 'installed': previous}
     if previous == target:
+        attested = installed.get('gitConfigReceipt')
+        if (receipt is not None and isinstance(attested, dict)
+                and pair_digest(attested) == pair_digest(receipt)
+                and report.get('configuration', {}).get('status') == 'equivalent'):
+            return {'strategy': 'verify', 'phase': 'post-check', 'installed': previous}
         return {'strategy': 'reconcile', 'phase': 'apply', 'installed': previous}
     if metadata is None:
         strategy = legacy(root, repository, previous)
@@ -508,16 +533,29 @@ def run(args, primitive, root, identity, *, guard_factory=None):
         qualify_identity(target, key)
         from inventory import remote_inventory
         report = remote_inventory(target, key, config, git_desired=True)
-        selected = plan(report, identity['revision'], target_contract, root=root,
+        proven = report.get('installed', {})
+        if proven.get('status') == 'present' and REVISION.fullmatch(proven.get('revision', '')):
+            selected['installed'] = proven['revision']
+        elif proven.get('status') == 'missing':
+            selected['installed'] = 'none'
+        from install_recovery import provisional_inventory, remote_probe as recovery_probe
+        planning_report = provisional_inventory(report)
+        selected = plan(planning_report, identity['revision'], target_contract, root=root,
                         repository=source_repository(config), receipt=receipt)
         fresh = selected['strategy'] in ['fresh', 'fresh-continuation']
+        # A new native dispatch proves this invocation. An unchanged Git pair
+        # retains its existing protected installation attestation verbatim.
+        attested_receipt = (copy.deepcopy(report['installed']['gitConfigReceipt'])
+                            if selected['strategy'] == 'verify' else receipt)
         completion = fresh_completion(config, report, args) if fresh else []
         pending = {'schemaVersion': 1, 'stage': 'fresh-incomplete', 'pairSha256': pair_digest(receipt)}
         retained_state = report.get('installed', {}).get('installationState', {})
         if retained_state.get('stage') != 'ready' or retained_state.get('pairSha256') != pair_digest(receipt):
             retained_state = {}
         print('RELAY_INSTALL_PLAN=' + json.dumps({**selected, 'target': identity['revision'],
-            'config': receipt.get('config_sha', receipt['config_sha256'])}, sort_keys=True), flush=True)
+            'config': receipt.get('config_sha', receipt['config_sha256']),
+            'dispatch_run_id': receipt.get('workflow_run_id'),
+            'attested_run_id': attested_receipt.get('workflow_run_id')}, sort_keys=True), flush=True)
         stage = 'repository-integration'
         consumer = args.consumer_root or Path(_git(args.config.parent, 'rev-parse', '--show-toplevel'))
         from workflow_projection import integration
@@ -538,6 +576,16 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 pool_guard = factory(target, key, 'codex-relay-pool-' + config['environment']['generalRunner']['name'])
                 locks.callback(release_guard, pool_guard)
             expected = selected['installed']
+            recovery = None
+            if (expected != 'none' and not fresh and selected['phase'] in ['apply', 'upgrade', 'post-check']
+                    and report.get('configuration', {}).get('consumer') != 'invalid'):
+                stage = 'lifecycle-recovery-proof'
+                recovery = recovery_probe(target, key, config, identity['revision'], expected, guard, pool_guard)
+            require(planning_report is report or recovery is not None, 'RECOVERY_REQUIRES_DIAGNOSIS')
+            if recovery is not None:
+                require(selected['phase'] in ['apply', 'upgrade', 'post-check'], 'RECOVERY_REQUIRES_DIAGNOSIS')
+                selected = {**selected, 'strategy': 'recovery', 'phase': 'upgrade'}
+                print('RELAY_INSTALL_RECOVERY=' + json.dumps(recovery, sort_keys=True), flush=True)
             receipt_applied = selected['strategy'] != 'fresh-continuation'
             schedule = [(selected['phase'], 'primary')]
             if completion:
@@ -555,9 +603,13 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 stage = ('fresh-' if completion else '') + phase
                 require(guard.poll() is None and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
                 require(args.config.read_bytes() == config_raw, 'CONFIG_BYTES_CHANGED')
-                inner = phase_arguments(args, phase, receipt, consumer, expected, guard, pool_guard,
+                inner = phase_arguments(args, phase, attested_receipt, consumer, expected, guard, pool_guard,
                                         fresh=bool(completion), slot=slot)
                 inner._intent_installation_state = pending if fresh else retained_state
+                if recovery is not None:
+                    inner.authorize_lifecycle_recovery = True
+                    inner.lifecycle_recovery_operation = recovery['operationId']
+                    inner._intent_recovery_proof = copy.deepcopy(recovery)
                 if phase == 'runner-register' and report.get('runners', {}).get('production', {}).get('status') != 'reusable':
                     inner.runner_registration_token = runner_token
                 if phase == 'general-runner-register':
@@ -581,7 +633,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 observed = remote_inventory(target, key, config, git_desired=True)
                 if phase in ['bootstrap', 'apply']:
                     receipt_applied = True
-                readback(observed, identity['revision'], receipt, same_pair_only=not receipt_applied)
+                readback(observed, identity['revision'], attested_receipt, same_pair_only=not receipt_applied)
                 if fresh:
                     require(observed['installed'].get('installationState') == pending,
                             'FRESH_PENDING_MARKER_UNPROVEN')
@@ -594,6 +646,8 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 require(observed['installed'].get('installationState') == ready, 'FRESH_READY_MARKER_UNPROVEN')
         print('RELAY_INSTALL_RESULT=' + json.dumps({'status': 'PASS', 'strategy': selected['strategy'],
             'product': identity['revision'], 'config': receipt.get('config_sha', receipt['config_sha256']),
+            'dispatch_run_id': receipt.get('workflow_run_id'),
+            'attested_run_id': attested_receipt.get('workflow_run_id'),
             'readiness': ('reviewer-and-automatic' if automatic_requested(config) else 'reviewer-only')
                          if fresh else 'preserved-existing',
             'integration': artifact, 'next': 'Publish the generated directory contents through the consumer repository normal change process; no installer rerun is required.'},
@@ -601,6 +655,10 @@ def run(args, primitive, root, identity, *, guard_factory=None):
     except Exception as error:
         mutation = mutation or (inner is not None and getattr(inner, '_intent_mutation_started', False))
         code = str(error).split(';')[0] if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__
+        if stage != 'desired-inputs' and code.startswith('INVALID_DEPLOYMENT_CONFIG:'):
+            suffix = code.removeprefix('INVALID_DEPLOYMENT_CONFIG:')
+            if re.fullmatch('[a-z][a-z0-9-]{0,100}', suffix):
+                code = 'RELAY_INSTALL_' + suffix.upper().replace('-', '_')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_:-]{0,160}', code):
             code = type(error).__name__
         failure = {'status': 'FAIL', 'target': identity['revision'], 'installed': selected['installed'],
