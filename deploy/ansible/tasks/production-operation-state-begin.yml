@@ -24,9 +24,11 @@
       exit 44
     }
 
-    {% if relay_upgrade_requested | default(false) | bool %}
-    # An explicit upgrade never implies recovery of a prior operation. The
-    # ordinary diagnosis/disposition interface remains the only next step.
+    {% if relay_upgrade_requested | default(false) | bool and not
+          (relay_admission_recovery_authorized | default(false) | bool and
+           relay_production_operation_recovery_required | default(false) | bool) %}
+    # Upgrade alone never grants recovery. Only already-authorized recovery
+    # may proceed to the exact protected record validation below.
     [[ ! -e "$record" && ! -L "$record" ]] || {
       echo 'PRODUCTION_UPGRADE_OPERATION_PENDING' >&2
       exit 45

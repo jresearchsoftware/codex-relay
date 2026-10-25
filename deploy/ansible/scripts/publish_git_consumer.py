@@ -69,6 +69,7 @@ def _atomic(path, raw, mode):
         with os.fdopen(fd, 'wb') as output:
             output.write(raw)
             output.flush()
+            os.fchmod(output.fileno(), mode)
             os.fsync(output.fileno())
         os.replace(temporary, path)
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

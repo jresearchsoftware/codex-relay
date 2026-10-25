@@ -365,6 +365,96 @@ class ProductionOperationStateExecutionTests(unittest.TestCase):
 
 
     @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
+    def test_authorized_upgrade_recovery_retains_exact_record_bytes_and_identity(self):
+        with tempfile.TemporaryDirectory(prefix="relay-upgrade-recovery-", dir="/run") as temporary:
+            directory = Path(temporary)
+            record = directory / "operation.json"
+            raw = json.dumps({"schemaVersion": "1", "state": "RECOVERY_REQUIRED",
+                              "phase": "apply", "target_head": HEAD}, indent=2).encode() + b"\n"
+            record.write_bytes(raw)
+            record.chmod(0o600)
+            before = record.stat()
+            variables = self._variables(directory, recovery_required=True)
+            variables.update(relay_upgrade_requested=True, relay_local_apply_source="git",
+                             relay_admission_recovery_authorized=True)
+            playbook = directory / "begin.yml"
+            self._playbook(playbook, variables,
+                f"- ansible.builtin.include_tasks: {json.dumps(str(ROOT / 'tasks/production-operation-state-begin.yml'))}")
+            result = self._run(playbook)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(record.read_bytes(), raw)
+            after = record.stat()
+            for field in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                          "st_size", "st_mtime_ns", "st_ctime_ns"):
+                self.assertEqual(getattr(after, field), getattr(before, field), field)
+            self.assertEqual(list(directory.glob("operation.json.tmp.*")), [])
+
+    @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
+    def test_upgrade_recovery_rejects_missing_authority_changed_or_unsafe_records_unchanged(self):
+        matching = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED", "phase": "apply", "target_head": HEAD}
+        pending = "PRODUCTION_UPGRADE_OPERATION_PENDING"
+        changed = "PRODUCTION_OPERATION_BEGIN_RECORD_CHANGED"
+        unsafe = "PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD"
+        cases = [
+            ("ordinary-upgrade", False, False, matching, 0o600, pending),
+            ("recovery-flag-only", False, True, matching, 0o600, pending),
+            ("authorization-only", True, False, matching, 0o600, pending),
+            ("wrong-phase", True, True, {**matching, "phase": "activate"}, 0o600, changed),
+            ("wrong-target", True, True, {**matching, "target_head": "a" * 40}, 0o600, changed),
+            ("wrong-schema", True, True, {**matching, "schemaVersion": "2"}, 0o600, changed),
+            ("wrong-schema-type", True, True, {**matching, "schemaVersion": 1}, 0o600, changed),
+            ("wrong-state", True, True, {**matching, "state": "COMPLETE"}, 0o600, changed),
+            ("extra-key", True, True, {**matching, "additional": True}, 0o600, changed),
+            ("malformed", True, True, b'{"state":', 0o600, unsafe),
+            ("public-mode", True, True, matching, 0o644, unsafe),
+            ("group-mode", True, True, matching, 0o640, unsafe),
+            ("read-only-mode", True, True, matching, 0o400, unsafe),
+            ("wrong-owner", True, True, matching, 0o600, unsafe),
+            ("wrong-group", True, True, matching, 0o600, unsafe),
+            ("symlink", True, True, matching, 0o600, unsafe),
+            ("missing", True, True, None, 0o600, "PRODUCTION_OPERATION_BEGIN_RECOVERY_RECORD_MISSING"),
+        ]
+        with tempfile.TemporaryDirectory(prefix="relay-upgrade-recovery-invalid-", dir="/run") as temporary:
+            for name, authorized, required, value, mode, error in cases:
+                with self.subTest(case=name):
+                    directory = Path(temporary) / name
+                    directory.mkdir()
+                    record = directory / "operation.json"
+                    if value is not None:
+                        raw = value if isinstance(value, bytes) else json.dumps(value).encode()
+                        record.write_bytes(raw)
+                        record.chmod(mode)
+                        if name in ["wrong-owner", "wrong-group"]:
+                            os.chown(record, 1 if name == "wrong-owner" else 0,
+                                     1 if name == "wrong-group" else 0)
+                        if name == "symlink":
+                            target = record.with_name("preserved-record.json")
+                            record.rename(target)
+                            record.symlink_to(target)
+                        before = record.lstat()
+                        target_before = record.stat()
+                    variables = self._variables(directory, recovery_required=required)
+                    variables.update(relay_upgrade_requested=True, relay_local_apply_source="git",
+                                     relay_admission_recovery_authorized=authorized)
+                    playbook = directory / "begin.yml"
+                    self._playbook(playbook, variables,
+                        f"- ansible.builtin.include_tasks: {json.dumps(str(ROOT / 'tasks/production-operation-state-begin.yml'))}")
+                    result = self._run(playbook)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, output)
+                    self.assertIn(error, output)
+                    if value is None:
+                        self.assertFalse(record.exists() or record.is_symlink(), output)
+                    else:
+                        self.assertEqual(record.read_bytes(), raw)
+                        for after, original in [(record.lstat(), before), (record.stat(), target_before)]:
+                            for field in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                                          "st_size", "st_mtime_ns", "st_ctime_ns"):
+                                self.assertEqual(getattr(after, field), getattr(original, field), field)
+                    self.assertEqual(list(directory.glob("operation.json.tmp.*")), [])
+
+
+    @unittest.skipUnless(privileged_localhost_ansible_available(), "root-capable native Ansible required")
     def test_installed_apply_requires_explicit_owner_recovery_and_preserves_retained_evidence(self):
         matching = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED",
                     "phase": "apply", "target_head": HEAD}
