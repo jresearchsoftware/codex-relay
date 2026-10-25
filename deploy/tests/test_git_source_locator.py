@@ -7,8 +7,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -178,6 +180,146 @@ def test_legacy_resume_keeps_existing_installed_policy_check_without_manifest_re
     monkeypatch.setattr(installed_config, 'read_protected', lambda *args: pytest.fail('unexpected manifest read'))
     assert backend.resume_configuration(config, raw, HEAD, '/opt/fixture') == ('e' * 40, None)
     assert calls == [{}]
+
+
+@pytest.fixture
+def resume_cli(tmp_path, monkeypatch):
+    """Execute cli.run and real projection logic with synthetic protected state."""
+    import workflow_projection
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    config = configuration.load(ROOT / 'deploy/example.json', ROOT)
+    config['source'] = {'repository': 'https://github.com/' + config['consumer']['repository'], 'revision': 'main'}
+    config['environment']['localApply'] = {'source': 'git', 'repository': 'example/private-config',
+                                         'configPath': 'test/relay.json'}
+    config_path = tmp_path / 'desired.json'
+    consumer = tmp_path / 'consumer'
+    consumer.mkdir()
+    lock_path = tmp_path / 'synthetic-host.lock'
+    lock_path.touch(mode=0o600)
+    lock_fd = os.open(lock_path, os.O_RDWR)
+    operation = '01234567-89ab-cdef-0123-456789abcdef'
+    state = {'backend': [], 'projection': [], 'verify': [], 'manifest': [], 'mismatch': False}
+    real_command = backend.command
+    monkeypatch.setattr(backend, 'root_owned', lambda path: None)
+    monkeypatch.setattr(backend.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(backend, 'source_identity', lambda root: {'revision': HEAD, 'tree': 'f' * 40})
+    monkeypatch.setattr(backend, 'command', lambda argv, **kwargs:
+        json.dumps({'phase': 'applying', 'target': HEAD}) if str(argv[0]).endswith('/relay-admission')
+        else real_command(argv, **kwargs))
+    monkeypatch.setattr(backend.tempfile, 'gettempdir', lambda: str(tmp_path))
+    expected_host_lock = Path('/var/lib/' + config['environment']['namespace'] + '-deployment.lock')
+
+    def lock_metadata(fd):
+        info = real_fstat(fd)
+        return SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_gid=0,
+            st_nlink=1, st_dev=info.st_dev, st_ino=info.st_ino) if fd == lock_fd else info
+
+    monkeypatch.setattr(backend.os, 'fstat', lock_metadata)
+    monkeypatch.setattr(Path, 'lstat', lambda path, *args, **kwargs:
+                        lock_metadata(lock_fd) if path == expected_host_lock else real_lstat(path, *args, **kwargs))
+    strict_projection = backend.committed_projection
+
+    def projection(*args, **kwargs):
+        state['projection'].append('strict')
+        return strict_projection(*args, **kwargs)
+
+    monkeypatch.setattr(backend, 'committed_projection', projection)
+
+    def verify(source, revision, **kwargs):
+        state['verify'].append(kwargs)
+        installed = copy.deepcopy(config)
+        if state['mismatch']:
+            installed['environment']['codexTokenRequired'] = not installed['environment']['codexTokenRequired']
+        return installed, SNAPSHOT_DIGEST, state['consumer_revision']
+
+    monkeypatch.setattr(installed_config, 'verify', verify)
+
+    def protected_manifest(path, modes):
+        assert state['verify'] and modes == {0o640, 0o600}
+        state['manifest'].append('read')
+        raw = config_path.read_bytes()
+        receipt = {'product_repository': config['source']['repository'].removeprefix('https://github.com/'),
+            'product_sha': HEAD, 'config_repository': 'example/private-config', 'config_path': 'test/relay.json',
+            'config_sha': CONFIG_HEAD, 'config_blob_sha': BLOB, 'config_sha256': hashlib.sha256(raw).hexdigest(),
+            'source_policy': 'accepted-main', 'workflow_run_id': 12, 'action': 'apply'}
+        return json.dumps({'commit': HEAD, 'resolvedRevision': HEAD, 'installedRevision': HEAD,
+            'deploymentConfigSha256': SNAPSHOT_DIGEST, 'gitConfigReceipt': receipt}).encode(), None
+
+    monkeypatch.setattr(installed_config, 'read_protected', protected_manifest)
+
+    def protected_postcheck(argv, cwd, env, log, guard=None, extra_guard=None):
+        assert '--check' in argv and str(ROOT / 'deploy/ansible/site.yml') in argv
+        values = json.loads(Path(argv[argv.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
+        state['backend'].append(next(iter(values.values())))
+        log.write('localhost : ok=1 changed=0 unreachable=0 failed=0\n'
+                  + f"RELAY_INSTALLED_REVISION={HEAD};consumer={state['consumer_revision']};previous=none\n")
+        return 0
+
+    monkeypatch.setattr(backend, 'run_backend', protected_postcheck)
+
+    def invoke(integration, *, git_mode=True, mismatch=False):
+        config['environment']['localApply'] = ({'source': 'git', 'repository': 'example/private-config',
+            'configPath': 'test/relay.json'} if git_mode else {'source': 'installed'})
+        config_path.write_text(json.dumps(config))
+        if integration == 'stale-compatible':
+            previous = copy.deepcopy(config)
+            previous['environment']['generalRunner']['name'] += '-previous'
+            workflow_projection.project(previous, 'e' * 40, ROOT, consumer)
+        else:
+            (consumer / 'README.md').write_text('Synthetic consumer without managed workflow publication.\n')
+        env = {**os.environ, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        for args in [('init', '--quiet', '--template=', '--initial-branch=main'), ('add', '.'),
+                     ('-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
+                      'commit', '--quiet', '-m', 'synthetic consumer')]:
+            subprocess.run(['git', '-C', str(consumer), *args], check=True, env=env, capture_output=True)
+        state['consumer_revision'] = backend.clean_git(consumer)
+        state['mismatch'] = mismatch
+        proposed = workflow_projection.integration(config, HEAD, ROOT, consumer, tmp_path / 'integration')
+        assert proposed['compatibility'] == integration
+        # Demonstrate that the obsolete strict gate rejects this real baseline.
+        with pytest.raises(configuration.InvalidConfig, match='workflow-projection-target-mismatch'):
+            strict_projection(config, HEAD, ROOT, consumer, state['consumer_revision'])
+        monkeypatch.setattr(sys, 'argv', ['relay-deploy', '--config', str(config_path),
+            '--consumer-root', str(consumer), '--phase', 'post-check', '--connection', 'local',
+            '--resolved-revision', HEAD, '--local-lifecycle', '--lifecycle-operation', operation,
+            '--lifecycle-lock-fd', str(lock_fd), '--log-root', str(tmp_path / 'logs')])
+        return backend.run(backend.arguments())
+
+    try:
+        yield invoke, state
+    finally:
+        os.close(lock_fd)
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux lifecycle CLI')
+@pytest.mark.parametrize('integration', ['stale-compatible', 'missing'])
+def test_git_resume_cli_reaches_protected_postcheck_without_consumer_publication(resume_cli, integration):
+    invoke, state = resume_cli
+    invoke(integration)
+    assert state['projection'] == []
+    assert state['verify'] == [{'require_local_apply': False}] and state['manifest'] == ['read']
+    assert len(state['backend']) == 1
+    assert state['backend'][0]['relay_git_config_receipt']['product_sha'] == HEAD
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux lifecycle CLI')
+@pytest.mark.parametrize('integration', ['stale-compatible', 'missing'])
+def test_legacy_resume_cli_keeps_strict_consumer_publication_gate(resume_cli, integration):
+    invoke, state = resume_cli
+    with pytest.raises(configuration.InvalidConfig, match='workflow-projection-target-mismatch'):
+        invoke(integration, git_mode=False)
+    assert state['projection'] == ['strict']
+    assert state['verify'] == state['backend'] == []
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux lifecycle CLI')
+def test_git_resume_cli_rejects_changed_installed_snapshot_before_backend(resume_cli):
+    invoke, state = resume_cli
+    with pytest.raises(configuration.InvalidConfig, match='git-resume-installed-config-binding'):
+        invoke('stale-compatible', mismatch=True)
+    assert state['projection'] == state['manifest'] == state['backend'] == []
+    assert state['verify'] == [{'require_local_apply': False}]
 
 
 @pytest.mark.skipif(sys.platform != 'linux' or getattr(os, 'geteuid', lambda: 1)() != 0

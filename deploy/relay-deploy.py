@@ -408,7 +408,11 @@ def run(args):
     else:
         require(not any([args.issue_number, args.issue_body_sha256, args.pull_request, args.review_id,
             args.reviewed_head, args.change_request_id, args.branch, args.base_branch_sha]), 'diagnostic-flags')
-    if not intent_install and (args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile)):
+    # Git resume proves the installed pair below. Receiving-repository workflow
+    # publication is independent of restoring that qualified host installation.
+    git_resume = (args.local_lifecycle and args.phase == 'post-check'
+                  and values['relay_local_apply_source'] == 'git')
+    if not intent_install and not git_resume and (args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile)):
         from workflow_projection import project, verify
         if args.phase == 'workflow-project':
             project(config, revision, ROOT, consumer_root, getattr(args, 'repository', None))
@@ -420,8 +424,8 @@ def run(args):
             print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
             return
     if args.local_lifecycle and args.phase == 'post-check':
-        # A later graceful resume observes current consumer projection bytes,
-        # but does not rewrite the installed manifest's original provenance.
+        # A later graceful resume verifies installed configuration and keeps
+        # the installed manifest's original provenance.
         consumer_revision, original_receipt = resume_configuration(
             config, config_path.read_bytes(), revision, values['relay_install_root'])
         if original_receipt is not None:
