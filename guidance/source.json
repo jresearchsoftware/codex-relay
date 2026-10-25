@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "codex-relay",
-  "version": "3.1.0",
+  "version": "4.0.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
   "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
   "workflow_contract": "relay-workflows-v4",
@@ -9,10 +9,10 @@
   "authority_schema": "4.0",
   "retained_authority_schema": "3.0",
   "shared_coordinate": "org.jresearch.ai/development-governance",
-  "shared_version": "4.0.0",
-  "shared_source_revision": "99034dd708e5d0201060986b561ada4d2cffd453",
-  "shared_distribution_revision": "f14da40725cd35fb3117ae84a506256505340787",
-  "shared_distribution_tree_hash": "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746",
-  "publication": "Frozen 3.1.0 candidate; compatible explicit v4 manual publication simplification; source acceptance and external publication remain separate",
+  "shared_version": "5.0.0",
+  "shared_source_revision": "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
+  "shared_distribution_revision": "30a23f467c30c41fec918204cbbf2ecfffd7bef5",
+  "shared_distribution_tree_hash": "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
+  "publication": "Frozen 4.0.0 candidate; manual PR Step-label clarification and immutable Shared 5.0.0 delivery; major for the bundled Shared ChatGPT helper receipt/status/update contract changes; source acceptance and publication remain separate",
   "shared_requirement": ">=2.5.0"
 }

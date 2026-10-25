@@ -11,7 +11,7 @@ pointer selects reading, never individual clauses. The authored
 bindings below. Native delivery reads complete shared protocols from the
 consuming project's reviewed lock and selected Shared slot through its generated
 `references/shared-protocols.md`; standalone includes the attributed immutable
-4.0.0 snapshot. Consumers deliberately select and adopt their own compatible
+5.0.0 snapshot. Consumers deliberately select and adopt their own compatible
 Shared dependency. No fixed bundled native route supersedes that selection.
 The historical
 [Task #108 analysis](task-handoff-methodology-analysis.md) and earlier

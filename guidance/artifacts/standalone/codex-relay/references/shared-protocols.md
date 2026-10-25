@@ -1,8 +1,8 @@
 # Shared protocol source: immutable standalone snapshot
 
-This standalone Skill deliberately includes Shared Governance 4.0.0.
-Its immutable producer is `99034dd708e5d0201060986b561ada4d2cffd453`, distribution
-`f14da40725cd35fb3117ae84a506256505340787`, tree `sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746`.
+This standalone Skill deliberately includes Shared Governance 5.0.0.
+Its immutable producer is `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9`, distribution
+`30a23f467c30c41fec918204cbbf2ecfffd7bef5`, tree `sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9`.
 Read the complete triggered protocols below offline. These generated exact bytes
 are a snapshot of the shared producer, never an independently authored fork.
 Local topic adoption and product authority retain their boundaries. A different

@@ -7,21 +7,25 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` frozen **3.1.0** package uses the
+The first-party `org.jresearch.ai/codex-relay` **4.0.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
 adopts Shared **5.0.0**, with the exact Git identity in
-[the identity contract](vibevm.md#selected-immutable-identities). This project
-consumer update changes no frozen Relay artifact, standalone snapshot or
-`guidance/source.json` provenance, and retains the native `>=2.5.0` floor.
+[the identity contract](vibevm.md#selected-immutable-identities). The new Relay
+release also selects that snapshot for standalone and publisher closure
+evidence, retaining the native `>=2.5.0` floor and frozen historical releases.
 
 The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
-changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4 manual publication. Native readers use this project's reviewed lock
+changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4
+manual publication; 4.0.0 clarifies the existing manual Step-label procedure
+and updates the complete standalone snapshot under the
+[whole-package classification](relay-guidance.md#version-and-provenance).
+Native readers use this project's reviewed lock
 and selected Shared slot through `references/shared-protocols.md`. Standalone
-retains a self-contained immutable Shared 4.0.0 snapshot, so the complete
+includes a self-contained immutable Shared 5.0.0 snapshot, so the complete
 Skill trees differ while retaining the same product contract. Frozen accepted
-1.0.0, 2.0.0, 2.0.1 and 3.0.0 registry payloads remain unchanged. Source acceptance does
+1.0.0, 2.0.0, 2.0.1, 3.0.0 and 3.1.0 registry payloads remain unchanged. Source acceptance does
 not imply external publication or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
@@ -33,8 +37,9 @@ references. Ordinary use needs no materializer, Python, registry, cache, network
 or additional owner command. Checkout/pull advances the accepted ready files.
 
 Relay's execution binding identifies the independently accepted source commit,
-separately from candidate root/nested AGENTS, boot and Skills. Task #186 freezes
-accepted Relay source `a29b40e6df97d5e338ef336c598785fb48b38428` for its execution;
+separately from candidate root/nested AGENTS, boot and Skills. Task #182's
+remediation freezes accepted Relay source
+`f91178cadc73f27b406ad0ac6fa9dc58577db069` for this execution;
 the unchanged Skill product-contract baseline remains
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
@@ -52,9 +57,7 @@ hash-checked executable from `toolchain/vibevm.json`:
 ```sh
 python3 scripts/build-relay-guidance.py
 python3 scripts/prepare-relay-self-adoption.py
-# Preserve the exact retained 4.0.0 build input as described below before install.
 /absolute/path/to/pinned/vibe --json install --no-default-registry --assume-yes
-# Restore that unchanged accepted build input after native install prunes it.
 /absolute/path/to/pinned/vibe --offline --json skill install \
   --skill codex-relay --agent codex --scope project --yes
 python3 scripts/prepare-relay-self-adoption.py --check
@@ -63,19 +66,16 @@ python3 scripts/qualify-vibevm.py
 
 For a project-only Shared update, use the existing frozen builder/registry
 `--check` modes; no Relay artifact generation or version change is needed.
-The frozen exporter still reads the historical root
-`vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0` snapshot.
-Preserve its exact tracked bytes in disposable storage before `install`, then
-restore that snapshot without editing it. It remains build input only: lock,
-boot and native Skill reading select 5.0.0. See the
-[retained-input warning disposition](vibevm.md#admitted-maintenance-and-qualification).
-Changing the frozen exporter would change its recorded provenance; that broader
-packaging maintenance is outside this consumer update.
+The current exporter reads the exact Shared 5.0.0 root slot selected in
+`guidance/source.json`. Native install can prune the obsolete unselected 4.0.0
+root slot; historical release payloads remain in the frozen registry. The
+verifier compares the complete standalone snapshot with the accepted 5.0.0
+distribution and validates consumer routing separately.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.1.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1` or `v3.0.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0` or `v3.1.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

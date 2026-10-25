@@ -24,6 +24,10 @@ SHARED_FIVE = {
     "revision": "30a23f467c30c41fec918204cbbf2ecfffd7bef5",
     "tree_hash": "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
 }
+SHARED_FOUR = {
+    "version": "4.0.0", "revision": "f14da40725cd35fb3117ae84a506256505340787",
+    "tree_hash": "sha256:d27a004b5f2dcc8ae0f7fd33289d97be1eab84ddbdf54d7e880cc6def7ad3746",
+}
 SHARED_TWO_FIVE = {
     "version": "2.5.0", "revision": "d691c1b9ad8c1bdababbf15da4ec7c69399e1e02",
     "tree_hash": "sha256:ea95bc042f78ce2dc830f70e1656777ffdb4c6c40be944a4d1cd4b32ed236c88",
@@ -322,7 +326,7 @@ def qualify(vibe):
     run("lower-bound-check", lower_consumer, ["check", "--path", "."], native=True)
     run("lower-bound-validate", lower_consumer, ["validate", "--path", ".", "--no-default-registry"], native=True)
     compatibility_graphs = {}
-    for fixture in (SHARED_THREE, snapshot_fixture):
+    for fixture in (SHARED_THREE, SHARED_FOUR, snapshot_fixture):
         target = sandbox / ("consumer-shared-" + fixture["version"])
         target.mkdir()
         select(version, revision, shared_fixture=fixture, target=target)
@@ -341,8 +345,10 @@ def qualify(vibe):
             require(snapshot == {key.removeprefix("references/shared/"): value for key, value in standalone.items()
                                  if key.startswith("references/shared/")},
                     "Standalone snapshot differs from the qualified immutable snapshot package")
+        if fixture == SHARED_FOUR:
+            # Keep an actual 4 -> 5 -> 4 transition independent of the standalone snapshot.
             # A deliberate Shared update/rollback must not change Relay's version or Skill bytes.
-            for selected in (SHARED_FIVE, snapshot_fixture):
+            for selected in (SHARED_FIVE, SHARED_FOUR):
                 select(version, revision, shared_fixture=selected, target=target)
                 label = "shared-only-update-" + selected["version"]
                 run(label, target, ["install", "--no-default-registry", "--assume-yes"], native=True, offline=False)

@@ -8,27 +8,34 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **3.0.0** becomes a first-party source release only on independent
+Version **4.0.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
 that another consumer adopted it. An unmerged artifact remains a candidate.
-The major version removes the native Skill's bundled Shared protocol paths and
-changes its supported dependency routing and packaging contract. It is not
+The 3.0.0 major removed the native Skill's bundled Shared protocol paths and
+changed its supported dependency routing and packaging contract. It was not
 caused by the Shared package's major number. Frozen accepted earlier registry
 bytes, including 2.0.1, remain unchanged for identity and rollback. The selected
 product-contract baseline is
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`; it is separate from the
 enclosing accepted guidance release.
 
+Version 4.0.0 updates the complete standalone snapshot to Shared 5.0.0. Its
+bundled `references/shared/tools/chatgpt` helper removes ownership receipts and
+changes status/update behavior; users of that optional helper should review
+its included README before updating. These shipped interface changes determine
+Relay's major version. Relay's own `scripts/project.py` installer receipts,
+native Skill receipts and consumer-selected Shared requirement are unchanged.
+
 ## Choose a delivery form
 
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `3.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `4.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
-standalone form includes an immutable, attributed Shared Governance 4.0.0
+standalone form includes an immutable, attributed Shared Governance 5.0.0
 snapshot for offline use. The native Skill has a real Shared dependency and no
 second protocol bundle: its generated `references/shared-protocols.md` directs
 reading through the consumer's reviewed `vibe.lock` and selected Shared slot.
@@ -89,9 +96,9 @@ Use the hash-checked VibeVM 1.0.7 binary identified in the assembled
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
 Select an explicit immutable Shared Governance Git source root and a compatible
-consumer requirement under local authority. The template's Shared 4.0.0 source
-is a reproducible example; a consumer with deliberately selected Shared 5.0.0
-keeps its own reviewed source and lock. Relay's supported SemVer lower bound is
+consumer requirement under local authority. The template's Shared 5.0.0 source
+is a reproducible example; a consumer with another deliberately selected
+compatible Shared version keeps its own reviewed source and lock. Relay's supported SemVer lower bound is
 declared in the native manifest; it does not pin consumers to the standalone
 snapshot or impose an upper bound from the Shared major number.
 

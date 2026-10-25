@@ -20,11 +20,8 @@ SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "5.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
-# Frozen standalone assembly still consumes this exact historical root input.
-# It is not selected by the consumer lock or any active protocol route.
-RETAINED_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/4.0.0")
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "3.1.0"
+SELF_VERSION = "4.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -176,32 +173,28 @@ def check_first_party_registry(root, expected):
     prior_files = files_in(root / prior)
     require(tree_hash(prior_files) == "sha256:297afba0242ec3ae2cd77448ac6bec4b112b72d9b3f8d229e9029dda60cbaaa6",
             "Frozen accepted 3.0.0 registry changed")
+    manual = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v3.1.0")
+    manual_files = files_in(root / manual)
+    require(tree_hash(manual_files) == "sha256:5bd96c600aaecec732981b8c45c82854493d34fa2597a01fdabe033735aac772",
+            "Frozen accepted 3.1.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
 
-def check_retained_snapshot(root):
+def check_standalone_snapshot(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
-    require(metadata["shared_version"] == RETAINED_SLOT.name,
-            "Retained build snapshot differs from frozen standalone selection")
-    files = files_in(root / RETAINED_SLOT)
-    marker = tomllib.loads(files.pop(MARKER).decode())
+    require(metadata["shared_version"] == VERSION
+            and metadata["shared_source_revision"] == SOURCE_REVISION
+            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
+            and metadata["shared_distribution_tree_hash"] == TREE_HASH,
+            "Standalone selection differs from the accepted immutable Shared snapshot")
+    files = check_package(root / SLOT)
+    files.pop(MARKER)
     standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
-    require(files == standalone and tree_hash(files) == metadata["shared_distribution_tree_hash"],
-            "Retained build snapshot differs from the frozen standalone payload")
-    require(type(marker.get("schema")) is int and marker == {
-        "schema": 1, "source_hash": metadata["shared_distribution_tree_hash"], "spec_format": "mixed",
-        "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
-                 for name, data in sorted(files.items())]}, "Retained snapshot metadata differs")
-    return set(files) | {MARKER}
-
-
-def retained_snapshot_warning():
-    return {"check": "lockfile_files", "severity": "warning", "path": RETAINED_SLOT.as_posix(),
-            "message": f"`{RETAINED_SLOT.as_posix()}` is a vibedeps/ slot no lockfile entry claims (orphan) — `vibe install` prunes these"}
+    require(files == standalone, "Standalone payload differs from the accepted immutable Shared snapshot")
 
 
 def check_first_party(root):
@@ -253,7 +246,7 @@ def check_project(root):
             "Consumer must retain exact Shared Git and native first-party requirements")
     files = check_package(root / SLOT)
     first_party, source_hash = check_first_party(root)
-    retained = check_retained_snapshot(root)
+    check_standalone_snapshot(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
     packages = lock.get("package", [])
     require(len(packages) == 2, "Expected exactly Shared and first-party native packages")
@@ -301,8 +294,7 @@ def check_project(root):
             "Native redirects differ from the accepted generated block")
     require(set(files_in(root / "vibevm/vibedeps")) == {
         (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files} | {
-        (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}} | {
-        (RETAINED_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in retained},
+        (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}},
             "Unexpected materialized dependency graph")
     for relative in ("vibevm/vibespecs/WAL.md", "vibevm/vibespecs/WAL.xml",
                      ".agents/skills/proportional-controls", ".agents/skills/.proportional-controls.vibe-skill-receipt.toml"):
@@ -312,7 +304,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "retained_build_snapshot": RETAINED_SLOT.as_posix()}
+            "project_skill": "PASS", "standalone_snapshot": VERSION}
 
 
 def compare_inputs(root, source, distribution):
@@ -373,8 +365,8 @@ def probe(vibe, pin, project_root=ROOT):
             require(documents and not any(d.get("ok") is False for d in documents), label + " failed")
             for document in documents:
                 if document.get("command") == "check":
-                    require(document["summary"]["error"] == 0 and document["summary"]["warning"] == 1
-                            and document["findings"] == [retained_snapshot_warning()],
+                    require(document["summary"]["error"] == 0 and document["summary"]["warning"] == 0
+                            and document["findings"] == [],
                             label + " has unexpected findings: " + result.stdout)
             require(not result.stderr.strip(), label + " emitted diagnostics: " + result.stderr)
             reports[label] = documents
@@ -386,7 +378,6 @@ def probe(vibe, pin, project_root=ROOT):
         facts = check_project(project)
         route_paths = ["vibe.toml", "vibe.lock", *AGENTS, *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
         route_paths += [(SLOT / name).as_posix() for name in PAYLOAD | {RECEIPT, MARKER}]
-        route_paths += [(RETAINED_SLOT / name).as_posix() for name in check_retained_snapshot(project)]
         route_paths += [(SELF_SLOT / name).as_posix() for name in files_in(project / SELF_SLOT)]
         route_paths += [(PROJECTION / name).as_posix() for name in files_in(project / PROJECTION)]
         route_paths += [SKILL_RECEIPT.as_posix()]
@@ -466,7 +457,6 @@ def probe(vibe, pin, project_root=ROOT):
         print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
                           "offline_file_reads": "PASS", "exact_regeneration": "PASS",
                           "overlays_and_collisions": "PASS",
-                          "retained_snapshot_warning": "Expected orphan warning: frozen standalone build input; online install prunes it, restore exact accepted bytes afterwards",
                           "upstream_check_limitations": "accepts missing INDEX/payload and divergent lock hash",
                           "upstream_acquisition_limitations": "offline reinstall needs an existing slot; upstream install/check is not accepted-source verification",
                           "model_behavior": "UNVERIFIED: no Codex/provider execution", "reports": reports}))

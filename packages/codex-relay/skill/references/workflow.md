@@ -145,6 +145,30 @@ folded by default, after actual GitHub expand/copy usability is qualified.
 Otherwise leave it open. Actions run names can show bounded Task/PR/route
 information but do not preallocate Step.
 
+### Manual result PR Step labels
+
+Automatic Step-label/title projection remains deferred to
+[Task #177](https://github.com/jresearchsoftware/codex-relay/issues/177).
+Manual Codex creating a new Relay-admitted result PR must add the exact `step-S`
+label already present on the canonical Task Issue. Set it during PR creation
+where supported, or immediately afterward and before result handoff. Verify the Issue and PR labels
+against the trusted admitted Step; never infer or allocate Step from a label,
+title or history. Missing, conflicting or mismatched Issue/admission metadata
+must be reported and reconciled before proceeding, not guessed. A manual Codex
+executor using an existing Task-owned PR must also check its label against the
+Issue and admitted Step before final handoff. Do not bulk-edit historical PRs.
+
+This manual responsibility does not restrict PR authorship: any participant or
+bot with ordinary GitHub permission may create a PR; Writer need not create it.
+If a new result PR reaches independent review without the label, Reviewer may
+add it through supported GitHub tools only after verifying the canonical Issue,
+protected admitted Step, PR binding and exact current head, then recheck the
+native Reviewer target. Stop on mismatched or uncertain metadata; never override
+a conflicting label. Independent native exact-head review and Writer/Reviewer
+separation remain required.
+
+### Independent attempts
+
 A fresh native command may admit an independent source/research attempt before
 an older Step has a terminal Outcome. Use an independent checkout and available
 resource; a shared checkout, physical slot or exclusive environment remains

@@ -180,7 +180,7 @@ and generated boot. Confirm the native static INDEX entry reaches the intended
 conditional protocol routes without claiming native dynamic-include behavior.
 Check removal leaves neither an uncovered obligation nor two canonical owners.
 Delta also uses ChatGPT for read-only review. Its proposed pinned-slot projector
-check finds current desired Instructions/custom/binding/receipt, but no owner
+check finds current desired Instructions/custom/binding, but no owner
 export or live settings readback exists. Preserve unknown live rules; do not
 overwrite settings or equate generated consistency with client readiness.
 

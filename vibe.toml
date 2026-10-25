@@ -8,7 +8,7 @@ spec_format = "mixed"
 "org.jresearch.ai/development-governance" = { version = "=5.0.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "30a23f467c30c41fec918204cbbf2ecfffd7bef5", auth = "none" }
 
 [requires.packages."flow:org.jresearch.ai/codex-relay"]
-version = "=3.1.0"
+version = "=4.0.0"
 link = "dynamic"
 
 [[registry]]

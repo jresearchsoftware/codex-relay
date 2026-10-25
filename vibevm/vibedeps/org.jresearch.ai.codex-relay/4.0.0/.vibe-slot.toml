@@ -1,0 +1,167 @@
+schema = 1
+source_hash = "sha256:3e892b02e6f6d3b0b6a1a64840af96b1da91f2af136297cac1bf37b5f326baeb"
+spec_format = "mixed"
+
+[[file]]
+path = "LICENSE"
+sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
+
+[[file]]
+path = "LICENSES.json"
+sha256 = "618ec7cb12cb12d73810f787c0389a27ac73c22c164a261b5d51711140e9dd15"
+
+[[file]]
+path = "README.md"
+sha256 = "fe51001da3254e4cccd66b06fd89e1f7c00c250d4f8d38fdbb7951220c38e0b6"
+
+[[file]]
+path = "skill/LICENSE"
+sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
+
+[[file]]
+path = "skill/PROVENANCE.json"
+sha256 = "12f59c15fee3c0d6db9dbcd18f55cedb7196854b08ea004a4fd021964ef2d1a1"
+
+[[file]]
+path = "skill/SKILL.md"
+sha256 = "49927c52f92232aea67c86a0afecd0a21d73cfef4bbac39eab5563706c53aa5c"
+
+[[file]]
+path = "skill/references/compatibility.md"
+sha256 = "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace"
+
+[[file]]
+path = "skill/references/diagnostics.md"
+sha256 = "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9"
+
+[[file]]
+path = "skill/references/examples.md"
+sha256 = "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171"
+
+[[file]]
+path = "skill/references/installation.md"
+sha256 = "283135f9f71e5c34a698af43763ee44e1692b69bb7f6354a7786c022a1fc3763"
+
+[[file]]
+path = "skill/references/product/contract.json"
+sha256 = "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c"
+
+[[file]]
+path = "skill/references/product/github-authority-v1.json"
+sha256 = "b4a7c7561ca8697e3b00df21c8c624d59d6cb5f3f2f56bde35d7ed6bdd161874"
+
+[[file]]
+path = "skill/references/product/github-authority-v4.json"
+sha256 = "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5"
+
+[[file]]
+path = "skill/references/product/vibevm.json"
+sha256 = "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
+
+[[file]]
+path = "skill/references/shared-protocols.md"
+sha256 = "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f"
+
+[[file]]
+path = "skill/references/workflow.md"
+sha256 = "55553925d70e0f99fda60256c494c91fb1e656e1f6a5a6381a42ada4aaa7a4a1"
+
+[[file]]
+path = "vibe.lock"
+sha256 = "e5a24c2b8ed5224001851f3a6081866bad9fdaabefe98dbe9f833fd5d6e9fb4e"
+
+[[file]]
+path = "vibe.toml"
+sha256 = "6073b4bf67c92bafd991e0f681ffca7825f68345fec3546ee29464305c5094d1"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/.vibe-slot.toml"
+sha256 = "84246572b9301c0e9714b07a2c818db753d9af5f81e609cad78ee6ae6d51fa94"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/CHANGELOG.md"
+sha256 = "3ed7cbc90cca1b856df14a8fb810d7812fa73b7c144683abfc9c1fa65419a10e"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/DISTRIBUTION.json"
+sha256 = "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/LICENSE"
+sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/README.md"
+sha256 = "2ac7b1be94aeff96a4b7622df0c62636c06d3f0112823f3337df3fd5bdc8dccb"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/tools/chatgpt/README.md"
+sha256 = "d4ab1f5f0401a9d8afc6751ba37f1af3f35a17b13af62f3a0970d39f818fbf11"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/tools/chatgpt/base.md"
+sha256 = "4479c0afc65ab4f2c7ba1f7441ad093e2af9feff1cf16d9a2c730edfa62fb986"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/tools/chatgpt/project.py"
+sha256 = "5fe59c07ff19eb54c84e5c043a5d55a580a9075f75c9e6bf2d3a622130fc7342"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibe.toml"
+sha256 = "85e81ea11e6b25902237081fd8eb4f6b8d65aa1363c38cdfb12dff49ce747d08"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/boot/development-governance.md"
+sha256 = "a3ee86004a8edb978f9f53b193f606c2899993e25d33906db46b3b74cee9cb9c"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/guides/engineering-methods.md"
+sha256 = "01103c8d52ab6ebd1acfecbce35e7b425db4d747094c6a2ac76289b875906248"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/guides/onboarding-examples.md"
+sha256 = "af33f3fb934af67193d158714189e48e61eb8a3419c8ab3e7629be01a518c952"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/guides/onboarding.md"
+sha256 = "f8c2715ae4ace8cae16fa29ced73b9e0d30ed5c577b1caf11aba5b934d9cf83f"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/context-loading.md"
+sha256 = "b45a2a73017e3cee690e1b030094c8c237527604f0321ba4f431cbd4e3cc123a"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md"
+sha256 = "9ebf6f5760e7368d1091f6033e8d5c4d1d6d64bc82c3537b8f9af1c28cafdd3b"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/github-repository-governance.md"
+sha256 = "d65dc2acd6bacdacd06f47e010b210ce046384998f73ebfe3b0e7842f885a016"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/independent-review.md"
+sha256 = "095605951df169b8ed37913d26c882e4ef6d0752563a49655fcf0164db1aa96f"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/package-versioning.md"
+sha256 = "47d97b3a8f59b7a8e477eadee58c571d5512290fc3c241493f7d3c6c52adbef6"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/proportional-controls.md"
+sha256 = "9d4995184b84665c3e1a8912d53438cdaa6e0b4fcef2af1f04e9111021e729ab"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/requirement-authority.md"
+sha256 = "bec2211e7243a37e46ec9eaa493cf3ee41eff33205cd8d70542990bfa20b6b80"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/self-adoption.md"
+sha256 = "d49a3a8bdb648cfbc24a823e7f6e9abb6315f71ded6677453c0260849255ece4"
+
+[[file]]
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/task-handoff.md"
+sha256 = "ceb56d8493d2da559b72fdd964eb01330de39d87a37076f74c44ebc844c481b9"
+
+[[file]]
+path = "vibevm/vibespecs/boot/codex-relay.md"
+sha256 = "8d617e81d7ab9b596a1bada45137566a57d79a53358dd830b63febf17de5817e"

@@ -97,8 +97,9 @@ acceptance; frozen 2.0.1 and earlier payloads remain unchanged.
 
 The immutable 4.0.0 distribution is
 [`f14da40725cd35fb3117ae84a506256505340787`](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/tree/f14da40725cd35fb3117ae84a506256505340787).
-It remains the deliberate standalone snapshot and producer release-closure
-evidence, independently of the native minimum. Source history and native fixture
+It remains in frozen Relay 3.1.0 and earlier releases. Relay 4.0.0 selects
+Shared 5.0.0 for standalone and publisher closure evidence, independently of
+the native minimum. Source history and native fixture
 evidence are distinct: qualification exercises 2.5.0, 3.0.0, 4.0.0 and 5.0.0,
 checks the shared section names used by the manual, and separately acquires
 2.4.0 without Relay to prove the missing Context Loading file before checking
@@ -120,9 +121,13 @@ Six of the nine protocol files are unchanged. The three affected topics are:
 Shared 5.0.0 also changes its ChatGPT projection tools and receipt contract.
 Relay's VibeVM Skill uses the selected package's protocols and ordinary native
 Skill projection; it does not depend on those Shared ChatGPT projection tools
-or their removed receipts. That unrelated tool change therefore requires no
-Relay adaptation. Relay's standalone projector receipts and native VibeVM slot
-receipts retain their own contracts. See the
+or their removed receipts. Native protocol consumption therefore requires no
+adaptation. The complete standalone payload does ship that helper and its
+documented interfaces: replacing it changes receipt generation, status schema
+and handling of edited generated outputs. That whole-package change determines
+Relay 4.0.0's [major classification](relay-guidance.md#version-and-provenance),
+while Relay's own standalone projector receipts and native VibeVM slot receipts
+retain their contracts. See the
 [5.0.0 changelog](https://github.com/jresearchsoftware/shared-governance/blob/d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9/packages/development-governance/CHANGELOG.md).
 
 The immutable 5.0.0 distribution is
@@ -136,7 +141,7 @@ The native VibeVM package declares a real `>=2.5.0` dependency. The consumer
 provides supported explicit immutable source roots, resolves the graph and
 commits its exact lock, slots and generated routes. The native Skill routes to
 the consumer's resolved `org.jresearch.ai/development-governance` slot from that
-lock. It must not route to a fixed 4.0.0 path, a separate Skill protocol bundle,
+lock. It must not route to a producer-fixed version path, a separate Skill protocol bundle,
 the Relay producer's root policy or a moving network lookup. A missing or
 inconsistent lock/slot is a maintenance error to reconcile through normal
 reviewed installation, not permission to fall back to another protocol copy.
