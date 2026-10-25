@@ -67,6 +67,11 @@ result and support diagnosis/recovery; they never select desired values.
 An unchanged exact Git pair with equivalent installed configuration takes the
 read-only verification path. It retains the original installation attestation
 and does not restart services merely because a new workflow run requested it.
+Its protected manifest's consumer revision records the receiving repository at
+installation time. Read-only verification retains that historical revision under
+the host and pool locks; a later receiving HEAD, including publication of the
+generated integration, remains a separate compatibility observation and does
+not require installation or rewriting the original receipt.
 
 The protected `deployment-source.json` is a fixed source locator and owner
 binding. It is not another configuration store. Actual target identity,

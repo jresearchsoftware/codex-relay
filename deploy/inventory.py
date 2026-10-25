@@ -157,6 +157,12 @@ def _installation(probe, install):
                 or manifest.get('gitTree') != identity.get('tree')):
             raise ValueError('identity')
         installed = {'status': 'present', 'revision': revision}
+        # This is historical installation provenance, independently of the
+        # receiving repository's current HEAD. Export only a typed exact SHA;
+        # callers requiring it must reject absent or malformed legacy evidence.
+        consumer_revision = manifest.get('consumerRevision')
+        if isinstance(consumer_revision, str) and re.fullmatch('[0-9a-f]{40}', consumer_revision):
+            installed['consumerRevision'] = consumer_revision
         if 'deploymentContract' in manifest:
             installed['deploymentContract'] = manifest['deploymentContract']
         if 'gitConfigReceipt' in manifest:
@@ -507,6 +513,10 @@ def _validate_report(report, config=None):
     if (not isinstance(installed, dict) or installed.get('status') not in ['present', 'missing', 'invalid']
             or installed['status'] == 'present' and not re.fullmatch('[0-9a-f]{40}', installed.get('revision', ''))):
         raise ValueError('inventory-installed-proof')
+    if ('consumerRevision' in installed and (installed['status'] != 'present'
+            or not isinstance(installed['consumerRevision'], str)
+            or not re.fullmatch('[0-9a-f]{40}', installed['consumerRevision']))):
+        raise ValueError('inventory-consumer-proof')
     configuration = report['configuration']
     if (not isinstance(configuration, dict) or configuration.keys() != {'status', 'consumer', 'deployment'}
             or configuration['status'] not in ['equivalent', 'consumer-equivalent', 'missing', 'different', 'invalid', 'unavailable']

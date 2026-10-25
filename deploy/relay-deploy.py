@@ -126,6 +126,29 @@ def resume_configuration(config, config_raw, revision, install_root):
     return consumer_revision, receipt
 
 
+def readonly_consumer_revision(report, config, revision, receipt, guard, pool_guard):
+    """Retain protected target provenance only for an unchanged Git installation.
+
+    The existing inventory transport reads the configured target, including SSH
+    targets. No controller-local installed path or caller-selected SHA is used.
+    """
+    require(guard is not None and guard.poll() is None
+            and ('generalRunnerPool' not in config['consumer']
+                 or pool_guard is not None and pool_guard.poll() is None),
+            'intent-readonly-host-lock-unproven')
+    installed = report.get('installed', {})
+    require(config['environment']['localApply'].get('source') == 'git'
+            and not report.get('blockers') and installed.get('status') == 'present'
+            and installed.get('revision') == revision and receipt.get('product_sha') == revision
+            and installed.get('gitConfigReceipt') == receipt
+            and report.get('configuration', {}).get('status') == 'equivalent',
+            'intent-readonly-installed-binding-unproven')
+    consumer_revision = installed.get('consumerRevision')
+    require(isinstance(consumer_revision, str) and re.fullmatch('[0-9a-f]{40}', consumer_revision),
+            'intent-readonly-consumer-provenance-unproven')
+    return consumer_revision
+
+
 def ingress_guard(target, key, values, revision):
     """Hold the installed host operation lock across the private adapter play.
 
@@ -412,6 +435,8 @@ def run(args):
     # publication is independent of restoring that qualified host installation.
     git_resume = (args.local_lifecycle and args.phase == 'post-check'
                   and values['relay_local_apply_source'] == 'git')
+    git_readonly = (intent_install and args.phase == 'post-check'
+                    and values['relay_local_apply_source'] == 'git')
     if not intent_install and not git_resume and (args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile)):
         from workflow_projection import project, verify
         if args.phase == 'workflow-project':
@@ -588,7 +613,8 @@ def run(args):
     log_fd, log_name = tempfile.mkstemp(prefix=f'relay-{revision[:12]}-{args.phase}-', suffix='.log', dir=args.log_root)
     if intent_install:
         args._intent_log_path = log_name
-    print(f'requested_revision={requested}\nresolved_revision={revision}\nconsumer_revision={consumer_revision}', flush=True)
+    consumer_label = 'receiving_revision' if git_readonly else 'consumer_revision'
+    print(f'requested_revision={requested}\nresolved_revision={revision}\n{consumer_label}={consumer_revision}', flush=True)
     lock_name = hashlib.sha256((target['host'] + values['relay_install_root']).encode()).hexdigest()[:24]
     lock_path = (Path(values['relay_state_root']) if args.local_reconcile else Path(tempfile.gettempdir())) / ('relay-deploy-' + lock_name + '.lock')
     with os.fdopen(log_fd, 'w') as log, tempfile.TemporaryDirectory(prefix='relay-deploy-') as temporary:
@@ -628,7 +654,7 @@ def run(args):
             if args.phase in ['check', 'post-check', 'tls-check']:
                 argv += ['--check']
             started = time.monotonic()
-            log.write(f'requested_revision={requested};resolved_revision={revision};consumer_revision={consumer_revision}\n')
+            log.write(f'requested_revision={requested};resolved_revision={revision};{consumer_label}={consumer_revision}\n')
             log.flush()
             with ExitStack() as host_locks:
                 guard = inherited_guard
@@ -732,6 +758,21 @@ def run(args):
                         require(not strict_inventory['blockers']
                                 and strict_revision == args.intent_expected_installed_revision,
                                 'intent-installation-changed-before-reservation')
+                        if git_readonly:
+                            original_consumer = readonly_consumer_revision(locked_inventory, config, revision,
+                                args.git_intent, guard, pool_guard)
+                            repeated_consumer = readonly_consumer_revision(strict_inventory, config, revision,
+                                args.git_intent, guard, pool_guard)
+                            require(original_consumer == repeated_consumer,
+                                    'intent-readonly-consumer-provenance-changed')
+                            print('RELAY_INSTALL_CONSUMER_PROVENANCE=installed:' + original_consumer
+                                  + ';receiving:' + consumer_revision, flush=True)
+                            log.write('consumer_revision=' + original_consumer
+                                      + ';receiving_revision=' + consumer_revision + '\n')
+                            consumer_revision = original_consumer
+                            values['relay_consumer_revision'] = consumer_revision
+                            inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                            (work / 'inventory.json').write_text(json.dumps(inventory))
                         from intent_install import prepare_target
                         if (args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
                                 and prepare_target(target, key, config, revision, guard)):
