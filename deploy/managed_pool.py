@@ -49,6 +49,11 @@ def pool_contract(config):
                 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
         workflows[repository].append(repository + '/' + LIFECYCLE_WORKFLOW
                                      + '@refs/heads/' + consumer['baseBranch'])
+    deployment = environment['localApply'].get('repository') if environment['localApply'].get('source') == 'git' else None
+    if deployment is not None:
+        require(deployment not in repositories and deployment.split('/')[0] == repository.split('/')[0],
+                'DEPLOYMENT_REPOSITORY_UNPROVEN')
+        workflows[deployment] = [deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main']
     return {'version': 1, 'name': name, 'runnerUser': general['user'],
             'organization': repository.split('/')[0], 'group': general['group'],
             'appId': general['poolApp']['appId'], 'installationId': general['poolApp']['installationId'],
@@ -58,6 +63,7 @@ def pool_contract(config):
             'readiness': '/opt/' + environment['namespace'] + '/relay-reviewer-readiness',
             'workflowRefs': workflows[repository],
             'workflowRefsByRepository': workflows,
+            **({'deploymentRepository': deployment} if deployment is not None else {}),
             'label': general_pool_label(config),
             'members': [{'id': slot['id'], 'name': slot['runnerName'],
                          'label': execution_slot_label(config, slot),

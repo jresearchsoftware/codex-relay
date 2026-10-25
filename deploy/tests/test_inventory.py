@@ -142,6 +142,35 @@ def test_installed_equivalence_and_registered_runners_reuse_without_secret_reads
     assert snapshot(target.root) == before
 
 
+@pytest.mark.parametrize('revision', ['c' * 40, None, 'main', 'C' * 40, 12])
+def test_inventory_exports_only_exact_historical_consumer_provenance(target, revision):
+    release = installed(target)
+    manifest_path = path(target, release + '/artifact-manifest.json')
+    manifest = json.loads(manifest_path.read_bytes())
+    if revision is not None:
+        manifest['consumerRevision'] = revision
+    manifest_path.write_text(json.dumps(manifest))
+    before = snapshot(target.root)
+    report = observe(target)
+    if revision == 'c' * 40:
+        assert report['installed']['consumerRevision'] == revision
+    else:
+        # Existing legacy inventory remains available. Read-only Git callers
+        # cannot treat missing/untyped historical metadata as provenance.
+        assert 'consumerRevision' not in report['installed']
+    assert inventory._validate_report(report, target.config) == report
+    assert snapshot(target.root) == before
+
+
+@pytest.mark.parametrize('revision', ['main', None, 12, 'C' * 40])
+def test_transport_rejects_untyped_consumer_provenance(target, revision):
+    installed(target)
+    report = observe(target)
+    report['installed']['consumerRevision'] = revision
+    with pytest.raises(ValueError, match='inventory-consumer-proof'):
+        inventory._validate_report(report, target.config)
+
+
 def test_old_snapshot_absence_is_visible_owner_handoff_not_fabricated_equivalence(target):
     installed(target, snapshot=False)
     report = observe(target)

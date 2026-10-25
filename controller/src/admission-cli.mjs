@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
-import { createAdmissionControl, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { fail } from './execution-contract.mjs';
 
@@ -16,7 +16,9 @@ const commands = {
   initialize: [], status: ['operation?'], quiesce: ['operation', 'target'],
   drain: ['operation', 'timeout'], 'drain-check': ['operation'],
   phase: ['operation', 'phase', 'revision?'], resume: ['operation'], snapshot: ['operation'],
-  'recovery-target': ['operation', 'target']
+  'recovery-target': ['operation', 'target'],
+  'consumer-transition-check': ['operation', 'revision'],
+  'consumer-transition': ['operation', 'previous-digest', 'revision']
 };
 export function parseAdmissionArguments(args) {
   const [command, ...values] = args; const allowed = commands[command];
@@ -24,12 +26,12 @@ export function parseAdmissionArguments(args) {
   const options = {};
   for (let i = 0; i < values.length; i += 2) {
     const key = values[i].replace(/^--/, '');
-    const storedKey = key === 'operation' ? 'operationId' : key;
+    const storedKey = key === 'operation' ? 'operationId' : key === 'previous-digest' ? 'previousDigest' : key;
     if (values[i] !== `--${key}` || !allowed.some(name => name.replace(/\?$/, '') === key) || Object.hasOwn(options, storedKey)) fail('ADMISSION_ARGUMENTS_INVALID');
     options[storedKey] = values[i + 1];
   }
   for (const name of allowed.filter(name => !name.endsWith('?'))) {
-    if (options[name === 'operation' ? 'operationId' : name] === undefined) fail('ADMISSION_ARGUMENTS_INVALID');
+    if (options[name === 'operation' ? 'operationId' : name === 'previous-digest' ? 'previousDigest' : name] === undefined) fail('ADMISSION_ARGUMENTS_INVALID');
   }
   if (command === 'drain') {
     if (!/^[1-9][0-9]{0,3}$/.test(options.timeout) || Number(options.timeout) > 3600) fail('ADMISSION_TIMEOUT_INVALID');
@@ -42,11 +44,13 @@ export function installedAdmissionControl() {
   // async action revalidates the protected migration context and whole stores;
   // a previously observed receipt cannot hide later changes before admission.
   const methods = ['initialize', 'read', 'assertOpen', 'assertTaskComplete', 'assertSlotComplete',
-    'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete'];
+    'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete',
+    'checkConsumerTransition', 'transitionConsumer'];
   return Object.fromEntries(methods.map(name => [name, async (...args) => {
     const { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
-    const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
+    const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER,
+      ...(name === 'transitionConsumer' ? { consumerTransition: args[0] } : {}) });
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
@@ -66,7 +70,10 @@ export function installedAdmissionControl() {
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
         return task !== null && CONSUMER.repository !== compatibility.receipt.repository
           ? { active: [], unknown: [] } : inventory;
-      } });
+      },
+      supplementalManualInventory: async () => (await composite.all())
+        .filter(record => record.envelope.route === 'manual' && !manualAdmissionComplete(record))
+        .map(record => record.envelope.runId) });
     return admission[name](...args);
   }]));
 }
@@ -129,6 +136,9 @@ export async function main(args = process.argv.slice(2)) {
   if (command === 'drain-check') return admission.drained(options);
   if (command === 'snapshot') return admission.snapshot({ ...options, services: await readAdmissionSnapshot() });
   if (command === 'recovery-target') return admission.recoveryTarget(options);
+  if (command === 'consumer-transition-check') return admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision });
+  if (command === 'consumer-transition') return admission.transitionConsumer({
+    operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision });
   return admission[command](options);
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }

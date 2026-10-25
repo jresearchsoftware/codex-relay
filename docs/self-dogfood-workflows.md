@@ -1,4 +1,4 @@
-# Public Relay consumer workflows
+# Self-dogfood workflow ownership
 
 The workflows under `.github/workflows/` are installed consumer artifacts for
 `jresearchsoftware/codex-relay`. Relay-managed behavior comes from canonical
@@ -6,6 +6,12 @@ The workflows under `.github/workflows/` are installed consumer artifacts for
 which are projected for both self-dogfood and external consumers. The protected
 consumer configuration remains `/etc/codex-relay/consumer.json`. Candidate CI
 remains specific to this repository.
+
+Task #63 adds the [Git-managed private lifecycle source interface](git-managed-installation.md).
+It does not establish PROD activation. The existing public lifecycle file below
+remains the working installed entrypoint until a qualified, owner-authorized
+reviewed cutover. Do not remove it from this source candidate or run two active
+privileged Apply entrypoints.
 
 The schema-2 projection binds the workflow contract and deterministic file
 digests instead of a product SHA. It is derived from an accepted exact product
@@ -25,7 +31,8 @@ See the [Task workflow guide](task-workflow.md) for usage and the
 | --- | --- |
 | [Routing](../.github/workflows/codex-relay-routing.yml) | Owner ready-label commands and optional owner dispatch on `main`; installed controller and fixed Writer/worker helpers |
 | [Publication recovery](../.github/workflows/manual-writer-publication-recovery.yml) | Owner dispatch on `main`; inspect or recover one retained attempt using its exact owner authorization comment |
-| [Owner lifecycle](../.github/workflows/manual-main-production-deploy.yml) | Owner dispatch on `main`; apply accepted Relay `main`, gracefully stop, or resume through the fixed protected lifecycle helper |
+| [Retained owner lifecycle](../.github/workflows/manual-main-production-deploy.yml) | Current public owner dispatch on `main` until reviewed cutover; installed-snapshot apply, stop or resume through the fixed helper |
+| [Private lifecycle template](../deploy/workflows/deployment.yml.in) | Replacement artifact for the private deployment repository; reviewed config-main dispatch binds its exact SHA and independently selected public product SHA |
 | [Exact-head validation](../.github/workflows/relay-exact-head-validation.yml) | Disposable GitHub-hosted candidate checks at the exact PR head or pushed `main` commit |
 
 Routing uses the native names required by the
@@ -97,7 +104,44 @@ exact candidate head. It does not qualify installed sudoers, process isolation,
 credentials, ingress, runner restrictions or independent acceptance. See
 [contributor validation](../CONTRIBUTING.md#local-validation) for its check set.
 
-## Public owner lifecycle workflow
+## Private Git lifecycle and cutover
+
+The selected destination is private `jresearchsoftware/codex-relay-deployment`:
+canonical `prod/relay.json` plus one owner-dispatched lifecycle workflow. Its
+`GITHUB_SHA` is configuration provenance, never a public product or Task/consumer
+SHA. The root coordinator verifies the actual owner dispatch/run/repository/ref,
+retrieves that exact private Git blob with the workflow's scoped ephemeral
+read-only token, and resolves accepted public product source separately. The
+fixed helper receives the token through stdin with a clean privileged child
+environment; neither candidate CI nor a worker receives private access.
+
+One `apply` installs/reconciles the frozen pair, including config-only changes,
+and verifies effective configuration and installed attestation after mutation.
+Previous installed intent is not an equality gate. Merge alone never deploys.
+Ordinary install generates consumer routing/recovery and a separate private
+lifecycle integration directory, each published through its receiving
+repository's normal change process without another completed-host install.
+
+Before cutover, verify the actual private repository Actions permissions,
+owner/trigger policy, runner registrations, selected repository and exact
+workflow/ref allowlists, root helper/sudo closure and private-source access.
+Reuse the proven general/production separation; YAML conditions and labels do
+not establish external scheduling isolation. Qualify the replacement before
+retiring the public owner workflow and stale projection/policy entries through
+their respective reviewed/owner-controlled paths. The completed cutover leaves
+ordinary routing/recovery and independent candidate CI in public consumers and
+the sole privileged owner lifecycle workflow in the private repository.
+
+The source candidate, private publication, runner ACL acceptance, installed
+qualification, live PROD Apply and its pair readback are separate facts. Task
+#63 implementation and disposable TEST runs do not authorize PROD deployment or
+shared policy mutation. See the complete
+[cutover contract](git-managed-installation.md#reviewed-prod-cutover).
+
+## Retained public owner lifecycle workflow
+
+This section describes the existing installed-snapshot interface preserved until
+the replacement above completes its separately qualified owner cutover.
 
 `manual-main-production-deploy.yml` has one action selector: `apply` (the
 default), `stop`, or `resume`. There is no revision, target, config or executable

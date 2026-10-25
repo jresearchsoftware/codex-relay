@@ -21,7 +21,7 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "5.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "4.0.0"
+SELF_VERSION = "4.1.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -177,9 +177,13 @@ def check_first_party_registry(root, expected):
     manual_files = files_in(root / manual)
     require(tree_hash(manual_files) == "sha256:5bd96c600aaecec732981b8c45c82854493d34fa2597a01fdabe033735aac772",
             "Frozen accepted 3.1.0 registry changed")
+    frozen = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.0.0")
+    frozen_files = files_in(root / frozen)
+    require(tree_hash(frozen_files) == "sha256:3e892b02e6f6d3b0b6a1a64840af96b1da91f2af136297cac1bf37b5f326baeb",
+            "Frozen accepted 4.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 

@@ -156,7 +156,20 @@ def _installation(probe, install):
                 or not re.fullmatch('[0-9a-f]{40}', manifest.get('gitTree', ''))
                 or manifest.get('gitTree') != identity.get('tree')):
             raise ValueError('identity')
-        return {'status': 'present', 'revision': revision}, release, manifest
+        installed = {'status': 'present', 'revision': revision}
+        # This is historical installation provenance, independently of the
+        # receiving repository's current HEAD. Export only a typed exact SHA;
+        # callers requiring it must reject absent or malformed legacy evidence.
+        consumer_revision = manifest.get('consumerRevision')
+        if isinstance(consumer_revision, str) and re.fullmatch('[0-9a-f]{40}', consumer_revision):
+            installed['consumerRevision'] = consumer_revision
+        if 'deploymentContract' in manifest:
+            installed['deploymentContract'] = manifest['deploymentContract']
+        if 'gitConfigReceipt' in manifest:
+            installed['gitConfigReceipt'] = manifest['gitConfigReceipt']
+        if 'installationState' in manifest:
+            installed['installationState'] = manifest['installationState']
+        return installed, release, manifest
     except FileNotFoundError:
         # A current pointer with missing release/identity is damaged, not fresh.
         try:
@@ -417,7 +430,7 @@ def _protected_state(probe, config):
     return result
 
 
-def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None):
+def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None, git_desired=False):
     """Inventory is observation only, never decommission/installation authority.
 
     ``root``, ``boundary`` and identities are fixture seams, not public CLI
@@ -446,8 +459,10 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
             blockers.append(label + '-invalid;inspect-before-retry')
     if installed['status'] == 'invalid':
         blockers.append('installed-identity-invalid')
-    if configuration['status'] in ['invalid', 'different']:
+    if not git_desired and configuration['status'] in ['invalid', 'different']:
         blockers.append('configuration-' + configuration['status'])
+    if git_desired and configuration['consumer'] == 'invalid':
+        blockers.append('installed-consumer-configuration-invalid')
     if installed['status'] == 'present' and configuration['consumer'] == 'missing':
         blockers.append('installed-consumer-configuration-missing')
     blockers.extend('runner-' + name + '-ambiguous' for name, row in runners.items() if row['status'] == 'invalid')
@@ -498,6 +513,10 @@ def _validate_report(report, config=None):
     if (not isinstance(installed, dict) or installed.get('status') not in ['present', 'missing', 'invalid']
             or installed['status'] == 'present' and not re.fullmatch('[0-9a-f]{40}', installed.get('revision', ''))):
         raise ValueError('inventory-installed-proof')
+    if ('consumerRevision' in installed and (installed['status'] != 'present'
+            or not isinstance(installed['consumerRevision'], str)
+            or not re.fullmatch('[0-9a-f]{40}', installed['consumerRevision']))):
+        raise ValueError('inventory-consumer-proof')
     configuration = report['configuration']
     if (not isinstance(configuration, dict) or configuration.keys() != {'status', 'consumer', 'deployment'}
             or configuration['status'] not in ['equivalent', 'consumer-equivalent', 'missing', 'different', 'invalid', 'unavailable']
@@ -533,11 +552,13 @@ def _validate_report(report, config=None):
     return report
 
 
-def remote_inventory(target, key, config):
+def remote_inventory(target, key, config, *, git_desired=False):
     """The entrypoint validates config and the configured target identity before this call."""
     source = Path(__file__).read_text()
     from ansible_transport import run_target
     argv = ['/usr/bin/python3', '-I', '-c', source]
+    if git_desired:
+        argv.append('--git-desired')
     try:
         result = run_target(target, key, argv, input=json.dumps(config), timeout=45)
         if result.returncode or len(result.stdout) > LIMIT:
@@ -549,7 +570,7 @@ def remote_inventory(target, key, config):
 
 if __name__ == '__main__':
     try:
-        report = inspect(_json(sys.stdin.buffer.read(LIMIT + 1)))
+        report = inspect(_json(sys.stdin.buffer.read(LIMIT + 1)), git_desired=sys.argv[1:] == ['--git-desired'])
         print(json.dumps(report, sort_keys=True, separators=(',', ':')))
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         print('RELAY_INVENTORY_UNAVAILABLE;inspect-configured-target', file=sys.stderr)

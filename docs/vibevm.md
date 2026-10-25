@@ -2,9 +2,9 @@
 
 Relay selects Shared Governance **5.0.0** for its project-wide adoption under
 Task [#186](https://github.com/jresearchsoftware/codex-relay/issues/186).
-Relay **4.0.0** also selects Shared 5.0.0 for its standalone snapshot and
+Relay **4.1.0** also selects Shared 5.0.0 for its standalone snapshot and
 publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
-frozen Relay 3.1.0 and earlier packages retain their original bytes.
+frozen Relay 4.0.0 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
 all nine applicable complete shared topics. The
 [ownership mapping](relay-guidance-ownership.md)
@@ -55,7 +55,7 @@ not actual model traversal or compliance.
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=5.0.0` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=4.0.0`,
+source and exact commit. The native local registry supplies Relay `=4.1.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -78,14 +78,16 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
+Guidance 4.1.0 adds the compatible ordinary Git-pair installer guidance and keeps
+expert/other-consumer paths. Its source candidate does not establish private
+PROD activation. Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
 the standalone snapshot; see its
 [whole-package classification](relay-guidance.md#version-and-provenance). Guidance 3.1.0
 added compatible explicit manual publication to accepted 3.0.0.
 The earlier 3.0.0 was a major release because it removes the native
 Skill's bundled Shared protocol paths and changes its packaging/routing
 contract, independently of Shared version arithmetic. Frozen first-party
-1.0.0, 2.0.0, 2.0.1, 3.0.0 and 3.1.0 registry payloads remain intact for historical identity
+1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain intact for historical identity
 and rollback; they are not active requirements. The current exporter uses the
 selected Shared 5.0.0 root slot. Earlier Shared selections remain in Git history
 and frozen historical Relay packages. Project version `0.0.0`

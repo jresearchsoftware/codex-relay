@@ -2,8 +2,12 @@
 import json
 import os
 from pathlib import Path
+import sys
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'deploy'))
 
 import managed_pool as pool
 import pool_migration as migration
@@ -72,3 +76,51 @@ def test_incomplete_or_unsafe_installed_state_never_becomes_a_fresh_install(tmp_
     with pytest.raises(pool.PoolError, match='SERIAL_STATE_UNPROVEN'):
         migration.reject_serial_transition(contract, root=tmp_path, owner_uid=os.getuid())
     assert observe(tmp_path) == before
+
+
+@pytest.mark.parametrize('snapshot', ['missing', 'tampered'])
+def test_authenticated_managed_legacy_guard_never_reads_current_snapshot(tmp_path, contract, monkeypatch, snapshot):
+    installed = peer(tmp_path, contract, namespace=contract['namespace'], repository=contract['repository'])
+    if snapshot == 'missing':
+        installed.snapshot.unlink()
+    else:
+        installed.snapshot.write_bytes(b'{unbound current snapshot')
+    before = observe(tmp_path)
+    original_open = os.open
+
+    def guarded_open(path, *args, **kwargs):
+        assert not isinstance(path, (str, Path)) or Path(path).name != 'deployment-config.json'
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, 'open', guarded_open)
+    migration.reject_legacy_registration(contract, root=tmp_path, owner_uid=os.getuid())
+    assert observe(tmp_path) == before
+
+
+@pytest.mark.parametrize('kind', ['registration', 'service'])
+def test_authenticated_managed_legacy_guard_preserves_original_artifacts(tmp_path, contract, kind):
+    if kind == 'registration':
+        path = tmp_path / 'opt' / contract['namespace'] / 'general-runner'
+        path.mkdir(parents=True)
+        (path / '.credentials').write_bytes(b'private legacy evidence, never opened by guard')
+    else:
+        path = tmp_path / 'etc/systemd/system' / (contract['namespace'] + '-general-runner.service')
+        path.parent.mkdir(parents=True)
+        path.write_text('[Service]\nExecStart=/original/run.sh\n')
+    before = observe(tmp_path)
+    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_REQUIRED'):
+        migration.reject_legacy_registration(contract, root=tmp_path, owner_uid=os.getuid())
+    assert observe(tmp_path) == before
+
+
+@pytest.mark.parametrize('unsafe', ['symlink', 'writable'])
+def test_authenticated_managed_legacy_guard_keeps_protected_parent_boundary(tmp_path, contract, unsafe):
+    if unsafe == 'symlink':
+        target = tmp_path / 'elsewhere'
+        target.mkdir()
+        (tmp_path / 'opt').symlink_to(target)
+    else:
+        (tmp_path / 'opt').mkdir(mode=0o777)
+        (tmp_path / 'opt').chmod(0o777)
+    with pytest.raises((pool.PoolError, OSError)):
+        migration.reject_legacy_registration(contract, root=tmp_path, owner_uid=os.getuid())

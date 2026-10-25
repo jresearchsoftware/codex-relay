@@ -24,7 +24,12 @@ def connection_vars(target, key=None, *, local=False):
     if connection not in ['ssh', 'local']:
         raise ValueError('unsupported-ansible-connection')
     values = {'ansible_connection': connection, 'ansible_user': target['user'],
-              'ansible_become': not local, 'ansible_python_interpreter': '/usr/bin/python3'}
+              'ansible_python_interpreter': '/usr/bin/python3'}
+    # Protected installed-local callers already run as root. Inherit the play's
+    # privilege decisions: a host-level False suppresses become_user as well,
+    # making runner probes and runner-owned archive extraction execute as root.
+    if not local:
+        values['ansible_become'] = True
     if connection == 'ssh':
         values.update(ansible_ssh_private_key_file=str(key), ansible_ssh_common_args=STRICT_SSH)
     return values

@@ -28,6 +28,9 @@ def test_only_qualified_connections_and_connection_specific_capabilities():
     local = transport.connection_vars(LOCAL)
     assert local['ansible_connection'] == 'local' and local['ansible_become'] is True
     assert not any('ssh' in key or 'key_file' in key for key in local)
+    installed_local = transport.connection_vars({'host': 'synthetic.invalid', 'user': 'root'}, local=True)
+    assert installed_local['ansible_connection'] == 'local' and 'ansible_become' not in installed_local
+    assert not any('ssh' in key or 'key_file' in key for key in installed_local)
     for connection in ['paramiko', 'winrm', 'docker', 'auto']:
         with pytest.raises(ValueError, match='unsupported-ansible-connection'):
             transport.connection_vars({**LOCAL, 'connection': connection})

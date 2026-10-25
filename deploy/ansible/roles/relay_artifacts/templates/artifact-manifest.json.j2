@@ -5,6 +5,15 @@
   "installedRevision": {{ relay_release_commit | to_json }},
   "gitTree": {{ relay_source_identity.tree | to_json }},
   "consumerRevision": {{ relay_consumer_revision | to_json }},
+{% if relay_deployment_contract | default({}) | length > 0 %}
+  "deploymentContract": {{ relay_deployment_contract | to_json }},
+{% endif %}
+{% if relay_git_config_receipt | default({}) | length > 0 %}
+  "gitConfigReceipt": {{ relay_git_config_receipt | to_json }},
+{% endif %}
+{% if relay_installation_state | default({}) | length > 0 %}
+  "installationState": {{ relay_installation_state | to_json }},
+{% endif %}
 {% if relay_installed_deployment_config | default('') | length > 0 %}
   "deploymentConfigSha256": {{ relay_installed_deployment_config_sha256 | to_json }},
 {% endif %}

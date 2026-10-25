@@ -5,7 +5,7 @@
   "delivery_form": "vpm",
   "files": {
     "LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "SKILL.md": "49927c52f92232aea67c86a0afecd0a21d73cfef4bbac39eab5563706c53aa5c",
+    "SKILL.md": "de0f92642219dda3c8a884b530de250d97b3a06a79840197c2434451ec5796d7",
     "references/compatibility.md": "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace",
     "references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "references/examples.md": "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171",
@@ -15,12 +15,12 @@
     "references/product/github-authority-v4.json": "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5",
     "references/product/vibevm.json": "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a",
     "references/shared-protocols.md": "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f",
-    "references/workflow.md": "55553925d70e0f99fda60256c494c91fb1e656e1f6a5a6381a42ada4aaa7a4a1"
+    "references/workflow.md": "f8b9def184d727bfd5e94a4e2c12ee2d7713a1f95ac8fbf69fed8bbfc22b576a"
   },
   "generator": "scripts/build-relay-guidance.py",
   "name": "codex-relay",
   "protocol_source": "consumer-vibe-lock",
-  "publication": "Frozen 4.0.0 candidate; manual PR Step-label clarification and immutable Shared 5.0.0 delivery; major for the bundled Shared ChatGPT helper receipt/status/update contract changes; source acceptance and publication remain separate",
+  "publication": "Frozen 4.1.0 source candidate; compatible additive intent-driven installation guidance with retained expert and consumer paths; Task 63 source support requires separately accepted installed product and owner-qualified private PROD cutover; no external publication or deployment claim",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -35,18 +35,18 @@
     "contracts/src/github-authority-v4.json": "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5",
     "deploy/workflows/contract.json": "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c",
     "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
-    "guidance/source.json": "18f35e3b37de837ec7195759df65f63436da7151ad28827433ceb4ddaa2107dd",
+    "guidance/source.json": "0aa79a2ca6acebe64fb3b4dee6fc237e8ebb743e231d770e409436cd547cae99",
     "packages/codex-relay/skill/LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "packages/codex-relay/skill/SKILL.md": "49927c52f92232aea67c86a0afecd0a21d73cfef4bbac39eab5563706c53aa5c",
+    "packages/codex-relay/skill/SKILL.md": "de0f92642219dda3c8a884b530de250d97b3a06a79840197c2434451ec5796d7",
     "packages/codex-relay/skill/references/compatibility.md": "2c0007f48079712af98ece3abf5253c9a1534c8bdf09ef82694d09660bfd8ace",
     "packages/codex-relay/skill/references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "packages/codex-relay/skill/references/examples.md": "de7b5d7fc8b204f1f7eae00733860f937068797c1976d5920ebdf8e575fe5171",
     "packages/codex-relay/skill/references/installation.md": "283135f9f71e5c34a698af43763ee44e1692b69bb7f6354a7786c022a1fc3763",
     "packages/codex-relay/skill/references/shared-protocols.md": "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f",
-    "packages/codex-relay/skill/references/workflow.md": "55553925d70e0f99fda60256c494c91fb1e656e1f6a5a6381a42ada4aaa7a4a1",
+    "packages/codex-relay/skill/references/workflow.md": "f8b9def184d727bfd5e94a4e2c12ee2d7713a1f95ac8fbf69fed8bbfc22b576a",
     "scripts/build-relay-guidance.py": "6e38ce0c739667ca0332c224b3cdfcc1ec686eafeccd18b7b118c3e68f614ef8",
     "toolchain/vibevm.json": "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
   },
-  "version": "4.0.0",
+  "version": "4.1.0",
   "workflow_contract": "relay-workflows-v4"
 }

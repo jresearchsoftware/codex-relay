@@ -53,3 +53,17 @@
     msg: INSTALLED_DEPLOYMENT_CONFIG_CHECK_MODE_PLAN=protected-snapshot-pending
   changed_when: true
   when: ansible_check_mode | bool and not relay_snapshot_release.stat.exists
+
+- name: Publish the protected Git source locator independently of installed desired values
+  ansible.builtin.copy:
+    content: |
+      {{ relay_deployment_source | to_nice_json }}
+    dest: '{{ relay_config_root }}/deployment-source.json'
+    owner: root
+    group: root
+    mode: '0600'
+    follow: false
+    unsafe_writes: false
+  no_log: true
+  diff: false
+  when: relay_deployment_source | default({}) | length > 0

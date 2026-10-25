@@ -1,10 +1,18 @@
 ---
-- name: Prove the protected installed identity and preserve complete owner intent before upgrade
+- name: Prove the protected installed identity and the admitted desired-state route
   ansible.builtin.command:
     argv: >-
-      {{ ['/usr/bin/python3', '-c', lookup('file', playbook_dir + '/scripts/verify_upgrade.py'),
-          relay_install_root, relay_config_root] +
-         ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else []) }}
+      {{ ['/usr/bin/python3', '-c',
+          ('resource_globals = {"__name__": "relay_selected_resource_proof"};exec(' ~
+           (lookup('file', playbook_dir + '/../clean_reinstall.py') | to_json) ~
+           ', resource_globals);prove_git_resources = resource_globals["prove_git_resource_boundary"];'
+           if relay_git_desired_state | default(false) | bool else '') ~
+          lookup('file', playbook_dir + '/scripts/verify_upgrade.py')] +
+         (['--git-desired', relay_install_root, relay_config_root,
+           relay_production_operation_target_head, relay_intent_expected_installed_revision]
+          if relay_git_desired_state | default(false) | bool else
+          [relay_install_root, relay_config_root] +
+          ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else [])) }}
     stdin: '{{ (relay_serial_pool_target_config if relay_serial_pool_transition | default(false) | bool else relay_installed_deployment_config) | string }}'
     stdin_add_newline: false
   changed_when: false

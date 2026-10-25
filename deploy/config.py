@@ -249,6 +249,12 @@ def validate(c, product_root):
         repository = c['source']['repository'].removeprefix('https://github.com/').removeprefix('git@github.com:').removesuffix('.git')
         require(repository == deployment_repository(c) and c['consumer']['baseBranch'] == 'main'
                 and c['source'].get('revision', 'main') == 'main', 'localApply.installed-self-consumer')
+    elif local_apply.get('source') == 'git':
+        require(object_keys(local_apply, ['source', 'repository', 'configPath'])
+                and text(local_apply['repository'], r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
+                and relative(local_apply['configPath'])
+                and local_apply['configPath'].endswith('.json')
+                and c['consumer']['baseBranch'] == 'main', 'localApply.git')
     else:
         require(object_keys(local_apply, ['configPath']) and relative(local_apply['configPath']), 'localApply')
     require(type(e['codexTokenRequired']) is bool, 'codexTokenRequired')
@@ -416,6 +422,11 @@ def compile_inputs(c):
         'relay_production_local_apply_stage_root': state + '/production-apply',
         'relay_owner_lifecycle_helper_path': '/usr/local/sbin/' + ns + '-owner-lifecycle',
         'relay_local_apply_source': e['localApply'].get('source', 'checkout'),
+        'relay_deployment_source': ({'repository': e['localApply']['repository'],
+            'configPath': e['localApply']['configPath'], 'owner': consumer['owner'],
+            'productRepository': c['source']['repository'].removeprefix('https://github.com/').removeprefix(
+                'git@github.com:').removesuffix('.git')}
+            if e['localApply'].get('source') == 'git' else {}),
         'relay_consumer_deployment_config_relative': e['localApply'].get('configPath', ''),
         'relay_reviewer_bind_mode': 'nexus_gateway' if bind['mode'] == 'docker_gateway' else 'a_only_loopback',
         'relay_docker_network_name': bind['network'], 'relay_docker_nginx_container_name': bind['container'],

@@ -4,7 +4,7 @@ Changing the consumer digest also changes admission and original-attempt
 recovery bindings. Registration-name changes or stopping the old service cannot
 establish that compatibility. Preserve all original state before owner design.
 """
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import os
 from pathlib import Path
 import stat
@@ -13,7 +13,8 @@ from managed_pool import PoolError, require
 from pool_eligibility import _directory, _open_directory, _read, _json, _peer, NAMESPACE
 
 
-def reject_serial_transition(contract, *, root=Path('/'), owner_uid=0):
+@contextmanager
+def _legacy_boundary(contract, root, owner_uid):
     namespace = contract['namespace']
     require(isinstance(namespace, str) and NAMESPACE.fullmatch(namespace), 'SERIAL_STATE_UNPROVEN')
     with ExitStack() as stack:
@@ -39,6 +40,21 @@ def reject_serial_transition(contract, *, root=Path('/'), owner_uid=0):
         legacy = present(['opt', namespace, 'general-runner'])
         legacy |= present(['etc', 'systemd', 'system', namespace + '-general-runner.service'])
         require(not legacy, 'SERIAL_TRANSITION_REQUIRED')
+        yield namespace, descriptor, stack
+
+
+def reject_legacy_registration(contract, *, root=Path('/'), owner_uid=0):
+    """Reject legacy artifacts after the caller authenticates managed current.
+
+    This guard grants no source, resource or pool eligibility proof. It does not
+    read a mutable deployment snapshot or any legacy credentials/journals.
+    """
+    with _legacy_boundary(contract, root, owner_uid):
+        pass
+
+
+def reject_serial_transition(contract, *, root=Path('/'), owner_uid=0):
+    with _legacy_boundary(contract, root, owner_uid) as (namespace, descriptor, stack):
         try:
             opt = _open_directory(descriptor, 'opt', owner_uid, stack, [])
             install = _open_directory(opt, namespace, owner_uid, stack, [])

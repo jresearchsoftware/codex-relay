@@ -234,7 +234,7 @@
         set -a;
         . '{{ relay_reviewer_credential_env_file }}';
         set +a;
-        runuser -u '{{ relay_reviewer_user }}' --preserve-environment
+        /usr/sbin/runuser -u '{{ relay_reviewer_user }}' --preserve-environment
         '{{ relay_install_root }}/relay-reviewer-credential-check'
       args:
         executable: /bin/sh

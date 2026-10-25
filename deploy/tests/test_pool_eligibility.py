@@ -373,6 +373,33 @@ def test_current_prospective_contract_cannot_supply_foreign_workflow_claims(tmp_
         observe(tmp_path, bad)
 
 
+def test_private_deployment_is_one_exact_lifecycle_ref_not_an_execution_consumer(tmp_path, contract):
+    deployment = 'example-org/private-deployment'
+    contract['repositories'] = [contract['repository']]
+    contract['deploymentRepository'] = deployment
+    contract['workflowRefsByRepository'] = {
+        contract['repository']: contract['workflowRefs'], deployment: [lifecycle_ref(deployment)]}
+    assert observe(tmp_path, contract) == contract['workflowRefsByRepository']
+    assert deployment not in contract['repositories']
+    contract['workflowRefsByRepository'][deployment].append(
+        deployment + '/.github/workflows/validation.yml@refs/heads/main')
+    with pytest.raises(PoolError, match='ELIGIBILITY_CONTRACT_INVALID'):
+        observe(tmp_path, contract)
+
+
+def test_peer_git_deployment_adds_no_public_lifecycle_or_candidate_eligibility(tmp_path, contract):
+    fixture = peer(tmp_path, contract)
+    fixture.config['consumer']['baseBranch'] = 'main'
+    fixture.config['environment']['localApply'] = {
+        'source': 'git', 'repository': 'example-org/private-deployment', 'configPath': 'prod/relay.json'}
+    save(fixture)
+    actual = observe(tmp_path, contract)
+    assert actual[fixture.config['consumer']['repository']] == refs(fixture.config)
+    assert actual['example-org/private-deployment'] == [lifecycle_ref('example-org/private-deployment')]
+    assert all('/validation.' not in ref and '@refs/pull/' not in ref
+               for rows in actual.values() for ref in rows)
+
+
 @pytest.mark.parametrize('name', ['snapshot', 'manifest', 'identity'])
 def test_peer_evidence_is_rechecked_after_reading_all_snapshot_bytes(tmp_path, contract, monkeypatch, name):
     fixture = peer(tmp_path, contract)

@@ -1,4 +1,19 @@
 ---
+- name: Inspect the consumer snapshot for a Git-owned configuration transition
+  ansible.builtin.stat:
+    path: '{{ relay_consumer_config_path }}'
+    follow: false
+  register: relay_git_previous_consumer
+  when: relay_git_desired_state | default(false) | bool
+
+- name: Select the protected same-operation consumer publication
+  ansible.builtin.set_fact:
+    relay_git_consumer_transition: >-
+      {{ relay_git_desired_state | default(false) | bool and
+         relay_intent_expected_installed_revision | default('none') != 'none' and
+         relay_git_previous_consumer.stat.exists | default(false) and
+         not ansible_check_mode | bool }}
+
 - name: Install the root-owned explicit consumer snapshot
   ansible.builtin.template:
     src: consumer.json.j2
@@ -6,6 +21,47 @@
     owner: root
     group: root
     mode: '0644'
+  when: not relay_git_consumer_transition | bool
+
+- name: Stage literal Git desired consumer bytes for locked publication
+  ansible.builtin.template:
+    src: consumer.json.j2
+    dest: '{{ relay_config_root }}/.consumer-{{ relay_admission_operation_id }}.desired.json'
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  when: relay_git_consumer_transition | bool
+
+- name: Publish the Git consumer and admission digest under one continuous Writer lock
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ relay_release_path }}/reviewed-source/deploy/ansible/scripts/publish_git_consumer.py'
+      - --source
+      - '{{ relay_release_path }}/reviewed-source'
+      - --config-root
+      - '{{ relay_config_root }}'
+      - --desired
+      - '{{ relay_config_root }}/.consumer-{{ relay_admission_operation_id }}.desired.json'
+      - --claim-root
+      - '{{ relay_writer_claim_root }}'
+      - --repository
+      - '{{ relay_github_repository }}'
+      - --operation
+      - '{{ relay_admission_operation_id }}'
+      - --revision
+      - '{{ relay_release_commit }}'
+  register: relay_git_consumer_publication
+  changed_when: relay_git_consumer_publication.stdout is search('PUBLISHED')
+  when: relay_git_consumer_transition | bool
+
+- name: Remove only the successfully published desired staging file
+  ansible.builtin.file:
+    path: '{{ relay_config_root }}/.consumer-{{ relay_admission_operation_id }}.desired.json'
+    state: absent
+  when: relay_git_consumer_transition | bool
 
 - name: Install the fixed root-owned diagnostics store wrapper
   ansible.builtin.template:

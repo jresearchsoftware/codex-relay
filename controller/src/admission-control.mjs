@@ -5,11 +5,89 @@ import { randomUUID } from 'node:crypto';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
+import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
 const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', 'recovery-required']);
 const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
+const configDigest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+function publishedTerminal(record, recoveredHandoff = false) {
+  const outcome = record?.outcome;
+  return outcome && ['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW'].includes(outcome.status)
+    && positive(outcome.outcomeId) && configDigest(outcome.bodySha256)
+    && (outcome.head === null || exactSha(outcome.head))
+    && (outcome.prNumber === null || positive(outcome.prNumber))
+    && !record.publicationIntent && !record.commentIntent && !record.lifecycleIntent
+    && (recoveredHandoff || record.handoffComplete !== false);
+}
+
+// Manual execution deliberately has no worker journal. Its protected Writer
+// submission and native publication receipts bind the original admission instead.
+export function manualAdmissionComplete(record) {
+  const e = record?.envelope;
+  if (e?.route !== 'manual' || !publishedTerminal(record) || record.outcome.manual !== true
+    || record.prIntent && record.prNumber !== record.outcome.prNumber) return false;
+  const result = record.manualSubmission?.publishedResult;
+  if (!result) return e.request?.schema_version === '3.0' && e.request.kind === 'task-request'
+    && positive(record.manualResultAuthorization?.id) && configDigest(record.manualResultAuthorization.sha256)
+    && configDigest(e.requestReference?.sha256);
+  try {
+    validateAuthorityRecord(result, { repository: e.repository, task: e.issueNumber });
+    if (result.kind !== 'outcome' || result.attempt !== e.attemptId
+      || !configDigest(record.manualSubmission.sha256)
+      || canonicalAuthorityJson(result.parent) !== canonicalAuthorityJson(record.manualSubmission.parent)
+      || record.outcome.prNumber !== (result.parent.kind === 'pull_request' ? result.parent.number : null)
+      || record.outcome.head !== (exactSha(result.result.revision) ? result.result.revision : null)
+      || record.outcome.status !== (result.status === 'implemented' ? 'IMPLEMENTED_PENDING_FRESH_REVIEW' : 'BLOCKED')) return false;
+    if (result.schema_version === '4.0') return result.step === e.step
+      && canonicalAuthorityJson(result.authority) === canonicalAuthorityJson(e.request.authority)
+      && canonicalAuthorityJson(result.admission) === canonicalAuthorityJson(admissionBinding(e.request));
+    return canonicalAuthorityJson(result.request) === canonicalAuthorityJson(e.requestReference);
+  } catch { return false; }
+}
+
+export async function completedAdmissionRecord(record, journal) {
+  const e = record?.envelope;
+  if (!e || e.version !== VERSION || !configDigest(e.consumerDigest) || !positive(e.runId)) return false;
+  if (e.route === 'manual') return manualAdmissionComplete(record);
+  if (e.route !== 'auto' || !publishedTerminal(record, Boolean(record.prepublicationRecovery))
+    || record.controllerLifecycle?.status === 'active') return false;
+  const lifecycle = record.controllerLifecycle;
+  if (lifecycle && (lifecycle.version !== 1 || lifecycle.status !== 'complete'
+    || !['started', 'not_started'].includes(lifecycle.child)
+    || !(lifecycle.containment === 'reaped'
+      || lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))) return false;
+  if (record.admissionBlock && !lifecycle && record.outcome.status === 'BLOCKED') return true;
+  if (record.prepublicationRecovery) {
+    const recovery = record.prepublicationRecovery;
+    const saved = await journal.get(e.runId, e.repository);
+    return Boolean(saved && saved.version === VERSION && digest(saved.envelope) === digest(e)
+      && recovery.complete === true && recovery.handoffProven === true
+      && recovery.binding?.terminal?.journalDigest === digest(saved)
+      && recovery.binding.terminal.controllerDigest === digest(record.controllerLifecycle ?? null)
+      && recovery.publication?.status === 'PUBLISHED'
+      && recovery.publication.publishedHead === recovery.binding.head && exactSha(recovery.binding.head)
+      && recovery.collection?.head === recovery.binding.head && recovery.collection.clean === true
+      && recovery.outcome?.status === 'IMPLEMENTED_PENDING_FRESH_REVIEW'
+      && recovery.outcome.head === recovery.binding.head && positive(recovery.outcome.outcomeId)
+      && positive(recovery.outcome.prNumber) && record.prNumber === recovery.outcome.prNumber
+      && !record.prIntent);
+  }
+  if (record.prIntent && !(positive(record.prNumber) && record.prNumber === record.outcome.prNumber)
+    && !(record.prIntent === true && !Object.hasOwn(record, 'controllerLifecycle')
+      && e.target === 'issue' && positive(record.outcome.prNumber) && exactSha(record.outcome.head)
+      && record.publishedHead === record.outcome.head
+      && (record.outcome.status === 'BLOCKED' ? record.finalHead === null : record.finalHead === record.outcome.head))) return false;
+  const saved = await journal.get(e.runId, e.repository);
+  if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e) || !saved.outcome
+    || !['status', 'head', 'prNumber', 'outcomeId'].every(key => record.outcome[key] === saved.outcome[key])) return false;
+  if (saved.execution === null) return true;
+  const execution = saved.execution;
+  return execution?.reserved === true && execution.returned === true
+    && ['started', 'not_started'].includes(execution.child)
+    && (execution.containment === 'reaped' || execution.child === 'not_started' && execution.containment === 'not_required');
+}
 function validServices(value) {
   // The primary service keeps the original `general` key. Additional activity
   // intent is complete only for this immutable installation topology; caller
@@ -33,11 +111,13 @@ function validServices(value) {
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
-  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null }) {
+  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null,
+  supplementalManualInventory = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
     || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
-    || (supplementalVerify !== null && typeof supplementalVerify !== 'function')) fail('ADMISSION_CONFIG_INVALID');
+    || (supplementalVerify !== null && typeof supplementalVerify !== 'function')
+    || (supplementalManualInventory !== null && typeof supplementalManualInventory !== 'function')) fail('ADMISSION_CONFIG_INVALID');
   const pathname = join(root, stateName);
   async function protect() {
     if (!protectedRoot) return;
@@ -47,7 +127,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (at === '/') return;
     }
   }
-  function validate(value) {
+  function validate(value, previousDigest = null) {
     if (!value || Object.keys(value).length !== fields.length || fields.some(key => !Object.hasOwn(value, key))
       || value.version !== 1 || !PHASES.has(value.phase)
       || (value.previousActive !== null && !validServices(value.previousActive))
@@ -55,10 +135,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       || (value.phase === 'verified' ? !exactSha(value.verifiedRevision) || value.verifiedRevision !== value.target : value.verifiedRevision !== null)
       || (value.phase === 'open' ? value.operationId !== null || value.target !== null
         : !operation(value.operationId) || !exactSha(value.target))) fail('ADMISSION_STATE_INVALID');
-    if (value.consumerDigest !== consumerDigest) fail('CONSUMER_CONFIG_CHANGED');
+    if (!configDigest(value.consumerDigest) || value.consumerDigest !== consumerDigest
+      && value.consumerDigest !== previousDigest) fail('CONSUMER_CONFIG_CHANGED');
     return value;
   }
-  async function read({ missing = false } = {}) {
+  async function read({ missing = false, previousDigest = null } = {}) {
     // The migration owner/source/gate binding is global. Historical execution
     // and publication state are inspected only for the resource being used,
     // or in full for a lifecycle drain.
@@ -74,7 +155,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         || (protectedRoot && stat.uid !== 0)) fail('ADMISSION_STATE_UNSAFE');
       let value;
       try { value = parseConsumerJson(await file.readFile('utf8')); } catch { fail('ADMISSION_STATE_INVALID'); }
-      return validate(value);
+      return validate(value, previousDigest);
     } finally { await file.close(); }
   }
   async function write(value) {
@@ -146,12 +227,17 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
   function validRecord(record) {
     const e = record?.envelope;
     if (!e || e.version !== VERSION || !positive(e.runId) || !['auto', 'manual'].includes(e.route)
-      || e.consumerDigest !== consumerDigest) throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID'), {
+      || !configDigest(e.consumerDigest)) throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID'), {
       code: 'ADMISSION_ATTEMPT_INVALID', details: { conflictingRunId: e?.runId, repository: e?.repository,
         resource: e?.executionSlot ?? 'primary' } });
     return e;
   }
-  async function currentInventory(task = null, slot = null, resourceOnly = false) {
+  async function historicalComplete(record) {
+    // A completed lifecycle flag alone cannot reinterpret a different config's
+    // execution. Compare the original immutable envelope and terminal journal.
+    return completedAdmissionRecord(record, journal);
+  }
+  async function currentInventory(task = null, slot = null, resourceOnly = false, includeManual = false) {
     const active = []; const unknown = [];
     const rows = store.scan ? await store.scan()
       : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
@@ -167,6 +253,18 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // A handoff is not evidence of physical runner occupation.
       if (resourceOnly && identity.route === 'manual') continue;
       const e = validRecord(record);
+      if (e.consumerDigest !== consumerDigest) {
+        if (await historicalComplete(record)) continue;
+        fail('ADMISSION_ATTEMPT_INVALID');
+      }
+      if (includeManual && e.route === 'manual') {
+        if (!manualAdmissionComplete(record)) unknown.push(e.runId);
+        continue;
+      }
+      if (includeManual && e.route === 'auto' && !await historicalComplete(record)) {
+        unknown.push(e.runId);
+        continue;
+      }
       if (e.route !== 'auto' || record.admissionBlock) continue;
       if (resourceOnly) {
         let released;
@@ -221,9 +319,14 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     }
     return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
   }
-  async function inventory(task = null, slot = null, resourceOnly = false) {
-    if (!supplementalInventory) return currentInventory(task, slot, resourceOnly);
-    const current = await currentInventory(task, slot, resourceOnly);
+  async function inventory(task = null, slot = null, resourceOnly = false, includeManual = false) {
+    const current = await currentInventory(task, slot, resourceOnly, includeManual);
+    if (includeManual && supplementalManualInventory) {
+      const manual = await supplementalManualInventory();
+      if (!Array.isArray(manual) || !manual.every(positive)) fail('ADMISSION_ATTEMPT_INVALID');
+      current.unknown.push(...manual);
+    }
+    if (!supplementalInventory) return current;
     const supplemental = await supplementalInventory({ task, slot, resourceOnly });
     if (!supplemental || !['active', 'unknown'].every(key => Array.isArray(supplemental[key])
       && supplemental[key].every(positive))) fail('ADMISSION_ATTEMPT_INVALID');
@@ -272,6 +375,25 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (pending.active.length) return { ...state, ...pending, drained: false };
       return { ...await write({ ...state, phase: 'drained' }), ...pending, drained: true };
     },
+    async checkConsumerTransition({ operationId, target }) {
+      const state = bound(await read(), operationId);
+      if (!exactSha(target) || state.target !== target) fail('ADMISSION_TARGET_MISMATCH');
+      if (!['drained', 'applying'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
+      const pending = await inventory(null, null, false, true);
+      if (pending.active.length || pending.unknown.length) fail('ADMISSION_NOT_DRAINED');
+      return { operationId, target, previousDigest: state.consumerDigest };
+    },
+    async transitionConsumer({ operationId, previousDigest, target }) {
+      if (!configDigest(previousDigest)) fail('ADMISSION_CONFIG_INVALID');
+      const state = bound(await read({ previousDigest }), operationId);
+      if (!exactSha(target) || state.target !== target) fail('ADMISSION_TARGET_MISMATCH');
+      if (!['drained', 'applying'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
+      const pending = await inventory(null, null, false, true);
+      if (pending.active.length || pending.unknown.length) fail('ADMISSION_NOT_DRAINED');
+      // The caller holds the existing Writer mutex continuously from the old
+      // precheck through consumer publication. Attempts and journals stay intact.
+      return state.consumerDigest === consumerDigest ? state : write({ ...state, consumerDigest });
+    },
     async phase({ operationId, phase, revision }) {
       const state = bound(await read(), operationId);
       if (phase === 'verified' && !exactSha(revision)) fail('ADMISSION_VERIFIED_REVISION_REQUIRED');
@@ -317,6 +439,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       await protect();
       if (!positive(runId)) fail('RUN_ID_INVALID');
       const record = await store.get(runId); const e = validRecord(record);
+      if (e.consumerDigest !== consumerDigest) fail('CONSUMER_CONFIG_CHANGED');
       if (e.attemptId !== attemptId || e.route !== 'auto' || record.admissionBlock) fail('ATTEMPT_NOT_ADMITTED');
       const lifecycle = record.controllerLifecycle;
       if (lifecycle && (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status))) fail('ADMISSION_ATTEMPT_INVALID');

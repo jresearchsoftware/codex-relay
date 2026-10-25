@@ -26,9 +26,13 @@ class BootstrapCliTests(unittest.TestCase):
         cls.events = cls.base / 'events'
         ssh = cls.bin / 'ssh'
         ssh.write_text('#!/usr/bin/python3\n' + f'''
-import json, os, sys
+import io, json, os, sys
 from pathlib import Path
 Path({str(cls.calls)!r}).write_text('strict-preflight')
+if '__relay_payload' in sys.argv[-1]:
+    request = json.loads(sys.stdin.read())
+    sys.argv[-1] = request.pop('__relay_source')
+    sys.stdin = io.StringIO(json.dumps(request))
 guard = Path({str(cls.guard_live)!r})
 def event(name):
     identity = guard.read_text() if guard.exists() else None

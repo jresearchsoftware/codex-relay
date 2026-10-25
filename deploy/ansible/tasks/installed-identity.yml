@@ -71,3 +71,12 @@
 - name: Report the exact installed identity after the complete role composition
   ansible.builtin.debug:
     msg: 'RELAY_INSTALLED_REVISION={{ relay_release_commit }};consumer={{ relay_consumer_revision }};previous={{ relay_production_final_manifest.previousRevision }}'
+
+- name: Prove the selected Git input pair and deployment compatibility metadata
+  ansible.builtin.assert:
+    that:
+      - relay_production_final_manifest.gitConfigReceipt == relay_git_config_receipt
+      - relay_production_final_manifest.deploymentContract == relay_deployment_contract
+      - relay_production_final_manifest.installedRevision == relay_git_config_receipt.product_sha
+    fail_msg: RELAY_GIT_PAIR_INSTALLED_BINDING_INVALID
+  when: relay_git_config_receipt | default({}) | length > 0

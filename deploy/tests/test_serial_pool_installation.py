@@ -151,6 +151,20 @@ def test_retained_original_tamper_stops_before_executing_its_source(source_bundl
             'reservedReceiptReplay': True, 'originalGate': 'applying', 'removed': 0}
 
 
+def test_retired_serial_git_intent_and_current_snapshot_drift_use_live_protected_graph(source_bundle):
+    bundle, tree = source_bundle
+    with tempfile.TemporaryDirectory(prefix='relay-serial-retired-git-', dir='/run') as temporary:
+        command = ['unshare', '--mount', '--net', '--pid', '--fork', '--kill-child', '--mount-proc',
+            sys.executable, str(bundle / 'current/deploy/tests/test_serial_pool_installation.py'),
+            '--installed-harness', temporary, str(bundle), tree, '1', 'retired-git', str(QUALIFIED_NODE)]
+        result = subprocess.run(command, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+                                text=True, capture_output=True, timeout=120)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {'gitIntent': 'retained', 'snapshotDrift': ['missing', 'tampered'],
+            'currentDigestMismatch': 'blocked', 'frozenOriginalTamper': 'blocked',
+            'receiptUnchanged': True, 'networkIsolated': True}
+
+
 def installed_harness(fixture, bundle, source_tree, capacity, scenario, qualified_node):
     """Called only as a child of root unshare; all mounts disappear on exit."""
     real_run = subprocess.run
@@ -327,7 +341,8 @@ def installed_harness(fixture, bundle, source_tree, capacity, scenario, qualifie
     with patch('subprocess.run', side_effect=boundary):
         recovered_original, evidence = installation.original_installation(target)
         assert recovered_original == original and [run['runId'] for run in evidence['runs']] == [11, 12, 13]
-        if scenario not in ['lifecycle', 'plural', 'same-revision', 'same-revision-links', 'retained-context-tamper']:
+        if scenario not in ['lifecycle', 'plural', 'same-revision', 'same-revision-links',
+                            'retained-context-tamper', 'retired-git']:
             if scenario == 'unknown-original':
                 damaged = copy.deepcopy(old_records[11])
                 damaged['controllerLifecycle']['containment'] = 'unknown'
@@ -527,6 +542,45 @@ assert.equal((await gate.status()).phase,'open');console.log(JSON.stringify({ok:
                 'RELAY_REPOSITORY': config.deployment_repository(target)},
             text=True, capture_output=True, timeout=60)
         assert response.returncode == 0, response.stdout + response.stderr
+        if scenario == 'retired-git':
+            desired = copy.deepcopy(target)
+            desired['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/deployment',
+                                                   'configPath': 'prod/relay.json'}
+            desired['environment']['reviewerRepositories'] = [config.deployment_repository(target)]
+            desired['consumer']['defaultProfile']['effort'] = 'medium'
+            desired_digest = installation.consumer_digest(desired['consumer'], new_release / 'reviewed-source')
+            assert desired_digest != target_digest
+            retained_receipt = (Path('/etc') / namespace / transition.RECEIPT_NAME).read_bytes()
+            current_gate_path = claim / 'admission-pool-v1.json'
+            retained_gate = current_gate_path.read_bytes()
+            expected = {'phase': 'retired', 'operationId': OPERATION,
+                        'targetRevision': target_revision, 'completionRequired': False}
+            assert installation.preflight(desired, api, desired_digest) == expected
+            snapshot = new_release / 'deployment-config.json'
+            snapshot.unlink()
+            assert installation.preflight(desired, api, desired_digest) == expected
+            native_write(snapshot, b'{overwritten malformed current snapshot')
+            assert installation.preflight(desired, api, desired_digest) == expected
+            # A new desired digest never legitimizes a live gate mismatch.
+            damaged_gate = json.loads(retained_gate)
+            damaged_gate['consumerDigest'] = desired_digest
+            native_write(current_gate_path, damaged_gate)
+            with pytest.raises(managed_pool.PoolError):
+                installation.preflight(desired, api, desired_digest)
+            current_gate_path.write_bytes(retained_gate)
+            frozen = Path(receipt['original']['configPath'])
+            frozen_raw = frozen.read_bytes()
+            frozen.write_bytes(frozen_raw + b'\n')
+            with pytest.raises(managed_pool.PoolError, match='ORIGINAL_INSTALLATION_UNPROVEN'):
+                installation.preflight(desired, api, desired_digest)
+            frozen.write_bytes(frozen_raw)
+            assert (Path('/etc') / namespace / transition.RECEIPT_NAME).read_bytes() == retained_receipt
+            assert all(Path(path).read_bytes() == raw for path, raw in old_bytes.items())
+            assert (claim / 'admission-v1.json').read_bytes() == old_gate
+            print(json.dumps({'gitIntent': 'retained', 'snapshotDrift': ['missing', 'tampered'],
+                'currentDigestMismatch': 'blocked', 'frozenOriginalTamper': 'blocked',
+                'receiptUnchanged': True, 'networkIsolated': True}))
+            return
         assert all(Path(path).read_bytes() == raw for path, raw in old_bytes.items())
         assert (claim / 'admission-v1.json').read_bytes() == old_gate
         print(json.dumps({'capacity': capacity, 'originalGate': 'applying', 'newGate': 'open',

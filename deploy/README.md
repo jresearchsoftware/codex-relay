@@ -6,6 +6,13 @@ and invoke `deploy/relay-deploy.py` from the selected Relay source. The
 `ansible/` directory is an internal backend, not a consumer API. Consumers do
 not copy or maintain its inventory, roles, tasks or handlers.
 
+The ordinary owner-facing install/update command is `--phase install`. Read the
+[Git-managed installation guide](../docs/git-managed-installation.md) for its
+frozen product/config pair, automatic strategy selection, private lifecycle
+workflow, generated integration directories and reviewed PROD cutover. The
+phase-specific commands below remain expert and retained compatibility APIs;
+their prepublication/configuration comparison rules are not Git Apply gates.
+
 For an owner-designated isolated TEST deployment, use the standing
 [TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
 Keep reproduction, related repairs, representative installation and the original
@@ -31,7 +38,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
 | `environment.repository` | Required lifecycle/Production Runner anchor for plural `consumer.repositories`; must be a configured target. Singleton inputs keep their existing repository |
 | `environment.generalRunner.scope`, `environment.generalRunner.group` | Optional general-runner registration scope and its dedicated organization runner group; omitted scope preserves repository registration |
-| `environment.localApply` | Either `{ "configPath": "deploy/relay.json" }` for a versioned consumer checkout, or `{ "source": "installed" }` for protected self-dogfood configuration |
+| `environment.localApply` | Owner checkout `{ "configPath": "deploy/relay.json" }`, retained installed-snapshot `{ "source": "installed" }`, or Git desired state `{ "source": "git", "repository": "owner/private-deployment", "configPath": "prod/relay.json" }` |
 | `environment.compatibilityLinks` | Optional old invocation paths retained during a consumer's workflow migration |
 | `environment.ingress.publicAddresses` | Explicit public IPv4/IPv6 addresses for ACME; independent of SSH `target.host` |
 | `environment.tls.source` | Optional protected existing certificate/key references, validated before reuse |
@@ -68,8 +75,10 @@ directory. Preflight rejects existing units bound to another installation or
 an installed Reviewer configuration with targets outside the requested Reviewer
 repository set. Preflight accepts either singleton `repository` or plural
 `repositories` configuration and ignores target order and duplicates. It permits
-adding targets to the same instance while retaining its installed targets; the
-existing service, Unix identity and namespace collision checks still apply.
+adding targets to the same instance while retaining its installed targets in
+the expert compatibility route. Git Apply uses the reviewed desired target set,
+including removals, while retaining actual service, Unix identity, credential
+and namespace collision checks.
 
 ### Shared managed General Runner pool
 
@@ -529,7 +538,13 @@ optional registration-token arguments for operator convenience. It is never
 product configuration or execution authority. Ordinary logs and durable
 configuration must not contain those tokens.
 
-### Inventory and clean install
+<a id="inventory-and-clean-install"></a>
+### Expert inventory and clean install
+
+These explicit phases preserve their existing contract. Ordinary
+[`install`](../docs/git-managed-installation.md) composes installation and
+readiness internally and returns repository integration as an output; it does
+not require a consumer projection commit before host installation.
 
 Reproduction starts with one accepted exact Relay source, one durable nonsecret
 owner configuration and explicitly external protected prerequisites. An empty
@@ -937,9 +952,8 @@ contain bounded non-secret configuration/runtime evidence.
 
 ## Workflow projection and pinned runtime
 
-Keep four revisions distinct: the accepted product source used for an install,
-the exact installed Relay revision, the consumer repository commit carrying
-Task/CR authority, and any newer accepted/released product revision. A newer
+Keep product source, installed product, private desired-config commit, consumer
+Task/CR authority and any newer accepted/released product revision distinct. A newer
 Relay commit does not invalidate a working installed revision. Normal routing
 and recovery neither consult moving `main` nor compare the consumer workflow
 SHA with the installed product SHA. No warning or degraded success is emitted
@@ -948,7 +962,8 @@ release lookup, so no update-available note is emitted.
 
 Canonical product sources are [routing](workflows/routing.yml.in),
 [publication recovery](workflows/recovery.yml.in), and the supported installed
-self-dogfood [production reconciliation](workflows/production.yml.in). Consumer
+self-dogfood [production reconciliation](workflows/production.yml.in), plus
+the private Git [owner lifecycle](workflows/deployment.yml.in). Consumer
 configuration supplies repository/owner/ref, runner identities/groups/labels
 and installation namespace. Candidate validation is specific to each consumer
 and is not projected. The `.github/workflows/` copies are versioned installation
@@ -956,22 +971,26 @@ artifacts; product changes edit the templates. Self-dogfood uses this same rule.
 
 ### Per-repository installation preparation
 
-For every explicitly owner-managed repository configured for the installation,
-Relay orchestration prepares and publishes a separate reviewable GitHub PR in
-that repository containing its routing workflow, publication-recovery workflow
-and `.github/relay-workflows.json`. Resolve each projection from the selected
+Ordinary installation emits a complete routing/recovery integration tree and
+`.github/relay-workflows.json`. Git mode also emits a separate deployment tree
+for the private lifecycle repository; the public consumer projection contains
+no new privileged lifecycle workflow. The result names both receiving
+directories. Publish their contents through each repository's normal change
+process after installation; publication does not require repeating a successful
+host installation. Resolve each projection from the selected
 exact accepted product source and that target's configured repository, trusted
 base branch, runner identities/groups/labels and installation namespace. A
 projection for the protected installation anchor cannot stand in for another
-target's projection. The optional owner-lifecycle workflow is projected only
-where the configured installed self-consumer contract supports it.
+target's projection. The retained installed-snapshot route continues to project
+its optional public owner workflow until its separately reviewed cutover.
 Use the validated installation configuration, including its managed-pool
 capacity and derived execution identities, rather than a singleton example:
 managed routing, recovery and owner lifecycle use `relay-workflows-v4` and the
 shared General Runner group/pool selector. A SERIAL example still renders v3
 and cannot verify a managed installation's projection.
 
-For the owner-selected four-repository rollout, the separate target PRs belong
+Separately authorized orchestration may still prepare target PRs. For the
+owner-selected four-repository rollout, those separate target PRs belong
 in `jresearchsoftware/codex-relay`, `jresearchsoftware/shared-governance`,
 `jresearchsoftware/codex-model-landscape` and
 `jresearchsoftware/docs-evolution-review`. This is an explicit rollout set,
@@ -984,9 +1003,9 @@ Relay orchestration owns that publication through the target repositories'
 ordinary GitHub channels, preserves useful existing work and reuses the same
 matching proposal on repetition. One central product PR, a local review
 directory or a read-only proposal does not complete per-repository publication.
-If publication access is unavailable, report the missing target PR and access
-boundary rather than claiming preparation complete or substituting owner copy
-steps.
+If that separately authorized publication is unavailable, report its affected
+target and access boundary. This does not turn repository publication into a
+pre-install prerequisite for the ordinary installer.
 
 Each target owner retains acceptance, merge, activation and repository-governance
 decisions. Proposal publication neither changes runner-group ACLs, App access,
@@ -1023,7 +1042,7 @@ including when older consumer workflows occupy the intended paths. Resolve
 those differences through the normal consumer review/publication process.
 
 The product-owned [workflow contract](workflows/contract.json) versions only the
-interface used by the three workflows: installed routing/recovery invocation,
+interface used by managed workflows: installed routing/recovery invocation,
 environment/input meanings and the production helper argument. Change its
 identity only for an interface compatibility change; ordinary implementation,
 documentation, build or release revisions do not change it. Each workflow
@@ -1045,7 +1064,9 @@ unchanged content, workflow contract and consumer inputs at a different product
 SHA yield identical files and manifest, so bootstrap/reinstall requires no
 additional consumer PR.
 Actual managed content or compatibility changes yield a bounded
-proposal and stop for normal consumer review/merge. File digests remain solely
+proposal for normal consumer review/publication. The expert projection-bound
+phases stop at that transition; ordinary install returns the proposal and
+continues safe host work. File digests remain solely
 as the previous managed drift baseline. Schema-1 SHA-bound manifests are read
 and drift-checked for a one-time schema-2 migration; they are not treated as
 current projection. Existing SHA-bound consumers, including self-dogfood,
@@ -1107,6 +1128,12 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+The ordinary Git-pair composition is described in the
+[installation guide](../docs/git-managed-installation.md). The retained
+installed-snapshot/checkout lifecycle below remains the current public PROD
+surface until the qualified owner cutover; it must not be mistaken for a
+source claim that private PROD activation has occurred.
+
 Normal apply reconciles installable state and preserves existing separately
 authorized runner/Reviewer activation. It uses root-protected parents, durable
 operation evidence and live-owner locks. Reviewer restart preserves an already
@@ -1127,7 +1154,7 @@ The later runner role checks the retained shared state parent's type, root
 owner and mode even when its group is still only planned. That pending group
 assignment counts as a change; apply still requires and enforces the real group.
 
-The ordinary owner surface for an installed self-consumer is the projected
+The retained owner surface for an installed-snapshot self-consumer is the projected
 **Owner Relay lifecycle** GitHub workflow. Choose `apply` to bind accepted
 public Relay `main` once, reconcile an already installed exact target or upgrade
 to that immutable target, and finish this sequence under the existing host mutex:
@@ -1140,7 +1167,7 @@ name and Unix user together. The protected Production Runner stays separate.
 The lifecycle preserves PID and start identity for every previously active
 General Runner, including a secondary member transporting the workflow.
 
-The protected coordinator resolves the target anonymously and never follows
+That retained coordinator resolves the target anonymously and never follows
 later movement of `main`. It verifies the frozen consumer dispatch's reviewed
 projection against the exact selected source. Identical workflow bytes and
 contract remain compatible across product revisions; a changed projection
@@ -1173,7 +1200,10 @@ Managed apply snapshots actual service activity and uses the existing supported
 upgrade backend. It consolidates try-restart of the previously active Reviewer
 and production dependency, verifies the real executable and process adoption,
 installed identity, service health, recovery timer, preserved activation intent,
-and exact projected workflows before reopening admission. The general runner
+and the applicable workflow compatibility before reopening admission. Git mode
+also transitions the current consumer digest under the same operation and
+verifies its selected config receipt; an old snapshot is not desired-state
+authority. The general runner
 is transport and retains its PID/start identity across planned Reviewer
 transitions; its initial readiness check is preserved. Inactive/unregistered
 components remain inactive. A general transport software, unit or group change
@@ -1210,8 +1240,10 @@ quiesce/drain under the host apply lock and validates the protected existing
 installation and owner configuration. Only source revision
 selection may differ from the protected configuration snapshot. Credentials,
 runner registration, service activation intent, TLS/mTLS, consumer identity and
-Writer/Reviewer separation are preserved. Configuration changes are separate
-owner reconciliation. Upgrade never supplies tokens, registers runners or
+Writer/Reviewer separation are preserved. Configuration changes in this expert
+primitive are separate owner reconciliation; ordinary Git Apply accepts reviewed
+config changes in the same operation without that equality gate. Expert upgrade
+never supplies tokens, registers runners or
 implicitly starts inactive components. Existing operation/recovery evidence blocks
 an upgrade; diagnose it through the existing recovery interface. Failed or
 ambiguous apply/activation/verification never becomes a successful upgrade receipt.
@@ -1376,6 +1408,10 @@ Source/channel upgrades use the protected owner lifecycle and the existing publi
 credential-free source access on private production hosts.
 
 ### Protected self-dogfood reconciliation
+
+This is the retained installed-snapshot API. The owner-selected replacement is
+[`localApply.source: git`](../docs/git-managed-installation.md#private-owner-lifecycle).
+Keep the working public entrypoint until its reviewed and qualified cutover.
 
 A self-dogfood consumer may keep deployment configuration private and select
 `"localApply": {"source": "installed"}`. This mode requires the consumer and
