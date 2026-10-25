@@ -198,6 +198,26 @@ class GitIntentTests(unittest.TestCase):
             with self.assertRaisesRegex(intent.GitIntentError, '^GIT_INTENT_TOKEN_INVALID$'):
                 intent.read_token(io.BytesIO(value))
 
+    def test_native_rfc6750_opaque_tokens_and_padding_are_accepted_without_prefix_assumptions(self):
+        for token in ('header.payload.signature', 'opaque-part_value.~+/==', 'opaque=', 'a' * 4094 + '=='):
+            for suffix in (b'', b'\n', b'\r\n'):
+                self.assertEqual(intent.read_token(io.BytesIO(token.encode() + suffix)), token)
+            with patch.object(intent.http.client, 'HTTPSConnection') as connection:
+                connection.return_value.getresponse.return_value.status = 200
+                connection.return_value.getresponse.return_value.read.return_value = b'{}'
+                intent.github_api('/repos/' + PRIVATE, token)
+                self.assertEqual(connection.return_value.request.call_args.kwargs['headers']['Authorization'], 'Bearer ' + token)
+
+    def test_bearer_header_injection_interior_padding_and_overflow_never_reach_http(self):
+        invalid = ('Bearer opaque', 'opaque value', 'opaque\tvalue', 'opaque\nvalue',
+            'opaque\r\nInjected: true', 'opaque\x00value', 'opaque\x7f', 'opaque\u00e9',
+            'opaque=middle', '=padding', 'a' * 4095 + '==', 'opaque@host', 'opaque?query')
+        for token in invalid:
+            with patch.object(intent.http.client, 'HTTPSConnection') as connection:
+                with self.assertRaisesRegex(intent.GitIntentError, '^GIT_INTENT_TOKEN_INVALID$'):
+                    intent.github_api('/repos/' + PRIVATE, token)
+                connection.assert_not_called()
+
     def test_http_redirect_errors_and_oversize_are_not_followed_or_exposed(self):
         for status, data, code in [(302, b'private response', 'GIT_INTENT_HTTP_STATUS'),
                                     (403, TOKEN.encode(), 'GIT_INTENT_HTTP_STATUS'),

@@ -80,6 +80,16 @@ class RepositorySourceTests(unittest.TestCase):
         self.signer.assert_not_called()
         self.assertTrue(all(row[0] == 'GET' and row[2] is None for row in calls))
 
+    def test_opaque_installation_token_is_preserved_for_read_and_revocation(self):
+        config, values, calls, api = fixture()
+        opaque = 'header.payload-part_signature.~+/=='
+        values['POST', '/app/installations/202/access_tokens']['token'] = opaque
+        with source.consumer_access(config, REPOSITORY, api=api) as access:
+            self.assertEqual(access.token, opaque)
+            self.assertNotIn(opaque, repr(access))
+        self.assertEqual(calls[-1], ('DELETE', '/installation/token', opaque, None))
+        self.assertIsNone(access.token)
+
     def test_anonymous_403_never_substitutes_credentials(self):
         config, _, calls, _ = fixture()
         with self.assertRaisesRegex(source.ConsumerSourceError, '^CONSUMER_SOURCE_HTTP_403$'):
@@ -179,6 +189,33 @@ class RepositorySourceTests(unittest.TestCase):
 
 
 class GitSourceTransportTests(unittest.TestCase):
+    def test_rfc6750_credentials_reach_header_and_git_env_with_no_prefix_assumptions(self):
+        opaque = 'opaque-part_value.~+/=='
+        with patch.object(source.http.client, 'HTTPSConnection') as connection:
+            connection.return_value.getresponse.return_value.status = 200
+            connection.return_value.getresponse.return_value.read.return_value = b'{}'
+            source.github_api('GET', '/repos/' + REPOSITORY, opaque)
+            self.assertEqual(connection.return_value.request.call_args.kwargs['headers']['Authorization'], 'Bearer ' + opaque)
+        env = source.git_read_environment({}, REPOSITORY, opaque)
+        header = next(env['GIT_CONFIG_VALUE_' + str(i)] for i in range(int(env['GIT_CONFIG_COUNT']))
+                      if env['GIT_CONFIG_KEY_' + str(i)].endswith('.git.extraHeader'))
+        self.assertEqual(base64.b64decode(header.removeprefix('AUTHORIZATION: basic ')).decode(), 'x-access-token:' + opaque)
+
+    def test_token_injection_invalid_padding_and_overflow_are_rejected_before_http_or_git(self):
+        invalid = ('Bearer opaque', 'opaque value', 'opaque\tvalue', 'opaque\nvalue',
+            'opaque\r\nInjected: true', 'opaque\x00value', 'opaque\x7f', 'opaque\u00e9',
+            'opaque=middle', '=padding', 'opaque@host', 'opaque?query')
+        for token in invalid:
+            with patch.object(source.http.client, 'HTTPSConnection') as connection:
+                with self.assertRaisesRegex(source.ConsumerSourceError, '^CONSUMER_SOURCE_CREDENTIAL_INVALID$'):
+                    source.github_api('GET', '/repos/' + REPOSITORY, token)
+                connection.assert_not_called()
+            with self.assertRaisesRegex(source.ConsumerSourceError, '^CONSUMER_SOURCE_TOKEN_INVALID$'):
+                source.git_read_environment({}, REPOSITORY, token)
+        with self.assertRaises(source.ConsumerSourceError):
+            source.git_read_environment({}, REPOSITORY, 'a' * 4095 + '==')
+        with self.assertRaises(source.ConsumerSourceError):
+            source.github_api('GET', '/repos/' + REPOSITORY, 'a' * 16383 + '==')
     def test_git_fetch_has_plain_url_and_environment_only_auth_without_persistent_config(self):
         with tempfile.TemporaryDirectory(prefix='relay-consumer-fetch-', dir='/tmp') as name:
             root = Path(name) / 'checkout'; calls = []
