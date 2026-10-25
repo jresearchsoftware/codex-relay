@@ -284,7 +284,11 @@ def resume_cli(tmp_path, monkeypatch):
             '--consumer-root', str(consumer), '--phase', 'post-check', '--connection', 'local',
             '--resolved-revision', HEAD, '--local-lifecycle', '--lifecycle-operation', operation,
             '--lifecycle-lock-fd', str(lock_fd), '--log-root', str(tmp_path / 'logs')])
-        return backend.run(backend.arguments())
+        previous_umask = os.umask(0o077)
+        try:
+            return backend.run(backend.arguments())
+        finally:
+            os.umask(previous_umask)
 
     try:
         yield invoke, state
