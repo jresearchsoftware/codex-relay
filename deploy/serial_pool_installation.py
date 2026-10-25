@@ -357,8 +357,8 @@ def preflight(config, github, target_digest):
                         and re.fullmatch('[0-9a-f]{64}', observed.get('digest', ''))
                         and observed.get('gate', {}).get('consumerDigest') == observed['digest'],
                         'SERIAL_TRANSITION_NEW_GATE_UNPROVEN')
-                from pool_migration import reject_serial_transition
-                reject_serial_transition(pool_contract(config))
+                from pool_migration import reject_legacy_registration
+                reject_legacy_registration(pool_contract(config))
                 return None
         # An ordinary already-managed installation has no SERIAL transition.
         # Keep its existing complete protected peer/pool preflight unchanged.

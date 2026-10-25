@@ -4,7 +4,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -155,13 +158,12 @@ def test_expert_route_retains_original_owner_delta_gate(retired, monkeypatch):
     assert not retired['calls']
 
 
-@pytest.mark.parametrize('managed', [True, False])
-def test_no_receipt_git_managed_host_does_not_use_mutable_snapshot_as_original_history(tmp_path, monkeypatch, managed):
+def test_no_receipt_unmanaged_git_host_keeps_exact_original_history(tmp_path, monkeypatch):
     namespace = 'relay-managed-fixture'
     current = tmp_path / namespace / 'current'
     current.mkdir(parents=True)
     desired = {'environment': {'namespace': namespace, 'localApply': {'source': 'git'}}}
-    live = {'generalRunnerPool': {'desiredCapacity': 1}} if managed else {'repository': 'example/consumer'}
+    live = {'repository': 'example/consumer'}
     class Files:
         def read(self, path, **_options):
             return None if path.endswith('serial-pool-compat-v1.json') else transition.encoded(live)
@@ -175,16 +177,9 @@ def test_no_receipt_git_managed_host_does_not_use_mutable_snapshot_as_original_h
         calls.append((config, git_desired))
         return {'managed': True, 'digest': CURRENT_DIGEST, 'gate': {'consumerDigest': CURRENT_DIGEST}}
     monkeypatch.setattr(installation, '_current_admission', actual)
-    monkeypatch.setattr(installation, 'pool_contract', lambda _config: {})
-    import pool_migration
-    monkeypatch.setattr(pool_migration, 'reject_serial_transition', lambda _contract: None)
-    if managed:
-        assert installation.preflight(desired, object(), DESIRED_DIGEST) is None
-        assert calls == [(desired, True)]
-    else:
-        with pytest.raises(managed_pool.PoolError, match='EXACT_ORIGINAL_HISTORY_REQUIRED'):
-            installation.preflight(desired, object(), DESIRED_DIGEST)
-        assert not calls
+    with pytest.raises(managed_pool.PoolError, match='EXACT_ORIGINAL_HISTORY_REQUIRED'):
+        installation.preflight(desired, object(), DESIRED_DIGEST)
+    assert not calls
 
 
 @pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0, reason='native protected source boundary')
@@ -220,3 +215,140 @@ def test_git_source_selection_uses_protected_code_not_mutable_config_snapshot(tm
     alias.symlink_to('/opt/foreign/controller')
     with pytest.raises(managed_pool.PoolError, match='SOURCE_LINK_UNPROVEN'):
         installation.current_source(desired, git_desired=True)
+
+
+MANAGED_PREFLIGHT = r'''import hashlib,json,os,subprocess,sys
+from pathlib import Path
+sys.dont_write_bytecode=True
+fixture,product,namespace,revision,fault=sys.argv[1:]
+for name in ['opt','etc','var/lib']:
+    subprocess.run(['/usr/bin/mount','--bind',str(Path(fixture)/name),'/'+name],check=True)
+sys.path.insert(0,str(Path(product)/'deploy'))
+import serial_pool_installation as installation
+payload=json.load(sys.stdin)
+source=Path('/opt')/namespace/'releases'/revision/'reviewed-source'
+consumer=Path('/etc')/namespace/'consumer.json'
+claims=Path('/var/lib')/namespace/'writer-claims'
+cli=source/'controller/src/admission-cli.mjs'
+env={'PATH':'/usr/bin:/bin','LANG':'C','LC_ALL':'C','RELAY_CONSUMER_CONFIG':str(consumer),
+     'RELAY_REPOSITORY':payload['desired']['consumer']['repository']}
+initialized=subprocess.run(['/usr/bin/node',str(cli),'initialize'],env=env,text=True,capture_output=True)
+if initialized.returncode:raise RuntimeError('actual Node initialize: '+initialized.stderr)
+gate_path=claims/'admission-v1.json'
+gate=json.loads(gate_path.read_bytes())
+if fault=='gate-mismatch':
+    gate['consumerDigest']='0'*64;gate_path.write_text(json.dumps(gate));gate_path.chmod(0o600)
+elif fault=='unsafe-source':
+    (source/'consumer/consumer-config.mjs').chmod(0o666)
+elif fault=='unknown-source':
+    current=Path('/opt')/namespace/'current';current.unlink();current.symlink_to('releases/'+'f'*40)
+critical=[consumer,gate_path,source/'.relay-source.json',source.parent/'artifact-manifest.json']
+snapshot=source.parent/'deployment-config.json'
+if snapshot.exists():critical.append(snapshot)
+def stamps():
+    result={}
+    for path in critical:
+        s=path.lstat();result[str(path)]=(hashlib.sha256(path.read_bytes()).hexdigest(),s.st_mode,s.st_uid,s.st_gid,s.st_ino,s.st_ctime_ns)
+    return result
+before=stamps();opened=[];watch=[True]
+def audit(event,args):
+    if watch[0] and event=='open' and isinstance(args[0],str) and Path(args[0]).name in ['deployment-config.json','.credentials','not-read.pem']:
+        opened.append(Path(args[0]).name)
+sys.addaudithook(audit)
+try:
+    result=installation.preflight(payload['desired'],object(),payload['targetDigest'])
+    observed=installation._current_admission(payload['desired'],git_desired=True)
+    output={'status':'PASS','result':result,'actualAdmission':observed}
+except Exception as error:
+    output={'status':'BLOCKED','type':type(error).__name__,'code':str(error)}
+watch[0]=False
+output.update(opened=opened,unchanged=before==stamps(),initializedGate=json.loads(initialized.stdout))
+print(json.dumps(output))
+'''
+
+
+@pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0, reason='root isolated managed installation')
+@pytest.mark.parametrize('fault', ['missing', 'tampered', 'legacy-directory', 'legacy-service',
+                                  'unsafe-source', 'unknown-source', 'gate-mismatch', 'unmanaged'])
+def test_real_managed_git_preflight_uses_actual_node_and_legacy_guard_without_own_snapshot(fault):
+    """Run the actual helper and installed graph in a private local FS view.
+
+    No fake current-admission/guard proof, credential read, live API or system
+    service is involved. The two snapshot cases reproduce the real repair seam.
+    """
+    from config import loads
+    from managed_pool_transport import consumer_digest, projected_consumer
+    from test_managed_pool import inputs
+
+    probe = subprocess.run(['/usr/bin/unshare', '--mount', '--fork', '/usr/bin/true'], capture_output=True)
+    if probe.returncode:
+        pytest.skip('private mount namespace unavailable')
+    namespace = 'relay-managed-git-test'
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=ROOT, text=True).strip()
+    original = inputs(2, namespace=namespace)
+    original['environment']['localApply'] = {
+        'source': 'git', 'repository': 'example-org/private-deployment', 'configPath': 'test/relay.json'}
+    original['consumer']['defaultProfile']['effort'] = 'xhigh'
+    original = loads(json.dumps(original), ROOT)
+    original = loads(json.dumps(original, sort_keys=True, separators=(',', ':')), ROOT)
+    actual = projected_consumer(original, ROOT)
+    assert len(actual['executionSlots']) == 32
+    desired = copy.deepcopy(original)
+    desired['consumer']['defaultProfile']['effort'] = 'medium'
+    target_digest = consumer_digest(projected_consumer(desired, ROOT), ROOT)
+    if fault == 'unmanaged':
+        actual.pop('generalRunnerPool')
+        actual.pop('executionSlots')
+    with tempfile.TemporaryDirectory(prefix='relay-managed-preflight-', dir='/run') as temporary:
+        root = Path(temporary)
+        source = root / 'opt' / namespace / 'releases' / revision / 'reviewed-source'
+        for component in ['consumer', 'controller', 'contracts', 'runtime', 'reviewer']:
+            shutil.copytree(ROOT / component, source / component,
+                ignore=shutil.ignore_patterns('__pycache__', 'node_modules', 'target'))
+        for path in [root, *root.rglob('*')]:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        (source / '.relay-source.json').write_text(json.dumps({'revision': revision, 'tree': tree}))
+        manifest = {'commit': revision, 'installedRevision': revision, 'resolvedRevision': revision,
+                    'gitTree': tree, 'deploymentConfigSha256': '0' * 64}
+        (source.parent / 'artifact-manifest.json').write_text(json.dumps(manifest))
+        (source.parent / 'artifact-manifest.json').chmod(0o600)
+        (root / 'opt' / namespace / 'current').symlink_to('releases/' + revision)
+        config = root / 'etc' / namespace
+        config.mkdir(parents=True)
+        consumer = config / 'consumer.json'
+        consumer.write_text(json.dumps(actual))
+        consumer.chmod(0o644)
+        claims = root / 'var/lib' / namespace / 'writer-claims'
+        claims.mkdir(parents=True, mode=0o700)
+        (root / 'etc/systemd/system').mkdir(parents=True)
+        if fault == 'tampered':
+            snapshot = source.parent / 'deployment-config.json'
+            snapshot.write_bytes(b'{unbound current snapshot')
+            snapshot.chmod(0o600)
+        elif fault == 'legacy-directory':
+            legacy = root / 'opt' / namespace / 'general-runner'
+            legacy.mkdir()
+            os.mkfifo(legacy / '.credentials', 0o600)  # Any attempted credential read would block.
+        elif fault == 'legacy-service':
+            (root / 'etc/systemd/system' / (namespace + '-general-runner.service')).write_text('[Service]\n')
+        process = subprocess.run(['/usr/bin/unshare', '--mount', '--propagation', 'private', '--',
+            '/usr/bin/python3', '-I', '-c', MANAGED_PREFLIGHT, str(root), str(ROOT), namespace, revision, fault],
+            input=json.dumps({'desired': desired, 'targetDigest': target_digest}), capture_output=True,
+            text=True, timeout=90)
+        assert process.returncode == 0, process.stderr
+        result = json.loads(process.stdout)
+        assert result['unchanged'], result
+        assert '.credentials' not in result['opened'] and 'not-read.pem' not in result['opened']
+        if fault in ['missing', 'tampered']:
+            assert result['status'] == 'PASS', result
+            assert result['result'] is None and result['actualAdmission']['managed'] is True
+            assert result['actualAdmission']['digest'] == result['initializedGate']['consumerDigest']
+            assert result['actualAdmission']['digest'] != target_digest  # Future Git policy is permitted.
+            assert result['opened'] == []
+        else:
+            assert result['status'] == 'BLOCKED', result
+            if fault in ['legacy-directory', 'legacy-service']:
+                assert 'SERIAL_TRANSITION_REQUIRED' in result['code']
+            elif fault == 'gate-mismatch':
+                assert 'ORIGINAL_READER_UNPROVEN' in result['code']
