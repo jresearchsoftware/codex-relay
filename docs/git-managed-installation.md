@@ -73,6 +73,10 @@ binding. It is not another configuration store. Actual target identity,
 protected paths, schema, credentials, runtime permissions and external access
 still require validation. Routine desired changes have no installed-intent
 equality precondition or separate config-reconciliation ceremony.
+An isolated TEST qualification pin survives Apply verification, unchanged-pair
+replay and resume only when the trusted frozen receipt proves that exact
+candidate and configuration. Resume retains the original verified installation
+receipt; Git configuration and workflow inputs cannot introduce a pin.
 
 ## Strategy, compatibility and recovery
 

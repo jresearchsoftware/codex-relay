@@ -17,7 +17,8 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, loads, compile_inputs, require, selector, select_execution_slot, deployment_repository
+from config import load, loads, compile_inputs, require, selector, select_execution_slot, deployment_repository, unique_object
+from git_source_locator import expected_locator, resume_receipt
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -107,6 +108,22 @@ def root_owned(path):
         metadata = entry.lstat()
         require(metadata.st_uid == 0 and not stat.S_ISLNK(metadata.st_mode)
                 and not metadata.st_mode & 0o022, 'protected-local-input')
+
+
+def resume_configuration(config, config_raw, revision, install_root):
+    """Verify installed provenance before retaining its original Git evidence."""
+    from installed_config import verify, read_protected
+    source = Path(install_root) / 'releases' / revision / 'reviewed-source'
+    git_mode = config['environment']['localApply'].get('source') == 'git'
+    installed, digest, consumer_revision = verify(
+        source, revision, **({'require_local_apply': False} if git_mode else {}))
+    receipt = None
+    if git_mode:
+        require(installed == config, 'git-resume-installed-config-binding')
+        manifest = json.loads(read_protected(source.parent / 'artifact-manifest.json', {0o640, 0o600})[0],
+                              object_pairs_hook=unique_object)
+        receipt = resume_receipt(config, revision, manifest, digest, config_raw)
+    return consumer_revision, receipt
 
 
 def ingress_guard(target, key, values, revision):
@@ -405,9 +422,13 @@ def run(args):
     if args.local_lifecycle and args.phase == 'post-check':
         # A later graceful resume observes current consumer projection bytes,
         # but does not rewrite the installed manifest's original provenance.
-        from installed_config import verify
-        _, _, consumer_revision = verify(Path(values['relay_install_root']) / 'releases' /
-                                         revision / 'reviewed-source', revision)
+        consumer_revision, original_receipt = resume_configuration(
+            config, config_path.read_bytes(), revision, values['relay_install_root'])
+        if original_receipt is not None:
+            args.git_intent = original_receipt
+    values['relay_deployment_source'] = expected_locator(
+        config, revision, getattr(args, 'git_intent', None),
+        config_path.read_bytes() if getattr(args, 'git_intent', None) else None)
     target = dict(config['target'])
     if getattr(args, 'connection', None) is not None:
         target['connection'] = args.connection

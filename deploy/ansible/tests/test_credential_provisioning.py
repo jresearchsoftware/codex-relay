@@ -33,6 +33,7 @@ class CredentialProvisioningTests(unittest.TestCase):
         self.assertIn("GITHUB_APP_ID={{ relay_writer_app_id }}", writer)
         self.assertIn("GITHUB_APP_INSTALLATION_ID={{ relay_writer_app_installation_id }}", writer)
         helper = text("roles/relay_runtime/templates/relay-credential-provision.j2")
+        self.assertIn("/usr/sbin/runuser -u '{{ relay_reviewer_user }}' --preserve-environment", helper)
         self.assertIn('grep -Fx "$key_var=$key_file"', helper)
         self.assertIn('grep -Fx "$app_id_var=$app_id"', helper)
         self.assertIn('grep -Fx "$installation_id_var=$installation_id"', helper)

@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +87,9 @@ def run_activation_fixture(activation, *, parent_exports_credential, require_use
         runuser.chmod(0o755)
 
         command = activation_shell_command(activation)
+        # Substitute only the fixed privilege boundary for this unprivileged
+        # fixture. The root native regression below executes real runuser.
+        command = command.replace('/usr/sbin/runuser', str(runuser))
         for placeholder, value in (
             ("{{ relay_reviewer_credential_env_file }}", "./reviewer.env"),
             ("{{ relay_install_root }}", "./install"),
@@ -166,7 +170,7 @@ class ReviewerActivationTests(unittest.TestCase):
         self.assertIn("failed_when: false", self.activation)
         self.assertIn("set -a;", self.activation)
         self.assertIn(
-            "runuser -u '{{ relay_reviewer_user }}' --preserve-environment",
+            "/usr/sbin/runuser -u '{{ relay_reviewer_user }}' --preserve-environment",
             self.activation,
         )
         self.assertIn(
@@ -181,6 +185,47 @@ class ReviewerActivationTests(unittest.TestCase):
             "ExecStartPre=+{{ relay_reviewer_start_guard_path }}",
             self.reviewer_service,
         )
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0,
+                         'native Reviewer identity boundary requires root')
+    def test_real_activation_credential_gate_runs_with_owner_sanitized_path(self):
+        import grp
+        import pwd
+        from ansible.parsing.dataloader import DataLoader
+        from ansible.template import Templar
+        identity = pwd.getpwnam('nobody')
+        group = grp.getgrgid(identity.pw_gid).gr_name
+        with tempfile.TemporaryDirectory(prefix='relay-activation-path-', dir='/run') as temporary:
+            root = Path(temporary)
+            root.chmod(0o755)
+            env_file, key_file = root / 'reviewer.env', root / 'reviewer.pem'
+            env_file.write_text('GITHUB_APP_ID=1001\nGITHUB_APP_INSTALLATION_ID=2001\n'
+                                'GITHUB_APP_PRIVATE_KEY_FILE=' + str(key_file) + '\n')
+            key_file.write_text('synthetic metadata-only fixture; no credential material\n')
+            for path in [env_file, key_file]:
+                path.chmod(0o640)
+                os.chown(path, 0, identity.pw_gid)
+            values = {'relay_reviewer_user': identity.pw_name, 'relay_reviewer_group': group,
+                      'relay_reviewer_credential_env_file': str(env_file),
+                      'relay_reviewer_credential_key_file': str(key_file), 'relay_install_root': str(root)}
+            loader = DataLoader()
+            template = Templar(loader=loader, variables=values)
+            helper = root / 'relay-reviewer-credential-check'
+            helper.write_text(template.template((ROOT / 'roles/relay_runtime/templates/relay-reviewer-credential-check.j2').read_text()))
+            helper.chmod(0o755)
+            tasks = loader.load_from_file(str(ROOT / 'relay-reviewer-activation.yml'))
+            task = next(task for task in tasks[0]['pre_tasks']
+                        if task.get('name') == 'Verify Reviewer credential readiness before service activation')
+            command = template.template(task['ansible.builtin.shell'])
+            environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}
+            ready = subprocess.run(['/bin/sh', '-c', command], env=environment,
+                                   capture_output=True, text=True, timeout=10)
+            self.assertEqual(ready.returncode, 0, ready.stderr)
+            # The qualified executable must preserve the actual readiness gate.
+            key_file.chmod(0o600)
+            denied = subprocess.run(['/bin/sh', '-c', command], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(denied.returncode, 26, denied.stderr)
 
     @unittest.skipUnless(shutil.which("sh"), "POSIX sh is required for the subprocess fixture")
     def test_activation_exports_sourced_assignments_to_child_checker(self):

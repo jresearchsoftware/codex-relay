@@ -90,7 +90,10 @@ Path('.credentials').chmod(0o600)
                       relay_runner_credentials_marker=str(self.runner / '.credentials'),
                       relay_runner_home=str(self.root / 'home'), relay_runner_work_root=str(self.root / 'work'))
         self.helper = self.root / 'registration'
-        self.executable(self.helper, Environment(undefined=StrictUndefined).from_string(TEMPLATE.read_text()).render(values))
+        # Only the fixed privilege executable is substituted in this unprivileged
+        # behavioral fixture; the root regression below executes real runuser.
+        template = TEMPLATE.read_text().replace('/usr/sbin/runuser', str(self.bin / 'runuser'))
+        self.executable(self.helper, Environment(undefined=StrictUndefined).from_string(template).render(values))
 
     def executable(self, path, content):
         path.write_text(content)
@@ -290,6 +293,68 @@ Path('.credentials').chmod(0o600)
         self.assertIn('REGISTRATION_STATE_AMBIGUOUS', retry.stderr)
         self.assertEqual((self.runner / 'calls').read_text(), 'called\n')
         self.assertNotIn('rsa-residue-synthetic-token', result.stdout + result.stderr + self.pending.read_text())
+
+
+@unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0 and Path('/usr/sbin/runuser').is_file(),
+                     'native registration identity boundary requires root and runuser')
+class NativeRegistrationPathTests(unittest.TestCase):
+    def test_actual_clean_path_registration_version_and_reuse_preserve_user_boundary(self):
+        user = pwd.getpwnam('nobody')
+        group = grp.getgrgid(user.pw_gid).gr_name
+        with tempfile.TemporaryDirectory(prefix='relay-native-registration-', dir='/run') as temporary:
+            root = Path(temporary)
+            root.chmod(0o755)
+            runner, state = root / 'runner', root / 'state'
+            runner.mkdir(mode=0o750)
+            state.mkdir(mode=0o755)
+            (runner / 'bin').mkdir()
+            (runner / '_diag').mkdir()
+            marker = {'agentId': 77, 'agentName': 'fixture-runner', 'gitHubUrl': 'https://github.com/example',
+                      'poolName': 'fixture-isolated-group', 'workFolder': str(root / 'work')}
+            (runner / 'bin/Runner.Listener').write_text('#!/bin/sh\necho 2.336.0\n')
+            (runner / 'run.sh').write_text('#!/bin/sh\nexit 0\n')
+            # The synthetic package has no network operation. Real runuser must
+            # launch it as the selected runner and keep the ephemeral value off argv.
+            (runner / 'config.sh').write_text('#!/usr/bin/python3\nimport os,sys\nfrom pathlib import Path\n'
+                + 'assert os.getuid() == ' + str(user.pw_uid) + '\n'
+                + 'assert os.environ.get("ACTIONS_RUNNER_INPUT_TOKEN") == "fixture-ephemeral"\n'
+                + 'assert "fixture-ephemeral" not in sys.argv\n'
+                + 'Path("calls").open("a").write("registered\\n")\n'
+                + 'Path(".runner").write_text(' + repr(json.dumps(marker)) + ')\n'
+                + 'Path(".credentials").write_text("{}")\n'
+                + 'Path(".runner").chmod(0o600);Path(".credentials").chmod(0o600)\n')
+            for path in [runner, *runner.rglob('*')]:
+                os.chown(path, user.pw_uid, user.pw_gid)
+                path.chmod(0o750)
+            values = dict(relay_runner_root=str(runner), relay_runner_user=user.pw_name,
+                relay_runner_group=group, relay_state_root=str(state), relay_runner_repository='example/consumer',
+                relay_github_repository='example/consumer', relay_runner_name='fixture-runner',
+                relay_runner_registration_scope='organization', relay_runner_registration_group='fixture-isolated-group',
+                relay_runner_labels=['fixture'], relay_runner_registration_marker=str(runner / '.runner'),
+                relay_runner_credentials_marker=str(runner / '.credentials'),
+                relay_runner_home=str(root / 'home'), relay_runner_work_root=str(root / 'work'))
+            helper = root / 'registration'
+            helper.write_text(Environment(undefined=StrictUndefined).from_string(TEMPLATE.read_text()).render(values))
+            helper.chmod(0o755)
+            environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}
+            fresh = subprocess.run(['/bin/bash', str(helper)], input='fixture-ephemeral\n',
+                                   env=environment, text=True, capture_output=True, timeout=20)
+            self.assertEqual(fresh.returncode, 0, fresh.stderr)
+            self.assertIn('state=registered', fresh.stdout)
+            self.assertNotIn('fixture-ephemeral', fresh.stdout + fresh.stderr)
+            retained = {name: (runner / name).read_bytes() for name in ['.runner', '.credentials']}
+            reused = subprocess.run(['/bin/bash', str(helper)], input='', env=environment,
+                                    text=True, capture_output=True, timeout=20)
+            self.assertEqual(reused.returncode, 0, reused.stderr)
+            self.assertIn('state=reused', reused.stdout)
+            self.assertEqual((runner / 'calls').read_text(), 'registered\n')
+            self.assertEqual({name: (runner / name).read_bytes() for name in retained}, retained)
+            (runner / '.runner').write_text(json.dumps({**marker, 'agentName': 'foreign-runner'}))
+            denied = subprocess.run(['/bin/bash', str(helper)], input='', env=environment,
+                                    text=True, capture_output=True, timeout=20)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn('REGISTRATION_STATE_AMBIGUOUS', denied.stderr)
+            self.assertEqual((runner / 'calls').read_text(), 'registered\n')
 
 
 if __name__ == '__main__':
