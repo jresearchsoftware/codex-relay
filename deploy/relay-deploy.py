@@ -894,6 +894,8 @@ def run(args):
                         # apply retains its normal durable operation semantics.
                         values['relay_production_operation_phase'] = 'post-check'
                         values['relay_upgrade_requested'] = False
+                        if intent_install:
+                            values['relay_intent_expected_installed_revision'] = revision
                         inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                         (work / 'inventory.json').write_text(json.dumps(inventory))
                         offset = len(Path(log_name).read_text())
