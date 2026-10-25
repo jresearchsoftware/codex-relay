@@ -36,7 +36,10 @@ def _positive(value):
 
 
 def _token(value):
-    require(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_]{1,4096}', value) is not None,
+    # RFC 6750 bearer credentials are opaque; native tokens may contain dots,
+    # URL/base64 characters and trailing padding. Never infer a token prefix.
+    require(isinstance(value, str) and 1 <= len(value) <= MAX_TOKEN_BYTES
+            and re.fullmatch(r'[A-Za-z0-9._~+/-]+=*', value) is not None,
             'GIT_INTENT_TOKEN_INVALID')
     return value
 

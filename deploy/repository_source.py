@@ -44,13 +44,17 @@ def _repository_name(value):
     return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}', value) is not None
 
 
+def _bearer(value, limit):
+    return isinstance(value, str) and 1 <= len(value) <= limit and re.fullmatch(r'[A-Za-z0-9._~+/-]+=*', value) is not None
+
+
 def github_api(method, path, token=None, body=None):
     require(method in ('GET', 'POST', 'DELETE') and isinstance(path, str)
             and re.fullmatch(r'/(?:app|installation|repos)(?:/[A-Za-z0-9_.-]+)*', path), 'API_PATH_INVALID')
     headers = {'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
                'Content-Type': 'application/json', 'User-Agent': 'codex-relay-consumer-source'}
     if token is not None:
-        require(isinstance(token, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,16384}', token), 'CREDENTIAL_INVALID')
+        require(_bearer(token, 16384), 'CREDENTIAL_INVALID')
         headers['Authorization'] = 'Bearer ' + token
     connection = http.client.HTTPSConnection('api.github.com', timeout=30, context=ssl.create_default_context())
     try:
@@ -192,7 +196,7 @@ def consumer_access(config, repository, *, api=None):
             raise ConsumerSourceError('CONSUMER_SOURCE_TOKEN_ISSUANCE_UNPROVEN') from None
         require(isinstance(issued, dict), 'TOKEN_INVALID')
         token = issued.get('token')
-        require(isinstance(token, str) and re.fullmatch('[A-Za-z0-9_]{1,4096}', token), 'TOKEN_INVALID')
+        require(_bearer(token, 4096), 'TOKEN_INVALID')
         require(issued.get('permissions') == {'contents': 'read', 'metadata': 'read'}
                 and isinstance(issued.get('repositories'), list) and len(issued['repositories']) == 1,
                 'TOKEN_SCOPE_MISMATCH')
@@ -223,7 +227,7 @@ def git_read_environment(base, repository, token=None):
     settings = [('credential.helper', ''), ('credential.interactive', 'false'),
                 ('http.followRedirects', 'false'), ('http.extraHeader', '')]
     if token is not None:
-        require(isinstance(token, str) and re.fullmatch('[A-Za-z0-9_]{1,4096}', token), 'TOKEN_INVALID')
+        require(_bearer(token, 4096), 'TOKEN_INVALID')
         header = 'AUTHORIZATION: basic ' + base64.b64encode(('x-access-token:' + token).encode()).decode()
         settings.append(('http.https://github.com/' + repository + '.git.extraHeader', header))
     environment['GIT_CONFIG_COUNT'] = str(len(settings))
