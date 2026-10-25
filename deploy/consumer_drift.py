@@ -64,14 +64,21 @@ def _publish(consumer, raw, operation_id, owner_uid):
 def _render_original(snapshot, source):
     """Use the original owning template/compiler, never copy its values as desired."""
     program = ('import json,sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
+        'from config import loads;'
         'from managed_pool_transport import projected_consumer;'
-        'print(json.dumps(projected_consumer(json.load(sys.stdin),Path(sys.argv[1]).parent)))')
+        'source=Path(sys.argv[1]).parent;'
+        'snapshot=loads(sys.stdin.read(),source);'
+        'print(json.dumps(projected_consumer(snapshot,source)))')
     process = subprocess.Popen(['/usr/bin/python3', '-I', '-c', program, str(source / 'deploy')],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
         env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'HOME': '/root',
              'PYTHONDONTWRITEBYTECODE': '1'})
     try:
-        output, _ = process.communicate(input=json.dumps(snapshot).encode(), timeout=90)
+        # The canonical snapshot sorts every nested mapping. The original
+        # loader rederives managed slots in its owning key order before the
+        # template renders them; that order remains part of the Node digest ABI.
+        output, _ = process.communicate(input=json.dumps(snapshot, ensure_ascii=False,
+            separators=(',', ':')).encode(), timeout=90)
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)

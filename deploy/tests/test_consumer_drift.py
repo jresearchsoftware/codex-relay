@@ -197,6 +197,58 @@ def test_original_source_renderer_preserves_owning_template_order():
     assert json.dumps(rendered) == json.dumps(projected_consumer(config, ROOT))
 
 
+@pytest.mark.parametrize('explicit_defaults', [False, True])
+def test_canonical_managed_snapshot_replays_owning_loader_before_template(explicit_defaults):
+    """A real sorted deployment snapshot must reproduce the original Node ABI.
+
+    The fresh Git entrypoint validates/rederives all 32 slots before compiling
+    inventory, then independently writes a recursively sorted config snapshot.
+    Rendering that snapshot as an already-compiled dict keeps every value but
+    changes nested insertion order and therefore the authentic admission digest.
+    """
+    from config import loads
+    from managed_pool_transport import consumer_digest, projected_consumer
+    from test_managed_pool import inputs
+
+    original = inputs(2)
+    original['environment']['localApply'] = {
+        'source': 'git', 'repository': 'example-org/private-deployment', 'configPath': 'test/relay.json'}
+    original['environment']['reviewerRepositories'] = ['example-org/sample-project', 'example-org/another-project']
+    if explicit_defaults:
+        original['consumer']['defaultProfile']['effort'] = 'xhigh'
+        original['consumer']['workGroup'] = original['environment']['codexWorkGroup']
+    else:
+        original['consumer']['defaultProfile'].pop('effort', None)
+        original['consumer'].pop('workGroup', None)
+    original = loads(json.dumps(original), ROOT)
+    # The ordinary Git primitive repeats validation after canonicalizing input.
+    original = loads(json.dumps(original, sort_keys=True, separators=(',', ':')), ROOT)
+    assert len(original['consumer']['executionSlots']) == 32
+    installed = projected_consumer(original, ROOT)  # Actual Ansible template.
+    authentic_digest = consumer_digest(installed, ROOT)  # Actual owning Node validator/digest.
+    canonical = json.dumps(original, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+    snapshot = json.loads(canonical)
+    future = copy.deepcopy(original)
+    future['consumer']['defaultProfile']['effort'] = 'medium'
+    future['environment']['reviewerRepositories'] = ['example-org/sample-project']
+    future_before = copy.deepcopy(future)
+
+    direct = projected_consumer(snapshot, ROOT)
+    assert direct == installed, 'the failure is order, not a changed resource or policy value'
+    assert consumer_digest(direct, ROOT) != authentic_digest
+    assert list(direct['executionSlots'][0]) != list(installed['executionSlots'][0])
+    assert list(direct['executionSlots'][0]['paths']) != list(installed['executionSlots'][0]['paths'])
+
+    restored = drift._render_original(snapshot, ROOT)
+    assert json.dumps(restored) == json.dumps(installed)
+    assert consumer_digest(restored, ROOT) == authentic_digest
+    assert restored['defaultProfile'].get('effort', 'xhigh') == 'xhigh'
+    assert snapshot == json.loads(canonical) and future == future_before
+    requested = copy.deepcopy(installed)
+    requested['defaultProfile']['effort'] = future['consumer']['defaultProfile']['effort']
+    assert consumer_digest(requested, ROOT) != authentic_digest
+
+
 def test_target_termination_reaps_private_child_process_group(tmp_path):
     child_pid = tmp_path / 'child-pid'
     child = ('import os,time;from pathlib import Path;'
