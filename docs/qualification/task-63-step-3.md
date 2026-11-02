@@ -3,7 +3,9 @@
 Date: 2026-11-02. Accepted comparison: `b6edaaf4982df5b7dd6d56fd68b7ce7e34ccd7a9`.
 Authority: [Task 63](https://github.com/jresearchsoftware/codex-relay/issues/63),
 [diagnostic evidence](https://github.com/jresearchsoftware/codex-relay/issues/63#issuecomment-6583772562),
-and [Step 3 Decision](https://github.com/jresearchsoftware/codex-relay/issues/63#issuecomment-6583905377).
+the [Step 3 Decision](https://github.com/jresearchsoftware/codex-relay/issues/63#issuecomment-6583905377),
+the [manual continuity Decision](https://github.com/jresearchsoftware/codex-relay/issues/63#issuecomment-6584441512),
+and the [preflight amendment](https://github.com/jresearchsoftware/codex-relay/issues/63#issuecomment-6584770902).
 This is owner-authorized standalone manual Step 3. It has no native admission
 or Writer Outcome; the retained native Step 2 projection remains unchanged.
 
@@ -97,6 +99,49 @@ malformed and pending receipts remain unresolved. The publisher additionally
 reports fixed-action/failure/exit metadata and only a complete bounded CLI error
 envelope. Raw child streams, arguments and private paths are never published.
 Post-replacement failures keep their recovery-required classification.
+
+## Complete install-path classification
+
+The preflight amendment applies to this same standalone Step 3. It does not
+admit a new native execution, authorize another PROD attempt, activate the
+retired public workflow or make Task 119 a prerequisite. The following owning
+checks are classified across `intent_install.run` → `relay-deploy.run` →
+`ansible/site.yml`; component validators remain their requirement owners.
+
+| Surface | Before disruption | Final bounded revalidation / remaining dynamic proof |
+| --- | --- | --- |
+| Product/config authority and identity | Frozen commits, config blob/content, source tree, host identity, installed epoch/capabilities and selected strategy | Same local config bytes and clean exact product identity; staged tree and source receipt |
+| Installed/foreign resource ownership | Inventory, selected-resource upgrade proof, protected roots, service identities, Nexus/listener boundary | Static old source/helper/config/unit bindings, service process identities and protected input metadata |
+| Unix accounts and runtime paths | Existing UID/GID aliases, planned account/home/workgroup changes, active general transport restart barrier, runtime/tmp/arg0 and every runner/member destination | Same NSS/path/service observations; actual resulting UID/process isolation remains an installed runtime check |
+| Retained attempt/publication compatibility | Real candidate admission reader against the authenticated old context; strict history check only for a changed consumer digest | Drain finishes before Writer mutex acquisition; actual current old consumer and history are rechecked under that mutex |
+| Live consumer drift | Read-only private mount view authenticates old baseline from its protected original evidence; selected Git still exclusively supplies desired values | Existing bounded restoration runs only after preparation; final canonical consumer must require no restoration and match the proven old digest |
+| Credentials and App access | Configured source or retained protected material, modes/ownership, real key parsing, existing App qualification and repository scope | Same material metadata and desired App qualification; no new grant or credential acquisition is invented |
+| TLS and external ingress | Existing owning certificate/key validator, required ingress/Docker identity; fresh ACME inputs are distinguished from completed issuance | Future ACME issuance and live mTLS/listener proof are explicit dynamic steps, not a preflight PASS claim |
+| Runner/workflow policy | Existing managed-pool App/runner/group/repository/workflow qualification before any SERIAL retirement | Rechecked under existing host/pool locks; exact old idle runner binding is rechecked by its owning transition before stop |
+| Reviewer source, toolchain and build | Actual isolated source acquisition, full Git-tree validation, pinned Rust acquisition/reuse and real locked Cargo build | Sealed full release and toolchain, real Node import closure and Reviewer native loader; live consume performs no download/build |
+| Runner and Codex distributions | Actual isolated download, archive/installer/layout/version qualification and sealed package trees | Both complete package seals and destination compatibility rechecked before live consume; no live Runner version probe that writes `_diag` |
+| Existing target/partial release | Protected destination structure and all prospective copy collisions | Revalidated before candidate files are consumed; same-SHA preparation stays outside the active release |
+| Pre-cutover race/abort | Original open gate and unchanged old installation captured as private disposable evidence | Actual Writer kernel holder plus old consumer/static/service/credential proof permits exact original gate restoration; no attempt or journal is rewritten |
+| Replacement | Candidate staged outside the root that retirement archives; original retirement inventory/locks retained | A changed-consumer replacement is an explicit pre-cutover unsupported boundary; no late fresh-path gate rebind is attempted |
+| Installed activation and effects | Only prerequisites can be certified | Real current pointer, installed manifest/Git pair, executable/PID, namespace/sudo/socket/timer/mTLS/runner readiness remain mandatory postchecks with the original operation's forward-recovery boundary |
+
+No new dispatch/admission ledger or generic post-mutation rollback is introduced.
+The original PROD operation and its ten unresolved terminal-history proofs
+remain protected gates. Unknown old contexts, external changes that prevent
+proof of old availability, and unsupported replacement rebindings return a
+specific owner handoff instead of claiming safe automatic retry.
+
+The publisher's protected same-UUID backup pair is tested after consumer rename,
+including execution under the real Writer lease. This is distinct from full
+installer recovery. If both the installed manifest and actual consumer already
+describe the new digest while admission still binds the old digest, and the
+bootstrap cannot authenticate its old context, the ordinary installer stops at
+`CONSUMER_PREFLIGHT_BASELINE_GATE_MISMATCH` before further live effects. It does
+not reinterpret the new snapshot as old authority. That frontier needs an
+evidence-bound protected recovery of the original operation; this change does
+not certify a generic automatic rollback/forward-recovery engine. The observed
+PROD incident currently retains the old consumer digest and no publication
+backup, so that separate post-rename fixture is not a claimed PROD diagnosis.
 
 ## Isolated Linux qualification
 

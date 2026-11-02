@@ -48,6 +48,8 @@
   hosts: relay
   become: true
   gather_facts: false
+  environment:
+    RELAY_WRITER_LOCK_LEASE: '{{ relay_intent_writer_lock_lease | default("") }}'
   pre_tasks:
     - name: End the mutating play after a read-only recovery classification
       ansible.builtin.meta: end_play

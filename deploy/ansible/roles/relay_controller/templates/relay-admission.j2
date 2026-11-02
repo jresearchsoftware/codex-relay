@@ -3,6 +3,14 @@
 # Root-only lifecycle operations use no Writer or worker credentials.
 set -eu
 test "$(/usr/bin/id -u)" -eq 0 || exit 40
+if test -n "${RELAY_WRITER_LOCK_LEASE-}"; then
+    # A root cutover holder already owns this exact kernel flock. Its fixed
+    # verifier refuses dead/forged receipts; drain must have finished earlier.
+    exec /usr/bin/python3 -I '{{ relay_install_root }}/current/reviewed-source/deploy/writer_lock_lease.py' \
+      --exec-admission "$RELAY_WRITER_LOCK_LEASE" \
+      '{{ relay_install_root }}/current/reviewed-source' '{{ relay_consumer_config_path }}' \
+      '{{ relay_github_repository }}' "$@"
+fi
 case "${1-}" in
   drain)
     # The CLI locks one snapshot at a time so admitted controllers can finish.
@@ -10,7 +18,7 @@ case "${1-}" in
       PATH=/usr/bin:/bin LANG=C LC_ALL=C \
       /usr/bin/node '{{ relay_install_root }}/current/reviewed-source/controller/src/admission-cli.mjs' "$@"
     ;;
-  initialize|quiesce|status|drain-check|phase|snapshot|recovery-target|resume|consumer-transition-check|consumer-transition)
+  initialize|quiesce|status|drain-check|phase|snapshot|recovery-target|resume|consumer-transition-preflight|consumer-transition-check|consumer-transition)
     exec /usr/bin/env -i RELAY_CONSUMER_CONFIG='{{ relay_consumer_config_path }}' RELAY_REPOSITORY='{{ relay_github_repository }}' \
       PATH=/usr/bin:/bin LANG=C LC_ALL=C \
       /usr/bin/flock -w 180 '{{ relay_writer_claim_root }}/publication-v2.lock' \

@@ -108,12 +108,13 @@ class UpgradeActivationTests(unittest.TestCase):
                                + shlex.quote(str(admission)) + ' "$@"\n')
         gate_helper.chmod(0o755)
         tasks = []
-        for name in ('snapshot', 'activate', 'validation'):
+        for name in ('observe', 'snapshot', 'activate', 'validation'):
             source = (ROOT / f'tasks/upgrade-lifecycle-{name}.yml').read_text()
-            path = root / f'{name}.yml'
+            path = root / ('upgrade-lifecycle-observe.yml' if name == 'observe' else f'{name}.yml')
             path.write_text(source.replace('/bin/systemctl', str(systemctl))
                            .replace('retries: 30', 'retries: 1').replace('delay: 1', 'delay: 0'))
-            tasks.append({'ansible.builtin.include_tasks': str(path)})
+            if name != 'observe':
+                tasks.append({'ansible.builtin.include_tasks': str(path)})
         # The private listener remains the production health boundary. Use a
         # temporary local TCP listener so the real wait_for executes too.
         import socket

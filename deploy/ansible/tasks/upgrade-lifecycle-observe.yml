@@ -1,0 +1,88 @@
+---
+# Read-only service intent observation, reusable before quiesce and again
+# immediately before retaining the original managed lifecycle snapshot.
+- name: Inspect managed upgrade service activity before installation
+  ansible.builtin.command:
+    argv:
+      - /bin/systemctl
+      - show
+      - '{{ item }}'
+      - --property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload
+  loop: '{{ [relay_reviewer_service_name, relay_production_runner_service_name, relay_general_runner_service_name, relay_namespace ~ "-relay-manual-outcome.socket"] + (relay_additional_execution_slots | default([]) | map(attribute="relay_runner_service_name") | list) }}'
+  register: relay_upgrade_lifecycle_initial_services
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require known service activity before a managed upgrade
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search('(?m)^LoadState=(loaded|not-found)$')
+      - item.stdout is search('(?m)^ActiveState=(active|inactive|failed)$')
+      - >-
+        not (item.item is search('[.]socket$') and item.stdout is search('(?m)^LoadState=not-found$')) or
+        (item.stdout is search('(?m)^ActiveState=inactive$') and
+         item.stdout is search('(?m)^SubState=dead$') and
+         (not (item.stdout is search('(?m)^UnitFileState=.+$')) or
+          item.stdout is search('(?m)^UnitFileState=(not-found|disabled)$')))
+      - >-
+        item.stdout is search('(?m)^LoadState=not-found$') or
+        item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$')
+      - >-
+        not (item.stdout is search('(?m)^ActiveState=active$')) or
+        (
+          item.rc == 0 and
+          (
+            (item.item is search('[.]socket$') and item.stdout is search('(?m)^SubState=listening$')) or
+            (not (item.item is search('[.]socket$')) and
+             item.stdout is search('(?m)^MainPID=[1-9][0-9]*$') and
+             item.stdout is search('(?m)^ExecMainStartTimestampMonotonic=[1-9][0-9]*$') and
+             item.stdout is search('(?m)^SubState=running$'))
+          ) and
+          (item.item is search('[.]socket$') or item.stdout is search('(?m)^UnitFileState=(enabled|enabled-runtime)$'))
+        )
+    fail_msg: RELAY_UPGRADE_SERVICE_ACTIVITY_UNPROVEN
+  loop: '{{ relay_upgrade_lifecycle_initial_services.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Build the bounded observed activation intent for the exact admission operation
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_observed_activity: >-
+      {{
+        (relay_upgrade_lifecycle_observed_activity | default({})) |
+        combine({item.name: {
+          'active': relay_upgrade_lifecycle_initial_services.results[item.index].stdout is search('(?m)^ActiveState=active$'),
+          'enabled': (relay_upgrade_lifecycle_initial_services.results[item.index].stdout | regex_findall('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$') | first | default('disabled')),
+          'load': (relay_upgrade_lifecycle_initial_services.results[item.index].stdout | regex_findall('(?m)^LoadState=(loaded|not-found)$') | first)
+        }})
+      }}
+  loop:
+    - {name: reviewer, index: 0}
+    - {name: production, index: 1}
+    - {name: general, index: 2}
+    - {name: manualOutcome, index: 3}
+
+- name: Bind each additional runner activity to its immutable configured slot
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_observed_activity: >-
+      {{ relay_upgrade_lifecycle_observed_activity | combine({"slot-" ~ item.relay_execution_slot: {
+        'active': relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout is search('(?m)^ActiveState=active$'),
+        'enabled': (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^UnitFileState=(enabled|enabled-runtime|disabled)$') | first | default('disabled')),
+        'load': (relay_upgrade_lifecycle_initial_services.results[slot_index + 4].stdout | regex_findall('(?m)^LoadState=(loaded|not-found)$') | first)
+      }}) }}
+  loop: '{{ relay_additional_execution_slots | default([]) }}'
+  loop_control:
+    index_var: slot_index
+
+- name: Use the compatible snapshot wire shape only for a proved absent manual socket
+  ansible.builtin.set_fact:
+    # The installed pre-capability helper accepts exactly the original three
+    # components. A proved absent socket has no activation intent to preserve;
+    # present sockets always require the complete four-component journal.
+    relay_upgrade_lifecycle_snapshot_activity: >-
+      {{ relay_upgrade_lifecycle_observed_activity |
+         dict2items | rejectattr('key', 'equalto', 'manualOutcome') | items2dict
+         if relay_upgrade_lifecycle_observed_activity.manualOutcome ==
+            {'active': false, 'enabled': 'disabled', 'load': 'not-found'}
+         else relay_upgrade_lifecycle_observed_activity }}

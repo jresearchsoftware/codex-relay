@@ -1,10 +1,19 @@
 ---
+- name: Select verified staged artifact consumption without changing ordinary callers
+  ansible.builtin.set_fact:
+    relay_artifact_consume_staged: '{{ relay_intent_staged_release | default("") | length > 0 and not (relay_artifact_stage_only | default(false) | bool) }}'
+
 - name: Resolve shared reviewed artifact identities
   ansible.builtin.include_tasks: resolve-identities.yml
   when: relay_release_commit is not defined
 
+- name: Consume the exact sealed candidate instead of building during cutover
+  ansible.builtin.include_tasks: intent-consume.yml
+  when: relay_artifact_consume_staged | bool
+
 - name: Reuse the shared Reviewer artifact admission contract
   ansible.builtin.include_tasks: verify-reviewer-reuse.yml
+  when: not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Create the exact relay release namespace
   ansible.builtin.file:
@@ -13,6 +22,7 @@
     owner: root
     group: '{{ relay_group }}'
     mode: '0750'
+  when: not (relay_artifact_consume_staged | default(false) | bool)
   loop:
     - '{{ relay_release_path }}/reviewer-source'
 
@@ -27,9 +37,11 @@
     - '{{ relay_release_path }}'
     - '{{ relay_release_path }}/bin'
     - '{{ relay_release_path }}/reviewed-source'
+  when: not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage Relay source through its internal Git transport
   ansible.builtin.include_tasks: stage-source.yml
+  when: not (relay_artifact_consume_staged | default(false) | bool) and not (relay_artifact_stage_only | default(false) | bool)
 
 - name: Stage the exact reviewed privileged Writer helper artifact
   ansible.builtin.copy:
@@ -39,7 +51,9 @@
     owner: root
     group: root
     mode: '0700'
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage the exact reviewed on-demand Codex dispatch artifact
   ansible.builtin.file:
@@ -50,7 +64,9 @@
     owner: root
     group: '{{ relay_runner_group }}'
     follow: false
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage the exact reviewed diagnostics store artifact
   ansible.builtin.file:
@@ -61,7 +77,9 @@
     owner: root
     group: root
     follow: false
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage reviewed Rust Reviewer source and lockfile
   ansible.builtin.copy:
@@ -74,7 +92,9 @@
   loop:
     - {source: '{{ relay_release_path }}/reviewed-source/reviewer/Cargo.toml', destination: Cargo.toml, mode: '0640'}
     - {source: '{{ relay_release_path }}/reviewed-source/reviewer/Cargo.lock', destination: Cargo.lock, mode: '0640'}
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage reviewed Rust Reviewer implementation
   ansible.builtin.copy:
@@ -84,7 +104,9 @@
     owner: root
     group: '{{ relay_group }}'
     mode: preserve
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Create protected shared Reviewer schema build inputs
   ansible.builtin.file:
@@ -96,6 +118,7 @@
   loop:
     - '{{ relay_release_path }}/contracts'
     - '{{ relay_release_path }}/contracts/src'
+  when: not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Stage the exact shared GitHub authority schemas for the Reviewer build
   ansible.builtin.copy:
@@ -108,10 +131,13 @@
   loop:
     - github-authority-v1.json
     - github-authority-v4.json
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Reconcile the shared pinned Rust toolchain for builds and development
   ansible.builtin.include_tasks: rust-toolchain.yml
+  when: not (relay_artifact_consume_staged | default(false) | bool) and not (relay_artifact_stage_only | default(false) | bool)
 
 - name: Record the verified reused Reviewer toolchain identity
   ansible.builtin.set_fact:
@@ -119,11 +145,14 @@
   when:
     - not ansible_check_mode | bool
     - relay_reviewer_reuse_verified | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Record the non-mutating artifact staging plan in check-mode
   ansible.builtin.debug:
     msg: 'ARTIFACT_CHECK_MODE_PLAN=commit={{ relay_release_commit }}; controller={{ relay_controller_source_tree_sha256 }}; codexLauncher={{ relay_codex_launcher_source_tree_sha256 }}; reviewer={{ relay_reviewer_source_tree_sha256 }}; reviewerBuildInputs={{ relay_reviewer_build_inputs_tree_sha256 }}; reviewerReuse=verified-content-only; current={{ relay_release_path }}'
-  when: ansible_check_mode | bool
+  when:
+    - ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Build the locked reviewed Rust Reviewer release artifact
   ansible.builtin.command:
@@ -135,13 +164,15 @@
       - --target-dir
       - '{{ relay_release_path }}/reviewer-target'
     chdir: '{{ relay_release_path }}/reviewer-source'
-    creates: '{{ relay_release_path }}/reviewer-target/release/reviewer-mcp-http'
+    creates: '{{ omit if relay_artifact_stage_only | default(false) | bool else relay_release_path ~ "/reviewer-target/release/reviewer-mcp-http" }}'
   environment:
     CARGO_HOME: '{{ relay_rust_toolchain_cargo_home }}'
+    HOME: '{{ relay_intent_stage_root if relay_artifact_stage_only | default(false) | bool else ansible_env.HOME }}'
     PATH: '{{ relay_rust_toolchain_root }}/bin:{{ ansible_env.PATH }}'
   when:
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Record the built Reviewer toolchain identity
   ansible.builtin.set_fact:
@@ -149,6 +180,7 @@
   when:
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Install the built Reviewer executable into the release contract
   ansible.builtin.copy:
@@ -161,6 +193,7 @@
   when:
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Reuse the verified Reviewer executable without rebuilding it
   ansible.builtin.copy:
@@ -174,6 +207,7 @@
     - not ansible_check_mode | bool
     - relay_reviewer_reuse_verified | bool
     - relay_current_release.stat.lnk_source != relay_release_path
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Read the deployed Reviewer executable digest
   ansible.builtin.command:
@@ -182,7 +216,9 @@
       - '{{ relay_release_path }}/bin/reviewer-mcp-http'
   register: relay_reviewer_binary_digest
   changed_when: false
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Require a verifiable Reviewer executable digest
   ansible.builtin.assert:
@@ -190,11 +226,15 @@
       - relay_reviewer_binary_digest.stdout.split() | length == 2
       - relay_reviewer_binary_digest.stdout.split()[0] is match('^[0-9a-f]{64}$')
     fail_msg: 'Reviewer build output is missing or does not have a SHA-256 identity'
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Reconcile the protected deployment snapshot before its manifest
   ansible.builtin.include_tasks: installed-config.yml
-  when: relay_installed_deployment_config | default('') | length > 0
+  when:
+    - relay_installed_deployment_config | default('') | length > 0
+    - not (relay_artifact_stage_only | default(false) | bool)
 
 - name: Record the deployed artifact manifest
   ansible.builtin.template:
@@ -215,7 +255,9 @@
     follow: false
   register: relay_release_activation
   notify: Try-restart Reviewer after release transition
-  when: not ansible_check_mode | bool
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_stage_only | default(false) | bool)
 
 - name: Record whether the reviewed release binding changed
   ansible.builtin.set_fact:

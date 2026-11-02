@@ -1,0 +1,7 @@
+---
+- name: Install only relay prerequisites
+  ansible.builtin.apt:
+    name: '{{ relay_base_packages }}'
+    state: present
+    update_cache: '{{ relay_manage_base_packages | bool }}'
+  when: relay_manage_base_packages | bool

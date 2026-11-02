@@ -5,14 +5,20 @@
       {{ ['/usr/bin/python3', '-c',
           ('resource_globals = {"__name__": "relay_selected_resource_proof"};exec(' ~
            (lookup('file', playbook_dir + '/../clean_reinstall.py') | to_json) ~
-           ', resource_globals);prove_git_resources = resource_globals["prove_git_resource_boundary"];'
+           ', resource_globals);prove_git_resources = resource_globals["prove_git_resource_boundary"];prove_selected_resources = resource_globals["prove_consumer_resources"];'
            if relay_git_desired_state | default(false) | bool else '') ~
           lookup('file', playbook_dir + '/scripts/verify_upgrade.py')] +
          (['--git-desired', relay_install_root, relay_config_root,
            relay_production_operation_target_head, relay_intent_expected_installed_revision]
           if relay_git_desired_state | default(false) | bool else
           [relay_install_root, relay_config_root] +
-          ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else [])) }}
+          ([relay_production_operation_target_head] if relay_owner_apply_requested | default(false) | bool else [])) +
+         (['--consumer-baseline', relay_intent_preflight_consumer_path,
+           '--baseline-digest', relay_intent_preflight_baseline_digest,
+           '--claim-root', relay_intent_preflight_claim_root, '--stage-root', relay_intent_stage_root]
+          if relay_git_desired_state | default(false) | bool and relay_intent_preflight_consumer_path | default('') | length > 0 else []) +
+         (['--qualified-serial-preflight', relay_intent_stage_root] if relay_git_desired_state | default(false) | bool
+          and relay_intent_preflight_serial | default(false) | bool else []) }}
     stdin: '{{ (relay_serial_pool_target_config if relay_serial_pool_transition | default(false) | bool else relay_installed_deployment_config) | string }}'
     stdin_add_newline: false
   changed_when: false

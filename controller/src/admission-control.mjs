@@ -293,7 +293,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     // execution. Compare the original immutable envelope and terminal journal.
     return completedAdmissionRecord(record, journal);
   }
-  async function currentInventory(task = null, slot = null, resourceOnly = false, includeManual = false) {
+  async function currentInventory(task = null, slot = null, resourceOnly = false, includeManual = false,
+    terminalAutomatic = true) {
     const active = []; const unknown = [];
     const rows = store.scan ? await store.scan()
       : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
@@ -317,7 +318,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         if (!manualAdmissionComplete(record)) unknown.push(e.runId);
         continue;
       }
-      if (includeManual && e.route === 'auto' && !await historicalComplete(record)) {
+      if (includeManual && terminalAutomatic && e.route === 'auto' && !await historicalComplete(record)) {
         unknown.push(e.runId);
         continue;
       }
@@ -375,8 +376,9 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     }
     return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
   }
-  async function inventory(task = null, slot = null, resourceOnly = false, includeManual = false) {
-    const current = await currentInventory(task, slot, resourceOnly, includeManual);
+  async function inventory(task = null, slot = null, resourceOnly = false, includeManual = false,
+    terminalAutomatic = true) {
+    const current = await currentInventory(task, slot, resourceOnly, includeManual, terminalAutomatic);
     if (includeManual && supplementalManualInventory) {
       const manual = await supplementalManualInventory();
       if (!Array.isArray(manual) || !manual.every(positive)) fail('ADMISSION_ATTEMPT_INVALID');
@@ -422,6 +424,21 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     async status({ operationId } = {}) {
       const state = await read(); if (operationId !== undefined) bound(state, operationId);
       return { ...state, ...await inventory() };
+    },
+    async preflightConsumerTransition({ desiredDigest }) {
+      if (!configDigest(desiredDigest)) fail('ADMISSION_CONFIG_INVALID');
+      const state = await read();
+      const consumerChange = desiredDigest !== state.consumerDigest;
+      // This observation runs before quiesce and never changes the gate. Valid
+      // active controllers may finish during the later bounded drain; unknown
+      // automatic work and unresolved manual rebindings are already blockers.
+      // The final transition still requires its original strict terminal proof.
+      const pending = await inventory(null, null, false, consumerChange, false);
+      const active = [...new Set(pending.active)].sort((a, b) => a - b);
+      const unknown = [...new Set(pending.unknown)].sort((a, b) => a - b);
+      return { currentDigest: state.consumerDigest, desiredDigest, consumerChange,
+        phase: state.phase, operationId: state.operationId, target: state.target,
+        active, unknown, eligible: unknown.length === 0 };
     },
     async drained({ operationId }) {
       const state = bound(await read(), operationId);

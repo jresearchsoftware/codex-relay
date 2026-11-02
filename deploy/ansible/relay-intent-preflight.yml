@@ -1,0 +1,35 @@
+---
+# Reuse the ordinary owning validators, without entering site's mutating play.
+- name: Validate frozen source and existing installation before isolated preparation
+  hosts: relay
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Verify existing slot UID and GID aliases
+      ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
+      vars:
+        relay_slot_topology_preflight: true
+
+    - name: Inspect the retained production operation without beginning one
+      ansible.builtin.include_tasks: tasks/production-operation-state.yml
+
+    - name: Validate selected installed resources and target compatibility
+      ansible.builtin.include_tasks: tasks/upgrade-preflight.yml
+      when: relay_upgrade_requested | default(false) | bool or relay_owner_apply_requested | default(false) | bool
+
+    - name: Resolve the existing Nexus gateway without changing its network
+      ansible.builtin.include_role:
+        name: relay_docker_network_gateway
+      when: relay_deployment_profile == 'production' and relay_reviewer_bind_mode == 'nexus_gateway'
+
+    - name: Validate host, listener and foreign ownership boundaries
+      ansible.builtin.include_role:
+        name: relay_preflight
+
+    - name: Observe existing service activation intent without writing a snapshot
+      ansible.builtin.include_tasks: tasks/upgrade-lifecycle-observe.yml
+      when: relay_intent_expected_installed_revision != 'none'
+
+    - name: Report read-only compatibility proof without claiming runtime activation
+      ansible.builtin.debug:
+        msg: 'RELAY_INTENT_PREFLIGHT_READY={{ relay_source_identity.revision }}'

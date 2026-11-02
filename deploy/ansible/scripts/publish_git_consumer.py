@@ -143,7 +143,7 @@ def _execute(argv, env, *, timeout=60):
 
 
 def publish(source, config_root, desired, claim_root, repository, operation, revision, *,
-            owner_uid=0, boundary=Path('/'), execute=_execute):
+            writer_lock_lease=None, owner_uid=0, boundary=Path('/'), execute=_execute):
     """All path arguments originate in the trusted installer, never runner input.
 
     owner_uid/boundary/execute are fixture seams, unavailable on the command line.
@@ -168,18 +168,32 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
             'CONSUMER_PUBLICATION_SOURCE_MISMATCH')
     desired_bytes = _read(desired, options)
     lock_path = claim_root / 'publication-v2.lock'
-    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+                      | (0 if writer_lock_lease else os.O_CREAT), 0o600)
     try:
         _protected(lock_path, **options)
         require(_stamp(os.fstat(lock_fd)) == _stamp(lock_path.lstat()), 'CONSUMER_PUBLICATION_LOCK_CHANGED')
-        deadline = time.monotonic() + 180
-        while True:
+        lease = None
+        if writer_lock_lease:
+            # Execute only verified exact-source bytes, without an import cache
+            # write. The receipt alone never substitutes for its live flock.
+            module_path = source / 'deploy/writer_lock_lease.py'
+            module = {'__name__': 'relay_verified_writer_lock_lease', '__file__': str(module_path)}
+            exec(compile(_read(module_path, options), str(module_path), 'exec'), module)
             try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                require(time.monotonic() < deadline, 'CONSUMER_PUBLICATION_LOCK_TIMEOUT')
-                time.sleep(0.1)
+                lease = module['verify'](writer_lock_lease, lock_path, operation=operation,
+                    target=revision, owner_uid=owner_uid, boundary=boundary)
+            except (OSError, ValueError, KeyError, TypeError):
+                raise ConsumerPublicationError('CONSUMER_PUBLICATION_WRITER_LEASE_UNPROVEN') from None
+        else:
+            deadline = time.monotonic() + 180
+            while True:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    require(time.monotonic() < deadline, 'CONSUMER_PUBLICATION_LOCK_TIMEOUT')
+                    time.sleep(0.1)
         old_bytes = _read(consumer, options)
         backup = config_root / ('consumer-before-' + operation + '.json')
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
@@ -198,6 +212,7 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
         current_digest = digest(consumer)
         receipt_path = config_root / 'serial-pool-compat-v1.json'
         pending_transition = False
+        leased_recovery_pair = False
         if backup.exists():
             _read(backup, options)
             backup_digest = digest(backup)
@@ -210,6 +225,14 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
                 require(gate.get('consumerDigest') in (backup_digest, current_digest),
                         'CONSUMER_PUBLICATION_BACKUP_CHANGED')
                 pending_transition = gate['consumerDigest'] == backup_digest
+                # A same-operation retry may follow the durable config rename
+                # while this holder still owns the original consumer binding.
+                # Only the protected backup plus the applying gate authenticate
+                # that pair; an arbitrary current-digest change is not enough.
+                leased_recovery_pair = (lease is not None and current_digest == desired_digest
+                    and backup_digest == lease['consumerDigest'] and gate.get('phase') == 'applying')
+        require(lease is None or lease['consumerDigest'] == current_digest or leased_recovery_pair,
+                'CONSUMER_PUBLICATION_WRITER_LEASE_DIGEST_CHANGED')
         if desired_digest == current_digest and not pending_transition:
             # Code-only upgrades retain the original consumer binding, including
             # outstanding manual handoffs. They need no new config-change drain.
@@ -275,6 +298,7 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ('source', 'config-root', 'desired', 'claim-root', 'repository', 'operation', 'revision'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--writer-lock-lease', default=os.environ.get('RELAY_WRITER_LOCK_LEASE'))
     args = vars(parser.parse_args())
     try:
         print(json.dumps(publish(**args)))

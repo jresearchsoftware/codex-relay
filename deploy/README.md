@@ -905,6 +905,16 @@ connection. The target needs no GitHub source
 credential: Relay transfers a normal Git archive internally. There is no
 consumer distribution bundle, installer hash lock or cached executable helper.
 
+For a proved missing installation, Git install prepares the configured
+product-owned OS packages before isolated source and artifact staging. This
+limited preparation reuses the ordinary base-package task; it creates no Relay
+accounts, helpers, service units or live consumer configuration. An active
+namespace service or unknown activity stops preparation before package changes;
+shared runner-pool and foreign services remain outside this check. With
+`relay_manage_base_packages: false`, the target owner supplies those OS
+prerequisites; a missing staging Node executable or C compiler stops before
+candidate staging. Package presence does not establish Node 22 qualification.
+
 On the verified Debian host, use the same public command and durable configuration
 with `--connection local`. This selects Ansible's local connection without changing
 the configuration digest, original installation identity or recovery binding:

@@ -1,0 +1,81 @@
+---
+- name: Require the reviewed compiler host before any artifact preparation
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture == 'x86_64'
+    fail_msg: INTENT_RUST_HOST_ARCHITECTURE_UNSUPPORTED
+
+- name: Retain the immutable live Rust destination independently of the private builder
+  ansible.builtin.set_fact:
+    relay_intent_rust_live_root: '{{ relay_rust_toolchain_root }}'
+
+- name: Inspect the existing pinned Rust prefix without changing it
+  ansible.builtin.stat:
+    path: '{{ relay_intent_rust_live_root }}'
+    follow: false
+  register: relay_intent_rust_prefix
+
+- name: Require a protected existing Rust prefix
+  ansible.builtin.assert:
+    that:
+      - not relay_intent_rust_prefix.stat.exists or (relay_intent_rust_prefix.stat.isdir and not relay_intent_rust_prefix.stat.islnk and relay_intent_rust_prefix.stat.pw_name == 'root' and relay_intent_rust_prefix.stat.mode[-2] in ['0', '1', '4', '5'] and relay_intent_rust_prefix.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: INTENT_RUST_EXISTING_PREFIX_UNSAFE
+
+- name: Inspect the complete pinned Rust tool set before considering reuse
+  ansible.builtin.stat:
+    path: '{{ relay_intent_rust_live_root }}/bin/{{ item }}'
+    follow: false
+  loop: [cargo, rustc, rustfmt]
+  register: relay_intent_rust_binaries
+  when: relay_intent_rust_prefix.stat.exists
+
+- name: Refuse incomplete or aliased existing Rust tools before any cutover
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.pw_name == 'root'
+      - item.stat.executable
+      - item.stat.mode[-2] in ['0', '1', '4', '5']
+      - item.stat.mode[-1] in ['0', '1', '4', '5']
+    fail_msg: INTENT_RUST_EXISTING_TOOLS_UNPROVEN
+  loop: '{{ relay_intent_rust_binaries.results | default([]) }}'
+  when: relay_intent_rust_prefix.stat.exists
+
+- name: Prove all existing compiler substitution parents before executing version probes
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", playbook_dir + "/roles/relay_artifacts/files/relay-intent-stage.py") }}', check-toolchain, '{{ relay_intent_stage_root }}']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity, "prefix": relay_intent_rust_live_root} | to_json }}'
+    stdin_add_newline: false
+  changed_when: false
+  when: relay_intent_rust_prefix.stat.exists
+
+- name: Verify existing pinned compiler identities without modifying their prefix
+  ansible.builtin.command:
+    argv: ['{{ relay_intent_rust_live_root }}/bin/{{ item }}', --version]
+  loop: [cargo, rustc]
+  register: relay_intent_rust_versions
+  changed_when: false
+  failed_when: relay_intent_rust_versions.rc != 0 or not (relay_intent_rust_versions.stdout is match('^' ~ item ~ ' ' ~ (relay_rust_toolchain_version | regex_escape) ~ ' '))
+  when: relay_intent_rust_prefix.stat.exists
+
+- name: Prepare a missing toolchain exclusively inside the private candidate stage
+  ansible.builtin.include_tasks: rust-toolchain.yml
+  vars:
+    relay_state_root: '{{ relay_intent_stage_root }}/private-state'
+    relay_group: root
+    relay_rust_toolchain_root: '{{ relay_intent_stage_root }}/rust-toolchain'
+    relay_rust_toolchain_unpack_root: '{{ relay_intent_stage_root }}/rust-unpack'
+    relay_rust_toolchain_cargo_home: '{{ relay_intent_stage_root }}/cargo-home'
+  when: not relay_intent_rust_prefix.stat.exists
+
+- name: Select the read-only existing or privately prepared compiler
+  ansible.builtin.set_fact:
+    relay_intent_rust_build_root: '{{ relay_intent_rust_live_root if relay_intent_rust_prefix.stat.exists else relay_intent_stage_root ~ "/rust-toolchain" }}'
+    relay_intent_rust_stage:
+      livePrefix: '{{ relay_intent_rust_live_root }}'
+      stagedPrefix: '{{ "" if relay_intent_rust_prefix.stat.exists else relay_intent_stage_root ~ "/rust-toolchain" }}'
+      version: '{{ relay_rust_toolchain_version }}'
+      archiveSha256: '{{ relay_rust_toolchain_archive_sha256 }}'
+    relay_rust_toolchain_cargo_version:
+      stdout: '{{ relay_intent_rust_versions.results[0].stdout if relay_intent_rust_prefix.stat.exists else relay_rust_toolchain_cargo_version.stdout }}'

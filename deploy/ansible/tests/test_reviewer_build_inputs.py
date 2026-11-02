@@ -39,7 +39,7 @@ class ReviewerBuildInputTests(unittest.TestCase):
             'dest': '{{ relay_release_path }}/contracts/src/{{ item }}',
             'remote_src': True, 'owner': 'root', 'group': '{{ relay_group }}', 'mode': '0640',
         })
-        self.assertEqual(task['when'], 'not ansible_check_mode | bool')
+        self.assertEqual(task['when'], ['not ansible_check_mode | bool', 'not (relay_artifact_consume_staged | default(false) | bool)'])
 
     @unittest.skipUnless(NATIVE, 'Native Ansible and Rust required for staged compile-input qualification')
     def test_actual_staging_supplies_compile_inputs_and_missing_v4_fails_compilation(self):

@@ -424,6 +424,32 @@ def test_legacy_hardening_uses_selected_source_and_live_host_mutex(monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize('frontier', ['restored-old', 'fresh-packages'])
+def test_preparation_failure_reports_real_mutation_and_recovery_scope(invocation, monkeypatch, capsys, frontier):
+    args, _config, _receipt, _artifact = invocation
+    before = observed(PREVIOUS, CONTRACT) if frontier == 'restored-old' else fresh_report()
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_kwargs: before)
+    def primitive(inner):
+        inner._intent_failure_stage = 'final-revalidation' if frontier == 'restored-old' else 'fresh-product-prerequisites'
+        if frontier == 'restored-old':
+            inner._intent_old_availability_restored = True
+        else:
+            inner._intent_product_prerequisites = True
+        raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_PREREQUISITE')
+    with pytest.raises(RuntimeError, match='INSTALL_PREFLIGHT_INJECTED_PREREQUISITE'):
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+    failure = json.loads(capsys.readouterr().out.split('RELAY_INSTALL_FAILURE=')[1])
+    assert failure['automaticRetrySafe'] is False
+    if frontier == 'restored-old':
+        assert failure['hostMutation'] is True
+        assert failure['recovery'] == 'not-required-old-availability-verified'
+        assert failure['oldAvailability'] == 'verified-restored-original-open-gate'
+    else:
+        assert failure['hostMutation'] == 'unknown'
+        assert failure['recovery'] == 'not-started-product-prerequisites-only'
+        assert failure['productPrerequisites'] == 'fresh-host-package-preparation-requested'
+
+
 def native_composition(invocation, monkeypatch, before=None):
     args, config, receipt, _ = invocation
     state = copy.deepcopy(before or fresh_report())

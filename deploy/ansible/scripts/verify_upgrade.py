@@ -1,9 +1,11 @@
 """Read-only upgrade gate: retain one proven installation and its owner intent."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 
@@ -67,8 +69,70 @@ def verify_apply(install_root, target_revision, *, owner_uid=0, boundary=Path('/
     return release.name
 
 
+def authenticated_consumer_baseline(install, config_root, target_revision, context, *, owner_uid=0, boundary=Path('/')):
+    """Reprove only the private clone authenticated by the actual history gate.
+
+    The caller's root orchestration obtained this context from the native Node
+    preflight. No ordinary loader, live config or retained record is replaced.
+    """
+    protection = {'owner_uid': owner_uid, 'boundary': boundary}
+    stage, baseline = Path(context['stageRoot']), Path(context['consumerPath'])
+    if (stage.parent not in (install / 'releases', install.parent / ('.' + install.name + '-staging'))
+            or not re.fullmatch(r'[.]stage-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', stage.name)
+            or baseline.parent.parent != stage or baseline.name != 'consumer.json'
+            or not re.fullmatch('consumer-context-[A-Za-z0-9]{6}', baseline.parent.name)
+            or not re.fullmatch('[a-f0-9]{64}', context.get('baselineDigest', ''))):
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    for directory in (stage, baseline.parent):
+        protected(directory, directory=True, **protection)
+        if stat.S_IMODE(directory.stat().st_mode) != 0o700:
+            raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    protected(baseline, **protection)
+    if baseline.stat().st_size > 128 * 1024:
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    raw = baseline.read_bytes()
+    actual = json.loads(raw)
+    claim = Path(context['claimRoot'])
+    if (not isinstance(actual, dict) or not claim.is_absolute() or str(claim) != os.path.normpath(claim)
+            or actual.get('paths', {}).get('claimRoot') != str(claim)):
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    source = stage / 'release/reviewed-source'
+    for path in (source / '.relay-source.json', source / 'consumer/consumer-config.mjs'):
+        protected(path, **protection)
+    if json.loads((source / '.relay-source.json').read_bytes()).get('revision') != target_revision:
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    program = ('import{readFileSync}from"node:fs";import{pathToFileURL}from"node:url";'
+               'const m=await import(pathToFileURL(process.argv[1]));'
+               'const c=m.validateConsumer(m.parseConsumerJson(readFileSync(process.argv[2],"utf8")));'
+               'console.log(JSON.stringify({digest:m.consumerDigest(c),claimRoot:c.paths.claimRoot}));')
+    result = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program,
+        str(source / 'consumer/consumer-config.mjs'), str(baseline)], stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+        env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+    if (result.returncode or len(result.stdout) > 4096
+            or json.loads(result.stdout) != {'digest': context['baselineDigest'], 'claimRoot': str(claim)}
+            or baseline.read_bytes() != raw):
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    receipt = Path(config_root) / 'serial-pool-compat-v1.json'
+    paired = receipt.exists() or receipt.is_symlink()
+    if paired:
+        protected(receipt, **protection)
+    gate_path = boundary / claim.relative_to('/') / ('admission-pool-v1.json' if paired else 'admission-v1.json')
+    protected(gate_path, **protection)
+    if gate_path.stat().st_size > 4096 or stat.S_IMODE(gate_path.stat().st_mode) != 0o600:
+        raise ValueError('RELAY_INSTALL_BASELINE_GATE_UNPROVEN')
+    gate = json.loads(gate_path.read_bytes())
+    if (not isinstance(gate, dict) or set(gate) != {'version', 'consumerDigest', 'phase', 'operationId', 'target',
+                                                  'previousActive', 'verifiedRevision'}
+            or gate.get('version') != 1 or gate.get('consumerDigest') != context['baselineDigest']
+            or gate.get('phase') not in ('open', 'quiesced', 'drained', 'applying', 'verified', 'recovery-required')):
+        raise ValueError('RELAY_INSTALL_BASELINE_GATE_UNPROVEN')
+    return actual
+
+
 def verify_desired(install_root, config_root, target_revision, expected_installed, *,
-                   owner_uid=0, boundary=Path('/'), expected_config=None, resource_probe=None):
+                   owner_uid=0, boundary=Path('/'), expected_config=None, resource_probe=None,
+                   consumer_baseline=None, consumer_resource_probe=None, qualified_serial_preflight=False):
     """Bind the planner's observed installation without comparing desired intent.
 
     A reviewed Git change may replace an old profile, target set or snapshot.
@@ -93,23 +157,48 @@ def verify_desired(install_root, config_root, target_revision, expected_installe
             actual = release.name
     if actual != expected_installed:
         raise ValueError('RELAY_INSTALL_PLANNED_IDENTITY_CHANGED')
+    if consumer_baseline is not None and actual == 'none':
+        raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+    baseline = (authenticated_consumer_baseline(install, config_root, target_revision, consumer_baseline,
+                owner_uid=owner_uid, boundary=boundary) if consumer_baseline is not None else None)
+    if qualified_serial_preflight and (actual == 'none' or expected_config is None
+            or not isinstance(expected_config.get('consumer', {}).get('generalRunnerPool'), dict)):
+        raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
+    if qualified_serial_preflight:
+        serial_stage = Path(qualified_serial_preflight)
+        if (serial_stage.parent != install / 'releases'
+                or not re.fullmatch(r'[.]stage-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', serial_stage.name)):
+            raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
+        protected(serial_stage, directory=True, **protection)
+        identity_path = serial_stage / 'release/reviewed-source/.relay-source.json'
+        protected(identity_path, **protection)
+        if (stat.S_IMODE(serial_stage.stat().st_mode) != 0o700
+                or json.loads(identity_path.read_bytes()).get('revision') != target_revision):
+            raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
     if actual != 'none' and expected_config is not None:
         namespace = expected_config['environment']['namespace']
         if (install != boundary / 'opt' / namespace
                 or Path(config_root) != boundary / 'etc' / namespace):
             raise ValueError('REINSTALL_RESOURCE_MIGRATION_UNSUPPORTED')
-        proof = resource_probe or globals().get('prove_git_resources')
-        if not callable(proof):
-            raise ValueError('RELAY_INSTALL_RESOURCE_PROOF_UNAVAILABLE')
-        proof(expected_config, root=boundary, owner_uid=owner_uid)
+        if not qualified_serial_preflight:
+            proof = (consumer_resource_probe or globals().get('prove_selected_resources') if baseline is not None
+                     else resource_probe or globals().get('prove_git_resources'))
+            if not callable(proof):
+                raise ValueError('RELAY_INSTALL_RESOURCE_PROOF_UNAVAILABLE')
+            if baseline is None:
+                proof(expected_config, root=boundary, owner_uid=owner_uid)
+            else:
+                proof(expected_config, baseline, root=boundary, owner_uid=owner_uid)
     config_root = Path(config_root)
     if config_root.exists() or config_root.is_symlink():
         protected(config_root, directory=True, **protection)
         consumer = config_root / 'consumer.json'
         if consumer.exists() or consumer.is_symlink():
             protected(consumer, **protection)
-            if not isinstance(json.loads(consumer.read_text()), dict):
+            if baseline is None and not isinstance(json.loads(consumer.read_text()), dict):
                 raise ValueError('RELAY_INSTALL_ACTUAL_CONSUMER_INVALID')
+        elif baseline is not None:
+            raise ValueError('RELAY_INSTALL_ACTUAL_CONSUMER_INVALID')
     return actual
 
 
@@ -165,14 +254,26 @@ def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) == 6 and sys.argv[1] == '--git-desired':
-            revision = verify_desired(*sys.argv[2:], expected_config=json.load(sys.stdin))
+        if len(sys.argv) >= 6 and sys.argv[1] == '--git-desired':
+            import argparse
+            parser = argparse.ArgumentParser(add_help=False)
+            for name in ('install_root', 'config_root', 'target_revision', 'expected_installed'):
+                parser.add_argument(name)
+            for name in ('consumer-baseline', 'baseline-digest', 'claim-root', 'stage-root'):
+                parser.add_argument('--' + name)
+            parser.add_argument('--qualified-serial-preflight', default=False)
+            arguments = vars(parser.parse_args(sys.argv[2:]))
+            selected = [arguments.pop(key) for key in ('consumer_baseline', 'baseline_digest', 'claim_root', 'stage_root')]
+            if any(value is not None for value in selected) and not all(value is not None for value in selected):
+                raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
+            context = dict(zip(('consumerPath', 'baselineDigest', 'claimRoot', 'stageRoot'), selected)) if selected[0] else None
+            revision = verify_desired(**arguments, expected_config=json.load(sys.stdin), consumer_baseline=context)
         elif len(sys.argv) in [3, 4]:
             revision = (verify_apply(sys.argv[1], sys.argv[3]) if len(sys.argv) == 4 else
                         verify(sys.argv[1], sys.argv[2], json.load(sys.stdin)))
         else:
             raise ValueError('RELAY_UPGRADE_INPUT_INVALID')
-    except (ValueError, OSError, TypeError, KeyError, AttributeError):
+    except (ValueError, OSError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
         # Never include private configuration, credentials or remote content.
         print('RELAY_UPGRADE_PREFLIGHT_BLOCKED;inspect-installed-identity-and-owner-intent', file=sys.stderr)
         sys.exit(1)
