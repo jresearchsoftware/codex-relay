@@ -158,6 +158,31 @@ class Probe:
         self.observed.append(row)
         return info
 
+    def inspect_loaded_unit(self, label, path):
+        """Read distro units through only Debian's fixed usrmerge alias.
+
+        Managed destinations and credentials always use the strict inspector.
+        The alias itself and the canonical protected unit both enter the same
+        initial/final observation, so replacing either changes the receipt.
+        """
+        self.physical(path)  # Keep the ordinary normalized-path validation.
+        logical = Path(path)
+        alias = self.physical('/lib')
+        if logical.is_relative_to('/lib/systemd/system') and alias.is_symlink():
+            before = alias.lstat()
+            target = os.readlink(alias)
+            require(before.st_uid == self.owner_uid and target in ('usr/lib', '/usr/lib'),
+                    'HOST_LOADED_UNIT_ALIAS_UNSAFE', label)
+            fields = ['st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mtime_ns', 'st_ctime_ns']
+            self.observed.append([label + '-distro-lib-alias', *[getattr(before, key) for key in fields], target])
+            canonical = str(Path('/usr/lib') / logical.relative_to('/lib'))
+            result = self.inspect(label, canonical, protected=True, required=True, content=True)
+            after = alias.lstat()
+            require(all(getattr(before, key) == getattr(after, key) for key in fields)
+                    and os.readlink(alias) == target, 'HOST_LOADED_UNIT_ALIAS_CHANGED', label)
+            return result
+        return self.inspect(label, path, protected=True, required=True, content=True)
+
 
 def destination_specs(v):
     """Existing role namespaces and fixed entrypoints; no recursive journal scan."""
@@ -530,7 +555,7 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
         elif state['ActiveState'] == 'active' and unit.endswith('.service'):
             require(int(pid) > 0, 'HOST_SERVICE_PROCESS_UNPROVEN', label)
         for path in [state.get('FragmentPath', ''), *state.get('DropInPaths', '').split()]:
-            if path: probe.inspect(label + '-loaded-unit', path, protected=True, required=True, content=True)
+            if path: probe.inspect_loaded_unit(label + '-loaded-unit', path)
         probe.inspect(label + '-unit-destination', '/etc/systemd/system/' + unit, protected=True)
         observed_services.append([label, state, start])
         runner = next((r for r in runners + old_runners if r['label'] == label), None)

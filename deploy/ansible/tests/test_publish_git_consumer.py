@@ -212,6 +212,7 @@ class PublishConsumerTests(unittest.TestCase):
                 path.chmod(0o755 if path.is_dir() else 0o644)
             (source / '.relay-source.json').write_text(json.dumps({'revision': REVISION}))
             config.mkdir(mode=0o755)
+            config.chmod(0o755)
             claims.mkdir(mode=0o700)
             consumer = config / 'consumer.json'
             old = json.loads((ROOT / 'deploy/example.json').read_text())['consumer']

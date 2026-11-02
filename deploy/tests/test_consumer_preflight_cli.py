@@ -5,8 +5,10 @@ import os
 from pathlib import Path
 import selectors
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -15,6 +17,45 @@ CLI = 'controller/src/consumer-preflight-cli.mjs'
 NODE = '/usr/bin/node'
 TARGET = 'e' * 40
 OP = '12345678-1234-1234-1234-123456789abc'
+
+
+def protect_fixture_source(root):
+    """Materialize the protected artifact contract, independent of checkout modes."""
+    assert not root.is_symlink()
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        Path(directory).chmod(0o755)
+        dirs[:] = [name for name in dirs if not (Path(directory) / name).is_symlink()]
+        for name in files:
+            path = Path(directory) / name
+            info = path.lstat()
+            if stat.S_ISREG(info.st_mode):
+                path.chmod(0o755 if info.st_mode & 0o111 else 0o644)
+
+@unittest.skipUnless(sys.platform == 'linux', 'Linux file modes and symlinks required')
+class FixtureArtifactProtectionTests(unittest.TestCase):
+    def test_archive_modes_are_normalized_only_in_copied_artifact_without_following_links(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout, external = root / 'checkout', root / 'external'
+            checkout.mkdir(); checkout.chmod(0o775)
+            external.mkdir(); external.chmod(0o775)
+            for path, mode in [(checkout / 'module.mjs', 0o664), (checkout / 'entrypoint', 0o775),
+                               (external / 'private-input', 0o664)]:
+                path.write_text('synthetic mode fixture'); path.chmod(mode)
+            (checkout / 'external-file').symlink_to(external / 'private-input')
+            (checkout / 'external-directory').symlink_to(external, target_is_directory=True)
+            original = {path: (path.lstat().st_mode, path.lstat().st_ino)
+                        for path in [checkout, external, *checkout.iterdir(), external / 'private-input']}
+            artifact = root / 'protected-copy'
+            shutil.copytree(checkout, artifact, symlinks=True)
+            protect_fixture_source(artifact)
+            self.assertEqual(stat.S_IMODE(artifact.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE((artifact / 'module.mjs').stat().st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE((artifact / 'entrypoint').stat().st_mode), 0o755)
+            self.assertTrue((artifact / 'external-file').is_symlink())
+            self.assertTrue((artifact / 'external-directory').is_symlink())
+            self.assertEqual({path: (path.lstat().st_mode, path.lstat().st_ino) for path in original}, original)
+
 
 SEED = r"""
 import {serialPoolFixture} from './controller/test/serial-pool-fixture.mjs';
@@ -75,10 +116,11 @@ class ConsumerPreflightCliTests(unittest.TestCase):
         self.source = self.stage / 'source'
         for component in ['consumer', 'controller', 'runtime', 'contracts', 'reviewer/src']:
             shutil.copytree(ROOT / component, self.source / component,
-                            ignore=shutil.ignore_patterns('node_modules', 'target', '__pycache__'))
+                            symlinks=True, ignore=shutil.ignore_patterns('node_modules', 'target', '__pycache__'))
         (self.source / 'deploy').mkdir()
         shutil.copyfile(ROOT / 'deploy/writer_lock_lease.py', self.source / 'deploy/writer_lock_lease.py')
         (self.source / '.relay-source.json').write_text(json.dumps({'revision': TARGET}))
+        protect_fixture_source(self.source)
         installed = self.root / ('opt/relay-compat/releases/' + 'd' * 40)
         (installed / 'reviewed-source').mkdir(parents=True)
         (installed / 'reviewed-source/.relay-source.json').write_text(json.dumps({'revision': 'd' * 40}))

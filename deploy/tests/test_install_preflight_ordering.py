@@ -57,6 +57,9 @@ def invocation(tmp_path, monkeypatch):
     identity = {'revision': TARGET, 'tree': 'f' * 40}
     monkeypatch.setattr(backend, 'source_identity', lambda _: identity)
     monkeypatch.setattr(backend, 'clean_git', lambda _: CONSUMER)
+    # The controller's invocation lock is private to this synthetic fixture,
+    # including when the same suite is exercised by root and an ordinary UID.
+    monkeypatch.setattr(backend.tempfile, 'gettempdir', lambda: str(tmp_path))
     monkeypatch.setattr(ansible_transport, 'qualify_target', lambda *_: None)
     monkeypatch.setattr(consumer_drift, 'prepare', lambda *_: {'status': 'unchanged'})
     monkeypatch.setattr(inventory, 'remote_inventory', lambda *_args, **_kwargs:

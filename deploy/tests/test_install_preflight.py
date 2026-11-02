@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import selectors
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,19 @@ import install_preflight as preflight
 
 OP = '12345678-1234-1234-1234-123456789abc'
 OLD, TARGET = 'a' * 40, 'b' * 40
+
+
+def protect_fixture_source(root):
+    """Materialize only the copied root artifact, preserving external symlinks."""
+    assert not root.is_symlink()
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        Path(directory).chmod(0o755)
+        dirs[:] = [name for name in dirs if not (Path(directory) / name).is_symlink()]
+        for name in files:
+            path = Path(directory) / name
+            info = path.lstat()
+            if stat.S_ISREG(info.st_mode):
+                path.chmod(0o755 if info.st_mode & 0o111 else 0o644)
 
 
 class LocalPrepared(preflight.PreparedInstall):
@@ -109,10 +123,11 @@ class OldInstallationTests(unittest.TestCase):
         source = self.at(self.prepared.source)
         for component in ['consumer', 'controller', 'contracts', 'runtime', 'reviewer/src']:
             shutil.copytree(ROOT / component, source / component,
-                            ignore=shutil.ignore_patterns('node_modules', 'target', '__pycache__'))
+                            symlinks=True, ignore=shutil.ignore_patterns('node_modules', 'target', '__pycache__'))
         (source / 'deploy').mkdir()
         shutil.copyfile(ROOT / 'deploy/writer_lock_lease.py', source / 'deploy/writer_lock_lease.py')
         (source / '.relay-source.json').write_text(json.dumps({'revision': TARGET}))
+        protect_fixture_source(source)
         self.prepared.desired_digest = 'f' * 64
 
     def at(self, logical):

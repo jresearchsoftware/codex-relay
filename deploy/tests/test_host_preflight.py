@@ -116,6 +116,67 @@ def test_all_selected_app_repositories_and_readonly_stable_receipt(target):
     assert f['inspect']()['observedSha256'] == first['observedSha256']
 
 
+@pytest.mark.parametrize('spelling', ['usr/lib', '/usr/lib'])
+def test_loaded_distro_unit_uses_only_standard_usrmerge_alias_and_stable_readonly_receipt(target, spelling):
+    f = target
+    f['write']('/usr/lib/systemd/system/docker.service', b'[Service]\nExecStart=/usr/bin/dockerd\n', 0o644)
+    f['path']('/lib').symlink_to(spelling, target_is_directory=True)
+    f['services']['docker.service'] = {'FragmentPath': '/lib/systemd/system/docker.service'}
+    before = snapshot(f['root'])
+    first, second = f['inspect'](), f['inspect']()
+    assert first['observedSha256'] == second['observedSha256']
+    assert snapshot(f['root']) == before
+    # This exception belongs only to reads of loaded distro units. A managed
+    # destination under the same alias still receives the ordinary strict gate.
+    with pytest.raises(host.HostPreflightError, match='HOST_DESTINATION_PARENT_UNSAFE'):
+        host.Probe(f['root'], 0).inspect('managed-destination', '/lib/systemd/system/docker.service', protected=True)
+
+
+def test_loaded_unit_alias_replacement_changes_receipt_and_unknown_alias_is_rejected(target):
+    f = target
+    f['write']('/usr/lib/systemd/system/docker.service', b'[Service]\nExecStart=/usr/bin/dockerd\n', 0o644)
+    alias = f['path']('/lib'); alias.symlink_to('usr/lib', target_is_directory=True)
+    f['services']['docker.service'] = {'FragmentPath': '/lib/systemd/system/docker.service'}
+    first = f['inspect']()['observedSha256']
+    alias.unlink(); alias.symlink_to('/usr/lib', target_is_directory=True)
+    assert f['inspect']()['observedSha256'] != first
+    alias.unlink(); alias.symlink_to('../usr/lib', target_is_directory=True)
+    with pytest.raises(host.HostPreflightError, match='HOST_LOADED_UNIT_ALIAS_UNSAFE'):
+        f['inspect']()
+
+
+def test_loaded_distro_unit_and_canonical_parents_still_reject_group_write(target):
+    f = target
+    unit = f['write']('/usr/lib/systemd/system/docker.service', b'[Service]\nExecStart=/usr/bin/dockerd\n', 0o644)
+    f['path']('/lib').symlink_to('usr/lib', target_is_directory=True)
+    f['services']['docker.service'] = {'FragmentPath': '/lib/systemd/system/docker.service'}
+    unit.chmod(0o664)
+    before = snapshot(f['root'])
+    with pytest.raises(host.HostPreflightError, match='HOST_DESTINATION_METADATA_UNSAFE'):
+        f['inspect']()
+    assert snapshot(f['root']) == before
+    unit.chmod(0o644)
+    unit.parent.chmod(0o775)
+    with pytest.raises(host.HostPreflightError, match='HOST_DESTINATION_PARENT_UNSAFE'):
+        f['inspect']()
+
+
+def test_foreign_distro_alias_owner_and_aliased_canonical_directory_are_rejected(target):
+    f = target
+    f['write']('/usr/lib/systemd/system/docker.service', b'[Service]\nExecStart=/usr/bin/dockerd\n', 0o644)
+    alias = f['path']('/lib'); alias.symlink_to('usr/lib', target_is_directory=True)
+    f['services']['docker.service'] = {'FragmentPath': '/lib/systemd/system/docker.service'}
+    os.chown(alias, 65534, 0, follow_symlinks=False)
+    with pytest.raises(host.HostPreflightError, match='HOST_LOADED_UNIT_ALIAS_UNSAFE'):
+        f['inspect']()
+    os.chown(alias, 0, 0, follow_symlinks=False)
+    canonical = f['path']('/usr/lib')
+    canonical.rename(canonical.with_name('retained-lib'))
+    canonical.symlink_to('retained-lib', target_is_directory=True)
+    with pytest.raises(host.HostPreflightError, match='HOST_DESTINATION_PARENT_UNSAFE'):
+        f['inspect']()
+
+
 @pytest.mark.parametrize('kind', ['production', 'general', 'slot', 'member'])
 def test_every_runner_destination_collision_fails_before_any_mutation(target, kind):
     f = target; v = f['values']
