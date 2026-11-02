@@ -60,10 +60,11 @@ The ten unresolved original records remain:
 | 38959797962 | Relay 85 / 2 |
 | 39105109884 | Relay 141 / 11 |
 | 39595014831 | Relay 169 / 3 |
-| 39599176190 | docs-evolution-review 329 / 2 |
+| Withheld from public report | Other private consumer / 2 |
 | 40175968131 | Relay 63 / 1 |
 
-No record has a terminal revocation/cancellation receipt. Some later Decisions
+The private consumer's native identifiers remain in protected evidence. No
+record has a terminal revocation/cancellation receipt. Some later Decisions
 withdraw authority, describe no execution, or preserve known missing Outcomes;
 these are not permission to fabricate terminal history. Task 141 also retains
 ready-consumption uncertainty without a handoff receipt. Ordinary owner result
