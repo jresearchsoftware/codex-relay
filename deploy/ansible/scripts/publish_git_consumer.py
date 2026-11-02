@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import stat
 import subprocess
 import time
@@ -12,7 +13,9 @@ import uuid
 
 
 class ConsumerPublicationError(ValueError):
-    pass
+    def __init__(self, code, controller_diagnostic=None):
+        super().__init__(code)
+        self.controller_diagnostic = controller_diagnostic
 
 
 def require(condition, code):
@@ -82,16 +85,61 @@ def _atomic(path, raw, mode):
             temporary.unlink()
 
 
-def _execute(argv, env):
+def _execute(argv, env, *, timeout=60):
+    # Only fixed action names and the CLI's complete bounded error envelope may
+    # cross this boundary. Never publish command arguments or child output.
+    action = 'consumer-digest' if argv[1:2] == ['--input-type=module'] else 'controller'
+    if argv[2:3] in (['consumer-transition-check'], ['consumer-transition']):
+        action = argv[2]
+    diagnostic = {'action': action, 'failure': 'execution_failed'}
+    output = {'stdout': bytearray(), 'stderr': bytearray()}
     try:
-        result = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, timeout=60, check=False)
-        require(result.returncode == 0 and len(result.stdout) <= 4096, 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
-        value = json.loads(result.stdout)
-        require(isinstance(value, dict), 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
+        with subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE) as child:
+            try:
+                deadline = time.monotonic() + timeout
+                with selectors.DefaultSelector() as streams:
+                    streams.register(child.stdout, selectors.EVENT_READ, ('stdout', 4096))
+                    streams.register(child.stderr, selectors.EVENT_READ, ('stderr', 256))
+                    while streams.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(argv, timeout)
+                        for key, _ in streams.select(remaining):
+                            name, limit = key.data
+                            chunk = os.read(key.fd, 4096)
+                            if not chunk:
+                                streams.unregister(key.fileobj)
+                            else:
+                                # Retain one overflow byte to reject truncated envelopes;
+                                # continue draining both pipes without unbounded storage.
+                                output[name].extend(chunk[:max(0, limit + 1 - len(output[name]))])
+                child.wait(timeout=max(0, deadline - time.monotonic()))
+            except BaseException:
+                child.kill()
+                child.wait()
+                raise
+        if child.returncode != 0:
+            diagnostic.update(failure='nonzero_exit', exit_code=child.returncode)
+            match = re.fullmatch(rb'\{"code":"([A-Z][A-Z0-9_]{0,79})"\}\n?', output['stderr'])
+            if action in ('consumer-transition-check', 'consumer-transition') and len(output['stderr']) <= 256 and match is not None:
+                diagnostic['code'] = match[1].decode('ascii')
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+        diagnostic['failure'] = 'invalid_stdout'
+        if len(output['stdout']) > 4096:
+            diagnostic['failure'] = 'output_too_large'
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+        value = json.loads(output['stdout'])
+        if not isinstance(value, dict):
+            raise ValueError()
         return value
+    except ConsumerPublicationError:
+        raise
+    except subprocess.TimeoutExpired:
+        diagnostic['failure'] = 'timeout'
     except (OSError, subprocess.SubprocessError, ValueError):
-        raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED') from None
+        pass
+    raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from None
 
 
 def publish(source, config_root, desired, claim_root, repository, operation, revision, *,
@@ -215,8 +263,9 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
                     and result.get('phase') in ('drained', 'applying')
                     and result.get('consumerDigest') == desired_digest
                     and digest(consumer) == desired_digest, 'CONSUMER_PUBLICATION_TRANSITION_UNPROVEN')
-        except ConsumerPublicationError:
-            raise ConsumerPublicationError('CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY') from None
+        except ConsumerPublicationError as error:
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY',
+                                           error.controller_diagnostic) from None
         return {'status': 'PUBLISHED', 'operationId': operation, 'target': revision, 'consumerDigest': result['consumerDigest']}
     finally:
         os.close(lock_fd)
@@ -231,7 +280,10 @@ def main():
         print(json.dumps(publish(**args)))
     except (ConsumerPublicationError, OSError, ValueError) as error:
         code = str(error) if isinstance(error, ConsumerPublicationError) else 'CONSUMER_PUBLICATION_FAILED'
-        print(json.dumps({'error_code': code}))
+        result = {'error_code': code}
+        if isinstance(error, ConsumerPublicationError) and error.controller_diagnostic is not None:
+            result['controller_diagnostic'] = error.controller_diagnostic
+        print(json.dumps(result))
         raise SystemExit(1) from None
 
 

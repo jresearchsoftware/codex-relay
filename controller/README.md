@@ -533,6 +533,19 @@ revision and no active or unknown attempts. The public deployment coordinator
 owns deployment authority and same-operation verification; the helper stores
 only lifecycle control state and reuses the existing attempt records.
 
+Changing the consumer digest additionally checks retained manual history,
+which ordinary automatic-drain status does not enumerate. A published Writer
+refusal before authority resolution and handoff is complete without a manual
+submission. Completed manual results retain their original v4 binding or v3
+publication receipts, including the earlier owner-authorization and sealed
+direct-result formats. Recognition never backfills or edits historical records.
+An issued handoff without a proven terminal result remains unresolved, even if
+later authority withdraws it, another Step completes, or its Task closes. A
+missing handoff receipt is not proof that offline execution never started.
+Unresolved publication, malformed receipts and mismatched identities still
+prevent a digest transition. A code-only Apply with the same digest retains
+outstanding manual bindings and needs no new configuration-change barrier.
+
 During `applying`, the trusted backend records its original Reviewer,
 production-runner and general-runner activity/enablement intent through
 `snapshot --operation UUID` with bounded JSON on stdin. Additional runner

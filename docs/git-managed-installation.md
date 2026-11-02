@@ -118,6 +118,16 @@ remain readable only with their exact terminal proof. New Writer mutations
 must use the current digest. Known legacy runtime-directory hardening runs
 before admission; it preserves the proven lock inode and rejects other shapes.
 
+The digest-transition inventory includes manual history. It distinguishes
+published pre-handoff admission refusals and completed historical Writer
+results from handoffs with no terminal result. Withdrawal, a closed Task or a
+newer Step does not cancel an unknown offline execution. Such unresolved work
+still blocks a configuration change; preserve its original identity and
+publication/recovery path rather than deleting records or inventing Outcomes.
+Ordinary automatic-drain status alone does not prove this manual inventory is
+complete. Code-only Apply with an unchanged consumer digest preserves the old
+manual bindings without requiring a new digest transition.
+
 Fresh installation composes supported protected credential/TLS preparation,
 installation, activation, runner readiness and final verification when their
 inputs are available. App installation/permissions, runner-group repository and
@@ -129,6 +139,15 @@ Failure output reports the exact target, proven prior revision, chosen strategy,
 failing stage, known mutation/recovery state, retry disposition and retained log
 path when available. Unknown mutation is reported as unknown. Recovery records
 are not erased and admission is not reopened on unproven success.
+
+Git consumer publication failures retain their existing `error_code` and may
+also include `controller_diagnostic`: a fixed action, failure category, exit
+code and, when available, the controller's bounded error code. For example,
+`consumer-transition-check` / `ADMISSION_NOT_DRAINED` identifies unresolved
+history before consumer publication. Raw child output, arguments and private
+paths are not included. An error after consumer replacement retains the
+recovery-required classification and its original operation; its diagnostic
+does not authorize a blind retry or reopening admission.
 
 ## Repository integration output
 

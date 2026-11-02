@@ -12,26 +12,82 @@ const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', '
 const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
 const configDigest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-function publishedTerminal(record, recoveredHandoff = false) {
+function publishedTerminal(record, recoveredHandoff = false, retainedBodyReceipt = false) {
   const outcome = record?.outcome;
   return outcome && ['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW'].includes(outcome.status)
-    && positive(outcome.outcomeId) && configDigest(outcome.bodySha256)
+    && positive(outcome.outcomeId) && (configDigest(outcome.bodySha256)
+      || retainedBodyReceipt && !Object.hasOwn(outcome, 'bodySha256'))
     && (outcome.head === null || exactSha(outcome.head))
     && (outcome.prNumber === null || positive(outcome.prNumber))
     && !record.publicationIntent && !record.commentIntent && !record.lifecycleIntent
     && (recoveredHandoff || record.handoffComplete !== false);
 }
 
-// Manual execution deliberately has no worker journal. Its protected Writer
-// submission and native publication receipts bind the original admission instead.
-export function manualAdmissionComplete(record) {
-  const e = record?.envelope;
-  if (e?.route !== 'manual' || !publishedTerminal(record) || record.outcome.manual !== true
-    || record.prIntent && record.prNumber !== record.outcome.prNumber) return false;
-  const result = record.manualSubmission?.publishedResult;
-  if (!result) return e.request?.schema_version === '3.0' && e.request.kind === 'task-request'
+function retainedManualAuthorization(record) {
+  const e = record.envelope;
+  return e.request?.schema_version === '3.0' && e.request.kind === 'task-request'
     && positive(record.manualResultAuthorization?.id) && configDigest(record.manualResultAuthorization.sha256)
     && configDigest(e.requestReference?.sha256);
+}
+
+function retainedDirectManualResult(record) {
+  const e = record.envelope; const submission = record.manualSubmission; const seal = record.commentBodies?.outcome;
+  const parent = submission?.parent;
+  // Early direct-v3 Writer saved the exact submitted-result digest and native
+  // body seal, but not the redundant publishedResult object. Do not backfill it
+  // or use this receipt format for current v4 admissions.
+  return e.request?.schema_version === '3.0' && e.request.kind === 'task-request'
+    && configDigest(e.requestReference?.sha256) && configDigest(submission?.sha256)
+    && Object.keys(submission).length === 3 && !Object.hasOwn(submission, 'publishedResult')
+    && submission.rendererVersion === 'human-v1'
+    && parent && Object.keys(parent).length === 2 && positive(parent.number)
+    && (parent.kind === 'pull_request' ? record.outcome.prNumber === parent.number
+      : parent.kind === 'issue' && parent.number === e.issueNumber && record.outcome.prNumber === null)
+    && seal?.number === parent.number && seal.sha256 === record.outcome.bodySha256
+    && seal.rendererVersion === submission.rendererVersion;
+}
+
+// Manual execution deliberately has no worker journal. Its protected Writer
+// submission and native publication receipts bind the original admission instead.
+function rejectedManualAdmission(record) {
+  const e = record.envelope; const block = record.admissionBlock;
+  // Writer can publish a terminal refusal before resolving authority or issuing
+  // a handoff. That receipt is not a submitted manual execution result.
+  return block && typeof block === 'object' && !Array.isArray(block)
+    && /^[A-Z][A-Z0-9_]{0,79}$/.test(block.code ?? '')
+    && canonicalAuthorityJson(block) === canonicalAuthorityJson(e.admissionBlock)
+    && !e.request && e.authorityDigest === null && e.branch === null && e.startHead === null
+    && record.outcome.status === 'BLOCKED' && record.outcome.head === null && record.outcome.prNumber === null
+    && !record.controllerLifecycle && !record.manualSubmission && !record.manualResultAuthorization
+    && !record.commentBodies?.handoff && !record.handoffComplete
+    && !record.prIntent && !record.prNumber && !record.publishedHead && !record.finalHead
+    && !record.successOutcomeIntent && !record.readinessIntent && !record.prepublicationRecovery;
+}
+
+export function manualAdmissionComplete(record) {
+  const e = record?.envelope;
+  if (e?.route !== 'manual') return false;
+  // The original owner-authorization transport predates body hashes and
+  // comment-body seals. Only its unextended protected v3 receipt may omit them;
+  // a present invalid hash or a partial modern receipt remains unresolved.
+  const retained = retainedManualAuthorization(record) && !Object.hasOwn(record, 'manualSubmission')
+    && !Object.hasOwn(record, 'commentBodies') && record.outcome
+    && Object.keys(record.outcome).length === 5
+    && ['status', 'head', 'prNumber', 'outcomeId', 'manual'].every(key => Object.hasOwn(record.outcome, key));
+  const rejected = record.outcome && rejectedManualAdmission(record);
+  const seal = record.commentBodies?.outcome;
+  // Earlier generic refusals sealed the native comment before also copying its
+  // hash into outcome. The immutable body seal supplies the same proof.
+  const sealedRejection = rejected && seal?.number === (e.target === 'pull_request' ? e.number : e.issueNumber)
+    && configDigest(seal.sha256) && seal.rendererVersion === 'human-v1'
+    && Object.keys(record.outcome).length === 4;
+  if (!publishedTerminal(record, false, retained || sealedRejection)) return false;
+  if (rejected) return true;
+  if (record.outcome.manual !== true
+    || record.prIntent && record.prNumber !== record.outcome.prNumber) return false;
+  const result = record.manualSubmission?.publishedResult;
+  if (!result && record.manualSubmission && Object.hasOwn(record.manualSubmission, 'publishedResult')) return false;
+  if (!result) return retainedManualAuthorization(record) || retainedDirectManualResult(record);
   try {
     validateAuthorityRecord(result, { repository: e.repository, task: e.issueNumber });
     if (result.kind !== 'outcome' || result.attempt !== e.attemptId
