@@ -1,0 +1,154 @@
+---
+# Private fresh-install composition. The public installer proves the target is
+# missing under its existing host/pool guards before entering this play.
+- name: Prepare product-owned OS prerequisites before fresh isolated staging
+  hosts: relay
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Require the proved missing installation before package preparation
+      ansible.builtin.assert:
+        that:
+          - relay_intent_expected_installed_revision == 'none'
+          - not ansible_check_mode | bool
+        fail_msg: INTENT_PREREQUISITES_FRESH_TARGET_REQUIRED
+
+    - name: Inspect the canonical release pointer without following it
+      ansible.builtin.stat:
+        path: '{{ relay_install_root }}/current'
+        follow: false
+      register: relay_intent_prerequisites_current
+
+    - name: Refuse package preparation against an existing installed pointer
+      ansible.builtin.assert:
+        that:
+          - not relay_intent_prerequisites_current.stat.exists | default(false)
+          - not relay_intent_prerequisites_current.stat.islnk | default(false)
+        fail_msg: INTENT_PREREQUISITES_FRESH_TARGET_REQUIRED
+
+    - name: Inspect configured admission and journal roots without reading retained contents
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -I
+          - -c
+          - |-
+            import json, os, re, stat, sys
+            from pathlib import Path
+            code = 'INTENT_PREREQUISITES_RETAINED_ADMISSION_REQUIRES_DIAGNOSIS'
+            try:
+                claim = Path(sys.argv[1])
+                if not claim.is_absolute() or '..' in claim.parts: raise ValueError()
+                if os.path.lexists(claim) and not stat.S_ISDIR(claim.lstat().st_mode): raise ValueError()
+                slots = json.loads(sys.argv[3])
+                if not isinstance(slots, list) or not all(isinstance(path, str) for path in slots): raise ValueError()
+                roots = [claim / 'publication-v2', claim / 'publication-pool-v1', Path(sys.argv[2]), *map(Path, slots)]
+                for name in ['admission-v1.json', 'admission-pool-v1.json']:
+                    if os.path.lexists(claim / name): raise ValueError()
+                observed = 0
+                for root in dict.fromkeys(roots):
+                    if not root.is_absolute() or '..' in root.parts: raise ValueError()
+                    for parent in root.parents:
+                        if os.path.lexists(parent) and not stat.S_ISDIR(parent.lstat().st_mode): raise ValueError()
+                    if not os.path.lexists(root): continue
+                    if not stat.S_ISDIR(root.lstat().st_mode): raise ValueError()
+                    pending = [root]
+                    while pending:
+                        with os.scandir(pending.pop()) as entries:
+                            for entry in entries:
+                                observed += 1
+                                if observed > 10000: raise ValueError()
+                                info = entry.stat(follow_symlinks=False)
+                                if re.match(r'[1-9][0-9]*[.]json(?:$|[.])', entry.name): raise ValueError()
+                                if stat.S_ISDIR(info.st_mode): pending.append(Path(entry.path))
+                                elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1: raise ValueError()
+                print('INTENT_PREREQUISITES_ADMISSION_ABSENT')
+            except Exception:
+                print(code); sys.exit(40)
+          - '{{ relay_writer_claim_root }}'
+          - '{{ relay_dispatch_state_root }}/attempts-v2'
+          - '{{ relay_execution_slots | default([]) | map(attribute="paths.attemptRoot") | list | to_json }}'
+      register: relay_intent_prerequisites_admission
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Preserve retained admission for diagnosis before any fresh package preparation
+      ansible.builtin.assert:
+        that:
+          - relay_intent_prerequisites_admission.rc == 0
+          - relay_intent_prerequisites_admission.stdout == 'INTENT_PREREQUISITES_ADMISSION_ABSENT'
+        fail_msg: >-
+          INTENT_PREREQUISITES_RETAINED_ADMISSION_REQUIRES_DIAGNOSIS;
+          restore a qualified original source and use its supported retained-operation path before retrying;
+          preserve admission records and execution journals.
+
+    - name: Observe namespace-owned services before any fresh OS package effect
+      ansible.builtin.command:
+        argv:
+          - /bin/systemctl
+          - show
+          - '{{ item }}'
+          - --property=LoadState,ActiveState,SubState,MainPID,ControlPID
+      loop: >-
+        {{ ([relay_reviewer_service_name, relay_production_runner_service_name,
+             relay_controller_service_name, relay_namespace ~ '-relay-manual-outcome.socket',
+             relay_reviewer_recovery_service_name, relay_reviewer_recovery_timer_name] +
+            ([relay_general_runner_service_name] if relay_general_runner_pool is not defined else []) +
+            (relay_additional_execution_slots | default([]) | map(attribute='relay_runner_service_name') | list))
+           | unique | list }}
+      register: relay_intent_prerequisites_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Refuse active or unknown orphan Relay state before fresh OS preparation
+      ansible.builtin.assert:
+        that:
+          - item.stdout is search('(?m)^LoadState=(loaded|not-found)$')
+          - item.stdout is search('(?m)^ActiveState=(inactive|failed)$')
+          - item.stdout is search('(?m)^SubState=(dead|failed)$')
+          - item.rc == 0 or item.stdout is search('(?m)^LoadState=not-found$')
+          - >-
+            item.stdout is search('(?m)^LoadState=not-found$') or
+            item.item is search('[.](socket|timer)$') or
+            (item.stdout is search('(?m)^MainPID=0$') and item.stdout is search('(?m)^ControlPID=0$'))
+        fail_msg: INTENT_PREREQUISITES_NAMESPACE_ACTIVITY_UNPROVEN
+      loop: '{{ relay_intent_prerequisites_services.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+
+  tasks:
+    - name: Reuse only the owning product OS prerequisite tasks
+      ansible.builtin.include_role:
+        name: relay_base
+        tasks_from: prerequisites.yml
+
+    - name: Inspect the fixed staging executable prerequisites without changing them
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -I
+          - -c
+          - |-
+            import os, sys
+            for label, path in [('NODE', '/usr/bin/node'), ('C_COMPILER', '/usr/bin/cc')]:
+                if not os.path.isfile(path) or not os.access(path, os.X_OK):
+                    print('INTENT_PREREQUISITES_' + label + '_REQUIRED')
+                    sys.exit(40)
+            print('INTENT_PREREQUISITES_READY')
+      register: relay_intent_prerequisites_executables
+      changed_when: false
+      failed_when: false
+
+    - name: Require configured OS prerequisites before candidate staging
+      ansible.builtin.assert:
+        that:
+          - relay_intent_prerequisites_executables.rc == 0
+          - relay_intent_prerequisites_executables.stdout == 'INTENT_PREREQUISITES_READY'
+        fail_msg: >-
+          {{ relay_intent_prerequisites_executables.stdout
+             if relay_intent_prerequisites_executables.stdout in
+                ['INTENT_PREREQUISITES_NODE_REQUIRED', 'INTENT_PREREQUISITES_C_COMPILER_REQUIRED']
+             else 'INTENT_PREREQUISITES_UNPROVEN' }};
+          provide the configured OS prerequisites or enable product-managed base packages before repeating the same install.

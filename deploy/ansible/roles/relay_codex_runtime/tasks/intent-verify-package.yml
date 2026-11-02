@@ -1,0 +1,8 @@
+---
+- name: Revalidate the sealed Codex distribution and actual destination metadata
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/../relay_runner/files/relay-intent-package.py") }}',
+           verify, codex, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}', '{{ relay_codex_cli_version }}', '-']
+    stdin: '{{ {"home": relay_codex_package_home, "installDir": relay_codex_package_install_dir, "binary": relay_codex_binary_path, "installer": relay_codex_installer_path} | to_json }}'
+  changed_when: false
+  check_mode: false

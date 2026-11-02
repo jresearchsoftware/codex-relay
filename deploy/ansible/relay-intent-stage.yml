@@ -1,0 +1,22 @@
+---
+# Private backend composition. The public install operation owns this stage.
+- name: Prepare the frozen candidate while the installed Relay remains available
+  hosts: relay
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Stage and verify the selected source and Reviewer artifact
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/intent-stage.yml
+
+    - name: Stage the selected Runner distribution without changing registrations
+      ansible.builtin.include_role:
+        name: relay_runner
+        tasks_from: intent-stage-package.yml
+
+    - name: Stage the selected Codex distribution without changing active entrypoints
+      ansible.builtin.include_role:
+        name: relay_codex_runtime
+        tasks_from: intent-stage-package.yml
+
+    - name: Seal the completed candidate and package identities
+      ansible.builtin.include_tasks: roles/relay_artifacts/tasks/intent-stage-seal.yml

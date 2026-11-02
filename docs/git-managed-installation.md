@@ -83,6 +83,71 @@ replay and resume only when the trusted frozen receipt proves that exact
 candidate and configuration. Resume retains the original verified installation
 receipt; Git configuration and workflow inputs cannot introduce a pin.
 
+## Preparation before cutover
+
+For a Git-managed install, the existing host/pool locks cover a read-only
+compatibility phase and real isolated candidate preparation before admission
+quiesces. The installer validates the frozen source/configuration pair, old
+resource and service bindings, Unix identities and destinations, retained
+attempt history, configured credential material, App access and applicable
+runner policy. A changed desired consumer requires terminal proof for every
+manual attempt whose consumer binding would change. A code-only change keeps
+its original consumer binding and does not invent that additional barrier.
+
+On a proven fresh target with no current installation, the owning base-package
+task first prepares its product prerequisites. It creates no Relay accounts,
+helpers, configuration or service units. This preserves public first-install
+bootstrap; missing product-managed compiler/Node packages do not become a new
+owner credential or private-backend requirement. Actual candidate loader and
+runtime qualification still follow; package presence does not prove Node 22.
+An absent release pointer alone is insufficient: active orphan namespace
+services or retained admission/publication/execution history require diagnosis
+of the original installation. Provisioned credentials and empty state roots
+remain valid fresh-install inputs. No protected history is removed to make the
+target appear fresh.
+
+The candidate source, pinned Reviewer build/toolchain, Runner and Codex packages
+are prepared and sealed in a private operation directory. Preparation executes
+the real build, package validators and loaders; it does not change `current`,
+active configuration, installed helpers, service units, registrations or shared
+toolchain/package prefixes. Protected replacement stages beside the old install
+root so retiring that root cannot retire its candidate. No new public phase or
+extra workflow approval is required.
+Retrying the same operation preserves its prior private stage before creating a
+new one; a live or unproven Writer holder prevents that preservation step.
+
+A prerequisite or build failure reports a bounded cause and supported next
+action while retaining the old entrypoint. Correct the prerequisite through
+the existing version's supported owner procedure, then retry the same selected
+Git inputs. Do not resolve missing terminal history by editing protected attempt
+files, writing a fictional Outcome or clearing admission state. If the old
+version cannot perform the required correction, the installer stops for a
+separately qualified owner transition.
+
+After the bounded drain, the installer revalidates the relevant host/policy,
+frozen Git, old consumer and sealed payload evidence. Ordinary consumer
+publication and active installation share the existing Writer kernel mutex;
+the private lease is verified against that actual mutex, process and frozen
+target. A new manual attempt during drain is rechecked before active writes.
+If this final proof fails before active cutover, the original open admission
+bytes can be restored only with proof that the old consumer, source, helpers,
+units, services and protected inputs remain valid. Attempt and journal records
+are retained, including the new attempt that caused the abort.
+
+The initial SERIAL-to-pool transition keeps its separately authenticated old
+history and existing retirement protocol. Protected replacement temporarily
+releases the Writer lease for its owning retirement helper, then reacquires it
+before candidate installation. Replacement that also changes the consumer
+digest currently stops before retirement: its fresh-install consumer path
+cannot safely rebind a retained gate. Use a compatible lifecycle transition
+where supported, or a separately qualified replacement preserving that history.
+
+Real activation, process identity, socket/mTLS readiness, runner readiness and
+installed Git-pair verification remain post-installation checks. A failure
+after the active mutation boundary retains the original operation and its
+specific forward-recovery evidence. Preparation does not certify those future
+results or provide a generic rollback of a partially installed system.
+
 ## Strategy, compatibility and recovery
 
 The installer distinguishes absent state, same-product reconciliation,
@@ -118,6 +183,16 @@ remain readable only with their exact terminal proof. New Writer mutations
 must use the current digest. Known legacy runtime-directory hardening runs
 before admission; it preserves the proven lock inode and rejects other shapes.
 
+The digest-transition inventory includes manual history. It distinguishes
+published pre-handoff admission refusals and completed historical Writer
+results from handoffs with no terminal result. Withdrawal, a closed Task or a
+newer Step does not cancel an unknown offline execution. Such unresolved work
+still blocks a configuration change; preserve its original identity and
+publication/recovery path rather than deleting records or inventing Outcomes.
+Ordinary automatic-drain status alone does not prove this manual inventory is
+complete. Code-only Apply with an unchanged consumer digest preserves the old
+manual bindings without requiring a new digest transition.
+
 Fresh installation composes supported protected credential/TLS preparation,
 installation, activation, runner readiness and final verification when their
 inputs are available. App installation/permissions, runner-group repository and
@@ -129,6 +204,15 @@ Failure output reports the exact target, proven prior revision, chosen strategy,
 failing stage, known mutation/recovery state, retry disposition and retained log
 path when available. Unknown mutation is reported as unknown. Recovery records
 are not erased and admission is not reopened on unproven success.
+
+Git consumer publication failures retain their existing `error_code` and may
+also include `controller_diagnostic`: a fixed action, failure category, exit
+code and, when available, the controller's bounded error code. For example,
+`consumer-transition-check` / `ADMISSION_NOT_DRAINED` identifies unresolved
+history before consumer publication. Raw child output, arguments and private
+paths are not included. An error after consumer replacement retains the
+recovery-required classification and its original operation; its diagnostic
+does not authorize a blind retry or reopening admission.
 
 ## Repository integration output
 

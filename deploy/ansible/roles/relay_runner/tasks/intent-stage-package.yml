@@ -1,0 +1,71 @@
+---
+- name: Require the same pinned Runner package for isolated intent staging
+  ansible.builtin.assert:
+    that:
+      - relay_runner_package_version == '2.336.0'
+      - relay_runner_package_platform == 'linux-x64'
+      - relay_runner_package_url == 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
+      - relay_runner_package_sha256 == '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+      - not ansible_check_mode | bool
+    fail_msg: INTENT_RUNNER_PACKAGE_CONTRACT_INVALID
+
+- name: Inspect actual Runner destinations before creating the isolated package stage
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/files/relay-intent-package.py") }}',
+           initialize, runner, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}',
+           '{{ relay_runner_package_version }}', '{{ relay_runner_package_sha256 }}']
+    stdin: '{{ {"root": relay_runner_root, "archive": relay_runner_package_archive, "user": relay_runner_user, "service": relay_runner_service_name, "packageVersion": relay_runner_package_version} | to_json }}'
+  changed_when: true
+
+- name: Download and verify the pinned Runner archive inside the isolated stage
+  ansible.builtin.get_url:
+    url: '{{ relay_runner_package_url }}'
+    dest: '{{ relay_intent_stage_root }}/runner-package/archive.tar.gz'
+    owner: root
+    group: root
+    mode: '0600'
+    checksum: 'sha256:{{ relay_runner_package_sha256 }}'
+
+- name: Validate the staged Runner archive using the selected source validator
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/files/relay-runner-archive-check.py") }}',
+           '{{ relay_intent_stage_root }}/runner-package/archive.tar.gz', '{{ relay_runner_package_version }}']
+  changed_when: false
+
+- name: Create the isolated Runner payload directory
+  ansible.builtin.file:
+    path: '{{ relay_intent_stage_root }}/runner-package/payload'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Extract the validated Runner package without touching the live namespace
+  ansible.builtin.unarchive:
+    src: '{{ relay_intent_stage_root }}/runner-package/archive.tar.gz'
+    dest: '{{ relay_intent_stage_root }}/runner-package/payload'
+    remote_src: true
+    owner: root
+    group: root
+
+- name: Protect the complete isolated Runner payload before its version probe
+  ansible.builtin.file:
+    path: '{{ relay_intent_stage_root }}/runner-package/payload'
+    owner: root
+    group: root
+    mode: 'g-w,o-w'
+    recurse: true
+    follow: false
+
+- name: Probe and seal the actual staged Runner package
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/files/relay-intent-package.py") }}',
+           seal, runner, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}',
+           '{{ relay_runner_package_version }}', '{{ relay_runner_package_sha256 }}']
+    stdin: '{{ {"root": relay_runner_root, "archive": relay_runner_package_archive, "user": relay_runner_user, "service": relay_runner_service_name, "packageVersion": relay_runner_package_version} | to_json }}'
+  register: relay_intent_runner_seal
+  changed_when: true
+
+- name: Expose the nonsecret Runner package stage identity
+  ansible.builtin.set_fact:
+    relay_intent_runner_stage: '{{ relay_intent_runner_seal.stdout | from_json }}'

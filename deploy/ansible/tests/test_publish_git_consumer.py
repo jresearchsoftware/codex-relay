@@ -2,6 +2,7 @@
 import fcntl
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location('publish_git_consumer',
@@ -21,6 +24,79 @@ OP = '12345678-1234-1234-1234-123456789abc'
 REVISION = 'a' * 40
 hash_bytes = lambda raw: hashlib.sha256(raw).hexdigest()
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class ControllerDiagnosticTests(unittest.TestCase):
+    def child(self, program, action='consumer-transition-check', **options):
+        with tempfile.TemporaryDirectory(prefix='relay-controller-diagnostic-') as temporary:
+            script = Path(temporary) / 'private-child.py'
+            script.write_text(program)
+            return publication._execute([sys.executable, str(script), action, '/private/argument'],
+                                        {'PATH': '/usr/bin:/bin'}, **options)
+
+    def failure(self, program, **options):
+        with self.assertRaisesRegex(publication.ConsumerPublicationError,
+                                    '^CONSUMER_PUBLICATION_CONTROLLER_FAILED$') as caught:
+            self.child(program, **options)
+        return caught.exception.controller_diagnostic
+
+    def test_exact_cli_error_envelope_retains_bounded_code_and_exit(self):
+        diagnostic = self.failure('import sys;sys.stdout.write("private stdout");'
+            'sys.stderr.write(\'{"code":"ADMISSION_NOT_DRAINED"}\\n\');sys.exit(1)')
+        self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
+            'failure': 'nonzero_exit', 'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED'})
+
+    def test_invalid_noisy_oversize_and_duplicate_envelopes_never_expose_stderr(self):
+        for stderr in ('', 'private token /private/path', '{"code":"private-token"}',
+                       '{"code":"ADMISSION_FAILED","path":"/private/path"}',
+                       'noise\n{"code":"ADMISSION_FAILED"}\n',
+                       '{"code":"ADMISSION_FAILED"}\nprivate token',
+                       '{"code":"FIRST","code":"SECOND"}',
+                       '{"code":"' + 'A' * 81 + '"}',
+                       '{"code":"ADMISSION_FAILED"}' + ' ' * 300,
+                       'x' * (128 * 1024)):
+            with self.subTest(stderr=stderr[:50]):
+                diagnostic = self.failure('import sys;sys.stderr.write(' + repr(stderr) + ');sys.exit(7)')
+                self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
+                    'failure': 'nonzero_exit', 'exit_code': 7})
+
+    def test_unrecognized_action_does_not_echo_argument_or_promote_error_code(self):
+        diagnostic = self.failure('import sys;sys.stderr.write(\'{"code":"ADMISSION_FAILED"}\');sys.exit(1)',
+                                  action='/private/action')
+        self.assertEqual(diagnostic, {'action': 'controller', 'failure': 'nonzero_exit', 'exit_code': 1})
+
+    def test_timeout_invalid_stdout_and_large_stdout_have_fixed_categories(self):
+        cases = [('import time;time.sleep(10)', {'timeout': 0.1}, 'timeout'),
+                 ('print("private invalid stdout")', {}, 'invalid_stdout'),
+                 ('print("[]")', {}, 'invalid_stdout'),
+                 ('import sys;sys.stdout.buffer.write(b"\\xff")', {}, 'invalid_stdout'),
+                 ('print("x" * (128 * 1024))', {}, 'output_too_large')]
+        for program, options, failure in cases:
+            with self.subTest(failure=failure):
+                self.assertEqual(self.failure(program, **options),
+                    {'action': 'consumer-transition-check', 'failure': failure})
+
+    def test_launch_failure_is_bounded_and_success_preserves_json_contract(self):
+        with self.assertRaises(publication.ConsumerPublicationError) as caught:
+            publication._execute(['/private/missing-program'], {})
+        self.assertEqual(caught.exception.controller_diagnostic,
+                         {'action': 'controller', 'failure': 'execution_failed'})
+        self.assertEqual(self.child('print(\'{"phase":"applying"}\')'), {'phase': 'applying'})
+
+    def test_public_failure_is_one_stdout_json_without_child_output(self):
+        diagnostic = self.failure('import sys;sys.stderr.write(\'{"code":"ADMISSION_NOT_DRAINED"}\\n\');sys.exit(1)')
+        error = publication.ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+        arguments = [str(ROOT / 'deploy/ansible/scripts/publish_git_consumer.py')]
+        for name in ('source', 'config-root', 'desired', 'claim-root', 'repository', 'operation', 'revision'):
+            arguments.extend(['--' + name, '/private/input'])
+        with patch.object(sys, 'argv', arguments), patch.object(publication, 'publish', side_effect=error):
+            output = io.StringIO()
+            with redirect_stdout(output), self.assertRaises(SystemExit) as caught:
+                publication.main()
+        self.assertEqual(caught.exception.code, 1)
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        self.assertEqual(json.loads(output.getvalue()), {
+            'error_code': 'CONSUMER_PUBLICATION_CONTROLLER_FAILED', 'controller_diagnostic': diagnostic})
 
 
 class PublishConsumerTests(unittest.TestCase):
@@ -70,7 +146,9 @@ class PublishConsumerTests(unittest.TestCase):
         self.assertEqual(self.consumer.read_bytes(), self.new)
         self.assertEqual(self.backup.read_bytes(), self.old)
         if self.fail_transition:
-            raise publication.ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED')
+            raise publication.ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', {
+                'action': 'consumer-transition', 'failure': 'nonzero_exit',
+                'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED'})
         self.gate['consumerDigest'] = hash_bytes(self.new)
         for name in ('admission-v1.json', 'admission-pool-v1.json'):
             (self.claims / name).write_text(json.dumps(self.gate))
@@ -134,6 +212,7 @@ class PublishConsumerTests(unittest.TestCase):
                 path.chmod(0o755 if path.is_dir() else 0o644)
             (source / '.relay-source.json').write_text(json.dumps({'revision': REVISION}))
             config.mkdir(mode=0o755)
+            config.chmod(0o755)
             claims.mkdir(mode=0o700)
             consumer = config / 'consumer.json'
             old = json.loads((ROOT / 'deploy/example.json').read_text())['consumer']
@@ -162,6 +241,12 @@ class PublishConsumerTests(unittest.TestCase):
 
             initialized = admission('initialize')
             admission('quiesce', '--operation', OP, '--target', REVISION)
+            with self.assertRaises(publication.ConsumerPublicationError) as caught:
+                publication._execute(['/usr/bin/node', str(cli), 'consumer-transition-check',
+                                      '--operation', OP, '--revision', REVISION], env)
+            self.assertEqual(caught.exception.controller_diagnostic, {
+                'action': 'consumer-transition-check', 'failure': 'nonzero_exit',
+                'exit_code': 1, 'code': 'ADMISSION_PHASE_INVALID'})
             self.assertTrue(admission('drain-check', '--operation', OP)['drained'])
             admission('phase', '--operation', OP, '--phase', 'applying')
 
@@ -236,8 +321,11 @@ class PublishConsumerTests(unittest.TestCase):
     def test_failed_transition_keeps_known_config_and_original_backup_for_exact_recovery(self):
         self.fail_transition = True
         with self.assertRaisesRegex(publication.ConsumerPublicationError,
-                                    '^CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY$'):
+                                    '^CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY$') as caught:
             self.publish()
+        self.assertEqual(caught.exception.controller_diagnostic, {
+            'action': 'consumer-transition', 'failure': 'nonzero_exit',
+            'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED'})
         self.assertEqual(self.consumer.read_bytes(), self.new)
         self.assertEqual(self.backup.read_bytes(), self.old)
         self.fail_transition = False

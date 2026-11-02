@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { consumerDigest, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
 import { createCompatibilityStore, historicalOperationContext, loadSerialPoolCompatibility,
   verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
 import { serialPoolFixture } from './serial-pool-fixture.mjs';
+import { createAdmissionControl, manualAdmissionComplete } from '../src/admission-control.mjs';
 
 const linux = process.platform === 'linux';
 const operationId = 'abcdef12-1234-1234-1234-123456789abc';
@@ -81,6 +82,91 @@ test('completed prior manual pool result remains readable without manufacturing 
     const unresolved = structuredClone(record); delete unresolved.manualResultAuthorization;
     await f.currentStore.put(202, unresolved);
     await assert.rejects(store.get(202), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+  });
+
+test('retained pool refusals and both original v3 manual receipts remain read-only after a Git profile change',
+  { skip: !linux }, async t => {
+    const f = await changedFixture(t); await completeCurrent(f);
+    const envelope = (runId, overrides = {}) => f.envelope(runId, { route: 'manual', executionSlot: 'primary',
+      consumerDigest: f.receipt.target.consumerDigest, ...overrides });
+    const outcome = runId => ({ status: 'BLOCKED', head: null, prNumber: null, outcomeId: runId + 1000,
+      bodySha256: 'b'.repeat(64) });
+    const admissionBlock = { code: 'AUTHORITY_TASK_REQUEST_REQUIRED' };
+    const rejected = { envelope: envelope(203, { request: null, authorityDigest: null, branch: null, startHead: null,
+      admissionBlock }), admissionBlock, outcome: outcome(203) };
+    const authorized = { envelope: envelope(204, { request: { schema_version: '3.0', kind: 'task-request' },
+      requestReference: { sha256: 'a'.repeat(64) } }), outcome: { ...outcome(204), manual: true },
+    manualResultAuthorization: { id: 1204, sha256: 'c'.repeat(64) } };
+    delete authorized.outcome.bodySha256;
+    const direct = { envelope: envelope(205, { request: { schema_version: '3.0', kind: 'task-request' },
+      requestReference: { sha256: 'a'.repeat(64) } }), outcome: { ...outcome(205), manual: true },
+    manualSubmission: { sha256: 'd'.repeat(64), parent: { kind: 'issue', number: 42 }, rendererVersion: 'human-v1' },
+    commentBodies: { outcome: { number: 42, sha256: 'b'.repeat(64), rendererVersion: 'human-v1' } } };
+    const sealedRejection = structuredClone(rejected);
+    Object.assign(sealedRejection.envelope, { runId: 206, attemptId: 'run-206' });
+    delete sealedRejection.outcome.bodySha256;
+    sealedRejection.commentBodies = { outcome: { number: 42, sha256: 'e'.repeat(64), rendererVersion: 'human-v1' } };
+    const records = [rejected, authorized, direct, sealedRejection];
+    for (const record of records) await f.currentStore.put(record.envelope.runId, record);
+    const context = await f.load();
+    const store = createCompatibilityStore({ compatibility: context, currentStore: f.currentStore, originalStore: f.originalStore });
+    const path = id => join(context.current.storeRoot, `${id}.json`);
+    const before = await Promise.all(records.map(record => readFile(path(record.envelope.runId))));
+    const journalBefore = await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json'));
+    assert.equal((await store.all()).length, f.records.length + 5);
+    const scanned = await store.scan();
+    for (const [index, record] of records.entries()) {
+      const id = record.envelope.runId;
+      assert.deepEqual(await store.get(id), record);
+      assert.equal(scanned.find(row => row.runId === id).error, null);
+      assert.equal(await f.journal.get(id), null);
+      await assert.rejects(store.put(id, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+      await assert.rejects(store.reserve(id, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+      await assert.rejects(store.withLock(id, () => assert.fail('historical manual mutation')),
+        { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+      assert.deepEqual(await readFile(path(id)), before[index]);
+    }
+    assert.deepEqual(await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json')), journalBefore);
+    const malformed = [
+      [rejected, record => { record.handoffComplete = true; }],
+      [rejected, record => { record.envelope.admissionBlock = { code: 'OTHER_REFUSAL' }; }],
+      [authorized, record => { record.commentBodies = {}; }],
+      [authorized, record => { record.manualSubmission = null; }],
+      [authorized, record => { record.envelope.request.schema_version = '4.0'; }],
+      [direct, record => { record.manualSubmission.publishedResult = null; }],
+      [direct, record => { record.commentBodies.outcome.sha256 = 'f'.repeat(64); }],
+      [direct, record => { record.envelope.request.schema_version = '4.0'; }],
+      [direct, record => { delete record.outcome; record.handoffComplete = true; }],
+      [sealedRejection, record => { record.commentBodies.outcome.number = 43; }],
+      [sealedRejection, record => { record.commentBodies.outcome.sha256 = 'invalid'; }],
+      [sealedRejection, record => { record.outcome.bodySha256 = 'invalid'; }]
+    ];
+    for (const [original, mutate] of malformed) {
+      const record = structuredClone(original); mutate(record); const id = record.envelope.runId;
+      await f.currentStore.put(id, record); const observed = await readFile(path(id));
+      await assert.rejects(store.get(id), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+      await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+      assert.equal((await store.scan()).find(row => row.runId === id).error, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      assert.deepEqual(await readFile(path(id)), observed);
+      assert.deepEqual(await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json')), journalBefore);
+      await f.currentStore.put(id, original);
+    }
+    // The installed adapter's supplemental inventory uses the same classifier:
+    // these historical results are complete, while the original SERIAL handoff
+    // still needs its own terminal Outcome before any consumer transition.
+    const supplementalManualInventory = async () => (await store.all())
+      .filter(record => record.envelope.route === 'manual' && !manualAdmissionComplete(record))
+      .map(record => record.envelope.runId);
+    assert.deepEqual(await supplementalManualInventory(), [100]);
+    const admission = createAdmissionControl({ root: dirname(f.poolGatePath), stateName: 'admission-pool-v1.json',
+      consumerDigest: f.currentDigest, store: { all: async () => [] }, journal: f.journal,
+      protectedRoot: false, supplementalManualInventory });
+    await admission.quiesce({ operationId, target }); await admission.drained({ operationId });
+    await admission.phase({ operationId, phase: 'applying' });
+    await assert.rejects(admission.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+    for (const [index, record] of records.entries())
+      assert.deepEqual(await readFile(path(record.envelope.runId)), before[index]);
+    assert.deepEqual(await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json')), journalBefore);
   });
 
 test('changed Git config cannot replace the immutable receipt target or dispense with its frozen snapshot',

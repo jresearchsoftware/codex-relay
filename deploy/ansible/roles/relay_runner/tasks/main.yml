@@ -1,4 +1,14 @@
 ---
+- name: Verify the frozen isolated Runner package before any live role mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/files/relay-intent-package.py") }}',
+           verify, runner, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}',
+           '{{ relay_runner_package_version }}', '{{ relay_runner_package_sha256 }}']
+    stdin: '{{ {"root": relay_runner_root, "archive": relay_runner_package_archive, "user": relay_runner_user, "service": relay_runner_service_name, "packageVersion": relay_runner_package_version} | to_json }}'
+  changed_when: false
+  check_mode: false
+  when: relay_intent_stage_root is defined
+
 - name: Require the pinned runner package and identity contract
   ansible.builtin.assert:
     that:
@@ -160,7 +170,18 @@
     mode: '0644'
     checksum: 'sha256:{{ relay_runner_package_sha256 }}'
   when:
+    - relay_intent_stage_root is not defined
     - not ansible_check_mode | bool or relay_runner_existing_archive.stat.exists
+
+- name: Consume the verified frozen Runner archive without network access
+  ansible.builtin.copy:
+    src: '{{ relay_intent_stage_root }}/runner-package/archive.tar.gz'
+    dest: '{{ relay_runner_package_archive }}'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  when: relay_intent_stage_root is defined and not ansible_check_mode | bool
 
 - name: Install runner archive safety validator
   ansible.builtin.copy:

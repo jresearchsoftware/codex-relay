@@ -1,0 +1,128 @@
+---
+- name: Require the frozen private staging invocation
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode | bool
+      - relay_intent_stage_root is match('^/[^\r\n]+/\.stage-[a-f0-9-]{36}$')
+      - relay_intent_stage_operation is match('^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$')
+      - >-
+        relay_intent_stage_root ==
+        ((relay_install_root | dirname) ~ '/.' ~ (relay_install_root | basename) ~ '-staging'
+         if relay_intent_stage_reinstall | default(false) | bool else relay_release_root)
+        ~ '/.stage-' ~ relay_intent_stage_operation
+      - relay_source_archive | length > 0
+    fail_msg: INTENT_ARTIFACT_STAGE_INPUT_INVALID
+
+- name: Resolve the frozen product and build identity before isolated staging
+  ansible.builtin.include_tasks: resolve-identities.yml
+
+- name: Transport the exact frozen Git archive into the private operation directory
+  ansible.builtin.copy:
+    src: '{{ relay_source_archive }}'
+    dest: '{{ relay_intent_stage_root }}/source.tar'
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Validate the complete Git tree and materialize only bounded regular source bytes
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", playbook_dir + "/roles/relay_artifacts/files/relay-intent-stage.py") }}', extract, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_root }}/source.tar']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity, "compatibilityLinks": relay_compatibility_links} | to_json }}'
+    stdin_add_newline: false
+  register: relay_intent_source_acquisition
+  changed_when: true
+
+- name: Render the desired consumer solely for source compatibility validation
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_controller/templates/consumer.json.j2'
+    dest: '{{ relay_intent_stage_root }}/consumer.json'
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Parse actual candidate entrypoints without executing their privileged main functions
+  ansible.builtin.command:
+    argv: ['/usr/bin/node', --check, '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/{{ item }}']
+  loop: [admission-cli.mjs, privileged-writer-entrypoint.mjs, codex-dispatch-entrypoint.mjs, diagnostic-store-entrypoint.mjs]
+  changed_when: false
+
+- name: Return the exact source and desired consumer before expensive preparation
+  ansible.builtin.meta: end_play
+  when: relay_intent_stage_source_only | default(false) | bool
+
+- name: Prepare a pinned toolchain without mutating a shared prefix or cache
+  ansible.builtin.include_tasks: intent-toolchain.yml
+
+- name: Preserve the frozen private configuration only inside isolated staging
+  ansible.builtin.copy:
+    content: '{{ relay_installed_deployment_config | string }}'
+    dest: '{{ relay_intent_stage_root }}/release/deployment-config.json'
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Build or content-verify the Reviewer through the ordinary artifact tasks
+  ansible.builtin.include_role:
+    name: relay_artifacts
+  vars:
+    relay_artifact_stage_only: true
+    relay_release_path: '{{ relay_intent_stage_root }}/release'
+    relay_group: root
+    relay_reviewer_group: root
+    relay_runner_group: root
+    relay_rust_toolchain_root: '{{ relay_intent_rust_build_root }}'
+    relay_rust_toolchain_cargo_home: '{{ relay_intent_stage_root }}/cargo-home'
+
+- name: Remove only the disposable staged build target before sealing deliverable bytes
+  ansible.builtin.file:
+    path: '{{ relay_intent_stage_root }}/release/reviewer-target'
+    state: absent
+
+- name: Relocate only fixed internal artifact aliases before sealing
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", playbook_dir + "/roles/relay_artifacts/files/relay-intent-stage.py") }}', normalize-links, '{{ relay_intent_stage_root }}']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity} | to_json }}'
+    stdin_add_newline: false
+  changed_when: true
+
+- name: Execute actual candidate controller and publication import closures without credentials
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/node
+      - --input-type=module
+      - -e
+      - 'import {pathToFileURL} from "node:url"; for(const path of process.argv.slice(2)) await import(pathToFileURL(path)); console.log("INTENT_STAGE_IMPORTS_READY");'
+      - stage-import
+      - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/admission-cli.mjs'
+      - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/manual-outcome.mjs'
+      - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/privileged-writer-helper.mjs'
+      - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/trusted-git.mjs'
+  environment:
+    RELAY_CONSUMER_CONFIG: '{{ relay_intent_stage_root }}/consumer.json'
+    RELAY_REPOSITORY: '{{ relay_github_repository }}'
+    HOME: '{{ relay_intent_stage_root }}'
+  register: relay_intent_import_closure
+  changed_when: false
+  failed_when: relay_intent_import_closure.rc != 0 or relay_intent_import_closure.stdout != 'INTENT_STAGE_IMPORTS_READY'
+
+- name: Execute the staged Reviewer argument parser and native loader without activation
+  ansible.builtin.command:
+    argv: ['/usr/bin/env', '-i', 'PATH=/usr/bin:/bin', 'LANG=C', 'HOME={{ relay_intent_stage_root }}', '{{ relay_intent_stage_root }}/release/bin/reviewer-mcp-http', --help]
+  register: relay_intent_reviewer_loader
+  changed_when: false
+  failed_when: relay_intent_reviewer_loader.rc != 0 or 'Usage:' not in relay_intent_reviewer_loader.stdout
+
+- name: Retain bounded artifact provenance for the final candidate seal
+  ansible.builtin.set_fact:
+    relay_intent_reviewer_stage:
+      cargoVersion: '{{ relay_reviewer_cargo_version }}'
+      binarySha256: '{{ relay_reviewer_binary_digest.stdout.split()[0] }}'
+      artifactProvenance: '{{ relay_reviewer_artifact_provenance }}'
+      reuseSourceRelease: '{{ relay_reviewer_reuse_source_release }}'
+      reuseSourceBinarySha256: '{{ relay_reviewer_reuse_source_digest }}'
+      buildContractSha256: '{{ relay_reviewer_build_contract_sha256 }}'
+      previousRevision: '{{ relay_previous_revision }}'

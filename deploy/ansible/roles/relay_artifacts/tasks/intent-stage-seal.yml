@@ -1,0 +1,12 @@
+---
+- name: Seal source and Reviewer bytes only after all package stages succeeded
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", playbook_dir + "/roles/relay_artifacts/files/relay-intent-stage.py") }}', seal, '{{ relay_intent_stage_root }}']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity, "sourceAcquisition": relay_intent_source_acquisition.stdout | from_json, "reviewer": relay_intent_reviewer_stage, "toolchain": relay_intent_rust_stage, "packages": {"runner": relay_intent_runner_stage, "codex": relay_intent_codex_stage}} | to_json }}'
+    stdin_add_newline: false
+  register: relay_intent_artifact_receipt
+  changed_when: true
+
+- name: Report the completed private stage without claiming activation
+  ansible.builtin.debug:
+    msg: 'RELAY_INTENT_STAGE_READY={{ relay_source_identity.revision }};operation={{ relay_intent_stage_operation }};receipt={{ relay_intent_stage_root }}/receipt.json'

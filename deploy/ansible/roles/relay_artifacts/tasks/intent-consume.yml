@@ -1,0 +1,70 @@
+---
+- name: Require the exact sealed release selected by the locked installer
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode | bool
+      - relay_intent_staged_release == relay_intent_stage_root ~ '/release'
+      - >-
+        relay_intent_stage_root ==
+        ((relay_install_root | dirname) ~ '/.' ~ (relay_install_root | basename) ~ '-staging'
+         if relay_intent_stage_reinstall | default(false) | bool else relay_release_root)
+        ~ '/.stage-' ~ relay_intent_stage_operation
+    fail_msg: INTENT_STAGED_RELEASE_BINDING_INVALID
+
+- name: Verify and consume sealed source and Reviewer bytes without downloading or rebuilding
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", role_path + "/files/relay-intent-stage.py") }}', consume, '{{ relay_intent_stage_root }}', '{{ relay_release_path }}']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity, "expectedToolchainPrefix": relay_rust_toolchain_root, "releaseRoot": relay_release_root, "reinstall": relay_intent_stage_reinstall | default(false) | bool} | to_json }}'
+    stdin_add_newline: false
+  register: relay_intent_consumed_artifacts
+  changed_when: true
+
+- name: Retain the verified staged Reviewer provenance for the ordinary manifest
+  ansible.builtin.set_fact:
+    relay_reviewer_cargo_version: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.cargoVersion }}'
+    relay_reviewer_binary_digest:
+      stdout: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.binarySha256 }}  {{ relay_release_path }}/bin/reviewer-mcp-http'
+    relay_reviewer_artifact_provenance: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.artifactProvenance }}'
+    relay_reviewer_reuse_source_release: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.reuseSourceRelease }}'
+    relay_reviewer_reuse_source_digest: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.reuseSourceBinarySha256 }}'
+    relay_previous_revision: '{{ (relay_intent_consumed_artifacts.stdout | from_json).reviewer.previousRevision }}'
+
+- name: Apply only the ordinary public runtime traversal contract to consumed directories
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    mode: '0751'
+  loop: ['', bin, reviewed-source]
+
+- name: Assign the consumed Reviewer executable to its existing service group
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/bin/reviewer-mcp-http'
+    owner: root
+    group: '{{ relay_reviewer_group }}'
+    mode: '0750'
+
+- name: Preserve ordinary group access to immutable Reviewer build inputs
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ relay_group }}'
+    recurse: true
+    follow: false
+  loop: [reviewer-source, contracts]
+
+- name: Preserve the ordinary dispatcher alias ownership without following it
+  ansible.builtin.file:
+    path: '{{ relay_release_path }}/bin/relay-codex-dispatch.mjs'
+    owner: root
+    group: '{{ relay_runner_group | default(relay_group) }}'
+    follow: false
+
+- name: Install a privately prepared Rust prefix only at its unchanged missing destination
+  ansible.builtin.command:
+    argv: ['/usr/bin/python3', '-I', '-c', '{{ lookup("file", role_path + "/files/relay-intent-stage.py") }}', consume-toolchain, '{{ relay_intent_stage_root }}']
+    stdin: '{{ {"operationId": relay_intent_stage_operation, "sourceIdentity": relay_source_identity, "expectedToolchainPrefix": relay_rust_toolchain_root} | to_json }}'
+    stdin_add_newline: false
+  changed_when: true

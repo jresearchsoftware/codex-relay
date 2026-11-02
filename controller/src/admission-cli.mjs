@@ -17,6 +17,7 @@ const commands = {
   drain: ['operation', 'timeout'], 'drain-check': ['operation'],
   phase: ['operation', 'phase', 'revision?'], resume: ['operation'], snapshot: ['operation'],
   'recovery-target': ['operation', 'target'],
+  'consumer-transition-preflight': ['desired-digest'],
   'consumer-transition-check': ['operation', 'revision'],
   'consumer-transition': ['operation', 'previous-digest', 'revision']
 };
@@ -26,17 +27,20 @@ export function parseAdmissionArguments(args) {
   const options = {};
   for (let i = 0; i < values.length; i += 2) {
     const key = values[i].replace(/^--/, '');
-    const storedKey = key === 'operation' ? 'operationId' : key === 'previous-digest' ? 'previousDigest' : key;
+    const storedKey = key === 'operation' ? 'operationId' : key === 'previous-digest' ? 'previousDigest'
+      : key === 'desired-digest' ? 'desiredDigest' : key;
     if (values[i] !== `--${key}` || !allowed.some(name => name.replace(/\?$/, '') === key) || Object.hasOwn(options, storedKey)) fail('ADMISSION_ARGUMENTS_INVALID');
     options[storedKey] = values[i + 1];
   }
   for (const name of allowed.filter(name => !name.endsWith('?'))) {
-    if (options[name === 'operation' ? 'operationId' : name === 'previous-digest' ? 'previousDigest' : name] === undefined) fail('ADMISSION_ARGUMENTS_INVALID');
+    if (options[name === 'operation' ? 'operationId' : name === 'previous-digest' ? 'previousDigest'
+      : name === 'desired-digest' ? 'desiredDigest' : name] === undefined) fail('ADMISSION_ARGUMENTS_INVALID');
   }
   if (command === 'drain') {
     if (!/^[1-9][0-9]{0,3}$/.test(options.timeout) || Number(options.timeout) > 3600) fail('ADMISSION_TIMEOUT_INVALID');
     options.timeout = Number(options.timeout);
   }
+  if (command === 'consumer-transition-preflight' && !/^[a-f0-9]{64}$/.test(options.desiredDigest)) fail('ADMISSION_CONFIG_INVALID');
   return { command, options };
 }
 export function installedAdmissionControl() {
@@ -45,7 +49,7 @@ export function installedAdmissionControl() {
   // a previously observed receipt cannot hide later changes before admission.
   const methods = ['initialize', 'read', 'assertOpen', 'assertTaskComplete', 'assertSlotComplete',
     'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete',
-    'checkConsumerTransition', 'transitionConsumer'];
+    'preflightConsumerTransition', 'checkConsumerTransition', 'transitionConsumer'];
   return Object.fromEntries(methods.map(name => [name, async (...args) => {
     const { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
@@ -136,6 +140,7 @@ export async function main(args = process.argv.slice(2)) {
   if (command === 'drain-check') return admission.drained(options);
   if (command === 'snapshot') return admission.snapshot({ ...options, services: await readAdmissionSnapshot() });
   if (command === 'recovery-target') return admission.recoveryTarget(options);
+  if (command === 'consumer-transition-preflight') return admission.preflightConsumerTransition(options);
   if (command === 'consumer-transition-check') return admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision });
   if (command === 'consumer-transition') return admission.transitionConsumer({
     operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision });

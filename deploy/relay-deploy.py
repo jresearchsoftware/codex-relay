@@ -570,6 +570,10 @@ def run(args):
         'relay_tls_phase': {'tls-check': 'prerequisites', 'tls-prepare': 'prerequisites',
                            'tls-dry-run': 'dry_run', 'tls-issue': 'issue'}.get(args.phase, 'prerequisites'),
     })
+    if intent_install:
+        values['relay_consumer_config_path'] = values['relay_config_root'] + '/consumer.json'
+        if pool_reinstall_proof is not None and not pool_reinstall_proof['completed']:
+            values['relay_clean_reinstall_journal_sha256'] = pool_reinstall_proof['journalSha256']
     if getattr(args, '_intent_fresh_bootstrap', False):
         require(intent_install and args.phase == 'bootstrap'
                 and args.intent_expected_installed_revision == 'none' and inherited_guard is not None,
@@ -701,6 +705,18 @@ def run(args):
                     lifecycle_operation = None
                     serial_transition = False
                     new_gate_installed = False
+                    preparation = None
+                    pool_preflight_proof = None
+                    def clear_preparation_inventory():
+                        for name in ['relay_intent_writer_lock_lease', 'relay_intent_admission_prefix',
+                                     'relay_intent_staged_release', 'relay_intent_stage_root',
+                                     'relay_intent_stage_operation', 'relay_intent_stage_source_only',
+                                     'relay_intent_stage_reinstall', 'relay_intent_preflight_consumer_path',
+                                     'relay_intent_preflight_baseline_digest', 'relay_intent_preflight_claim_root',
+                                     'relay_intent_preflight_serial', 'relay_intent_preflight_installed_revision']:
+                            values.pop(name, None)
+                            inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
+                        (work / 'inventory.json').write_text(json.dumps(inventory))
                     if intent_install:
                         # The first observation chose a strategy. Revalidate its
                         # installation under the same host mutex before even a
@@ -725,6 +741,91 @@ def run(args):
                         require(not strategy_inventory(locked_inventory)['blockers']
                                 and locked_revision == args.intent_expected_installed_revision,
                                 'intent-installation-changed-before-reservation')
+                    if ('generalRunnerPool' in config['consumer']
+                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
+                        from managed_pool_transport import preflight_pool
+                        pool_preflight_proof = preflight_pool(target, key, config, guard,
+                            local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
+                        serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
+                    if intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
+                        from install_preflight import PreparedInstall
+                        stage_operation = admission_operation_id or str(uuid.uuid4())
+                        preparation = PreparedInstall(target, key, values, identity, stage_operation,
+                            local=args.local_reconcile or args.local_lifecycle, reinstall=args.phase == 'reinstall')
+                        created_stage = preparation.create()
+                        if isinstance(created_stage, dict) and created_stage.get('preservedPrevious') is True:
+                            print('RELAY_INSTALL_PREPARATION=previous-stage-preserved;operation=' + stage_operation, flush=True)
+                        args._intent_failure_stage = 'preflight-source'
+                        values.update(relay_intent_stage_root=preparation.stage,
+                            relay_intent_stage_operation=stage_operation, relay_intent_stage_source_only=True,
+                            relay_intent_stage_reinstall=args.phase == 'reinstall',
+                            relay_intent_preflight_installed_revision=args.intent_expected_installed_revision)
+                        def preflight_play(name):
+                            inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                            (work / 'inventory.json').write_text(json.dumps(inventory))
+                            offset = len(Path(log_name).read_text())
+                            code = run_backend([*argv[:3], str(BACKEND / name), *argv[4:]],
+                                BACKEND, env, log, guard, pool_guard)
+                            log.flush()
+                            proof = Path(log_name).read_text()[offset:]
+                            if code != 0 or 'failed=0' not in proof:
+                                codes = re.findall(r'\b(?:INTENT|HOST|RELAY|PRODUCTION)_[A-Z_]{2,100}\b', proof)
+                                error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_' +
+                                    ('STAGING_FAILED' if name == 'relay-intent-stage.yml' else 'COMPATIBILITY_FAILED'))
+                                error.next_action = ('Inspect the named preflight prerequisite in the private installer log; '
+                                    'correct it through the existing version or owner-supported package/credential procedure '
+                                    'while the old entrypoint remains available. Retry the same frozen Git pair.')
+                                raise error
+                        if args.intent_expected_installed_revision == 'none':
+                            args._intent_failure_stage = 'fresh-product-prerequisites'
+                            args._intent_product_prerequisites = True
+                            preflight_play('relay-intent-prerequisites.yml')
+                            args._intent_failure_stage = 'preflight-source'
+                        preflight_play('relay-intent-stage.yml')
+                        preparation.desired()
+                        args._intent_failure_stage = 'preflight-history'
+                        if pool_reinstall_proof is not None and not pool_reinstall_proof['completed']:
+                            preparation.consumer_retained(pool_reinstall_proof)
+                        elif args.intent_expected_installed_revision != 'none':
+                            preparation.consumer(serial=serial_transition)
+                        if preparation.initial is not None:
+                            if args.phase == 'reinstall' and preparation.initial['consumerChange']:
+                                error = RuntimeError('INSTALL_PREFLIGHT_REINSTALL_CONSUMER_REBIND_UNSUPPORTED')
+                                error.next_action = ('Keep the installed entrypoint available. This protected replacement '
+                                    'cannot rebind retained admission history through the fresh-install consumer path. '
+                                    'Use a compatible installed lifecycle transition when its contract permits it, '
+                                    'or obtain a separately qualified replacement preserving the original gate and history; '
+                                    'do not edit protected attempts or clear admission state.')
+                                raise error
+                        # The owning read-only checks and real staging run before
+                        # quiesce; a dry run cannot replace build/load proof.
+                        args._intent_failure_stage = 'preflight-host-policy'
+                        backend_expected = values['relay_intent_expected_installed_revision']
+                        values['relay_intent_expected_installed_revision'] = args.intent_expected_installed_revision
+                        values['relay_intent_preflight_serial'] = serial_transition
+                        if preparation.initial is not None and preparation.initial['consumerRestoreRequired']:
+                            values['relay_intent_preflight_consumer_path'] = preparation.initial['effectiveConsumerPath']
+                            values['relay_intent_preflight_baseline_digest'] = preparation.initial['baselineDigest']
+                            values['relay_intent_preflight_claim_root'] = preparation.initial['claimRoot']
+                        preflight_play('relay-intent-preflight.yml')
+                        for name in ['relay_intent_preflight_consumer_path', 'relay_intent_preflight_baseline_digest',
+                                     'relay_intent_preflight_claim_root', 'relay_intent_preflight_serial']:
+                            values.pop(name, None)
+                            inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
+                        values['relay_intent_expected_installed_revision'] = backend_expected
+                        inventory['all']['children']['relay']['hosts'][target['host']]['relay_intent_expected_installed_revision'] = backend_expected
+                        preparation.host()
+                        if (preparation.initial is not None and not args.authorize_lifecycle_recovery
+                                and not (serial_transition and getattr(pool_preflight_proof, 'operation_id', None))):
+                            preparation.capture()
+                        values['relay_intent_stage_source_only'] = False
+                        args._intent_failure_stage = 'candidate-stage'
+                        preflight_play('relay-intent-stage.yml')
+                        preparation.verify_stage()
+                        values['relay_intent_staged_release'] = preparation.stage + '/release'
+                        inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                        (work / 'inventory.json').write_text(json.dumps(inventory))
+                        print('RELAY_INSTALL_PREFLIGHT=prepared;operation=' + stage_operation, flush=True)
                     if (intent_install and (lifecycle_required or pool_reinstall)
                             and not args.authorize_lifecycle_recovery):
                         from consumer_drift import prepare as restore_consumer_drift
@@ -773,23 +874,14 @@ def run(args):
                             values['relay_consumer_revision'] = consumer_revision
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
-                        from intent_install import prepare_target
-                        if (args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
-                                and prepare_target(target, key, config, revision, guard)):
-                            args._intent_mutation_started = True
-                            print('RELAY_INSTALL_HARDENING=legacy-operation-directory;mode=0750', flush=True)
-                    if ('generalRunnerPool' in config['consumer']
-                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
-                        from managed_pool_transport import preflight_pool
-                        pool_preflight_proof = preflight_pool(target, key, config, guard,
-                            local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
-                        serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
-                    if intent_install and args.phase not in ['post-check', 'check', 'tls-check']:
-                        # From here a lifecycle reservation, retirement or backend
-                        # may mutate the host. A failure reports uncertainty rather
-                        # than claiming that an unsuccessful backend changed none.
-                        args._intent_mutation_started = True
                     if serial_transition:
+                        if preparation is not None:
+                            # SERIAL owns its separate old context and rechecks
+                            # its remote idle runner before stopping that runner.
+                            preparation.final(serial=True)
+                            require(hashlib.sha256(config_path.read_bytes()).hexdigest() == args.git_intent['config_sha256']
+                                    and source_identity(ROOT) == identity, 'frozen-git-inputs-changed-before-cutover')
+                            preparation.cutover_started = True
                         from lifecycle import progress
                         require(not args.local_lifecycle and not args.local_reconcile,
                                 'MANAGED_POOL_SERIAL_TRANSITION_EXTERNAL_OWNER_APPLY_REQUIRED')
@@ -802,6 +894,8 @@ def run(args):
                                 'MANAGED_POOL_SERIAL_TRANSITION_OPERATION_CONFLICT')
                         lifecycle_operation = retained_operation or admission_operation_id or str(uuid.uuid4())
                         values['relay_admission_operation_id'] = lifecycle_operation
+                        if intent_install:
+                            args._intent_mutation_started = True
                         transition = transition_pool(target, key, config, revision, lifecycle_operation,
                             guard, extra_guard=pool_guard, action='begin')
                         require(transition['phase'] in ['stopped', 'installed', 'retired'], 'MANAGED_POOL_SERIAL_TRANSITION_STOP_UNPROVEN')
@@ -819,6 +913,8 @@ def run(args):
                                 relay_production_operation_phase='post-check',
                                 relay_upgrade_requested=False,
                                 relay_upgrade_lifecycle_managed=False)
+                            if preparation is not None:
+                                clear_preparation_inventory()
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
                             returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard, pool_guard)
@@ -868,6 +964,8 @@ def run(args):
                     if lifecycle_required and not args.local_lifecycle and not serial_transition:
                         from lifecycle import progress
                         lifecycle_operation = admission_operation_id
+                        if intent_install:
+                            args._intent_mutation_started = True
                         if not args.authorize_lifecycle_recovery:
                             progress('QUIESCE', revision)
                             remote_admission(target, key, values['relay_namespace'], 'quiesce',
@@ -890,6 +988,8 @@ def run(args):
                         from lifecycle import progress
                         from clean_reinstall import remote_action, continuation_inventory
                         lifecycle_operation = admission_operation_id
+                        if intent_install:
+                            args._intent_mutation_started = True
                         if args.authorize_lifecycle_recovery:
                             pool_reinstall_proof = remote_action(target, key, config, revision, action='continue',
                                 guard=guard, operation_id=lifecycle_operation)
@@ -912,21 +1012,82 @@ def run(args):
                         if pool_reinstall_proof is not None:
                             observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
+                    if preparation is not None and not serial_transition:
+                        args._intent_failure_stage = 'final-revalidation'
+                        fresh_preparation = preparation.initial is None
+                        if preparation.retained_proof is not None:
+                            repeated_retirement = remote_action(target, key, config, revision,
+                                action='continuation', guard=guard, operation_id=lifecycle_operation)
+                            require(repeated_retirement == preparation.retained_proof,
+                                    'INSTALL_PREFLIGHT_RETAINED_REPLACEMENT_CHANGED')
+                        if pool_preflight_proof is not None:
+                            repeated_pool = preflight_pool(target, key, config, guard,
+                                local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
+                            require(str(repeated_pool) == str(pool_preflight_proof),
+                                    'INSTALL_PREFLIGHT_POOL_POLICY_CHANGED')
+                        if not fresh_preparation:
+                            preparation.lock_writer()
+                        preparation.final(fresh=fresh_preparation)
+                        require(hashlib.sha256(config_path.read_bytes()).hexdigest() == args.git_intent['config_sha256']
+                                and source_identity(ROOT) == identity, 'frozen-git-inputs-changed-before-cutover')
+                        # Keep the existing Writer kernel lock across the final
+                        # evidence check and every active installation effect.
+                        if not fresh_preparation:
+                            values.update(relay_intent_writer_lock_lease=preparation.lease_path,
+                                relay_intent_admission_prefix=preparation.admission_prefix())
+                        inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                        (work / 'inventory.json').write_text(json.dumps(inventory))
+                        preparation.cutover_started = True
+                        args._intent_failure_stage = 'controlled-cutover'
+                    if intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
+                        args._intent_mutation_started = True
+                        from intent_install import prepare_target
+                        if prepare_target(target, key, config, revision, guard):
+                            print('RELAY_INSTALL_HARDENING=legacy-operation-directory;mode=0750', flush=True)
+                    if install_flow:
                         if args.phase == 'reinstall':
                             from clean_reinstall import remote_action
                             if pool_reinstall_proof is None:
+                                # Protected replacement retains the same consumer
+                                # digest (proved above). Its owning retirement
+                                # helper takes its original publication lock for
+                                # pool admission observations. Release this lease
+                                # for that bounded operation, then reacquire before
+                                # installing any candidate helpers/configuration.
+                                if preparation is not None:
+                                    preparation.release_writer()
                                 retired = remote_action(target, key, config, revision, observed,
                                     action='decommission', guard=guard,
                                     **({'git_desired': True} if intent_install else {}),
                                     **({'operation_id': lifecycle_operation} if pool_reinstall else {}))
                                 values['relay_clean_reinstall_journal_sha256'] = retired['journalSha256']
                                 retirement_report = observed
+                                if preparation is not None and preparation.initial is not None:
+                                    preparation.lock_writer()
+                                    preparation.after_retirement()
+                                    require(hashlib.sha256(config_path.read_bytes()).hexdigest() == args.git_intent['config_sha256']
+                                            and source_identity(ROOT) == identity, 'frozen-git-inputs-changed-after-retirement')
                             else:
                                 retirement_report = {**observed, 'installed': {'status': 'present',
                                     'revision': pool_reinstall_proof['sourceRevision']}}
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
-                    returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard, pool_guard)
+                    def cutover_poll():
+                        for holder in [pool_guard, preparation.holder if preparation is not None else None]:
+                            if holder is not None and holder.poll() is not None:
+                                return holder.poll()
+                        return None
+                    if preparation is not None and preparation.holder is not None:
+                        returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard,
+                            SimpleNamespace(poll=cutover_poll))
+                    else:
+                        returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard, pool_guard)
+                    if preparation is not None:
+                        preparation.release_writer()
+                        args._intent_failure_stage = 'activation-verification'
+                        # Subsequent native postchecks use the ordinary fixed
+                        # installed helper after the publication mutex releases.
+                        clear_preparation_inventory()
                     if serial_transition and returncode == 0:
                         log.flush()
                         new_gate_installed = f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in Path(log_name).read_text()
@@ -1000,7 +1161,23 @@ def run(args):
                                     'MANAGED_POOL_SERIAL_TRANSITION_RESUME_UNPROVEN')
                         progress('OPEN', revision)
                 except Exception:
-                    if lifecycle_operation and (not serial_transition or new_gate_installed):
+                    restored_old = False
+                    if (preparation is not None and preparation.captured and not preparation.cutover_started
+                            and lifecycle_operation and not args.authorize_lifecycle_recovery):
+                        try:
+                            aborted = preparation.abort()
+                            require(aborted['status'] == 'old-open-restored', 'INSTALL_PREFLIGHT_ABORT_UNPROVEN')
+                            args._intent_mutation_started = False
+                            args._intent_old_availability_restored = True
+                            restored_old = True
+                            print('RELAY_INSTALL_PREFLIGHT=aborted;old-availability=verified;operation=' + lifecycle_operation,
+                                  flush=True)
+                        except Exception:
+                            print('RELAY_INSTALL_PREFLIGHT_ABORT=unproven;retain-original-operation;inspect-before-recovery',
+                                  flush=True)
+                    if preparation is not None:
+                        preparation.release_writer()
+                    if lifecycle_operation and not restored_old and (not serial_transition or new_gate_installed):
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')

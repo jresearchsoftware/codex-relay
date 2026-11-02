@@ -1,0 +1,67 @@
+---
+- name: Require the same official Codex package for isolated intent staging
+  ansible.builtin.assert:
+    that:
+      - relay_codex_cli_version == '0.160.0'
+      - relay_codex_installer_url == 'https://chatgpt.com/codex/install.sh'
+      - not ansible_check_mode | bool
+    fail_msg: INTENT_CODEX_PACKAGE_CONTRACT_INVALID
+
+- name: Inspect actual Codex destinations before creating the isolated package stage
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/../relay_runner/files/relay-intent-package.py") }}',
+           initialize, codex, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}', '{{ relay_codex_cli_version }}', '-']
+    stdin: '{{ {"home": relay_codex_package_home, "installDir": relay_codex_package_install_dir, "binary": relay_codex_binary_path, "installer": relay_codex_installer_path} | to_json }}'
+  changed_when: true
+
+- name: Create the isolated official Codex installer directories
+  ansible.builtin.file:
+    path: '{{ relay_intent_stage_root }}/codex-package/{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: [package-home, package-bin]
+
+- name: Download the official installer only into the isolated Codex stage
+  ansible.builtin.get_url:
+    url: '{{ relay_codex_installer_url }}'
+    dest: '{{ relay_intent_stage_root }}/codex-package/installer.sh'
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the pinned official Codex package without touching live package-home
+  ansible.builtin.command:
+    argv: [/usr/bin/env, -i, 'PATH=/usr/bin:/bin', 'LANG=C', 'LC_ALL=C',
+           'HOME={{ relay_intent_stage_root }}/codex-package/package-home',
+           'CODEX_HOME={{ relay_intent_stage_root }}/codex-package/package-home',
+           'CODEX_INSTALL_DIR={{ relay_intent_stage_root }}/codex-package/package-bin', 'CODEX_NON_INTERACTIVE=1',
+           /bin/sh, '{{ relay_intent_stage_root }}/codex-package/installer.sh', --release, '{{ relay_codex_cli_version }}']
+  changed_when: true
+
+- name: Qualify the entire isolated official Codex distribution using the existing package guard
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/files/relay-codex-package-guard.py") }}',
+           '{{ relay_intent_stage_root }}/codex-package/package-home', '{{ relay_intent_stage_root }}/codex-package/package-bin/codex',
+           '{{ relay_codex_cli_version }}', normalize]
+  changed_when: true
+
+- name: Make only internal absolute Codex resource links relocatable
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/../relay_runner/files/relay-intent-package.py") }}',
+           relocate, codex, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}', '{{ relay_codex_cli_version }}', '-']
+    stdin: '{}'
+  changed_when: true
+
+- name: Probe and seal the actual staged Codex package without authentication
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -I, -c, '{{ lookup("file", role_path + "/../relay_runner/files/relay-intent-package.py") }}',
+           seal, codex, '{{ relay_intent_stage_root }}', '{{ relay_intent_stage_operation }}', '{{ relay_codex_cli_version }}', '-']
+    stdin: '{}'
+  register: relay_intent_codex_seal
+  changed_when: true
+
+- name: Expose the nonsecret Codex package stage identity
+  ansible.builtin.set_fact:
+    relay_intent_codex_stage: '{{ relay_intent_codex_seal.stdout | from_json }}'

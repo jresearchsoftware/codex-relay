@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import stat
 import subprocess
 import time
@@ -12,7 +13,9 @@ import uuid
 
 
 class ConsumerPublicationError(ValueError):
-    pass
+    def __init__(self, code, controller_diagnostic=None):
+        super().__init__(code)
+        self.controller_diagnostic = controller_diagnostic
 
 
 def require(condition, code):
@@ -82,20 +85,65 @@ def _atomic(path, raw, mode):
             temporary.unlink()
 
 
-def _execute(argv, env):
+def _execute(argv, env, *, timeout=60):
+    # Only fixed action names and the CLI's complete bounded error envelope may
+    # cross this boundary. Never publish command arguments or child output.
+    action = 'consumer-digest' if argv[1:2] == ['--input-type=module'] else 'controller'
+    if argv[2:3] in (['consumer-transition-check'], ['consumer-transition']):
+        action = argv[2]
+    diagnostic = {'action': action, 'failure': 'execution_failed'}
+    output = {'stdout': bytearray(), 'stderr': bytearray()}
     try:
-        result = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, timeout=60, check=False)
-        require(result.returncode == 0 and len(result.stdout) <= 4096, 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
-        value = json.loads(result.stdout)
-        require(isinstance(value, dict), 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
+        with subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE) as child:
+            try:
+                deadline = time.monotonic() + timeout
+                with selectors.DefaultSelector() as streams:
+                    streams.register(child.stdout, selectors.EVENT_READ, ('stdout', 4096))
+                    streams.register(child.stderr, selectors.EVENT_READ, ('stderr', 256))
+                    while streams.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(argv, timeout)
+                        for key, _ in streams.select(remaining):
+                            name, limit = key.data
+                            chunk = os.read(key.fd, 4096)
+                            if not chunk:
+                                streams.unregister(key.fileobj)
+                            else:
+                                # Retain one overflow byte to reject truncated envelopes;
+                                # continue draining both pipes without unbounded storage.
+                                output[name].extend(chunk[:max(0, limit + 1 - len(output[name]))])
+                child.wait(timeout=max(0, deadline - time.monotonic()))
+            except BaseException:
+                child.kill()
+                child.wait()
+                raise
+        if child.returncode != 0:
+            diagnostic.update(failure='nonzero_exit', exit_code=child.returncode)
+            match = re.fullmatch(rb'\{"code":"([A-Z][A-Z0-9_]{0,79})"\}\n?', output['stderr'])
+            if action in ('consumer-transition-check', 'consumer-transition') and len(output['stderr']) <= 256 and match is not None:
+                diagnostic['code'] = match[1].decode('ascii')
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+        diagnostic['failure'] = 'invalid_stdout'
+        if len(output['stdout']) > 4096:
+            diagnostic['failure'] = 'output_too_large'
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+        value = json.loads(output['stdout'])
+        if not isinstance(value, dict):
+            raise ValueError()
         return value
+    except ConsumerPublicationError:
+        raise
+    except subprocess.TimeoutExpired:
+        diagnostic['failure'] = 'timeout'
     except (OSError, subprocess.SubprocessError, ValueError):
-        raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED') from None
+        pass
+    raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from None
 
 
 def publish(source, config_root, desired, claim_root, repository, operation, revision, *,
-            owner_uid=0, boundary=Path('/'), execute=_execute):
+            writer_lock_lease=None, owner_uid=0, boundary=Path('/'), execute=_execute):
     """All path arguments originate in the trusted installer, never runner input.
 
     owner_uid/boundary/execute are fixture seams, unavailable on the command line.
@@ -120,18 +168,32 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
             'CONSUMER_PUBLICATION_SOURCE_MISMATCH')
     desired_bytes = _read(desired, options)
     lock_path = claim_root / 'publication-v2.lock'
-    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+                      | (0 if writer_lock_lease else os.O_CREAT), 0o600)
     try:
         _protected(lock_path, **options)
         require(_stamp(os.fstat(lock_fd)) == _stamp(lock_path.lstat()), 'CONSUMER_PUBLICATION_LOCK_CHANGED')
-        deadline = time.monotonic() + 180
-        while True:
+        lease = None
+        if writer_lock_lease:
+            # Execute only verified exact-source bytes, without an import cache
+            # write. The receipt alone never substitutes for its live flock.
+            module_path = source / 'deploy/writer_lock_lease.py'
+            module = {'__name__': 'relay_verified_writer_lock_lease', '__file__': str(module_path)}
+            exec(compile(_read(module_path, options), str(module_path), 'exec'), module)
             try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                require(time.monotonic() < deadline, 'CONSUMER_PUBLICATION_LOCK_TIMEOUT')
-                time.sleep(0.1)
+                lease = module['verify'](writer_lock_lease, lock_path, operation=operation,
+                    target=revision, owner_uid=owner_uid, boundary=boundary)
+            except (OSError, ValueError, KeyError, TypeError):
+                raise ConsumerPublicationError('CONSUMER_PUBLICATION_WRITER_LEASE_UNPROVEN') from None
+        else:
+            deadline = time.monotonic() + 180
+            while True:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    require(time.monotonic() < deadline, 'CONSUMER_PUBLICATION_LOCK_TIMEOUT')
+                    time.sleep(0.1)
         old_bytes = _read(consumer, options)
         backup = config_root / ('consumer-before-' + operation + '.json')
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
@@ -150,6 +212,7 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
         current_digest = digest(consumer)
         receipt_path = config_root / 'serial-pool-compat-v1.json'
         pending_transition = False
+        leased_recovery_pair = False
         if backup.exists():
             _read(backup, options)
             backup_digest = digest(backup)
@@ -162,6 +225,14 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
                 require(gate.get('consumerDigest') in (backup_digest, current_digest),
                         'CONSUMER_PUBLICATION_BACKUP_CHANGED')
                 pending_transition = gate['consumerDigest'] == backup_digest
+                # A same-operation retry may follow the durable config rename
+                # while this holder still owns the original consumer binding.
+                # Only the protected backup plus the applying gate authenticate
+                # that pair; an arbitrary current-digest change is not enough.
+                leased_recovery_pair = (lease is not None and current_digest == desired_digest
+                    and backup_digest == lease['consumerDigest'] and gate.get('phase') == 'applying')
+        require(lease is None or lease['consumerDigest'] == current_digest or leased_recovery_pair,
+                'CONSUMER_PUBLICATION_WRITER_LEASE_DIGEST_CHANGED')
         if desired_digest == current_digest and not pending_transition:
             # Code-only upgrades retain the original consumer binding, including
             # outstanding manual handoffs. They need no new config-change drain.
@@ -215,8 +286,9 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
                     and result.get('phase') in ('drained', 'applying')
                     and result.get('consumerDigest') == desired_digest
                     and digest(consumer) == desired_digest, 'CONSUMER_PUBLICATION_TRANSITION_UNPROVEN')
-        except ConsumerPublicationError:
-            raise ConsumerPublicationError('CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY') from None
+        except ConsumerPublicationError as error:
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY',
+                                           error.controller_diagnostic) from None
         return {'status': 'PUBLISHED', 'operationId': operation, 'target': revision, 'consumerDigest': result['consumerDigest']}
     finally:
         os.close(lock_fd)
@@ -226,12 +298,16 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ('source', 'config-root', 'desired', 'claim-root', 'repository', 'operation', 'revision'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--writer-lock-lease', default=os.environ.get('RELAY_WRITER_LOCK_LEASE'))
     args = vars(parser.parse_args())
     try:
         print(json.dumps(publish(**args)))
     except (ConsumerPublicationError, OSError, ValueError) as error:
         code = str(error) if isinstance(error, ConsumerPublicationError) else 'CONSUMER_PUBLICATION_FAILED'
-        print(json.dumps({'error_code': code}))
+        result = {'error_code': code}
+        if isinstance(error, ConsumerPublicationError) and error.controller_diagnostic is not None:
+            result['controller_diagnostic'] = error.controller_diagnostic
+        print(json.dumps(result))
         raise SystemExit(1) from None
 
 

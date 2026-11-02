@@ -661,13 +661,21 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 code = 'RELAY_INSTALL_' + suffix.upper().replace('-', '_')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_:-]{0,160}', code):
             code = type(error).__name__
+        old_restored = inner is not None and getattr(inner, '_intent_old_availability_restored', False)
+        prerequisites = inner is not None and getattr(inner, '_intent_product_prerequisites', False)
         failure = {'status': 'FAIL', 'target': identity['revision'], 'installed': selected['installed'],
-            'strategy': selected['strategy'], 'stage': stage, 'cause': code,
-            'hostMutation': 'unknown' if mutation else False,
-            'recovery': 'retained-state-requires-diagnosis' if mutation else 'not-started',
+            'strategy': selected['strategy'], 'stage': getattr(inner, '_intent_failure_stage', stage), 'cause': code,
+            'hostMutation': True if old_restored else 'unknown' if mutation or prerequisites else False,
+            'recovery': ('not-required-old-availability-verified' if old_restored else
+                         'retained-state-requires-diagnosis' if mutation else
+                         'not-started-product-prerequisites-only' if prerequisites else 'not-started'),
             'automaticRetrySafe': False, 'next': getattr(error, 'next_action',
                 'Inspect the reported prerequisite or retained operation evidence before retrying.')}
         if inner is not None and getattr(inner, '_intent_log_path', None):
             failure['log'] = inner._intent_log_path
+        if prerequisites:
+            failure['productPrerequisites'] = 'fresh-host-package-preparation-requested'
+        if old_restored:
+            failure['oldAvailability'] = 'verified-restored-original-open-gate'
         print('RELAY_INSTALL_FAILURE=' + json.dumps(failure, sort_keys=True), flush=True)
         raise RuntimeError('RELAY_INSTALL_FAILED;stage=' + stage + ';cause=' + code) from None

@@ -43,6 +43,7 @@ def primitive_fixture(root, already_installed):
     from ansible.template import Templar
     sys.path.insert(0, str(ROOT / 'deploy'))
     import ansible_transport
+    import install_preflight
     import intent_install
     import inventory as inventory_module
     spec = importlib.util.spec_from_file_location('post_bootstrap_primitive', ROOT / 'deploy/relay-deploy.py')
@@ -76,6 +77,27 @@ def primitive_fixture(root, already_installed):
     install = Path('/opt') / config['environment']['namespace']
     config_root = Path('/etc') / config['environment']['namespace']
     calls = []
+    preparation_calls, private_plays = [], []
+
+    class Preparation:
+        """Staging transport is qualified separately; this fixture owns identity."""
+        def __init__(self, _target, _key, _values, _identity, operation, **_options):
+            preparation_calls.append('construct')
+            self.stage = str(root / ('.stage-' + operation))
+            self.source = self.stage + '/release/reviewed-source'
+            self.lease_path = self.stage + '/writer-lock.json'
+            self.initial, self.holder, self.captured, self.cutover_started = None, None, False, False
+            self.retained_proof = None
+        def create(self): preparation_calls.append('create')
+        def desired(self): preparation_calls.append('desired')
+        def host(self, **_options): preparation_calls.append('host')
+        def verify_stage(self): preparation_calls.append('seal')
+        def final(self, *, fresh=False, **_options):
+            assert fresh and self.initial is None and not (install / 'current').exists()
+            preparation_calls.append('final')
+        def release_writer(self):
+            assert self.holder is None
+            preparation_calls.append('release')
 
     def publish(revision):
         release = install / 'releases' / revision
@@ -115,6 +137,14 @@ def primitive_fixture(root, already_installed):
         assert held_guard is guard and guard.poll() is None
         hosts = json.loads(Path(argv[argv.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
         values = hosts[config['target']['host']]
+        play = Path(argv[3]).name
+        if play in ['relay-intent-prerequisites.yml', 'relay-intent-stage.yml']:
+            assert values['relay_intent_expected_installed_revision'] == 'none'
+            assert not (install / 'current').exists()
+            private_plays.append(play)
+            log.write('changed=0 failed=0\n')
+            return 0
+        assert play in ['relay-intent-preflight.yml', 'site.yml']
         values['playbook_dir'] = str(ROOT / 'deploy/ansible')
         loader = DataLoader()
         loader.set_basedir(values['playbook_dir'])
@@ -123,10 +153,15 @@ def primitive_fixture(root, already_installed):
         command = template.template(task['ansible.builtin.command']['argv'])
         stdin = template.template(task['ansible.builtin.command']['stdin'])
         expected = values['relay_intent_expected_installed_revision']
-        calls.append(expected)
         checked = subprocess.run(command, input=stdin, capture_output=True, text=True, timeout=30)
         assert checked.returncode == 0, checked.stderr + '\nexpected=' + expected
         assert checked.stdout == 'RELAY_UPGRADE_SOURCE_VALIDATED=' + expected + '\n'
+        if play == 'relay-intent-preflight.yml':
+            assert expected == 'none' and not (install / 'current').exists()
+            private_plays.append(play)
+            log.write('changed=0 failed=0\n')
+            return 0
+        calls.append(expected)
         if '--check' not in argv:
             assert expected == 'none' and not (install / 'current').exists()
             publish(REVISION)
@@ -141,17 +176,23 @@ def primitive_fixture(root, already_installed):
     with patch.object(cli, 'source_identity', return_value={'revision': REVISION, 'tree': 'd' * 40}), \
          patch.object(cli, 'clean_git', return_value=CONSUMER), patch.object(cli, 'git', side_effect=archive), \
          patch.object(cli, 'run_backend', side_effect=backend), \
+         patch.object(cli.tempfile, 'gettempdir', return_value=str(root)), \
          patch.object(ansible_transport, 'qualify_target'), \
+         patch.object(install_preflight, 'PreparedInstall', Preparation), \
          patch.object(inventory_module, 'remote_inventory', side_effect=observed), \
          patch.object(intent_install, 'prepare_target', return_value=False):
         if already_installed:
             with pytest.raises(ValueError, match='intent-installation-changed-before-reservation'):
                 cli.run(args)
             assert calls == []
+            assert preparation_calls == [] and private_plays == []
             print(json.dumps({'initialGate': 'rejected', 'backendCalls': 0}))
         else:
             cli.run(args)
             assert args.intent_expected_installed_revision == 'none'
+            assert private_plays == ['relay-intent-prerequisites.yml', 'relay-intent-stage.yml',
+                                     'relay-intent-preflight.yml', 'relay-intent-stage.yml']
+            assert preparation_calls == ['construct', 'create', 'desired', 'host', 'seal', 'final', 'release']
             print(json.dumps({'initialExpected': calls[0], 'postCheckExpected': calls[1],
                               'originalArgument': args.intent_expected_installed_revision,
                               'backendCalls': len(calls)}))

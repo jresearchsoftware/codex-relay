@@ -533,6 +533,44 @@ revision and no active or unknown attempts. The public deployment coordinator
 owns deployment authority and same-operation verification; the helper stores
 only lifecycle control state and reuses the existing attempt records.
 
+Changing the consumer digest additionally checks retained manual history,
+which ordinary automatic-drain status does not enumerate. A published Writer
+refusal before authority resolution and handoff is complete without a manual
+submission. Completed manual results retain their original v4 binding or v3
+publication receipts, including the earlier owner-authorization and sealed
+direct-result formats. Recognition never backfills or edits historical records.
+An issued handoff without a proven terminal result remains unresolved, even if
+later authority withdraws it, another Step completes, or its Task closes. A
+missing handoff receipt is not proof that offline execution never started.
+Unresolved publication, malformed receipts and mismatched identities still
+prevent a digest transition. A code-only Apply with the same digest retains
+outstanding manual bindings and needs no new configuration-change barrier.
+
+The root helper also exposes the read-only
+`consumer-transition-preflight --desired-digest SHA256` observation. It works
+independently of the current lifecycle phase and returns the current/desired
+digests, operation/target, active and unknown runs, and `eligible`. Valid active
+automatic work may still drain; unknown work and unresolved manual rebinding
+make the proposed transition ineligible. This observation allocates no attempt,
+changes no gate and does not replace the strict final transition check.
+
+The Git installer authenticates the old consumer before importing that runtime.
+A drifted file may be overlaid with independently proven old bytes only in a
+private read-only mount view for preflight. The selected Git commit remains
+the sole desired configuration. After preparation/drain, the actual canonical
+consumer must be proven again; an available private old view alone cannot
+authorize reopening admission.
+
+During the short active install, a root holder can retain the existing Writer
+mutex. Its private receipt is checked against the actual kernel flock, process
+birth, descriptor/inode, operation and frozen target before the bounded admission
+prefix or publisher reuses it. It creates no native admission or replacement
+publication authority. Before any active effect, a failed final proof can
+restore the exact original open gate only while the complete old-availability
+proof remains valid. Attempt/history records are preserved. Post-mutation
+failures retain their original forward-recovery boundary; see the
+[installation preparation contract](../docs/git-managed-installation.md#preparation-before-cutover).
+
 During `applying`, the trusted backend records its original Reviewer,
 production-runner and general-runner activity/enablement intent through
 `snapshot --operation UUID` with bounded JSON on stdin. Additional runner
