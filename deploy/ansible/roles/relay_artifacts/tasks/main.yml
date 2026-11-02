@@ -143,9 +143,9 @@
   ansible.builtin.set_fact:
     relay_reviewer_cargo_version: '{{ relay_current_reviewer_manifest.reviewerBuildToolchain.cargoVersion }}'
   when:
+    - not (relay_artifact_consume_staged | default(false) | bool)
     - not ansible_check_mode | bool
     - relay_reviewer_reuse_verified | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Record the non-mutating artifact staging plan in check-mode
   ansible.builtin.debug:
@@ -170,17 +170,17 @@
     HOME: '{{ relay_intent_stage_root if relay_artifact_stage_only | default(false) | bool else ansible_env.HOME }}'
     PATH: '{{ relay_rust_toolchain_root }}/bin:{{ ansible_env.PATH }}'
   when:
+    - not (relay_artifact_consume_staged | default(false) | bool)
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Record the built Reviewer toolchain identity
   ansible.builtin.set_fact:
     relay_reviewer_cargo_version: '{{ relay_rust_toolchain_cargo_version.stdout }}'
   when:
+    - not (relay_artifact_consume_staged | default(false) | bool)
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Install the built Reviewer executable into the release contract
   ansible.builtin.copy:
@@ -191,9 +191,9 @@
     group: '{{ relay_reviewer_group }}'
     mode: '0750'
   when:
+    - not (relay_artifact_consume_staged | default(false) | bool)
     - not ansible_check_mode | bool
     - not relay_reviewer_reuse_verified | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Reuse the verified Reviewer executable without rebuilding it
   ansible.builtin.copy:
@@ -204,10 +204,10 @@
     group: '{{ relay_reviewer_group }}'
     mode: '0750'
   when:
+    - not (relay_artifact_consume_staged | default(false) | bool)
     - not ansible_check_mode | bool
     - relay_reviewer_reuse_verified | bool
     - relay_current_release.stat.lnk_source != relay_release_path
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Read the deployed Reviewer executable digest
   ansible.builtin.command:
@@ -218,17 +218,19 @@
   changed_when: false
   when:
     - not ansible_check_mode | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Require a verifiable Reviewer executable digest
   ansible.builtin.assert:
     that:
       - relay_reviewer_binary_digest.stdout.split() | length == 2
       - relay_reviewer_binary_digest.stdout.split()[0] is match('^[0-9a-f]{64}$')
+      - >-
+        not (relay_artifact_consume_staged | default(false) | bool) or
+        relay_reviewer_binary_digest.stdout.split()[0] ==
+        (relay_intent_consumed_artifacts.stdout | from_json).reviewer.binarySha256
     fail_msg: 'Reviewer build output is missing or does not have a SHA-256 identity'
   when:
     - not ansible_check_mode | bool
-    - not (relay_artifact_consume_staged | default(false) | bool)
 
 - name: Reconcile the protected deployment snapshot before its manifest
   ansible.builtin.include_tasks: installed-config.yml

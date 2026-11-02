@@ -427,6 +427,17 @@ preserve their respective host identity and root authorization checks.
 A selector resolves once and the exact installed identity
 is reported. Selecting a version does not grant deployment authority.
 
+Git-managed installation separates read-only compatibility, isolated real
+artifact preparation, locked final revalidation, controlled cutover and actual
+installed verification. Private stage/old-state receipts are disposable
+evidence under the existing host/pool/Writer locks, not another task or
+deployment authority. The root Writer holder is verified against its kernel
+lock before reuse. Only an unchanged, proven old installation can have its
+original open gate restored before cutover; later failures retain the original
+operation's qualified recovery boundary. The
+[installation contract](git-managed-installation.md#preparation-before-cutover)
+owns the applicable checks, fresh prerequisite preparation and remaining gates.
+
 Product source revision, installed product revision, desired private-config
 revision, consumer authority revision and latest accepted product revision are
 independent. Routing and recovery use

@@ -546,6 +546,31 @@ Unresolved publication, malformed receipts and mismatched identities still
 prevent a digest transition. A code-only Apply with the same digest retains
 outstanding manual bindings and needs no new configuration-change barrier.
 
+The root helper also exposes the read-only
+`consumer-transition-preflight --desired-digest SHA256` observation. It works
+independently of the current lifecycle phase and returns the current/desired
+digests, operation/target, active and unknown runs, and `eligible`. Valid active
+automatic work may still drain; unknown work and unresolved manual rebinding
+make the proposed transition ineligible. This observation allocates no attempt,
+changes no gate and does not replace the strict final transition check.
+
+The Git installer authenticates the old consumer before importing that runtime.
+A drifted file may be overlaid with independently proven old bytes only in a
+private read-only mount view for preflight. The selected Git commit remains
+the sole desired configuration. After preparation/drain, the actual canonical
+consumer must be proven again; an available private old view alone cannot
+authorize reopening admission.
+
+During the short active install, a root holder can retain the existing Writer
+mutex. Its private receipt is checked against the actual kernel flock, process
+birth, descriptor/inode, operation and frozen target before the bounded admission
+prefix or publisher reuses it. It creates no native admission or replacement
+publication authority. Before any active effect, a failed final proof can
+restore the exact original open gate only while the complete old-availability
+proof remains valid. Attempt/history records are preserved. Post-mutation
+failures retain their original forward-recovery boundary; see the
+[installation preparation contract](../docs/git-managed-installation.md#preparation-before-cutover).
+
 During `applying`, the trusted backend records its original Reviewer,
 production-runner and general-runner activity/enablement intent through
 `snapshot --operation UUID` with bounded JSON on stdin. Additional runner

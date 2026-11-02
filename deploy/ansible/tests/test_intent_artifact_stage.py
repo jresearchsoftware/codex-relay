@@ -384,6 +384,40 @@ class IntentArtifactStageTests(unittest.TestCase):
                          Path('/usr/bin/true').read_bytes())
         self.assert_old_available()
 
+    def test_actual_complete_artifact_role_consumes_without_facts_from_skipped_build_tasks(self):
+        if not shutil.which('ansible-playbook'):
+            self.skipTest('Ansible required for complete artifact role consumption')
+        self.prepare()
+        isolated_role = self.root / 'roles/relay_artifacts'
+        shutil.copytree(ROLE, isolated_role)
+        # The role's real tasks and templates run unchanged. Only the final
+        # service handler is a fixture no-op; no host unit is in this sandbox.
+        (isolated_role / 'handlers/main.yml').write_text(yaml.safe_dump([{
+            'name': 'Try-restart Reviewer after release transition',
+            'ansible.builtin.debug': {'msg': 'isolated artifact fixture notification'}}]))
+        variables = yaml.safe_load((ANSIBLE / 'group_vars/all.yml').read_text())
+        variables.update(relay_intent_stage_root=str(self.root), relay_intent_stage_operation=OP,
+            relay_intent_staged_release=str(self.root / 'release'), relay_release_root=str(self.parent),
+            relay_install_root=str(self.parent), relay_source_identity=self.identity,
+            relay_group='root', relay_reviewer_group='root', relay_runner_group='root',
+            relay_rust_toolchain_root=str(self.parent / 'toolchains/rust'),
+            relay_requested_revision=self.revision, relay_consumer_revision='d' * 40)
+        self.assertNotIn('relay_reviewer_reuse_verified', variables)
+        play = self.root / 'complete-consume.yml'
+        play.write_text(yaml.safe_dump([{'hosts': 'all', 'gather_facts': False, 'vars': variables,
+            'tasks': [{'name': 'Consume through the entire actual artifact role', 'ansible.builtin.include_role': {
+                'name': str(isolated_role)}}]}]))
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+            env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1'},
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        destination = self.parent / self.revision
+        manifest = json.loads((destination / 'artifact-manifest.json').read_text())
+        self.assertEqual(manifest['commit'], self.revision)
+        self.assertEqual((self.parent / 'current').resolve(), destination)
+        self.assertEqual((destination / 'bin/reviewer-mcp-http').read_bytes(), Path('/usr/bin/true').read_bytes())
+        self.assertEqual((self.old / 'available').read_text(), 'unchanged old installation')
+
     def test_reinstall_sibling_stage_survives_runtime_archival_and_actual_ansible_consume(self):
         if not shutil.which('ansible-playbook'):
             self.skipTest('Ansible required for actual reinstall sealed-consumption fixture')

@@ -161,10 +161,16 @@ not a release/adoption claim. WSL Node 22.20.0 separately passed the targeted
 controller/compatibility suites. The full candidate checks and exact-head CI
 are recorded with the ordinary result and native PR checks.
 
-This qualifies the affected real process/filesystem boundary. It does not claim
-a live installation upgrade, privileged workflow dispatch, restored PROD
-functionality or an end-to-end PROD cutover. Existing prepared TEST services and
-repositories were not mutated. No new Task 119 recovery subsystem was added.
+Those process/filesystem fixtures qualify their affected boundary; they do not
+themselves prove a live installation or workflow dispatch. Additional real TEST
+Apply, failure-injection and readback evidence is recorded in the ordinary
+Step 3 result on the canonical Task, bound to the exact tested product/config
+pair. A direct owner TEST invocation does not become a GitHub Actions run.
+TEST reconstruction after an injected or diagnosed failure is disposable
+sandbox administration, with original evidence preserved; it is not a claim
+that product automatic recovery performed that reconstruction. No restored PROD
+functionality, end-to-end PROD cutover or new Task 119 recovery subsystem is
+claimed.
 
 ## Remaining protected boundary
 
