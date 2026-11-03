@@ -295,8 +295,11 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
     root = Path(root)
     p = paths(config, binding, root)
     require(binding['installedRevision'] == binding['retainedTarget'], 'RETAINED_INSTALLATION_REQUIRED')
+    archive = p['receipt'].with_name(p['receipt'].name.removesuffix('.json') + '.original.json')
+    archive_present = archive.exists() or archive.is_symlink()
     if p['receipt'].exists() or p['receipt'].is_symlink():
         receipt = load_receipt(p['receipt'], root, owner_uid)
+        require(receipt['state'] != 'reserved' or not archive_present, 'INTERRUPTED_ARCHIVE')
         require(receipt['binding'] == binding and receipt['state'] == 'reserved'
                 and receipt['desiredConfigSha256'] == sha(json.dumps(config, sort_keys=True).encode()),
                 'RETAINED_RECEIPT_REQUIRES_DIAGNOSIS')
@@ -325,6 +328,7 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
             result = observe(receipt, gate, admission_probe, 'inspect')
             require(result['desiredDigest'] == receipt['desiredDigest'], 'DESIRED_DIGEST_CHANGED')
         return receipt
+    require(not archive_present, 'INTERRUPTED_ARCHIVE')
     require(not p['journal'].exists() and not p['journal'].is_symlink()
             and not p['journal'].with_name(p['journal'].name + '.next').exists(), 'REINSTALL_REQUIRES_DIAGNOSIS')
     current = p['install'] / 'current'

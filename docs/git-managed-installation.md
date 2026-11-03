@@ -197,6 +197,12 @@ consumer-before backup is not itself a blocker when these original/current
 contexts are authenticated. The corrected staged controller checks current
 Task dispositions and all live/publication effects under the real Writer mutex.
 It never replays Codex or invents native completion receipts.
+Closed Tasks use their current native disposition directly. An abandoned open
+route still needs the existing protected historical-disposition adapter's exact
+acknowledgement of active trusted Decisions, revalidated against current authority
+and local effects. An earlier in-memory diagnostic classification does not create
+that persistent acknowledgement. This is the existing Step 4 interpretation
+mechanism described below, not another owner Decision or terminal Outcome.
 
 One protected operation-specific continuation receipt preserves the original
 gate/backend bytes and binds the selected controller/final pair. The existing

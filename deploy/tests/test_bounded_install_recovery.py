@@ -336,6 +336,27 @@ def test_missing_original_activity_intent_is_refused_before_any_continuation_mut
     assert not incident.receipt.exists() and not incident.backup.exists()
 
 
+def test_original_git_snapshot_does_not_replace_the_authentic_live_consumer_context(incident):
+    # The original Apply may have published its intended snapshot before
+    # consumer publication failed. The real gate still authenticates OLD bytes.
+    original = copy.deepcopy(incident.original)
+    original['consumer']['defaultProfile']['effort'] = 'high'
+    snapshot = write(incident.release / 'deployment-config.json', original)
+    manifest_path = incident.release / 'artifact-manifest.json'
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest['deploymentConfigSha256'] = hashlib.sha256(snapshot).hexdigest()
+    manifest['gitConfigReceipt']['config_sha256'] = hashlib.sha256(snapshot).hexdigest()
+    write(manifest_path, manifest)
+    before, history = incident.snapshot(), incident.history()
+    proof = incident.helper('inspect')
+    assert proof['original']['originalConsumer']['defaultProfile']['effort'] == 'high'
+    assert proof['original']['consumer']['defaultProfile']['effort'] == 'xhigh'
+    reserved = incident.helper('begin', proof)
+    assert reserved['state'] == 'reserved'
+    assert incident.snapshot() == before and incident.history() == history
+    assert not incident.backup.exists()
+
+
 @pytest.mark.parametrize('effect', ['journal', 'publication', 'submission'])
 def test_real_preflight_rejects_conflicting_effects_even_with_native_closed_tasks(incident, effect):
     record_path = incident.claims / 'publication-v2/401.json'
@@ -506,6 +527,59 @@ def test_interrupted_backend_clear_keeps_original_journal_and_verified_recovery_
     with pytest.raises(ValueError, match='FINAL_RECEIPT_UNPROVEN'):
         incident.helper('finalize', reserved)
     assert json.loads(incident.gate.read_bytes())['phase'] == 'applying'
+
+
+def test_interrupted_backend_archive_stops_inspection_before_any_continuation_effect(incident, monkeypatch):
+    import bounded_recovery
+    reserved = incident.helper('begin', incident.helper('inspect'))
+    backend = incident.backend.read_bytes()
+    incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
+    incident.native('phase', options={'operationId': OPERATION, 'phase': 'applying'})
+    incident.publish()
+    incident.final_artifacts()
+    original_atomic = bounded_recovery.atomic
+
+    def interrupt(path, value, *arguments, **options):
+        if value.get('state') == 'backend-complete':
+            raise OSError('synthetic interruption after original archive fsync')
+        return original_atomic(path, value, *arguments, **options)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bounded_recovery, 'atomic', interrupt)
+        with pytest.raises(OSError, match='synthetic interruption after original archive fsync'):
+            bounded_recovery.backend_finalize(incident.backend, incident.revision, OPERATION, root=incident.root)
+    archive = incident.receipt.with_name(incident.receipt.name.removesuffix('.json') + '.original.json')
+    assert archive.read_bytes() == backend and incident.backend.read_bytes() == backend
+    assert json.loads(incident.receipt.read_bytes()) == reserved
+    before, history = incident.snapshot(), incident.history()
+    archive_before = archive.read_bytes(), archive.stat().st_ino
+    receipt_before = incident.receipt.read_bytes(), incident.receipt.stat().st_ino
+    with pytest.raises(ValueError, match='^BOUNDED_RECOVERY_INTERRUPTED_ARCHIVE$'):
+        bounded_recovery.inspect(incident.config, incident.binding, root=incident.root,
+            admission_probe=lambda *_: pytest.fail('interrupted archive must stop before native effects'))
+    assert incident.snapshot() == before and incident.history() == history
+    assert (archive.read_bytes(), archive.stat().st_ino) == archive_before
+    assert (incident.receipt.read_bytes(), incident.receipt.stat().st_ino) == receipt_before
+
+
+@pytest.mark.parametrize('shape', ['file', 'dangling-symlink'])
+def test_orphan_original_archive_stops_initial_inspection_without_mutation(incident, shape):
+    import bounded_recovery
+    archive = incident.receipt.with_name(incident.receipt.name.removesuffix('.json') + '.original.json')
+    if shape == 'file':
+        write(archive, incident.backend.read_bytes())
+    else:
+        archive.symlink_to('nonexistent-original-evidence.json')
+    before, history, info = incident.snapshot(), incident.history(), archive.lstat()
+    with pytest.raises(ValueError, match='^BOUNDED_RECOVERY_INTERRUPTED_ARCHIVE$'):
+        bounded_recovery.inspect(incident.config, incident.binding, root=incident.root,
+            admission_probe=lambda *_: pytest.fail('orphan archive must stop before native effects'))
+    assert not incident.receipt.exists() and incident.snapshot() == before and incident.history() == history
+    assert archive.lstat().st_ino == info.st_ino and archive.lstat().st_mode == info.st_mode
+    if shape == 'dangling-symlink':
+        assert os.readlink(archive) == 'nonexistent-original-evidence.json'
+    else:
+        assert archive.read_bytes() == incident.backend.read_bytes()
 
 
 def test_reserved_continuation_cannot_be_rebound_to_another_git_pair_or_operation(incident):
