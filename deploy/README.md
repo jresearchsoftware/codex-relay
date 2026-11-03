@@ -1138,6 +1138,15 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+For a retained Git Apply whose original target is already installed, the
+[bounded controller recovery](../docs/git-managed-installation.md#bounded-recovery-with-a-separately-accepted-controller)
+interface independently binds a corrected accepted controller, the immutable
+original operation target and the final Git product/config pair. It preserves
+the same UUID and original backend evidence, uses the corrected staged reader
+for historical/live-effect checks, and verifies installation and services before
+admission resumes. It is a qualified owner operation, not an ordinary blind retry
+or a variant of the decommissioned-reinstall disposition above.
+
 The ordinary Git-pair composition is described in the
 [installation guide](../docs/git-managed-installation.md). The retained
 installed-snapshot/checkout lifecycle below remains the current public PROD

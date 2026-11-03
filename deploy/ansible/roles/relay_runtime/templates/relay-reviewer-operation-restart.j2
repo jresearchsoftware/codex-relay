@@ -53,18 +53,36 @@ runner_should_activate="$runner_was_active"
 if [[ "$recover_active" == true ]]; then
   recovery_activity="$("$admission_helper" status --operation "$recovery_operation" |
     /usr/bin/python3 -c '
-import json, sys
+import json, subprocess, sys
 gate = json.load(sys.stdin)
 with open(sys.argv[2], encoding="utf-8") as stream:
     record = json.load(stream)
 previous = gate.get("previousActive")
+target_matches = gate.get("target") == record.get("target_head")
+if not target_matches:
+    # The immutable backend record retains its original target. Only the
+    # protected operation-specific receipt may bind a newer installed target.
+    result = subprocess.run(
+        ["/usr/bin/python3", "-I", sys.argv[3], "backend-validate-applying", sys.argv[2],
+         str(gate.get("target", "")), sys.argv[1]],
+        capture_output=True, text=True, timeout=60,
+        env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
+             "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        raise SystemExit("REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_UNPROVEN")
+    proof = json.loads(result.stdout)
+    target_matches = (proof.get("operationId") == sys.argv[1]
+                      and proof.get("originalTarget") == record.get("target_head")
+                      and proof.get("desiredTarget") == gate.get("target"))
 if (gate.get("operationId") != sys.argv[1] or gate.get("phase") != "applying"
-        or gate.get("target") != record.get("target_head")
+        or not target_matches
         or not isinstance(previous, dict) or previous.get("reviewer", {}).get("active") is not True
         or type(previous.get("production", {}).get("active")) is not bool):
     raise SystemExit("REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_UNPROVEN")
 print("true" if previous["production"]["active"] else "false")
-' "$recovery_operation" "$operation_record")"
+' "$recovery_operation" "$operation_record" \
+    '{{ relay_install_root }}/current/reviewed-source/deploy/bounded_recovery.py')"
   runner_should_activate="$recovery_activity"
   [[ "$runner_was_active" == false || "$runner_should_activate" == true ]] || {
     echo 'REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_CHANGED' >&2

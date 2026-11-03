@@ -112,6 +112,59 @@
     - relay_deployment_profile == 'production'
     - relay_production_operation_record_stat.stat.exists | default(false)
 
+- name: Clear any continuation proof from an earlier inspection
+  ansible.builtin.set_fact:
+    relay_production_operation_continuation: {}
+  when: relay_deployment_profile == 'production'
+
+- name: Validate the protected same-operation continuation receipt
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - |-
+        import json
+        import sys
+
+        context = {'__name__': 'relay_bounded_recovery'}
+        exec({{ lookup('file', '../../bounded_recovery.py') | to_json }}, context)
+        print(json.dumps(context['backend_validate'](*sys.argv[1:]), sort_keys=True))
+      - '{{ relay_production_operation_record_path }}'
+      - '{{ relay_production_operation_target_head }}'
+      - '{{ relay_bounded_recovery_binding.operationId }}'
+  register: relay_production_operation_continuation_check
+  changed_when: false
+  check_mode: false
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_bounded_recovery_binding | default({}) | length > 0
+
+- name: Bind the validated continuation to this exact backend request
+  ansible.builtin.set_fact:
+    relay_production_operation_continuation: '{{ relay_production_operation_continuation_check.stdout | from_json }}'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_bounded_recovery_binding | default({}) | length > 0
+
+- name: Require the continuation proof to match its immutable original and selected target
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_continuation is mapping
+      - (relay_production_operation_continuation.keys() | list | sort) == ['backendSha256', 'desiredTarget', 'operationId', 'originalTarget']
+      - relay_production_operation_continuation.operationId == relay_bounded_recovery_binding.operationId
+      - relay_production_operation_continuation.operationId == relay_admission_operation_id
+      - relay_production_operation_continuation.originalTarget == relay_bounded_recovery_binding.retainedTarget
+      - relay_production_operation_continuation.originalTarget == relay_production_operation_record.target_head
+      - relay_production_operation_continuation.desiredTarget == relay_bounded_recovery_binding.desiredRevision
+      - relay_production_operation_continuation.desiredTarget == relay_production_operation_target_head
+      - relay_production_operation_record.phase == 'apply'
+      - relay_production_operation_continuation.backendSha256 is match('^[0-9a-f]{64}$')
+    fail_msg: 'PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_bounded_recovery_binding | default({}) | length > 0
+
 - name: Record the inspected production operation disposition
   ansible.builtin.set_fact:
     relay_production_operation_recovery_required: '{{ relay_production_operation_record_stat.stat.exists | default(false) | bool }}'
@@ -124,7 +177,16 @@
       {{
         relay_production_operation_record_stat.stat.exists | default(false) | bool and
         relay_production_operation_record.phase == relay_production_operation_phase and
-        relay_production_operation_record.target_head == relay_production_operation_target_head
+        (
+          relay_production_operation_record.target_head == relay_production_operation_target_head or
+          (
+            relay_production_operation_phase == 'apply' and
+            relay_bounded_recovery_binding | default({}) | length > 0 and
+            relay_production_operation_continuation | default({}) | length > 0 and
+            relay_production_operation_continuation.originalTarget == relay_production_operation_record.target_head and
+            relay_production_operation_continuation.desiredTarget == relay_production_operation_target_head
+          )
+        )
       }}
     relay_production_operation_active_phase: >-
       {{ relay_production_operation_record.phase if relay_production_operation_record_stat.stat.exists | default(false) else relay_production_operation_phase }}

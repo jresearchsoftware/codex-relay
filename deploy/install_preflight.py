@@ -396,7 +396,7 @@ class PreparedInstall:
         if result.returncode:
             # Only a bounded code crosses the private transport, never its raw
             # input, command output, config, credential or filesystem details.
-            codes = re.findall(r'\b(?:INSTALL_PREFLIGHT|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK)_[A-Z_]{1,100}\b', result.stderr)
+            codes = re.findall(r'\b(?:INSTALL_PREFLIGHT|BOUNDED_RECOVERY|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK)_[A-Z_]{1,100}\b', result.stderr)
             error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_PREREQUISITE_UNPROVEN')
             error.next_action = ('Correct the named prerequisite using the existing installed version or its owner-supported '
                                  'credential/package procedure; retain the old entrypoint and retry the same frozen Git pair.')
@@ -655,6 +655,13 @@ try {
         return ['/usr/bin/python3', '-I', self.source + '/deploy/writer_lock_lease.py',
                 '--exec-admission', self.lease_path, self.source, self.values['relay_consumer_config_path'],
                 self.values['relay_github_repository']]
+
+    def bounded_recovery(self, config, binding, proof, *, action='begin'):
+        """Run the frozen controller's fixed recovery adapter under its Writer lease."""
+        require(self.holder is not None and self.holder.poll() is None, 'WRITER_LOCK_MISSING')
+        return self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/bounded_recovery.py', action],
+            payload={'config': config, 'binding': binding, 'proof': proof, 'source': self.source,
+                     'lease': self.lease_path, 'desiredDigest': self.desired_digest})
 
     def after_retirement(self):
         """Recheck the bounded lock gap after the owning replacement helper.

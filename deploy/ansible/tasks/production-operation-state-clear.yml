@@ -19,6 +19,23 @@
       exit 44
     }
 
+    {% if relay_bounded_recovery_binding | default({}) | length > 0 %}
+    # This commit point follows complete runtime/identity validation. The
+    # helper proves the final Git pair and durably archives original bytes
+    # before removing the active record; no earlier reset is permitted.
+    /usr/bin/python3 -I - "$record" '{{ relay_production_operation_target_head }}' \
+      '{{ relay_bounded_recovery_binding.operationId }}' "$expected_phase" "$expected_head" <<'PY'
+    import sys
+
+    context = {'__name__': 'relay_bounded_recovery'}
+    exec({{ lookup('file', '../../bounded_recovery.py') | to_json }}, context)
+    proof = context['backend_validate'](*sys.argv[1:4])
+    if (sys.argv[4] != 'apply' or proof['originalTarget'] != sys.argv[5]
+            or proof['operationId'] != '{{ relay_admission_operation_id }}'):
+        raise SystemExit('PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID')
+    context['backend_finalize'](*sys.argv[1:4])
+    PY
+    {% else %}
     /usr/bin/python3 - "$record" "$schema_version" "$expected_phase" "$expected_head" <<'PY'
     import json
     import os
@@ -49,6 +66,7 @@
         raise SystemExit('PRODUCTION_OPERATION_STATE_CLEAR_MISMATCH')
     os.unlink(path)
     PY
+    {% endif %}
   when: not ansible_check_mode | bool
   args:
     executable: /bin/bash
