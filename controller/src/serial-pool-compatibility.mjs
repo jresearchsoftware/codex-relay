@@ -526,7 +526,7 @@ async function sealedJournalEnvelope(context, binding) {
 
 // The public composite retains history for lineage/deduplication but cannot
 // mutate it. Original Writer operations use their original store separately.
-export function createCompatibilityStore({ compatibility, currentStore, originalStore }) {
+export function createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition = null }) {
   require(settings.has(compatibility), 'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
   const sealed = compatibility.receipt.original.runs;
   const historical = (runId, repository) => repository === compatibility.receipt.repository
@@ -544,7 +544,11 @@ export function createCompatibilityStore({ compatibility, currentStore, original
         e.executionSlot);
       const journal = createAttemptStore(physical(compatibility.root, selected.paths.attemptRoot),
         { repository: e.repository });
-      require(await completedAdmissionRecord(record, journal), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      const { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } = await import('./manual-attempt-disposition.mjs');
+      require(!await manualAttemptHasConflictingActivity(record, { journal })
+        && (await completedAdmissionRecord(record, journal)
+          || await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition })),
+      'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
     }
     return record;
   }

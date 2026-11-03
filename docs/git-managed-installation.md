@@ -90,8 +90,9 @@ compatibility phase and real isolated candidate preparation before admission
 quiesces. The installer validates the frozen source/configuration pair, old
 resource and service bindings, Unix identities and destinations, retained
 attempt history, configured credential material, App access and applicable
-runner policy. A changed desired consumer requires terminal proof for every
-manual attempt whose consumer binding would change. A code-only change keeps
+runner policy. A changed desired consumer requires terminal proof or a verified
+historical Task disposition for every manual attempt whose consumer binding
+would change. A code-only change keeps
 its original consumer binding and does not invent that additional barrier.
 
 On a proven fresh target with no current installation, the owning base-package
@@ -183,15 +184,48 @@ remain readable only with their exact terminal proof. New Writer mutations
 must use the current digest. Known legacy runtime-directory hardening runs
 before admission; it preserves the proven lock inode and rejects other shapes.
 
-The digest-transition inventory includes manual history. It distinguishes
-published pre-handoff admission refusals and completed historical Writer
-results from handoffs with no terminal result. Withdrawal, a closed Task or a
-newer Step does not cancel an unknown offline execution. Such unresolved work
-still blocks a configuration change; preserve its original identity and
-publication/recovery path rather than deleting records or inventing Outcomes.
-Ordinary automatic-drain status alone does not prove this manual inventory is
-complete. Code-only Apply with an unchanged consumer digest preserves the old
-manual bindings without requiring a new digest transition.
+The digest-transition inventory includes manual history. Published pre-handoff
+refusals and completed historical Writer results keep their original receipt
+classification. A Task currently closed as `completed` or `not_planned` by its
+verified configured owner can make an otherwise abandoned manual handoff
+nonblocking. This records lifecycle eligibility, without asserting that the
+original execution completed or never started. No Outcome, cancellation,
+admission or journal is created or rewritten.
+
+For an open Task, a protected owner adapter can acknowledge that particular
+attempt's withdrawal or route switch from exact existing trusted Task Decisions.
+The adapter interprets the explicit owner direction; the runtime does not infer
+permission from prose keywords, a newer Step, changed profile or a missing
+receipt. `createInstalledTaskDisposition({allowAcknowledgement:true})` supplies
+the root-only expert adapter. Under the existing Writer kernel lock, the adapter
+must verify the original record and absence of any matching runner journal,
+then call `acknowledge(record, {reason, sources})` with exact active native
+Decision references and recheck the journal. This optional internal operation
+uses already authorized direction; it requires no new owner prompt, Task,
+Decision or manual Start/Cancel ceremony. Workers and ordinary admission inputs
+cannot enable it.
+
+The small root-owned `historical-manual-dispositions-v1` cache beneath the
+existing claim root binds repository, Task, run/attempt, original consumer and
+record/envelope hashes to the exact native Task/Decision evidence. It is an
+auditable observation, never desired configuration or execution authority.
+Every preflight, final transition and later old-digest inventory rereads GitHub
+through a repository-scoped `issues:read` Writer App token. Current Issue bytes,
+native owner identity, complete closure/reopen events, trusted Task authority
+and referenced PR authority must match. Reopening, changed authority, revoked
+sources or changed local effects invalidates reuse. An unavailable/incomplete
+native read fails with a specific `HISTORICAL_TASK_*` diagnostic; there is no
+offline freshness exemption. Closed Tasks use durable native state directly.
+
+A real worker journal, active/uncertain execution, pending publication or
+recovery and conflicting ownership still block, even when the Task closes.
+Original identities and supported publication/recovery paths remain intact.
+`status` and preflight report `manualAttempts.historical` separately from
+`manualAttempts.actionable`; missing native receipts remain visible without
+reappearing as actionable blockers on unchanged-source upgrades. Ordinary
+automatic counts retain their meaning. Code-only Apply with an unchanged
+consumer digest preserves the old manual bindings without requiring a new
+digest transition.
 
 Fresh installation composes supported protected credential/TLS preparation,
 installation, activation, runner readiness and final verification when their

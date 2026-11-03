@@ -61,14 +61,27 @@ export async function http(path, { method = "GET", token, jwt, body } = {}) {
   return value;
 }
 
-export async function token() {
+export async function taskReadToken(repository) {
+  // The root lifecycle adapter selects this identity from the protected current
+  // configuration or authenticated retained compatibility configuration. Never
+  // accept a repository selector from worker or admission command arguments.
+  if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+    || repository.split('/').some(part => part === '.' || part === '..')) throw blocked('WRITER_IDENTITY_INVALID');
+  return installationToken(repository, { metadata: 'read', issues: 'read' });
+}
+
+async function installationToken(repository, permissions) {
   const payload = await http(`/app/installations/${INSTALLATION_ID}/access_tokens`, {
     method: "POST",
     jwt: await appJwt(),
-    body: { repositories: [CONSUMER.repository.split('/')[1]], permissions: WRITER_TOKEN_PERMISSIONS }
+    body: { repositories: [repository.split('/')[1]], permissions }
   });
   if (typeof payload.token !== "string" || !payload.token || typeof payload.expires_at !== "string") throw blocked("WRITER_TOKEN_INVALID", "GitHub did not return a bounded installation token");
   const expiry = Date.parse(payload.expires_at);
   if (!Number.isFinite(expiry) || expiry <= Date.now() || expiry > Date.now() + 70 * 60 * 1000) throw blocked("WRITER_TOKEN_INVALID", "Writer installation token lifetime is outside the bounded contract");
   return payload.token;
+}
+
+export async function token() {
+  return installationToken(CONSUMER.repository, WRITER_TOKEN_PERMISSIONS);
 }

@@ -256,6 +256,11 @@ binding. Late original Outcomes preserve their admission and claims without
 changing a newer Step's Draft/Ready state or granting current-head acceptance.
 Historical unknown manual execution stays unknown: owner withdrawal revokes future
 permission and does not create a cancellation or negative-execution receipt.
+Lifecycle eligibility separately honors verified native Task closure or an exact
+protected interpretation of trusted withdrawal/route-switch Decisions. Its
+bounded cache revalidates live authority and original local effects at each use;
+it never supplies an execution Outcome. See the
+[historical disposition contract](git-managed-installation.md#strategy-compatibility-and-recovery).
 
 | Owner | Record | Purpose |
 | --- | --- | --- |

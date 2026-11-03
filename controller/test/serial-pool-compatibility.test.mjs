@@ -259,6 +259,32 @@ test('complete inventories reject extra, duplicate and altered historical/curren
   await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_ENVELOPE_CHANGED' });
 });
 
+test('retired old-digest pool handoffs remain read-only and are revalidated without rewriting history', { skip: !linux }, async t => {
+  const f = await fixture(t); const ctx = await f.load();
+  const record = { envelope: { ...f.current.envelope, route: 'manual', consumerDigest: 'f'.repeat(64) }, outcome: null };
+  await f.currentStore.put(200, record);
+  const pathname = join(ctx.current.storeRoot, '200.json'); const before = await readFile(pathname);
+  let retired = true;
+  const manualAttemptDisposition = async value => retired ? { disposition: 'historical', reason: 'task-completed',
+    repository: value.envelope.repository, issueNumber: value.envelope.issueNumber,
+    runId: value.envelope.runId, attemptId: value.envelope.attemptId, consumerDigest: value.envelope.consumerDigest,
+    envelopeDigest: digest(value.envelope), recordDigest: digest(value), evidenceDigest: 'd'.repeat(64) } : null;
+  const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore,
+    currentStore: f.currentStore, manualAttemptDisposition });
+  assert.deepEqual(await store.get(200), record);
+  assert.ok((await store.all()).some(row => row.envelope.runId === 200));
+  assert.equal((await store.scan()).find(row => row.runId === 200).error, null);
+  for (const action of [() => store.put(200, record), () => store.reserve(200, record),
+    () => store.withLock(200, async () => assert.fail('historical lock must never be acquired'))]) {
+    await assert.rejects(action(), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+  }
+  assert.deepEqual(await readFile(pathname), before);
+  retired = false;
+  await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+  assert.equal((await store.scan()).find(row => row.runId === 200).error, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+  assert.deepEqual(await readFile(pathname), before);
+});
+
 test('sealed ownership remains strict on primary while distinct managed resource ignores unrelated history', { skip: !linux }, async t => {
   const f = await fixture(t); const ctx = await f.load();
   const changed = structuredClone(f.records[0]); changed.envelope.issueNumber = 77;

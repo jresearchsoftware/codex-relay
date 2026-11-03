@@ -6,6 +6,7 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
 const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', 'recovery-required']);
@@ -168,12 +169,13 @@ function validServices(value) {
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
   stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null,
-  supplementalManualInventory = null }) {
+  supplementalManualInventory = null, manualAttemptDisposition = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
     || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
     || (supplementalVerify !== null && typeof supplementalVerify !== 'function')
-    || (supplementalManualInventory !== null && typeof supplementalManualInventory !== 'function')) fail('ADMISSION_CONFIG_INVALID');
+    || (supplementalManualInventory !== null && typeof supplementalManualInventory !== 'function')
+    || (manualAttemptDisposition !== null && typeof manualAttemptDisposition !== 'function')) fail('ADMISSION_CONFIG_INVALID');
   const pathname = join(root, stateName);
   async function protect() {
     if (!protectedRoot) return;
@@ -291,11 +293,21 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
   async function historicalComplete(record) {
     // A completed lifecycle flag alone cannot reinterpret a different config's
     // execution. Compare the original immutable envelope and terminal journal.
-    return completedAdmissionRecord(record, journal);
+    return !await manualAttemptHasConflictingActivity(record, { journal })
+      && completedAdmissionRecord(record, journal);
   }
   async function currentInventory(task = null, slot = null, resourceOnly = false, includeManual = false,
-    terminalAutomatic = true) {
+    terminalAutomatic = true, manualDiagnostics = false) {
     const active = []; const unknown = [];
+    const manualAttempts = { historical: [], actionable: [] };
+    async function manualDisposition(record) {
+      const e = record.envelope;
+      const observation = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition });
+      if (observation) manualAttempts.historical.push({ runId: e.runId, issueNumber: e.issueNumber,
+        reason: observation.reason });
+      else manualAttempts.actionable.push(e.runId);
+      return observation;
+    }
     const rows = store.scan ? await store.scan()
       : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
     for (const row of rows) {
@@ -312,10 +324,15 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const e = validRecord(record);
       if (e.consumerDigest !== consumerDigest) {
         if (await historicalComplete(record)) continue;
+        if (e.route === 'manual' && await manualDisposition(record)) continue;
         fail('ADMISSION_ATTEMPT_INVALID');
       }
-      if (includeManual && e.route === 'manual') {
-        if (!manualAdmissionComplete(record)) unknown.push(e.runId);
+      if (e.route === 'manual') {
+        if (await manualAttemptHasConflictingActivity(record, { journal })) {
+          manualAttempts.actionable.push(e.runId);
+          unknown.push(e.runId);
+        } else if ((includeManual || manualDiagnostics) && !manualAdmissionComplete(record)
+          && !await manualDisposition(record) && includeManual) unknown.push(e.runId);
         continue;
       }
       if (includeManual && terminalAutomatic && e.route === 'auto' && !await historicalComplete(record)) {
@@ -374,22 +391,43 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         unknown.push(e.runId);
       }
     }
-    return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
+    return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b),
+      ...(manualAttemptDisposition && (includeManual || manualDiagnostics || manualAttempts.historical.length)
+        ? { manualAttempts } : {}) };
   }
   async function inventory(task = null, slot = null, resourceOnly = false, includeManual = false,
-    terminalAutomatic = true) {
-    const current = await currentInventory(task, slot, resourceOnly, includeManual, terminalAutomatic);
-    if (includeManual && supplementalManualInventory) {
+    terminalAutomatic = true, manualDiagnostics = false) {
+    const current = await currentInventory(task, slot, resourceOnly, includeManual, terminalAutomatic, manualDiagnostics);
+    if ((includeManual || manualDiagnostics) && supplementalManualInventory) {
       const manual = await supplementalManualInventory();
-      if (!Array.isArray(manual) || !manual.every(positive)) fail('ADMISSION_ATTEMPT_INVALID');
-      current.unknown.push(...manual);
+      const unresolved = Array.isArray(manual) ? manual : manual?.unknown;
+      if (!Array.isArray(unresolved) || !unresolved.every(positive)) fail('ADMISSION_ATTEMPT_INVALID');
+      if (includeManual) current.unknown.push(...unresolved);
+      if (!Array.isArray(manual)) {
+        const diagnostics = manual.manualAttempts;
+        if (!diagnostics || !Array.isArray(diagnostics.historical) || !Array.isArray(diagnostics.actionable)
+          || !diagnostics.actionable.every(positive) || !diagnostics.historical.every(row => row
+            && positive(row.runId) && positive(row.issueNumber)
+            && ['task-completed', 'task-not-planned', 'owner-withdrawal', 'route-switch'].includes(row.reason))) fail('ADMISSION_ATTEMPT_INVALID');
+        current.manualAttempts ??= { historical: [], actionable: [] };
+        current.manualAttempts.historical.push(...diagnostics.historical);
+        current.manualAttempts.actionable.push(...diagnostics.actionable);
+      }
     }
-    if (!supplementalInventory) return current;
+    if (current.manualAttempts) {
+      const diagnostics = current.manualAttempts;
+      diagnostics.historical = [...new Map(diagnostics.historical.map(row =>
+        [`${row.runId}:${row.issueNumber}:${row.reason}`, row])).values()]
+        .sort((a, b) => a.runId - b.runId || a.issueNumber - b.issueNumber || a.reason.localeCompare(b.reason));
+      diagnostics.actionable = [...new Set(diagnostics.actionable)].sort((a, b) => a - b);
+    }
+    if (!supplementalInventory) return { ...current,
+      unknown: [...new Set(current.unknown)].sort((a, b) => a - b) };
     const supplemental = await supplementalInventory({ task, slot, resourceOnly });
     if (!supplemental || !['active', 'unknown'].every(key => Array.isArray(supplemental[key])
       && supplemental[key].every(positive))) fail('ADMISSION_ATTEMPT_INVALID');
-    return Object.fromEntries(['active', 'unknown'].map(key =>
-      [key, [...new Set([...current[key], ...supplemental[key]])].sort((a, b) => a - b)]));
+    return { ...current, ...Object.fromEntries(['active', 'unknown'].map(key =>
+      [key, [...new Set([...current[key], ...supplemental[key]])].sort((a, b) => a - b)])) };
   }
   return {
     async initialize() {
@@ -423,7 +461,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     },
     async status({ operationId } = {}) {
       const state = await read(); if (operationId !== undefined) bound(state, operationId);
-      return { ...state, ...await inventory() };
+      return { ...state, ...await inventory(null, null, false, false, true, Boolean(manualAttemptDisposition)) };
     },
     async preflightConsumerTransition({ desiredDigest }) {
       if (!configDigest(desiredDigest)) fail('ADMISSION_CONFIG_INVALID');
@@ -438,7 +476,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const unknown = [...new Set(pending.unknown)].sort((a, b) => a - b);
       return { currentDigest: state.consumerDigest, desiredDigest, consumerChange,
         phase: state.phase, operationId: state.operationId, target: state.target,
-        active, unknown, eligible: unknown.length === 0 };
+        active, unknown, eligible: unknown.length === 0,
+        ...(pending.manualAttempts ? { manualAttempts: pending.manualAttempts } : {}) };
     },
     async drained({ operationId }) {
       const state = bound(await read(), operationId);

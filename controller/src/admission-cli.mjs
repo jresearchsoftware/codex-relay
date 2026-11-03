@@ -9,6 +9,8 @@ import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
 import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
+import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
+import { createInstalledTaskDisposition } from './installed-task-disposition.mjs';
 import { fail } from './execution-contract.mjs';
 
 const exec = promisify(execFile);
@@ -55,17 +57,24 @@ export function installedAdmissionControl() {
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER,
       ...(name === 'transitionConsumer' ? { consumerTransition: args[0] } : {}) });
+    const disposition = createInstalledTaskDisposition({
+      historicalConsumer: compatibility?.originalConsumer ?? null });
+    const manualAttemptDisposition = disposition.resolve;
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore) });
+        store: originalStore, journal: createSlotJournal(originalStore), manualAttemptDisposition });
       return admission[name](...args);
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
-    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
+    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition });
+    const currentJournal = createSlotJournal(currentStore);
+    const originalJournalRoot = compatibility.root === '/' ? compatibility.originalConsumer.paths.attemptRoot
+      : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
+    const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, manualAttemptDisposition,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
@@ -75,9 +84,23 @@ export function installedAdmissionControl() {
         return task !== null && CONSUMER.repository !== compatibility.receipt.repository
           ? { active: [], unknown: [] } : inventory;
       },
-      supplementalManualInventory: async () => (await composite.all())
-        .filter(record => record.envelope.route === 'manual' && !manualAdmissionComplete(record))
-        .map(record => record.envelope.runId) });
+      supplementalManualInventory: async () => {
+        const unknown = [], historical = [];
+        for (const record of await composite.all()) {
+          if (record.envelope.route !== 'manual') continue;
+          const e = record.envelope;
+          const original = e.repository === compatibility.receipt.repository
+            && compatibility.receipt.original.runs.some(run => run.runId === e.runId);
+          const journal = original ? originalJournal : currentJournal;
+          if (await manualAttemptHasConflictingActivity(record, { journal })) { unknown.push(e.runId); continue; }
+          if (manualAdmissionComplete(record)) continue;
+          const observed = await historicalManualAttemptDisposition(record, {
+            journal, resolve: manualAttemptDisposition });
+          if (observed) historical.push({ runId: e.runId, issueNumber: e.issueNumber, reason: observed.reason });
+          else unknown.push(e.runId);
+        }
+        return { unknown, manualAttempts: { historical, actionable: unknown } };
+      } });
     return admission[name](...args);
   }]));
 }

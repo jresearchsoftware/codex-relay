@@ -1,0 +1,171 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createAdmissionControl, manualAdmissionComplete } from '../src/admission-control.mjs';
+import { createAttemptStore } from '../src/attempt-store.mjs';
+import { digest, VERSION } from '../src/execution-contract.mjs';
+import { historicalManualAttemptDisposition, manualAttemptHasNoPendingEffects } from '../src/manual-attempt-disposition.mjs';
+
+const oldDigest = 'a'.repeat(64), nextDigest = 'b'.repeat(64), target = 'c'.repeat(40);
+const operationId = '12345678-1234-1234-1234-123456789abc';
+const record = runId => ({ envelope: { version: VERSION, repository: 'example/sample',
+  runId, attemptId: `run-${runId}`, consumerDigest: oldDigest, route: 'manual',
+  issueNumber: 42, target: 'issue', number: 42 }, outcome: null });
+const observation = (value, reason = 'task-completed') => ({ disposition: 'historical', reason,
+  repository: value.envelope.repository, issueNumber: value.envelope.issueNumber,
+  runId: value.envelope.runId, attemptId: value.envelope.attemptId,
+  consumerDigest: value.envelope.consumerDigest, envelopeDigest: digest(value.envelope),
+  recordDigest: digest(value), evidenceDigest: 'd'.repeat(64) });
+
+async function fixture(t, resolve) {
+  const root = await mkdtemp(join(tmpdir(), 'relay-manual-disposition-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = createAttemptStore(join(root, 'records'), { repository: 'example/sample' });
+  const journal = createAttemptStore(join(root, 'journals'), { repository: 'example/sample' });
+  const create = consumerDigest => createAdmissionControl({ root, consumerDigest, store, journal,
+    protectedRoot: false, manualAttemptDisposition: resolve });
+  const control = create(oldDigest); await control.initialize();
+  return { root, store, journal, control, create };
+}
+
+test('historical disposition retains issued or unissued handoff bytes without fabricating completion', async t => {
+  let reads = 0;
+  const f = await fixture(t, async value => { reads++; return observation(value); });
+  for (const runId of [71, 93]) {
+    const value = record(runId);
+    if (runId === 71) {
+      value.commentBodies = { handoff: { number: 42, sha256: 'e'.repeat(64), rendererVersion: 'human-v1' } };
+      value.handoffComplete = true;
+      value.readyConsumption = { status: 'consumed', eventId: 100, removalEventId: 101 };
+    }
+    await f.store.put(runId, value);
+  }
+  const original = await Promise.all([71, 93].map(runId => readFile(join(f.root, 'records', `${runId}.json`))));
+  const gate = await readFile(join(f.root, 'admission-v1.json'));
+  const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.equal(result.eligible, true); assert.deepEqual(result.unknown, []);
+  assert.deepEqual(result.manualAttempts, { historical: [71, 93].map(runId => ({ runId, issueNumber: 42,
+    reason: 'task-completed' })), actionable: [] });
+  assert.ok(reads >= 2);
+  assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), gate);
+  for (const [index, runId] of [71, 93].entries()) {
+    const saved = await f.store.get(runId);
+    assert.equal(saved.outcome, null); assert.equal(manualAdmissionComplete(saved), false);
+    assert.deepEqual(await readFile(join(f.root, 'records', `${runId}.json`)), original[index]);
+  }
+});
+
+test('status separates missing historical receipts from actionable attempts without inventing automatic activity', async t => {
+  const f = await fixture(t, async value => value.envelope.runId === 71 ? observation(value, 'owner-withdrawal') : null);
+  await f.store.put(71, record(71)); await f.store.put(93, record(93));
+  const status = await f.control.status();
+  assert.deepEqual(status.active, []); assert.deepEqual(status.unknown, []);
+  assert.deepEqual(status.manualAttempts, { historical: [{ runId: 71, issueNumber: 42,
+    reason: 'owner-withdrawal' }], actionable: [93] });
+  const preflight = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.equal(preflight.eligible, false); assert.deepEqual(preflight.unknown, [93]);
+});
+
+test('reopening or changed authority is re-read at final check, transition and later old-digest inventory', async t => {
+  let historical = true, reads = 0;
+  const f = await fixture(t, async value => { reads++; return historical ? observation(value, 'task-not-planned') : null; });
+  await f.store.put(71, record(71));
+  assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: nextDigest })).eligible, true);
+  await f.control.quiesce({ operationId, target }); await f.control.drained({ operationId });
+  historical = false;
+  await assert.rejects(f.control.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+  historical = true; await f.control.checkConsumerTransition({ operationId, target });
+  const next = f.create(nextDigest);
+  await next.transitionConsumer({ operationId, previousDigest: oldDigest, target });
+  assert.deepEqual((await next.status()).manualAttempts.actionable, []);
+  assert.equal((await next.preflightConsumerTransition({ desiredDigest: 'f'.repeat(64) })).eligible, true);
+  historical = false;
+  await assert.rejects(next.status(), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  assert.ok(reads >= 6);
+  assert.deepEqual(await f.store.get(71), record(71));
+});
+
+test('worker evidence and every unfinished publication boundary override Task disposition', async t => {
+  let calls = 0;
+  const f = await fixture(t, async value => { calls++; return observation(value); });
+  const boundaries = [
+    { controllerLifecycle: { version: 1, status: 'active' } },
+    { publicationIntent: { head: target } }, { commentIntent: { key: 'handoff' } },
+    { lifecycleIntent: { draft: true } }, { relationshipIntent: { number: 45 } },
+    { prIntent: true }, { publishedHead: target }, { finalHead: target }, { prNumber: 45 },
+    { successOutcomeIntent: { head: target } }, { readinessIntent: { head: target } },
+    { prepublicationRecovery: { complete: false } }, { manualSubmission: { sha256: oldDigest } },
+    { manualResultAuthorization: { id: 1, sha256: oldDigest } }, { outcome: { status: 'BLOCKED' } },
+    { handoffComplete: false }, { commentBodies: { outcome: { number: 42 } } },
+    { readyConsumption: { status: 'deleting' } }, { readyConsumption: { status: 'uncertain' } }
+  ];
+  for (const [index, fields] of boundaries.entries()) await f.store.put(index + 100, { ...record(index + 100), ...fields });
+  await f.store.put(99, record(99)); await f.journal.put(99, { envelope: record(99).envelope,
+    execution: { reserved: true, returned: false } });
+  const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.equal(result.eligible, false); assert.equal(result.unknown.length, boundaries.length + 1);
+  assert.equal(calls, 0);
+});
+
+test('completed manual receipt never hides contradictory live execution or pending publication', async t => {
+  const f = await fixture(t, async value => observation(value));
+  const complete = { ...record(71), envelope: { ...record(71).envelope,
+    request: { schema_version: '3.0', kind: 'task-request' }, requestReference: { sha256: 'e'.repeat(64) } },
+    outcome: { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: null, prNumber: null,
+      outcomeId: 1071, manual: true }, manualResultAuthorization: { id: 2071, sha256: 'f'.repeat(64) } };
+  assert.equal(manualAdmissionComplete(complete), true);
+  for (const [index, fields] of [
+    { controllerLifecycle: { version: 1, status: 'active' } },
+    { relationshipIntent: { number: 45 } }, { prepublicationRecovery: { complete: false } }
+  ].entries()) {
+    const runId = index + 71;
+    await f.store.put(runId, { ...complete, envelope: { ...complete.envelope, runId,
+      attemptId: `run-${runId}` }, ...fields });
+  }
+  const withJournal = { ...complete, envelope: { ...complete.envelope, runId: 74, attemptId: 'run-74' } };
+  await f.store.put(74, withJournal);
+  await f.journal.put(74, { envelope: withJournal.envelope, execution: { reserved: true, returned: false } });
+  const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.equal(result.eligible, false); assert.deepEqual(result.unknown, [71, 72, 73, 74]);
+});
+
+test('activity appearing while authority is read invalidates an otherwise exact observation', async () => {
+  let saved = null; const value = record(71);
+  const result = await historicalManualAttemptDisposition(value, {
+    journal: { get: async () => saved }, resolve: async input => {
+      saved = { execution: { reserved: true } }; return observation(input);
+    }
+  });
+  assert.equal(result, null);
+});
+
+test('foreign, stale or incomplete disposition evidence fails closed and cannot mutate its input', async () => {
+  for (const fields of [{ repository: 'another/repository' }, { consumerDigest: nextDigest },
+    { attemptId: 'run-72' }, { issueNumber: 43 }, { recordDigest: nextDigest },
+    { envelopeDigest: nextDigest }, { evidenceDigest: null }, { disposition: 'completed' }]) {
+    const value = record(71);
+    await assert.rejects(historicalManualAttemptDisposition(value, { resolve: async input => ({ ...observation(input), ...fields }) }),
+      { code: 'ADMISSION_MANUAL_DISPOSITION_INVALID' });
+  }
+  const value = record(71);
+  await assert.rejects(historicalManualAttemptDisposition(value, { resolve: async input => {
+    const result = observation(input); input.publicationIntent = { head: target }; return result;
+  } }), { code: 'ADMISSION_MANUAL_DISPOSITION_INVALID' });
+  assert.equal(manualAttemptHasNoPendingEffects(value), false);
+});
+
+test('supplemental historical evidence remains distinct from unresolved original-history runs', async t => {
+  const f = await fixture(t, async value => observation(value));
+  const control = createAdmissionControl({ root: f.root, consumerDigest: oldDigest, store: f.store,
+    journal: f.journal, protectedRoot: false, manualAttemptDisposition: async value => observation(value),
+    supplementalManualInventory: async () => ({ unknown: [88], manualAttempts: {
+      historical: [{ runId: 77, issueNumber: 49, reason: 'route-switch' }], actionable: [88] } }) });
+  const result = await control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.deepEqual(result.unknown, [88]);
+  assert.deepEqual(result.manualAttempts, { historical: [{ runId: 77, issueNumber: 49,
+    reason: 'route-switch' }], actionable: [88] });
+  const status = await control.status(); assert.deepEqual(status.unknown, []);
+  assert.deepEqual(status.manualAttempts, result.manualAttempts);
+});
