@@ -164,6 +164,67 @@ operation or clears a gate. Other uncertain or unsupported recovery
 states stop with preserved evidence and one supported next action; a blocker
 string or repeated invocation alone is not proof that replay is safe.
 
+### Bounded recovery with a separately accepted controller
+
+When a failed Git Apply has already installed its original product target but
+retains both an `apply / RECOVERY_REQUIRED` backend record and the same closed
+admission UUID, a corrected accepted product may continue that operation:
+
+```sh
+python3 deploy/relay-deploy.py --phase install \
+  --resolved-revision <accepted-controller-and-final-product-SHA> \
+  --config /path/to/accepted-config-checkout/prod/relay.json \
+  --consumer-root /path/to/consumer \
+  --authorize-install-recovery \
+  --install-recovery-operation <original-UUID> \
+  --install-recovery-target <original-product-target-SHA>
+```
+
+The flag explicitly selects continuation to the independently authenticated
+final Git pair; it does not make a candidate accepted or authorize a PROD
+operation. The retained target, controller revision and final product/config
+pair remain distinct evidence fields. This bounded route requires the original
+installed product to be the retained target and supports the known deployment
+epoch/capabilities without changing physical consumers, credential bindings or
+service intent. The controller and final product revision coincide in this
+route. Other target combinations require their own supported classification;
+they are not inferred from a flag or a moving branch.
+
+Before any transition, the installer proves the protected original manifest,
+Git-config receipt, configuration snapshot, current consumer, source graph,
+credentials and exact backend/gate identity under the deployment locks. A missing
+consumer-before backup is not itself a blocker when these original/current
+contexts are authenticated. The corrected staged controller checks current
+Task dispositions and all live/publication effects under the real Writer mutex.
+It never replays Codex or invents native completion receipts.
+Closed Tasks use their current native disposition directly. An abandoned open
+route still needs the existing protected historical-disposition adapter's exact
+acknowledgement of active trusted Decisions, revalidated against current authority
+and local effects. An earlier in-memory diagnostic classification does not create
+that persistent acknowledgement. This is the existing Step 4 interpretation
+mechanism described below, not another owner Decision or terminal Outcome.
+
+One protected operation-specific continuation receipt preserves the original
+gate/backend bytes and binds the selected controller/final pair. The existing
+same-UUID recovery target transition is explicit; the original backend record's
+target and bytes remain unchanged. Backend validation consumes that exact
+receipt, rather than treating two different source identities as equal. Reopened
+Tasks, changed authority, source/config/credential drift, unknown live effects,
+conflicting operations and incompatible transitions still fail closed.
+
+The ordinary staged installation, service-intent preservation and runtime checks
+remain mandatory. Only successful installed-pair verification permits the backend
+to archive its original record byte for byte and remove the active record name.
+The installer independently reads back the final Git pair, verifies the same
+admission operation and final continuation receipt, then resumes admission.
+An interruption preserves closed admission and evidence. An exact reserved
+continuation may be revalidated; partial receipt/archive completion requires
+diagnosis and is not permission to repeat installation or reset a journal.
+
+This differs from expert `reinstall-recover`, which dispositions a separate
+decommissioned clean-reinstall journal and does not install or activate its
+controller revision. Neither interface permits raw protected-history edits.
+
 [Installation metadata](../deploy/installation-contract.json) declares a strict
 deployment epoch and known capabilities, retained in installed manifests.
 Pre-metadata revisions use one bounded legacy lifecycle boundary,

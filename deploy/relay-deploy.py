@@ -240,6 +240,10 @@ def arguments():
     p.add_argument('--authorize-lifecycle-recovery', action='store_true',
                    help='After diagnosis/disposition, recover or roll back a retained quiesced operation')
     p.add_argument('--lifecycle-recovery-operation', help='Exact retained admission operation UUID')
+    p.add_argument('--authorize-install-recovery', action='store_true',
+                   help='Continue one diagnosed operation using this independently accepted controller and Git pair')
+    p.add_argument('--install-recovery-operation', help='Exact original operation UUID; install recovery only')
+    p.add_argument('--install-recovery-target', help='Immutable original product target; install recovery only')
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
@@ -274,6 +278,12 @@ def run(args):
         from intent_install import run as install
         return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
     intent_install = getattr(args, 'intent_install', False)
+    bounded_binding = getattr(args, '_intent_bounded_recovery', None)
+    require(bounded_binding is None or intent_install and args.authorize_lifecycle_recovery,
+            'bounded-recovery-interface-only')
+    require(not getattr(args, 'authorize_install_recovery', False)
+            and getattr(args, 'install_recovery_operation', None) is None
+            and getattr(args, 'install_recovery_target', None) is None, 'install-recovery-interface-only')
     inherited_guard = getattr(args, '_intent_host_guard', None)
     inherited_pool_guard = getattr(args, '_intent_pool_guard', None)
     require(inherited_guard is None or (intent_install and inherited_guard.poll() is None
@@ -533,6 +543,7 @@ def run(args):
         'relay_intent_expected_installed_revision': ('none' if intent_install and args.phase == 'reinstall'
             else getattr(args, 'intent_expected_installed_revision', '')),
         'relay_git_config_receipt': getattr(args, 'git_intent', {}),
+        'relay_bounded_recovery_binding': bounded_binding or {},
         'relay_deployment_contract': deployment_contract,
         'relay_installation_state': getattr(args, '_intent_installation_state', {}),
         'relay_production_runner_enable_exact_head': revision,
@@ -729,7 +740,14 @@ def run(args):
                             if locked_installed.get('status') == 'missing' else 'invalid')
                         from intent_install import strategy_inventory
                         intent_recovery = getattr(args, '_intent_recovery_proof', None)
-                        if intent_recovery is not None:
+                        if bounded_binding is not None:
+                            from bounded_recovery import remote_probe as bounded_probe
+                            from install_recovery import provisional_inventory
+                            bounded = bounded_probe(target, key, config, bounded_binding, guard, pool_guard)
+                            require(bounded == args._intent_bounded_recovery_proof,
+                                    'bounded-recovery-evidence-changed')
+                            locked_inventory = provisional_inventory(locked_inventory)
+                        elif intent_recovery is not None:
                             from install_recovery import revalidate as revalidate_recovery, proved_inventory
                             require(args.authorize_lifecycle_recovery
                                     and args.lifecycle_recovery_operation == intent_recovery['operationId'],
@@ -769,7 +787,7 @@ def run(args):
                             log.flush()
                             proof = Path(log_name).read_text()[offset:]
                             if code != 0 or 'failed=0' not in proof:
-                                codes = re.findall(r'\b(?:INTENT|HOST|RELAY|PRODUCTION)_[A-Z_]{2,100}\b', proof)
+                                codes = re.findall(r'\b(?:BOUNDED_RECOVERY|INTENT|HOST|RELAY|PRODUCTION)_[A-Z_]{2,100}\b', proof)
                                 error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_' +
                                     ('STAGING_FAILED' if name == 'relay-intent-stage.yml' else 'COMPATIBILITY_FAILED'))
                                 error.next_action = ('Inspect the named preflight prerequisite in the private installer log; '
@@ -797,6 +815,20 @@ def run(args):
                                     'or obtain a separately qualified replacement preserving the original gate and history; '
                                     'do not edit protected attempts or clear admission state.')
                                 raise error
+                        if bounded_binding is not None:
+                            # The original gate is already closed. Reprove all
+                            # manual/live effects with the qualified controller,
+                            # preserve original evidence, then explicitly bind
+                            # the SAME operation to its owner-selected final pair.
+                            preparation.lock_writer()
+                            args._intent_mutation_started = True
+                            args._intent_bounded_recovery_proof = preparation.bounded_recovery(
+                                config, bounded_binding, args._intent_bounded_recovery_proof)
+                            gate = preparation.execute([*preparation.admission_prefix(), 'recovery-target',
+                                '--operation', admission_operation_id, '--target', revision])
+                            require(gate['operationId'] == admission_operation_id and gate['target'] == revision
+                                    and gate['phase'] == 'recovery-required', 'bounded-recovery-target-unproven')
+                            preparation.release_writer()
                         # The owning read-only checks and real staging run before
                         # quiesce; a dry run cannot replace build/load proof.
                         args._intent_failure_stage = 'preflight-host-policy'
@@ -853,7 +885,9 @@ def run(args):
                         strict_revision = (strict_installed.get('revision')
                             if strict_installed.get('status') == 'present' else 'none'
                             if strict_installed.get('status') == 'missing' else 'invalid')
-                        if getattr(args, '_intent_recovery_proof', None) is not None:
+                        if bounded_binding is not None:
+                            strict_inventory = provisional_inventory(strict_inventory)
+                        elif getattr(args, '_intent_recovery_proof', None) is not None:
                             strict_inventory = proved_inventory(strict_inventory, repeated, revision,
                                 args.intent_expected_installed_revision)
                         require(not strict_inventory['blockers']
@@ -972,17 +1006,27 @@ def run(args):
                                              '--operation', lifecycle_operation, '--target', revision)
                         progress('DRAIN', revision)
                         if args.authorize_lifecycle_recovery:
-                            state = remote_admission(target, key, values['relay_namespace'], 'status',
-                                                     '--operation', lifecycle_operation)
+                            if bounded_binding is not None:
+                                preparation.lock_writer()
+                                preparation.bounded_recovery(config, bounded_binding,
+                                    args._intent_bounded_recovery_proof, action='revalidate')
+                                def recovery_admission(*arguments):
+                                    return preparation.execute([*preparation.admission_prefix(), *arguments])
+                            else:
+                                def recovery_admission(*arguments):
+                                    return remote_admission(target, key, values['relay_namespace'], *arguments)
+                            state = recovery_admission('status', '--operation', lifecycle_operation)
                             require(state['phase'] == 'recovery-required' and not state['active']
                                     and not state['unknown'], 'lifecycle-recovery-drain-unproven')
-                            remote_admission(target, key, values['relay_namespace'], 'recovery-target',
-                                             '--operation', lifecycle_operation, '--target', revision)
+                            recovery_admission('recovery-target', '--operation', lifecycle_operation, '--target', revision)
                         else:
                             remote_admission(target, key, values['relay_namespace'], 'drain',
                                              '--operation', lifecycle_operation, '--timeout', '1800')
-                        remote_admission(target, key, values['relay_namespace'], 'phase',
-                                         '--operation', lifecycle_operation, '--phase', 'applying')
+                        if bounded_binding is not None:
+                            recovery_admission('phase', '--operation', lifecycle_operation, '--phase', 'applying')
+                        else:
+                            remote_admission(target, key, values['relay_namespace'], 'phase',
+                                             '--operation', lifecycle_operation, '--phase', 'applying')
                         progress('APPLY', revision)
                     elif pool_reinstall:
                         from lifecycle import progress
@@ -1025,7 +1069,7 @@ def run(args):
                                 local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
                             require(str(repeated_pool) == str(pool_preflight_proof),
                                     'INSTALL_PREFLIGHT_POOL_POLICY_CHANGED')
-                        if not fresh_preparation:
+                        if not fresh_preparation and preparation.holder is None:
                             preparation.lock_writer()
                         preparation.final(fresh=fresh_preparation)
                         require(hashlib.sha256(config_path.read_bytes()).hexdigest() == args.git_intent['config_sha256']
@@ -1143,6 +1187,10 @@ def run(args):
                                 'lifecycle-same-operation-activation-proof')
                     if lifecycle_operation:
                         require(guard is not None and guard.poll() is None, 'lifecycle-host-lock-lost')
+                        if bounded_binding is not None:
+                            from intent_install import readback
+                            final_inventory = remote_inventory(target, key, config, git_desired=True)
+                            readback(final_inventory, revision, args.git_intent)
                         if serial_transition:
                             transition = transition_pool(target, key, config, revision, lifecycle_operation,
                                 guard, extra_guard=pool_guard, action='finish')
@@ -1151,6 +1199,13 @@ def run(args):
                         progress('ACTIVATE/VERIFY', revision)
                         remote_admission(target, key, values['relay_namespace'], 'phase',
                                          '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
+                        if bounded_binding is not None:
+                            preparation.lock_writer()
+                            try:
+                                preparation.bounded_recovery(config, bounded_binding,
+                                    args._intent_bounded_recovery_proof, action='finalize')
+                            finally:
+                                preparation.release_writer()
                         if pool_reinstall and not completed_pool_reinstall:
                             remote_action(target, key, config, revision, retirement_report, action='complete',
                                           guard=guard, operation_id=lifecycle_operation)

@@ -219,6 +219,63 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert 'abort' not in events
 
 
+@pytest.mark.parametrize('failure', [None, 'compatibility', 'final', 'backend-return', 'receipt-finalize'])
+def test_bounded_recovery_uses_current_controller_and_final_pair_before_resume(invocation, monkeypatch, failure):
+    """Exercise the public primitive's composition; host adapters remain synthetic here."""
+    import bounded_recovery
+    args, events, gate, state, records = invocation
+    operation = '12345678-1234-4234-8234-123456789abc'
+    binding = {'operationId': operation, 'retainedTarget': OLD, 'installedRevision': OLD,
+               'controllerRevision': TARGET, 'desiredRevision': TARGET, 'gitConfigReceipt': args.git_intent}
+    original_proof = {'binding': binding, 'original': 'protected-original-evidence'}
+    reserved = {**original_proof, 'state': 'reserved'}
+    args.authorize_lifecycle_recovery, args.lifecycle_recovery_operation = True, operation
+    args._intent_bounded_recovery, args._intent_bounded_recovery_proof = binding, original_proof
+    state['failure'] = failure
+    gate.update(phase='recovery-required', operation=operation, operationId=operation,
+                target=OLD, active=[], unknown=[])
+    monkeypatch.setattr(bounded_recovery, 'remote_probe', lambda *_args: original_proof)
+    base = install_preflight.PreparedInstall
+    class RecoveryPreparation(base):
+        def lock_writer(self):
+            assert self.holder is None
+            super().lock_writer()
+        def execute(self, argv, **_options):
+            assert self.holder is not None and argv[0] == 'verified-private-admission'
+            command, options = argv[1], argv[2:]
+            events.append('controller:' + command)
+            if command == 'recovery-target': gate['target'] = options[options.index('--target') + 1]
+            if command == 'phase': gate['phase'] = options[options.index('--phase') + 1]
+            return copy.deepcopy(gate)
+        def bounded_recovery(self, _config, selected, proof, *, action='begin'):
+            assert self.holder is not None and selected == binding
+            events.append('receipt:' + action)
+            if action == 'begin': assert proof == original_proof
+            else: assert proof == reserved
+            if action == 'finalize' and failure == 'receipt-finalize':
+                raise RuntimeError('BOUNDED_RECOVERY_FINAL_INSTALLATION_UNPROVEN')
+            return reserved
+    monkeypatch.setattr(install_preflight, 'PreparedInstall', RecoveryPreparation)
+    def readback(report, revision, receipt, **_options):
+        assert revision == TARGET and receipt == binding['gitConfigReceipt']
+        assert report['installed']['status'] == 'present'
+        events.append('final-git-pair-readback')
+    monkeypatch.setattr(intent_install, 'readback', readback)
+    if failure:
+        with pytest.raises((ValueError, RuntimeError)):
+            backend.run(args)
+        assert gate['phase'] == 'recovery-required' and 'resume' not in events
+    else:
+        backend.run(args)
+        assert gate['phase'] == 'open'
+        assert events.index('receipt:begin') < events.index('controller:recovery-target') < events.index('compatibility')
+        assert events.index('receipt:revalidate') < events.index('controller:phase') < events.index('backend')
+        assert events.index('backend') < events.index('final-git-pair-readback') < events.index('phase:verified')
+        assert events.index('phase:verified') < events.index('receipt:finalize') < events.index('resume')
+    assert 'quiesce' not in events and 'abort' not in events
+    assert state['preparation'].operation == operation and records == [{'runId': 7, 'terminal': True}]
+
+
 @pytest.mark.parametrize('failure', [None, 'prerequisites', 'build-stage'])
 def test_fresh_product_packages_precede_real_staging_without_fabricating_a_gate(invocation, failure):
     args, events, gate, state, records = invocation

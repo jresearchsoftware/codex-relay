@@ -372,6 +372,7 @@ def phase_arguments(args, phase, receipt, consumer, expected, guard, pool_guard,
     if phase in authorizations:
         setattr(inner, 'authorize_' + authorizations[phase], True)
     inner.phase, inner.intent_install = phase, True
+    inner.install_recovery_operation = inner.install_recovery_target = None
     inner.intent_expected_installed_revision = expected
     inner.git_intent, inner.git_config_receipt = copy.deepcopy(receipt), None
     inner.consumer_root, inner.projection_output = Path(consumer), None
@@ -511,8 +512,15 @@ def complete_fresh(target, key, config, revision, receipt, guard, pool_guard):
 def run(args, primitive, root, identity, *, guard_factory=None):
     require(os.sys.platform == 'linux', 'LINUX_CONTROLLER_REQUIRED')
     require(args.resolved_revision == identity['revision'], 'EXACT_PRODUCT_TARGET_REQUIRED')
-    require(not any(getattr(args, key, False) for key in vars(args) if key.startswith('authorize_')),
+    bounded_requested = getattr(args, 'authorize_install_recovery', False)
+    require(not any(getattr(args, key, False) for key in vars(args)
+                    if key.startswith('authorize_') and key != 'authorize_install_recovery'),
             'EXPERT_AUTHORIZATION_FLAGS_INVALID')
+    require((bounded_requested and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',
+                getattr(args, 'install_recovery_operation', None) or '')
+             and REVISION.fullmatch(getattr(args, 'install_recovery_target', None) or ''))
+            or (not bounded_requested and getattr(args, 'install_recovery_operation', None) is None
+                and getattr(args, 'install_recovery_target', None) is None), 'RECOVERY_ARGUMENTS_INVALID')
     root = Path(root)
     args.config = args.config.absolute()
     stage, selected, mutation = 'desired-inputs', {'strategy': 'unresolved', 'installed': 'unavailable'}, False
@@ -577,11 +585,28 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 locks.callback(release_guard, pool_guard)
             expected = selected['installed']
             recovery = None
-            if (expected != 'none' and not fresh and selected['phase'] in ['apply', 'upgrade', 'post-check']
+            bounded_binding = bounded_proof = None
+            if bounded_requested:
+                require(expected != 'none' and not fresh and selected['phase'] in ['apply', 'upgrade', 'post-check'],
+                        'RECOVERY_TRANSITION_UNSUPPORTED')
+                bounded_binding = {'operationId': args.install_recovery_operation,
+                    'retainedTarget': args.install_recovery_target, 'installedRevision': args.install_recovery_target,
+                    'controllerRevision': identity['revision'], 'desiredRevision': identity['revision'],
+                    'gitConfigReceipt': copy.deepcopy(receipt)}
+                from bounded_recovery import remote_probe as bounded_probe
+                stage = 'bounded-recovery-proof'
+                bounded_proof = bounded_probe(target, key, config, bounded_binding, guard, pool_guard)
+                selected = {**selected, 'strategy': 'bounded-recovery', 'phase': 'upgrade'}
+                print('RELAY_INSTALL_RECOVERY=' + json.dumps({'operationId': bounded_binding['operationId'],
+                    'retainedTarget': bounded_binding['retainedTarget'], 'controllerRevision': identity['revision'],
+                    'desiredProduct': identity['revision'], 'desiredConfig': receipt.get('config_sha'),
+                    'transition': 'explicit-owner-selected-compatible-continuation'}, sort_keys=True), flush=True)
+            elif (expected != 'none' and not fresh and selected['phase'] in ['apply', 'upgrade', 'post-check']
                     and report.get('configuration', {}).get('consumer') != 'invalid'):
                 stage = 'lifecycle-recovery-proof'
                 recovery = recovery_probe(target, key, config, identity['revision'], expected, guard, pool_guard)
-            require(planning_report is report or recovery is not None, 'RECOVERY_REQUIRES_DIAGNOSIS')
+            require(planning_report is report or recovery is not None or bounded_proof is not None,
+                    'RECOVERY_REQUIRES_DIAGNOSIS')
             if recovery is not None:
                 require(selected['phase'] in ['apply', 'upgrade', 'post-check'], 'RECOVERY_REQUIRES_DIAGNOSIS')
                 selected = {**selected, 'strategy': 'recovery', 'phase': 'upgrade'}
@@ -610,6 +635,11 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     inner.authorize_lifecycle_recovery = True
                     inner.lifecycle_recovery_operation = recovery['operationId']
                     inner._intent_recovery_proof = copy.deepcopy(recovery)
+                if bounded_proof is not None:
+                    inner.authorize_lifecycle_recovery = True
+                    inner.lifecycle_recovery_operation = bounded_binding['operationId']
+                    inner._intent_bounded_recovery = copy.deepcopy(bounded_binding)
+                    inner._intent_bounded_recovery_proof = copy.deepcopy(bounded_proof)
                 if phase == 'runner-register' and report.get('runners', {}).get('production', {}).get('status') != 'reusable':
                     inner.runner_registration_token = runner_token
                 if phase == 'general-runner-register':
