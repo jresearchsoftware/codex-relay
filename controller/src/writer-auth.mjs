@@ -14,6 +14,9 @@ export const WRITER_TOKEN_PERMISSIONS = Object.freeze({
   pull_requests: "write",
   workflows: "write"
 });
+export const TASK_READ_TOKEN_PERMISSIONS = Object.freeze({
+  metadata: 'read', issues: 'read', pull_requests: 'read'
+});
 export function parseEnv(text, expectedKeyFile) {
   const values = {};
   for (const line of text.split(/\r?\n/)) {
@@ -67,7 +70,7 @@ export async function taskReadToken(repository) {
   // accept a repository selector from worker or admission command arguments.
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
     || repository.split('/').some(part => part === '.' || part === '..')) throw blocked('WRITER_IDENTITY_INVALID');
-  return installationToken(repository, { metadata: 'read', issues: 'read' });
+  return installationToken(repository, TASK_READ_TOKEN_PERMISSIONS);
 }
 
 async function installationToken(repository, permissions) {

@@ -68,6 +68,30 @@ test('status separates missing historical receipts from actionable attempts with
   assert.equal(preflight.eligible, false); assert.deepEqual(preflight.unknown, [93]);
 });
 
+test('known original CR and Issue continuation PR identities do not imply unfinished creation or execution', async t => {
+  const f = await fixture(t, async value => observation(value,
+    value.envelope.target === 'pull_request' ? 'task-completed' : 'route-switch'));
+  const cr = { ...record(71), envelope: { ...record(71).envelope, target: 'pull_request', number: 55,
+    request: { kind: 'admission', existing_pr: 55 } }, prNumber: 55 };
+  const continuation = { ...record(72), envelope: { ...record(72).envelope,
+    continuation: { pullRequest: 56 }, request: { kind: 'admission', existing_pr: 56 } }, prNumber: 56 };
+  await f.store.put(71, cr); await f.store.put(72, continuation);
+  const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
+  assert.equal(result.eligible, true); assert.deepEqual(result.unknown, []);
+  assert.deepEqual(result.manualAttempts.historical, [
+    { runId: 71, issueNumber: 42, reason: 'task-completed' },
+    { runId: 72, issueNumber: 42, reason: 'route-switch' }
+  ]);
+  assert.deepEqual(await f.store.get(71), cr); assert.deepEqual(await f.store.get(72), continuation);
+  for (const fields of [
+    { prNumber: 57 }, { prNumber: 0 }, { prIntent: true }, { publishedHead: target },
+    { envelope: { ...cr.envelope, continuation: { pullRequest: 57 } } },
+    { envelope: { ...cr.envelope, request: { existing_pr: 57 } } },
+    { envelope: { ...cr.envelope, request: { existing_pr: 0 } } }
+  ]) assert.equal(manualAttemptHasNoPendingEffects({ ...cr, ...fields }), false);
+  assert.equal(manualAttemptHasNoPendingEffects({ ...record(73), prNumber: 55 }), false);
+});
+
 test('reopening or changed authority is re-read at final check, transition and later old-digest inventory', async t => {
   let historical = true, reads = 0;
   const f = await fixture(t, async value => { reads++; return historical ? observation(value, 'task-not-planned') : null; });

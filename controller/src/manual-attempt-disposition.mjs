@@ -4,10 +4,21 @@ const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const reasons = new Set(['task-completed', 'task-not-planned', 'owner-withdrawal', 'route-switch']);
 const effects = ['controllerLifecycle', 'outcome', 'manualSubmission', 'manualResultAuthorization',
   'publicationIntent', 'commentIntent', 'lifecycleIntent', 'relationshipIntent', 'prIntent',
-  'publishedHead', 'finalHead', 'prNumber', 'successOutcomeIntent', 'readinessIntent',
+  'publishedHead', 'finalHead', 'successOutcomeIntent', 'readinessIntent',
   'prepublicationRecovery', 'publicationRecoveries', 'collection', 'execution'];
 const readyEffectPending = record => record.readyConsumption !== undefined && record.readyConsumption !== null
   && record.readyConsumption.status !== 'consumed';
+
+function originalPullRequestBinding(record) {
+  const e = record.envelope;
+  const bindings = [e.target === 'pull_request' ? e.number : null,
+    e.continuation?.pullRequest, e.request?.existing_pr].filter(value => value !== undefined && value !== null);
+  if (!bindings.every(positive) || new Set(bindings).size > 1) return false;
+  // Remembering an existing admitted PR is not a PR-creation reservation.
+  // A result discovered or created later needs its original publication proof.
+  return record.prNumber === undefined || record.prNumber === null
+    || positive(record.prNumber) && bindings.length > 0 && bindings[0] === record.prNumber;
+}
 
 export async function manualAttemptHasConflictingActivity(record, { journal } = {}) {
   if (record?.envelope?.route !== 'manual') return false;
@@ -28,7 +39,8 @@ export function manualAttemptHasNoPendingEffects(record) {
     || !positive(e.issueNumber) || e.attemptId !== `run-${e.runId}`
     || typeof e.repository !== 'string' || !e.repository || !hash(e.consumerDigest)
     || !['issue', 'pull_request'].includes(e.target) || !positive(e.number)
-    || effects.some(key => Boolean(record[key])) || record.handoffComplete === false || readyEffectPending(record)) return false;
+    || effects.some(key => Boolean(record[key])) || record.handoffComplete === false || readyEffectPending(record)
+    || !originalPullRequestBinding(record)) return false;
   if (record.commentBodies !== undefined && record.commentBodies !== null) {
     const bodies = record.commentBodies;
     if (typeof bodies !== 'object' || Array.isArray(bodies)

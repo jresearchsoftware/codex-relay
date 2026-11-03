@@ -79,10 +79,22 @@ export function installedAdmissionControl() {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
       supplementalInventory: async ({ task, slot, resourceOnly }) => {
-        if (task === null && slot === null) await composite.all();
+        const records = task === null && slot === null ? await composite.all() : null;
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
-        return task !== null && CONSUMER.repository !== compatibility.receipt.repository
-          ? { active: [], unknown: [] } : inventory;
+        if (task !== null && CONSUMER.repository !== compatibility.receipt.repository) return { active: [], unknown: [] };
+        // Old runtime readers legitimately ignored manual handoffs. Add only
+        // concrete conflicting effects here on every global drain/resume; a
+        // missing manual Outcome alone remains a separate transition concern.
+        if (!resourceOnly) for (const record of records ?? await composite.all()) {
+          const e = record.envelope;
+          if (e.repository !== compatibility.receipt.repository || e.route !== 'manual'
+            || !compatibility.receipt.original.runs.some(run => run.runId === e.runId)
+            || task !== null && e.issueNumber !== task) continue;
+          if (await manualAttemptHasConflictingActivity(record, { journal: originalJournal }))
+            inventory.unknown.push(e.runId);
+        }
+        inventory.unknown = [...new Set(inventory.unknown)].sort((a, b) => a - b);
+        return inventory;
       },
       supplementalManualInventory: async () => {
         const unknown = [], historical = [];

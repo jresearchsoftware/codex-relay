@@ -210,7 +210,8 @@ existing claim root binds repository, Task, run/attempt, original consumer and
 record/envelope hashes to the exact native Task/Decision evidence. It is an
 auditable observation, never desired configuration or execution authority.
 Every preflight, final transition and later old-digest inventory rereads GitHub
-through a repository-scoped `issues:read` Writer App token. Current Issue bytes,
+through a repository-scoped Writer App token with metadata, Issues and PR read
+permissions. Current Issue bytes,
 native owner identity, complete closure/reopen events, trusted Task authority
 and referenced PR authority must match. Reopening, changed authority, revoked
 sources or changed local effects invalidates reuse. An unavailable/incomplete

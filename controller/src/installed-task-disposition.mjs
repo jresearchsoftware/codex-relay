@@ -14,7 +14,7 @@ const positive = n => Number.isSafeInteger(n) && n > 0;
 const identity = value => value && { login: value.login, id: value.id, type: value.type };
 
 // Native reads use the existing protected Writer App, with repository-scoped
-// issues:read permission only. The allowlist includes an original consumer only
+// metadata, Issue and PR read permissions only. The allowlist includes an original consumer only
 // after the caller has authenticated its retained compatibility envelope.
 export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONSUMER,
   historicalConsumer = null, fetchImpl = fetch, tokenFor = taskReadToken } = {}) {
@@ -61,6 +61,8 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
     if (envelope && (envelope.repository !== repository || envelope.issueNumber !== task))
       fail('HISTORICAL_TASK_REPOSITORY_MISMATCH');
     if (envelope?.target === 'pull_request' && positive(envelope.number)) pullRequests.add(envelope.number);
+    if (positive(envelope?.continuation?.pullRequest)) pullRequests.add(envelope.continuation.pullRequest);
+    if (positive(envelope?.request?.existing_pr)) pullRequests.add(envelope.request.existing_pr);
     for (const comment of await list(repository, `issues/${task}/comments`)) {
       if (!same(identity(comment.user), reviewer) || !/^```relay-authority/m.test(comment.body ?? '')) continue;
       if (!positive(comment.id) || comment.issue_url !== issue.url) fail('HISTORICAL_TASK_AUTHORITY_INVALID');
@@ -89,12 +91,19 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
       const records = [];
       for (const [path, kind] of [[`issues/${number}/comments`, 'issue-comment'], [`pulls/${number}/reviews`, 'review']]) {
         for (const item of await list(repository, path)) {
-          if (!same(identity(item.user), reviewer) || !/^```relay-authority/m.test(item.body ?? '')) continue;
-          const payload = extractAuthorityRecord(item.body, { repository, task });
-          if (!payload || payload.parent.kind !== 'pull_request' || payload.parent.number !== number)
-            fail('HISTORICAL_TASK_AUTHORITY_INVALID');
-          const native = { kind, id: item.id, repository, parent: { kind: 'pull_request', number }, body: item.body };
-          records.push({ reference: nativeReference(native), body: item.body, state: item.state ?? null,
+          if (!same(identity(item.user), reviewer)) continue;
+          const typed = /^```relay-authority/m.test(item.body ?? '');
+          if (!typed && kind !== 'review') continue;
+          if (typed) {
+            const payload = extractAuthorityRecord(item.body, { repository, task });
+            if (!payload || payload.parent.kind !== 'pull_request' || payload.parent.number !== number)
+              fail('HISTORICAL_TASK_AUTHORITY_INVALID');
+          }
+          // Retained legacy CRs have no relay-authority fence. Native review
+          // body/state/head are still exact authority evidence, including a
+          // dismissal, even though this reader does not execute that old CR.
+          const native = { kind, id: item.id, repository, parent: { kind: 'pull_request', number }, body: item.body ?? '' };
+          records.push({ reference: nativeReference(native), body: item.body ?? '', state: item.state ?? null,
             commit_id: item.commit_id ?? null });
         }
       }
