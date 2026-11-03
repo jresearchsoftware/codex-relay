@@ -787,7 +787,7 @@ def run(args):
                             log.flush()
                             proof = Path(log_name).read_text()[offset:]
                             if code != 0 or 'failed=0' not in proof:
-                                codes = re.findall(r'\b(?:INTENT|HOST|RELAY|PRODUCTION)_[A-Z_]{2,100}\b', proof)
+                                codes = re.findall(r'\b(?:BOUNDED_RECOVERY|INTENT|HOST|RELAY|PRODUCTION)_[A-Z_]{2,100}\b', proof)
                                 error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_' +
                                     ('STAGING_FAILED' if name == 'relay-intent-stage.yml' else 'COMPATIBILITY_FAILED'))
                                 error.next_action = ('Inspect the named preflight prerequisite in the private installer log; '
