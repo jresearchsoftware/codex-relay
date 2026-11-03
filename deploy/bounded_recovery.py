@@ -19,6 +19,7 @@ import sys
 SHA = re.compile(r'[0-9a-f]{40}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
 UUID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
+UNIX_IDENTITY = re.compile(r'[a-z_][a-z0-9_-]{0,31}')
 LIMIT = 512 * 1024
 
 
@@ -143,21 +144,43 @@ def resource_identity(config):
 def credentials(config, root, owner_uid):
     """Observe configured host credentials without returning credential bytes."""
     namespace = config['environment']['namespace']
-    candidates = {root / 'etc' / namespace / relative for relative in [
+    config_root = root / 'etc' / namespace
+    candidates = {config_root / relative for relative in [
         'reviewer-credentials/github-app.env', 'reviewer-credentials/github-app-private-key.pem',
         'writer-credentials/github-app.env', 'writer-credentials/github-app-private-key.pem',
         'codex-credentials/access-token']}
+    runtime_tokens = {config_root / 'codex-credentials/access-token': config['consumer'].get('runtimeUser')}
+    runtime_users = set(config['consumer'].get('repositoryRuntimeUsers', {}).values())
+    for user in runtime_users - {config['consumer'].get('runtimeUser')}:
+        require(isinstance(user, str) and UNIX_IDENTITY.fullmatch(user) and user != 'root',
+                'CREDENTIAL_IDENTITY_UNPROVEN')
+        runtime_tokens[config_root / 'runtime-users' / user / 'codex-credentials/access-token'] = user
+    for slot in config['consumer'].get('executionSlots', []):
+        slot_id = slot['id']
+        if slot_id == 'primary':
+            continue
+        require(isinstance(slot_id, str) and re.fullmatch('[a-z][a-z0-9-]{0,31}', slot_id),
+                'CREDENTIAL_IDENTITY_UNPROVEN')
+        slot_root = config_root / 'slots' / slot_id
+        runtime_tokens[slot_root / 'codex-credentials/access-token'] = slot['runtimeUser']
+        if slot['runtimeUser'] == config['consumer'].get('runtimeUser'):
+            for user in runtime_users - {slot['runtimeUser']}:
+                runtime_tokens[slot_root / 'runtime-users' / user / 'codex-credentials/access-token'] = user
+    candidates.update(runtime_tokens)
+    writer_paths = set()
     for key in ['credentialEnv', 'credentialKeyFile']:
         value = config['consumer']['paths'].get(key)
         if value:
             path = Path(value)
-            candidates.add(path if path.is_relative_to(root) else root / str(path).lstrip('/'))
-    allowed = {owner_uid}
+            path = path if path.is_relative_to(root) else root / str(path).lstrip('/')
+            candidates.add(path)
+            writer_paths.add(path)
+    reviewer_owners = {owner_uid}
     reviewer = config['environment'].get('reviewerUser')
     reviewer_gid = None
     if reviewer:
         try:
-            allowed.add(pwd.getpwnam(reviewer).pw_uid)
+            reviewer_owners.add(pwd.getpwnam(reviewer).pw_uid)
             reviewer_gid = grp.getgrnam(reviewer).gr_gid
         except KeyError:
             pass
@@ -168,14 +191,26 @@ def credentials(config, root, owner_uid):
             result[str(path.relative_to(root))] = None
             continue
         before = path.lstat()
-        reviewer_file = path.is_relative_to(root / 'etc' / namespace / 'reviewer-credentials')
+        reviewer_file = path in {config_root / 'reviewer-credentials/github-app.env',
+            config_root / 'reviewer-credentials/github-app-private-key.pem'} and path not in writer_paths
+        allowed = reviewer_owners if reviewer_file else {owner_uid}
         mode = stat.S_IMODE(before.st_mode)
         accepted_mode = mode == 0o600 or (reviewer_file and mode == 0o640 and before.st_gid == reviewer_gid)
+        if path in runtime_tokens and path not in writer_paths:
+            user = runtime_tokens[path]
+            require(isinstance(user, str) and UNIX_IDENTITY.fullmatch(user) and user != 'root',
+                    'CREDENTIAL_IDENTITY_UNPROVEN')
+            try:
+                runtime_uid, runtime_gid = pwd.getpwnam(user).pw_uid, grp.getgrnam(user).gr_gid
+            except KeyError:
+                require(False, 'CREDENTIAL_IDENTITY_UNPROVEN')
+            allowed = {runtime_uid}
+            accepted_mode = mode == 0o600 and before.st_gid == runtime_gid
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid in allowed
                 and accepted_mode and before.st_size <= 65536, 'CREDENTIAL_UNSAFE')
         for parent in path.parents:
             info = parent.lstat()
-            require(stat.S_ISDIR(info.st_mode) and info.st_uid in allowed and not info.st_mode & 0o022,
+            require(stat.S_ISDIR(info.st_mode) and info.st_uid in allowed | {owner_uid} and not info.st_mode & 0o022,
                     'CREDENTIAL_PATH_UNSAFE')
             if parent == root:
                 break
