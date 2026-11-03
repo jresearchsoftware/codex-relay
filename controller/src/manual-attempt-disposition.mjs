@@ -26,6 +26,17 @@ export async function manualAttemptHasConflictingActivity(record, { journal } = 
     'relationshipIntent', 'readinessIntent', 'successOutcomeIntent', 'prepublicationRecovery',
     'publicationRecoveries', 'collection', 'execution'].some(key => Boolean(record[key]))
     || record.handoffComplete === false || readyEffectPending(record)) return true;
+  const resultProgress = ['prIntent', 'manualSubmission', 'manualResultAuthorization',
+    'outcome', 'publishedHead', 'finalHead'].some(key => Boolean(record[key]))
+    || Boolean(record.commentBodies?.outcome) || !originalPullRequestBinding(record);
+  if (resultProgress) {
+    // A mere handoff does not occupy a worker or hold a code-only upgrade.
+    // Once trusted result/publication progress exists, retain that boundary
+    // until its exact native receipt proves completion. Lazy loading keeps
+    // this lifecycle guard separate from the receipt predicate's own module.
+    const { manualAdmissionComplete } = await import('./admission-control.mjs');
+    if (!manualAdmissionComplete(record)) return true;
+  }
   const e = record.envelope;
   return Boolean(journal && await journal.get(e.runId, e.repository));
 }

@@ -7,6 +7,7 @@ import { createAdmissionControl, manualAdmissionComplete } from '../src/admissio
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { digest, VERSION } from '../src/execution-contract.mjs';
 import { historicalManualAttemptDisposition, manualAttemptHasNoPendingEffects } from '../src/manual-attempt-disposition.mjs';
+import { admissionBinding, authoritySourceDigest, createAdmissionSnapshot, sha256Body } from '../../contracts/src/github-authority.mjs';
 
 const oldDigest = 'a'.repeat(64), nextDigest = 'b'.repeat(64), target = 'c'.repeat(40);
 const operationId = '12345678-1234-1234-1234-123456789abc';
@@ -153,6 +154,61 @@ test('completed manual receipt never hides contradictory live execution or pendi
   await f.journal.put(74, { envelope: withJournal.envelope, execution: { reserved: true, returned: false } });
   const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
   assert.equal(result.eligible, false); assert.deepEqual(result.unknown, [71, 72, 73, 74]);
+});
+
+test('global drain blocks incomplete trusted manual result progress without a disposition resolver', async t => {
+  const f = await fixture(t);
+  const handoff = record(70);
+  const knownPr = { ...record(71), envelope: { ...record(71).envelope,
+    continuation: { pullRequest: 55 } }, prNumber: 55 };
+  await f.store.put(70, handoff); await f.store.put(71, knownPr);
+  const progress = [
+    { manualSubmission: { sha256: oldDigest } },
+    { manualResultAuthorization: { id: 123, sha256: oldDigest } },
+    { prIntent: true }, { outcome: { status: 'BLOCKED' } },
+    { publishedHead: target }, { finalHead: target }, { prNumber: 55 },
+    { commentBodies: { outcome: { number: 42, sha256: oldDigest, rendererVersion: 'human-v1' } } }
+  ];
+  for (const [index, fields] of progress.entries()) await f.store.put(index + 80, { ...record(index + 80), ...fields });
+  const status = await f.control.status();
+  assert.deepEqual(status.active, []);
+  assert.deepEqual(status.unknown, progress.map((_, index) => index + 80));
+  await f.control.quiesce({ operationId, target });
+  await assert.rejects(f.control.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  assert.deepEqual(await f.store.get(70), handoff); assert.deepEqual(await f.store.get(71), knownPr);
+});
+
+test('exact retained v3 and current v4 manual receipts release global drain despite recorded result progress', async t => {
+  const f = await fixture(t);
+  const retained = { ...record(71), envelope: { ...record(71).envelope,
+    request: { schema_version: '3.0', kind: 'task-request' }, requestReference: { sha256: 'e'.repeat(64) } },
+    outcome: { status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: target, prNumber: 55,
+      outcomeId: 1071, manual: true }, manualResultAuthorization: { id: 2071, sha256: 'f'.repeat(64) },
+    prIntent: true, prNumber: 55, publishedHead: target, finalHead: target };
+  const body = 'Authority model: github-native-v1\nIssue closure policy: keep-open';
+  const parent = { kind: 'issue', number: 42 };
+  const source = { charter: { kind: 'issue-body', id: 42, parent, sha256: sha256Body(body) },
+    decisions: [], change_request: null, compatibility_request: null };
+  const authority = { ...source, sha256: authoritySourceDigest(source) };
+  const request = createAdmissionSnapshot({ authority, request: { repository: 'example/sample', task: 42,
+    charter_sha256: sha256Body(body), purpose: 'Bounded qualification', scope: [], model: 'gpt-6.1-sol',
+    effort: 'xhigh', subagents: false, validation: ['diff-check'], boundaries: [], branch: null,
+    base_sha: null, starting_head: null, existing_pr: null, issue_closure_policy: 'keep-open',
+    continuation: { hold: false, next: null }, route: 'manual' } }, { step: 1, attempt: 'run-72', runId: '72' });
+  const result = { schema_version: '4.0', kind: 'outcome', repository: 'example/sample', task: 42,
+    parent, charter_sha256: sha256Body(body), attempt: 'run-72', step: 1, status: 'implemented',
+    result: { kind: 'qualification', revision: null, identities: [{ kind: 'github-actions-run', id: '72' }] },
+    warnings: [], limitations: [], summary: 'Bounded result.', authority, admission: admissionBinding(request) };
+  const current = { ...record(72), envelope: { ...record(72).envelope, step: 1, request },
+    manualSubmission: { sha256: sha256Body(JSON.stringify(result)), parent, publishedResult: result },
+    outcome: { manual: true, status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: null, prNumber: null,
+      outcomeId: 1072, bodySha256: 'e'.repeat(64) } };
+  assert.equal(manualAdmissionComplete(retained), true); assert.equal(manualAdmissionComplete(current), true);
+  await f.store.put(71, retained); await f.store.put(72, current);
+  assert.deepEqual((await f.control.status()).unknown, []);
+  await f.control.quiesce({ operationId, target });
+  assert.equal((await f.control.drained({ operationId })).drained, true);
+  assert.deepEqual(await f.store.get(71), retained); assert.deepEqual(await f.store.get(72), current);
 });
 
 test('activity appearing while authority is read invalidates an otherwise exact observation', async () => {
