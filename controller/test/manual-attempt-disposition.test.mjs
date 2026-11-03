@@ -69,6 +69,45 @@ test('status separates missing historical receipts from actionable attempts with
   assert.equal(preflight.eligible, false); assert.deepEqual(preflight.unknown, [93]);
 });
 
+test('optional status reports unavailable native evidence while required transitions remain fail closed', async t => {
+  let unavailable = true;
+  const f = await fixture(t, async value => {
+    if (unavailable) throw Object.assign(new Error('native unavailable'), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+    return observation(value);
+  });
+  await f.store.put(71, record(71));
+  const status = await f.control.status();
+  assert.deepEqual(status.active, []); assert.deepEqual(status.unknown, []);
+  assert.deepEqual(status.manualAttempts, { historical: [], actionable: [71], errors: [
+    { runId: 71, code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' }
+  ] });
+  assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: oldDigest })).eligible, true);
+  await assert.rejects(f.control.preflightConsumerTransition({ desiredDigest: nextDigest }),
+    { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  await f.control.quiesce({ operationId, target });
+  assert.equal((await f.control.drained({ operationId })).drained, true);
+  await assert.rejects(f.control.checkConsumerTransition({ operationId, target }),
+    { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  unavailable = false;
+  const next = f.create(nextDigest); await next.transitionConsumer({ operationId, previousDigest: oldDigest, target });
+  unavailable = true;
+  await assert.rejects(next.status(), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+});
+
+test('status does not suppress invalid authority, unsafe caches, invalid dispositions or unreadable journals', async t => {
+  for (const code of ['HISTORICAL_TASK_AUTHORITY_INVALID', 'HISTORICAL_TASK_CACHE_UNSAFE',
+    'ADMISSION_MANUAL_DISPOSITION_INVALID']) {
+    const f = await fixture(t, async () => { throw Object.assign(new Error(code), { code }); });
+    await f.store.put(71, record(71)); await assert.rejects(f.control.status(), { code });
+  }
+  const f = await fixture(t, async value => observation(value));
+  await f.store.put(71, record(71));
+  const control = createAdmissionControl({ root: f.root, consumerDigest: oldDigest, store: f.store,
+    journal: { get: async () => { throw Object.assign(new Error('unreadable'), { code: 'JOURNAL_UNREADABLE' }); } },
+    protectedRoot: false, manualAttemptDisposition: async value => observation(value) });
+  await assert.rejects(control.status(), { code: 'JOURNAL_UNREADABLE' });
+});
+
 test('known original CR and Issue continuation PR identities do not imply unfinished creation or execution', async t => {
   const f = await fixture(t, async value => observation(value,
     value.envelope.target === 'pull_request' ? 'task-completed' : 'route-switch'));
@@ -248,4 +287,21 @@ test('supplemental historical evidence remains distinct from unresolved original
     reason: 'route-switch' }], actionable: [88] });
   const status = await control.status(); assert.deepEqual(status.unknown, []);
   assert.deepEqual(status.manualAttempts, result.manualAttempts);
+});
+
+test('supplemental optional diagnostics carry bounded source errors without weakening required checks', async t => {
+  const f = await fixture(t, async value => observation(value));
+  const control = createAdmissionControl({ root: f.root, consumerDigest: oldDigest, store: f.store,
+    journal: f.journal, protectedRoot: false, manualAttemptDisposition: async value => observation(value),
+    supplementalManualInventory: async ({ includeManual, manualDiagnostics }) => {
+      if (includeManual) throw Object.assign(new Error('unavailable'), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+      assert.equal(manualDiagnostics, true);
+      return { unknown: [88], manualAttempts: { historical: [], actionable: [88], errors: [
+        { runId: 88, code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' }
+      ] } };
+    } });
+  const status = await control.status(); assert.deepEqual(status.unknown, []);
+  assert.deepEqual(status.manualAttempts.errors, [{ runId: 88, code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' }]);
+  await assert.rejects(control.preflightConsumerTransition({ desiredDigest: nextDigest }),
+    { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
 });

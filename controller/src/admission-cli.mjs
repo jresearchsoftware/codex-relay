@@ -96,8 +96,8 @@ export function installedAdmissionControl() {
         inventory.unknown = [...new Set(inventory.unknown)].sort((a, b) => a - b);
         return inventory;
       },
-      supplementalManualInventory: async () => {
-        const unknown = [], historical = [];
+      supplementalManualInventory: async ({ includeManual, manualDiagnostics }) => {
+        const unknown = [], historical = [], errors = [];
         for (const record of await composite.all()) {
           if (record.envelope.route !== 'manual') continue;
           const e = record.envelope;
@@ -106,12 +106,17 @@ export function installedAdmissionControl() {
           const journal = original ? originalJournal : currentJournal;
           if (await manualAttemptHasConflictingActivity(record, { journal })) { unknown.push(e.runId); continue; }
           if (manualAdmissionComplete(record)) continue;
-          const observed = await historicalManualAttemptDisposition(record, {
-            journal, resolve: manualAttemptDisposition });
+          let observed;
+          try { observed = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition }); }
+          catch (error) {
+            if (!manualDiagnostics || includeManual || !original && e.consumerDigest !== CONSUMER_DIGEST
+              || error.code !== 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE') throw error;
+            errors.push({ runId: e.runId, code: error.code });
+          }
           if (observed) historical.push({ runId: e.runId, issueNumber: e.issueNumber, reason: observed.reason });
           else unknown.push(e.runId);
         }
-        return { unknown, manualAttempts: { historical, actionable: unknown } };
+        return { unknown, manualAttempts: { historical, actionable: unknown, ...(errors.length ? { errors } : {}) } };
       } });
     return admission[name](...args);
   }]));

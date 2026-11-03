@@ -110,7 +110,9 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
             commit_id: item.commit_id ?? null });
         }
       }
-      artifacts.push({ number, state: pr.state, head: pr.head.sha, records });
+      artifacts.push({ number, state: pr.state, head: pr.head.sha, body: pr.body ?? '',
+        baseRef: pr.base.ref ?? null, headRef: pr.head.ref ?? null,
+        author: identity(pr.user) ?? null, records });
     }
     return { repository, task, owner, lifecycle, artifacts, authority: authority.sort((a, b) => a.reference.id - b.reference.id),
       issue: { id: issue.id, number: issue.number, state: issue.state, state_reason: issue.state_reason,

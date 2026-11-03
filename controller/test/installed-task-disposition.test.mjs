@@ -128,6 +128,12 @@ for (const source of ['continuation', 'request']) {
     const evidence = { reason: 'owner-withdrawal', sources: [snapshot.decisions[0].reference] };
     await resolver.acknowledge(record, evidence);
     assert.equal((await resolver.resolve(record)).reason, 'owner-withdrawal');
+    f.pr.body = 'Rebound Task relationship';
+    assert.equal(await resolver.resolve(record), null);
+    await resolver.acknowledge(record, evidence);
+    f.pr.head.ref = 'changed-original-branch';
+    assert.equal(await resolver.resolve(record), null);
+    await resolver.acknowledge(record, evidence);
     review.state = 'DISMISSED';
     assert.equal(await resolver.resolve(record), null);
     await resolver.acknowledge(record, evidence);

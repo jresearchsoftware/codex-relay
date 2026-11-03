@@ -300,9 +300,14 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     terminalAutomatic = true, manualDiagnostics = false) {
     const active = []; const unknown = [];
     const manualAttempts = { historical: [], actionable: [] };
-    async function manualDisposition(record) {
+    async function manualDisposition(record, optional = false) {
       const e = record.envelope;
-      const observation = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition });
+      let observation;
+      try { observation = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition }); }
+      catch (error) {
+        if (!optional || error.code !== 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE') throw error;
+        (manualAttempts.errors ??= []).push({ runId: e.runId, code: error.code });
+      }
       if (observation) manualAttempts.historical.push({ runId: e.runId, issueNumber: e.issueNumber,
         reason: observation.reason });
       else manualAttempts.actionable.push(e.runId);
@@ -332,7 +337,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
           manualAttempts.actionable.push(e.runId);
           unknown.push(e.runId);
         } else if ((includeManual || manualDiagnostics) && !manualAdmissionComplete(record)
-          && !await manualDisposition(record) && includeManual) unknown.push(e.runId);
+          && !await manualDisposition(record, manualDiagnostics && !includeManual) && includeManual) unknown.push(e.runId);
         continue;
       }
       if (includeManual && terminalAutomatic && e.route === 'auto' && !await historicalComplete(record)) {
@@ -399,7 +404,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     terminalAutomatic = true, manualDiagnostics = false) {
     const current = await currentInventory(task, slot, resourceOnly, includeManual, terminalAutomatic, manualDiagnostics);
     if ((includeManual || manualDiagnostics) && supplementalManualInventory) {
-      const manual = await supplementalManualInventory();
+      const manual = await supplementalManualInventory({ includeManual, manualDiagnostics });
       const unresolved = Array.isArray(manual) ? manual : manual?.unknown;
       if (!Array.isArray(unresolved) || !unresolved.every(positive)) fail('ADMISSION_ATTEMPT_INVALID');
       if (includeManual) current.unknown.push(...unresolved);
@@ -408,10 +413,14 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         if (!diagnostics || !Array.isArray(diagnostics.historical) || !Array.isArray(diagnostics.actionable)
           || !diagnostics.actionable.every(positive) || !diagnostics.historical.every(row => row
             && positive(row.runId) && positive(row.issueNumber)
-            && ['task-completed', 'task-not-planned', 'owner-withdrawal', 'route-switch'].includes(row.reason))) fail('ADMISSION_ATTEMPT_INVALID');
+            && ['task-completed', 'task-not-planned', 'owner-withdrawal', 'route-switch'].includes(row.reason))
+          || diagnostics.errors !== undefined && (!Array.isArray(diagnostics.errors) || diagnostics.errors.length > 10000
+            || !diagnostics.errors.every(row => row && Object.keys(row).length === 2
+              && positive(row.runId) && row.code === 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'))) fail('ADMISSION_ATTEMPT_INVALID');
         current.manualAttempts ??= { historical: [], actionable: [] };
         current.manualAttempts.historical.push(...diagnostics.historical);
         current.manualAttempts.actionable.push(...diagnostics.actionable);
+        if (diagnostics.errors?.length) (current.manualAttempts.errors ??= []).push(...diagnostics.errors);
       }
     }
     if (current.manualAttempts) {
@@ -420,6 +429,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         [`${row.runId}:${row.issueNumber}:${row.reason}`, row])).values()]
         .sort((a, b) => a.runId - b.runId || a.issueNumber - b.issueNumber || a.reason.localeCompare(b.reason));
       diagnostics.actionable = [...new Set(diagnostics.actionable)].sort((a, b) => a - b);
+      if (diagnostics.errors) {
+        diagnostics.errors = [...new Map(diagnostics.errors.map(row => [`${row.runId}:${row.code}`, row])).values()]
+          .sort((a, b) => a.runId - b.runId);
+        if (diagnostics.errors.length > 10000) fail('ADMISSION_ATTEMPT_INVALID');
+      }
     }
     if (!supplementalInventory) return { ...current,
       unknown: [...new Set(current.unknown)].sort((a, b) => a - b) };

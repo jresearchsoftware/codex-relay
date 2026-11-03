@@ -228,6 +228,14 @@ automatic counts retain their meaning. Code-only Apply with an unchanged
 consumer digest preserves the old manual bindings without requiring a new
 digest transition.
 
+For same-consumer `status`, unavailable native Task authority is informational:
+`manualAttempts.errors` identifies the affected run and
+`HISTORICAL_TASK_AUTHORITY_UNAVAILABLE`; the attempt remains actionable and no
+historical disposition is claimed. Required transitions and old-digest
+eligibility still fail closed. Malformed evidence, unsafe cache and unreadable
+journals are never downgraded. A code-only operation does not gain a new native
+authority prerequisite merely from optional status diagnostics.
+
 Fresh installation composes supported protected credential/TLS preparation,
 installation, activation, runner readiness and final verification when their
 inputs are available. App installation/permissions, runner-group repository and

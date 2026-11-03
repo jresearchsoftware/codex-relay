@@ -534,7 +534,11 @@ assert.deepEqual((await store.all()).map(r=>r.envelope.runId),[11,12,13,44]);
 const gate=installedAdmissionControl();
 await gate.phase({operationId:'12345678-1234-4234-8234-123456789abc',phase:'verified',revision:'@@TARGET_REVISION@@'});
 await gate.resume({operationId:'12345678-1234-4234-8234-123456789abc'});
-assert.equal((await gate.status()).phase,'open');console.log(JSON.stringify({ok:true}));'''
+const status=await gate.status();assert.equal(status.phase,'open');
+assert.deepEqual(status.active,[]);assert.deepEqual(status.unknown,[]);
+assert.deepEqual(status.manualAttempts.historical,[]);assert.deepEqual(status.manualAttempts.actionable,[12]);
+assert.deepEqual(status.manualAttempts.errors,[{runId:12,code:'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'}]);
+console.log(JSON.stringify({ok:true}));'''
         reader = reader.replace('@@TARGET_REVISION@@', target_revision).replace('@@CURRENT_SLOT@@',
             'pool-2' if capacity == 2 else 'primary')
         response = real_run(['/usr/bin/node', '--input-type=module', '-e', reader],
