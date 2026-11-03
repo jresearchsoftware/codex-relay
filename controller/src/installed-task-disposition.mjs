@@ -23,10 +23,13 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
   const tokens = new Map();
   async function request(repository, path, global = false) {
     if (!repositories.includes(repository)) fail('HISTORICAL_TASK_REPOSITORY_MISMATCH');
-    if (!tokens.has(repository)) tokens.set(repository, await tokenFor(repository));
-    const response = await fetchImpl(`https://api.github.com/${global ? path : `repos/${repository}/${path}`}`, {
-      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${tokens.get(repository)}`,
-        'x-github-api-version': '2022-11-28' }, signal: AbortSignal.timeout(15000) });
+    let response;
+    try {
+      if (!tokens.has(repository)) tokens.set(repository, await tokenFor(repository));
+      response = await fetchImpl(`https://api.github.com/${global ? path : `repos/${repository}/${path}`}`, {
+        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${tokens.get(repository)}`,
+          'x-github-api-version': '2022-11-28' }, signal: AbortSignal.timeout(15000) });
+    } catch { fail('HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'); }
     if (!response.ok) fail('HISTORICAL_TASK_AUTHORITY_UNAVAILABLE');
     try { return await response.json(); } catch { fail('HISTORICAL_TASK_AUTHORITY_INVALID'); }
   }

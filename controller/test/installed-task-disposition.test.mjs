@@ -87,6 +87,11 @@ test('unavailable native status fails explicitly with no cached/offline bypass',
   const read = createNativeTaskDispositionReader({ tokenFor: async () => 'synthetic',
     fetchImpl: async () => ({ ok: false }) });
   await assert.rejects(read(repository, 42), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  for (const options of [{ tokenFor: async () => { throw new Error('private credential diagnostic'); } },
+    { tokenFor: async () => 'synthetic', fetchImpl: async () => { throw new TypeError('network timeout'); } }]) {
+    const unavailable = createNativeTaskDispositionReader(options);
+    await assert.rejects(unavailable(repository, 42), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  }
 });
 
 test('durable acknowledgement cache is repository/run scoped and keeps private files across a fresh adapter', async t => {
