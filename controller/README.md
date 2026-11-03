@@ -473,7 +473,7 @@ installed runtime/user/sudo proof requires its separate integration checks.
 
 ## Lifecycle admission and drain
 
-The root-only, credential-free `relay-admission` helper controls automatic
+The root-only `relay-admission` helper controls automatic
 Issue and CR admission. Its durable gate is
 `paths.claimRoot/admission-v1.json`, outside runner and worker write access.
 The gate and Writer share `publication-v2.lock`. New automatic admission checks
@@ -539,17 +539,24 @@ refusal before authority resolution and handoff is complete without a manual
 submission. Completed manual results retain their original v4 binding or v3
 publication receipts, including the earlier owner-authorization and sealed
 direct-result formats. Recognition never backfills or edits historical records.
-An issued handoff without a proven terminal result remains unresolved, even if
-later authority withdraws it, another Step completes, or its Task closes. A
-missing handoff receipt is not proof that offline execution never started.
-Unresolved publication, malformed receipts and mismatched identities still
-prevent a digest transition. A code-only Apply with the same digest retains
+Missing native terminal receipts remain historical facts. For lifecycle
+eligibility, a verified owner closure (`completed`/`not_planned`) or an exact
+protected acknowledgement of existing trusted withdrawal/route-switch Decisions
+can disposition an abandoned manual attempt. The original record stays intact;
+`manualAdmissionComplete` does not become true. The
+[historical disposition contract](../docs/git-managed-installation.md#strategy-compatibility-and-recovery)
+defines the root-only adapter/cache, repository-scoped native reads and mandatory
+freshness. A newer Step or missing handoff receipt alone proves nothing about
+offline execution. Matching runner journals, live/unknown effects, unresolved
+publication, malformed receipts and conflicting identities still prevent drain
+or a digest transition. A code-only Apply with the same digest retains
 outstanding manual bindings and needs no new configuration-change barrier.
 
 The root helper also exposes the read-only
 `consumer-transition-preflight --desired-digest SHA256` observation. It works
 independently of the current lifecycle phase and returns the current/desired
-digests, operation/target, active and unknown runs, and `eligible`. Valid active
+digests, operation/target, active and unknown runs, `eligible`, and separate
+historical/actionable manual diagnostics. Valid active
 automatic work may still drain; unknown work and unresolved manual rebinding
 make the proposed transition ineligible. This observation allocates no attempt,
 changes no gate and does not replace the strict final transition check.

@@ -9,6 +9,8 @@ import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
 import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
+import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
+import { createInstalledTaskDisposition } from './installed-task-disposition.mjs';
 import { fail } from './execution-contract.mjs';
 
 const exec = promisify(execFile);
@@ -55,29 +57,67 @@ export function installedAdmissionControl() {
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER,
       ...(name === 'transitionConsumer' ? { consumerTransition: args[0] } : {}) });
+    const disposition = createInstalledTaskDisposition({
+      historicalConsumer: compatibility?.originalConsumer ?? null });
+    const manualAttemptDisposition = disposition.resolve;
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore) });
+        store: originalStore, journal: createSlotJournal(originalStore), manualAttemptDisposition });
       return admission[name](...args);
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
-    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
+    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition });
+    const currentJournal = createSlotJournal(currentStore);
+    const originalJournalRoot = compatibility.root === '/' ? compatibility.originalConsumer.paths.attemptRoot
+      : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
+    const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: createSlotJournal(currentStore),
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, manualAttemptDisposition,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
       supplementalInventory: async ({ task, slot, resourceOnly }) => {
-        if (task === null && slot === null) await composite.all();
+        const records = task === null && slot === null ? await composite.all() : null;
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
-        return task !== null && CONSUMER.repository !== compatibility.receipt.repository
-          ? { active: [], unknown: [] } : inventory;
+        if (task !== null && CONSUMER.repository !== compatibility.receipt.repository) return { active: [], unknown: [] };
+        // Old runtime readers legitimately ignored manual handoffs. Add only
+        // concrete conflicting effects here on every global drain/resume; a
+        // missing manual Outcome alone remains a separate transition concern.
+        if (!resourceOnly) for (const record of records ?? await composite.all()) {
+          const e = record.envelope;
+          if (e.repository !== compatibility.receipt.repository || e.route !== 'manual'
+            || !compatibility.receipt.original.runs.some(run => run.runId === e.runId)
+            || task !== null && e.issueNumber !== task) continue;
+          if (await manualAttemptHasConflictingActivity(record, { journal: originalJournal }))
+            inventory.unknown.push(e.runId);
+        }
+        inventory.unknown = [...new Set(inventory.unknown)].sort((a, b) => a - b);
+        return inventory;
       },
-      supplementalManualInventory: async () => (await composite.all())
-        .filter(record => record.envelope.route === 'manual' && !manualAdmissionComplete(record))
-        .map(record => record.envelope.runId) });
+      supplementalManualInventory: async ({ includeManual, manualDiagnostics }) => {
+        const unknown = [], historical = [], errors = [];
+        for (const record of await composite.all()) {
+          if (record.envelope.route !== 'manual') continue;
+          const e = record.envelope;
+          const original = e.repository === compatibility.receipt.repository
+            && compatibility.receipt.original.runs.some(run => run.runId === e.runId);
+          const journal = original ? originalJournal : currentJournal;
+          if (await manualAttemptHasConflictingActivity(record, { journal })) { unknown.push(e.runId); continue; }
+          if (manualAdmissionComplete(record)) continue;
+          let observed;
+          try { observed = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition }); }
+          catch (error) {
+            if (!manualDiagnostics || includeManual || !original && e.consumerDigest !== CONSUMER_DIGEST
+              || error.code !== 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE') throw error;
+            errors.push({ runId: e.runId, code: error.code });
+          }
+          if (observed) historical.push({ runId: e.runId, issueNumber: e.issueNumber, reason: observed.reason });
+          else unknown.push(e.runId);
+        }
+        return { unknown, manualAttempts: { historical, actionable: unknown, ...(errors.length ? { errors } : {}) } };
+      } });
     return admission[name](...args);
   }]));
 }

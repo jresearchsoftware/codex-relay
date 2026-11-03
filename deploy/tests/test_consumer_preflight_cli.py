@@ -164,19 +164,12 @@ class ConsumerPreflightCliTests(unittest.TestCase):
                     self.configuration.write_bytes(b'{ invalid live JSON')
                 before = self.protected_snapshot()
                 result = self.run_cli()
-                self.assertEqual(result.returncode, 0, result.stderr)
-                receipt = json.loads(result.stdout)
-                self.assertEqual(receipt['currentDigest'], self.digest)
-                self.assertEqual(receipt['unknown'], [100, 201])
-                self.assertEqual(receipt['active'], [200])
-                self.assertFalse(receipt['eligible'])
-                self.assertTrue(receipt['consumerRestoreRequired'])
-                self.assertEqual(receipt['baselineDigest'], self.digest)
-                self.assertEqual(receipt['actualDriftCategory'], 'digest-mismatch' if drift == 'valid' else 'invalid-consumer')
-                clone = Path(receipt['effectiveConsumerPath'])
-                self.assertTrue(clone.is_relative_to(self.stage))
-                self.assertEqual(clone.parent.stat().st_mode & 0o777, 0o700)
-                self.assertEqual(clone.stat().st_mode & 0o777, 0o644)
+                # Required consumer rebinding cannot classify these original
+                # and current handoffs without native Task authority. This
+                # fixture deliberately supplies no App credentials or API.
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, '')
+                self.assertEqual(json.loads(result.stderr)['code'], 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE')
                 self.assertEqual(self.protected_snapshot(), before)
 
     def test_unchanged_digest_keeps_original_manual_bindings_and_matching_live_config_needs_no_snapshot(self):
@@ -265,12 +258,18 @@ class ConsumerPreflightCliTests(unittest.TestCase):
             'throw new Error("read-only private view missing");}'
             'catch(error){if(error.code!=="EROFS")throw error;}\n' + candidate.read_text())
         before = self.protected_snapshot()
-        result = self.run_cli()
+        result = self.run_cli(desired=self.digest)
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertTrue(value['consumerRestoreRequired'])
-        self.assertEqual(value['unknown'], [100, 201])
-        self.assertEqual(json.loads(Path(value['effectiveConsumerPath']).read_bytes()), self.consumer)
+        self.assertEqual(value['unknown'], [])
+        self.assertEqual(value['active'], [200])
+        self.assertTrue(value['eligible'])
+        clone = Path(value['effectiveConsumerPath'])
+        self.assertTrue(clone.is_relative_to(self.stage))
+        self.assertEqual(clone.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(clone.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(json.loads(clone.read_bytes()), self.consumer)
         self.assertEqual(self.protected_snapshot(), before)
 
     def test_final_observation_reuses_verified_writer_holder_without_nested_flock(self):
