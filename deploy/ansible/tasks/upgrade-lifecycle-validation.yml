@@ -62,7 +62,6 @@
   loop_control:
     loop_var: service_index
   when:
-    - not relay_upgrade_runtime_adopted | default(false) | bool
     - relay_upgrade_lifecycle_previous_active[['reviewer', 'production'][service_index]].active | bool
     - relay_upgrade_lifecycle_initial_services.results[service_index].stdout is search('(?m)^ActiveState=active$')
 

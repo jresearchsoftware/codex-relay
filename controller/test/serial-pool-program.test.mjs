@@ -207,7 +207,8 @@ test('real archived Writer broker reads and replays the original envelope in its
 
 test('retained release containing the adapter verifies its exact graph before preserving original SERIAL context', { skip: !linux }, async t => {
   const f = await serialPoolFixture(t);
-  await copyFile(join(moduleRoot, 'controller/src/serial-pool-compatibility.mjs'), join(f.sourceRoot, 'controller/src/serial-pool-compatibility.mjs'));
+  for (const name of ['serial-pool-compatibility.mjs', 'transition-timing.mjs'])
+    await copyFile(join(moduleRoot, 'controller/src', name), join(f.sourceRoot, 'controller/src', name));
   f.receipt.original.sourceTreeSha256 = await protectedSourceTreeSha256(f.sourceRoot, f.options);
   await f.write(f.receiptPath, f.receipt, 0o644);
   await assert.rejects(loadSerialPoolCompatibility({ ...f.options, consumerPath: f.oldConsumerPath, consumer: undefined }),

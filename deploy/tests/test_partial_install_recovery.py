@@ -1,18 +1,45 @@
 """The precise post-rename frontier, with original protected bytes/processes."""
 import copy
 import json
+import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
 from test_bounded_install_recovery import incident, BASELINE, OPERATION, write
 import partial_install_recovery as partial
 
-pytestmark = pytest.mark.skipif(sys.platform != 'linux', reason='native Linux filesystem proof')
+pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
+    reason='root native Linux filesystem proof')
+
+
+def test_controller_acceptance_uses_original_policy_and_native_public_main(monkeypatch, tmp_path):
+    controller, accepted = 'a' * 40, 'b' * 40
+    binding = {'gitConfigReceipt': {'source_policy': 'accepted-ancestor',
+        'product_repository': 'example/product'}}
+    requests = []
+    def native(argv, **options):
+        requests.append(argv)
+        return (accepted + '\trefs/heads/main\n')
+    monkeypatch.setattr(partial.subprocess, 'check_output', native)
+    monkeypatch.setattr(partial.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0))
+    assert partial.accepted_controller(tmp_path, binding, controller)['acceptedMain'] == accepted
+    assert requests[0][-3:] == ['--exit-code', 'https://github.com/example/product.git', 'refs/heads/main']
+    monkeypatch.setattr(partial.subprocess, 'run', lambda argv, **k:
+        SimpleNamespace(returncode=1 if 'merge-base' in argv else 0))
+    with pytest.raises(ValueError, match='CONTROLLER_NOT_ACCEPTED'):
+        partial.accepted_controller(tmp_path, binding, controller)
+    requests.clear()
+    binding['gitConfigReceipt']['source_policy'] = 'test-qualified-exact'
+    assert partial.accepted_controller(tmp_path, binding, controller)['policy'] == 'test-qualified-exact'
+    assert requests == []
 
 
 def frontier(incident):
+    path = incident.release / 'artifact-manifest.json'
+    old = json.loads(path.read_bytes()); old['reviewerBinarySha256'] = 'a' * 64; write(path, old)
     proof = incident.helper('inspect')
     receipt = incident.helper('begin', proof)
     incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
@@ -20,6 +47,8 @@ def frontier(incident):
     with pytest.raises(ValueError, match='TRANSITION_REQUIRES_RECOVERY'):
         incident.publish(interrupt=True)
     incident.final_artifacts()
+    path = incident.install / 'releases' / incident.revision / 'artifact-manifest.json'
+    desired = json.loads(path.read_bytes()); desired['reviewerBinarySha256'] = 'b' * 64; write(path, desired)
     return receipt
 
 
@@ -35,7 +64,7 @@ def test_partial_frontier_proves_frozen_pair_and_preserves_old_gate_backend_hist
     assert json.loads(incident.backend.read_bytes())['target_head'] == BASELINE
 
 
-@pytest.mark.parametrize('change', ['backup', 'consumer', 'pair', 'backend', 'gate', 'operation', 'archive'])
+@pytest.mark.parametrize('change', ['backup', 'consumer', 'pair', 'backend', 'gate', 'operation', 'archive', 'same-runtime'])
 def test_partial_frontier_rejects_altered_or_ambiguous_evidence_before_effects(incident, change):
     frontier(incident)
     config = copy.deepcopy(incident.config)
@@ -57,9 +86,12 @@ def test_partial_frontier_rejects_altered_or_ambiguous_evidence_before_effects(i
         value['verifiedRevision'] = incident.revision; write(incident.gate, value)
     elif change == 'operation':
         operation = '22345678-1234-4234-8234-123456789abc'
-    else:
+    elif change == 'archive':
         archive = incident.receipt.with_name(incident.receipt.name.removesuffix('.json') + '.original.json')
         write(archive, incident.backend.read_bytes())
+    else:
+        path = incident.install / 'releases' / incident.revision / 'artifact-manifest.json'
+        value = json.loads(path.read_bytes()); value['reviewerBinarySha256'] = 'a' * 64; write(path, value)
     before, history = incident.snapshot(), incident.history()
     with pytest.raises((ValueError, FileNotFoundError)):
         partial.inspect(config, operation, BASELINE, root=incident.root)

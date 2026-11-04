@@ -191,9 +191,13 @@ digest transition under the Writer mutex, and continues the existing controller
 role and installation tail. It skips completed prerequisite/runtime/artifact
 installation and release switching. The standard final checks prove the actual
 Reviewer executable, services and frozen Git pair before archiving the original
-backend. A Reviewer already proven to run the desired executable is not restarted
-again. Verified same-operation admission and continuation completion precede
-resume; on failure admission remains closed with the evidence preserved.
+backend. The old Reviewer PID/start identity and original executable must still
+be proven. An already advanced runtime, or equal original/desired executable
+bytes without configuration-reload proof, receives a precise refusal before
+effects rather than a duplicate restart or an assumed activation. Verified
+same-operation admission and continuation
+completion precede resume. Failures before verified resume keep admission closed;
+an interruption afterward requires current readback, with evidence preserved.
 
 Consumer-transition diagnostics contain bounded elapsed-time and native-reader,
 original-reader and composite-inventory counters. Historical envelopes are

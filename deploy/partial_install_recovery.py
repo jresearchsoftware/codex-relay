@@ -5,6 +5,7 @@ controller supplies corrected observation/publication code, then runs the
 existing installation tail and its complete runtime/identity validation.
 """
 from contextlib import ExitStack
+import hashlib
 import inspect as source_inspect
 import json
 from pathlib import Path
@@ -23,9 +24,28 @@ def require(value, code):
         raise ValueError('PARTIAL_INSTALL_' + code)
 
 
+def old_reviewer(namespace, expected):
+    unit = namespace + '-reviewer.service'
+    def pid():
+        value = subprocess.check_output(['/bin/systemctl', 'show', unit, '--property=MainPID', '--value'],
+            text=True, timeout=15).strip()
+        require(value.isdigit() and int(value) > 0, 'OLD_REVIEWER_RUNTIME_UNPROVEN')
+        return value
+    selected = pid()
+    stat_path = Path('/proc') / selected / 'stat'
+    def start():
+        return stat_path.read_text().rsplit(') ', 1)[1].split()[19]
+    before = start()
+    with (Path('/proc') / selected / 'exe').open('rb') as stream:
+        observed = hashlib.file_digest(stream, 'sha256').hexdigest()
+    require(observed == expected and pid() == selected and start() == before, 'OLD_REVIEWER_RUNTIME_UNPROVEN')
+    return {'pid': int(selected), 'startTicks': int(before), 'sha256': observed}
+
+
 def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
     """Read only; an on-disk final product is explicitly not running proof."""
     require(bounded.UUID.fullmatch(operation or '') and bounded.SHA.fullmatch(retained or ''), 'ARGUMENTS_INVALID')
+    root = Path(root)
     p = bounded.paths(config, {'operationId': operation}, root)
     receipt = bounded.load_receipt(p['receipt'], root, owner_uid)
     binding = receipt['binding']
@@ -40,13 +60,23 @@ def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
             == receipt['original']['consumerSha256'], 'BEFORE_BACKUP_CHANGED')
     release = p['install'] / 'releases' / binding['desiredRevision']
     manifest, snapshot, _ = bounded.installed(release, binding['desiredRevision'], root, owner_uid)
+    original_manifest, _, _ = bounded.installed(p['install'] / 'releases' / binding['installedRevision'],
+        binding['installedRevision'], root, owner_uid)
+    old_binary = original_manifest.get('reviewerBinarySha256', '')
+    new_binary = manifest.get('reviewerBinarySha256', '')
+    # This frontier is the reported old-running-Reviewer shape. An already
+    # advanced process without proof of configuration reload is not permission
+    # to restart it again or to assume activation completed.
+    require(bounded.DIGEST.fullmatch(old_binary) and bounded.DIGEST.fullmatch(new_binary)
+            and old_binary != new_binary, 'RUNTIME_ADOPTION_AMBIGUOUS')
     source = bounded.decode(bounded.read(release / 'reviewed-source/.relay-source.json', root, owner_uid))
     require(source.get('revision') == binding['desiredRevision'] and snapshot == config, 'FROZEN_PAIR_CHANGED')
     current = bounded.read(p['config'] / 'consumer.json', root, owner_uid)
     desired = bounded.read(p['config'] / ('.consumer-' + operation + '.desired.json'), root, owner_uid, private=True)
     require(current == desired, 'LIVE_CONSUMER_CHANGED')
+    runtime = old_reviewer(p['install'].name, old_binary) if root == Path('/') else None
     return {'receipt': receipt, 'gate': gate, 'manifest': manifest, 'sourceIdentity': source,
-            'consumerSha256': bounded.sha(current)}
+            'consumerSha256': bounded.sha(current), 'originalReviewerSha256': old_binary, 'oldReviewer': runtime}
 
 
 def remote_inspect(target, key, config, operation, retained):
@@ -56,8 +86,9 @@ def remote_inspect(target, key, config, operation, retained):
         + repr(Path(bounded.__file__).read_text()) + ',context)\n'
         'import types\nm=types.ModuleType("bounded_recovery");m.__dict__.update(context);'
         'sys.modules["bounded_recovery"]=m\n'
-        'from pathlib import Path\nscope={"bounded":m,"Path":Path}\nexec('
-        + repr(source_inspect.getsource(require) + '\n' + source_inspect.getsource(inspect)) + ',scope)\n'
+        'from pathlib import Path\nimport hashlib,subprocess\nscope={"bounded":m,"Path":Path,"hashlib":hashlib,"subprocess":subprocess}\nexec('
+        + repr(source_inspect.getsource(require) + '\n' + source_inspect.getsource(old_reviewer)
+               + '\n' + source_inspect.getsource(inspect)) + ',scope)\n'
         'try:\n p=json.load(sys.stdin);print(json.dumps(scope["inspect"](**p)))\n'
         'except Exception as error:\n import re\n code=str(error);'
         'print(code if re.fullmatch(r"(?:PARTIAL_INSTALL|BOUNDED_RECOVERY)_[A-Z_]{1,100}",code) '
@@ -79,9 +110,7 @@ def unchanged_tail(root, desired, controller):
     changed = subprocess.check_output([*command, 'diff', '--name-only', desired, controller, '--',
         'deploy/config.py', 'deploy/ansible'], text=True).splitlines()
     allowed = {'deploy/ansible/site.yml', 'deploy/ansible/scripts/publish_git_consumer.py',
-        'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml',
-        'deploy/ansible/tasks/upgrade-lifecycle-activate.yml',
-        'deploy/ansible/tasks/upgrade-lifecycle-validation.yml'}
+        'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml'}
     require(all(path in allowed or path.startswith('deploy/ansible/tests/') for path in changed),
             'INSTALLATION_TAIL_CHANGED')
 
