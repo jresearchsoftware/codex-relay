@@ -211,12 +211,17 @@ def _run(args, root, identity, *, guard_factory=None):
         def proof():
             require(host.poll() is None and (pool is None or pool.poll() is None), 'HOST_LOCK_LOST')
             require(args.config.read_bytes() == raw, 'CONFIG_CHANGED')
+            git = ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', str(root)]
+            require(subprocess.check_output([*git, 'rev-parse', 'HEAD'], text=True).strip() == identity['revision']
+                    and not subprocess.check_output([*git, 'status', '--porcelain', '--untracked-files=all'], text=True),
+                    'CONTROLLER_SOURCE_CHANGED')
             return remote_inspect(target, key, config, args.install_recovery_operation, args.install_recovery_target)
         observed = proof()
         receipt, gate = observed['receipt'], observed['gate']
         binding = receipt['binding']
         desired = binding['desiredRevision']
         args._partial_desired = desired
+        require(hashlib.sha256(raw).hexdigest() == binding['gitConfigReceipt']['config_sha256'], 'CONFIG_BYTES_CHANGED')
         controller_acceptance = accepted_controller(root, binding, identity['revision'])
         unchanged_tail(root, desired, identity['revision'])
         require(observed['sourceIdentity']['revision'] == desired, 'DESIRED_SOURCE_CHANGED')
@@ -315,11 +320,11 @@ def _run(args, root, identity, *, guard_factory=None):
                              'operation': binding['operationId'], 'command': command})
             admitted('verify')
             finish = ('import json,sys;sys.path.insert(0,sys.argv[1]);import bounded_recovery as b;'
-                'p=json.load(sys.stdin);probe=b.fixed_probe(p["config"],p["controllerBinding"],p["source"],p["lease"],p["desiredDigest"]);'
+                'p=json.load(sys.stdin);probe=b.fixed_probe(p["config"],p["binding"],p["source"],p["lease"],p["desiredDigest"],controller_revision=p["controllerRevision"]);'
                 'print(json.dumps(b.finalize(p["config"],p["binding"],p["proof"],admission_probe=probe)))')
             preparation.execute(['/usr/bin/python3', '-I', '-c', finish, preparation.source + '/deploy'],
-                payload={'config': config, 'binding': binding, 'controllerBinding': {**binding,
-                    'controllerRevision': identity['revision']}, 'proof': receipt, 'source': preparation.source,
+                payload={'config': config, 'binding': binding, 'controllerRevision': identity['revision'],
+                    'proof': receipt, 'source': preparation.source,
                     'lease': preparation.lease_path, 'desiredDigest': receipt['desiredDigest']})
             admitted('resume')
             status = admitted('status')

@@ -187,12 +187,15 @@ export async function main(args = process.argv.slice(2)) {
       snapshot: readDrainSnapshot });
   }
   const admission = installedAdmissionControl();
+  // Preserve the existing one-envelope stderr contract for ordinary helper
+  // callers. The trusted publisher opts into the bounded timing stream.
+  const trace = action => process.env.RELAY_TRANSITION_TRACE === '1' ? traceConsumerTransition(action) : action();
   if (command === 'drain-check') return admission.drained(options);
   if (command === 'snapshot') return admission.snapshot({ ...options, services: await readAdmissionSnapshot() });
   if (command === 'recovery-target') return admission.recoveryTarget(options);
-  if (command === 'consumer-transition-preflight') return traceConsumerTransition(() => admission.preflightConsumerTransition(options));
-  if (command === 'consumer-transition-check') return traceConsumerTransition(() => admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision }));
-  if (command === 'consumer-transition') return traceConsumerTransition(() => admission.transitionConsumer({
+  if (command === 'consumer-transition-preflight') return trace(() => admission.preflightConsumerTransition(options));
+  if (command === 'consumer-transition-check') return trace(() => admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision }));
+  if (command === 'consumer-transition') return trace(() => admission.transitionConsumer({
     operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision }));
   return admission[command](options);
 }

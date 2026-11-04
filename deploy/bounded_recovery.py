@@ -540,7 +540,7 @@ def finalize(config, binding, proof, *, root=Path('/'), owner_uid=0, admission_p
     return {**receipt, 'state': 'complete'}
 
 
-def fixed_probe(config, binding, source, lease, desired_digest):
+def fixed_probe(config, binding, source, lease, desired_digest, *, controller_revision=None):
     """Construct one current-source invocation; callers cannot select a command."""
     source, lease = Path(source), Path(lease)
     for path in [source, source / 'controller', source / 'controller/src', source / 'deploy']:
@@ -548,8 +548,10 @@ def fixed_probe(config, binding, source, lease, desired_digest):
     for path in [source / '.relay-source.json', source / 'controller/src/admission-cli.mjs',
                  source / 'deploy/writer_lock_lease.py', lease]:
         protect(path, Path('/'), 0)
-    require(decode(read(source / '.relay-source.json', Path('/'), 0)).get('revision')
-            == binding['controllerRevision'] and DIGEST.fullmatch(desired_digest or ''),
+    controller_revision = controller_revision or binding['controllerRevision']
+    require(SHA.fullmatch(controller_revision or '')
+            and decode(read(source / '.relay-source.json', Path('/'), 0)).get('revision')
+            == controller_revision and DIGEST.fullmatch(desired_digest or ''),
             'CONTROLLER_SOURCE_UNPROVEN')
     namespace = config['environment']['namespace']
     consumer = '/etc/' + namespace + '/consumer.json'

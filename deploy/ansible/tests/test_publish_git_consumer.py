@@ -255,7 +255,7 @@ class PublishConsumerTests(unittest.TestCase):
             admission('quiesce', '--operation', OP, '--target', REVISION)
             with self.assertRaises(publication.ConsumerPublicationError) as caught:
                 publication._execute(['/usr/bin/node', str(cli), 'consumer-transition-check',
-                                      '--operation', OP, '--revision', REVISION], env)
+                                      '--operation', OP, '--revision', REVISION], {**env, 'RELAY_TRANSITION_TRACE': '1'})
             diagnostic = dict(caught.exception.controller_diagnostic)
             self.assertGreaterEqual(diagnostic.pop('timing')['elapsedMs'], 0)
             self.assertEqual(diagnostic, {

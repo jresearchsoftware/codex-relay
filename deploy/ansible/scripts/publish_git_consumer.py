@@ -236,7 +236,8 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
         old_bytes = _read(consumer, options)
         backup = config_root / ('consumer-before-' + operation + '.json')
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
-               'RELAY_CONSUMER_CONFIG': str(consumer), 'RELAY_REPOSITORY': repository}
+               'RELAY_CONSUMER_CONFIG': str(consumer), 'RELAY_REPOSITORY': repository,
+               'RELAY_TRANSITION_TRACE': '1'}
 
         def digest(path):
             # The product's actual validator owns normalization and digest rules.

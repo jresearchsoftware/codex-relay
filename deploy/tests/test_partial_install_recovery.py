@@ -1,5 +1,6 @@
 """The precise post-rename frontier, with original protected bytes/processes."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,16 @@ import partial_install_recovery as partial
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
     reason='root native Linux filesystem proof')
+
+
+def test_old_runtime_observer_hashes_actual_proc_executable_and_refuses_another_product(monkeypatch):
+    monkeypatch.setattr(partial.subprocess, 'check_output', lambda *a, **k: str(os.getpid()) + '\n')
+    with Path('/proc/self/exe').open('rb') as stream:
+        expected = hashlib.file_digest(stream, 'sha256').hexdigest()
+    observed = partial.old_reviewer('synthetic-test-only', expected)
+    assert observed['pid'] == os.getpid() and observed['startTicks'] > 0
+    with pytest.raises(ValueError, match='OLD_REVIEWER_RUNTIME_UNPROVEN'):
+        partial.old_reviewer('synthetic-test-only', '0' * 64)
 
 
 def test_controller_acceptance_uses_original_policy_and_native_public_main(monkeypatch, tmp_path):

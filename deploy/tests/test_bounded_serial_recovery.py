@@ -33,7 +33,7 @@ MIGRATION = '22345678-1234-4234-8234-123456789abc'
 # Only the GitHub HTTP boundary is synthetic. Native auth really parses the
 # fixture env, signs with its ephemeral RSA key and requests read-only scope.
 NATIVE = r"""
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {renderAuthorityRecord,sha256Body} from './contracts/src/github-authority.mjs';
 const consumer=JSON.parse(readFileSync(process.env.RELAY_CONSUMER_CONFIG)),repository=consumer.repository;
 const owner={login:consumer.owner,id:100,type:'User'};
@@ -57,10 +57,12 @@ globalThis.fetch=async(url,options={})=>{
   const m=path.match(/\/issues\/(\d+)(?:\/(events|comments))?$/);
   if(!m)throw Error('fixture rejected unexpected native route');
   const task=Number(m[1]),route=task===1410,kind=m[2];
-  if(kind==='events')value=route?[]:[{id:task,event:'closed',actor:owner,created_at:'2026-11-03T10:00:00Z'}];
+  const reopened=task===1401&&existsSync(new URL('./synthetic-reopened-task',import.meta.url));
+  if(kind==='events')value=route?[]:[{id:task,event:'closed',actor:owner,created_at:'2026-11-03T10:00:00Z'},
+   ...(reopened?[{id:task+1,event:'reopened',actor:owner,created_at:'2026-11-03T10:01:00Z'}]:[])];
   else if(kind==='comments')value=route?[comment]:[];
-  else value={id:10000+task,number:task,body,state:route?'open':'closed',
-   state_reason:route?null:task===1409?'not_planned':'completed',closed_by:route?null:owner,
+  else value={id:10000+task,number:task,body,state:route||reopened?'open':'closed',
+   state_reason:reopened?'reopened':route?null:task===1409?'not_planned':'completed',closed_by:route||reopened?null:owner,
    url:`https://api.github.com/repos/${repository}/issues/${task}`};
  }
  return new Response(JSON.stringify(value));
@@ -280,6 +282,14 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
         assert consumer.read_bytes() == desired.read_bytes()
         assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
         assert incident.history() == historical
+        reopened = incident.controller / 'synthetic-reopened-task'
+        write(reopened, b'explicit native-reopen fixture', 0o644)
+        with pytest.raises(publisher.ConsumerPublicationError, match='TRANSITION_REQUIRES_RECOVERY'):
+            publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
+                original['repository'], OPERATION, incident.revision, execute=execute)
+        assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
+        assert incident.history() == historical
+        reopened.unlink()
 
     result = publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
         original['repository'], OPERATION, incident.revision, execute=execute)
