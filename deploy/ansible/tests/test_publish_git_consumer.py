@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -27,6 +28,17 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class ControllerDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux process group cancellation')
+    def test_timeout_contains_descendant_before_it_can_publish_a_late_effect(self):
+        with tempfile.TemporaryDirectory(prefix='relay-cancellation-') as temporary:
+            effect = Path(temporary) / 'late-effect'
+            program = ('import subprocess,sys,time;subprocess.Popen([sys.executable,"-c",'
+                + repr('import time;from pathlib import Path;time.sleep(0.5);Path(' + repr(str(effect)) + ').touch()')
+                + ']);time.sleep(10)')
+            self.assertEqual(self.failure(program, timeout=0.1)['failure'], 'timeout')
+            time.sleep(0.6)
+            self.assertFalse(effect.exists())
+
     def child(self, program, action='consumer-transition-check', **options):
         with tempfile.TemporaryDirectory(prefix='relay-controller-diagnostic-') as temporary:
             script = Path(temporary) / 'private-child.py'
@@ -129,7 +141,9 @@ class PublishConsumerTests(unittest.TestCase):
     def execute(self, argv, env):
         self.calls.append(argv)
         self.assertEqual(env['RELAY_CONSUMER_CONFIG'], str(self.consumer))
-        self.assertEqual(set(env), {'PATH', 'LANG', 'LC_ALL', 'RELAY_CONSUMER_CONFIG', 'RELAY_REPOSITORY'})
+        self.assertEqual(set(env), {'PATH', 'LANG', 'LC_ALL', 'RELAY_CONSUMER_CONFIG', 'RELAY_REPOSITORY',
+                                   'RELAY_TRANSITION_TRACE'})
+        self.assertEqual(env['RELAY_TRANSITION_TRACE'], '1')
         # Every controller/validator operation observes one continuous lock.
         with (self.claims / 'publication-v2.lock').open('rb') as locked:
             with self.assertRaises(BlockingIOError):
@@ -243,8 +257,10 @@ class PublishConsumerTests(unittest.TestCase):
             admission('quiesce', '--operation', OP, '--target', REVISION)
             with self.assertRaises(publication.ConsumerPublicationError) as caught:
                 publication._execute(['/usr/bin/node', str(cli), 'consumer-transition-check',
-                                      '--operation', OP, '--revision', REVISION], env)
-            self.assertEqual(caught.exception.controller_diagnostic, {
+                                      '--operation', OP, '--revision', REVISION], {**env, 'RELAY_TRANSITION_TRACE': '1'})
+            diagnostic = dict(caught.exception.controller_diagnostic)
+            self.assertGreaterEqual(diagnostic.pop('timing')['elapsedMs'], 0)
+            self.assertEqual(diagnostic, {
                 'action': 'consumer-transition-check', 'failure': 'nonzero_exit',
                 'exit_code': 1, 'code': 'ADMISSION_PHASE_INVALID'})
             self.assertTrue(admission('drain-check', '--operation', OP)['drained'])

@@ -268,7 +268,11 @@ class ProductionComposedLifecycleTests(unittest.TestCase):
         play = yaml.safe_load(self.site)[1]
         roles = {entry['role']: entry for entry in play['roles']}
         for name in ('relay_codex_runtime', 'relay_controller', 'relay_base', 'relay_runtime', 'relay_artifacts'):
-            self.assertNotIn('when', roles[name])
+            if name == 'relay_controller':
+                self.assertNotIn('when', roles[name])
+            else:
+                self.assertEqual(roles[name].get('when'),
+                    'not relay_consumer_publication_continuation | default(false) | bool')
         primary = next(task for task in play['post_tasks']
                        if task.get('ansible.builtin.include_role') == {'name': 'relay_runner'})
         self.assertNotIn('when', primary)

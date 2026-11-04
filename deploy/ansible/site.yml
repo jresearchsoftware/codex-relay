@@ -76,6 +76,7 @@
       when:
         - relay_deployment_profile == 'production'
         - relay_production_operation_phase | default('') == 'apply'
+        - not relay_consumer_publication_continuation | default(false) | bool
 
     # A busy transition lock or ambiguous record must block BEFORE any install,
     # including updates to the helper executing this apply.
@@ -89,15 +90,20 @@
       ansible.builtin.include_role:
         name: relay_runner
         tasks_from: production-local-apply.yml
-      when: relay_deployment_profile == 'production'
+      when: relay_deployment_profile == 'production' and not relay_consumer_publication_continuation | default(false) | bool
   roles:
     - role: relay_base
+      when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_runtime
+      when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_artifacts
+      when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_reviewer_bind
-      when: relay_deployment_profile == 'production'
+      when: relay_deployment_profile == 'production' and not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_nginx
+      when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_codex_runtime
+      when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_controller
 
   post_tasks:

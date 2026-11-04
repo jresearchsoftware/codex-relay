@@ -64,6 +64,19 @@ test('native lifecycle reader binds repository, native owner, lifecycle and trus
   assert.equal((await f.read(repository, 42)).issue.state, 'open');
 });
 
+test('one observation reuses immutable actor identities but rereads mutable Task authority', async () => {
+  const f = fixture();
+  await f.read(repository, 42);
+  f.issue.state = 'open'; f.issue.state_reason = 'reopened'; f.issue.closed_by = null;
+  f.events.push({ id: 902, event: 'reopened', actor: owner, created_at: '2026-11-03T10:01:00Z' });
+  assert.equal((await f.read(repository, 42)).issue.state, 'open');
+  const pathCount = path => f.calls.filter(url => new URL(url).pathname === path).length;
+  assert.equal(pathCount(`/users/${encodeURIComponent(owner.login)}`), 1);
+  assert.equal(pathCount(`/users/${encodeURIComponent(reviewer.login)}`), 1);
+  for (const suffix of ['', '/events', '/comments'])
+    assert.equal(pathCount(`/repos/${repository}/issues/42${suffix}`), 2);
+});
+
 test('native reader cannot expand the configured repository allowlist or accept a PR/wrong native Issue', async () => {
   const f = fixture();
   await assert.rejects(f.read('foreign/repository', 42), { code: 'HISTORICAL_TASK_REPOSITORY_MISMATCH' });

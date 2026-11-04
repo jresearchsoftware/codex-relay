@@ -88,7 +88,7 @@ class ProductionCodexLauncherBindingTests(unittest.TestCase):
     def test_full_runtime_role_reconciles_the_shared_launcher_and_namespaces(self):
         role = next(entry for entry in yaml.safe_load(self.site)[1]['roles']
                     if entry['role'] == 'relay_codex_runtime')
-        self.assertNotIn('when', role)
+        self.assertEqual(role.get('when'), 'not relay_consumer_publication_continuation | default(false) | bool')
         self.assertIn('ansible.builtin.include_tasks: launcher.yml', self.runtime_tasks)
         self.assertIn('ansible.builtin.include_tasks: runtime-namespace.yml', self.runtime_tasks)
 

@@ -17,10 +17,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import pytest
 
 from test_bounded_install_recovery import BASELINE, Incident, NODE, OPERATION, ROOT, write
+sys.path.insert(0, str(ROOT / 'deploy/ansible/tests'))
+from test_git_consumer_history_recovery import HISTORY
 
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
@@ -30,7 +33,7 @@ MIGRATION = '22345678-1234-4234-8234-123456789abc'
 # Only the GitHub HTTP boundary is synthetic. Native auth really parses the
 # fixture env, signs with its ephemeral RSA key and requests read-only scope.
 NATIVE = r"""
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {renderAuthorityRecord,sha256Body} from './contracts/src/github-authority.mjs';
 const consumer=JSON.parse(readFileSync(process.env.RELAY_CONSUMER_CONFIG)),repository=consumer.repository;
 const owner={login:consumer.owner,id:100,type:'User'};
@@ -54,10 +57,12 @@ globalThis.fetch=async(url,options={})=>{
   const m=path.match(/\/issues\/(\d+)(?:\/(events|comments))?$/);
   if(!m)throw Error('fixture rejected unexpected native route');
   const task=Number(m[1]),route=task===1410,kind=m[2];
-  if(kind==='events')value=route?[]:[{id:task,event:'closed',actor:owner,created_at:'2026-11-03T10:00:00Z'}];
+  const reopened=task===1401&&existsSync(new URL('./synthetic-reopened-task',import.meta.url));
+  if(kind==='events')value=route?[]:[{id:task,event:'closed',actor:owner,created_at:'2026-11-03T10:00:00Z'},
+   ...(reopened?[{id:task+1,event:'reopened',actor:owner,created_at:'2026-11-03T10:01:00Z'}]:[])];
   else if(kind==='comments')value=route?[comment]:[];
-  else value={id:10000+task,number:task,body,state:route?'open':'closed',
-   state_reason:route?null:task===1409?'not_planned':'completed',closed_by:route?null:owner,
+  else value={id:10000+task,number:task,body,state:route||reopened?'open':'closed',
+   state_reason:reopened?'reopened':route?null:task===1409?'not_planned':'completed',closed_by:route||reopened?null:owner,
    url:`https://api.github.com/repos/${repository}/issues/${task}`};
  }
  return new Response(JSON.stringify(value));
@@ -76,7 +81,7 @@ def node(source, consumer, program, *arguments, preload=None):
     return json.loads(result.stdout)
 
 
-def harness(root):
+def harness(root, *, mixed=False):
     """Child-only mount changes disappear when this network-isolated process exits."""
     run = subprocess.run
     run(['mount', '--make-rprivate', '/'], check=True)
@@ -106,15 +111,17 @@ def harness(root):
     gate.update(operationId=MIGRATION, phase='applying')
     write(old_gate, gate)
     old_digest = gate['consumerDigest']
-    for run_id in range(401, 411):
-        task = run_id + 1000
-        envelope = {'version': 2, 'repository': original['repository'], 'consumerDigest': old_digest,
-            'runId': run_id, 'attemptId': 'run-' + str(run_id), 'step': 1, 'route': 'manual',
-            'target': 'issue', 'number': task, 'issueNumber': task,
-            'branch': original['taskBranchPrefix'] + 'task-' + str(task), 'startHead': BASELINE,
-            'historicalBase': BASELINE, 'targetBase': BASELINE, 'authorityDigest': 'a' * 64,
-            'profile': original['defaultProfile'], 'subagentsAllowed': False, 'validation': ['diff-check']}
-        write(incident.claims / 'publication-v2' / (str(run_id) + '.json'), {'envelope': envelope, 'outcome': None})
+    original_history = HISTORY.replace('route,target:',
+        "profile:CONSUMER.defaultProfile,subagentsAllowed:false,validation:['diff-check'],"
+        "targetBase:head,authorityDigest:'a'.repeat(64),historicalBase:selected.base_sha,route,target:")
+    seeded = node(retained / 'reviewed-source', serial, original_history, 'seed', 'full')
+    assert seeded['records'] == 161 and seeded['journals'] == 140
+    current_manual = []
+    if mixed:
+        for run_id in range(401, 411):
+            path = incident.claims / 'publication-v2' / (str(run_id) + '.json')
+            current_manual.append(json.loads(path.read_bytes()))
+            path.unlink()
     current = copy.deepcopy(original)
     current['generalRunnerPool'] = {'desiredCapacity': 1}
     names = ['workRoot', 'attemptRoot', 'dispatch', 'launcher', 'diagnosticsConfig', 'diagnosticsStore', 'diagnosticsRoot']
@@ -125,6 +132,10 @@ def harness(root):
     pool_bytes = consumer.read_bytes()
     digest_program = "import{CONSUMER_DIGEST}from'./consumer/consumer.mjs';console.log(JSON.stringify(CONSUMER_DIGEST));"
     current_digest = node(incident.controller, consumer, digest_program)
+    if mixed:
+        for record in current_manual:
+            record['envelope']['consumerDigest'] = current_digest
+            write(incident.claims / 'publication-pool-v1' / (str(record['envelope']['runId']) + '.json'), record)
     pool_gate = incident.claims / 'admission-pool-v1.json'
     write(pool_gate, {**gate, 'operationId': OPERATION, 'phase': 'recovery-required', 'consumerDigest': current_digest})
     # This explicitly synthetic receipt seals the actual original source graph,
@@ -139,7 +150,7 @@ console.log(JSON.stringify({source:await protectedSourceTreeSha256(source),
 """
     records = [json.loads(path.read_bytes()) for path in sorted((incident.claims / 'publication-v2').glob('*.json'))]
     record_list = root / 'synthetic-record-list.json'
-    write(record_list, records)
+    write(record_list, json.dumps(records).encode())
     hashes = node(incident.controller, consumer, seal, retained / 'reviewed-source', record_list)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt_path = consumer.with_name('serial-pool-compat-v1.json')
@@ -182,7 +193,12 @@ console.log(JSON.stringify({source:await protectedSourceTreeSha256(source),
         'GITHUB_APP_INSTALLATION_ID=' + current['writerApp']['installationId'] + '\n'
         'GITHUB_APP_PRIVATE_KEY_FILE=' + str(key_path) + '\n').encode())
     preload = incident.controller / 'synthetic-native-preload.mjs'
-    write(preload, NATIVE.encode(), 0o644)
+    native = NATIVE
+    if mixed:
+        native = native.replace("const path=new URL(url).pathname;let value;",
+            "const path=new URL(url).pathname;let value;"
+            "if(!path.includes('access_tokens'))await new Promise(r=>setTimeout(r,400));")
+    write(preload, native.encode(), 0o644)
     acknowledge = r"""
 import{createInstalledTaskDisposition}from'./controller/src/installed-task-disposition.mjs';
 import{loadSerialPoolCompatibility,createCompatibilityStore}from'./controller/src/serial-pool-compatibility.mjs';
@@ -239,12 +255,41 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
     publisher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(publisher)
 
+    timings = []
     def execute(argv, environment):
         with incident.lock.open('rb') as handle:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         actual = [argv[0], '--import', str(preload), *argv[1:]] if argv[1] != '--input-type=module' else argv
-        return publisher._execute(actual, environment)
+        start = time.monotonic()
+        result = None
+        try:
+            result = publisher._execute(actual, environment)
+            return result
+        finally:
+            timings.append({'action': argv[2] if argv[1] != '--input-type=module' else 'digest',
+                'seconds': round(time.monotonic() - start, 3),
+                **({'trace': result['_transitionTiming']} if result and '_transitionTiming' in result else {})})
+
+    if mixed:
+        def interrupted(argv, environment):
+            if 'consumer-transition' in argv:
+                return publisher._execute([argv[0], '--import', str(preload), *argv[1:]], environment, timeout=0.1)
+            return execute(argv, environment)
+        with pytest.raises(publisher.ConsumerPublicationError, match='TRANSITION_REQUIRES_RECOVERY'):
+            publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
+                original['repository'], OPERATION, incident.revision, execute=interrupted)
+        assert consumer.read_bytes() == desired.read_bytes()
+        assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
+        assert incident.history() == historical
+        reopened = incident.controller / 'synthetic-reopened-task'
+        write(reopened, b'explicit native-reopen fixture', 0o644)
+        with pytest.raises(publisher.ConsumerPublicationError, match='TRANSITION_REQUIRES_RECOVERY'):
+            publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
+                original['repository'], OPERATION, incident.revision, execute=execute)
+        assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
+        assert incident.history() == historical
+        reopened.unlink()
 
     result = publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
         original['repository'], OPERATION, incident.revision, execute=execute)
@@ -254,8 +299,9 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
     after = command(['consumer-transition-preflight', '--desired-digest', desired_digest])
     assert after['eligible'] and after['active'] == after['unknown'] == []
     assert command(['status'])['manualAttempts']['historical'] == observed['manualAttempts']['historical']
-    assert all(json.loads(path.read_bytes()).get('outcome') is None
-        for path in (incident.claims / 'publication-v2').glob('*.json'))
+    manual_store = 'publication-pool-v1' if mixed else 'publication-v2'
+    assert all(json.loads((incident.claims / manual_store / (str(run_id) + '.json')).read_bytes()).get('outcome') is None
+        for run_id in range(401, 411))
     assert incident.history() == historical
     assert all((Path(path).read_bytes(), Path(path).stat().st_ino) == value for path, value in originals.items())
     gate = json.loads(pool_gate.read_bytes())
@@ -263,11 +309,12 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
         'applying', OPERATION, incident.revision, desired_digest)
     assert json.loads(incident.backend.read_bytes()) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
         'phase': 'apply', 'target_head': BASELINE}
-    print(json.dumps({'composite': True, 'historical': 10, 'targetSnapshotCreated': True,
+    print(json.dumps({'composite': True, 'mixed': mixed, 'records': 161, 'historical': 10, 'timings': timings, 'targetSnapshotCreated': True,
         'originalHistoryUnchanged': True, 'admission': 'applying'}))
 
 
-def test_real_serial_composite_bounded_recovery_creates_missing_target_snapshot_before_consumer_change():
+@pytest.mark.parametrize('mixed', [False, True])
+def test_real_serial_composite_bounded_recovery_creates_missing_target_snapshot_before_consumer_change(mixed):
     if not NODE.is_file():
         pytest.skip('qualified Node 22 executable unavailable')
     probe = subprocess.run(['unshare', '--mount', '--net', '--pid', '--fork', '--kill-child', 'true'], capture_output=True)
@@ -275,12 +322,13 @@ def test_real_serial_composite_bounded_recovery_creates_missing_target_snapshot_
         pytest.skip('private mount/network/PID namespaces unavailable')
     with tempfile.TemporaryDirectory(prefix='relay-bounded-serial-', dir='/run') as directory:
         result = subprocess.run(['unshare', '--mount', '--net', '--pid', '--fork', '--kill-child', '--mount-proc',
-            sys.executable, str(Path(__file__).resolve()), '--composite-harness', directory],
-            text=True, capture_output=True, timeout=240)
+            sys.executable, str(Path(__file__).resolve()), '--mixed-harness' if mixed else '--composite-harness', directory],
+            text=True, capture_output=True, timeout=360)
         assert result.returncode == 0, result.stdout + result.stderr
         assert json.loads(result.stdout)['originalHistoryUnchanged'] is True
+        print(result.stdout.strip())
 
 
 if __name__ == '__main__':
-    assert len(sys.argv) == 3 and sys.argv[1] == '--composite-harness'
-    harness(Path(sys.argv[2]))
+    assert len(sys.argv) == 3 and sys.argv[1] in ['--composite-harness', '--mixed-harness']
+    harness(Path(sys.argv[2]), mixed=sys.argv[1] == '--mixed-harness')

@@ -522,6 +522,10 @@ def run(args, primitive, root, identity, *, guard_factory=None):
             or (not bounded_requested and getattr(args, 'install_recovery_operation', None) is None
                 and getattr(args, 'install_recovery_target', None) is None), 'RECOVERY_ARGUMENTS_INVALID')
     root = Path(root)
+    if getattr(args, 'continue_install_recovery', False):
+        require(bounded_requested, 'CONTINUATION_AUTHORIZATION_REQUIRED')
+        from partial_install_recovery import run as continue_install
+        return continue_install(args, root, identity, guard_factory=guard_factory)
     args.config = args.config.absolute()
     stage, selected, mutation = 'desired-inputs', {'strategy': 'unresolved', 'installed': 'unavailable'}, False
     inner = None

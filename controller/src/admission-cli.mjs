@@ -11,7 +11,8 @@ import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES 
 import { createSlotJournal } from './slot-journal.mjs';
 import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
 import { createInstalledTaskDisposition } from './installed-task-disposition.mjs';
-import { fail } from './execution-contract.mjs';
+import { digest, fail } from './execution-contract.mjs';
+import { traceConsumerTransition } from './transition-timing.mjs';
 
 const exec = promisify(execFile);
 const commands = {
@@ -59,7 +60,14 @@ export function installedAdmissionControl() {
       ...(name === 'transitionConsumer' ? { consumerTransition: args[0] } : {}) });
     const disposition = createInstalledTaskDisposition({
       historicalConsumer: compatibility?.originalConsumer ?? null });
-    const manualAttemptDisposition = disposition.resolve;
+    // An action is one locked observation. Reuse exact record observations only
+    // inside it; the next action always constructs a fresh native reader.
+    const dispositions = new Map();
+    const manualAttemptDisposition = record => {
+      const key = digest(record);
+      if (!dispositions.has(key)) dispositions.set(key, disposition.resolve(record));
+      return dispositions.get(key);
+    };
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
@@ -69,6 +77,8 @@ export function installedAdmissionControl() {
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
     const composite = createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition });
+    let records;
+    const compositeRecords = () => records ??= composite.all();
     const currentJournal = createSlotJournal(currentStore);
     const originalJournalRoot = compatibility.root === '/' ? compatibility.originalConsumer.paths.attemptRoot
       : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
@@ -79,13 +89,13 @@ export function installedAdmissionControl() {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
       supplementalInventory: async ({ task, slot, resourceOnly }) => {
-        const records = task === null && slot === null ? await composite.all() : null;
+        const records = task === null && slot === null ? await compositeRecords() : null;
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
         if (task !== null && CONSUMER.repository !== compatibility.receipt.repository) return { active: [], unknown: [] };
         // Old runtime readers legitimately ignored manual handoffs. Add only
         // concrete conflicting effects here on every global drain/resume; a
         // missing manual Outcome alone remains a separate transition concern.
-        if (!resourceOnly) for (const record of records ?? await composite.all()) {
+        if (!resourceOnly) for (const record of records ?? await compositeRecords()) {
           const e = record.envelope;
           if (e.repository !== compatibility.receipt.repository || e.route !== 'manual'
             || !compatibility.receipt.original.runs.some(run => run.runId === e.runId)
@@ -98,7 +108,7 @@ export function installedAdmissionControl() {
       },
       supplementalManualInventory: async ({ includeManual, manualDiagnostics }) => {
         const unknown = [], historical = [], errors = [];
-        for (const record of await composite.all()) {
+        for (const record of await compositeRecords()) {
           if (record.envelope.route !== 'manual') continue;
           const e = record.envelope;
           const original = e.repository === compatibility.receipt.repository
@@ -177,13 +187,16 @@ export async function main(args = process.argv.slice(2)) {
       snapshot: readDrainSnapshot });
   }
   const admission = installedAdmissionControl();
+  // Preserve the existing one-envelope stderr contract for ordinary helper
+  // callers. The trusted publisher opts into the bounded timing stream.
+  const trace = action => process.env.RELAY_TRANSITION_TRACE === '1' ? traceConsumerTransition(action) : action();
   if (command === 'drain-check') return admission.drained(options);
   if (command === 'snapshot') return admission.snapshot({ ...options, services: await readAdmissionSnapshot() });
   if (command === 'recovery-target') return admission.recoveryTarget(options);
-  if (command === 'consumer-transition-preflight') return admission.preflightConsumerTransition(options);
-  if (command === 'consumer-transition-check') return admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision });
-  if (command === 'consumer-transition') return admission.transitionConsumer({
-    operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision });
+  if (command === 'consumer-transition-preflight') return trace(() => admission.preflightConsumerTransition(options));
+  if (command === 'consumer-transition-check') return trace(() => admission.checkConsumerTransition({ operationId: options.operationId, target: options.revision }));
+  if (command === 'consumer-transition') return trace(() => admission.transitionConsumer({
+    operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision }));
   return admission[command](options);
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
