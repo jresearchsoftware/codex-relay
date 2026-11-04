@@ -879,7 +879,7 @@ def test_bound_active_package_is_reused_or_blocked_before_repair(tmp_path, compl
 
 @pytest.mark.parametrize('missing', ['config.sh', 'run.sh'])
 @pytest.mark.parametrize('active', [False, True])
-def test_listener_present_partial_package_repairs_only_when_inactive(tmp_path, missing, active):
+def test_registered_partial_package_requires_explicit_repair_even_when_inactive(tmp_path, missing, active):
     import yaml
     contract, template, arguments, member = install_fixture(tmp_path)
     fixture_package(tmp_path, member, arguments['runner_uid'])
@@ -897,15 +897,45 @@ def test_listener_present_partial_package_repairs_only_when_inactive(tmp_path, m
         with pytest.raises(pool.PoolError, match='INSTALL_ACTIVE_PACKAGE_UNPROVEN'):
             pool.installation_plan(contract, template, **arguments)
     else:
-        plan = pool.installation_plan(contract, template, **arguments)
-        assert plan['members']['primary']['installPackage'] is True
-        tasks = yaml.safe_load((ROOT / 'deploy/ansible/tasks/managed-pool-member.yml').read_text())
-        extraction = next(task for task in tasks if 'ansible.builtin.unarchive' in task)
-        assert extraction['when'] == ['not ansible_check_mode | bool',
-                                     'relay_pool_install_plan.members[relay_pool_member.id].installPackage']
-        assert 'creates' not in extraction['ansible.builtin.unarchive']
-        assert extraction['become_user'] == '{{ relay_general_runner_pool.runnerUser }}'
+        with pytest.raises(pool.PoolError, match='INSTALL_REGISTERED_PACKAGE_REPAIR_REQUIRED'):
+            pool.installation_plan(contract, template, **arguments)
     assert unchanged_tree(tmp_path) == before
+
+
+@pytest.mark.parametrize('absolute', [True, False])
+def test_active_native_updated_pool_layout_is_reused_without_mutation(tmp_path, absolute):
+    contract, template, arguments, member = install_fixture(tmp_path)
+    fixture_package(tmp_path, member, arguments['runner_uid'])
+    fixture_registration(tmp_path, contract, member, arguments['runner_uid'])
+    fixture_binding(tmp_path, contract)
+    unit_path = '/etc/systemd/system/' + member['service']
+    fixture_file(tmp_path, unit_path, fixture_unit(contract, template, member), os.getuid(), 0o644)
+    arguments['service_probe'] = lambda member: {'LoadState': 'loaded', 'ActiveState': 'active',
+        'MainPID': '50', 'ControlPID': '0', 'FragmentPath': unit_path}
+    runner = tmp_path / member['root'].lstrip('/')
+    (runner / 'bin').rename(runner / 'bin.2.999.0')
+    (runner / 'externals.2.999.0').mkdir(mode=0o750)
+    if os.getuid() != arguments['runner_uid']:
+        os.chown(runner / 'externals.2.999.0', arguments['runner_uid'], -1)
+    for name in ['bin', 'externals']:
+        (runner / name).symlink_to(member['root'] + '/' + name + '.2.999.0'
+                                 if absolute else name + '.2.999.0')
+        if os.getuid() != arguments['runner_uid']:
+            os.chown(runner / name, arguments['runner_uid'], -1, follow_symlinks=False)
+    before = unchanged_tree(tmp_path)
+    assert pool.installation_plan(contract, template, **arguments)['members']['primary']['installPackage'] is False
+    assert unchanged_tree(tmp_path) == before
+
+
+@pytest.mark.parametrize('target', ['/tmp/foreign/bin.2.999.0', '../bin.2.999.0', 'bin.alias', 'bin.2.999.0'])
+def test_pool_native_link_rejects_escape_alias_and_missing_target(tmp_path, target):
+    contract, template, arguments, member = install_fixture(tmp_path)
+    runner = tmp_path / member['root'].lstrip('/')
+    (runner / 'bin').symlink_to(target)
+    if os.getuid() != arguments['runner_uid']:
+        os.chown(runner / 'bin', arguments['runner_uid'], -1, follow_symlinks=False)
+    with pytest.raises(pool.PoolError, match='INSTALL_NATIVE_LAYOUT_UNSAFE'):
+        pool.installation_plan(contract, template, **arguments)
 
 
 def test_known_protected_unit_can_receive_new_template_without_an_unbound_unit_bypass(tmp_path):

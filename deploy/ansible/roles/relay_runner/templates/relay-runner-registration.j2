@@ -18,7 +18,8 @@ fi
 [[ -d "{{ relay_runner_root }}" && ! -L "{{ relay_runner_root }}" ]] || fail RUNNER_ROOT_INVALID
 [[ "$(stat -c '%U:%G:%a:%F' '{{ relay_runner_root }}')" == '{{ relay_runner_user }}:{{ relay_runner_group }}:750:directory' ]] || fail RUNNER_ROOT_OWNERSHIP
 [[ -x "{{ relay_runner_root }}/config.sh" && -x "{{ relay_runner_root }}/run.sh" ]] || fail RUNNER_PACKAGE_NOT_READY
-[[ "$(/usr/sbin/runuser --preserve-environment --user '{{ relay_runner_user }}' -- env HOME='{{ relay_runner_home }}' '{{ relay_runner_root }}/bin/Runner.Listener' --version 2>/dev/null || true)" == *"2.336.0"* ]] || fail RUNNER_VERSION_MISMATCH
+runner_version=$(/usr/sbin/runuser --preserve-environment --user '{{ relay_runner_user }}' -- env HOME='{{ relay_runner_home }}' '{{ relay_runner_root }}/bin/Runner.Listener' --version 2>/dev/null) || fail RUNNER_VERSION_MISMATCH
+[[ "$runner_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail RUNNER_VERSION_MISMATCH
 
 normalize_diagnostics() {
   find '{{ relay_runner_root }}/_diag' -maxdepth 1 -type f -exec chown '{{ relay_runner_user }}:{{ relay_runner_group }}' {} + -exec chmod 0640 {} + 2>/dev/null || true
@@ -94,6 +95,14 @@ try:
             and type(state.get('agentId')) is int and state['agentId'] > 0
             and (not group or state.get('poolName') == group)):
         raise ValueError('identity')
+    # Report only this non-secret persisted option. Reuse does not change it;
+    # an old disabled registration needs the separately authorized migration.
+    if 'disableUpdate' not in state:
+        print('absent')
+    elif type(state['disableUpdate']) is bool:
+        print('true' if state['disableUpdate'] else 'false')
+    else:
+        print('invalid')
 except (OSError, ValueError, TypeError, AttributeError):
     sys.exit(1)
 PY
@@ -101,13 +110,15 @@ PY
 
 pending_state=$(pending_registration inspect) || fail REGISTRATION_STATE_AMBIGUOUS
 if [[ -e '{{ relay_runner_registration_marker }}' || -L '{{ relay_runner_registration_marker }}' || -e '{{ relay_runner_credentials_marker }}' || -L '{{ relay_runner_credentials_marker }}' ]]; then
-  validate_registration || fail REGISTRATION_STATE_AMBIGUOUS
+  disable_update=$(validate_registration) || fail REGISTRATION_STATE_AMBIGUOUS
   pending_registration clear || fail REGISTRATION_STATE_AMBIGUOUS
   normalize_diagnostics
-  echo 'RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} version=2.336.0 state=reused group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}'
+  echo "RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(',') }} version=$runner_version state=reused group={{ relay_runner_registration_group if relay_runner_registration_scope == 'organization' else '-' }} work={{ relay_runner_work_root }} disable_update=$disable_update"
   exit 0
 fi
 [[ "$pending_state" == absent ]] || fail REGISTRATION_STATE_AMBIGUOUS
+# Complete prepared listeners belong to the native updater. A locally valid
+# numeric version does not prove GitHub server support or an update offer.
 # RSA-only state can survive a remote registration before either local marker
 # was saved. Preserve it for diagnosis instead of requesting another token.
 [[ ! -e '{{ relay_runner_root }}/.credentials_rsaparams' && ! -L '{{ relay_runner_root }}/.credentials_rsaparams' ]] || fail REGISTRATION_STATE_AMBIGUOUS
@@ -128,7 +139,7 @@ registration_group_args=(--runnergroup '{{ relay_runner_registration_group }}')
 {% else %}
 registration_group_args=()
 {% endif %}
-if ! registration_output=$(/usr/sbin/runuser --preserve-environment --user '{{ relay_runner_user }}' -- /bin/bash -c 'cd "$1" && shift && exec ./config.sh "$@"' _ '{{ relay_runner_root }}' --unattended --url '{{ registration_url }}' --name '{{ relay_runner_name }}' --labels '{{ relay_runner_labels | join(',') }}' --work '{{ relay_runner_work_root }}' --disableupdate "${registration_group_args[@]}" 2>&1); then
+if ! registration_output=$(/usr/sbin/runuser --preserve-environment --user '{{ relay_runner_user }}' -- /bin/bash -c 'cd "$1" && shift && exec ./config.sh "$@"' _ '{{ relay_runner_root }}' --unattended --url '{{ registration_url }}' --name '{{ relay_runner_name }}' --labels '{{ relay_runner_labels | join(',') }}' --work '{{ relay_runner_work_root }}' "${registration_group_args[@]}" 2>&1); then
   unset registration_value ACTIONS_RUNNER_INPUT_TOKEN
   normalize_diagnostics
   [[ ! -e '{{ relay_runner_registration_marker }}' && ! -L '{{ relay_runner_registration_marker }}' && ! -e '{{ relay_runner_credentials_marker }}' && ! -L '{{ relay_runner_credentials_marker }}' ]] || fail REGISTRATION_STATE_AMBIGUOUS
@@ -154,6 +165,6 @@ fi
 
 unset registration_value ACTIONS_RUNNER_INPUT_TOKEN registration_output
 normalize_diagnostics
-validate_registration || fail REGISTRATION_STATE_AMBIGUOUS
+disable_update=$(validate_registration) || fail REGISTRATION_STATE_AMBIGUOUS
 pending_registration clear || fail REGISTRATION_STATE_AMBIGUOUS
-echo 'RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(",") }} version=2.336.0 state=registered group={{ relay_runner_registration_group if relay_runner_registration_scope == "organization" else "-" }} work={{ relay_runner_work_root }}'
+echo "RUNNER_REGISTRATION_PASS url={{ registration_url }} name={{ relay_runner_name }} label={{ relay_runner_labels | join(',') }} version=$runner_version state=registered group={{ relay_runner_registration_group if relay_runner_registration_scope == 'organization' else '-' }} work={{ relay_runner_work_root }} disable_update=$disable_update"

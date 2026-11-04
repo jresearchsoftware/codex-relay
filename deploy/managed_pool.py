@@ -645,22 +645,43 @@ def installation_plan(contract, unit_template, *, root=Path('/'), owner_uid=0,
         if service['LoadState'] == 'loaded':
             require((unit_info is not None or member_plan['retiring'])
                     and service.get('FragmentPath') == unit_path, 'INSTALL_UNKNOWN_SERVICE')
+        # Native self-update replaces these directories with contained absolute
+        # or relative links to NAME.VERSION. Check their targets before reading
+        # an executable through the mutable runner-owned namespace.
+        package_directories = {}
+        for name in ['bin', 'externals']:
+            logical = member['root'] + '/' + name
+            info = metadata(logical)
+            if info is not None and stat.S_ISLNK(info.st_mode):
+                target = os.readlink(physical(logical))
+                if os.path.isabs(target):
+                    require(str(Path(target).parent) == member['root'], 'INSTALL_NATIVE_LAYOUT_UNSAFE')
+                    target = Path(target).name
+                require(info.st_uid == runner_uid and re.fullmatch(
+                    re.escape(name) + r'\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', target),
+                    'INSTALL_NATIVE_LAYOUT_UNSAFE')
+                logical = member['root'] + '/' + target
+                require(metadata(logical) is not None, 'INSTALL_NATIVE_LAYOUT_UNSAFE')
+            if metadata(logical) is not None:
+                directory(logical, runner_uid, [])
+            package_directories[name] = logical
         complete = True
         for logical in [member['root'] + '/config.sh', member['root'] + '/run.sh', member['root'] + '/bin/Runner.Listener']:
+            if logical.endswith('/bin/Runner.Listener'):
+                logical = package_directories['bin'] + '/Runner.Listener'
             info = metadata(logical)
             if info is None:
                 complete = False
             else:
                 require(stat.S_ISREG(info.st_mode) and info.st_uid == runner_uid
                         and info.st_mode & 0o111, 'INSTALL_PACKAGE_UNSAFE')
-        if metadata(member['root'] + '/bin') is not None:
-            directory(member['root'] + '/bin', runner_uid, [])
         if record is not None and record['phase'] == 'remove':
             # Preserve the exact retirement frontier; reconciliation owns local
             # marker cleanup, including a package/unit already partly removed.
             member_plan['createDirectories'] = []
             continue
         require(complete or service['ActiveState'] != 'active', 'INSTALL_ACTIVE_PACKAGE_UNPROVEN')
+        require(complete or not present, 'INSTALL_REGISTERED_PACKAGE_REPAIR_REQUIRED')
         member_plan['installPackage'] = not complete
         member_plan['installUnit'] = unit_info is None or installed_unit != expected
     return plan

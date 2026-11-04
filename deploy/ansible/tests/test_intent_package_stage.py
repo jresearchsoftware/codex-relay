@@ -154,7 +154,7 @@ def test_runner_stage_failure_preserves_every_live_byte(package_fixture, failure
     assert not (f['stage'] / 'runner-package/manifest.json').exists()
 
 
-def test_runner_stage_seal_and_tamper_rejection_do_not_probe_live_runner(package_fixture):
+def test_runner_stage_seal_and_tamper_rejection_preserve_live_distribution(package_fixture):
     f = package_fixture; values = runner_package(f); before = snapshot(f['live'])
     result = run_stage(f, 'runner', values)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -221,3 +221,50 @@ def test_live_roles_gate_network_and_installer_only_for_the_staged_route():
         guard_index = next(index for index, item in enumerate(tasks)
                            if 'Verify the frozen isolated' in item.get('name', ''))
         assert guard_index < first_effect
+
+
+@pytest.mark.parametrize('link_kind', ['absolute', 'relative'])
+def test_staging_accepts_native_update_layout_and_probes_only_as_runner(package_fixture, link_kind):
+    import pwd
+    f = package_fixture; values = runner_package(f)
+    root = Path(values['relay_runner_root']); user = pwd.getpwnam(values['relay_runner_user'])
+    binary = root / 'bin.2.400.0'; (root / 'bin').rename(binary)
+    (root / 'bin').symlink_to(binary if link_kind == 'absolute' else binary.name, target_is_directory=True)
+    external = root / 'externals.2.400.0'; external.mkdir()
+    (root / 'externals').symlink_to(external, target_is_directory=True)
+    diagnostic = root / '_diag'; diagnostic.mkdir(mode=0o750)
+    os.chown(diagnostic, user.pw_uid, user.pw_gid)
+    command = binary / 'Runner.Listener'
+    command.write_text('#!/bin/sh\nid -u > "' + str(diagnostic / 'live-probe') + '"\nprintf "2.400.0\\n"\n')
+    before = snapshot(f['live'])
+    result = run_stage(f, 'runner', values)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert guard(f, 'runner', 'verify', values).returncode == 0
+    observed = diagnostic / 'live-probe'
+    assert observed.read_text().strip() == str(user.pw_uid) and observed.stat().st_uid == user.pw_uid
+    assert observed.stat().st_mode & 0o777 == 0o600
+    after = snapshot(f['live'])
+    assert {name: row for name, row in before.items() if not name.startswith('runner/_diag')} == {
+        name: row for name, row in after.items() if not name.startswith('runner/_diag')}
+
+
+def test_staging_rejects_registered_corrupt_version_without_bootstrap_replacement(package_fixture):
+    f = package_fixture; values = runner_package(f)
+    command = Path(values['relay_runner_root']) / 'bin/Runner.Listener'
+    command.write_text('#!/bin/sh\necho 2.400.0-invalid\n')
+    before = snapshot(f['live'])
+    result = run_stage(f, 'runner', values)
+    assert result.returncode != 0 and 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED' in result.stdout
+    assert snapshot(f['live']) == before
+    assert not (f['stage'] / 'runner-package/manifest.json').exists()
+
+
+@pytest.mark.parametrize('target', ['../foreign/bin.2.400.0', '/bin', 'bin.02.400.0'])
+def test_staging_rejects_unsafe_or_ambiguous_native_binary_alias(package_fixture, target):
+    f = package_fixture; values = runner_package(f)
+    root = Path(values['relay_runner_root']); (root / 'bin').rename(root / 'bin.2.400.0')
+    (root / 'bin').symlink_to(target, target_is_directory=True)
+    before = snapshot(f['live'])
+    result = run_stage(f, 'runner', values)
+    assert result.returncode != 0 and 'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE' in result.stdout
+    assert snapshot(f['live']) == before

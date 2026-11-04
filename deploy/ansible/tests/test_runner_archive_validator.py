@@ -49,14 +49,14 @@ class RunnerArchiveValidatorTests(unittest.TestCase):
         finally:
             pathlib.Path(name).unlink(missing_ok=True)
 
-    def test_accepts_pinned_layout_and_version(self):
+    def test_accepts_selected_bootstrap_layout_and_version(self):
         result = self.run_validator(archive([("config.sh", "file"), ("run.sh", "file"), ("bin/Runner.Listener", "file")]))
         self.assertEqual(result.returncode, 0)
         self.assertIn("RUNNER_ARCHIVE_VALID version=2.336.0", result.stdout)
 
-    def test_rejects_wrong_version_and_missing_entrypoint(self):
+    def test_rejects_malformed_version_and_missing_entrypoint(self):
         self.assertNotEqual(self.run_validator(archive([("config.sh", "file"), ("run.sh", "file")])).returncode, 0)
-        self.assertNotEqual(self.run_validator(archive([("config.sh", "file"), ("run.sh", "file"), ("bin/Runner.Listener", "file")]), "2.335.0").returncode, 0)
+        self.assertNotEqual(self.run_validator(archive([("config.sh", "file"), ("run.sh", "file"), ("bin/Runner.Listener", "file")]), "2.335.0 extra").returncode, 0)
 
     def test_rejects_unsafe_paths_and_links(self):
         unsafe = archive([("config.sh", "file"), ("run.sh", "file"), ("bin/Runner.Listener", "file"), ("../escape", "file")])
@@ -69,3 +69,12 @@ class RunnerArchiveValidatorTests(unittest.TestCase):
             payload = archive([('config.sh', 'file'), ('run.sh', 'file'),
                                ('bin/Runner.Listener', 'file'), (name, 'file')])
             self.assertIn('INSTANCE_STATE_IN_PACKAGE', self.run_validator(payload).stdout)
+
+    def test_layout_validator_uses_selected_version_instead_of_a_second_pin(self):
+        payload = archive([('config.sh', 'file'), ('run.sh', 'file'), ('bin/Runner.Listener', 'file')])
+        for version in ('2.338.2', '2.400.0'):
+            result = self.run_validator(payload, version)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn('RUNNER_ARCHIVE_VALID version=' + version, result.stdout)
+        for version in ('02.338.2', '2.338.2suffix', '2.338', '2.338.2\nwrong', '1' * 129 + '.1.1'):
+            self.assertIn('VERSION_CONTRACT', self.run_validator(payload, version).stdout)

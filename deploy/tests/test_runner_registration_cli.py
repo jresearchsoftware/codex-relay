@@ -17,7 +17,7 @@ elif '--expect-binding' in sys.argv[-1]:
     import shlex
     binding = shlex.split(sys.argv[-1])[-1]
     sys.stdin.read()
-    print('RUNNER_REGISTRATION_PASS ' + binding.replace(' group=', ' version=2.336.0 state=reused group=', 1))
+    print('RUNNER_REGISTRATION_PASS ' + binding.replace(' group=', ' version=999.1.0 state=reused group=', 1) + ' disable_update=false')
 ''')
         backend = cls.bin / 'ansible-playbook'
         backend.write_text(backend.read_text() + "\nprint('GENERAL_RUNNER_VALIDATED='+head+';phase=general-runner-enable;production=preserved')\n")
@@ -36,6 +36,8 @@ elif '--expect-binding' in sys.argv[-1]:
                     result = self.invoke('--phase', phase, '--authorize-' + phase, *token_arguments)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('state=reused', result.stdout)
+                    self.assertIn('version=999.1.0', result.stdout)
+                    self.assertIn('disable_update=false', result.stdout)
                     self.assertNotIn('synthetic-ephemeral-input', result.stdout + result.stderr)
                     self.assertFalse(self.capture.exists(), 'registration does not serialize an Ansible inventory')
                     self.assertEqual((self.base / 'logs').exists(), logs_existed, 'registration does not create normal deployment logs')

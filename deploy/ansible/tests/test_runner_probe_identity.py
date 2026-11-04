@@ -85,8 +85,8 @@ def runner(request):
         'Create runner diagnostic namespace with runner ownership',
         'Inspect existing runner diagnostic files',
         'Normalize runner diagnostic file ownership before package probes',
-        'Verify installed runner reports the pinned version',
-        'Refuse installed runner version drift',
+        'Verify installed runner reports a valid native version',
+        'Require a valid installed version and the exact distribution after bootstrap',
         'Reconcile runner diagnostic ownership after all package probes',
         'Enforce runner ownership of all diagnostic files after probes',
     }
@@ -97,6 +97,7 @@ def runner(request):
             'group': group, 'records': records, 'tools': tools, 'tasks': tasks,
             'variables': {'relay_runner_root': str(root), 'relay_runner_user': user.pw_name,
                 'relay_runner_group': group, 'relay_runner_package_archive': str(archive),
+                'relay_runner_package_version': '2.336.0',
                 'relay_runner_package_install_needed': True,
                 'relay_runner_registration_marker': str(root / '.runner'),
                 'relay_runner_credentials_marker': str(root / '.credentials')}}

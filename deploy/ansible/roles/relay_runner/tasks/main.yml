@@ -12,10 +12,10 @@
 - name: Require the pinned runner package and identity contract
   ansible.builtin.assert:
     that:
-      - relay_runner_package_version == '2.336.0'
+      - relay_runner_package_version is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$') and relay_runner_package_version | length <= 128
       - relay_runner_package_platform == 'linux-x64'
-      - relay_runner_package_url == 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
-      - relay_runner_package_sha256 == '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+      - relay_runner_package_url == ('https://github.com/actions/runner/releases/download/v' ~ relay_runner_package_version ~ '/actions-runner-' ~ relay_runner_package_platform ~ '-' ~ relay_runner_package_version ~ '.tar.gz')
+      - relay_runner_package_sha256 is match('^[a-f0-9]{64}$')
       - relay_runner_repository == relay_github_repository
       - relay_runner_name in ([relay_general_runner_name, relay_production_runner_name] + (relay_execution_slots | default([]) | map(attribute='runnerName') | list))
       - >-
@@ -154,6 +154,72 @@
       - not (relay_runner_initial_paths.results[5].stat.exists and (not relay_runner_initial_paths.results[5].stat.isreg or relay_runner_initial_paths.results[5].stat.islnk | default(false)))
     fail_msg: 'RUNNER_ROOT_OR_REGISTRATION_STATE_AMBIGUOUS'
 
+- name: Validate contained native runner directory links before any live executable probe
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - |
+        import os, pathlib, re, stat, sys
+        root = pathlib.Path(sys.argv[1])
+        for name in ('bin', 'externals'):
+            path = root / name
+            if not os.path.lexists(path):
+                continue
+            if path.is_symlink():
+                target = os.readlink(path)
+                if os.path.isabs(target):
+                    if pathlib.Path(target).parent != root:
+                        raise SystemExit('RUNNER_NATIVE_LAYOUT_UNSAFE')
+                    target = pathlib.Path(target).name
+                if not re.fullmatch(re.escape(name) + r'[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)', target):
+                    raise SystemExit('RUNNER_NATIVE_LAYOUT_UNSAFE')
+                path = root / target
+            if not path.exists() or not stat.S_ISDIR(path.lstat().st_mode):
+                raise SystemExit('RUNNER_NATIVE_LAYOUT_UNSAFE')
+      - '{{ relay_runner_root }}'
+  changed_when: false
+  check_mode: false
+
+- name: Inspect the installed runner version before software reconciliation
+  ansible.builtin.command:
+    # Runner.Listener creates diagnostics even for --version. Keep probes as
+    # private as the running service, including during read-only check mode.
+    argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
+  become_user: '{{ relay_runner_user }}'
+  register: relay_runner_package_existing_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - relay_runner_initial_paths.results[3].stat.exists
+    - relay_runner_initial_paths.results[3].stat.isreg | default(false)
+    - not relay_runner_initial_paths.results[3].stat.islnk | default(false)
+    - relay_runner_initial_paths.results[3].stat.executable | default(false)
+
+- name: Determine whether runner software needs installation or repair
+  ansible.builtin.set_fact:
+    relay_runner_package_install_needed: >-
+      {{ not (relay_runner_initial_paths.results[1].stat.isreg | default(false) and
+                 not relay_runner_initial_paths.results[1].stat.islnk | default(false) and
+                 relay_runner_initial_paths.results[1].stat.executable | default(false)) or
+         not (relay_runner_initial_paths.results[2].stat.isreg | default(false) and
+                 not relay_runner_initial_paths.results[2].stat.islnk | default(false) and
+                 relay_runner_initial_paths.results[2].stat.executable | default(false)) or
+         not (relay_runner_initial_paths.results[3].stat.isreg | default(false) and
+                 not relay_runner_initial_paths.results[3].stat.islnk | default(false) and
+                 relay_runner_initial_paths.results[3].stat.executable | default(false)) or
+         relay_runner_package_existing_version.rc | default(1) != 0 or
+         relay_runner_package_existing_version.stdout | default('') | length > 128 or
+         not (relay_runner_package_existing_version.stdout | default('') | trim is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$')) }}
+
+- name: Require explicit repair for damaged registered runner software
+  ansible.builtin.assert:
+    that:
+      - not (relay_runner_package_install_needed | bool and relay_runner_initial_paths.results[4].stat.exists)
+    fail_msg: RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED
+
 - name: Inspect an existing cached runner archive before package reconciliation
   ansible.builtin.stat:
     path: '{{ relay_runner_package_archive }}'
@@ -170,6 +236,7 @@
     mode: '0644'
     checksum: 'sha256:{{ relay_runner_package_sha256 }}'
   when:
+    - relay_runner_package_install_needed | bool
     - relay_intent_stage_root is not defined
     - not ansible_check_mode | bool or relay_runner_existing_archive.stat.exists
 
@@ -181,7 +248,7 @@
     owner: root
     group: root
     mode: '0644'
-  when: relay_intent_stage_root is defined and not ansible_check_mode | bool
+  when: relay_runner_package_install_needed | bool and relay_intent_stage_root is defined and not ansible_check_mode | bool
 
 - name: Install runner archive safety validator
   ansible.builtin.copy:
@@ -208,13 +275,14 @@
   register: relay_runner_archive_check
   changed_when: false
   check_mode: false
-  when: relay_runner_archive_stat.stat.exists
+  when: relay_runner_package_install_needed | bool and relay_runner_archive_stat.stat.exists
 
 - name: Record fresh-host runner package check-mode plan
   ansible.builtin.debug:
-    msg: 'RUNNER_CHECK_MODE_PACKAGE_PLAN=download_verify_extract; version=2.336.0; platform=linux-x64; mutable_root={{ relay_runner_root }}'
+    msg: 'RUNNER_CHECK_MODE_PACKAGE_PLAN=download_verify_extract; version={{ relay_runner_package_version }}; platform={{ relay_runner_package_platform }}; mutable_root={{ relay_runner_root }}'
   when:
     - ansible_check_mode | bool
+    - relay_runner_package_install_needed | bool
     - not relay_runner_archive_stat.stat.exists
 
 - name: Refuse package drift or archive validation failure
@@ -222,29 +290,9 @@
     that:
       - relay_runner_archive_stat.stat.exists or ansible_check_mode | bool
       - not relay_runner_archive_stat.stat.exists or relay_runner_archive_check.rc == 0
-      - not relay_runner_archive_stat.stat.exists or relay_runner_archive_check.stdout is search('RUNNER_ARCHIVE_VALID version=2.336.0')
+      - not relay_runner_archive_stat.stat.exists or relay_runner_archive_check.stdout == ('RUNNER_ARCHIVE_VALID version=' ~ relay_runner_package_version ~ ' platform=' ~ relay_runner_package_platform)
     fail_msg: 'RUNNER_PACKAGE_ARCHIVE_INVALID'
-
-- name: Inspect the installed runner version before software reconciliation
-  ansible.builtin.command:
-    # Runner.Listener creates diagnostics even for --version. Keep probes as
-    # private as the running service, including during read-only check mode.
-    argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
-  become_user: '{{ relay_runner_user }}'
-  register: relay_runner_package_existing_version
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when: relay_runner_initial_paths.results[3].stat.exists
-
-- name: Determine whether runner software needs installation or repair
-  ansible.builtin.set_fact:
-    relay_runner_package_install_needed: >-
-      {{ not relay_runner_initial_paths.results[1].stat.exists or
-         not relay_runner_initial_paths.results[2].stat.exists or
-         not relay_runner_initial_paths.results[3].stat.exists or
-         relay_runner_package_existing_version.rc | default(1) != 0 or
-         relay_runner_package_existing_version.stdout | default('') | trim != relay_runner_package_version }}
+  when: relay_runner_package_install_needed | bool
 
 - name: Inspect runner activity before replacing software files
   ansible.builtin.command:
@@ -331,7 +379,7 @@
     label: '{{ item.path }}'
   when: relay_runner_installed_paths.results[2].stat.exists
 
-- name: Verify installed runner reports the pinned version
+- name: Verify installed runner reports a valid native version
   ansible.builtin.command:
     argv: ['/bin/sh', '-c', 'umask 077; exec "$@"', 'relay-runner-version', '{{ relay_runner_root }}/bin/Runner.Listener', '--version']
   become_user: '{{ relay_runner_user }}'
@@ -341,13 +389,19 @@
   failed_when: false
   when: relay_runner_installed_paths.results[2].stat.exists
 
-- name: Refuse installed runner version drift
+- name: Require a valid installed version and the exact distribution after bootstrap
   ansible.builtin.assert:
     that:
       - relay_runner_installed_paths.results[2].stat.exists or ansible_check_mode | bool
       - not relay_runner_installed_paths.results[2].stat.exists or relay_runner_version_check.rc == 0
-      - not relay_runner_installed_paths.results[2].stat.exists or (relay_runner_version_check.stdout ~ relay_runner_version_check.stderr) is search('2.336.0')
+      - not relay_runner_installed_paths.results[2].stat.exists or (relay_runner_version_check.stdout | length <= 128 and relay_runner_version_check.stdout | trim is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))
+      - not (relay_runner_package_install_needed | default(false) | bool) or ansible_check_mode | bool or relay_runner_version_check.stdout | trim == relay_runner_package_version
     fail_msg: 'RUNNER_INSTALLED_VERSION_MISMATCH'
+
+- name: Report installed runner software under GitHub native update authority
+  ansible.builtin.debug:
+    msg: 'RUNNER_NATIVE_SOFTWARE version={{ relay_runner_version_check.stdout | trim }}; bootstrap={{ relay_runner_package_version }}; native_update_needed={{ relay_runner_version_check.stdout | trim is version(relay_runner_package_version, "<") }}; health=version-probe-only; update_authority=github'
+  when: relay_runner_installed_paths.results[2].stat.exists
 
 - name: Reconcile runner diagnostic ownership after all package probes
   ansible.builtin.find:

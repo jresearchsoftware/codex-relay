@@ -38,6 +38,32 @@ def real(path, directory=None, *, owner=True):
     return True
 
 
+def runner_directory(root, name):
+    path = root / name
+    if path.is_symlink():
+        # The native updater atomically points bin/externals at a retained
+        # versioned directory inside the same instance (using absolute links).
+        target = os.readlink(path)
+        if os.path.isabs(target):
+            require(Path(target).parent == root, 'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE')
+            target = Path(target).name
+        require(re.fullmatch(re.escape(name) + r'[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)', target),
+                'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE')
+        path = root / target
+        require(real(path, True, owner=False), 'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE')
+    return path if real(path, True, owner=False) else None
+
+
+def runner_entrypoint(root, name):
+    path = root / name
+    if name == 'bin/Runner.Listener':
+        directory = runner_directory(root, 'bin')
+        if directory is None:
+            return None
+        path = directory / 'Runner.Listener'
+    return path if real(path, False, owner=False) else None
+
+
 def inspect_live(kind, values):
     if kind == 'runner':
         root = Path(values['root'])
@@ -50,8 +76,10 @@ def inspect_live(kind, values):
                     'INTENT_RUNNER_REGISTRATION_AMBIGUOUS')
             for path in markers:
                 real(path, False, owner=False)
+            for name in ('bin', 'externals'):
+                runner_directory(root, name)
             for name in ('config.sh', 'run.sh', 'bin/Runner.Listener'):
-                real(root / name, False, owner=False)
+                runner_entrypoint(root, name)
     else:
         for key in ('home', 'installDir'):
             real(values[key], True)
@@ -69,31 +97,27 @@ def inspect_live(kind, values):
 
 
 def runner_transition(stage, values):
-    # Runner.Listener writes _diag even for --version. Compare protected staged
-    # distribution bytes instead of executing the mutable live installation.
-    payload, live = stage / 'payload', Path(values['root'])
-    matching = True
-    for path in payload.rglob('*'):
-        relative = path.relative_to(payload)
-        if relative.parts[0] == '_diag':
-            continue
-        target = live / relative
-        if path.is_symlink():
-            matching = matching and target.is_symlink() and os.readlink(target) == os.readlink(path)
-        elif path.is_dir():
-            matching = matching and target.is_dir() and not target.is_symlink()
-        else:
-            matching = matching and target.is_file() and not target.is_symlink() and target.stat().st_size == path.stat().st_size
-            if matching:
-                matching = file_sha(target) == file_sha(path)
-        if not matching:
-            break
-    if not matching:
-        state = subprocess.run(['systemctl', 'is-active', values['service']], stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=False,
-            env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
-        require(state.returncode in (3, 4) and state.stdout.strip() in (b'inactive', b'failed', b'unknown'),
-                'RUNNER_ACTIVE_PACKAGE_TRANSITION_REQUIRED')
+    # Native self-update may change every distribution byte, so staged bootstrap
+    # bytes do not establish drift. Probe live software only as its unprivileged
+    # runner identity; Runner.Listener may write its private diagnostics.
+    live = Path(values['root'])
+    entrypoints = [runner_entrypoint(live, name) for name in ('config.sh', 'run.sh', 'bin/Runner.Listener')]
+    complete = all(path is not None and path.stat().st_mode & 0o111 for path in entrypoints)
+    if complete:
+        probe = subprocess.run(['/usr/sbin/runuser', '--user', values['user'], '--', '/bin/sh', '-c',
+            'umask 077; exec "$@"', 'relay-runner-version', str(live / 'bin/Runner.Listener'), '--version'],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=60, check=False, cwd=live, env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+        complete = (probe.returncode == 0 and len(probe.stdout) <= 128 and
+                    re.fullmatch(rb'(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)', probe.stdout.strip()))
+    if complete:
+        return
+    require(not os.path.lexists(live / '.runner'), 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED')
+    state = subprocess.run(['systemctl', 'is-active', values['service']], stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=False,
+        env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+    require(state.returncode in (3, 4) and state.stdout.strip() in (b'inactive', b'failed', b'unknown'),
+            'RUNNER_ACTIVE_PACKAGE_TRANSITION_REQUIRED')
 
 
 def tree(root, *, skip_manifest=False):

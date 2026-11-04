@@ -55,8 +55,10 @@ def register_runner(target, key, values, revision, token, guard):
             next_action = ('fresh registration token required' if code == 'FRESH_REGISTRATION_TOKEN_REQUIRED'
                            else 'inspect-before-retry')
             raise RuntimeError(f'RUNNER_REGISTRATION_FAIL code={code};next={next_action}')
+        version = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
         proof = re.fullmatch(r'RUNNER_REGISTRATION_PASS url=(\S+) name=(\S+) label=([A-Za-z0-9_.,-]+) '
-                             r'version=2\.336\.0 state=(registered|reused) group=(\S+) work=(\S+)\n?', output)
+                             + r'version=' + version + r' state=(registered|reused) group=(\S+) work=(\S+)'
+                             r'(?: disable_update=(?:absent|true|false|invalid))?\n?', output)
         if (proof is None or proof[1] != url or proof[2] != name
                 or proof[3] != ','.join(values['relay_runner_labels'])
                 or proof[5] != group or proof[6] != work):

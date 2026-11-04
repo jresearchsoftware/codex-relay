@@ -222,6 +222,7 @@ class RunnerPackageFixture:
         cache = directory / 'cache'
         cache.mkdir()
         archive = cache / 'runner.tar.gz'
+        bootstrap_version = yaml.safe_load((ROOT / 'group_vars/all.yml').read_text())['relay_runner_package_version']
         with tarfile.open(archive, 'w:gz') as tar:
             # GNU tar restores this entry onto the destination itself.
             # Omitting it hid the fresh-install 0755 root regression.
@@ -230,7 +231,7 @@ class RunnerPackageFixture:
             tar.addfile(member)
             for name, content in {
                 'config.sh': b'#!/bin/sh\nexit 99\n', 'run.sh': b'#!/bin/sh\nexit 99\n',
-                'bin/Runner.Listener': b'#!/bin/sh\nprintf "2.336.0\\n"\n',
+                'bin/Runner.Listener': ('#!/bin/sh\nprintf "' + bootstrap_version + '\\n"\n').encode(),
             }.items():
                 member = tarfile.TarInfo(name)
                 member.mode, member.size = 0o755, len(content)
@@ -267,7 +268,7 @@ class RunnerPackageFixture:
 
 @unittest.skipUnless(ANSIBLE and getattr(os, 'geteuid', lambda: 1)() == 0, 'root for temporary file ownership only')
 class RunnerInstalledStateExecutionTests(unittest.TestCase):
-    def test_fresh_registered_repair_and_idempotent_reconciliation(self):
+    def test_fresh_bootstrap_native_version_retention_and_idempotent_reconciliation(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             fixture = RunnerPackageFixture(directory)
@@ -309,15 +310,28 @@ class RunnerInstalledStateExecutionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn('outdated unit', (directory / 'units/runner.service').read_text())
             self.assertNotIn('lifecycle', trace.read_text())
-            # A version change cannot overwrite binaries of an executing runner.
-            (runner / 'bin/Runner.Listener').write_text('#!/bin/sh\nprintf "2.335.0\\n"\n')
-            result = fixture.run()
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('RUNNER_ACTIVE_PACKAGE_TRANSITION_REQUIRED', result.stdout)
-            service_state.write_text('inactive')
-            result = fixture.run()
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn('2.336.0', (runner / 'bin/Runner.Listener').read_text())
+            # Native software remains authoritative in active and inactive
+            # instances, including versions below the newer bootstrap release.
+            for installed in ('2.335.0', '2.400.0'):
+                listener.write_text('#!/bin/sh\nprintf "' + installed + '\\n"\n')
+                installed_before = (listener.stat().st_ino, listener.stat().st_mtime_ns, listener.read_bytes())
+                for active_state in ('active', 'inactive'):
+                    service_state.write_text(active_state)
+                    result = fixture.run()
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('FIXTURE_PACKAGE_INSTALL_NEEDED=False', result.stdout)
+                    self.assertEqual((listener.stat().st_ino, listener.stat().st_mtime_ns, listener.read_bytes()),
+                                     installed_before)
+            # Corrupt registered software is an explicit repair boundary; neither
+            # an inactive service nor the bootstrap archive authorizes overwrite.
+            listener.write_text('#!/bin/sh\nexit 7\n')
+            for active_state in ('active', 'inactive'):
+                service_state.write_text(active_state)
+                result = fixture.run()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED', result.stdout)
+                self.assertEqual(listener.read_text(), '#!/bin/sh\nexit 7\n')
+            listener.write_text('#!/bin/sh\nprintf "2.400.0\\n"\n')
             self.assertEqual(stat.S_IMODE(runner.stat().st_mode), 0o750)
             self.assertEqual(credential.stat().st_ino, identity)
             self.assertEqual(stat.S_IMODE(credential.stat().st_mode), 0o600)

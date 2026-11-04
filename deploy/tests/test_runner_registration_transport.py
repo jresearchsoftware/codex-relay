@@ -49,6 +49,28 @@ class TransportTests(unittest.TestCase):
         self.invoke()
         self.process.communicate.assert_called_once_with(input='\n', timeout=1)
 
+    def test_native_version_and_persisted_option_are_diagnostics_in_current_proof(self):
+        original = self.process.communicate.return_value[0]
+        for version in ('0.1.0', '2.338.2', '999.1.0'):
+            for option in ('absent', 'true', 'false', 'invalid'):
+                with self.subTest(version=version, option=option):
+                    output = original.replace('version=2.336.0', 'version=' + version).rstrip('\n')
+                    output += ' disable_update=' + option + '\n'
+                    self.process.communicate.return_value = (output, '')
+                    proof, _ = self.invoke()
+                    self.assertEqual(proof, output.strip())
+
+    def test_malformed_native_version_or_persisted_option_is_not_a_proof(self):
+        original = self.process.communicate.return_value[0]
+        outputs = [original.replace('version=2.336.0', 'version=' + version)
+                   for version in ('02.336.0', '2.336.0-preview', '2.336', '2.336.0suffix')]
+        outputs.append(original.rstrip('\n') + ' disable_update=unexpected\n')
+        for output in outputs:
+            with self.subTest(output=output):
+                self.process.communicate.return_value = (output, '')
+                with self.assertRaisesRegex(RuntimeError, 'proof-unproven'):
+                    self.invoke()
+
     def test_general_helper_and_repository_identity_are_selected(self):
         self.values['relay_runner_name'] = '{{ relay_general_runner_name }}'
         self.values['relay_runner_labels'] = ['general']
