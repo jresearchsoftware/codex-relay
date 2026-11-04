@@ -7,11 +7,12 @@ which are projected for both self-dogfood and external consumers. The protected
 consumer configuration remains `/etc/codex-relay/consumer.json`. Candidate CI
 remains specific to this repository.
 
-Task #63 adds the [Git-managed private lifecycle source interface](git-managed-installation.md).
-It does not establish PROD activation. The existing public lifecycle file below
-remains the working installed entrypoint until a qualified, owner-authorized
-reviewed cutover. Do not remove it from this source candidate or run two active
-privileged Apply entrypoints.
+The owner-qualified self-dogfood cutover now uses the
+[Git-managed private lifecycle](git-managed-installation.md). The superseded
+public owner workflow is disabled and its projection is retired here after the
+private Apply and installed readback. Ordinary public routing and Writer
+publication recovery retain their existing bytes and privileges. Never enable
+two privileged owner lifecycle entrypoints.
 
 The schema-2 projection binds the workflow contract and deterministic file
 digests instead of a product SHA. It is derived from an accepted exact product
@@ -31,8 +32,7 @@ See the [Task workflow guide](task-workflow.md) for usage and the
 | --- | --- |
 | [Routing](../.github/workflows/codex-relay-routing.yml) | Owner ready-label commands and optional owner dispatch on `main`; installed controller and fixed Writer/worker helpers |
 | [Publication recovery](../.github/workflows/manual-writer-publication-recovery.yml) | Owner dispatch on `main`; inspect or recover one retained attempt using its exact owner authorization comment |
-| [Retained owner lifecycle](../.github/workflows/manual-main-production-deploy.yml) | Current public owner dispatch on `main` until reviewed cutover; installed-snapshot apply, stop or resume through the fixed helper |
-| [Private lifecycle template](../deploy/workflows/deployment.yml.in) | Replacement artifact for the private deployment repository; reviewed config-main dispatch binds its exact SHA and independently selected public product SHA |
+| [Private lifecycle template](../deploy/workflows/deployment.yml.in) | Sole self-dogfood owner lifecycle entrypoint in the private deployment repository; reviewed config-main dispatch binds its exact SHA and independently selected public product SHA |
 | [Exact-head validation](../.github/workflows/relay-exact-head-validation.yml) | Disposable GitHub-hosted candidate checks at the exact PR head or pushed `main` commit |
 
 Routing uses the native names required by the
@@ -83,11 +83,12 @@ trusted workflow/ref access so it cannot receive routing, recovery or candidate
 jobs. The general runner requires its own proven external trust boundary. Its
 default repository registration scope and labels are not workflow allowlists.
 The public deployment interface also supports an explicit organization-scoped
-general runner in a separate group restricted to this repository and exactly
-`jresearchsoftware/codex-relay/.github/workflows/codex-relay-routing.yml@refs/heads/main`
-`jresearchsoftware/codex-relay/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/main`,
-and
-`jresearchsoftware/codex-relay/.github/workflows/manual-main-production-deploy.yml@refs/heads/main`.
+general runner in a separate group with selected repository and exact workflow
+refs. Self-dogfood retains the public routing and publication-recovery refs and
+allows the sole owner lifecycle ref only from the private deployment repository:
+`jresearchsoftware/codex-relay-deployment/.github/workflows/manual-main-production-deploy.yml@refs/heads/main`.
+Other qualified consumers retain their separately selected routing/recovery refs;
+no public owner lifecycle ref is needed for this Git-mode installation.
 This option requires owner acceptance of the registration scope and independent
 qualification of the external group ACL; it does not migrate an existing runner
 or establish that the public consumer has adopted the option. Candidate CI must
@@ -140,8 +141,12 @@ shared policy mutation. See the complete
 
 ## Retained public owner lifecycle workflow
 
-This section describes the existing installed-snapshot interface preserved until
-the replacement above completes its separately qualified owner cutover.
+This section documents the retained installed-snapshot interface supplied by the
+[product template](../deploy/workflows/production.yml.in) for separately configured
+consumers. It is no longer the self-dogfood entrypoint: this repository's public
+projection is retired, while the product template and compatibility/recovery API
+remain available. Do not re-enable the old public workflow for the Git-mode
+installation.
 
 `manual-main-production-deploy.yml` has one action selector: `apply` (the
 default), `stop`, or `resume`. There is no revision, target, config or executable
