@@ -108,7 +108,7 @@ def unchanged_tail(root, desired, controller):
     require(subprocess.run([*command, 'merge-base', '--is-ancestor', desired, controller],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, 'DESIRED_SOURCE_NOT_ANCESTOR')
     changed = subprocess.check_output([*command, 'diff', '--name-only', desired, controller, '--',
-        'deploy/config.py', 'deploy/ansible'], text=True).splitlines()
+        'deploy/config.py', 'deploy/workflow_projection.py', 'deploy/workflows', 'deploy/ansible'], text=True).splitlines()
     allowed = {'deploy/ansible/site.yml', 'deploy/ansible/scripts/publish_git_consumer.py',
         'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml'}
     require(all(path in allowed or path.startswith('deploy/ansible/tests/') for path in changed),
@@ -165,6 +165,43 @@ def admission(config, source, lease, operation, command):
     return bounded.decode(result.stdout)
 
 
+def timing(value):
+    fields = {'elapsedMs', 'originalCalls', 'originalMs', 'nativeCalls', 'nativeMs', 'compositeCalls', 'compositeMs'}
+    return value if (isinstance(value, dict) and value.keys() == fields
+        and all(type(n) is int and 0 <= n <= 86400000 for n in value.values())) else None
+
+
+def publish(preparation, arguments):
+    result = run_target(preparation.target, preparation.key, arguments, timeout=210)
+    require(len(result.stdout.encode()) <= 8192, 'PUBLICATION_RESULT_UNPROVEN')
+    try:
+        report = bounded.decode(result.stdout)
+    except (ValueError, TypeError):
+        require(False, 'PUBLICATION_RESULT_UNPROVEN')
+    require(isinstance(report, dict), 'PUBLICATION_RESULT_UNPROVEN')
+    if result.returncode:
+        code = report.get('error_code', '')
+        require(re.fullmatch(r'CONSUMER_PUBLICATION_[A-Z_]{1,80}', code) is not None, 'PUBLICATION_RESULT_UNPROVEN')
+        error = ValueError(code)
+        diagnostic = report.get('controller_diagnostic')
+        if isinstance(diagnostic, dict):
+            safe = {}
+            if diagnostic.get('action') in ['consumer-transition', 'consumer-transition-check', 'consumer-digest', 'controller']:
+                safe['action'] = diagnostic['action']
+            if diagnostic.get('failure') in ['timeout', 'nonzero_exit', 'execution_failed', 'invalid_stdout', 'output_too_large']:
+                safe['failure'] = diagnostic['failure']
+            if isinstance(diagnostic.get('code'), str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', diagnostic['code']):
+                safe['code'] = diagnostic['code']
+            if type(diagnostic.get('exit_code')) is int and -255 <= diagnostic['exit_code'] <= 255:
+                safe['exit_code'] = diagnostic['exit_code']
+            if timing(diagnostic.get('timing')) is not None:
+                safe['timing'] = diagnostic['timing']
+            if safe:
+                error.controller_diagnostic = safe
+        raise error
+    return report
+
+
 def run(args, root, identity, *, guard_factory=None):
     args._partial_stage = 'protected-frontier'
     args._partial_mutation_started = False
@@ -173,12 +210,13 @@ def run(args, root, identity, *, guard_factory=None):
         return _run(args, root, identity, guard_factory=guard_factory)
     except Exception as error:
         code = str(error)
-        if not re.fullmatch(r'(?:PARTIAL_INSTALL|BOUNDED_RECOVERY|INSTALL_PREFLIGHT|WRITER_LOCK)_[A-Z_]{1,100}', code):
+        if not re.fullmatch(r'(?:PARTIAL_INSTALL|BOUNDED_RECOVERY|INSTALL_PREFLIGHT|WRITER_LOCK|CONSUMER_PUBLICATION)_[A-Z_]{1,100}', code):
             code = 'PARTIAL_INSTALL_PROOF_UNAVAILABLE'
         print('RELAY_INSTALL_FAILURE=' + json.dumps({'status': 'FAIL',
             'strategy': 'consumer-publication-continuation', 'controller': identity['revision'],
             'target': args._partial_desired, 'installed': args._partial_desired,
             'stage': args._partial_stage, 'cause': code,
+            **({'controller_diagnostic': error.controller_diagnostic} if hasattr(error, 'controller_diagnostic') else {}),
             'hostMutation': 'possible' if args._partial_mutation_started else False,
             'automaticRetrySafe': False, 'recovery': 'same-operation-evidence-requires-readback',
             'log': str(args.log_root),
@@ -225,6 +263,12 @@ def _run(args, root, identity, *, guard_factory=None):
         controller_acceptance = accepted_controller(root, binding, identity['revision'])
         unchanged_tail(root, desired, identity['revision'])
         require(observed['sourceIdentity']['revision'] == desired, 'DESIRED_SOURCE_CHANGED')
+        args._partial_stage = 'repository-integration'
+        from workflow_projection import integration
+        consumer = args.consumer_root or Path(subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null',
+            '-C', str(args.config.parent), 'rev-parse', '--show-toplevel'], text=True).strip())
+        artifact = integration(config, desired, root, consumer,
+            args.projection_output or args.log_root / ('integration-' + desired + '-continuation'))
         values = compile_inputs(config)
         values.update(relay_consumer_config_path=values['relay_config_root'] + '/consumer.json',
             relay_deployment_profile='production', relay_review_root=str(root),
@@ -294,13 +338,14 @@ def _run(args, root, identity, *, guard_factory=None):
             # reconstructed or host-derived desired configuration is accepted.
             args._partial_stage = 'consumer-transition'
             args._partial_mutation_started = True
-            result = preparation.execute(['/usr/bin/python3', '-I', publisher,
+            result = publish(preparation, ['/usr/bin/python3', '-I', publisher,
                 '--source', preparation.source, '--controller-revision', identity['revision'],
                 '--config-root', values['relay_config_root'], '--desired', desired_path,
                 '--claim-root', values['relay_writer_claim_root'], '--repository', values['relay_github_repository'],
                 '--operation', binding['operationId'], '--revision', desired,
                 '--writer-lock-lease', preparation.lease_path])
             require(result.get('consumerDigest') == receipt['desiredDigest'], 'CONSUMER_TRANSITION_UNPROVEN')
+            transition_timing = timing(result.get('controllerTiming'))
             preparation.release_writer()
             values.update(relay_consumer_publication_source=preparation.source,
                 relay_consumer_publication_controller=identity['revision'])
@@ -334,5 +379,7 @@ def _run(args, root, identity, *, guard_factory=None):
             print('RELAY_INSTALL_RESULT=' + json.dumps({'status': 'PASS', 'strategy': 'consumer-publication-continuation',
                 'controller': identity['revision'], 'retainedTarget': binding['retainedTarget'],
                 'controllerAcceptance': controller_acceptance,
+                **({'consumerTransitionTiming': transition_timing} if transition_timing is not None else {}),
                 'product': desired, 'config': binding['gitConfigReceipt']['config_sha'],
-                'operationId': binding['operationId'], 'admission': 'open'}, sort_keys=True), flush=True)
+                'operationId': binding['operationId'], 'admission': 'open', 'integration': artifact,
+                'next': artifact['next']}, sort_keys=True), flush=True)

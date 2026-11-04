@@ -26,6 +26,19 @@ def test_old_runtime_observer_hashes_actual_proc_executable_and_refuses_another_
         partial.old_reviewer('synthetic-test-only', '0' * 64)
 
 
+def test_publication_failure_keeps_bounded_cause_and_removes_private_remote_details(monkeypatch):
+    report = {'error_code': 'CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY',
+        'controller_diagnostic': {'action': 'consumer-transition', 'failure': 'nonzero_exit',
+            'code': 'ADMISSION_NOT_DRAINED', 'exit_code': 1, 'path': '/private/diagnostic',
+            'message': 'private response body'}}
+    monkeypatch.setattr(partial, 'run_target', lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=json.dumps(report)))
+    with pytest.raises(ValueError, match='CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY') as caught:
+        partial.publish(SimpleNamespace(target={}, key=None), ['fixed-fixture-command'])
+    assert caught.value.controller_diagnostic == {'action': 'consumer-transition', 'failure': 'nonzero_exit',
+        'code': 'ADMISSION_NOT_DRAINED', 'exit_code': 1}
+
+
 def test_controller_acceptance_uses_original_policy_and_native_public_main(monkeypatch, tmp_path):
     controller, accepted = 'a' * 40, 'b' * 40
     binding = {'gitConfigReceipt': {'source_policy': 'accepted-ancestor',

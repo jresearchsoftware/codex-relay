@@ -141,7 +141,9 @@ class PublishConsumerTests(unittest.TestCase):
     def execute(self, argv, env):
         self.calls.append(argv)
         self.assertEqual(env['RELAY_CONSUMER_CONFIG'], str(self.consumer))
-        self.assertEqual(set(env), {'PATH', 'LANG', 'LC_ALL', 'RELAY_CONSUMER_CONFIG', 'RELAY_REPOSITORY'})
+        self.assertEqual(set(env), {'PATH', 'LANG', 'LC_ALL', 'RELAY_CONSUMER_CONFIG', 'RELAY_REPOSITORY',
+                                   'RELAY_TRANSITION_TRACE'})
+        self.assertEqual(env['RELAY_TRANSITION_TRACE'], '1')
         # Every controller/validator operation observes one continuous lock.
         with (self.claims / 'publication-v2.lock').open('rb') as locked:
             with self.assertRaises(BlockingIOError):
