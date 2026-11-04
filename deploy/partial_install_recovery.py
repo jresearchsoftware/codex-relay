@@ -270,7 +270,10 @@ def _run(args, root, identity, *, guard_factory=None):
         artifact = integration(config, desired, root, consumer,
             args.projection_output or args.log_root / ('integration-' + desired + '-continuation'))
         values = compile_inputs(config)
+        snapshot = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
         values.update(relay_consumer_config_path=values['relay_config_root'] + '/consumer.json',
+            relay_installed_deployment_config=snapshot,
+            relay_installed_deployment_config_sha256=hashlib.sha256(snapshot.encode('utf-8')).hexdigest(),
             relay_deployment_profile='production', relay_review_root=str(root),
             relay_admission_operation_id=binding['operationId'], relay_git_desired_state=True,
             relay_git_config_receipt=binding['gitConfigReceipt'], relay_bounded_recovery_binding=binding,
@@ -376,10 +379,11 @@ def _run(args, root, identity, *, guard_factory=None):
             require(status['phase'] == 'open' and status['consumerDigest'] == receipt['desiredDigest']
                     and status['active'] == status['unknown'] == [], 'FINAL_ADMISSION_UNPROVEN')
             preparation.release_writer()
-            print('RELAY_INSTALL_RESULT=' + json.dumps({'status': 'PASS', 'strategy': 'consumer-publication-continuation',
+            final_result = {'status': 'PASS', 'strategy': 'consumer-publication-continuation',
                 'controller': identity['revision'], 'retainedTarget': binding['retainedTarget'],
                 'controllerAcceptance': controller_acceptance,
                 **({'consumerTransitionTiming': transition_timing} if transition_timing is not None else {}),
                 'product': desired, 'config': binding['gitConfigReceipt']['config_sha'],
                 'operationId': binding['operationId'], 'admission': 'open', 'integration': artifact,
-                'next': artifact['next']}, sort_keys=True), flush=True)
+                'next': artifact['next']}
+    print('RELAY_INSTALL_RESULT=' + json.dumps(final_result, sort_keys=True), flush=True)
