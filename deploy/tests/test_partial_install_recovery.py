@@ -76,13 +76,18 @@ def frontier(incident):
     return receipt
 
 
-def test_partial_frontier_proves_frozen_pair_and_preserves_old_gate_backend_history(incident):
+@pytest.mark.parametrize('digest_advanced', [False, True])
+def test_partial_frontier_proves_frozen_pair_and_preserves_old_gate_backend_history(incident, digest_advanced):
     receipt = frontier(incident)
+    if digest_advanced:
+        gate = json.loads(incident.gate.read_bytes())
+        gate['consumerDigest'] = receipt['desiredDigest']
+        write(incident.gate, gate)
     before, history = incident.snapshot(), incident.history()
     value = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
     assert value['receipt'] == receipt
     assert value['gate']['phase'] == 'applying'
-    assert value['gate']['consumerDigest'] != receipt['desiredDigest']
+    assert (value['gate']['consumerDigest'] == receipt['desiredDigest']) is digest_advanced
     assert value['sourceIdentity']['revision'] == receipt['binding']['desiredRevision']
     assert incident.snapshot() == before and incident.history() == history
     assert json.loads(incident.backend.read_bytes())['target_head'] == BASELINE
