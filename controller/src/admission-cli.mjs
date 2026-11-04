@@ -11,7 +11,7 @@ import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES 
 import { createSlotJournal } from './slot-journal.mjs';
 import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
 import { createInstalledTaskDisposition } from './installed-task-disposition.mjs';
-import { fail } from './execution-contract.mjs';
+import { digest, fail } from './execution-contract.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 
 const exec = promisify(execFile);
@@ -64,7 +64,7 @@ export function installedAdmissionControl() {
     // inside it; the next action always constructs a fresh native reader.
     const dispositions = new Map();
     const manualAttemptDisposition = record => {
-      const key = JSON.stringify(record);
+      const key = digest(record);
       if (!dispositions.has(key)) dispositions.set(key, disposition.resolve(record));
       return dispositions.get(key);
     };

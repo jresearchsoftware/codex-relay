@@ -301,7 +301,9 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
         with self.assertRaises(publication.ConsumerPublicationError) as caught:
             self.publish()
         self.assertEqual(str(caught.exception), 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
-        self.assertEqual(caught.exception.controller_diagnostic, {'action': 'consumer-transition-check',
+        diagnostic = dict(caught.exception.controller_diagnostic)
+        self.assertGreaterEqual(diagnostic.pop('timing')['nativeCalls'], 1)
+        self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
             'failure': 'nonzero_exit', 'exit_code': 1, 'code': 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'})
         self.assertEqual(self.consumer.read_bytes(), self.old)
         self.assertFalse(self.backup.exists())

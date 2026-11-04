@@ -86,6 +86,28 @@ def unchanged_tail(root, desired, controller):
             'INSTALLATION_TAIL_CHANGED')
 
 
+def accepted_controller(root, binding, controller):
+    receipt = binding['gitConfigReceipt']
+    # This protected policy is established by the original explicitly isolated
+    # TEST qualification. A caller flag cannot turn a PROD receipt into TEST.
+    if receipt.get('source_policy') == 'test-qualified-exact':
+        return {'policy': 'test-qualified-exact', 'revision': controller}
+    repository = receipt.get('product_repository', '')
+    require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository) is not None, 'PRODUCT_REPOSITORY_INVALID')
+    command = ['git', '-c', 'core.hooksPath=/dev/null', '-C', str(root)]
+    remote = 'https://github.com/' + repository + '.git'
+    row = subprocess.check_output([*command, 'ls-remote', '--exit-code', remote, 'refs/heads/main'],
+        text=True, timeout=30).split()
+    require(len(row) == 2 and bounded.SHA.fullmatch(row[0]) and row[1] == 'refs/heads/main', 'ACCEPTED_MAIN_UNPROVEN')
+    if subprocess.run([*command, 'cat-file', '-e', row[0] + '^{commit}'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        subprocess.run([*command, 'fetch', '--no-tags', remote, row[0]],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=60)
+    require(subprocess.run([*command, 'merge-base', '--is-ancestor', controller, row[0]],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, 'CONTROLLER_NOT_ACCEPTED')
+    return {'policy': 'accepted-ancestor', 'revision': controller, 'acceptedMain': row[0]}
+
+
 def admission(config, source, lease, operation, command):
     """Fixed final commands with independent controller and frozen target."""
     import os
@@ -115,6 +137,28 @@ def admission(config, source, lease, operation, command):
 
 
 def run(args, root, identity, *, guard_factory=None):
+    args._partial_stage = 'protected-frontier'
+    args._partial_mutation_started = False
+    args._partial_desired = 'unavailable'
+    try:
+        return _run(args, root, identity, guard_factory=guard_factory)
+    except Exception as error:
+        code = str(error)
+        if not re.fullmatch(r'(?:PARTIAL_INSTALL|BOUNDED_RECOVERY|INSTALL_PREFLIGHT|WRITER_LOCK)_[A-Z_]{1,100}', code):
+            code = 'PARTIAL_INSTALL_PROOF_UNAVAILABLE'
+        print('RELAY_INSTALL_FAILURE=' + json.dumps({'status': 'FAIL',
+            'strategy': 'consumer-publication-continuation', 'controller': identity['revision'],
+            'target': args._partial_desired, 'installed': args._partial_desired,
+            'stage': args._partial_stage, 'cause': code,
+            'hostMutation': 'possible' if args._partial_mutation_started else False,
+            'automaticRetrySafe': False, 'recovery': 'same-operation-evidence-requires-readback',
+            'log': str(args.log_root),
+            'next': 'Inspect the named stage and retained operation; keep the frozen Git pair and original evidence. Do not rerun full Apply or edit the gate/history.'},
+            sort_keys=True), flush=True)
+        raise ValueError(code) from None
+
+
+def _run(args, root, identity, *, guard_factory=None):
     from intent_install import qualify_identity, hold_install_guard, release_guard
     from install_preflight import PreparedInstall
     require(args.authorize_install_recovery and args.continue_install_recovery
@@ -143,6 +187,8 @@ def run(args, root, identity, *, guard_factory=None):
         receipt, gate = observed['receipt'], observed['gate']
         binding = receipt['binding']
         desired = binding['desiredRevision']
+        args._partial_desired = desired
+        controller_acceptance = accepted_controller(root, binding, identity['revision'])
         unchanged_tail(root, desired, identity['revision'])
         require(observed['sourceIdentity']['revision'] == desired, 'DESIRED_SOURCE_CHANGED')
         values = compile_inputs(config)
@@ -193,6 +239,7 @@ def run(args, root, identity, *, guard_factory=None):
             stage_values = {**values, 'relay_source_identity': identity, 'relay_source_archive': str(archive),
                 'relay_intent_stage_root': preparation.stage, 'relay_intent_stage_operation': staging_id,
                 'relay_intent_stage_source_only': True, 'relay_compatibility_links': []}
+            args._partial_stage = 'controller-source-staging'
             backend('relay-intent-stage.yml', stage_values)
             # Reprove the exact frontier after staging and before any effect.
             require(proof() == observed, 'FRONTIER_CHANGED')
@@ -211,6 +258,8 @@ def run(args, root, identity, *, guard_factory=None):
             require(digests == [receipt['desiredDigest'], receipt['desiredDigest']], 'DESIRED_CONSUMER_CHANGED')
             # The authentic desired file survived this specific failure. No
             # reconstructed or host-derived desired configuration is accepted.
+            args._partial_stage = 'consumer-transition'
+            args._partial_mutation_started = True
             result = preparation.execute(['/usr/bin/python3', '-I', publisher,
                 '--source', preparation.source, '--controller-revision', identity['revision'],
                 '--config-root', values['relay_config_root'], '--desired', desired_path,
@@ -221,10 +270,12 @@ def run(args, root, identity, *, guard_factory=None):
             preparation.release_writer()
             values.update(relay_consumer_publication_source=preparation.source,
                 relay_consumer_publication_controller=identity['revision'])
+            args._partial_stage = 'remaining-installation-and-runtime-validation'
             text = backend('site.yml', values)
             require('PRODUCTION_APPLY_VALIDATED=' + desired in text, 'RUNTIME_VALIDATION_MISSING')
             # The standard tail verifies the running executable/services and
             # archives the unchanged original backend before this final gate.
+            args._partial_stage = 'final-admission-and-continuation-proof'
             preparation.initial['baselineDigest'] = receipt['desiredDigest']
             preparation.lock_writer()
             final_command = ('import json,sys;sys.path.insert(0,sys.argv[1]);import partial_install_recovery as p;'
@@ -248,5 +299,6 @@ def run(args, root, identity, *, guard_factory=None):
             preparation.release_writer()
             print('RELAY_INSTALL_RESULT=' + json.dumps({'status': 'PASS', 'strategy': 'consumer-publication-continuation',
                 'controller': identity['revision'], 'retainedTarget': binding['retainedTarget'],
+                'controllerAcceptance': controller_acceptance,
                 'product': desired, 'config': binding['gitConfigReceipt']['config_sha'],
                 'operationId': binding['operationId'], 'admission': 'open'}, sort_keys=True), flush=True)

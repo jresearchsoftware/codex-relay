@@ -204,6 +204,8 @@ The controller observation ceiling is 180 seconds, matching preflight. Cancellat
 kills its process group, including original-reader descendants. This ceiling
 does not substitute for a short measured transition or establish recovery.
 
+#### Starting bounded recovery
+
 When a failed Git Apply has already installed its original product target but
 retains both an `apply / RECOVERY_REQUIRED` backend record and the same closed
 admission UUID, a corrected accepted product may continue that operation:
