@@ -8,6 +8,7 @@ import { createAttemptStore } from './attempt-store.mjs';
 import { createHistoricalTaskDisposition } from './historical-task-disposition.mjs';
 import { taskReadToken } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
+import { timedTransitionPart } from './transition-timing.mjs';
 
 const same = (a, b) => canonicalAuthorityJson(a) === canonicalAuthorityJson(b);
 const positive = n => Number.isSafeInteger(n) && n > 0;
@@ -21,13 +22,17 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
   const repositories = [...new Set([...configuredRepositories(consumer),
     ...(historicalConsumer ? configuredRepositories(historicalConsumer) : [])])];
   const tokens = new Map();
+  const actors = new Map();
   async function request(repository, path, global = false) {
+    return timedTransitionPart('native', () => nativeRequest(repository, path, global));
+  }
+  async function nativeRequest(repository, path, global = false) {
     if (!repositories.includes(repository)) fail('HISTORICAL_TASK_REPOSITORY_MISMATCH');
     let response;
     try {
-      if (!tokens.has(repository)) tokens.set(repository, await tokenFor(repository));
+      if (!tokens.has(repository)) tokens.set(repository, Promise.resolve().then(() => tokenFor(repository)));
       response = await fetchImpl(`https://api.github.com/${global ? path : `repos/${repository}/${path}`}`, {
-        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${tokens.get(repository)}`,
+        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${await tokens.get(repository)}`,
           'x-github-api-version': '2022-11-28' }, signal: AbortSignal.timeout(15000) });
     } catch { fail('HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'); }
     if (!response.ok) fail('HISTORICAL_TASK_AUTHORITY_UNAVAILABLE');
@@ -43,20 +48,30 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
     }
     fail('HISTORICAL_TASK_AUTHORITY_INCOMPLETE');
   }
+  const actor = (repository, login) => {
+    if (!actors.has(login)) actors.set(login, request(repository, `users/${encodeURIComponent(login)}`, true));
+    return actors.get(login);
+  };
   return async (repository, task, record) => {
     if (!repositories.includes(repository) || !positive(task)) fail('HISTORICAL_TASK_REPOSITORY_MISMATCH');
     const policy = historicalConsumer && configuredRepositories(historicalConsumer).includes(repository)
       && !configuredRepositories(consumer).includes(repository) ? historicalConsumer : consumer;
-    const issue = await request(repository, `issues/${task}`);
+    // These reads are independent. Keep the same complete evidence, but do not
+    // turn network round trips into a serial post-rename critical path.
+    const [issue, ownerValue, events, reviewerValue, comments] = await Promise.all([
+      request(repository, `issues/${task}`), actor(repository, policy.owner),
+      list(repository, `issues/${task}/events`), actor(repository, policy.reviewerApp.expectedActor),
+      list(repository, `issues/${task}/comments`)
+    ]);
     if (issue.number !== task || !positive(issue.id) || issue.pull_request
       || issue.url !== `https://api.github.com/repos/${repository}/issues/${task}`
       || typeof issue.body !== 'string') fail('HISTORICAL_TASK_AUTHORITY_INVALID');
-    const owner = identity(await request(repository, `users/${encodeURIComponent(policy.owner)}`, true));
+    const owner = identity(ownerValue);
     if (owner.login !== policy.owner || owner.type !== 'User' || !positive(owner.id)) fail('HISTORICAL_TASK_AUTHORITY_INVALID');
-    const lifecycle = (await list(repository, `issues/${task}/events`))
+    const lifecycle = events
       .filter(event => ['closed', 'reopened'].includes(event.event))
       .map(event => ({ id: event.id, event: event.event, actor: identity(event.actor), created_at: event.created_at }));
-    const reviewer = identity(await request(repository, `users/${encodeURIComponent(policy.reviewerApp.expectedActor)}`, true));
+    const reviewer = identity(reviewerValue);
     if (reviewer.login !== policy.reviewerApp.expectedActor || reviewer.type !== 'Bot' || !positive(reviewer.id))
       fail('HISTORICAL_TASK_AUTHORITY_INVALID');
     const decisions = [], authority = [], pullRequests = new Set();
@@ -66,7 +81,7 @@ export function createNativeTaskDispositionReader({ consumer = INSTALLATION_CONS
     if (envelope?.target === 'pull_request' && positive(envelope.number)) pullRequests.add(envelope.number);
     if (positive(envelope?.continuation?.pullRequest)) pullRequests.add(envelope.continuation.pullRequest);
     if (positive(envelope?.request?.existing_pr)) pullRequests.add(envelope.request.existing_pr);
-    for (const comment of await list(repository, `issues/${task}/comments`)) {
+    for (const comment of comments) {
       if (!same(identity(comment.user), reviewer) || !/^```relay-authority/m.test(comment.body ?? '')) continue;
       if (!positive(comment.id) || comment.issue_url !== issue.url) fail('HISTORICAL_TASK_AUTHORITY_INVALID');
       const payload = extractAuthorityRecord(comment.body, { repository, task });

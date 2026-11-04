@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import signal
 import stat
 import subprocess
 import time
@@ -85,22 +86,44 @@ def _atomic(path, raw, mode):
             temporary.unlink()
 
 
-def _execute(argv, env, *, timeout=60):
+def _controller_trace(stderr):
+    timing, errors = None, []
+    fields = {'elapsedMs', 'originalCalls', 'originalMs', 'nativeCalls', 'nativeMs', 'compositeCalls', 'compositeMs'}
+    for line in stderr.splitlines():
+        if line.startswith(b'RELAY_TRANSITION_TIMING '):
+            try:
+                observed = json.loads(line[len(b'RELAY_TRANSITION_TIMING '):])
+                if (isinstance(observed, dict) and observed.keys() == fields
+                        and all(type(value) is int and 0 <= value <= 86400000 for value in observed.values())):
+                    timing = observed
+                    continue
+            except (ValueError, TypeError):
+                pass
+        errors.append(line)
+    return timing if len(stderr) <= 8192 else None, errors
+
+
+def _execute(argv, env, *, timeout=None):
     # Only fixed action names and the CLI's complete bounded error envelope may
     # cross this boundary. Never publish command arguments or child output.
     action = 'consumer-digest' if argv[1:2] == ['--input-type=module'] else 'controller'
     if argv[2:3] in (['consumer-transition-check'], ['consumer-transition']):
         action = argv[2]
+    if timeout is None:
+        # Native evidence has its own 15-second request bounds. The publisher
+        # must allow the same observation budget as preflight, including real
+        # history; batching/reuse, rather than this ceiling, shortens the path.
+        timeout = 180 if action != 'consumer-digest' else 60
     diagnostic = {'action': action, 'failure': 'execution_failed'}
     output = {'stdout': bytearray(), 'stderr': bytearray()}
     try:
         with subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE) as child:
+                              stderr=subprocess.PIPE, start_new_session=True) as child:
             try:
                 deadline = time.monotonic() + timeout
                 with selectors.DefaultSelector() as streams:
                     streams.register(child.stdout, selectors.EVENT_READ, ('stdout', 4096))
-                    streams.register(child.stderr, selectors.EVENT_READ, ('stderr', 256))
+                    streams.register(child.stderr, selectors.EVENT_READ, ('stderr', 8192))
                     while streams.get_map():
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
@@ -116,13 +139,22 @@ def _execute(argv, env, *, timeout=60):
                                 output[name].extend(chunk[:max(0, limit + 1 - len(output[name]))])
                 child.wait(timeout=max(0, deadline - time.monotonic()))
             except BaseException:
-                child.kill()
+                # The original-reader subprocess must not survive cancellation
+                # of its CLI parent or retain a lease/pipe after timeout.
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 child.wait()
                 raise
+        stderr = bytes(output['stderr'])
+        timing, errors = _controller_trace(stderr)
+        if timing is not None and len(stderr) <= 8192:
+            diagnostic['timing'] = timing
         if child.returncode != 0:
             diagnostic.update(failure='nonzero_exit', exit_code=child.returncode)
-            match = re.fullmatch(rb'\{"code":"([A-Z][A-Z0-9_]{0,79})"\}\n?', output['stderr'])
-            if action in ('consumer-transition-check', 'consumer-transition') and len(output['stderr']) <= 256 and match is not None:
+            match = re.fullmatch(rb'\{"code":"([A-Z][A-Z0-9_]{0,79})"\}', b'\n'.join(errors))
+            if action in ('consumer-transition-check', 'consumer-transition') and len(stderr) <= 8192 and match is not None:
                 diagnostic['code'] = match[1].decode('ascii')
             raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
         diagnostic['failure'] = 'invalid_stdout'
@@ -132,18 +164,23 @@ def _execute(argv, env, *, timeout=60):
         value = json.loads(output['stdout'])
         if not isinstance(value, dict):
             raise ValueError()
+        if timing is not None:
+            value['_transitionTiming'] = timing
         return value
     except ConsumerPublicationError:
         raise
     except subprocess.TimeoutExpired:
         diagnostic['failure'] = 'timeout'
+        timing, _ = _controller_trace(bytes(output['stderr']))
+        if timing is not None:
+            diagnostic['timing'] = timing
     except (OSError, subprocess.SubprocessError, ValueError):
         pass
     raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from None
 
 
 def publish(source, config_root, desired, claim_root, repository, operation, revision, *,
-            writer_lock_lease=None, owner_uid=0, boundary=Path('/'), execute=_execute):
+            writer_lock_lease=None, controller_revision=None, owner_uid=0, boundary=Path('/'), execute=_execute):
     """All path arguments originate in the trusted installer, never runner input.
 
     owner_uid/boundary/execute are fixture seams, unavailable on the command line.
@@ -164,7 +201,9 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
     validator = source / 'consumer/consumer-config.mjs'
     for path in (cli, validator):
         _protected(path, **options)
-    require(json.loads(_read(source / '.relay-source.json', options)).get('revision') == revision,
+    controller_revision = controller_revision or revision
+    require(re.fullmatch(r'[a-f0-9]{40}', controller_revision) is not None
+            and json.loads(_read(source / '.relay-source.json', options)).get('revision') == controller_revision,
             'CONSUMER_PUBLICATION_SOURCE_MISMATCH')
     desired_bytes = _read(desired, options)
     lock_path = claim_root / 'publication-v2.lock'
@@ -182,7 +221,7 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
             exec(compile(_read(module_path, options), str(module_path), 'exec'), module)
             try:
                 lease = module['verify'](writer_lock_lease, lock_path, operation=operation,
-                    target=revision, owner_uid=owner_uid, boundary=boundary)
+                    target=controller_revision, owner_uid=owner_uid, boundary=boundary)
             except (OSError, ValueError, KeyError, TypeError):
                 raise ConsumerPublicationError('CONSUMER_PUBLICATION_WRITER_LEASE_UNPROVEN') from None
         else:
@@ -289,7 +328,8 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
         except ConsumerPublicationError as error:
             raise ConsumerPublicationError('CONSUMER_PUBLICATION_TRANSITION_REQUIRES_RECOVERY',
                                            error.controller_diagnostic) from None
-        return {'status': 'PUBLISHED', 'operationId': operation, 'target': revision, 'consumerDigest': result['consumerDigest']}
+        return {'status': 'PUBLISHED', 'operationId': operation, 'target': revision, 'consumerDigest': result['consumerDigest'],
+                **({'controllerTiming': result['_transitionTiming']} if '_transitionTiming' in result else {})}
     finally:
         os.close(lock_fd)
 
@@ -299,6 +339,7 @@ def main():
     for name in ('source', 'config-root', 'desired', 'claim-root', 'repository', 'operation', 'revision'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--writer-lock-lease', default=os.environ.get('RELAY_WRITER_LOCK_LEASE'))
+    parser.add_argument('--controller-revision')
     args = vars(parser.parse_args())
     try:
         print(json.dumps(publish(**args)))

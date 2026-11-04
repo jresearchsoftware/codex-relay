@@ -244,6 +244,8 @@ def arguments():
                    help='Continue one diagnosed operation using this independently accepted controller and Git pair')
     p.add_argument('--install-recovery-operation', help='Exact original operation UUID; install recovery only')
     p.add_argument('--install-recovery-target', help='Immutable original product target; install recovery only')
+    p.add_argument('--continue-install-recovery', action='store_true',
+                   help='Finish the reserved post-consumer-publication operation without changing its frozen Git pair')
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
@@ -277,6 +279,7 @@ def run(args):
     if args.phase == 'install':
         from intent_install import run as install
         return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
+    require(not getattr(args, 'continue_install_recovery', False), 'install-continuation-interface-only')
     intent_install = getattr(args, 'intent_install', False)
     bounded_binding = getattr(args, '_intent_bounded_recovery', None)
     require(bounded_binding is None or intent_install and args.authorize_lifecycle_recovery,

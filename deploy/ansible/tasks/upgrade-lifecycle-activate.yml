@@ -4,13 +4,42 @@
 # already active production runner under the existing transition lock.
 # For a SERIAL/pool transition these flags come from the separate target gate.
 # A new inactive pool transport is never activated by Reviewer restart here.
+- name: Observe whether a partial continuation already adopted the desired Reviewer
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |-
+        import hashlib, json, subprocess, sys
+        service, manifest = sys.argv[1:]
+        p = subprocess.run(['/bin/systemctl', 'show', service, '--property=MainPID', '--value'],
+                           capture_output=True, text=True, check=True, timeout=15)
+        pid = p.stdout.strip()
+        adopted = False
+        if pid.isdigit() and int(pid) > 0:
+            with open(manifest) as stream:
+                expected = json.load(stream)['reviewerBinarySha256']
+            with open('/proc/' + pid + '/exe', 'rb') as stream:
+                adopted = hashlib.file_digest(stream, 'sha256').hexdigest() == expected
+        print(json.dumps(adopted))
+      - '{{ relay_reviewer_service_name }}'
+      - '{{ relay_release_path }}/artifact-manifest.json'
+  register: relay_partial_reviewer_adoption
+  changed_when: false
+  when: relay_consumer_publication_continuation | default(false) | bool
+
+- name: Reuse verified running product adoption without a duplicate restart
+  ansible.builtin.set_fact:
+    relay_upgrade_runtime_adopted: '{{ relay_partial_reviewer_adoption.stdout | from_json }}'
+  when: relay_consumer_publication_continuation | default(false) | bool
+
 - name: Try-restart the previously active Reviewer and production dependency
   ansible.builtin.command:
     argv: >-
       {{ [relay_reviewer_operation_restart_path] +
          (['--recover-active', relay_admission_operation_id] if relay_admission_recovery_authorized | default(false) | bool else []) }}
   changed_when: true
-  when: relay_upgrade_lifecycle_reviewer_was_active | bool
+  when: relay_upgrade_lifecycle_reviewer_was_active | bool and not relay_upgrade_runtime_adopted | default(false) | bool
 
 - name: Wait for the previously active Reviewer listener after activation
   ansible.builtin.wait_for:

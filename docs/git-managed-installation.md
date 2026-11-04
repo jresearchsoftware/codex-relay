@@ -166,6 +166,44 @@ string or repeated invocation alone is not proof that replay is safe.
 
 ### Bounded recovery with a separately accepted controller
 
+#### Continuing the consumer-publication frontier
+
+If an already reserved bounded operation stopped after publishing the desired
+release/consumer but before its admission digest and running Reviewer advanced,
+use the same public `--phase install --authorize-install-recovery` command and
+original operation/retained-target arguments with `--continue-install-recovery`.
+`--resolved-revision` identifies the independently accepted corrected controller;
+the protected reservation retains the exact desired product/configuration pair.
+The new controller does not rewrite that pair or the prior controller identity.
+Use the original frozen configuration bytes. This flag grants no PROD authority.
+
+The supported frontier requires the desired release already installed, an
+`applying` same-operation gate with the old or desired digest, an unchanged
+`reserved` continuation and original backend, and authentic consumer-before and
+desired staging files. Protected identity/credential/source evidence and native
+Task/live-effect eligibility are revalidated. Changed evidence, an interrupted
+archive, another operation or unrelated installation-template changes refuse
+before further installation effects. This is not a generic partial-upgrade
+engine.
+
+The controller stages its corrected reader, completes only the missing consumer
+digest transition under the Writer mutex, and continues the existing controller
+role and installation tail. It skips completed prerequisite/runtime/artifact
+installation and release switching. The standard final checks prove the actual
+Reviewer executable, services and frozen Git pair before archiving the original
+backend. A Reviewer already proven to run the desired executable is not restarted
+again. Verified same-operation admission and continuation completion precede
+resume; on failure admission remains closed with the evidence preserved.
+
+Consumer-transition diagnostics contain bounded elapsed-time and native-reader,
+original-reader and composite-inventory counters. Historical envelopes are
+validated in bounded batches, with one composite snapshot and exact-record
+native disposition reuse per locked action. A subsequent action performs fresh
+Task reads; reopening, authority changes and pending/live effects remain blockers.
+The controller observation ceiling is 180 seconds, matching preflight. Cancellation
+kills its process group, including original-reader descendants. This ceiling
+does not substitute for a short measured transition or establish recovery.
+
 When a failed Git Apply has already installed its original product target but
 retains both an `apply / RECOVERY_REQUIRED` backend record and the same closed
 admission UUID, a corrected accepted product may continue that operation:

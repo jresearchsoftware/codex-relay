@@ -38,9 +38,11 @@
   ansible.builtin.command:
     argv:
       - /usr/bin/python3
-      - '{{ relay_release_path }}/reviewed-source/deploy/ansible/scripts/publish_git_consumer.py'
+      - '{{ relay_consumer_publication_source | default(relay_release_path ~ "/reviewed-source") }}/deploy/ansible/scripts/publish_git_consumer.py'
       - --source
-      - '{{ relay_release_path }}/reviewed-source'
+      - '{{ relay_consumer_publication_source | default(relay_release_path ~ "/reviewed-source") }}'
+      - --controller-revision
+      - '{{ relay_consumer_publication_controller | default(relay_release_commit) }}'
       - --config-root
       - '{{ relay_config_root }}'
       - --desired

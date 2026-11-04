@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
+import { timedTransitionPart } from './transition-timing.mjs';
 import { configuredRepositories, consumerDigest, parseConsumerJson, resolveExecutionConsumer, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 
 const execute = promisify(execFile);
@@ -169,6 +170,10 @@ if(CONSUMER_DIGEST!==request.consumerDigest)contract.fail('CONSUMER_CONFIG_CHANG
 let result;
 if(request.operation==='context')result={consumer:CONSUMER,consumerDigest:CONSUMER_DIGEST};
 else if(request.operation==='validate-envelope')result=contract.validateEnvelope(request.envelope);
+else if(request.operation==='validate-envelopes'){
+  for(const envelope of request.envelopes)contract.validateEnvelope(envelope);
+  result={validated:request.envelopes.length};
+}
 else if(request.operation==='inventory'){
   const {createAdmissionControl}=await moduleAt('controller/src/admission-control.mjs');
   const {createAttemptStore}=await moduleAt('controller/src/attempt-store.mjs');
@@ -212,6 +217,9 @@ else if(request.operation==='inventory'){
 process.stdout.write(JSON.stringify(result));
 `;
 async function originalCall(context, request, options) {
+  return timedTransitionPart('original', () => originalCallUntimed(context, request, options));
+}
+async function originalCallUntimed(context, request, options) {
   const rootPath = pathname => physical(options.root, pathname);
   const payload = { ...request, sourceRoot: context.original.sourceRoot,
     consumerDigest: context.receipt.original.consumerDigest, runs: context.receipt.original.runs,
@@ -600,12 +608,27 @@ export function createCompatibilityStore({ compatibility, currentStore, original
     // Full classification proves immutable ownership and envelope provenance.
     // Logical execution/publication completion belongs to an explicit drain,
     // not to every unrelated lookup or Writer mutation.
-    for (const record of original.filter(record => !record.admissionBlock)) await originalCall(verified,
-      { operation: 'validate-envelope', envelope: record.envelope }, settings.get(verified));
+    // One original runtime owns the whole bounded batch. Starting a new Node
+    // process for every retained envelope made a 161-row transition scale with
+    // process startup, repeated for each composite inventory.
+    let envelopes = [], bytes = 0;
+    const flush = async () => {
+      if (!envelopes.length) return;
+      const checked = await originalCall(verified, { operation: 'validate-envelopes', envelopes }, settings.get(verified));
+      require(checked?.validated === envelopes.length, 'SERIAL_POOL_COMPATIBILITY_ORIGINAL_READER_FAILED');
+      envelopes = []; bytes = 0;
+    };
+    for (const record of original.filter(record => !record.admissionBlock)) {
+      const size = Buffer.byteLength(JSON.stringify(record.envelope));
+      require(size <= 512 * 1024, 'SERIAL_POOL_COMPATIBILITY_STORE_LIMIT');
+      if (envelopes.length === 256 || bytes + size > 2 * 1024 * 1024) await flush();
+      envelopes.push(record.envelope); bytes += size;
+    }
+    await flush();
     return [...original, ...current].sort((left, right) => left.envelope.runId - right.envelope.runId);
   }
   return {
-    all: classified,
+    all: () => timedTransitionPart('composite', classified),
     async scan() {
       const verified = await verifiedContext();
       const original = await readProtectedStore(verified, verified.original.storeRoot,

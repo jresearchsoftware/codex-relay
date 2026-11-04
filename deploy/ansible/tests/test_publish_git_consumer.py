@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -27,6 +28,17 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class ControllerDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux process group cancellation')
+    def test_timeout_contains_descendant_before_it_can_publish_a_late_effect(self):
+        with tempfile.TemporaryDirectory(prefix='relay-cancellation-') as temporary:
+            effect = Path(temporary) / 'late-effect'
+            program = ('import subprocess,sys,time;subprocess.Popen([sys.executable,"-c",'
+                + repr('import time;from pathlib import Path;time.sleep(0.5);Path(' + repr(str(effect)) + ').touch()')
+                + ']);time.sleep(10)')
+            self.assertEqual(self.failure(program, timeout=0.1)['failure'], 'timeout')
+            time.sleep(0.6)
+            self.assertFalse(effect.exists())
+
     def child(self, program, action='consumer-transition-check', **options):
         with tempfile.TemporaryDirectory(prefix='relay-controller-diagnostic-') as temporary:
             script = Path(temporary) / 'private-child.py'
@@ -244,7 +256,9 @@ class PublishConsumerTests(unittest.TestCase):
             with self.assertRaises(publication.ConsumerPublicationError) as caught:
                 publication._execute(['/usr/bin/node', str(cli), 'consumer-transition-check',
                                       '--operation', OP, '--revision', REVISION], env)
-            self.assertEqual(caught.exception.controller_diagnostic, {
+            diagnostic = dict(caught.exception.controller_diagnostic)
+            self.assertGreaterEqual(diagnostic.pop('timing')['elapsedMs'], 0)
+            self.assertEqual(diagnostic, {
                 'action': 'consumer-transition-check', 'failure': 'nonzero_exit',
                 'exit_code': 1, 'code': 'ADMISSION_PHASE_INVALID'})
             self.assertTrue(admission('drain-check', '--operation', OP)['drained'])
