@@ -561,6 +561,9 @@ class PackageRevalidationTests(unittest.TestCase):
         package_spec = importlib.util.spec_from_file_location('install_preflight_package_fixture', package_path)
         package = importlib.util.module_from_spec(package_spec); package_spec.loader.exec_module(package)
         self.package = package
+        # The live runner identity can traverse its namespace while the sealed
+        # .stage subtree remains root-only for artifact revalidation.
+        fixture.parent.chmod(0o755)
         live = fixture.parent / 'live'
         live.mkdir()
         runner = live / 'runner'
@@ -572,11 +575,13 @@ class PackageRevalidationTests(unittest.TestCase):
             if kind == 'runner':
                 (root / 'archive.tar.gz').write_bytes(b'synthetic already-validated archive bytes')
                 payload = root / 'payload'
-                for name in ['config.sh', 'run.sh', 'bin/Runner.Listener']:
+                for name in ['config.sh', 'run.sh', 'bin/Runner.Listener', 'externals/node24/bin/node']:
                     path = payload / name; path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text('#!/bin/sh\nexit 0\n'); path.chmod(0o755)
                     target = runner / name; target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(path, target); target.chmod(0o755)
+                    if name == 'bin/Runner.Listener':
+                        target.write_text('#!/bin/sh\nprintf "2.336.0\\n"\n')
                 digest = hashlib.sha256((root / 'archive.tar.gz').read_bytes()).hexdigest()
                 version = '2.336.0'
             else:

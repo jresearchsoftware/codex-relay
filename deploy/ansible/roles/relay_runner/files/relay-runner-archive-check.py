@@ -3,6 +3,7 @@
 
 import pathlib
 import posixpath
+import re
 import sys
 import tarfile
 
@@ -20,7 +21,7 @@ def main():
     if len(sys.argv) != 3:
         fail("ARGUMENTS")
     archive = pathlib.Path(sys.argv[1])
-    if sys.argv[2] != "2.336.0":
+    if len(sys.argv[2]) > 128 or not re.fullmatch(r"(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)", sys.argv[2]):
         fail("VERSION_CONTRACT")
     try:
         with tarfile.open(archive, "r:gz") as handle:
@@ -57,7 +58,7 @@ def main():
                 fail("REQUIRED_ENTRYPOINT_MISSING")
     except (OSError, tarfile.TarError):
         fail("MALFORMED_ARCHIVE")
-    print("RUNNER_ARCHIVE_VALID version=2.336.0 platform=linux-x64")
+    print(f"RUNNER_ARCHIVE_VALID version={sys.argv[2]} platform=linux-x64")
 
 
 if __name__ == "__main__":

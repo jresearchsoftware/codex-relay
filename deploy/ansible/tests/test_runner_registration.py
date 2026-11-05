@@ -9,9 +9,11 @@ import tempfile
 import unittest
 
 from jinja2 import Environment, StrictUndefined
+import yaml
 
 
 TEMPLATE = Path(__file__).resolve().parents[1] / 'roles/relay_runner/templates/relay-runner-registration.j2'
+BOOTSTRAP_VERSION = yaml.safe_load((Path(__file__).resolve().parents[1] / 'group_vars/all.yml').read_text())['relay_runner_package_version']
 
 
 @unittest.skipUnless(os.name == 'posix', 'Linux runner helper')
@@ -41,14 +43,15 @@ shift
 exec "$@"
 ''')
         (self.runner / 'bin').mkdir()
-        self.executable(self.runner / 'bin/Runner.Listener', '#!/bin/sh\necho 2.336.0\n')
+        self.listener_version(BOOTSTRAP_VERSION)
         self.executable(self.runner / 'run.sh', '#!/bin/sh\nexit 0\n')
         self.marker = {'agentId': 123, 'agentName': 'production-runner',
                        'gitHubUrl': 'https://github.com/example',
                        'poolName': 'production-group', 'workFolder': str(self.root / 'work')}
         self.executable(self.runner / 'config.sh', '''#!/usr/bin/python3
-import json, os
+import json, os, sys
 from pathlib import Path
+assert '--disableupdate' not in sys.argv
 Path('calls').open('a').write('called\\n')
 token = os.environ.get('ACTIONS_RUNNER_INPUT_TOKEN')
 if token == 'expired-synthetic-token':
@@ -99,6 +102,10 @@ Path('.credentials').chmod(0o600)
         path.write_text(content)
         path.chmod(0o750)
 
+    def listener_version(self, version, exit_code=0):
+        self.executable(self.runner / 'bin/Runner.Listener',
+                        '#!/usr/bin/python3\nprint(' + repr(version) + ')\nraise SystemExit(' + str(exit_code) + ')\n')
+
     def run_helper(self, token='', *arguments):
         return subprocess.run(['bash', self.helper, *arguments], input=token + '\n', text=True, capture_output=True,
                               env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH']})
@@ -121,6 +128,62 @@ Path('.credentials').chmod(0o600)
         self.assertFalse((self.runner / 'calls').exists())
         self.assertFalse(self.pending.exists())
 
+    def test_new_registration_uses_bootstrap_version_and_native_update_default(self):
+        result = self.run_helper('fresh-synthetic-token')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('version=' + BOOTSTRAP_VERSION + ' state=registered', result.stdout)
+        self.assertIn('disable_update=absent', result.stdout)
+
+    def test_registered_native_updated_and_older_versions_are_reused_without_replacement(self):
+        self.registered()
+        retained = {name: (self.runner / name).read_bytes() for name in ('.runner', '.credentials')}
+        for version in ('0.1.0', BOOTSTRAP_VERSION, '999.1.0'):
+            with self.subTest(version=version):
+                self.listener_version(version)
+                result = self.run_helper('unused-synthetic-token')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('version=' + version + ' state=reused', result.stdout)
+                self.assertNotIn('unused-synthetic-token', result.stdout + result.stderr)
+                self.assertFalse((self.runner / 'calls').exists())
+                self.assertEqual({name: (self.runner / name).read_bytes() for name in retained}, retained)
+
+    def test_unregistered_prepared_package_retains_native_version_authority(self):
+        for version in ('0.1.0', '999.1.0'):
+            with self.subTest(version=version):
+                self.listener_version(version)
+                result = self.run_helper('unused-synthetic-token')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('version=' + version + ' state=registered', result.stdout)
+                self.assertTrue((self.runner / 'calls').exists())
+                self.assertFalse(self.pending.exists())
+                (self.runner / '.runner').unlink()
+                (self.runner / '.credentials').unlink()
+
+    def test_registered_version_must_be_exact_numeric_and_probe_successful(self):
+        self.registered()
+        for version, exit_code in (('prefix ' + BOOTSTRAP_VERSION, 0),
+                                   (BOOTSTRAP_VERSION + '-preview', 0),
+                                   (BOOTSTRAP_VERSION + '\n999.1.0', 0),
+                                   ('02.336.0', 0), ('2.336', 0), ('', 0),
+                                   (BOOTSTRAP_VERSION, 1)):
+            with self.subTest(version=version, exit_code=exit_code):
+                self.listener_version(version, exit_code)
+                result = self.run_helper('unused-synthetic-token')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('RUNNER_VERSION_MISMATCH', result.stderr)
+                self.assertFalse((self.runner / 'calls').exists())
+
+    def test_reuse_reports_persisted_update_option_without_rewriting_registration(self):
+        for value, diagnostic in ((True, 'true'), (False, 'false'), ('false', 'invalid'), (None, 'invalid')):
+            with self.subTest(value=value):
+                self.registered({**self.marker, 'disableUpdate': value})
+                retained = (self.runner / '.runner').read_bytes()
+                result = self.run_helper()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('disable_update=' + diagnostic, result.stdout)
+                self.assertEqual((self.runner / '.runner').read_bytes(), retained)
+                self.assertFalse((self.runner / 'calls').exists())
+
     def test_pending_reinstall_blocks_direct_registration_and_preserves_evidence(self):
         journal = Path(str(self.state_root) + '-clean-reinstall.json')
         journal.write_text('{"stage":"DECOMMISSIONED"}')
@@ -131,6 +194,40 @@ Path('.credentials').chmod(0o600)
         self.assertFalse((self.runner / 'calls').exists())
         self.assertFalse(self.pending.exists())
         self.assertEqual(journal.read_text(), '{"stage":"DECOMMISSIONED"}')
+
+    def test_effective_migrated_update_setting_and_disagreement_preserve_registration(self):
+        for original in (True, False, 'absent', 'false', None, 0):
+            for effective in (True, False, 'absent', 'false', None, 0):
+                with self.subTest(original=original, effective=effective):
+                    self.registered({**self.marker, **({'disableUpdate': original} if original != 'absent' else {})})
+                    migrated = self.runner / '.runner_migrated'
+                    migrated.write_text(json.dumps({**self.marker,
+                        **({'disableUpdate': effective} if effective != 'absent' else {})}))
+                    migrated.chmod(0o600)
+                    retained = {name: ((self.runner / name).stat().st_ino, (self.runner / name).read_bytes())
+                                for name in ('.runner', '.runner_migrated', '.credentials')}
+                    result = self.run_helper('unused-synthetic-token')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    diagnostic = ('absent' if effective == 'absent' else
+                                  str(effective).lower() if type(effective) is bool else 'invalid')
+                    self.assertIn('disable_update=' + diagnostic + ' disable_update_source=.runner_migrated', result.stdout)
+                    mismatch = type(original) is not type(effective) or original != effective
+                    self.assertIn('disable_update_mismatch=' + str(mismatch).lower(), result.stdout)
+                    self.assertEqual({name: ((self.runner / name).stat().st_ino, (self.runner / name).read_bytes())
+                                      for name in retained}, retained)
+                    self.assertFalse((self.runner / 'calls').exists())
+
+    def test_migrated_identity_disagreement_cannot_reuse_or_register(self):
+        self.registered()
+        migrated = self.runner / '.runner_migrated'
+        migrated.write_text(json.dumps({**self.marker, 'agentId': 456}))
+        migrated.chmod(0o600)
+        retained = migrated.read_bytes()
+        result = self.run_helper('unused-synthetic-token')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.assertEqual(migrated.read_bytes(), retained)
+        self.assertFalse((self.runner / 'calls').exists())
 
     def test_changed_public_configuration_cannot_mutate_the_installed_runner(self):
         binding = ('url=https://github.com/example name=production-runner label=production '
@@ -311,7 +408,7 @@ class NativeRegistrationPathTests(unittest.TestCase):
             (runner / '_diag').mkdir()
             marker = {'agentId': 77, 'agentName': 'fixture-runner', 'gitHubUrl': 'https://github.com/example',
                       'poolName': 'fixture-isolated-group', 'workFolder': str(root / 'work')}
-            (runner / 'bin/Runner.Listener').write_text('#!/bin/sh\necho 2.336.0\n')
+            (runner / 'bin/Runner.Listener').write_text('#!/bin/sh\necho ' + BOOTSTRAP_VERSION + '\n')
             (runner / 'run.sh').write_text('#!/bin/sh\nexit 0\n')
             # The synthetic package has no network operation. Real runuser must
             # launch it as the selected runner and keep the ephemeral value off argv.
@@ -319,6 +416,7 @@ class NativeRegistrationPathTests(unittest.TestCase):
                 + 'assert os.getuid() == ' + str(user.pw_uid) + '\n'
                 + 'assert os.environ.get("ACTIONS_RUNNER_INPUT_TOKEN") == "fixture-ephemeral"\n'
                 + 'assert "fixture-ephemeral" not in sys.argv\n'
+                + 'assert "--disableupdate" not in sys.argv\n'
                 + 'Path("calls").open("a").write("registered\\n")\n'
                 + 'Path(".runner").write_text(' + repr(json.dumps(marker)) + ')\n'
                 + 'Path(".credentials").write_text("{}")\n'
@@ -341,12 +439,16 @@ class NativeRegistrationPathTests(unittest.TestCase):
                                    env=environment, text=True, capture_output=True, timeout=20)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
             self.assertIn('state=registered', fresh.stdout)
+            self.assertIn('version=' + BOOTSTRAP_VERSION, fresh.stdout)
+            self.assertIn('disable_update=absent', fresh.stdout)
             self.assertNotIn('fixture-ephemeral', fresh.stdout + fresh.stderr)
             retained = {name: (runner / name).read_bytes() for name in ['.runner', '.credentials']}
+            (runner / 'bin/Runner.Listener').write_text('#!/bin/sh\necho 999.1.0\n')
             reused = subprocess.run(['/bin/bash', str(helper)], input='', env=environment,
                                     text=True, capture_output=True, timeout=20)
             self.assertEqual(reused.returncode, 0, reused.stderr)
             self.assertIn('state=reused', reused.stdout)
+            self.assertIn('version=999.1.0', reused.stdout)
             self.assertEqual((runner / 'calls').read_text(), 'registered\n')
             self.assertEqual({name: (runner / name).read_bytes() for name in retained}, retained)
             (runner / '.runner').write_text(json.dumps({**marker, 'agentName': 'foreign-runner'}))

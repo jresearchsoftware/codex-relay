@@ -37,10 +37,11 @@ def runner(request):
     tmp_path = Path(temporary.name)
     tmp_path.chmod(0o755)
     root = tmp_path / 'runner'
-    for path in [root, root / 'bin', root / '_diag']:
+    for path in [root, root / 'bin', root / '_diag', root / 'externals',
+                 root / 'externals/node24', root / 'externals/node24/bin']:
         path.mkdir(mode=0o750)
         os.chown(path, user.pw_uid, user.pw_gid)
-    for name in ['config.sh', 'run.sh']:
+    for name in ['config.sh', 'run.sh', 'externals/node24/bin/node']:
         path = root / name
         path.write_text('#!/bin/sh\nexit 0\n')
         path.chmod(0o755)
@@ -79,14 +80,15 @@ def runner(request):
     archive.chmod(0o644)
     selected = {
         'Inspect runner root and registration markers before package reconciliation',
+        'Validate contained native runner directory links before any live executable probe',
         'Inspect the installed runner version before software reconciliation',
         'Extract the verified runner package into the dedicated runner namespace',
         'Inspect installed runner entrypoints and version binary',
         'Create runner diagnostic namespace with runner ownership',
         'Inspect existing runner diagnostic files',
         'Normalize runner diagnostic file ownership before package probes',
-        'Verify installed runner reports the pinned version',
-        'Refuse installed runner version drift',
+        'Verify installed runner reports a valid native version',
+        'Require a valid installed version and the exact distribution after bootstrap',
         'Reconcile runner diagnostic ownership after all package probes',
         'Enforce runner ownership of all diagnostic files after probes',
     }
@@ -97,6 +99,7 @@ def runner(request):
             'group': group, 'records': records, 'tools': tools, 'tasks': tasks,
             'variables': {'relay_runner_root': str(root), 'relay_runner_user': user.pw_name,
                 'relay_runner_group': group, 'relay_runner_package_archive': str(archive),
+                'relay_runner_package_version': '2.336.0',
                 'relay_runner_package_install_needed': True,
                 'relay_runner_registration_marker': str(root / '.runner'),
                 'relay_runner_credentials_marker': str(root / '.credentials')}}

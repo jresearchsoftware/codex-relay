@@ -1341,6 +1341,17 @@ registration that disagrees with the selected scope remains blocked. Changing
 an admitted consumer's scope requires explicit owner acceptance and external
 qualification before registration or enablement.
 
+### Runner software and native self-updates
+
+GitHub's native updater owns ongoing Runner software updates. Relay verifies one
+initial bootstrap package and retains runnable registered software across native
+updates, including its contained versioned-directory links. New registrations
+enable updates by default; existing persisted settings require a separate,
+stopped-only owner maintenance transition. See the
+[self-update and migration runbook](../docs/runner-self-updates.md) for controlled
+General/Production Runner migration, service recovery, diagnostics and TEST scope.
+Ordinary Apply does not migrate settings or stop its active transport runner.
+
 ### Ephemeral runner registration
 
 Dedicated TEST runner and runner-group administration follows

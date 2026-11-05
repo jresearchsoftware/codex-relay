@@ -97,14 +97,15 @@ class RunnerLifecycleTests(unittest.TestCase):
         ):
             self.assertIn(marker, tasks)
         self.assertIn("ReadWritePaths={{ relay_runner_root }} {{ relay_runner_work_root }} {{ relay_runner_home }} {{ relay_log_root }} {{ relay_writer_claim_root }} {{ relay_diagnostics_root }} {{ relay_codex_home }} {{ relay_dispatch_state_root }} {{ relay_dispatch_work_root }} {{ relay_dispatch_home }}", RUNNER_SERVICE.read_text(encoding="utf-8"))
-        self.assertLess(tasks.index("Create runner diagnostic namespace"), tasks.index("Verify installed runner reports the pinned version"))
+        self.assertLess(tasks.index("Create runner diagnostic namespace"), tasks.index("Verify installed runner reports a valid native version"))
         self.assertIn("become_user: '{{ relay_runner_user }}'", tasks)
         self.assertLess(tasks.index("Enforce runner ownership of all diagnostic files after probes"), tasks.index("Install owner-mediated runner registration helper"))
 
     def test_registration_helper_never_places_token_in_argv_or_persists_it(self):
         helper = RUNNER_REGISTRATION.read_text(encoding="utf-8")
-        for marker in ("ACTIONS_RUNNER_INPUT_TOKEN", "read -r -s", "--disableupdate", "RUNNER_REGISTRATION_PASS", "REGISTRATION_STATE_AMBIGUOUS", "normalize_diagnostics", "runuser --preserve-environment --user '{{ relay_runner_user }}'"):
+        for marker in ("ACTIONS_RUNNER_INPUT_TOKEN", "read -r -s", "RUNNER_REGISTRATION_PASS", "REGISTRATION_STATE_AMBIGUOUS", "normalize_diagnostics", "runuser --preserve-environment --user '{{ relay_runner_user }}'", "disable_update=$disable_update", "version=$runner_version"):
             self.assertIn(marker, helper)
+        self.assertNotIn("--disableupdate", helper)
         self.assertNotIn("--token", helper)
         self.assertNotIn("GITHUB_APP", helper)
         self.assertIn("unset registration_value ACTIONS_RUNNER_INPUT_TOKEN", helper)
@@ -169,7 +170,7 @@ class RunnerLifecycleTests(unittest.TestCase):
 
     def test_archive_validator_rejects_links_and_path_traversal(self):
         validator = RUNNER_ARCHIVE_CHECK.read_text(encoding="utf-8")
-        for marker in ("UNSAFE_MEMBER_PATH", "UNSAFE_LINK_TARGET", "MALFORMED_ARCHIVE", "REQUIRED_ENTRYPOINT_MISSING", "RUNNER_ARCHIVE_VALID version=2.336.0"):
+        for marker in ("UNSAFE_MEMBER_PATH", "UNSAFE_LINK_TARGET", "MALFORMED_ARCHIVE", "REQUIRED_ENTRYPOINT_MISSING", "RUNNER_ARCHIVE_VALID version={sys.argv[2]}"):
             self.assertIn(marker, validator)
 
 

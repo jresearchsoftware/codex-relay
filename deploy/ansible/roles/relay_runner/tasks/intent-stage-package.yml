@@ -2,10 +2,10 @@
 - name: Require the same pinned Runner package for isolated intent staging
   ansible.builtin.assert:
     that:
-      - relay_runner_package_version == '2.336.0'
+      - relay_runner_package_version is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$') and relay_runner_package_version | length <= 128
       - relay_runner_package_platform == 'linux-x64'
-      - relay_runner_package_url == 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
-      - relay_runner_package_sha256 == '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+      - relay_runner_package_url == ('https://github.com/actions/runner/releases/download/v' ~ relay_runner_package_version ~ '/actions-runner-' ~ relay_runner_package_platform ~ '-' ~ relay_runner_package_version ~ '.tar.gz')
+      - relay_runner_package_sha256 is match('^[a-f0-9]{64}$')
       - not ansible_check_mode | bool
     fail_msg: INTENT_RUNNER_PACKAGE_CONTRACT_INVALID
 

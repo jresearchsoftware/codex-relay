@@ -162,3 +162,23 @@ def test_member_apply_still_extracts_and_verifies_package(tmp_path, member, dama
         if damage == 'executable':
             assert 'MANAGED_POOL_PACKAGE_UNPROVEN' in output
             assert not (root / 'version-probed').exists()
+
+
+@pytest.mark.parametrize('version', ['2.335.0', '2.400.0'])
+def test_member_preserves_existing_native_version_without_bootstrap_extraction(tmp_path, member, version):
+    host, root, state, values, tasks = member
+    plan = values['relay_pool_install_plan']['members']['primary']
+    for path in [root, state, state / 'home', state / 'work']:
+        path.mkdir(parents=True, mode=0o750)
+    package(values, version=version)
+    with tarfile.open(values['relay_runner_package_archive']) as archive:
+        archive.extractall(root)
+    archive_path = Path(values['relay_runner_package_archive']); archive_path.unlink()
+    (root / 'bin').rename(root / ('bin.' + version))
+    (root / 'bin').symlink_to(root / ('bin.' + version), target_is_directory=True)
+    before = (root / 'bin/Runner.Listener').read_bytes()
+    plan.update(createDirectories=[], installPackage=False, installUnit=False)
+    code, output = run_member(tmp_path, values, tasks, check=False)
+    assert code == 0, output
+    assert (root / 'bin').is_symlink() and (root / 'bin/Runner.Listener').read_bytes() == before
+    assert not archive_path.exists()

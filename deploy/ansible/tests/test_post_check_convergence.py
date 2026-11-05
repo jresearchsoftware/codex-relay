@@ -118,7 +118,7 @@ class PostCheckConvergenceTests(unittest.TestCase):
                 'Inspect the installed runner version before software reconciliation',
                 'Inspect existing runner diagnostic files',
                 'Normalize runner diagnostic file ownership before package probes',
-                'Verify installed runner reports the pinned version',
+                'Verify installed runner reports a valid native version',
                 'Reconcile runner diagnostic ownership after all package probes',
                 'Enforce runner ownership of all diagnostic files after probes',
             ]

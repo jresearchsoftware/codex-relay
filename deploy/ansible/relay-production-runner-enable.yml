@@ -281,7 +281,10 @@
       become_user: '{{ relay_runner_user }}'
       register: relay_production_runner_enable_version
       changed_when: false
-      failed_when: relay_production_runner_enable_version.stdout | trim != relay_runner_package_version
+      failed_when: >-
+        relay_production_runner_enable_version.rc != 0 or
+        relay_production_runner_enable_version.stdout | length > 128 or
+        not (relay_production_runner_enable_version.stdout | trim is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))
       check_mode: false
 
     - name: Require the installed production unit to remain root owned

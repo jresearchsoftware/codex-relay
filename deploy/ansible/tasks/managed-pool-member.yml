@@ -62,13 +62,18 @@
   loop: '{{ relay_pool_entrypoints.results }}'
   when: not ansible_check_mode | bool
 
-- name: Verify the exact pinned physical runner version as its own identity
+- name: Verify the physical runner native version as its own identity
   ansible.builtin.command:
     argv: ['/bin/sh', -c, 'umask 077; exec "$@"', relay-pool-version, '{{ relay_pool_member.root }}/bin/Runner.Listener', --version]
   become_user: '{{ relay_general_runner_pool.runnerUser }}'
   register: relay_pool_version
   changed_when: false
-  failed_when: relay_pool_version.stdout | trim != relay_runner_package_version
+  failed_when: >-
+    relay_pool_version.rc != 0 or
+    relay_pool_version.stdout | length > 128 or
+    not (relay_pool_version.stdout | trim is match('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$')) or
+    (relay_pool_install_plan.members[relay_pool_member.id].installPackage and
+     relay_pool_version.stdout | trim != relay_runner_package_version)
   when: not ansible_check_mode | bool
 
 - name: Install a distinct shared-pool service without activation

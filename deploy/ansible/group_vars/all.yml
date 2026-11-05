@@ -245,12 +245,14 @@ relay_dispatch_remediation_root: '{{ relay_dispatch_state_root }}/remediation'
 relay_dispatch_evidence_root: '{{ relay_dispatch_state_root }}/evidence'
 relay_writer_claim_root: '{{ relay_state_root }}/writer-claims'
 relay_writer_sudoers_file: /etc/sudoers.d/codex-relay-writer
-relay_runner_package_version: '2.336.0'
+# This verified distribution bootstraps missing software. Registered runner
+# software subsequently follows GitHub's native automatic update lifecycle.
+relay_runner_package_version: '2.338.2'
 relay_runner_package_platform: linux-x64
-relay_runner_package_url: 'https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz'
-relay_runner_package_sha256: '04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d'
+relay_runner_package_url: 'https://github.com/actions/runner/releases/download/v{{ relay_runner_package_version }}/actions-runner-{{ relay_runner_package_platform }}-{{ relay_runner_package_version }}.tar.gz'
+relay_runner_package_sha256: 'baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40'
 relay_runner_package_cache_root: /var/cache/codex-relay
-relay_runner_package_archive: '{{ relay_runner_package_cache_root }}/actions-runner-linux-x64-2.336.0.tar.gz'
+relay_runner_package_archive: '{{ relay_runner_package_cache_root }}/actions-runner-{{ relay_runner_package_platform }}-{{ relay_runner_package_version }}.tar.gz'
 relay_runner_root: '{{ relay_install_root }}/runner'
 relay_runner_exec_start: '{{ relay_runner_root }}/run.sh'
 relay_runner_work_root: '{{ relay_state_root }}/runner/work'
