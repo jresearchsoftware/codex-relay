@@ -45,7 +45,7 @@
 - name: Parse actual candidate entrypoints without executing their privileged main functions
   ansible.builtin.command:
     argv: ['/usr/bin/node', --check, '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/{{ item }}']
-  loop: [admission-cli.mjs, privileged-writer-entrypoint.mjs, codex-dispatch-entrypoint.mjs, diagnostic-store-entrypoint.mjs]
+  loop: [entrypoint.mjs, recover-attempt-publication.mjs, admission-cli.mjs, privileged-writer-entrypoint.mjs, codex-dispatch-entrypoint.mjs, diagnostic-store-entrypoint.mjs]
   changed_when: false
 
 - name: Return the exact source and desired consumer before expensive preparation
@@ -97,6 +97,8 @@
       - -e
       - 'import {pathToFileURL} from "node:url"; for(const path of process.argv.slice(2)) await import(pathToFileURL(path)); console.log("INTENT_STAGE_IMPORTS_READY");'
       - stage-import
+      - '{{ relay_intent_stage_root }}/release/bin/relay-routing.mjs'
+      - '{{ relay_intent_stage_root }}/release/bin/relay-publication-recovery.mjs'
       - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/admission-cli.mjs'
       - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/manual-outcome.mjs'
       - '{{ relay_intent_stage_root }}/release/reviewed-source/controller/src/privileged-writer-helper.mjs'

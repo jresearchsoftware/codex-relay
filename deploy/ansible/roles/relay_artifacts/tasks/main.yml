@@ -43,6 +43,21 @@
   ansible.builtin.include_tasks: stage-source.yml
   when: not (relay_artifact_consume_staged | default(false) | bool) and not (relay_artifact_stage_only | default(false) | bool)
 
+- name: Install stable Relay routing and recovery invocation paths
+  ansible.builtin.file:
+    src: '{{ relay_release_path }}/reviewed-source/controller/src/{{ item.source }}'
+    dest: '{{ relay_release_path }}/bin/{{ item.destination }}'
+    state: link
+    owner: root
+    group: root
+    follow: false
+  loop:
+    - {source: entrypoint.mjs, destination: relay-routing.mjs}
+    - {source: recover-attempt-publication.mjs, destination: relay-publication-recovery.mjs}
+  when:
+    - not ansible_check_mode | bool
+    - not (relay_artifact_consume_staged | default(false) | bool)
+
 - name: Stage the exact reviewed privileged Writer helper artifact
   ansible.builtin.copy:
     src: '{{ relay_release_path }}/reviewed-source/controller/src/privileged-writer-entrypoint.mjs'

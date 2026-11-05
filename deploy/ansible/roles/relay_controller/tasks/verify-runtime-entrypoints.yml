@@ -1,0 +1,27 @@
+---
+# Import through the workflow's stable aliases, with the real unprivileged
+# runner identity. Import guards prevent admission, recovery or credential use.
+- name: Verify installed routing and recovery imports as the general runner
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - '{{ relay_dispatch_user }}'
+      - --
+      - /usr/bin/env
+      - -i
+      - PATH=/usr/bin:/bin
+      - 'RELAY_CONSUMER_CONFIG={{ relay_consumer_config_path }}'
+      - 'RELAY_REPOSITORY={{ relay_github_repository }}'
+      - /usr/bin/node
+      - --input-type=module
+      - -e
+      - 'import {pathToFileURL} from "node:url"; for(const path of process.argv.slice(2)) await import(pathToFileURL(path)); console.log("INSTALLED_RELAY_IMPORTS_READY");'
+      - installed-import
+      - '{{ relay_release_path }}/bin/relay-routing.mjs'
+      - '{{ relay_release_path }}/bin/relay-publication-recovery.mjs'
+    chdir: /
+  register: relay_installed_entrypoint_imports
+  changed_when: false
+  failed_when: relay_installed_entrypoint_imports.rc != 0 or relay_installed_entrypoint_imports.stdout != 'INSTALLED_RELAY_IMPORTS_READY'
+  when: not ansible_check_mode | bool

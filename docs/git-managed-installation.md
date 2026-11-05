@@ -114,6 +114,15 @@ active configuration, installed helpers, service units, registrations or shared
 toolchain/package prefixes. Protected replacement stages beside the old install
 root so retiring that root cannot retire its candidate. No new public phase or
 extra workflow approval is required.
+The shared artifact role creates both stable public aliases,
+`bin/relay-routing.mjs` and `bin/relay-publication-recovery.mjs`, for ordinary
+and staged installations. The private seal requires every fixed runtime alias,
+its contained target and public payload read/traversal bits. After consumption
+and consumer publication, the controller imports both aliases with the actual
+General Runner identity and a clean environment, without invoking admission or
+recovery. A missing alias or unreadable import closure fails installation;
+root-only source imports do not establish runner readability. This preserves
+the private stage's `0700` parent and existing runner privileges.
 Retrying the same operation preserves its prior private stage before creating a
 new one; a live or unproven Writer holder prevents that preservation step.
 

@@ -47,6 +47,8 @@ class IntentArtifactStageTests(unittest.TestCase):
             'contracts/src/github-authority-v4.json': '{"schema_version":"4.0"}\n',
             'controller/src/codex-dispatch-entrypoint.mjs': 'export const status="ready";\n',
             'controller/src/diagnostic-store-entrypoint.mjs': 'export const status="ready";\n',
+            'controller/src/entrypoint.mjs': 'export const status="ready";\n',
+            'controller/src/recover-attempt-publication.mjs': 'export const status="ready";\n',
             'source-proof.txt': 'Exact frozen fixture bytes.\n',
             'executable.sh': '#!/bin/sh\nexit 0\n',
         }
@@ -82,6 +84,8 @@ class IntentArtifactStageTests(unittest.TestCase):
         release = self.root / 'release'
         binary = release / 'bin/reviewer-mcp-http'
         binary.parent.mkdir(mode=0o751)
+        binary.parent.chmod(0o751)
+        release.chmod(0o751)
         shutil.copyfile('/usr/bin/true', binary)
         binary.chmod(0o750)
         for name, target in stage.BIN_LINKS.items():
@@ -195,6 +199,30 @@ class IntentArtifactStageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'INTENT_STAGE_FILE_UNSAFE'):
             stage.run('verify', self.root, self.expected)
         self.assertFalse((self.parent / self.revision).exists())
+        self.assert_old_available()
+
+    def test_seal_requires_every_public_entrypoint_and_readable_contained_target(self):
+        metadata = self.prepare()
+        (self.root / 'receipt.json').unlink()
+        release = self.root / 'release'
+        for name in stage.BIN_LINKS:
+            alias = release / name
+            target = os.readlink(alias)
+            alias.unlink()
+            with self.assertRaisesRegex(ValueError, 'INTENT_STAGE_ENTRYPOINT_MISSING'):
+                stage.run('seal', self.root, metadata)
+            self.assertFalse((self.root / 'receipt.json').exists())
+            alias.symlink_to(target)
+        target = release / 'reviewed-source/controller/src/entrypoint.mjs'
+        target.chmod(0o640)
+        with self.assertRaisesRegex(ValueError, 'INTENT_STAGE_ENTRYPOINT_UNREADABLE'):
+            stage.run('seal', self.root, metadata)
+        target.chmod(0o644)
+        alias = release / 'bin/relay-routing.mjs'
+        alias.unlink()
+        alias.symlink_to('/etc/passwd')
+        with self.assertRaisesRegex(ValueError, 'INTENT_STAGE_ENTRYPOINT_MISSING'):
+            stage.run('seal', self.root, metadata)
         self.assert_old_available()
 
     def test_complete_destination_plan_rejects_late_collisions_before_copying_any_file(self):
@@ -348,6 +376,9 @@ class IntentArtifactStageTests(unittest.TestCase):
         config = self.root / 'consumer.json'
         config.write_text(json.dumps(consumer))
         config.chmod(0o600)
+        (source.parent / 'bin').mkdir()
+        for name, target in stage.BIN_LINKS.items():
+            (source.parent / name).symlink_to(target)
         tasks = yaml.safe_load((ROLE / 'tasks/intent-stage.yml').read_text())
         probe = next(task for task in tasks if task['name'].startswith('Execute actual candidate controller'))
         argv = [value.replace('{{ relay_intent_stage_root }}', str(self.root))
@@ -532,6 +563,58 @@ class IntentArtifactStageTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / 'release/artifact-manifest.json').read_text())['commit'], revision)
         self.assertFalse((self.parent / 'active-config').exists())
         self.assertFalse((install / 'releases' / revision).exists())
+        self.assert_old_available()
+
+        # Seal exactly what the real stage produced. In particular this test
+        # never creates the routing/recovery aliases itself (the former gap).
+        acquisition = stage.run('extract', self.root, self.expected, self.archive)
+        metadata = {**self.expected, 'sourceAcquisition': acquisition,
+            'reviewer': {'binarySha256': stage.hash_bytes(binary.read_bytes()),
+                         'cargoVersion': 'cargo ' + version, 'artifactProvenance': 'built',
+                         'reuseSourceRelease': '', 'reuseSourceBinarySha256': '',
+                         'buildContractSha256': 'c' * 64, 'previousRevision': 'none'},
+            'toolchain': {'livePrefix': str(prefix), 'stagedPrefix': '', 'version': version},
+            'packages': {}}
+        stage.run('seal', self.root, metadata)
+        stage.run('verify', self.root, self.expected)
+        variables.update(relay_intent_staged_release=str(self.root / 'release'),
+            relay_release_path=str(install / 'releases' / revision),
+            relay_group='root', relay_reviewer_group='root', relay_runner_group='root')
+        play.write_text(yaml.safe_dump([{'hosts': 'all', 'gather_facts': False, 'vars': variables,
+            'tasks': [{'ansible.builtin.include_role': {'name': str(ROLE), 'tasks_from': 'intent-consume.yml'}}]}]))
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+            env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1'},
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        destination = install / 'releases' / revision
+        for name, target in stage.BIN_LINKS.items():
+            self.assertEqual(os.readlink(destination / name), target)
+            self.assertTrue((destination / name).is_file())
+
+        # Use the shipped post-consumption probe under a real unprivileged UID,
+        # preserving the private stage's 0700 boundary and old active pointer.
+        self.parent.chmod(0o755)
+        public_config = self.parent / 'consumer.json'
+        shutil.copyfile(self.root / 'consumer.json', public_config)
+        public_config.chmod(0o644)
+        variables.update(relay_consumer_config_path=str(public_config), relay_dispatch_user='nobody')
+        probe = ANSIBLE / 'roles/relay_controller/tasks/verify-runtime-entrypoints.yml'
+        play.write_text(yaml.safe_dump([{'hosts': 'all', 'gather_facts': False, 'vars': variables,
+            'tasks': [{'ansible.builtin.include_tasks': str(probe)}]}]))
+        def installed_probe():
+            return subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+                env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1'},
+                capture_output=True, text=True, timeout=60)
+        result = installed_probe()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # An existing but unreadable dependency must fail the actual UID probe.
+        dependency = destination / 'reviewed-source/controller/src/entrypoint.mjs'
+        dependency.chmod(0o640)
+        result = installed_probe()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('EACCES', result.stdout + result.stderr)
+        dependency.chmod(0o644)
+        self.assertEqual(stat.S_IMODE(self.root.stat().st_mode), 0o700)
         self.assert_old_available()
 
 
