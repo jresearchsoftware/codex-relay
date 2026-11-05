@@ -17,7 +17,9 @@ MAX_BYTES = 2 * 1024 * 1024 * 1024
 IDENTITY_KEYS = {'revision', 'tree', 'sourceTreeSha256', 'controllerSourceTreeSha256',
                  'codexLauncherSourceTreeSha256', 'reviewerSourceTreeSha256', 'reviewerBuildInputsTreeSha256'}
 BIN_LINKS = {'bin/relay-codex-dispatch.mjs': '../reviewed-source/controller/src/codex-dispatch-entrypoint.mjs',
-             'bin/relay-diagnostics-store.mjs': '../reviewed-source/controller/src/diagnostic-store-entrypoint.mjs'}
+             'bin/relay-diagnostics-store.mjs': '../reviewed-source/controller/src/diagnostic-store-entrypoint.mjs',
+             'bin/relay-routing.mjs': '../reviewed-source/controller/src/entrypoint.mjs',
+             'bin/relay-publication-recovery.mjs': '../reviewed-source/controller/src/recover-attempt-publication.mjs'}
 
 
 def require(value, code):
@@ -226,6 +228,27 @@ def tree_digest(root, links=None, toolchain=False):
     return hash_bytes(json.dumps(sorted(rows), separators=(',', ':')).encode())
 
 
+def verify_entrypoints(release):
+    """Require the fixed public aliases, not merely any links present in a tree.
+
+    The private staging parent stays 0700. Check the payload's public traversal
+    and target read bits here; installed imports under the runner prove the
+    actual ancestor/ACL/dependency boundary after consumption.
+    """
+    for name, target in BIN_LINKS.items():
+        alias = release / name
+        require(alias.is_symlink() and os.readlink(alias) == target, 'INTENT_STAGE_ENTRYPOINT_MISSING')
+        resolved = alias.resolve(strict=True)
+        require(resolved.is_relative_to(release), 'INTENT_STAGE_LINK_ESCAPE')
+        read_regular(resolved)
+        require(resolved.stat().st_mode & stat.S_IROTH, 'INTENT_STAGE_ENTRYPOINT_UNREADABLE')
+        for directory in resolved.parents:
+            require(directory.stat().st_mode & stat.S_IXOTH, 'INTENT_STAGE_ENTRYPOINT_UNREADABLE')
+            if directory == release:
+                break
+        require((release / 'bin').stat().st_mode & stat.S_IXOTH, 'INTENT_STAGE_ENTRYPOINT_UNREADABLE')
+
+
 def verify(root, expected):
     receipt = json.loads(read_regular(root / 'receipt.json', limit=2 * 1024 * 1024))
     require(stat.S_IMODE((root / 'receipt.json').stat().st_mode) == 0o600
@@ -233,6 +256,7 @@ def verify(root, expected):
             and receipt['sourceIdentity'] == identity(expected['sourceIdentity']), 'INTENT_STAGE_RECEIPT_CHANGED')
     require(receipt['releaseTreeSha256'] == tree_digest(root / 'release', allowed_links(receipt['sourceAcquisition'])),
             'INTENT_STAGE_PAYLOAD_CHANGED')
+    verify_entrypoints(root / 'release')
     binary = root / 'release/bin/reviewer-mcp-http'
     require(hash_bytes(read_regular(binary)) == receipt['reviewer']['binarySha256'], 'INTENT_STAGE_REVIEWER_CHANGED')
     require(json.loads(read_regular(root / 'release/reviewed-source/.relay-source.json')) == expected['sourceIdentity'],
@@ -350,6 +374,7 @@ def run(action, root, data, argument=None):
         return {'status': 'NORMALIZED'}
     if action == 'seal':
         require(not (root / 'receipt.json').exists(), 'INTENT_STAGE_RECEIPT_ALREADY_EXISTS')
+        verify_entrypoints(root / 'release')
         if data['toolchain']['stagedPrefix']:
             require(data['toolchain']['stagedPrefix'] == str(root / 'rust-toolchain'), 'INTENT_STAGE_TOOLCHAIN_INVALID')
             data['toolchain']['treeSha256'] = tree_digest(root / 'rust-toolchain', toolchain=True)

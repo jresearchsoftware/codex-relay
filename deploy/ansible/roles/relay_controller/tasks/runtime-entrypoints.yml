@@ -65,6 +65,9 @@
     state: absent
   when: relay_git_consumer_transition | bool
 
+- name: Verify the workflow aliases after publishing the consumer snapshot
+  ansible.builtin.include_tasks: verify-runtime-entrypoints.yml
+
 - name: Install the fixed root-owned diagnostics store wrapper
   ansible.builtin.template:
     src: relay-diagnostics-store.j2
