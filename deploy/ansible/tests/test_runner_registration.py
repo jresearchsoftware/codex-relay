@@ -196,8 +196,8 @@ Path('.credentials').chmod(0o600)
         self.assertEqual(journal.read_text(), '{"stage":"DECOMMISSIONED"}')
 
     def test_effective_migrated_update_setting_and_disagreement_preserve_registration(self):
-        for original in (True, False, 'absent'):
-            for effective in (True, False, 'absent'):
+        for original in (True, False, 'absent', 'false', None, 0):
+            for effective in (True, False, 'absent', 'false', None, 0):
                 with self.subTest(original=original, effective=effective):
                     self.registered({**self.marker, **({'disableUpdate': original} if original != 'absent' else {})})
                     migrated = self.runner / '.runner_migrated'
@@ -208,9 +208,11 @@ Path('.credentials').chmod(0o600)
                                 for name in ('.runner', '.runner_migrated', '.credentials')}
                     result = self.run_helper('unused-synthetic-token')
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    diagnostic = str(effective).lower()
+                    diagnostic = ('absent' if effective == 'absent' else
+                                  str(effective).lower() if type(effective) is bool else 'invalid')
                     self.assertIn('disable_update=' + diagnostic + ' disable_update_source=.runner_migrated', result.stdout)
-                    self.assertIn('disable_update_mismatch=' + str(original != effective).lower(), result.stdout)
+                    mismatch = type(original) is not type(effective) or original != effective
+                    self.assertIn('disable_update_mismatch=' + str(mismatch).lower(), result.stdout)
                     self.assertEqual({name: ((self.runner / name).stat().st_ino, (self.runner / name).read_bytes())
                                       for name in retained}, retained)
                     self.assertFalse((self.runner / 'calls').exists())

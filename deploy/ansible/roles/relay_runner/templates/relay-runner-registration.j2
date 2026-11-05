@@ -110,8 +110,12 @@ try:
     # Upstream prefers the migrated marker. Report divergence without mutating
     # either registration or exposing any other persisted fields.
     options = [option(state) for state in states]
+    mismatch = len(states) == 2 and (
+        ('disableUpdate' in states[0]) != ('disableUpdate' in states[1])
+        or type(states[0].get('disableUpdate')) is not type(states[1].get('disableUpdate'))
+        or states[0].get('disableUpdate') != states[1].get('disableUpdate'))
     print(options[-1] + ' disable_update_source=' + os.path.basename(markers[-1])
-          + ' disable_update_mismatch=' + ('true' if len(set(options)) > 1 else 'false'))
+          + ' disable_update_mismatch=' + ('true' if mismatch else 'false'))
 except (OSError, ValueError, TypeError, AttributeError):
     sys.exit(1)
 PY
