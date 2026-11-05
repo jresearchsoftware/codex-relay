@@ -971,8 +971,9 @@ def test_pool_external_relink_damage_requires_stopped_repair_without_mutation(tm
     elif damage == 'node-alias':
         node = external / 'node24/bin/node'; node.unlink(); node.symlink_to('/bin/true')
     before = unchanged_tree(tmp_path)
-    with pytest.raises(pool.PoolError, match='INSTALL_(ACTIVE_PACKAGE_UNPROVEN|REGISTERED_PACKAGE_REPAIR_REQUIRED|NATIVE_LAYOUT_UNSAFE)'):
+    with pytest.raises(pool.PoolError, match='INSTALL_(ACTIVE_PACKAGE_UNPROVEN|REGISTERED_PACKAGE_REPAIR_REQUIRED|NATIVE_LAYOUT_UNSAFE)') as failure:
         pool.installation_plan(contract, template, **arguments)
+    assert 'stopped-only repair required' in str(failure.value)
     assert unchanged_tree(tmp_path) == before
 
 

@@ -151,6 +151,8 @@ def test_runner_stage_failure_preserves_every_live_byte(package_fixture, failure
     before = snapshot(f['live'])
     result = run_stage(f, 'runner', values)
     assert result.returncode != 0, result.stdout + result.stderr
+    assert ('RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED' in result.stdout + result.stderr or
+            'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE_STOPPED_REPAIR_REQUIRED' in result.stdout + result.stderr)
     assert snapshot(f['live']) == before
     assert not (f['stage'] / 'runner-package/manifest.json').exists()
 

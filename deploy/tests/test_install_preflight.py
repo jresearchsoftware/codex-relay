@@ -575,7 +575,7 @@ class PackageRevalidationTests(unittest.TestCase):
             if kind == 'runner':
                 (root / 'archive.tar.gz').write_bytes(b'synthetic already-validated archive bytes')
                 payload = root / 'payload'
-                for name in ['config.sh', 'run.sh', 'bin/Runner.Listener']:
+                for name in ['config.sh', 'run.sh', 'bin/Runner.Listener', 'externals/node24/bin/node']:
                     path = payload / name; path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text('#!/bin/sh\nexit 0\n'); path.chmod(0o755)
                     target = runner / name; target.parent.mkdir(parents=True, exist_ok=True)

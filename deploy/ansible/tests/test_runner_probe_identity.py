@@ -37,10 +37,11 @@ def runner(request):
     tmp_path = Path(temporary.name)
     tmp_path.chmod(0o755)
     root = tmp_path / 'runner'
-    for path in [root, root / 'bin', root / '_diag']:
+    for path in [root, root / 'bin', root / '_diag', root / 'externals',
+                 root / 'externals/node24', root / 'externals/node24/bin']:
         path.mkdir(mode=0o750)
         os.chown(path, user.pw_uid, user.pw_gid)
-    for name in ['config.sh', 'run.sh']:
+    for name in ['config.sh', 'run.sh', 'externals/node24/bin/node']:
         path = root / name
         path.write_text('#!/bin/sh\nexit 0\n')
         path.chmod(0o755)
@@ -79,6 +80,7 @@ def runner(request):
     archive.chmod(0o644)
     selected = {
         'Inspect runner root and registration markers before package reconciliation',
+        'Validate contained native runner directory links before any live executable probe',
         'Inspect the installed runner version before software reconciliation',
         'Extract the verified runner package into the dedicated runner namespace',
         'Inspect installed runner entrypoints and version binary',

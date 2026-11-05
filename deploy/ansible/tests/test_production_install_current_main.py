@@ -232,6 +232,7 @@ class RunnerPackageFixture:
             for name, content in {
                 'config.sh': b'#!/bin/sh\nexit 99\n', 'run.sh': b'#!/bin/sh\nexit 99\n',
                 'bin/Runner.Listener': ('#!/bin/sh\nprintf "' + bootstrap_version + '\\n"\n').encode(),
+                'externals/node24/bin/node': b'#!/bin/sh\nexit 0\n',
             }.items():
                 member = tarfile.TarInfo(name)
                 member.mode, member.size = 0o755, len(content)
