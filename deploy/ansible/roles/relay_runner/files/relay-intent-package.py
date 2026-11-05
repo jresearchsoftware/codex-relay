@@ -38,10 +38,10 @@ def real(path, directory=None, *, owner=True):
     return True
 
 
-def runner_directory(root, name):
+def _runner_directory(root, name):
     path = root / name
     if path.is_symlink():
-        # The native updater atomically points bin/externals at a retained
+        # The native updater separately points bin/externals at a retained
         # versioned directory inside the same instance (using absolute links).
         target = os.readlink(path)
         if os.path.isabs(target):
@@ -52,6 +52,13 @@ def runner_directory(root, name):
         path = root / target
         require(real(path, True, owner=False), 'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE')
     return path if real(path, True, owner=False) else None
+
+
+def runner_directory(root, name):
+    try:
+        return _runner_directory(root, name)
+    except (OSError, ValueError):
+        raise ValueError('INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE_STOPPED_REPAIR_REQUIRED') from None
 
 
 def runner_entrypoint(root, name):
@@ -102,17 +109,34 @@ def runner_transition(stage, values):
     # runner identity; Runner.Listener may write its private diagnostics.
     live = Path(values['root'])
     entrypoints = [runner_entrypoint(live, name) for name in ('config.sh', 'run.sh', 'bin/Runner.Listener')]
-    complete = all(path is not None and path.stat().st_mode & 0o111 for path in entrypoints)
+    directories = [runner_directory(live, name) for name in ('bin', 'externals')]
+    access_paths = [path for path in directories if path is not None]
+    complete = all(path is not None and path.stat().st_mode & 0o500 == 0o500 for path in directories)
+    external = directories[1]
+    if external is not None:
+        runtimes = [child for child in external.iterdir() if re.fullmatch(r'node[0-9]+', child.name)]
+        complete = complete and bool(runtimes)
+        for runtime in runtimes:
+            for path in (runtime, runtime / 'bin', runtime / 'bin/node'):
+                access_paths.append(path)
+                try:
+                    usable = real(path, path.name != 'node', owner=False) and path.stat().st_mode & 0o500 == 0o500
+                except (OSError, ValueError):
+                    usable = False
+                if not usable:
+                    complete = False
+    complete = complete and all(path is not None and path.stat().st_mode & 0o111 for path in entrypoints)
     if complete:
         probe = subprocess.run(['/usr/sbin/runuser', '--user', values['user'], '--', '/bin/sh', '-c',
-            'umask 077; exec "$@"', 'relay-runner-version', str(live / 'bin/Runner.Listener'), '--version'],
+            'umask 077; listener=$1; shift; for path do test -r "$path" && test -x "$path" || exit 1; done; exec "$listener" --version',
+            'relay-runner-version', str(live / 'bin/Runner.Listener'), *map(str, access_paths)],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             timeout=60, check=False, cwd=live, env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
         complete = (probe.returncode == 0 and len(probe.stdout) <= 128 and
                     re.fullmatch(rb'(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)', probe.stdout.strip()))
     if complete:
         return
-    require(not os.path.lexists(live / '.runner'), 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED')
+    require(not os.path.lexists(live / '.runner'), 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED_STOPPED_ONLY')
     state = subprocess.run(['systemctl', 'is-active', values['service']], stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=False,
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})

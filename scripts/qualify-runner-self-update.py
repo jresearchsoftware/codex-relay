@@ -105,8 +105,13 @@ def fixture(parent, name, sources, identity):
     root.mkdir(mode=0o750)
     for directory in ('bin', 'externals', 'bin.' + NEW_VERSION, 'externals.' + NEW_VERSION, '_diag', '_work'):
         (root / directory).mkdir(mode=0o750)
+    for directory in ('externals', 'externals.' + NEW_VERSION):
+        node = root / directory / 'node24/bin/node'
+        node.parent.mkdir(parents=True)
+        executable(node, '#!/bin/sh\nexit 0\n')
     for filename, content in sources.items():
         executable(root / filename, content)
+    executable(root / 'config.sh', '#!/bin/sh\nexit 0\n')
     state = {'agentId': identity, 'agentName': name, 'gitHubUrl': 'https://github.com/example',
              'poolName': 'synthetic-production' if name == 'production' else 'synthetic-general',
              'workFolder': str(root / '_work'), 'disableUpdate': True}

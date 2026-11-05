@@ -62,8 +62,9 @@ def runner_package(f, *, malformed=False, version='2.336.0'):
     live = f['live'] / 'runner'; live.mkdir()
     with tarfile.open(archive, 'w:gz') as output:
         for name, content in {'config.sh': '#!/bin/sh\nexit 0\n', 'run.sh': '#!/bin/sh\nexit 0\n',
-                              'bin/Runner.Listener': '#!/bin/sh\nprintf "%s\\n" ' + version + '\n'}.items():
-            path = live / name; path.parent.mkdir(exist_ok=True)
+                              'bin/Runner.Listener': '#!/bin/sh\nprintf "%s\\n" ' + version + '\n',
+                              'externals/node24/bin/node': '#!/bin/sh\nexit 0\n'}.items():
+            path = live / name; path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content); path.chmod(0o755)
             if malformed and name == 'config.sh':
                 continue
@@ -230,7 +231,7 @@ def test_staging_accepts_native_update_layout_and_probes_only_as_runner(package_
     root = Path(values['relay_runner_root']); user = pwd.getpwnam(values['relay_runner_user'])
     binary = root / 'bin.2.400.0'; (root / 'bin').rename(binary)
     (root / 'bin').symlink_to(binary if link_kind == 'absolute' else binary.name, target_is_directory=True)
-    external = root / 'externals.2.400.0'; external.mkdir()
+    external = root / 'externals.2.400.0'; (root / 'externals').rename(external)
     (root / 'externals').symlink_to(external, target_is_directory=True)
     diagnostic = root / '_diag'; diagnostic.mkdir(mode=0o750)
     os.chown(diagnostic, user.pw_uid, user.pw_gid)
@@ -268,3 +269,44 @@ def test_staging_rejects_unsafe_or_ambiguous_native_binary_alias(package_fixture
     result = run_stage(f, 'runner', values)
     assert result.returncode != 0 and 'INTENT_RUNNER_NATIVE_LAYOUT_UNSAFE' in result.stdout
     assert snapshot(f['live']) == before
+
+
+@pytest.mark.parametrize('damage', ['missing', 'dangling', 'escape', 'empty', 'node-missing', 'node-alias', 'node-not-executable'])
+def test_interrupted_relink_is_rejected_by_normal_staging_and_converges_after_stopped_repair(package_fixture, damage):
+    f = package_fixture; values = runner_package(f)
+    root = Path(values['relay_runner_root'])
+    (root / 'bin').rename(root / 'bin.2.400.0')
+    (root / 'bin').symlink_to('bin.2.400.0')
+    (root / 'bin/Runner.Listener').write_text('#!/bin/sh\nprintf "2.400.0\\n"\n')
+    external = root / 'externals.2.400.0'
+    (root / 'externals').rename(external)
+    if damage == 'dangling': (root / 'externals').symlink_to('externals.2.400.1')
+    elif damage == 'escape': (root / 'externals').symlink_to('/tmp')
+    elif damage != 'missing':
+        (root / 'externals').symlink_to(external)
+        if damage == 'empty': (external / 'node24').rename(root / 'retained-node')
+        else:
+            node = external / 'node24/bin/node'
+            if damage == 'node-missing': node.unlink()
+            elif damage == 'node-alias':
+                node.unlink(); node.symlink_to('/bin/true')
+            else: node.chmod(0o600)
+    before = snapshot(f['live'])
+    result = run_stage(f, 'runner', values)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert snapshot(f['live']) == before
+    assert not (f['stage'] / 'runner-package/manifest.json').exists()
+    # The stopped fixture has no service/processes. Repair only retained links
+    # and the synthetic payload; preserve registration and the newer version.
+    if (root / 'externals').is_symlink(): (root / 'externals').unlink()
+    if (root / 'retained-node').exists(): (root / 'retained-node').rename(external / 'node24')
+    node = external / 'node24/bin/node'
+    if node.is_symlink(): node.unlink()
+    node.write_text('#!/bin/sh\nexit 0\n'); node.chmod(0o755)
+    (root / 'externals').symlink_to(external)
+    if (f['stage'] / 'runner-package').exists(): shutil.rmtree(f['stage'] / 'runner-package')
+    repaired = snapshot(f['live'])
+    result = run_stage(f, 'runner', values)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert guard(f, 'runner', 'verify', values).returncode == 0
+    assert snapshot(f['live']) == repaired

@@ -80,29 +80,38 @@ validate_registration() {
 import json, os, stat, sys
 try:
     marker, credentials, url, name, work, group = sys.argv[1:]
-    for path in (marker, credentials):
+    migrated = os.path.join(os.path.dirname(marker), '.runner_migrated')
+    markers = [marker] + ([migrated] if os.path.lexists(migrated) else [])
+    for path in (*markers, credentials):
         metadata = os.lstat(path)
         if not (stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.getuid()
                 and metadata.st_gid == os.getgid() and stat.S_IMODE(metadata.st_mode) == 0o600):
             raise ValueError('metadata')
-    descriptor = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(descriptor, encoding='utf-8-sig') as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            raise ValueError('marker')
-        state = json.loads(stream.read(65537))
-    if not (state.get('gitHubUrl') == url and state.get('agentName') == name
-            and state.get('workFolder') == work
-            and type(state.get('agentId')) is int and state['agentId'] > 0
-            and (not group or state.get('poolName') == group)):
-        raise ValueError('identity')
-    # Report only this non-secret persisted option. Reuse does not change it;
-    # an old disabled registration needs the separately authorized migration.
-    if 'disableUpdate' not in state:
-        print('absent')
-    elif type(state['disableUpdate']) is bool:
-        print('true' if state['disableUpdate'] else 'false')
-    else:
-        print('invalid')
+    states = []
+    for path in markers:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, encoding='utf-8-sig') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError('marker')
+            state = json.loads(stream.read(65537))
+        if not (state.get('gitHubUrl') == url and state.get('agentName') == name
+                and state.get('workFolder') == work
+                and type(state.get('agentId')) is int and state['agentId'] > 0
+                and (not group or state.get('poolName') == group)):
+            raise ValueError('identity')
+        states.append(state)
+    if len(states) == 2 and any(states[0].get(key) != states[1].get(key)
+            for key in ('agentId', 'agentName', 'gitHubUrl', 'workFolder', 'poolId', 'poolName')):
+        raise ValueError('identity disagreement')
+    def option(state):
+        if 'disableUpdate' not in state:
+            return 'absent'
+        return ('true' if state['disableUpdate'] else 'false') if type(state['disableUpdate']) is bool else 'invalid'
+    # Upstream prefers the migrated marker. Report divergence without mutating
+    # either registration or exposing any other persisted fields.
+    options = [option(state) for state in states]
+    print(options[-1] + ' disable_update_source=' + os.path.basename(markers[-1])
+          + ' disable_update_mismatch=' + ('true' if len(set(options)) > 1 else 'false'))
 except (OSError, ValueError, TypeError, AttributeError):
     sys.exit(1)
 PY

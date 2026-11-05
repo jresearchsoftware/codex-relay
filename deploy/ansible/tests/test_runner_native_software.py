@@ -39,7 +39,8 @@ def host():
         archive = frozen / 'archive.tar.gz'
         with tarfile.open(archive, 'w:gz') as output:
             for name, content in {'config.sh': b'#!/bin/sh\nexit 0\n', 'run.sh': b'#!/bin/sh\nexit 0\n',
-                                  'bin/Runner.Listener': listener(VERSION)}.items():
+                                  'bin/Runner.Listener': listener(VERSION),
+                                  'externals/node24/bin/node': b'#!/bin/sh\nexit 0\n'}.items():
                 member = tarfile.TarInfo(name); member.mode = 0o755; member.size = len(content)
                 output.addfile(member, io.BytesIO(content))
         values = {'relay_runner_root': str(root), 'relay_runner_user': user.pw_name,
@@ -74,6 +75,14 @@ def install(host, version, *, registered=True, native_link=False):
     binary.mkdir()
     if native_link:
         (root / 'bin').symlink_to(binary, target_is_directory=True)
+    external = root / ('externals.' + version if native_link else 'externals')
+    node = external / 'node24/bin/node'
+    node.parent.mkdir(parents=True)
+    node.write_text('#!/bin/sh\nexit 0\n'); node.chmod(0o755)
+    for path in (external, node.parent.parent, node.parent, node):
+        os.chown(path, user.pw_uid, user.pw_gid)
+    if native_link:
+        (root / 'externals').symlink_to(external, target_is_directory=True)
     for name, content in {'config.sh': b'#!/bin/sh\nexit 0\n', 'run.sh': b'#!/bin/sh\nexit 0\n',
                           str(binary.relative_to(root) / 'Runner.Listener'): listener(version)}.items():
         path = root / name; path.write_bytes(content); path.chmod(0o755)
@@ -192,3 +201,104 @@ def test_main_role_rejects_unsafe_native_directory_links_before_live_probe(host,
     assert result.returncode != 0 and 'RUNNER_NATIVE_LAYOUT_UNSAFE' in result.stdout + result.stderr
     assert software(root) == before
     assert not list((root / '_diag').iterdir())
+
+
+@pytest.mark.parametrize('damage', ['missing', 'dangling', 'escape', 'empty', 'unsearchable', 'node-missing', 'node-alias', 'node-not-executable'])
+@pytest.mark.parametrize('check', [False, True])
+def test_interrupted_external_relink_requires_stopped_repair_then_apply_preserves_native_version(host, damage, check):
+    install(host, '2.400.0', native_link=True)
+    base, root, user, values, tasks = host
+    external = root / 'externals.2.400.0'
+    (root / 'externals').unlink()
+    if damage == 'dangling':
+        (root / 'externals').symlink_to('externals.2.400.1')
+    elif damage == 'escape':
+        (root / 'externals').symlink_to('/tmp')
+    elif damage != 'missing':
+        (root / 'externals').symlink_to(external)
+        if damage == 'empty':
+            (external / 'node24').rename(root / 'retained-node')
+        elif damage == 'unsearchable':
+            external.chmod(0o600)
+        else:
+            node = external / 'node24/bin/node'
+            if damage == 'node-missing': node.unlink()
+            elif damage == 'node-alias':
+                node.unlink(); node.symlink_to('/bin/true')
+            else: node.chmod(0o600)
+    before = software(root)
+    result = reconcile(host, check=check)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED' in result.stdout + result.stderr
+    assert software(root) == before
+    assert not list((root / '_diag').iterdir())
+    assert not (base / 'activity-probed').exists()
+    # Only this disposable, process-free fixture is repaired. Retain the exact
+    # native version/identity; never bootstrap over a registered installation.
+    if (root / 'externals').is_symlink(): (root / 'externals').unlink()
+    external.chmod(0o750)
+    if (root / 'retained-node').exists(): (root / 'retained-node').rename(external / 'node24')
+    node = external / 'node24/bin/node'
+    if node.is_symlink(): node.unlink()
+    node.write_text('#!/bin/sh\nexit 0\n'); node.chmod(0o755)
+    os.chown(node, user.pw_uid, user.pw_gid)
+    (root / 'externals').symlink_to(external)
+    repaired = software(root)
+    result = reconcile(host, check=check)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert software(root) == repaired
+    assert 'RUNNER_NATIVE_SOFTWARE version=2.400.0' in result.stdout
+    assert not Path(values['relay_runner_package_archive']).exists()
+
+
+@pytest.mark.skipif(os.environ.get('RELAY_RUNNER_UPSTREAM_PROOF') != '1',
+                    reason='explicit checksum-bound upstream shell download qualification')
+@pytest.mark.parametrize('interrupt', [False, True])
+def test_official_update_frontier_reaches_apply_and_staging_before_and_after_stopped_repair(host, monkeypatch, interrupt):
+    import importlib.util
+    def load(name, path):
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        return module
+    proof = load('upstream_proof', ANSIBLE.parents[1] / 'scripts/qualify-runner-self-update.py')
+    stage = load('stage_guard', ROLE / 'files/relay-intent-package.py')
+    base, old_root, user, values, tasks = host
+    original_fixture, original_repair = proof.fixture, proof.stopped_repair
+    def fixture(*args):
+        root = original_fixture(*args)
+        values.update(relay_runner_root=str(root), relay_runner_registration_marker=str(root / '.runner'),
+                      relay_runner_credentials_marker=str(root / '.credentials'))
+        return root
+    def run(argv, root, environment=None, timeout=15):
+        for path in (root, *root.rglob('*')):
+            os.chown(path, user.pw_uid, user.pw_gid, follow_symlinks=False)
+        return subprocess.run(argv, cwd=root, env=environment or proof.ENVIRONMENT,
+            user=user.pw_uid, group=user.pw_gid, extra_groups=(), start_new_session=True,
+            text=True, capture_output=True, timeout=timeout)
+    def observe(root, healthy):
+        # Normal Apply's intact task slice and the production staged-package
+        # transition guard inspect the actual updater-created frontier.
+        observed_host = (base, root, user, values, tasks)
+        before = software(root)
+        result = reconcile(observed_host)
+        assert software(root) == before
+        live = {'root': str(root), 'user': user.pw_name, 'service': values['relay_runner_service_name']}
+        if healthy:
+            assert result.returncode == 0, result.stdout + result.stderr
+            stage.runner_transition(None, live)
+        else:
+            assert result.returncode != 0 and 'RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED' in result.stdout
+            with pytest.raises(ValueError, match='RUNNER_REGISTERED_PACKAGE_REPAIR_REQUIRED'):
+                stage.runner_transition(None, live)
+        assert software(root) == before
+    def repair(root):
+        observe(root, False)
+        original_repair(root)
+        # The real updater and its detached process have exited; only this
+        # service-free disposable fixture's two contained links are repaired.
+        observe(root, True)
+    monkeypatch.setattr(proof, 'fixture', fixture)
+    monkeypatch.setattr(proof, 'run', run)
+    monkeypatch.setattr(proof, 'stopped_repair', repair)
+    result = proof.qualify_failure(base, 'upstream-interrupted', proof.fetch_sources(), interrupt)
+    assert result['healthy_synthetic_job'] is True

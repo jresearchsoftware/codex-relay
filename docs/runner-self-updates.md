@@ -16,11 +16,25 @@ or unsafe paths require diagnosis. Native `bin -> bin.VERSION` links remain
 inside the same runner root. Frozen bootstrap bytes are not a drift baseline
 for native-updated software.
 
+Apply, managed-pool preflight and staged package checks require both `bin` and
+`externals` to resolve to real, usable directories inside the instance. External
+`nodeNUMBER/bin/node` runtimes must be real executable files with searchable
+parents; no Node release number is pinned by this check. Missing/dangling links,
+empty or inaccessible external runtimes and unsafe aliases cannot pass merely
+because Listener still reports a version. Registered damage requires bounded
+stopped-only repair; ordinary Apply/staging never replaces that software.
+
 New registrations omit `--disableupdate`. Existing registrations retain their
 persisted setting: removing the flag from source cannot change them. Registration
 reuse reports the actual version and `disable_update` setting without changing
 the running listener. Inspect both `.runner` and `.runner_migrated`; upstream
 prefers the migrated file when present.
+The registration diagnostic reports `disable_update_source` and
+`disable_update_mismatch` alongside `disable_update`. With a migrated marker,
+the latter value comes from `.runner_migrated`; a mismatch is visible even when
+the two files have the same registration identity. Reuse leaves both untouched.
+Do not treat a mismatch as a completed migration: inspect and finish the stopped
+maintenance procedure before claiming enabled effective settings.
 
 ## Existing-registration maintenance
 

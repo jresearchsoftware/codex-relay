@@ -783,6 +783,12 @@ def fixture_unit(contract, template, member):
 def fixture_package(tmp_path, member, uid):
     for path in ['/config.sh', '/run.sh', '/bin/Runner.Listener']:
         fixture_file(tmp_path, member['root'] + path, 'synthetic-package', uid, 0o750)
+    external = tmp_path / (member['root'] + '/externals').lstrip('/')
+    for path in (external, external / 'node24', external / 'node24/bin'):
+        path.mkdir(mode=0o750)
+        if os.getuid() != uid:
+            os.chown(path, uid, -1)
+    fixture_file(tmp_path, member['root'] + '/externals/node24/bin/node', 'synthetic-node', uid, 0o750)
 
 
 def fixture_registration(tmp_path, contract, member, uid):
@@ -877,7 +883,7 @@ def test_bound_active_package_is_reused_or_blocked_before_repair(tmp_path, compl
     assert unchanged_tree(tmp_path) == before
 
 
-@pytest.mark.parametrize('missing', ['config.sh', 'run.sh'])
+@pytest.mark.parametrize('missing', ['config.sh', 'run.sh', 'externals/node24/bin/node'])
 @pytest.mark.parametrize('active', [False, True])
 def test_registered_partial_package_requires_explicit_repair_even_when_inactive(tmp_path, missing, active):
     import yaml
@@ -914,9 +920,7 @@ def test_active_native_updated_pool_layout_is_reused_without_mutation(tmp_path, 
         'MainPID': '50', 'ControlPID': '0', 'FragmentPath': unit_path}
     runner = tmp_path / member['root'].lstrip('/')
     (runner / 'bin').rename(runner / 'bin.2.999.0')
-    (runner / 'externals.2.999.0').mkdir(mode=0o750)
-    if os.getuid() != arguments['runner_uid']:
-        os.chown(runner / 'externals.2.999.0', arguments['runner_uid'], -1)
+    (runner / 'externals').rename(runner / 'externals.2.999.0')
     for name in ['bin', 'externals']:
         (runner / name).symlink_to(member['root'] + '/' + name + '.2.999.0'
                                  if absolute else name + '.2.999.0')
@@ -936,6 +940,40 @@ def test_pool_native_link_rejects_escape_alias_and_missing_target(tmp_path, targ
         os.chown(runner / 'bin', arguments['runner_uid'], -1, follow_symlinks=False)
     with pytest.raises(pool.PoolError, match='INSTALL_NATIVE_LAYOUT_UNSAFE'):
         pool.installation_plan(contract, template, **arguments)
+
+
+@pytest.mark.parametrize('damage', ['missing', 'dangling', 'escape', 'empty', 'unsearchable', 'node-alias'])
+@pytest.mark.parametrize('active', [False, True])
+def test_pool_external_relink_damage_requires_stopped_repair_without_mutation(tmp_path, damage, active):
+    contract, template, arguments, member = install_fixture(tmp_path)
+    fixture_package(tmp_path, member, arguments['runner_uid'])
+    fixture_registration(tmp_path, contract, member, arguments['runner_uid'])
+    fixture_binding(tmp_path, contract)
+    unit_path = '/etc/systemd/system/' + member['service']
+    fixture_file(tmp_path, unit_path, fixture_unit(contract, template, member), os.getuid(), 0o644)
+    arguments['service_probe'] = lambda member: {'LoadState': 'loaded',
+        'ActiveState': 'active' if active else 'inactive', 'MainPID': '50' if active else '0',
+        'ControlPID': '0', 'FragmentPath': unit_path}
+    runner = tmp_path / member['root'].lstrip('/')
+    (runner / 'bin').rename(runner / 'bin.2.999.0')
+    (runner / 'externals').rename(runner / 'externals.2.999.0')
+    for name in ('bin', 'externals'):
+        if name == 'externals' and damage == 'missing': continue
+        target = name + '.2.999.0'
+        if name == 'externals' and damage == 'dangling': target = 'externals.2.999.1'
+        if name == 'externals' and damage == 'escape': target = '/tmp'
+        (runner / name).symlink_to(target)
+        if os.getuid() != arguments['runner_uid']:
+            os.chown(runner / name, arguments['runner_uid'], -1, follow_symlinks=False)
+    external = runner / 'externals.2.999.0'
+    if damage == 'empty': (external / 'node24').rename(runner / 'retained-node')
+    elif damage == 'unsearchable': external.chmod(0o600)
+    elif damage == 'node-alias':
+        node = external / 'node24/bin/node'; node.unlink(); node.symlink_to('/bin/true')
+    before = unchanged_tree(tmp_path)
+    with pytest.raises(pool.PoolError, match='INSTALL_(ACTIVE_PACKAGE_UNPROVEN|REGISTERED_PACKAGE_REPAIR_REQUIRED|NATIVE_LAYOUT_UNSAFE)'):
+        pool.installation_plan(contract, template, **arguments)
+    assert unchanged_tree(tmp_path) == before
 
 
 def test_known_protected_unit_can_receive_new_template_without_an_unbound_unit_bypass(tmp_path):
@@ -986,7 +1024,9 @@ def test_native_extraction_preserves_private_member_root_and_next_installation_p
         # The published runner archive includes a root entry; extraction must
         # not replace our independently established private directory mode.
         for name, directory in [('.', True), ('bin', True), ('config.sh', False),
-                                ('run.sh', False), ('bin/Runner.Listener', False)]:
+                                ('run.sh', False), ('bin/Runner.Listener', False),
+                                ('externals', True), ('externals/node24', True),
+                                ('externals/node24/bin', True), ('externals/node24/bin/node', False)]:
             entry = tarfile.TarInfo(name)
             entry.uid, entry.gid, entry.mode = arguments['runner_uid'], before.st_gid, 0o755
             if name == '.':

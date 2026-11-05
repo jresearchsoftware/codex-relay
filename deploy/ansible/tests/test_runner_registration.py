@@ -195,6 +195,38 @@ Path('.credentials').chmod(0o600)
         self.assertFalse(self.pending.exists())
         self.assertEqual(journal.read_text(), '{"stage":"DECOMMISSIONED"}')
 
+    def test_effective_migrated_update_setting_and_disagreement_preserve_registration(self):
+        for original in (True, False, 'absent'):
+            for effective in (True, False, 'absent'):
+                with self.subTest(original=original, effective=effective):
+                    self.registered({**self.marker, **({'disableUpdate': original} if original != 'absent' else {})})
+                    migrated = self.runner / '.runner_migrated'
+                    migrated.write_text(json.dumps({**self.marker,
+                        **({'disableUpdate': effective} if effective != 'absent' else {})}))
+                    migrated.chmod(0o600)
+                    retained = {name: ((self.runner / name).stat().st_ino, (self.runner / name).read_bytes())
+                                for name in ('.runner', '.runner_migrated', '.credentials')}
+                    result = self.run_helper('unused-synthetic-token')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    diagnostic = str(effective).lower()
+                    self.assertIn('disable_update=' + diagnostic + ' disable_update_source=.runner_migrated', result.stdout)
+                    self.assertIn('disable_update_mismatch=' + str(original != effective).lower(), result.stdout)
+                    self.assertEqual({name: ((self.runner / name).stat().st_ino, (self.runner / name).read_bytes())
+                                      for name in retained}, retained)
+                    self.assertFalse((self.runner / 'calls').exists())
+
+    def test_migrated_identity_disagreement_cannot_reuse_or_register(self):
+        self.registered()
+        migrated = self.runner / '.runner_migrated'
+        migrated.write_text(json.dumps({**self.marker, 'agentId': 456}))
+        migrated.chmod(0o600)
+        retained = migrated.read_bytes()
+        result = self.run_helper('unused-synthetic-token')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('REGISTRATION_STATE_AMBIGUOUS', result.stderr)
+        self.assertEqual(migrated.read_bytes(), retained)
+        self.assertFalse((self.runner / 'calls').exists())
+
     def test_changed_public_configuration_cannot_mutate_the_installed_runner(self):
         binding = ('url=https://github.com/example name=production-runner label=production '
                    'group=changed-group work=' + str(self.root / 'work'))
