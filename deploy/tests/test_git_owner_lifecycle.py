@@ -158,6 +158,24 @@ class GitOwnerLifecycleTests(unittest.TestCase):
             self.assertEqual(reader.call_count, 1)
         self.assertNotIn('--authorize-install-recovery', self.primitive[0][0])
 
+    def test_reserved_recover_authenticates_new_dispatch_but_reads_back_original_pair(self):
+        declaration = {'operationId': OPERATION, 'retainedTarget': OLD,
+            'runners': {'production': {'runnerId': 55, 'runnerName': 'example-production'}}}
+        frozen_product = 'f' * 40
+        original = {**self.receipt, 'product_sha': frozen_product, 'workflow_run_id': 12}
+        reserved = {'desiredRevision': frozen_product, 'gitConfigReceipt': original}
+        with patch.object(owner.git_intent, 'recovery_declaration',
+                          return_value=(json.dumps(declaration).encode(), declaration)), \
+             patch.object(owner, 'retained_recovery_binding', return_value=reserved):
+            output = self.invoke('recover')
+        argv = self.primitive[0][0]
+        self.assertIn('--continue-install-recovery', argv)
+        self.assertEqual(argv[argv.index('--resolved-revision') + 1], HEAD)
+        self.assertEqual(self.readbacks[0][1:3], (frozen_product, original))
+        self.assertIn('RELAY_GIT_RECOVERY_CONTROLLER=' + HEAD, output)
+        self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + frozen_product, output)
+        self.assertEqual(self.gate.calls, [])
+
     def test_wrong_source_namespace_owner_or_install_root_stop_before_primitive(self):
         for modify in [lambda: self.desired['environment'].update(namespace='foreign'),
                        lambda: self.values.update(relay_install_root='/opt/foreign'),

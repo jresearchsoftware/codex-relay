@@ -169,12 +169,23 @@ class UpgradeActivationTests(unittest.TestCase):
                 f'sys.path[:0]=[{str(ROOT.parents[1] / "deploy")!r},{str(ROOT.parents[1] / "deploy/tests")!r}]\n'
                 'from retained_activation import prove\nfrom test_retained_activation import Evidence\n'
                 'value=json.load(sys.stdin)\nnative=Evidence(value)\n'
+                'runner=native.runner\n'
+                f'services=Path({str(root / "state.json")!r})\n'
+                'def observed_runner(component,expected,identity,contract):\n'
+                ' proof=runner(component,expected,identity,contract)\n'
+                ' unit="production.service" if component=="production" else component.removeprefix("slot-")+".service"\n'
+                ' state=dict(line.split("=",1) for line in json.loads(services.read_text())[unit].splitlines())\n'
+                ' proof.update(pid=state["MainPID"],startTicks=state["ExecMainStartTimestampMonotonic"])\n'
+                ' return proof\n'
+                'native.runner=observed_runner\n'
                 f'gate=Path({str(backend.paths["gate"] if backend else root / "gate/admission-v1.json")!r})\n'
                 'def authority():\n state=json.loads(gate.read_text())\n'
                 ' assert state["operationId"]==value["binding"]["operationId"]\n'
                 ' assert state["phase"]=="applying"\n'
                 ' assert state["previousActive"]==value["previous"]\n'
-                'native.authority=authority\nprint(json.dumps(prove(value,native)))\n')
+                'native.authority=authority\n'
+                'try: print(json.dumps(prove(value,native)))\n'
+                'except ValueError as error:\n print(str(error),file=sys.stderr);sys.exit(1)\n')
             proof_tasks = yaml.safe_load((ROOT / 'tasks/upgrade-maintained-runners.yml').read_text())
             proof_tasks[0]['ansible.builtin.command']['argv'] = ['/usr/bin/python3', str(probe)]
             (root / 'upgrade-maintained-runners.yml').write_text(yaml.safe_dump(proof_tasks, sort_keys=False))
@@ -232,7 +243,9 @@ class UpgradeActivationTests(unittest.TestCase):
             tasks.insert(1, {'ansible.builtin.copy': {'dest': str(root / 'state.json'), 'content': json.dumps(changed)}})
             result = self.run_play(root, tasks, values)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('RELAY_UPGRADE_SLOT_TRANSPORT_CHANGED', result.stdout)
+            self.assertTrue('RELAY_UPGRADE_SLOT_TRANSPORT_CHANGED' in result.stdout
+                            or 'RELAY_RETAINED_ACTIVATION_MAINTAINED_RUNTIME_CHANGED' in result.stdout,
+                            result.stdout + result.stderr)
             self.assertNotIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=', result.stdout)
             self.assertEqual(json.loads((root / 'gate/admission-v1.json').read_text())['phase'], 'applying')
 

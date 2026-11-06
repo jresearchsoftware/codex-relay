@@ -1,0 +1,19 @@
+---
+- name: Verify prerequisite acquisition before live admission cutover
+  hosts: relay
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Verify signed repository metadata and package hashes in an isolated APT cache
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -I
+          - -B
+          - -c
+          - '{{ lookup("file", playbook_dir + "/../apt_preflight.py") }}'
+        stdin: '{{ {"packages": relay_base_packages} | to_json }}'
+        stdin_add_newline: false
+      changed_when: false
+      check_mode: false
+      when: relay_manage_base_packages | bool

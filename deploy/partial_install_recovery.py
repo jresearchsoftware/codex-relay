@@ -110,7 +110,10 @@ def unchanged_tail(root, desired, controller):
     changed = subprocess.check_output([*command, 'diff', '--name-only', desired, controller, '--',
         'deploy/config.py', 'deploy/workflow_projection.py', 'deploy/workflows', 'deploy/ansible'], text=True).splitlines()
     allowed = {'deploy/ansible/site.yml', 'deploy/ansible/scripts/publish_git_consumer.py',
-        'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml'}
+        'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml',
+        'deploy/ansible/relay-intent-apt-preflight.yml',
+        'deploy/ansible/tasks/upgrade-maintained-runners.yml',
+        'deploy/ansible/tasks/upgrade-lifecycle-validation.yml'}
     require(all(path in allowed or path.startswith('deploy/ansible/tests/') for path in changed),
             'INSTALLATION_TAIL_CHANGED')
 
@@ -125,13 +128,22 @@ def accepted_controller(root, binding, controller):
     require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository) is not None, 'PRODUCT_REPOSITORY_INVALID')
     command = ['git', '-c', 'core.hooksPath=/dev/null', '-C', str(root)]
     remote = 'https://github.com/' + repository + '.git'
+    environment = {'HOME': str(root), 'XDG_CONFIG_HOME': str(Path(root) / '.xdg-unused'),
+        'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
+        'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
     row = subprocess.check_output([*command, 'ls-remote', '--exit-code', remote, 'refs/heads/main'],
-        text=True, timeout=30).split()
+        text=True, timeout=30, env=environment).split()
     require(len(row) == 2 and bounded.SHA.fullmatch(row[0]) and row[1] == 'refs/heads/main', 'ACCEPTED_MAIN_UNPROVEN')
     if subprocess.run([*command, 'cat-file', '-e', row[0] + '^{commit}'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
         subprocess.run([*command, 'fetch', '--no-tags', remote, row[0]],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=60)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=60, env=environment)
+    if subprocess.check_output([*command, 'rev-parse', '--is-shallow-repository'], text=True).strip() == 'true':
+        # The protected owner transport deliberately acquires a depth-one source.
+        # Ancestry must come from authentic Git objects, not a failed shallow
+        # merge-base or a caller assertion that the frozen target is an ancestor.
+        subprocess.run([*command, 'fetch', '--no-tags', '--unshallow', remote, row[0]],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=120, env=environment)
     require(subprocess.run([*command, 'merge-base', '--is-ancestor', controller, row[0]],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, 'CONTROLLER_NOT_ACCEPTED')
     return {'policy': 'accepted-ancestor', 'revision': controller, 'acceptedMain': row[0]}

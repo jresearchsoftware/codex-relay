@@ -138,7 +138,7 @@ def primitive_fixture(root, already_installed):
         hosts = json.loads(Path(argv[argv.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
         values = hosts[config['target']['host']]
         play = Path(argv[3]).name
-        if play in ['relay-intent-prerequisites.yml', 'relay-intent-stage.yml']:
+        if play in ['relay-intent-prerequisites.yml', 'relay-intent-stage.yml', 'relay-intent-apt-preflight.yml']:
             assert values['relay_intent_expected_installed_revision'] == 'none'
             assert not (install / 'current').exists()
             private_plays.append(play)
@@ -191,7 +191,8 @@ def primitive_fixture(root, already_installed):
             cli.run(args)
             assert args.intent_expected_installed_revision == 'none'
             assert private_plays == ['relay-intent-prerequisites.yml', 'relay-intent-stage.yml',
-                                     'relay-intent-preflight.yml', 'relay-intent-stage.yml']
+                                     'relay-intent-preflight.yml', 'relay-intent-apt-preflight.yml',
+                                     'relay-intent-stage.yml']
             assert preparation_calls == ['construct', 'create', 'desired', 'host', 'seal', 'final', 'release']
             print(json.dumps({'initialExpected': calls[0], 'postCheckExpected': calls[1],
                               'originalArgument': args.intent_expected_installed_revision,

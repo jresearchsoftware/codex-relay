@@ -1,16 +1,19 @@
-"""Read-only proof of owner-declared, already restored registered runners.
+"""Prove owner-declared Runners and restore only eligible stopped Production.
 
 The existing bounded continuation receipt owns the declaration. It never
-changes the first service snapshot, starts a runner, or supplies execution
-authority. Every observation is repeated before final lifecycle validation.
+changes the first service snapshot or supplies execution authority. An explicit
+recover may start its exact declared Production through the normal start gate;
+every live observation is repeated before final lifecycle validation.
 """
 import hashlib
+import fcntl
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 import bounded_recovery as retained
 from config import compile_inputs
@@ -79,12 +82,17 @@ class Native:
         self.pool_group = self.github.qualify(contract)
         return self.github.runners()
 
-    def runner(self, component, expected, identity, contract):
+    def runner(self, component, expected, identity, contract, *, stopped=False):
         value = runner_self_update.inspect(identity['root'], identity['service'], identity['user'],
                                            expected['runnerId'], expected['runnerName'])
         state = value['serviceState']
-        require(state['ActiveState'] == 'active' and state['SubState'] == 'running'
-                and re.fullmatch('[1-9][0-9]*', state['MainPID']) is not None, 'RUNNER_NOT_HEALTHY')
+        if stopped:
+            require(component == 'production' and state['ActiveState'] == 'inactive'
+                    and state['SubState'] == 'dead' and state['MainPID'] == '0', 'STOPPED_RUNNER_UNPROVEN')
+            runner_self_update.assert_stopped(identity['service'], identity['root'], identity['user'])
+        else:
+            require(state['ActiveState'] == 'active' and state['SubState'] == 'running'
+                    and re.fullmatch('[1-9][0-9]*', state['MainPID']) is not None, 'RUNNER_NOT_HEALTHY')
         settings = value['settings']
         require(all(item['disableUpdate'] is False and item['agentName'] == identity['name']
                     and item['poolName'] == identity['group']
@@ -108,15 +116,78 @@ class Native:
         unit = Path('/etc/systemd/system') / identity['service']
         retained.read(unit, Path('/'), 0)
         uid = runner_self_update.runner_uid(identity['user'])
-        process_uid = Path('/proc/' + state['MainPID']).stat().st_uid
-        require(process_uid == uid and state['ControlGroup'] == '/system.slice/' + identity['service'],
-                'LIVE_UNIX_IDENTITY_UNPROVEN')
+        if not stopped:
+            process_uid = Path('/proc/' + state['MainPID']).stat().st_uid
+            require(process_uid == uid and state['ControlGroup'] == '/system.slice/' + identity['service'],
+                    'LIVE_UNIX_IDENTITY_UNPROVEN')
         version = command(['/usr/sbin/runuser', '-u', identity['user'], '--',
                            identity['root'] + '/bin/Runner.Listener', '--version'], cwd=identity['root']).decode().strip()
         # GitHub online/idle is the current eligibility authority; a numerical
         # version or a successful local --version probe alone is insufficient.
         require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version), 'VERSION_UNPROVEN')
-        return {'service': identity['service'], 'runnerId': expected['runnerId'], 'version': version}
+        proof = {'service': identity['service'], 'runnerId': expected['runnerId'], 'version': version}
+        if not stopped:
+            proof.update(pid=state['MainPID'], startTicks=Path('/proc/' + state['MainPID'] + '/stat').read_text(
+                ).rsplit(') ', 1)[1].split()[19])
+        return proof
+
+    def restore(self, expected, identity, contract):
+        """Owner-selected recover may restore only its exact declared Production.
+
+        This is current-state activation under the ordinary operation lock and
+        start gate, never a claim that the old process survived or why it stopped.
+        """
+        lock = Path('/run') / self.config['environment']['namespace'] / 'production-operation.lock'
+        retained.protect(lock, Path('/'), 0)
+        descriptor = os.open(lock, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.authority()
+            reviewer = self.reviewer()
+            primary = self.primary(contract)
+            self.runner('production', expected, identity, contract, stopped=True)
+            remote = [r for r in self.github.runners() if r.get('id') == expected['runnerId']
+                      or r.get('name') == expected['runnerName']]
+            require(len(remote) == 1 and remote[0].get('id') == expected['runnerId']
+                    and remote[0].get('name') == expected['runnerName']
+                    and remote[0].get('status') in ['offline', 'online']
+                    and remote[0].get('busy') is False, 'RESTORE_REGISTRATION_UNPROVEN')
+            self.authority()
+            require(self.reviewer() == reviewer and self.primary(contract) == primary, 'CONTROL_RUNTIME_CHANGED')
+            command(['/bin/systemctl', 'start', identity['service']])
+            deadline = time.monotonic() + 30
+            while True:
+                remote = [r for r in self.github.runners() if r.get('id') == expected['runnerId']
+                          or r.get('name') == expected['runnerName']]
+                require(len(remote) == 1 and remote[0].get('id') == expected['runnerId']
+                        and remote[0].get('name') == expected['runnerName']
+                        and remote[0].get('busy') is False, 'RESTORED_REGISTRATION_UNPROVEN')
+                if remote[0].get('status') == 'online':
+                    break
+                require(time.monotonic() < deadline, 'RESTORED_REGISTRATION_NOT_ONLINE')
+                time.sleep(1)
+            self.runner('production', expected, identity, contract)
+            require(self.reviewer() == reviewer and self.primary(contract) == primary, 'CONTROL_RUNTIME_CHANGED')
+            self.authority()
+        finally:
+            os.close(descriptor)
+
+    def primary(self, contract):
+        identities, _ = services(self.config)
+        identity = identities['general']
+        pool = managed_pool.State('/var/lib/codex-relay-pools/' + contract['name']).read()
+        require(pool is not None and pool['binding'] == managed_pool.binding(contract), 'POOL_BINDING_CHANGED')
+        member = pool['members'].get(identity['id'])
+        require(isinstance(member, dict) and member.get('phase') == 'ready'
+                and type(member.get('runnerId')) is int and member['runnerId'] > 0, 'PRIMARY_IDENTITY_UNPROVEN')
+        expected = {'runnerId': member['runnerId'], 'runnerName': identity['name']}
+        matches = [r for r in self.github.runners() if r.get('id') == expected['runnerId']
+                   or r.get('name') == expected['runnerName']]
+        require(len(matches) == 1 and matches[0].get('id') == expected['runnerId']
+                and matches[0].get('name') == expected['runnerName']
+                and matches[0].get('status') == 'online' and type(matches[0].get('busy')) is bool,
+                'PRIMARY_REGISTRATION_UNPROVEN')
+        return self.runner('general', expected, identity, contract)
 
     def reviewer(self):
         namespace = self.config['environment']['namespace']
@@ -154,7 +225,13 @@ def prove(payload, native=None):
     require(declaration is not None, 'OWNER_DECLARATION_REQUIRED')
     previous, observed = payload['previous'], payload['observed']
     require(previous.keys() == observed.keys(), 'COMPONENT_SET_CHANGED')
+    require(not previous['general']['active'] or observed['general']['active'], 'GENERAL_TRANSPORT_UNPROVEN')
+    declared_stopped_production = ('production' in declaration['runners'] and not observed['production']['active'])
+    stopped_production = declared_stopped_production and payload.get('before') is None
     restored = {component for component in observed if observed[component]['active'] and not previous[component]['active']}
+    if declared_stopped_production:
+        require(not previous['production']['active'], 'PRODUCTION_ACTIVITY_CHANGED')
+        restored.add('production')
     require(restored == declaration['runners'].keys(), 'DECLARED_ACTIVITY_MISMATCH')
     require(previous['reviewer']['active'] and observed['reviewer']['active'], 'REVIEWER_UNPROVEN')
     native = native or Native(payload)
@@ -163,7 +240,8 @@ def prove(payload, native=None):
     require(restored <= identities.keys(), 'FOREIGN_OR_NEW_COMPONENT')
     remote = native.runners(contract)
     proof = {}
-    for component, expected in declaration['runners'].items():
+    # Prove every General transport before an optional Production effect.
+    for component, expected in sorted(declaration['runners'].items(), key=lambda item: item[0] == 'production'):
         identity = identities[component]
         require(previous[component]['load'] == 'loaded'
                 and observed[component]['load'] == 'loaded'
@@ -174,8 +252,11 @@ def prove(payload, native=None):
                    or runner.get('name') == expected['runnerName']]
         require(len(matches) == 1 and matches[0].get('id') == expected['runnerId']
                 and matches[0].get('name') == expected['runnerName']
-                and matches[0].get('status') == 'online' and matches[0].get('busy') is False,
+                and matches[0].get('status') in (['online', 'offline'] if component == 'production'
+                    and stopped_production else ['online']) and matches[0].get('busy') is False,
                 'ONLINE_IDLE_REGISTRATION_UNPROVEN')
+        if component == 'production' and stopped_production:
+            native.restore(expected, identity, contract)
         proof[component] = native.runner(component, expected, identity, contract)
     reviewer = native.reviewer()
     if payload.get('before') is not None:

@@ -101,6 +101,7 @@ if(input.action==='seed') {
 else if(input.action==='transition') result=await control.transitionConsumer(input.options);
 else if(input.action==='recovery-target') result=await control.recoveryTarget(input.options);
 else if(input.action==='phase') result=await control.phase(input.options);
+else if(input.action==='resume') result=await control.resume(input.options);
 else if(input.action==='status') result=await control.status();
 else throw new Error('fixture-action');
 console.log(JSON.stringify(result));
@@ -441,6 +442,17 @@ def test_gate_only_retained_operation_preserves_absence_and_completes_same_uuid(
     # Existing Ansible Begin creates this exact record under the existing locks.
     write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
                             'phase': 'apply', 'target_head': incident.revision})
+    # APT may fail after Begin, before any desired artifact/consumer is installed.
+    # The next read-only inspection must recognize only this derived backend.
+    incident.native('phase', options={'operationId': OPERATION, 'phase': 'recovery-required'})
+    interrupted, receipt_raw = incident.snapshot(), incident.receipt.read_bytes()
+    assert incident.helper('inspect') == reserved
+    assert incident.helper('begin', reserved) == reserved
+    assert incident.helper('revalidate', reserved) == reserved
+    assert incident.snapshot() == interrupted and incident.receipt.read_bytes() == receipt_raw
+    assert incident.history() == history
+    incident.native('phase', options={'operationId': OPERATION, 'phase': 'applying'})
+    assert incident.helper('revalidate', reserved) == reserved
     assert incident.publish()['status'] == 'PUBLISHED'
     incident.final_artifacts()
     bounded_recovery.backend_finalize(incident.backend, incident.revision, OPERATION, root=incident.root)
@@ -466,11 +478,61 @@ def test_gate_only_backend_cannot_be_replaced_or_reinterpreted(incident, damage)
     write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
                             'phase': 'apply', 'target_head': 'f' * 40})
     if damage == 'appeared':
-        with pytest.raises(ValueError, match='ORIGINAL_EVIDENCE_CHANGED'):
+        with pytest.raises(ValueError, match='BACKEND_BINDING_CHANGED'):
             incident.helper('revalidate', reserved)
     else:
         with pytest.raises(ValueError, match='BACKEND_BINDING_CHANGED'):
             bounded_recovery.backend_validate(incident.backend, incident.revision, OPERATION, root=incident.root)
+
+
+@pytest.mark.parametrize('damage', ['unselected-target', 'foreign-target', 'extra-field', 'wrong-phase',
+    'wrong-state', 'malformed', 'archive', 'receipt-next-link', 'changed-binding'])
+def test_post_begin_continuation_refuses_ambiguous_backend_or_receipt(incident, damage):
+    incident.backend.unlink()
+    reserved = incident.helper('begin', incident.helper('inspect'))
+    if damage != 'unselected-target':
+        incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
+    backend = {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+               'phase': 'apply', 'target_head': incident.revision}
+    if damage == 'foreign-target':
+        backend['target_head'] = 'f' * 40
+    elif damage == 'extra-field':
+        backend['operationId'] = OPERATION
+    elif damage == 'wrong-phase':
+        backend['phase'] = 'activate'
+    elif damage == 'wrong-state':
+        backend['state'] = 'STABLE'
+    write(incident.backend, b'{' if damage == 'malformed' else backend)
+    if damage == 'archive':
+        write(incident.receipt.with_name(incident.receipt.name.removesuffix('.json') + '.original.json'), b'foreign')
+    elif damage == 'receipt-next-link':
+        incident.receipt.with_name(incident.receipt.name + '.next').symlink_to(incident.root / 'absent')
+    elif damage == 'changed-binding':
+        incident.binding['controllerRevision'] = incident.binding['desiredRevision'] = 'e' * 40
+        incident.binding['gitConfigReceipt']['product_sha'] = 'e' * 40
+    before, receipt_raw, history = incident.snapshot(), incident.receipt.read_bytes(), incident.history()
+    for action, args in [('inspect', ()), ('revalidate', (reserved,))]:
+        with pytest.raises(ValueError):
+            incident.helper(action, *args)
+    assert incident.snapshot() == before and incident.receipt.read_bytes() == receipt_raw
+    assert incident.history() == history
+
+
+def test_post_begin_revalidation_refuses_backend_change_during_live_probe(incident):
+    import bounded_recovery
+    incident.backend.unlink()
+    reserved = incident.helper('begin', incident.helper('inspect'))
+    incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
+    write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                           'phase': 'apply', 'target_head': incident.revision})
+    def probe(context):
+        result = incident.probe(context)
+        write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                               'phase': 'apply', 'target_head': 'f' * 40})
+        return result
+    with pytest.raises(ValueError, match='EVIDENCE_CHANGED'):
+        bounded_recovery.revalidate(incident.config, incident.binding, reserved,
+                                   root=incident.root, admission_probe=probe)
 
 
 @pytest.mark.parametrize('evidence', ['manifest', 'source', 'source-blob', 'snapshot', 'consumer',

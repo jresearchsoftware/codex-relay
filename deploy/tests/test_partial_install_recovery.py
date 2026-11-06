@@ -61,6 +61,27 @@ def test_controller_acceptance_uses_original_policy_and_native_public_main(monke
     assert requests == []
 
 
+def test_depth_one_owner_source_fetches_authenticated_ancestry_without_root_credentials(monkeypatch, tmp_path):
+    controller = 'a' * 40
+    calls = []
+    def output(argv, **options):
+        calls.append((argv, options))
+        return controller + '\trefs/heads/main\n' if 'ls-remote' in argv else 'true\n'
+    monkeypatch.setattr(partial.subprocess, 'check_output', output)
+    def run(argv, **options):
+        calls.append((argv, options))
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(partial.subprocess, 'run', run)
+    binding = {'gitConfigReceipt': {'product_repository': 'example/product', 'source_policy': 'accepted-main'}}
+    assert partial.accepted_controller(tmp_path, binding, controller)['revision'] == controller
+    fetched = [(argv, options) for argv, options in calls if '--unshallow' in argv]
+    assert len(fetched) == 1
+    argv, options = fetched[0]
+    assert argv[-2:] == ['https://github.com/example/product.git', controller]
+    assert options['env']['HOME'] == str(tmp_path)
+    assert options['env']['GIT_CONFIG_GLOBAL'] == '/dev/null'
+
+
 def frontier(incident):
     path = incident.release / 'artifact-manifest.json'
     old = json.loads(path.read_bytes()); old['reviewerBinarySha256'] = 'a' * 64; write(path, old)

@@ -101,11 +101,8 @@
   ansible.builtin.assert:
     that:
       - >-
-        (relay_upgrade_lifecycle_initial_services.results[1].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$')) ==
+        [relay_upgrade_lifecycle_maintenance_proof.runners.production.pid] ==
         (relay_upgrade_lifecycle_final_services.results[1].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$'))
-      - >-
-        (relay_upgrade_lifecycle_initial_services.results[1].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$')) ==
-        (relay_upgrade_lifecycle_final_services.results[1].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
     fail_msg: RELAY_UPGRADE_MAINTAINED_PRODUCTION_TRANSPORT_CHANGED
   when: relay_upgrade_lifecycle_maintenance_proof is defined
 

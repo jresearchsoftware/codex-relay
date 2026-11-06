@@ -321,6 +321,22 @@ def original_backend(receipt):
     return None if original.get('backendAbsent') is True else base64.b64decode(original['backendBytes'])
 
 
+def continuation_backend(receipt, p, root, owner_uid):
+    """Observe the exact original, or the gate-only backend derived by Begin.
+
+    The latter is eligible only after the same UUID has selected the receipt's
+    desired target. It never replaces the immutable original absence evidence.
+    """
+    archive = p['receipt'].with_name(p['receipt'].name.removesuffix('.json') + '.original.json')
+    require(not archive.exists() and not archive.is_symlink(), 'INTERRUPTED_ARCHIVE')
+    raw = backend_bytes(p['record'], root, owner_uid)
+    if raw != original_backend(receipt):
+        require(original_backend(receipt) is None, 'ORIGINAL_EVIDENCE_CHANGED')
+        backend_validate(p['record'], receipt['binding']['desiredRevision'],
+                         receipt['binding']['operationId'], root=root, owner_uid=owner_uid)
+    return raw
+
+
 def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=None):
     binding_valid(binding)
     root = Path(root)
@@ -338,9 +354,9 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
         _, original_config, identity = installed(old_release, binding['installedRevision'], root, owner_uid)
         require(all(receipt['original'][key] == value for key, value in identity.items())
                 and resource_identity(config) == receipt['original']['resourceSha256']
-                and credentials(config, root, owner_uid) == receipt['original']['credentials']
-                and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt),
+                and credentials(config, root, owner_uid) == receipt['original']['credentials'],
                 'ORIGINAL_EVIDENCE_CHANGED')
+        backend_raw = continuation_backend(receipt, p, root, owner_uid)
         current = p['install'] / 'current'
         protect(p['install'], root, owner_uid, directory=True)
         info = current.lstat()
@@ -358,6 +374,7 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
         if admission_probe:
             result = observe(receipt, gate, admission_probe, 'inspect')
             require(result['desiredDigest'] == receipt['desiredDigest'], 'DESIRED_DIGEST_CHANGED')
+        require(backend_bytes(p['record'], root, owner_uid) == backend_raw, 'EVIDENCE_CHANGED')
         return receipt
     require(not archive_present, 'INTERRUPTED_ARCHIVE')
     require(not p['journal'].exists() and not p['journal'].is_symlink()
@@ -429,7 +446,8 @@ def begin(config, binding, proof, *, root=Path('/'), owner_uid=0, admission_prob
 
 
 def load_receipt(path, root, owner_uid):
-    require(not path.with_name(path.name + '.next').exists(), 'INTERRUPTED_RECEIPT')
+    pending = path.with_name(path.name + '.next')
+    require(not pending.exists() and not pending.is_symlink(), 'INTERRUPTED_RECEIPT')
     value = decode(read(path, root, owner_uid, private=True))
     require(isinstance(value, dict) and value.keys() == {'schemaVersion', 'binding', 'original',
             'desiredConfigSha256', 'state', 'desiredDigest'} and type(value['schemaVersion']) is int and value['schemaVersion'] == 1
@@ -462,9 +480,9 @@ def revalidate(config, binding, proof, *, root=Path('/'), owner_uid=0, admission
     require(all(receipt['original'][key] == value for key, value in identity.items())
             and resource_identity(config) == receipt['original']['resourceSha256']
             and sha(json.dumps(config, sort_keys=True).encode()) == receipt['desiredConfigSha256']
-            and credentials(config, root, owner_uid) == receipt['original']['credentials']
-            and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt),
+            and credentials(config, root, owner_uid) == receipt['original']['credentials'],
             'ORIGINAL_EVIDENCE_CHANGED')
+    backend_raw = continuation_backend(receipt, p, root, owner_uid)
     gate_raw = read(p['gate'], root, owner_uid, private=True)
     gate = gate_value(gate_raw, binding)
     require(gate['previousActive'] == decode(base64.b64decode(receipt['original']['gateBytes']))['previousActive'],
@@ -474,7 +492,7 @@ def revalidate(config, binding, proof, *, root=Path('/'), owner_uid=0, admission
     require(result['desiredDigest'] == receipt['desiredDigest']
             and (consumer_same or result['currentDigest'] == receipt['desiredDigest']), 'DESIRED_DIGEST_CHANGED')
     require(read(p['gate'], root, owner_uid, private=True) == gate_raw
-            and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt)
+            and backend_bytes(p['record'], root, owner_uid) == backend_raw
             and credentials(config, root, owner_uid) == receipt['original']['credentials'], 'EVIDENCE_CHANGED')
     return receipt
 

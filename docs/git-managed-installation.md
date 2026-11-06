@@ -281,6 +281,12 @@ to archive its original record byte for byte and remove the active record name.
 The installer independently reads back the final Git pair, verifies the same
 admission operation and final continuation receipt, then resumes admission.
 An interruption preserves closed admission and evidence. An exact reserved
+gate-only continuation may be revalidated after Begin creates the exact
+desired-target `apply / RECOVERY_REQUIRED` backend, provided the same UUID's
+gate has selected that desired target and all original evidence still matches.
+The receipt continues to retain original absence; it is not rewritten to claim
+that the derived backend existed originally. Foreign/malformed records, changed
+bindings and interrupted receipt/archive writes refuse. An exact reserved
 continuation may be revalidated; partial receipt/archive completion requires
 diagnosis and is not permission to repeat installation or reset a journal.
 
@@ -330,6 +336,53 @@ not authorize PROD work, admission reset, re-registration or deployment retry.
 The post-consumer-publication continuation flag does not accept a new maintenance
 declaration; an interrupted maintained recovery needs diagnosis of its retained
 receipt and actual runtime before selecting any further supported action.
+
+`DRAIN` waits for admitted work and closes admission; it does not stop a Runner.
+An explicit owner-selected `recover` can also restore its declared existing
+Production Runner from a proved inactive/dead, process-free state. Historical
+stop attribution is not a prerequisite and no historical liveness is claimed.
+The controller first proves all maintained General transports, exact existing
+registration/settings/group, empty active/unknown work, unchanged live Reviewer,
+protected unit/Unix identity and the same applying operation. It then holds the
+existing production-operation lock and starts only that Production service
+through its normal readiness gate. Current online/idle registration and the new
+live process are proved before continuing. Failed/ambiguous state, busy or changed
+registrations, lost General transport or Reviewer still refuse. No General or
+Reviewer restart, reset-failed, re-registration or original snapshot edit occurs.
+The final proof compares the actual post-restoration PID/start identity; it never
+compares a nonexistent old process or restarts a lost process a second time.
+
+#### Interrupted Begin before product/consumer publication
+
+If APT fails after Begin while `current` still selects the retained product and
+the original consumer is unchanged, use the same explicit
+`--continue-install-recovery` authorization with an independently accepted
+corrected controller. The exact original config bytes, maintenance declaration,
+reserved receipt, desired-target backend and UUID must match. The controller
+proves its accepted public ancestry and the bounded installation-tail relationship,
+then obtains product bytes from the receipt's **original desired Git object**.
+Its corrected observation/orchestration code runs independently; the original
+receipt/controller, desired product/config pair and source history are never
+silently rebound. Full staging, live preflight, Writer locking, same-operation
+Apply, installed-pair verification and admission completion remain mandatory.
+The later consumer-publication frontier retains its own stricter proof and does
+not accept a new maintenance declaration.
+
+The fixed private `recover` route detects an existing protected reservation and
+selects this continuation while retaining the original final-pair readback. A new
+owner dispatch authenticates this invocation; it does not replace the original
+dispatch evidence in that receipt. Completing this old pair does not claim that
+the corrected controller was installed as the product. A subsequent separately
+authorized ordinary Apply can adopt the accepted correction as desired product.
+
+Before admission cutover, ordinary intent installation verifies signed APT
+metadata and prerequisite package acquisition using disposable lists/cache and
+download-only semantics. It neither installs packages nor changes live APT lists.
+A failed acquisition leaves the known-good runtime and original gate available;
+an already closed recovery gate stays closed. APT signatures/hashes remain
+mandatory during actual Apply as well. A later repository failure retains the
+same operation and known runtime for guarded continuation, never an automatic
+gate reset or blind retry.
 
 This differs from expert `reinstall-recover`, which dispositions a separate
 decommissioned clean-reinstall journal and does not install or activate its

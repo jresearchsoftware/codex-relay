@@ -303,6 +303,26 @@ def git_target_capability(source):
     require('git-desired-v1' in capabilities, 'git-target-installation-contract-unsupported')
 
 
+def retained_recovery_binding(install, declaration, dispatch_receipt, *, filesystem_root=Path('/')):
+    """Keep a reserved operation's pair while authenticating a new owner dispatch."""
+    path = filesystem_root / 'var/lib' / (install.name + '-production-operation.'
+        + declaration['operationId'] + '.continuation.json')
+    if not path.exists() and not path.is_symlink():
+        return None
+    from bounded_recovery import load_receipt
+    retained = load_receipt(path, filesystem_root, 0)
+    binding = retained['binding']
+    require(retained['state'] == 'reserved'
+            and binding['operationId'] == declaration['operationId']
+            and binding['retainedTarget'] == declaration['retainedTarget']
+            and binding.get('runnerMaintenance') == declaration, 'git-retained-recovery-binding-changed')
+    original = binding['gitConfigReceipt']
+    require(all(original.get(key) == dispatch_receipt.get(key) for key in [
+        'config_repository', 'config_repository_id', 'config_path', 'config_blob_sha',
+        'config_sha256', 'product_repository', 'product_repository_id']), 'git-retained-recovery-pair-changed')
+    return binding
+
+
 def run_git(request, token, *, installed_source=None):
     match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
@@ -389,6 +409,7 @@ def run_git(request, token, *, installed_source=None):
             '--config', str(config_path), '--consumer-root', str(consumer), '--connection', 'local',
             '--phase', 'install', '--resolved-revision', target, '--git-config-receipt', str(receipt_path),
             '--log-root', '/var/log/' + install.name + '/owner-lifecycle']
+        verified_receipt = receipt
         if maintenance is not None:
             raw, declaration = maintenance
             # Public install remains the sole recovery authority and validates
@@ -399,9 +420,16 @@ def run_git(request, token, *, installed_source=None):
             argv += ['--authorize-install-recovery', '--install-recovery-operation', declaration['operationId'],
                      '--install-recovery-target', declaration['retainedTarget'],
                      '--retained-runner-maintenance', str(declaration_path)]
+            retained = retained_recovery_binding(install, declaration, receipt)
+            if retained is not None:
+                argv += ['--continue-install-recovery']
+                target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
         subprocess.run(argv, env=clean_environment(), check=True)
-        git_result(install, target, receipt, desired)
-        print('RELAY_GIT_APPLY_VERIFIED=' + target + ';config=' + config_sha, flush=True)
+        git_result(install, target, verified_receipt, desired)
+        if verified_receipt != receipt:
+            print('RELAY_GIT_RECOVERY_CONTROLLER=' + receipt['product_sha']
+                  + ';dispatch-config=' + config_sha, flush=True)
+        print('RELAY_GIT_APPLY_VERIFIED=' + target + ';config=' + verified_receipt['config_sha'], flush=True)
 
 
 def run(request):
