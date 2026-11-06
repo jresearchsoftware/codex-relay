@@ -46,7 +46,8 @@ class UpgradeActivationTests(unittest.TestCase):
         return subprocess.run(['ansible-playbook', '-i', 'localhost,', str(play)],
                               env=env, text=True, capture_output=True, timeout=75)
 
-    def fixture(self, root, initial, final, *, legacy_snapshot=False, execution_slots=False):
+    def fixture(self, root, initial, final, *, legacy_snapshot=False, execution_slots=False,
+                gate_root=None, target=HEAD, initial_target=None):
         initial = {**initial, 'codex-relay-relay-manual-outcome.socket': initial.get(
             'codex-relay-relay-manual-outcome.socket', socket_state())}
         final = {**final, 'codex-relay-relay-manual-outcome.socket': final.get(
@@ -68,7 +69,7 @@ class UpgradeActivationTests(unittest.TestCase):
             f'Path({str(state)!r}).write_text({json.dumps(final)!r})\n'
         )
         restart.chmod(0o755)
-        gate_root = root / 'gate'
+        gate_root = gate_root or root / 'gate'
         gate_root.mkdir(exist_ok=True, mode=0o700)
         admission = root / 'admission.mjs'
         admission.write_text(
@@ -81,7 +82,7 @@ class UpgradeActivationTests(unittest.TestCase):
             'const [action,flag,operationId,phaseFlag,phase]=process.argv.slice(2);\n'
             'if(flag!=="--operation") throw Error("fixture operation missing");\n'
             'try {await access(root+"/admission-v1.json");} catch {\n'
-            'await gate.initialize(); await gate.quiesce({operationId,target:"a".repeat(40)});'
+            'await gate.initialize(); await gate.quiesce({operationId,target:' + json.dumps(initial_target or target) + '});'
             'await gate.drained({operationId}); await gate.phase({operationId,phase:"applying"});}\n'
             'let output; if(action==="snapshot") {let input=""; for await(const chunk of process.stdin) input+=chunk;'
             'const services=JSON.parse(input);'
@@ -91,7 +92,7 @@ class UpgradeActivationTests(unittest.TestCase):
                'throw Object.assign(Error("ADMISSION_SNAPSHOT_INVALID"),{code:"ADMISSION_SNAPSHOT_INVALID"});'
                if legacy_snapshot else '') +
             'output=await gate.snapshot({operationId,services});}\n'
-            'else if(action==="phase" && phaseFlag==="--phase") output=await gate.phase({operationId,phase,revision:phase==="verified"?"a".repeat(40):undefined});\n'
+            'else if(action==="phase" && phaseFlag==="--phase") output=await gate.phase({operationId,phase,revision:phase==="verified"?' + json.dumps(target) + ':undefined});\n'
             'else if(action==="resume") output=await gate.resume({operationId});\n'
             'else throw Error("fixture action invalid");\nconsole.log(JSON.stringify(output));\n')
         gate_helper = root / 'relay-admission'
@@ -131,7 +132,7 @@ class UpgradeActivationTests(unittest.TestCase):
             'relay_reviewer_operation_restart_path': str(restart),
             'relay_reviewer_bind_address': '127.0.0.1',
             'relay_reviewer_bind_port': listener.getsockname()[1],
-            'relay_production_operation_target_head': HEAD,
+            'relay_production_operation_target_head': target,
             'relay_install_root': str(root), 'relay_admission_operation_id': OPERATION,
         }
         if execution_slots:
@@ -140,12 +141,16 @@ class UpgradeActivationTests(unittest.TestCase):
                 'relay_runner_service_name': 'codex-relay-slot-second-runner.service'}]
         return tasks, values, trace
 
-    def maintained_fixture(self, root, initial, final, declaration):
-        tasks, values, trace = self.fixture(root, initial, final)
+    def maintained_fixture(self, root, initial, final, declaration, *, backend=None):
+        options = ({"gate_root": backend.paths["gate"].parent, "target": backend.binding["desiredRevision"],
+                    "initial_target": backend.binding["retainedTarget"]} if backend else {})
+        tasks, values, trace = self.fixture(root, initial, final, **options)
         import sys
         sys.path.insert(0, str(ROOT.parents[1] / 'deploy/tests'))
         from test_retained_activation import payload
         data = payload()
+        if backend:
+            data["binding"] = backend.binding
         consumer = dict(data['config']['consumer'])
         consumer['executionSlots'] = consumer['executionSlots'][:6]
         (root / 'consumer.json').write_text(json.dumps(consumer))
@@ -164,7 +169,7 @@ class UpgradeActivationTests(unittest.TestCase):
                 f'sys.path[:0]=[{str(ROOT.parents[1] / "deploy")!r},{str(ROOT.parents[1] / "deploy/tests")!r}]\n'
                 'from retained_activation import prove\nfrom test_retained_activation import Evidence\n'
                 'value=json.load(sys.stdin)\nnative=Evidence(value)\n'
-                f'gate=Path({str(root / "gate/admission-v1.json")!r})\n'
+                f'gate=Path({str(backend.paths["gate"] if backend else root / "gate/admission-v1.json")!r})\n'
                 'def authority():\n state=json.loads(gate.read_text())\n'
                 ' assert state["operationId"]==value["binding"]["operationId"]\n'
                 ' assert state["phase"]=="applying"\n'

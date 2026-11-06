@@ -487,13 +487,16 @@ def backend_paths(record_path, operation_id, root):
     return namespace, record_path.with_name(record_path.stem + '.' + operation_id + '.continuation.json')
 
 
-def backend_validate(record_path, desired_revision, operation_id, *, root=Path('/'), owner_uid=0, require_applying=False):
+def backend_validate(record_path, desired_revision, operation_id, *, root=Path('/'), owner_uid=0,
+                     require_applying=False, expected_backend_absent=None):
     root = Path(root)
     namespace, receipt_path = backend_paths(record_path, operation_id, root)
     receipt = load_receipt(receipt_path, root, owner_uid)
     binding = receipt['binding']
     current_backend = backend_bytes(record_path, root, owner_uid)
     expected_backend = original_backend(receipt)
+    if expected_backend_absent is not None:
+        require((current_backend is None) == expected_backend_absent, 'BACKEND_BINDING_CHANGED')
     # A gate-only retained operation has no old backend bytes to reinterpret.
     # Before site.yml it stays absent; Begin may subsequently create only the
     # ordinary exact desired-target apply record under the existing locks.
@@ -516,7 +519,9 @@ def backend_validate(record_path, desired_revision, operation_id, *, root=Path('
             and gate['consumerDigest'] in [old_gate['consumerDigest'], receipt['desiredDigest']]
             and gate['previousActive'] == old_gate['previousActive'], 'BACKEND_GATE_CHANGED')
     return {'operationId': operation_id, 'originalTarget': binding['retainedTarget'],
-            'desiredTarget': desired_revision, 'backendSha256': receipt['original']['backendSha256']}
+            'desiredTarget': desired_revision, 'backendSha256': receipt['original']['backendSha256'],
+            'backendAbsent': expected_backend is None,
+            'receiptSha256': sha(json.dumps(receipt, sort_keys=True).encode())}
 
 
 def final_installation(namespace, receipt, root, owner_uid):

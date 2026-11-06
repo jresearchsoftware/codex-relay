@@ -1290,6 +1290,16 @@ uses the selected durable owner config and independently checks installed
 consumer/units/runner scope; it never manufactures a snapshot from guessed
 state. Keep the prior supported recovery path and exact source available.
 
+For gate-only bounded recovery, the protected continuation receipt must prove
+that the original backend record was absent. Preflight binds the original
+admission UUID, retained target, selected target and unchanged first snapshot.
+Immediately before mutation, begin repeats that proof and the inspected
+presence/absence check under the transition lock, with admission in `applying`.
+It creates only the current selected-target apply reservation. Final validation
+and clear preserve the original absence in the receipt; they never fabricate
+original backend bytes or an original-record archive. Existing backend records
+retain their strict schema, phase, target, ownership and lock checks.
+
 After diagnosing a failed operation and safely dispositioning any retained
 production mutation record through its existing interface, an owner may use
 `upgrade --authorize-upgrade --authorize-lifecycle-recovery

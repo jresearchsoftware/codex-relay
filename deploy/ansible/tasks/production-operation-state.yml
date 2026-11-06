@@ -151,19 +151,44 @@
   ansible.builtin.assert:
     that:
       - relay_production_operation_continuation is mapping
-      - (relay_production_operation_continuation.keys() | list | sort) == ['backendSha256', 'desiredTarget', 'operationId', 'originalTarget']
+      - (relay_production_operation_continuation.keys() | list | sort) == ['backendAbsent', 'backendSha256', 'desiredTarget', 'operationId', 'originalTarget', 'receiptSha256']
       - relay_production_operation_continuation.operationId == relay_bounded_recovery_binding.operationId
       - relay_production_operation_continuation.operationId == relay_admission_operation_id
       - relay_production_operation_continuation.originalTarget == relay_bounded_recovery_binding.retainedTarget
-      - relay_production_operation_continuation.originalTarget == relay_production_operation_record.target_head
       - relay_production_operation_continuation.desiredTarget == relay_bounded_recovery_binding.desiredRevision
       - relay_production_operation_continuation.desiredTarget == relay_production_operation_target_head
-      - relay_production_operation_record.phase == 'apply'
+      - relay_production_operation_phase == 'apply'
+      - relay_admission_recovery_authorized | default(false) | bool
       - relay_production_operation_continuation.backendSha256 is match('^[0-9a-f]{64}$')
+      - relay_production_operation_continuation.receiptSha256 is match('^[0-9a-f]{64}$')
     fail_msg: 'PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID'
   when:
     - relay_deployment_profile == 'production'
     - relay_bounded_recovery_binding | default({}) | length > 0
+
+- name: Retain strict existing-record continuation checks
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_record.phase == 'apply'
+      - >-
+        relay_production_operation_record.target_head ==
+        (relay_production_operation_continuation.desiredTarget if relay_production_operation_continuation.backendAbsent
+         else relay_production_operation_continuation.originalTarget)
+    fail_msg: 'PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_bounded_recovery_binding | default({}) | length > 0
+    - relay_production_operation_record_stat.stat.exists | default(false)
+
+- name: Require proven original backend absence for gate-only continuation
+  ansible.builtin.assert:
+    that:
+      - relay_production_operation_continuation.backendAbsent == true
+    fail_msg: 'PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID'
+  when:
+    - relay_deployment_profile == 'production'
+    - relay_bounded_recovery_binding | default({}) | length > 0
+    - not relay_production_operation_record_stat.stat.exists | default(false)
 
 - name: Record the inspected production operation disposition
   ansible.builtin.set_fact:
