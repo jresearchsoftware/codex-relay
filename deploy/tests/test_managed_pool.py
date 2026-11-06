@@ -8,6 +8,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
@@ -15,6 +16,25 @@ import config
 import managed_pool as pool
 import managed_pool_transport as transport
 import pool_authorization as authorization
+
+
+def test_new_registration_uses_native_updates_and_preserves_identity_and_token_transport():
+    contract = {'organization': 'example', 'group': 'general', 'label': 'relay-pool', 'runnerUser': 'relay-general'}
+    member = {'name': 'relay-general-2', 'label': 'pool-2', 'state': '/var/lib/example/pool-2',
+              'root': '/opt/example/pool-2'}
+    host = object.__new__(pool.Host)
+    host.contract = contract
+    with patch.object(pool.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run:
+        host.configure(member, 'synthetic-registration-token')
+        argv = run.call_args.args[0]
+        assert '--disableupdate' not in argv
+        for flag, expected in [('--name', member['name']), ('--runnergroup', contract['group']),
+                               ('--work', member['state'] + '/work')]:
+            assert argv[argv.index(flag) + 1] == expected
+        assert 'synthetic-registration-token' not in argv
+        assert run.call_args.kwargs['env']['ACTIONS_RUNNER_INPUT_TOKEN'] == 'synthetic-registration-token'
+        host.configure(member, 'synthetic-remove-token', remove=True)
+        assert run.call_args.args[0][-2:] == ['remove', '--unattended']
 
 
 def inputs(capacity=2, namespace='codex-relay', repository='example-org/sample-project'):

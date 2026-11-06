@@ -122,6 +122,42 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.readbacks[0][2], self.receipt)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + OLD, output)
 
+    def test_recover_passes_exact_reviewed_intent_to_public_installer_without_gate_mutation(self):
+        declaration = {'operationId': OPERATION, 'retainedTarget': OLD,
+            'runners': {'production': {'runnerId': 55, 'runnerName': 'example-production'}}}
+        raw = json.dumps(declaration).encode()
+        original_run = owner.subprocess.run.side_effect
+        observed = []
+
+        def backend(argv, **kwargs):
+            if '--retained-runner-maintenance' in argv:
+                path = Path(argv[argv.index('--retained-runner-maintenance') + 1])
+                observed.append((path.read_bytes(), stat.S_IMODE(path.stat().st_mode)))
+            return original_run(argv, **kwargs)
+
+        with patch.object(owner.git_intent, 'recovery_declaration', return_value=(raw, declaration)) as reader, \
+             patch.object(owner.subprocess, 'run', side_effect=backend):
+            self.invoke('recover')
+        reader.assert_called_once_with(self.binding, CONFIG_SHA, TOKEN)
+        argv = self.primitive[0][0]
+        self.assertIn('--authorize-install-recovery', argv)
+        self.assertEqual(argv[argv.index('--install-recovery-operation') + 1], OPERATION)
+        self.assertEqual(argv[argv.index('--install-recovery-target') + 1], OLD)
+        self.assertEqual(argv[argv.index('--resolved-revision') + 1], HEAD)
+        self.assertEqual(observed, [(raw, 0o600)])
+        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(len(self.readbacks), 1)
+
+    def test_unavailable_maintenance_stops_recover_and_apply_never_infers_recovery(self):
+        with patch.object(owner.git_intent, 'recovery_declaration', side_effect=GitIntentError(
+                'GIT_INTENT_RECOVERY_DECLARATION_INVALID')) as reader:
+            with self.assertRaises(GitIntentError):
+                self.invoke('recover')
+            self.assertEqual(self.primitive, [])
+            self.invoke('apply')
+            self.assertEqual(reader.call_count, 1)
+        self.assertNotIn('--authorize-install-recovery', self.primitive[0][0])
+
     def test_wrong_source_namespace_owner_or_install_root_stop_before_primitive(self):
         for modify in [lambda: self.desired['environment'].update(namespace='foreign'),
                        lambda: self.values.update(relay_install_root='/opt/foreign'),

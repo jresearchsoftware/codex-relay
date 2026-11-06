@@ -251,7 +251,7 @@ class Host:
             '--unattended', '--url', 'https://github.com/' + self.contract['organization'],
             '--name', member['name'], '--runnergroup', self.contract['group'],
             '--labels', self.contract['label'] + ',' + member['label'],
-            '--work', member['state'] + '/work', '--disableupdate']
+            '--work', member['state'] + '/work']
         environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8',
                        'HOME': member['state'] + '/home', 'ACTIONS_RUNNER_INPUT_TOKEN': token}
         result = subprocess.run(['/usr/sbin/runuser', '--preserve-environment', '-u',

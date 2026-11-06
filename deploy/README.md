@@ -1207,6 +1207,11 @@ executing root Python. This requires no additional owner action. An older
 installed helper that already fails this bootstrap cannot apply its own repair;
 install the accepted correction through a separately authorized supported public
 deployment/reconciliation operation before qualifying the ordinary workflow.
+For an otherwise authentic retained Git installation whose helper lacks the
+explicit recovery grammar, the bounded local-root
+[`owner-lifecycle-bootstrap` transport refresh](../docs/git-managed-installation.md#protected-private-recovery-transport-and-older-installed-helpers)
+installs only the accepted fixed transport, preserving installed source, services,
+admission and history. It does not itself recover or deploy the installation.
 
 Quiesce atomically closes the root-owned admission gate using the existing Writer
 lock. Already admitted automatic controllers retain their reservation through

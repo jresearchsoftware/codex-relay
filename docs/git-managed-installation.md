@@ -36,7 +36,8 @@ configuration. The selected configuration uses:
 
 The private repository contains that nonsecret configuration and one generated
 `manual-main-production-deploy.yml`, offering owner-triggered `apply`, `stop`
-and `resume`. Neither product nor configuration merge deploys automatically.
+and `resume`, plus the explicit bounded `recover` action described below.
+Neither product nor configuration merge deploys automatically.
 `GITHUB_SHA` identifies the reviewed private configuration commit. Product source
 is resolved independently from the configured public repository: omitted/main
 selects its frozen accepted main; an exact SHA must be proven on that accepted
@@ -333,6 +334,61 @@ receipt and actual runtime before selecting any further supported action.
 This differs from expert `reinstall-recover`, which dispositions a separate
 decommissioned clean-reinstall journal and does not install or activate its
 controller revision. Neither interface permits raw protected-history edits.
+
+#### Protected private recovery transport and older installed helpers
+
+The generated private owner workflow's `recover` action transports the same
+bounded operation through the existing fixed sudo helper and ephemeral workflow
+token. It reads the explicit owner maintenance declaration from the fixed sibling
+`<localApply.configPath>.runner-maintenance.json` in the **same reviewed private
+configuration commit** as the desired config. For example, `prod/relay.json` uses
+`prod/relay.json.runner-maintenance.json`, with exactly the declaration shape
+above. The owner attests the original operation/retained target and exact repaired
+IDs/names; neither workflow nor coordinator derives intent from current activity.
+Publish the declaration and generated workflow through the private repository's
+normal review/merge process. A file's presence does not affect ordinary Apply,
+stop or resume and does not authorize a recovery dispatch.
+
+`recover` authenticates the native owner dispatch and both Git sources before
+staging the declaration as private temporary data. It invokes public `install`
+with all four explicit recovery arguments, using the declared original UUID and
+retained target and the independently frozen accepted final product/config pair.
+The installer owns locks, protected preflight, immutable continuation evidence,
+activation checks and verified admission reopening. The transport never resets
+admission, synthesizes a backend record, stops healthy runners or replays work.
+Missing/invalid Git attestation, changed identities or unavailable live proof
+refuse rather than falling back to Apply or resume. `recover` reports the same
+verified Git-pair completion only after the public installer succeeds.
+
+An older installed helper cannot execute its own new grammar. After independent
+source acceptance and separate owner authorization, the supported **local root**
+bootstrap from a clean exact accepted product checkout is:
+
+```sh
+python3 deploy/relay-deploy.py --phase owner-lifecycle-bootstrap \
+  --authorize-owner-lifecycle-bootstrap --connection local \
+  --resolved-revision <accepted-public-main-SHA> \
+  --config /path/to/owner-held/relay.json
+```
+
+This refreshes only the existing fixed helper under the installation's deployment
+lock. It proves the protected current release/source locator, owner and Git source,
+fetches a fresh anonymous exact accepted-main controller into root-protected
+`/var/lib/<namespace>/owner-lifecycle-controllers/<SHA>`, and atomically publishes
+and reads back the helper. The owner-held config supplies the existing locator
+binding; it cannot replace private Git desired state. No token, new sudoers rule,
+privilege grant, service mutation, release switch, admission change or history
+edit is part of bootstrap. Ordinary commands keep using installed code; only
+`git:recover` uses the accepted bootstrap controller and separately proves the
+original installed release. Normal successful installation replaces the helper
+with its ordinary installed-source implementation.
+
+An unrecognized existing helper, unsafe code/path, changed source, busy lock or
+interrupted unpublished controller refuses with retained evidence for diagnosis.
+An already published identical controller/helper is verified and reused. This
+command is not an unqualified direct-root deployment fallback: bootstrap and the
+later genuine owner-triggered recovery each require their own existing protected
+authority. Source/TEST success does not grant either PROD operation.
 
 [Installation metadata](../deploy/installation-contract.json) declares a strict
 deployment epoch and known capabilities, retained in installed manifests.

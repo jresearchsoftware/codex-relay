@@ -164,19 +164,20 @@ def installed_proof(config, head):
     return True
 
 
-def git_anchor(installed):
+def git_anchor(installed, product_root=None):
     """Read only the protected source locator, never installed desired values."""
     import stat
-    release = ROOT.parent
+    product_root = ROOT if product_root is None else Path(product_root)
+    release = product_root.parent
     install = release.parent.parent
     require(release.name == installed and release.parent.name == 'releases'
-            and ROOT.name == 'reviewed-source', 'installed-release-path')
+            and product_root.name == 'reviewed-source', 'installed-release-path')
     current = install / 'current'
     protected_parents(current)
     metadata = current.lstat()
     require(stat.S_ISLNK(metadata.st_mode) and metadata.st_uid == 0
             and os.readlink(current) == str(release), 'installed-current-binding')
-    identity = json.loads(read_protected(ROOT / '.relay-source.json', {0o644, 0o640, 0o600})[0])
+    identity = json.loads(read_protected(product_root / '.relay-source.json', {0o644, 0o640, 0o600})[0])
     manifest = json.loads(read_protected(release / 'artifact-manifest.json', {0o640, 0o600})[0])
     require(isinstance(identity, dict) and isinstance(manifest, dict) and identity.get('revision') == installed
             and isinstance(identity.get('tree'), str) and re.fullmatch('[0-9a-f]{40}', identity['tree'])
@@ -302,17 +303,20 @@ def git_target_capability(source):
     require('git-desired-v1' in capabilities, 'git-target-installation-contract-unsupported')
 
 
-def run_git(request, token):
-    match = re.fullmatch(r'git:(apply|stop|resume):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
+def run_git(request, token, *, installed_source=None):
+    match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
-    install, binding, previous_manifest = git_anchor(installed)
+    require(installed_source is None or action == 'recover', 'recovery-bootstrap-route-only')
+    install, binding, previous_manifest = (git_anchor(installed) if installed_source is None
+                                          else git_anchor(installed, installed_source))
     frozen = git_intent.resolve_pair(binding, {'action': action, 'configSha': config_sha, 'runId': int(run_id)}, token)
+    maintenance = git_intent.recovery_declaration(binding, config_sha, token) if action == 'recover' else None
     # The private native token is used only by resolve_pair; public Git is anonymous.
     token = None
     receipt = frozen['receipt']
-    target = receipt['product_sha'] if action == 'apply' else installed
-    print(('RELAY_GIT_PAIR=' if action == 'apply' else 'RELAY_GIT_DISPATCH_PAIR=')
+    target = receipt['product_sha'] if action in ['apply', 'recover'] else installed
+    print(('RELAY_GIT_PAIR=' if action in ['apply', 'recover'] else 'RELAY_GIT_DISPATCH_PAIR=')
           + json.dumps(receipt, sort_keys=True), flush=True)
     stage = Path('/var/lib') / install.name / 'production-apply'
     protected_parents(stage / 'entry')
@@ -381,10 +385,21 @@ def run_git(request, token):
                         operation=state['operationId'], already_quiesced=True)
             return
         # The ordinary installer owns the single host lock and lifecycle gate.
-        subprocess.run(['/usr/bin/python3', str(source / 'deploy/relay-deploy.py'),
+        argv = ['/usr/bin/python3', str(source / 'deploy/relay-deploy.py'),
             '--config', str(config_path), '--consumer-root', str(consumer), '--connection', 'local',
             '--phase', 'install', '--resolved-revision', target, '--git-config-receipt', str(receipt_path),
-            '--log-root', '/var/log/' + install.name + '/owner-lifecycle'], env=clean_environment(), check=True)
+            '--log-root', '/var/log/' + install.name + '/owner-lifecycle']
+        if maintenance is not None:
+            raw, declaration = maintenance
+            # Public install remains the sole recovery authority and validates
+            # exact components, registrations, snapshot, processes and live work.
+            declaration_path = work / 'runner-maintenance.json'
+            declaration_path.write_bytes(raw)
+            declaration_path.chmod(0o600)
+            argv += ['--authorize-install-recovery', '--install-recovery-operation', declaration['operationId'],
+                     '--install-recovery-target', declaration['retainedTarget'],
+                     '--retained-runner-maintenance', str(declaration_path)]
+        subprocess.run(argv, env=clean_environment(), check=True)
         git_result(install, target, receipt, desired)
         print('RELAY_GIT_APPLY_VERIFIED=' + target + ';config=' + config_sha, flush=True)
 
@@ -479,9 +494,14 @@ def run(request):
 def main(arguments=None, token_stream=None):
     arguments = sys.argv[1:] if arguments is None else arguments
     try:
-        require(len(arguments) == 1, 'argument-contract')
+        require(len(arguments) == 1 or (len(arguments) == 3 and arguments[0].startswith('git:recover:')
+                and arguments[1] == '--installed-source' and Path(arguments[2]).is_absolute()), 'argument-contract')
         if arguments[0].startswith('git:'):
-            run_git(arguments[0], git_intent.read_token(sys.stdin.buffer if token_stream is None else token_stream))
+            token = git_intent.read_token(sys.stdin.buffer if token_stream is None else token_stream)
+            if len(arguments) == 3:
+                run_git(arguments[0], token, installed_source=arguments[2])
+            else:
+                run_git(arguments[0], token)
         else:
             run(arguments[0])
         return 0

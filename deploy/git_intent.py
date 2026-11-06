@@ -170,6 +170,39 @@ def _product_selection(raw, product, binding, api):
     return selected, 'accepted-ancestor'
 
 
+def recovery_declaration(binding, config_sha, token, *, api=None):
+    """Read owner attestation from the same reviewed private Git commit.
+
+    The fixed sibling path is data, never a caller-selected host path. Ordinary
+    Apply/stop/resume never consume it or infer recovery from its presence.
+    """
+    api = github_api if api is None else api
+    path = binding['configPath'] + '.runner-maintenance.json'
+    prefix = '/repos/' + binding['repository']
+    blob = _file_blob(api, prefix, config_sha, path, token)
+    data = api(prefix + '/git/blobs/' + blob, token)
+    require(isinstance(data, dict) and data.get('sha') == blob
+            and data.get('encoding') == 'base64' and type(data.get('size')) is int
+            and 0 < data['size'] <= 16384 and isinstance(data.get('content'), str)
+            and len(data['content']) <= 32768, 'GIT_INTENT_RECOVERY_DECLARATION_INVALID')
+    try:
+        raw = base64.b64decode(data['content'].replace('\n', '').replace('\r', ''), validate=True)
+        require(len(raw) == data['size'] and hashlib.sha1(
+            b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == blob,
+            'GIT_INTENT_RECOVERY_DECLARATION_INVALID')
+        value = json.loads(raw, object_pairs_hook=_unique_object)
+        require(isinstance(value, dict) and set(value) == {'operationId', 'retainedTarget', 'runners'}
+                and isinstance(value['operationId'], str) and re.fullmatch(
+                    r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', value['operationId'])
+                and _sha(value['retainedTarget']) and isinstance(value['runners'], dict)
+                and 0 < len(value['runners']) <= 33, 'GIT_INTENT_RECOVERY_DECLARATION_INVALID')
+        require(token.encode('ascii') not in raw and b'PRIVATE KEY' not in raw,
+                'GIT_INTENT_RECOVERY_DECLARATION_INVALID')
+        return raw, value
+    except (ValueError, TypeError, KeyError, UnicodeError):
+        raise GitIntentError('GIT_INTENT_RECOVERY_DECLARATION_INVALID') from None
+
+
 def resolve_pair(binding, dispatch, token, *, api=None):
     """Return private config_bytes and a nonsecret frozen-pair receipt.
 
@@ -194,7 +227,7 @@ def resolve_pair(binding, dispatch, token, *, api=None):
             and all(part not in ('', '.', '..') for part in path.split('/')),
             'GIT_INTENT_CONFIG_PATH_INVALID')
     config_sha, run_id, action = dispatch.get('configSha'), dispatch.get('runId'), dispatch.get('action')
-    require(_sha(config_sha) and _positive(run_id) and action in ('apply', 'stop', 'resume'),
+    require(_sha(config_sha) and _positive(run_id) and action in ('apply', 'stop', 'resume', 'recover'),
             'GIT_INTENT_DISPATCH_INVALID')
     config_repo = _repository(api, repository, token, True)
     require(_main(api, repository, token) == config_sha, 'GIT_INTENT_CONFIG_MAIN_CHANGED')
