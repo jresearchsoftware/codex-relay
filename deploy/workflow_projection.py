@@ -107,6 +107,7 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
+        'OWNER_RECOVERY_GUARD': '',
         'RECOVERY_RUNS_ON_YAML': json.dumps(general_runs_on),
         'RECOVERY_SLOT_INPUT': '',
         'RECOVERY_SLOT_ENV': '',
@@ -166,6 +167,19 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
     if deployment:
         templates = {PRODUCTION: 'deployment'}
+        if managed_pool:
+            # Maintained registrations must remain online/idle. Carry recovery
+            # on the existing original primary transport, never a restored peer
+            # whose own lifecycle job would invalidate that proof.
+            primary = next(slot for slot in slots if slot['id'] == 'primary')
+            recovery_runs_on = {'group': general['group'], 'labels': [
+                *general_labels, execution_slot_label(config, primary)]}
+            selectors = json.dumps({'recover': recovery_runs_on, 'ordinary': general_runs_on}, separators=(',', ':'))
+            values['GENERAL_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + selectors
+                + "')[inputs.action == 'recover' && 'recover' || 'ordinary'] }}")
+            values['OWNER_RECOVERY_GUARD'] = ('if [[ "$RELAY_LIFECYCLE_ACTION" == recover ]]; then\n'
+                + '            test "$RELAY_EXECUTION_SLOT" = primary || { echo RELAY_RECOVERY_PRIMARY_TRANSPORT_REQUIRED >&2; exit 1; }\n'
+                + '          fi')
     elif environment['localApply'].get('source') == 'installed' and repository == deployment_repository(config):
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],
                 'workflow-production-path-conflict')

@@ -349,6 +349,14 @@ Publish the declaration and generated workflow through the private repository's
 normal review/merge process. A file's presence does not affect ordinary Apply,
 stop or resume and does not authorize a recovery dispatch.
 
+For a managed pool, only `recover` selects the existing primary's exact pool and
+slot labels, with a matching runtime guard. The restored peers must stay idle;
+running the lifecycle job on a declared restored peer would itself invalidate
+that proof. Ordinary actions retain their pool selector. This requires the
+original primary transport to be healthy and outside the maintenance declaration;
+if it too needs maintained-activation proof, use a separately qualified external
+owner transport rather than weakening the idle check or dispatching repeatedly.
+
 `recover` authenticates the native owner dispatch and both Git sources before
 staging the declaration as private temporary data. It invokes public `install`
 with all four explicit recovery arguments, using the declared original UUID and

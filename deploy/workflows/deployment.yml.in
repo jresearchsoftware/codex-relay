@@ -40,6 +40,7 @@ jobs:
           NODE_PATH: ''
         run: |
           @@GENERAL_RUNNER_GUARD@@
+          @@OWNER_RECOVERY_GUARD@@
           /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           import { spawn } from 'node:child_process';
