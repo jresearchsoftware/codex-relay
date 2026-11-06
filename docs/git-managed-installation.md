@@ -281,6 +281,12 @@ to archive its original record byte for byte and remove the active record name.
 The installer independently reads back the final Git pair, verifies the same
 admission operation and final continuation receipt, then resumes admission.
 An interruption preserves closed admission and evidence. An exact reserved
+gate-only continuation may be revalidated after Begin creates the exact
+desired-target `apply / RECOVERY_REQUIRED` backend, provided the same UUID's
+gate has selected that desired target and all original evidence still matches.
+The receipt continues to retain original absence; it is not rewritten to claim
+that the derived backend existed originally. Foreign/malformed records, changed
+bindings and interrupted receipt/archive writes refuse. An exact reserved
 continuation may be revalidated; partial receipt/archive completion requires
 diagnosis and is not permission to repeat installation or reset a journal.
 
@@ -330,6 +336,19 @@ not authorize PROD work, admission reset, re-registration or deployment retry.
 The post-consumer-publication continuation flag does not accept a new maintenance
 declaration; an interrupted maintained recovery needs diagnosis of its retained
 receipt and actual runtime before selecting any further supported action.
+
+`DRAIN` waits for admitted work and closes admission; it does not stop a Runner.
+If a declared restored Production Runner is now stopped, this route refuses with
+`RELAY_RETAINED_ACTIVATION_PRODUCTION_STOP_CAUSE_UNPROVEN`. A reserved receipt,
+desired-target backend, original inactive snapshot and maintenance declaration
+do not prove a controlled service stop or grant permission to start it. The
+maintenance proof is transient and records no durable stop intent or historical
+process identity. Preserve the original records and diagnose the actual service
+stop through protected owner evidence before selecting a separately authorized
+recovery action. Do not weaken current online/idle proof, invent old liveness,
+rewrite the receipt to a new controller/desired pair, or manually start a service
+as a workaround. This correction of backend revalidation alone does not qualify
+an interrupted maintained recovery or a new controller against an older receipt.
 
 This differs from expert `reinstall-recover`, which dispositions a separate
 decommissioned clean-reinstall journal and does not install or activate its

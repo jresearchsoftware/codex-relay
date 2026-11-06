@@ -79,7 +79,7 @@ def test_exact_six_owner_restored_runners_preserve_original_snapshot():
     ('wrong-operation', 'RUNNER_MAINTENANCE_INVALID'),
     ('wrong-target', 'RUNNER_MAINTENANCE_INVALID'),
     ('undeclared', 'DECLARED_ACTIVITY_MISMATCH'),
-    ('not-restored', 'DECLARED_ACTIVITY_MISMATCH'),
+    ('not-restored', 'PRODUCTION_STOP_CAUSE_UNPROVEN'),
     ('new-service', 'ORIGINAL_SERVICE_CHANGED'),
     ('changed-enable', 'ORIGINAL_SERVICE_CHANGED'),
     ('foreign-name', 'ORIGINAL_SERVICE_CHANGED'),
@@ -140,6 +140,18 @@ def test_recheck_authority_after_observations():
     native.authority = authority
     with pytest.raises(ValueError, match='WORK_OR_OPERATION_UNPROVEN'):
         activation.prove(value, native)
+
+
+def test_stopped_declared_production_never_becomes_inferred_activation_authority():
+    value = payload()
+    value['observed']['production']['active'] = False
+    native = Evidence(value)
+    # Even synthetic online/idle registration cannot explain a missing local
+    # process or prove that admission DRAIN intentionally stopped it.
+    before = copy.deepcopy(value)
+    with pytest.raises(ValueError, match='PRODUCTION_STOP_CAUSE_UNPROVEN'):
+        activation.prove(value, native)
+    assert value == before and native.checks == 0
 
 
 def test_old_bounded_bindings_are_unchanged_and_declarations_are_exact():

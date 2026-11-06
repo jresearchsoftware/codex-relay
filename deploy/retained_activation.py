@@ -154,6 +154,11 @@ def prove(payload, native=None):
     require(declaration is not None, 'OWNER_DECLARATION_REQUIRED')
     previous, observed = payload['previous'], payload['observed']
     require(previous.keys() == observed.keys(), 'COMPONENT_SET_CHANGED')
+    # DRAIN closes admission and waits for work; it does not stop this service.
+    # Neither the immutable original snapshot nor the maintenance declaration
+    # proves why a subsequently restored Production process is now absent.
+    require('production' not in declaration['runners'] or observed['production']['active'],
+            'PRODUCTION_STOP_CAUSE_UNPROVEN')
     restored = {component for component in observed if observed[component]['active'] and not previous[component]['active']}
     require(restored == declaration['runners'].keys(), 'DECLARED_ACTIVITY_MISMATCH')
     require(previous['reviewer']['active'] and observed['reviewer']['active'], 'REVIEWER_UNPROVEN')
