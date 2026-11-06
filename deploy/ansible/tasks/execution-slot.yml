@@ -43,7 +43,7 @@
     relay_runner_registration_enabled: false
     relay_runner_registration_authorized: false
     relay_runner_registration_completed: false
-    relay_upgrade_lifecycle_general_was_active: '{{ (relay_upgrade_lifecycle_previous_active | default({})).get("slot-" ~ relay_slot_inputs.relay_execution_slot, {}).get("active", false) }}'
+    relay_upgrade_lifecycle_general_was_active: '{{ (relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active | default({}))).get("slot-" ~ relay_slot_inputs.relay_execution_slot, {}).get("active", false) }}'
   block:
     - name: Install the required optional parallel process namespace primitive
       ansible.builtin.apt:

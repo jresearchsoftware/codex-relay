@@ -220,8 +220,9 @@ does not substitute for a short measured transition or establish recovery.
 #### Starting bounded recovery
 
 When a failed Git Apply has already installed its original product target but
-retains both an `apply / RECOVERY_REQUIRED` backend record and the same closed
-admission UUID, a corrected accepted product may continue that operation:
+retains the same closed admission UUID, a corrected accepted product may continue
+that operation. A matching `apply / RECOVERY_REQUIRED` backend record may remain;
+the lifecycle gate may also retain recovery after the backend already completed:
 
 ```sh
 python3 deploy/relay-deploy.py --phase install \
@@ -265,6 +266,14 @@ receipt, rather than treating two different source identities as equal. Reopened
 Tasks, changed authority, source/config/credential drift, unknown live effects,
 conflicting operations and incompatible transitions still fail closed.
 
+For a gate-only retained operation, the same receipt proves and retains the
+original backend's absence. It does not fabricate old record or archive bytes.
+Before Apply, an unexpectedly appearing record refuses. The ordinary Ansible
+Begin boundary may then create only its exact desired-target apply record under
+the existing locks. Final installed verification removes that matching record
+and records completion through the same receipt; the original gate UUID and
+first snapshot remain unchanged throughout.
+
 The ordinary staged installation, service-intent preservation and runtime checks
 remain mandatory. Only successful installed-pair verification permits the backend
 to archive its original record byte for byte and remove the active record name.
@@ -273,6 +282,53 @@ admission operation and final continuation receipt, then resumes admission.
 An interruption preserves closed admission and evidence. An exact reserved
 continuation may be revalidated; partial receipt/archive completion requires
 diagnosis and is not permission to repeat installation or reset a journal.
+
+#### Already restored registered runners
+
+An original inactive service snapshot remains immutable after the owner repairs
+and restarts an existing registered Runner outside the failed operation. Current
+activity alone is not new activation authority. For this diagnosed case the
+bounded recovery command above additionally accepts
+`--retained-runner-maintenance /path/to/owner-declaration.json`:
+
+```json
+{
+  "operationId": "12345678-1234-1234-1234-123456789abc",
+  "retainedTarget": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runners": {
+    "production": {"runnerId": 55, "runnerName": "example-production-runner"},
+    "slot-pool-2": {"runnerId": 75, "runnerName": "example-general-runner-pool-2"}
+  }
+}
+```
+
+The owner explicitly attests the original IDs/names and completed maintenance;
+do not generate this declaration from whatever services happen to be active.
+The installer binds it to the existing operation-specific continuation receipt
+and frozen final Git pair. It introduces no second journal and never changes
+the original `previousActive`, backend bytes or historical attempts. The
+declaration must cover exactly the newly active components. Only already loaded,
+enabled Production or configured existing managed-pool runners are eligible;
+new, foreign, unregistered, renamed or ambiguously active components refuse.
+
+Before reconciliation and again before final acceptance, the controller proves
+the original UUID, empty active/unknown work, exact service/Unix identity,
+preserved managed-pool IDs, consistent effective native-update settings, a valid
+local version, and matching online/idle GitHub registration/group eligibility.
+Unavailable GitHub or Reviewer evidence refuses closed. Original transport
+checks extend to the restored pool members and Production process.
+
+This route preserves the live Reviewer and Runner processes. It is deliberately
+limited to a correction whose staged Reviewer executable, configuration and unit
+remain identical to the running installation. A required Reviewer restart,
+configuration/unit change, lost listener, changed process or changed declaration
+refuses instead of stopping repaired healthy runners. Ordinary upgrades retain
+their existing restart behavior. Continue only through a separately authorized
+owner operation with an independently accepted controller; this declaration does
+not authorize PROD work, admission reset, re-registration or deployment retry.
+The post-consumer-publication continuation flag does not accept a new maintenance
+declaration; an interrupted maintained recovery needs diagnosis of its retained
+receipt and actual runtime before selecting any further supported action.
 
 This differs from expert `reinstall-recover`, which dispositions a separate
 decommissioned clean-reinstall journal and does not install or activate its

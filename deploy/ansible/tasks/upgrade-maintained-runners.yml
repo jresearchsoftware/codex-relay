@@ -1,0 +1,46 @@
+---
+# Owner intent is carried by the already reserved bounded continuation, never
+# inferred from newly active services or written into the original snapshot.
+- name: Prove declared retained Runner maintenance under the original operation
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - 'import sys; sys.path.insert(0, sys.argv[1]); from retained_activation import main; main()'
+      - '{{ relay_intent_staged_release }}/reviewed-source/deploy'
+    stdin: >-
+      {{ {'config': relay_installed_deployment_config | from_json,
+          'binding': relay_bounded_recovery_binding,
+          'previous': relay_upgrade_lifecycle_previous_active,
+          'observed': relay_upgrade_lifecycle_observed_activity,
+          'admission': relay_intent_admission_prefix,
+          'release': relay_intent_staged_release,
+          'listener': relay_reviewer_bind_address ~ ':' ~ relay_reviewer_bind_port,
+          'before': relay_upgrade_lifecycle_maintenance_proof | default(none)} | to_json }}
+    stdin_add_newline: false
+  register: relay_upgrade_lifecycle_maintenance_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require exact owner-maintained Runner recovery proof
+  ansible.builtin.assert:
+    that:
+      - relay_upgrade_lifecycle_maintenance_check.rc == 0
+    fail_msg: >-
+      RELAY_UPGRADE_OWNER_MAINTENANCE_UNPROVEN:
+      {{ relay_upgrade_lifecycle_maintenance_check.stderr | default('') |
+         regex_findall('(?m)^(?:RELAY_RETAINED_ACTIVATION|BOUNDED_RECOVERY|MANAGED_POOL|RUNNER_SELF_UPDATE)_[A-Z_]{1,96}$') | join(',') }}
+
+- name: Retain transient proof without changing original activation intent
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_maintenance_proof: '{{ relay_upgrade_lifecycle_maintenance_check.stdout | from_json }}'
+
+- name: Select verified activity only for explicitly maintained existing runners
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_effective_active: >-
+      {{ (relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active)) |
+         combine({item: relay_upgrade_lifecycle_observed_activity[item]}) }}
+  loop: '{{ relay_upgrade_lifecycle_maintenance_proof.runners.keys() | list }}'

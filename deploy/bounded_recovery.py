@@ -101,8 +101,10 @@ def sync_dir(path):
 
 
 def binding_valid(binding):
-    require(isinstance(binding, dict) and binding.keys() == {'operationId', 'retainedTarget',
-            'installedRevision', 'controllerRevision', 'desiredRevision', 'gitConfigReceipt'}, 'BINDING_INVALID')
+    fields = {'operationId', 'retainedTarget', 'installedRevision', 'controllerRevision',
+              'desiredRevision', 'gitConfigReceipt'}
+    require(isinstance(binding, dict) and fields <= binding.keys() <= fields | {'runnerMaintenance'},
+            'BINDING_INVALID')
     require(UUID.fullmatch(binding.get('operationId', '')) and all(SHA.fullmatch(binding.get(key, ''))
             for key in ['retainedTarget', 'installedRevision', 'controllerRevision', 'desiredRevision'])
             and binding['controllerRevision'] == binding['desiredRevision'], 'BINDING_INVALID')
@@ -111,6 +113,20 @@ def binding_valid(binding):
             and SHA.fullmatch(receipt.get('config_sha', ''))
             and SHA.fullmatch(receipt.get('config_blob_sha', ''))
             and DIGEST.fullmatch(receipt.get('config_sha256', '')), 'GIT_PAIR_INVALID')
+    if 'runnerMaintenance' in binding:
+        maintenance = binding['runnerMaintenance']
+        require(isinstance(maintenance, dict) and maintenance.keys() == {'operationId', 'retainedTarget', 'runners'}
+                and maintenance['operationId'] == binding['operationId']
+                and maintenance['retainedTarget'] == binding['retainedTarget']
+                and isinstance(maintenance['runners'], dict) and 0 < len(maintenance['runners']) <= 33,
+                'RUNNER_MAINTENANCE_INVALID')
+        for component, runner in maintenance['runners'].items():
+            require(isinstance(component, str) and re.fullmatch(r'production|general|slot-[a-z][a-z0-9-]{0,31}', component)
+                    and isinstance(runner, dict) and runner.keys() == {'runnerId', 'runnerName'}
+                    and type(runner['runnerId']) is int and runner['runnerId'] > 0
+                    and isinstance(runner['runnerName'], str)
+                    and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', runner['runnerName']),
+                    'RUNNER_MAINTENANCE_INVALID')
     return binding
 
 
@@ -290,6 +306,21 @@ def gate_value(raw, binding, *, final=False):
     return gate
 
 
+def backend_bytes(path, root, owner_uid):
+    """Prove absence as well as protected bytes; a dangling link is not absent."""
+    try:
+        return read(path, root, owner_uid, private=True)
+    except FileNotFoundError:
+        protect(Path(path).parent, root, owner_uid, directory=True)
+        require(not Path(path).exists() and not Path(path).is_symlink(), 'BACKEND_BINDING_CHANGED')
+        return None
+
+
+def original_backend(receipt):
+    original = receipt['original']
+    return None if original.get('backendAbsent') is True else base64.b64decode(original['backendBytes'])
+
+
 def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=None):
     binding_valid(binding)
     root = Path(root)
@@ -308,7 +339,7 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
         require(all(receipt['original'][key] == value for key, value in identity.items())
                 and resource_identity(config) == receipt['original']['resourceSha256']
                 and credentials(config, root, owner_uid) == receipt['original']['credentials']
-                and read(p['record'], root, owner_uid, private=True) == base64.b64decode(receipt['original']['backendBytes']),
+                and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt),
                 'ORIGINAL_EVIDENCE_CHANGED')
         current = p['install'] / 'current'
         protect(p['install'], root, owner_uid, directory=True)
@@ -340,8 +371,8 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
                 '/opt/' + p['install'].name + '/releases/' + binding['installedRevision']], 'CURRENT_CHANGED')
     manifest, original_config, identity = installed(release, binding['installedRevision'], root, owner_uid)
     require(resource_identity(config) == resource_identity(original_config), 'RESOURCE_IDENTITY_CHANGED')
-    backend_raw = read(p['record'], root, owner_uid, private=True)
-    require(decode(backend_raw) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+    backend_raw = backend_bytes(p['record'], root, owner_uid)
+    require(backend_raw is None or decode(backend_raw) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
             'phase': 'apply', 'target_head': binding['retainedTarget']}, 'BACKEND_BINDING_CHANGED')
     gate_raw = read(p['gate'], root, owner_uid, private=True)
     gate = gate_value(gate_raw, binding)
@@ -354,12 +385,13 @@ def inspect(config, binding, *, root=Path('/'), owner_uid=0, admission_probe=Non
         'resourceSha256': resource_identity(original_config), 'consumerSha256': sha(consumer_raw),
         'credentials': credentials(original_config, root, owner_uid),
         'consumer': consumer, 'originalConsumer': original_config['consumer'],
-        'backendBytes': base64.b64encode(backend_raw).decode(), 'backendSha256': sha(backend_raw),
+        'backendBytes': base64.b64encode(backend_raw or b'').decode(), 'backendSha256': sha(backend_raw or b''),
+        **({'backendAbsent': True} if backend_raw is None else {}),
         'gateBytes': base64.b64encode(gate_raw).decode(), 'gateSha256': sha(gate_raw)},
         'desiredConfigSha256': sha(json.dumps(config, sort_keys=True).encode())}
     if admission_probe:
         observe(proof, gate, admission_probe, 'inspect')
-    require(stamp(current.lstat()) == stamp(info) and read(p['record'], root, owner_uid, private=True) == backend_raw
+    require(stamp(current.lstat()) == stamp(info) and backend_bytes(p['record'], root, owner_uid) == backend_raw
             and read(p['gate'], root, owner_uid, private=True) == gate_raw
             and read(p['config'] / 'consumer.json', root, owner_uid) == consumer_raw, 'EVIDENCE_CHANGED')
     return proof
@@ -409,8 +441,11 @@ def load_receipt(path, root, owner_uid):
         ['manifestSha256', 'sourceSha256', 'sourceGraphSha256', 'snapshotSha256', 'resourceSha256', 'consumerSha256', 'backendSha256', 'gateSha256'])
         and sha(base64.b64decode(original['backendBytes'], validate=True)) == original['backendSha256']
         and sha(base64.b64decode(original['gateBytes'], validate=True)) == original['gateSha256'], 'RECEIPT_INVALID')
-    require(decode(base64.b64decode(original['backendBytes'])) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
-        'phase': 'apply', 'target_head': value['binding']['retainedTarget']}, 'RECEIPT_INVALID')
+    if 'backendAbsent' in original:
+        require(original['backendAbsent'] is True and original['backendBytes'] == '', 'RECEIPT_INVALID')
+    else:
+        require(decode(base64.b64decode(original['backendBytes'])) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+            'phase': 'apply', 'target_head': value['binding']['retainedTarget']}, 'RECEIPT_INVALID')
     gate = gate_value(base64.b64decode(original['gateBytes']), value['binding'])
     require(gate['phase'] == 'recovery-required' and gate['target'] == value['binding']['retainedTarget'], 'RECEIPT_INVALID')
     return value
@@ -428,7 +463,7 @@ def revalidate(config, binding, proof, *, root=Path('/'), owner_uid=0, admission
             and resource_identity(config) == receipt['original']['resourceSha256']
             and sha(json.dumps(config, sort_keys=True).encode()) == receipt['desiredConfigSha256']
             and credentials(config, root, owner_uid) == receipt['original']['credentials']
-            and read(p['record'], root, owner_uid, private=True) == base64.b64decode(receipt['original']['backendBytes']),
+            and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt),
             'ORIGINAL_EVIDENCE_CHANGED')
     gate_raw = read(p['gate'], root, owner_uid, private=True)
     gate = gate_value(gate_raw, binding)
@@ -439,7 +474,7 @@ def revalidate(config, binding, proof, *, root=Path('/'), owner_uid=0, admission
     require(result['desiredDigest'] == receipt['desiredDigest']
             and (consumer_same or result['currentDigest'] == receipt['desiredDigest']), 'DESIRED_DIGEST_CHANGED')
     require(read(p['gate'], root, owner_uid, private=True) == gate_raw
-            and read(p['record'], root, owner_uid, private=True) == base64.b64decode(receipt['original']['backendBytes'])
+            and backend_bytes(p['record'], root, owner_uid) == original_backend(receipt)
             and credentials(config, root, owner_uid) == receipt['original']['credentials'], 'EVIDENCE_CHANGED')
     return receipt
 
@@ -457,9 +492,16 @@ def backend_validate(record_path, desired_revision, operation_id, *, root=Path('
     namespace, receipt_path = backend_paths(record_path, operation_id, root)
     receipt = load_receipt(receipt_path, root, owner_uid)
     binding = receipt['binding']
+    current_backend = backend_bytes(record_path, root, owner_uid)
+    expected_backend = original_backend(receipt)
+    # A gate-only retained operation has no old backend bytes to reinterpret.
+    # Before site.yml it stays absent; Begin may subsequently create only the
+    # ordinary exact desired-target apply record under the existing locks.
+    backend_matches = (current_backend == expected_backend or expected_backend is None
+        and current_backend is not None and decode(current_backend) == {
+            'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED', 'phase': 'apply', 'target_head': desired_revision})
     require(receipt['state'] == 'reserved' and binding['operationId'] == operation_id
-            and binding['desiredRevision'] == desired_revision
-            and read(record_path, root, owner_uid, private=True) == base64.b64decode(receipt['original']['backendBytes']),
+            and binding['desiredRevision'] == desired_revision and backend_matches,
             'BACKEND_BINDING_CHANGED')
     _, original_config, identity = installed(root / 'opt' / namespace / 'releases' / binding['installedRevision'],
         binding['installedRevision'], root, owner_uid)
@@ -501,18 +543,22 @@ def backend_finalize(record_path, desired_revision, operation_id, *, root=Path('
     receipt = load_receipt(receipt_path, root, owner_uid)
     final_installation(namespace, receipt, root, owner_uid)
     archive = receipt_path.with_name(receipt_path.name.removesuffix('.json') + '.original.json')
-    raw = base64.b64decode(receipt['original']['backendBytes'])
-    descriptor = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, 'wb') as stream:
-        stream.write(raw)
-        stream.flush()
-        os.fsync(stream.fileno())
-    sync_dir(archive.parent)
-    require(read(archive, root, owner_uid, private=True) == raw, 'BACKEND_ARCHIVE_UNPROVEN')
+    raw = backend_bytes(record_path, root, owner_uid)
+    require(raw is not None, 'BACKEND_APPLY_RECORD_MISSING')
+    if original_backend(receipt) is not None:
+        descriptor = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        sync_dir(archive.parent)
+        require(read(archive, root, owner_uid, private=True) == original_backend(receipt), 'BACKEND_ARCHIVE_UNPROVEN')
+    else:
+        require(not archive.exists() and not archive.is_symlink(), 'BACKEND_ARCHIVE_UNPROVEN')
     # Durable unchanged bytes precede removal of the active reservation. A
     # partial transition remains closed and is never replayed as a fresh apply.
     atomic(receipt_path, {**receipt, 'state': 'backend-complete'}, root, owner_uid)
-    require(read(record_path, root, owner_uid, private=True) == base64.b64decode(receipt['original']['backendBytes']),
+    require(read(record_path, root, owner_uid, private=True) == raw,
             'BACKEND_BINDING_CHANGED')
     Path(record_path).unlink()
     sync_dir(Path(record_path).parent)

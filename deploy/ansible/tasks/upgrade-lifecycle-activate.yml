@@ -10,7 +10,9 @@
       {{ [relay_reviewer_operation_restart_path] +
          (['--recover-active', relay_admission_operation_id] if relay_admission_recovery_authorized | default(false) | bool else []) }}
   changed_when: true
-  when: relay_upgrade_lifecycle_reviewer_was_active | bool
+  when:
+    - relay_upgrade_lifecycle_reviewer_was_active | bool
+    - relay_upgrade_lifecycle_maintenance_proof is not defined
 
 - name: Wait for the previously active Reviewer listener after activation
   ansible.builtin.wait_for:
