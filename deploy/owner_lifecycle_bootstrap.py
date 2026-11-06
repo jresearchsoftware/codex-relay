@@ -58,8 +58,12 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
             owner.git_target_capability(selected)
             destination = stage / revision
             desired = render(selected, install, destination)
-            previous, _ = read_protected(helper, {0o755}, group=0)
-            original = render(installed_source, install)
+            previous, _ = read_protected(helper, {0o750}, group=0)
+            # Older releases may not protect their template files as strongly as
+            # their executable import closure. Never evaluate installed Jinja as
+            # root: recover the original template from fresh exact Git objects.
+            original_source = owner.acquire_source(Path(temporary) / 'installed-source', repository, installed)
+            original = render(original_source, install)
             owner.require(previous in [original, desired], 'bootstrap-existing-helper-unrecognized')
             if destination.exists() or destination.is_symlink():
                 # An interrupted bootstrap is observable, never overwritten.
@@ -88,10 +92,10 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
                 with os.fdopen(fd, 'wb') as stream:
                     stream.write(desired)
                     stream.flush()
-                    os.fchmod(stream.fileno(), 0o755)
+                    os.fchmod(stream.fileno(), 0o750)
                     os.fsync(stream.fileno())
                 owner.git_anchor(installed, installed_source)
-                owner.require(read_protected(helper, {0o755}, group=0)[0] == previous,
+                owner.require(read_protected(helper, {0o750}, group=0)[0] == previous,
                               'bootstrap-helper-changed')
                 os.replace(temporary_helper, helper)
                 directory = os.open(helper.parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -102,5 +106,5 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
             finally:
                 if os.path.exists(temporary_helper):
                     os.unlink(temporary_helper)
-            owner.require(read_protected(helper, {0o755}, group=0)[0] == desired, 'bootstrap-readback-failed')
+            owner.require(read_protected(helper, {0o750}, group=0)[0] == desired, 'bootstrap-readback-failed')
             return revision

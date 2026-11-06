@@ -51,12 +51,13 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
     # The actual retained release cannot understand the new recover grammar.
     template.write_bytes(subprocess.check_output(['git', '-C', str(REPO), 'show',
         '5cac0e4973eaa945b90813ae831724456292a2e0:' + bootstrap.TEMPLATE]))
+    original_template = template.read_bytes()
     names = ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py',
              'deployment_lock.py', 'git_intent.py', 'repository_source.py']
     for name in names:
         shutil.copyfile(REPO / 'deploy' / name, installed_source / 'deploy' / name)
     helper.write_bytes(bootstrap.render(installed_source, install))
-    helper.chmod(0o755)
+    helper.chmod(0o750)
     config = {'source': {'repository': 'https://github.com/example/product'}, 'consumer': {'owner': 'owner'},
               'environment': {'localApply': {'source': 'git', 'repository': 'example/config', 'configPath': 'prod.json'}}}
     binding = {'productRepository': 'example/product', 'repository': 'example/config',
@@ -78,7 +79,7 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
             'import json,sys\nprint("BOOTSTRAP_SELECTED="+json.dumps(sys.argv[1:]))\n')
         target = directory / bootstrap.TEMPLATE
         target.parent.mkdir(parents=True)
-        shutil.copyfile(REPO / bootstrap.TEMPLATE, target)
+        target.write_bytes(original_template if revision == OLD else (REPO / bootstrap.TEMPLATE).read_bytes())
         return directory
 
     before = (install / 'current').readlink()
@@ -86,6 +87,8 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
          patch.object(bootstrap.owner, 'git_anchor', side_effect=anchor), \
          patch.object(bootstrap.owner, 'public_main', return_value=HEAD), \
          patch.object(bootstrap.owner, 'acquire_source', side_effect=fetch):
+        template.write_text('{{ 1 / 0 }}\n')
+        template.chmod(0o664)
         assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
         final = helper.read_bytes()
         assert (install / 'current').readlink() == before
@@ -103,7 +106,7 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
         assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' in normal.stderr
         assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
         assert helper.read_bytes() == final
-        assert len(fetches) == 2
+        assert fetches == [('example/product', HEAD), ('example/product', OLD)] * 2
         (controller / 'deploy/owner_lifecycle.py').write_text('# modified\n')
         with pytest.raises(ValueError, match='bootstrap-controller-drift'):
             bootstrap.bootstrap(config, HEAD, filesystem_root=root)
