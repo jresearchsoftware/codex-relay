@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Apply accepted product and configuration main, stop, or resume
+        description: Apply, stop, resume, or recover with reviewed Runner maintenance declaration
         type: choice
         required: true
         default: apply
-        options: [apply, stop, resume]
+        options: [apply, stop, resume, recover]
 
 permissions:
   contents: read
@@ -40,6 +40,7 @@ jobs:
           NODE_PATH: ''
         run: |
           @@GENERAL_RUNNER_GUARD@@
+          @@OWNER_RECOVERY_GUARD@@
           /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
           import { spawn } from 'node:child_process';
@@ -52,7 +53,7 @@ jobs:
           if (!/^[0-9a-f]{40}$/.test(installed ?? '') ||
               release !== `/opt/@@NAMESPACE@@/releases/${installed}` ||
               !/^[0-9a-f]{40}$/.test(sha ?? '') || !/^[1-9][0-9]{0,19}$/.test(run ?? '') ||
-              !['apply', 'stop', 'resume'].includes(action)) throw new Error('RELAY_GIT_DISPATCH_INVALID');
+              !['apply', 'stop', 'resume', 'recover'].includes(action)) throw new Error('RELAY_GIT_DISPATCH_INVALID');
           const child = spawn('/usr/bin/sudo', ['-n', '/usr/local/sbin/@@NAMESPACE@@-owner-lifecycle',
             `git:${action}:${installed}:${sha}:${run}`],
             { env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' }, stdio: ['pipe', 'inherit', 'inherit'] });

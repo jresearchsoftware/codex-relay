@@ -55,6 +55,32 @@ def fixture(raw=DEFAULT_CONFIG):
 
 
 class GitIntentTests(unittest.TestCase):
+    def test_recovery_attestation_is_bound_to_same_private_commit_blob_and_fixed_path(self):
+        binding, dispatch, values, calls, api = fixture()
+        declaration = {'operationId': '12345678-1234-1234-1234-123456789abc',
+            'retainedTarget': 'd' * 40, 'runners': {'production': {'runnerId': 55, 'runnerName': 'example'}}}
+        raw = json.dumps(declaration).encode()
+        blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+        prefix = '/repos/' + PRIVATE
+        values[prefix + '/git/trees/' + 'c' * 40]['tree'].append({
+            'path': 'production.json.runner-maintenance.json', 'type': 'blob', 'mode': '100644', 'sha': blob})
+        blob_path = prefix + '/git/blobs/' + blob
+        values[blob_path] = {'sha': blob, 'encoding': 'base64', 'size': len(raw),
+                             'content': base64.b64encode(raw).decode()}
+        dispatch['action'] = 'recover'
+        self.assertEqual(intent.resolve_pair(binding, dispatch, TOKEN, api=api)['receipt']['action'], 'recover')
+        self.assertEqual(intent.recovery_declaration(binding, CONFIG_SHA, TOKEN, api=api), (raw, declaration))
+        self.assertIn((prefix + '/git/trees/' + CONFIG_SHA, TOKEN), calls)
+        for change in [{'sha': 'e' * 40}, {'size': 16385}, {'encoding': 'utf-8'}, {'content': '%%%'}]:
+            original = copy.deepcopy(values[blob_path])
+            values[blob_path].update(change)
+            with self.assertRaises(intent.GitIntentError):
+                intent.recovery_declaration(binding, CONFIG_SHA, TOKEN, api=api)
+            values[blob_path] = original
+        values[prefix + '/git/trees/' + 'c' * 40]['tree'][-1]['mode'] = '120000'
+        with self.assertRaises(intent.GitIntentError):
+            intent.recovery_declaration(binding, CONFIG_SHA, TOKEN, api=api)
+
     def test_freezes_pair_and_keeps_product_anonymous(self):
         binding, dispatch, values, calls, api = fixture()
         result = intent.resolve_pair(binding, dispatch, TOKEN, api=api)

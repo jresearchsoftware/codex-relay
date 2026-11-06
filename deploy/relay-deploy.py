@@ -214,7 +214,9 @@ def arguments():
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--connection', choices=['ssh', 'local'],
                    help='Ansible connection override; preserves the exact deployment configuration binding')
-    p.add_argument('--phase', choices=[*PHASES, 'validate', 'install'], required=True)
+    p.add_argument('--phase', choices=[*PHASES, 'validate', 'install', 'owner-lifecycle-bootstrap'], required=True)
+    p.add_argument('--authorize-owner-lifecycle-bootstrap', action='store_true',
+                   help='Refresh only the fixed Git recovery transport from accepted source; local root only')
     p.add_argument('--requested-revision', help='selector already resolved by the trusted acquisition/bootstrap')
     p.add_argument('--resolved-revision', help='exact acquisition result; must equal this clean checkout')
     p.add_argument('--consumer-root', type=Path, help='consumer Git checkout when durable config is stored separately')
@@ -278,6 +280,19 @@ def arguments():
 
 def run(args):
     os.umask(0o077)
+    if args.phase == 'owner-lifecycle-bootstrap':
+        require(args.authorize_owner_lifecycle_bootstrap and args.connection == 'local',
+                'explicit-local-owner-lifecycle-bootstrap-required')
+        require(not any(value for key, value in vars(args).items()
+                        if key.startswith('authorize_') and key != 'authorize_owner_lifecycle_bootstrap'),
+                'bootstrap-authorization-flags-invalid')
+        identity = source_identity(ROOT)
+        require(args.resolved_revision == identity['revision'], 'bootstrap-exact-source-required')
+        from owner_lifecycle_bootstrap import bootstrap
+        result = bootstrap(load(args.config, ROOT), identity['revision'])
+        print('RELAY_OWNER_LIFECYCLE_BOOTSTRAPPED=' + result + ';services=unchanged;admission=unchanged')
+        return
+    require(not getattr(args, 'authorize_owner_lifecycle_bootstrap', False), 'bootstrap-interface-only')
     if args.phase == 'install':
         from intent_install import run as install
         return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
