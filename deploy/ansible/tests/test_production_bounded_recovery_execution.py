@@ -218,7 +218,8 @@ class ProductionBoundedBackendExecutionTests(unittest.TestCase):
                 self.assertFalse(fixture.record.exists())
 
     def test_gate_only_begin_rechecks_absence_gate_and_receipt_under_lock(self):
-        for damage in ("gate-phase", "gate-snapshot", "receipt", "receipt-digest", "receipt-bytes", "concurrent-record", "dangling-record"):
+        for damage in ("gate-phase", "gate-snapshot", "receipt", "receipt-digest", "receipt-bytes",
+                       "receipt-maintenance", "concurrent-record", "dangling-record"):
             with self.subTest(damage=damage), BoundedBackendFixture(gate_only=True) as fixture:
                 tasks = self.include("production-operation-state.yml")
                 if damage.startswith("gate-"):
@@ -234,6 +235,11 @@ class ProductionBoundedBackendExecutionTests(unittest.TestCase):
                     value, path = {**fixture.receipt, "desiredDigest": "9" * 64}, fixture.paths["receipt"]
                 elif damage == "receipt-bytes":
                     value, path = fixture.receipt, fixture.paths["receipt"]
+                elif damage == "receipt-maintenance":
+                    binding = {**fixture.binding, "runnerMaintenance": {
+                        "operationId": OPERATION, "retainedTarget": ORIGINAL,
+                        "runners": {"production": {"runnerId": 55, "runnerName": "sample-production-runner"}}}}
+                    value, path = {**fixture.receipt, "binding": binding}, fixture.paths["receipt"]
                 else:
                     value, path = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED", "phase": "apply",
                                    "target_head": DESIRED}, fixture.record
