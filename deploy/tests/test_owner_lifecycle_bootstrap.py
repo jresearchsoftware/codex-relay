@@ -48,7 +48,13 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
     (install / 'current').symlink_to(installed_source.parent)
     template = installed_source / bootstrap.TEMPLATE
     template.parent.mkdir(parents=True)
-    template.write_bytes((REPO / bootstrap.TEMPLATE).read_bytes())
+    # The actual retained release cannot understand the new recover grammar.
+    template.write_bytes(subprocess.check_output(['git', '-C', str(REPO), 'show',
+        '5cac0e4973eaa945b90813ae831724456292a2e0:' + bootstrap.TEMPLATE]))
+    names = ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py',
+             'deployment_lock.py', 'git_intent.py', 'repository_source.py']
+    for name in names:
+        shutil.copyfile(REPO / 'deploy' / name, installed_source / 'deploy' / name)
     helper.write_bytes(bootstrap.render(installed_source, install))
     helper.chmod(0o755)
     config = {'source': {'repository': 'https://github.com/example/product'}, 'consumer': {'owner': 'owner'},
@@ -68,6 +74,8 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
         for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py',
                      'deployment_lock.py', 'git_intent.py', 'repository_source.py', 'installation-contract.json']:
             shutil.copyfile(REPO / 'deploy' / name, directory / 'deploy' / name)
+        (directory / 'deploy/owner_lifecycle.py').write_text(
+            'import json,sys\nprint("BOOTSTRAP_SELECTED="+json.dumps(sys.argv[1:]))\n')
         target = directory / bootstrap.TEMPLATE
         target.parent.mkdir(parents=True)
         shutil.copyfile(REPO / bootstrap.TEMPLATE, target)
@@ -83,6 +91,16 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
         assert (install / 'current').readlink() == before
         controller = root / 'var/lib/fixture/owner-lifecycle-controllers' / HEAD
         assert final == bootstrap.render(controller, install, controller)
+        request = 'git:recover:' + OLD + ':' + HEAD + ':31'
+        selected = subprocess.run([str(helper), request], text=True, capture_output=True, timeout=15)
+        assert selected.returncode == 0, selected.stderr
+        assert json.loads(selected.stdout.removeprefix('BOOTSTRAP_SELECTED=')) == [
+            request, '--installed-source', str(installed_source)]
+        # A normal command still reaches installed code, never the bootstrap controller.
+        normal = subprocess.run([str(helper), 'stop:' + OLD + ':' + HEAD],
+                                text=True, capture_output=True, timeout=15)
+        assert 'BOOTSTRAP_SELECTED=' not in normal.stdout
+        assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' in normal.stderr
         assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
         assert helper.read_bytes() == final
         assert len(fetches) == 2

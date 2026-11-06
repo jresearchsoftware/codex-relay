@@ -252,6 +252,27 @@ def test_all_six_general_members_execute_apply_stop_resume_transport(installed_r
                 '-n', '/usr/local/sbin/codex-relay-owner-lifecycle', action + ':' + HEAD + ':' + CONSUMER_HEAD]}]
 
 
+def test_private_git_actions_include_explicit_recover_through_each_existing_member(installed_runtime):
+    execute, _ = installed_runtime
+    value = pool_configuration()
+    value['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/private-config',
+                                         'configPath': 'prod/relay.json'}
+    value = normalized(value)
+    workflow = yaml.safe_load(workflow_projection.render_deployment(value, HEAD, ROOT)[workflow_projection.PRODUCTION])
+    assert workflow[True]['workflow_dispatch']['inputs']['action']['options'] == ['apply', 'stop', 'resume', 'recover']
+    selected = step(workflow)
+    for member in value['consumer']['executionSlots'][:6]:
+        for action in ['apply', 'stop', 'resume', 'recover']:
+            result = execute(selected, member['runnerName'], member['runnerUser'],
+                             GITHUB_RUN_ID='31', RELAY_LIFECYCLE_ACTION=action,
+                             RELAY_GIT_TOKEN='synthetic-private-workflow-token')
+            assert result.returncode == 0, result.stderr
+            assert calls(result) == [{'kind': 'lifecycle', 'slot': None, 'args': [
+                '-n', '/usr/local/sbin/codex-relay-owner-lifecycle',
+                'git:' + action + ':' + HEAD + ':' + CONSUMER_HEAD + ':31']}]
+            assert 'synthetic-private-workflow-token' not in result.stdout + result.stderr
+
+
 @pytest.mark.parametrize('capacity,members', [(6, [0, 1, 5]), (1, [0])])
 def test_routing_and_recovery_transport_targets_survive_retired_original_member(
         installed_runtime, capacity, members):
