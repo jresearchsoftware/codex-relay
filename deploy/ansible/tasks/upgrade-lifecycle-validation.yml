@@ -1,6 +1,10 @@
 ---
 # Migration retains actual target-pool activity, not the stopped SERIAL unit.
 # The same PID/start-time checks remain binding for any already active peer pool.
+- name: Reprove maintained runners and unchanged Reviewer before final acceptance
+  ansible.builtin.include_tasks: upgrade-maintained-runners.yml
+  when: relay_upgrade_lifecycle_maintenance_proof is defined
+
 - name: Inspect managed upgrade service activity after exact installed proof
   ansible.builtin.command:
     argv:
@@ -20,7 +24,7 @@
       - item.stdout is search('(?m)^NeedDaemonReload=no$')
       - >-
         (
-          (relay_upgrade_lifecycle_previous_active[component].active | bool) and
+          ((relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active))[component].active | bool) and
           item.stdout is search('(?m)^ActiveState=active$') and
           (
             (component == 'manualOutcome' and item.stdout is search('(?m)^SubState=listening$')) or
@@ -30,7 +34,7 @@
           )
         ) or
         (
-          not (relay_upgrade_lifecycle_previous_active[component].active | bool) and
+          not ((relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active))[component].active | bool) and
           item.stdout is search('(?m)^ActiveState=(inactive|failed)$')
         )
       - >-
@@ -62,6 +66,7 @@
   loop_control:
     loop_var: service_index
   when:
+    - relay_upgrade_lifecycle_maintenance_proof is not defined
     - relay_upgrade_lifecycle_previous_active[['reviewer', 'production'][service_index]].active | bool
     - relay_upgrade_lifecycle_initial_services.results[service_index].stdout is search('(?m)^ActiveState=active$')
 
@@ -90,7 +95,19 @@
   loop: '{{ relay_additional_execution_slots | default([]) }}'
   loop_control:
     index_var: slot_index
-  when: relay_upgrade_lifecycle_previous_active['slot-' ~ item.relay_execution_slot].active | bool
+  when: (relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active))['slot-' ~ item.relay_execution_slot].active | bool
+
+- name: Prove the maintained Production Runner retained its exact live process
+  ansible.builtin.assert:
+    that:
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[1].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[1].stdout | regex_findall('(?m)^MainPID=([1-9][0-9]*)$'))
+      - >-
+        (relay_upgrade_lifecycle_initial_services.results[1].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$')) ==
+        (relay_upgrade_lifecycle_final_services.results[1].stdout | regex_findall('(?m)^ExecMainStartTimestampMonotonic=([1-9][0-9]*)$'))
+    fail_msg: RELAY_UPGRADE_MAINTAINED_PRODUCTION_TRANSPORT_CHANGED
+  when: relay_upgrade_lifecycle_maintenance_proof is defined
 
 - name: Report same-operation activation and general transport proof
   ansible.builtin.debug:

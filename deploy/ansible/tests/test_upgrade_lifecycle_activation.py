@@ -46,7 +46,8 @@ class UpgradeActivationTests(unittest.TestCase):
         return subprocess.run(['ansible-playbook', '-i', 'localhost,', str(play)],
                               env=env, text=True, capture_output=True, timeout=75)
 
-    def fixture(self, root, initial, final, *, legacy_snapshot=False, execution_slots=False):
+    def fixture(self, root, initial, final, *, legacy_snapshot=False, execution_slots=False,
+                gate_root=None, target=HEAD, initial_target=None):
         initial = {**initial, 'codex-relay-relay-manual-outcome.socket': initial.get(
             'codex-relay-relay-manual-outcome.socket', socket_state())}
         final = {**final, 'codex-relay-relay-manual-outcome.socket': final.get(
@@ -68,7 +69,7 @@ class UpgradeActivationTests(unittest.TestCase):
             f'Path({str(state)!r}).write_text({json.dumps(final)!r})\n'
         )
         restart.chmod(0o755)
-        gate_root = root / 'gate'
+        gate_root = gate_root or root / 'gate'
         gate_root.mkdir(exist_ok=True, mode=0o700)
         admission = root / 'admission.mjs'
         admission.write_text(
@@ -81,7 +82,7 @@ class UpgradeActivationTests(unittest.TestCase):
             'const [action,flag,operationId,phaseFlag,phase]=process.argv.slice(2);\n'
             'if(flag!=="--operation") throw Error("fixture operation missing");\n'
             'try {await access(root+"/admission-v1.json");} catch {\n'
-            'await gate.initialize(); await gate.quiesce({operationId,target:"a".repeat(40)});'
+            'await gate.initialize(); await gate.quiesce({operationId,target:' + json.dumps(initial_target or target) + '});'
             'await gate.drained({operationId}); await gate.phase({operationId,phase:"applying"});}\n'
             'let output; if(action==="snapshot") {let input=""; for await(const chunk of process.stdin) input+=chunk;'
             'const services=JSON.parse(input);'
@@ -91,7 +92,8 @@ class UpgradeActivationTests(unittest.TestCase):
                'throw Object.assign(Error("ADMISSION_SNAPSHOT_INVALID"),{code:"ADMISSION_SNAPSHOT_INVALID"});'
                if legacy_snapshot else '') +
             'output=await gate.snapshot({operationId,services});}\n'
-            'else if(action==="phase" && phaseFlag==="--phase") output=await gate.phase({operationId,phase});\n'
+            'else if(action==="phase" && phaseFlag==="--phase") output=await gate.phase({operationId,phase,revision:phase==="verified"?' + json.dumps(target) + ':undefined});\n'
+            'else if(action==="resume") output=await gate.resume({operationId});\n'
             'else throw Error("fixture action invalid");\nconsole.log(JSON.stringify(output));\n')
         gate_helper = root / 'relay-admission'
         consumer_fixture = root / 'consumer.json'
@@ -130,7 +132,7 @@ class UpgradeActivationTests(unittest.TestCase):
             'relay_reviewer_operation_restart_path': str(restart),
             'relay_reviewer_bind_address': '127.0.0.1',
             'relay_reviewer_bind_port': listener.getsockname()[1],
-            'relay_production_operation_target_head': HEAD,
+            'relay_production_operation_target_head': target,
             'relay_install_root': str(root), 'relay_admission_operation_id': OPERATION,
         }
         if execution_slots:
@@ -138,6 +140,101 @@ class UpgradeActivationTests(unittest.TestCase):
                 'relay_execution_slot': 'second',
                 'relay_runner_service_name': 'codex-relay-slot-second-runner.service'}]
         return tasks, values, trace
+
+    def maintained_fixture(self, root, initial, final, declaration, *, backend=None):
+        options = ({"gate_root": backend.paths["gate"].parent, "target": backend.binding["desiredRevision"],
+                    "initial_target": backend.binding["retainedTarget"]} if backend else {})
+        tasks, values, trace = self.fixture(root, initial, final, **options)
+        import sys
+        sys.path.insert(0, str(ROOT.parents[1] / 'deploy/tests'))
+        from test_retained_activation import payload
+        data = payload()
+        if backend:
+            data["binding"] = backend.binding
+        consumer = dict(data['config']['consumer'])
+        consumer['executionSlots'] = consumer['executionSlots'][:6]
+        (root / 'consumer.json').write_text(json.dumps(consumer))
+        values.update(relay_additional_execution_slots=[{
+            'relay_execution_slot': 'pool-' + str(number),
+            'relay_runner_service_name': 'pool-' + str(number) + '.service'} for number in range(2, 7)])
+        if declaration:
+            values.update(relay_admission_recovery_authorized=True,
+                          relay_bounded_recovery_binding=data['binding'],
+                          relay_installed_deployment_config=json.dumps(data['config']),
+                          relay_intent_staged_release=str(root),
+                          relay_intent_admission_prefix=[str(root / 'relay-admission')])
+            probe = root / 'maintenance-probe.py'
+            probe.write_text(
+                'import json,sys\nfrom pathlib import Path\n'
+                f'sys.path[:0]=[{str(ROOT.parents[1] / "deploy")!r},{str(ROOT.parents[1] / "deploy/tests")!r}]\n'
+                'from retained_activation import prove\nfrom test_retained_activation import Evidence\n'
+                'value=json.load(sys.stdin)\nnative=Evidence(value)\n'
+                f'gate=Path({str(backend.paths["gate"] if backend else root / "gate/admission-v1.json")!r})\n'
+                'def authority():\n state=json.loads(gate.read_text())\n'
+                ' assert state["operationId"]==value["binding"]["operationId"]\n'
+                ' assert state["phase"]=="applying"\n'
+                ' assert state["previousActive"]==value["previous"]\n'
+                'native.authority=authority\nprint(json.dumps(prove(value,native)))\n')
+            proof_tasks = yaml.safe_load((ROOT / 'tasks/upgrade-maintained-runners.yml').read_text())
+            proof_tasks[0]['ansible.builtin.command']['argv'] = ['/usr/bin/python3', str(probe)]
+            (root / 'upgrade-maintained-runners.yml').write_text(yaml.safe_dump(proof_tasks, sort_keys=False))
+        return tasks, values, trace
+
+    def test_owner_repaired_six_runners_complete_same_operation_without_restarting_them(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                        'production.service': service(enabled='enabled'),
+                        'general.service': service(43, active=True, enabled='enabled'),
+                        **{'pool-' + str(i) + '.service': service(enabled='enabled') for i in range(2, 7)}}
+            tasks, values, _ = self.maintained_fixture(root, original, original, False)
+            first = self.run_play(root, tasks[:1], values)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
+            history = root / 'gate/historical-evidence'
+            history.write_bytes(b'preserved original attempts\n')
+            helper = root / 'relay-admission'
+            for phase in ('recovery-required', 'applying'):
+                subprocess.run([str(helper), 'phase', '--operation', OPERATION, '--phase', phase],
+                               check=True, capture_output=True)
+            repaired = {**original, 'production.service': service(52, active=True, enabled='enabled'),
+                        **{'pool-' + str(i) + '.service': service(60 + i, active=True, enabled='enabled') for i in range(2, 7)}}
+            tasks, values, trace = self.maintained_fixture(root, repaired, repaired, True)
+            result = self.run_play(root, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=', result.stdout)
+            self.assertFalse(trace.exists(), 'healthy repaired processes must not be restarted')
+            self.assertEqual(json.loads((root / 'gate/admission-v1.json').read_text())['previousActive'], saved)
+            subprocess.run([str(helper), 'phase', '--operation', OPERATION, '--phase', 'verified'],
+                           check=True, capture_output=True)
+            subprocess.run([str(helper), 'resume', '--operation', OPERATION], check=True, capture_output=True)
+            self.assertEqual(json.loads((root / 'gate/admission-v1.json').read_text())['phase'], 'open')
+            self.assertEqual(history.read_bytes(), b'preserved original attempts\n')
+
+    def test_restored_runner_transport_loss_still_refuses_final_acceptance(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                        'production.service': service(enabled='enabled'),
+                        'general.service': service(43, active=True, enabled='enabled'),
+                        **{'pool-' + str(i) + '.service': service(enabled='enabled') for i in range(2, 7)}}
+            tasks, values, _ = self.maintained_fixture(root, original, original, False)
+            self.assertEqual(self.run_play(root, tasks[:1], values).returncode, 0)
+            repaired = {**original, 'production.service': service(52, active=True, enabled='enabled'),
+                        **{'pool-' + str(i) + '.service': service(60 + i, active=True, enabled='enabled') for i in range(2, 7)}}
+            for phase in ('recovery-required', 'applying'):
+                subprocess.run([str(root / 'relay-admission'), 'phase', '--operation', OPERATION, '--phase', phase],
+                               check=True, capture_output=True)
+            tasks, values, _ = self.maintained_fixture(root, repaired, repaired, True)
+            # Inject a lost/replaced transport after the real snapshot/proof.
+            changed = {**repaired, 'pool-2.service': service(99, active=True, enabled='enabled'),
+                       'codex-relay-relay-manual-outcome.socket': socket_state()}
+            tasks.insert(1, {'ansible.builtin.copy': {'dest': str(root / 'state.json'), 'content': json.dumps(changed)}})
+            result = self.run_play(root, tasks, values)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('RELAY_UPGRADE_SLOT_TRANSPORT_CHANGED', result.stdout)
+            self.assertNotIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=', result.stdout)
+            self.assertEqual(json.loads((root / 'gate/admission-v1.json').read_text())['phase'], 'applying')
 
     def test_extra_slot_activity_and_live_transport_are_retained_in_the_same_operation(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -115,16 +115,27 @@
       {{ {'manualOutcome': {'active': false, 'enabled': 'disabled', 'load': 'not-found'}} |
          combine(relay_upgrade_lifecycle_retained_state.previousActive) }}
 
+- name: Prove explicitly owner-maintained runners before selecting recovery activity
+  ansible.builtin.include_tasks: upgrade-maintained-runners.yml
+  when:
+    - relay_admission_recovery_authorized | default(false) | bool
+    - (relay_bounded_recovery_binding | default({})).runnerMaintenance is defined
+
+- name: Select original activity when no maintained Runner continuation was declared
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_effective_active: '{{ relay_upgrade_lifecycle_previous_active }}'
+  when: relay_upgrade_lifecycle_maintenance_proof is not defined
+
 - name: Retain the previously active components and general transport identity
   ansible.builtin.set_fact:
-    relay_upgrade_lifecycle_reviewer_was_active: '{{ relay_upgrade_lifecycle_previous_active.reviewer.active }}'
-    relay_upgrade_lifecycle_production_was_active: '{{ relay_upgrade_lifecycle_previous_active.production.active }}'
-    relay_upgrade_lifecycle_general_was_active: '{{ relay_upgrade_lifecycle_previous_active.general.active }}'
+    relay_upgrade_lifecycle_reviewer_was_active: '{{ relay_upgrade_lifecycle_effective_active.reviewer.active }}'
+    relay_upgrade_lifecycle_production_was_active: '{{ relay_upgrade_lifecycle_effective_active.production.active }}'
+    relay_upgrade_lifecycle_general_was_active: '{{ relay_upgrade_lifecycle_effective_active.general.active }}'
 
 - name: Require exact retained intent before any managed recovery activation
   ansible.builtin.assert:
     that:
-      - not relay_upgrade_lifecycle_observed_activity[item].active or relay_upgrade_lifecycle_previous_active[item].active
+      - not relay_upgrade_lifecycle_observed_activity[item].active or relay_upgrade_lifecycle_effective_active[item].active
       - >-
         not relay_upgrade_lifecycle_previous_active[item].active or
         relay_upgrade_lifecycle_observed_activity[item].active or

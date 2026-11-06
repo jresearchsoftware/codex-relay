@@ -35,6 +35,10 @@ def native_root_available():
 
 
 class BoundedBackendFixture:
+    def __init__(self, *, gate_only=False, reserve=True):
+        self.gate_only = gate_only
+        self.reserve_immediately = reserve
+
     def __enter__(self):
         try:
             return self.initialize()
@@ -63,7 +67,8 @@ class BoundedBackendFixture:
         self.record = self.paths["record"]
         self.raw = (json.dumps({"schemaVersion": "1", "state": "RECOVERY_REQUIRED",
             "phase": "apply", "target_head": ORIGINAL}, indent=2) + "\n").encode()
-        self.write(self.record, self.raw)
+        if not self.gate_only:
+            self.write(self.record, self.raw)
         config_root = Path("/etc") / self.namespace
         config_root.mkdir(mode=0o700)
         self.config_root = config_root
@@ -75,6 +80,11 @@ class BoundedBackendFixture:
             "previousActive": {"reviewer": {"active": True}, "production": {"active": True}},
             "verifiedRevision": None}
         self.save_gate()
+        if self.reserve_immediately:
+            self.reserve()
+        return self
+
+    def reserve(self):
         proof = recovery.inspect(self.config, self.binding)
         self.receipt = recovery.begin(self.config, self.binding, proof,
             admission_probe=lambda request: {**request, "currentDigest": self.gate["consumerDigest"],
@@ -82,7 +92,6 @@ class BoundedBackendFixture:
                 "desiredDigest": "f" * 64})
         self.gate.update(phase="applying", target=DESIRED)
         self.save_gate()
-        return self
 
     def __exit__(self, *_):
         if hasattr(self, "paths"):
@@ -153,6 +162,158 @@ class ProductionBoundedBackendExecutionTests(unittest.TestCase):
     @staticmethod
     def include(name):
         return "- ansible.builtin.include_tasks: " + json.dumps(str(ROOT / "tasks" / name)) + "\n"
+
+    def test_gate_only_preflight_begin_and_clear_preserve_absence_provenance(self):
+        with BoundedBackendFixture(gate_only=True) as fixture:
+            tasks = self.include("production-operation-state.yml")
+            tasks += ("- ansible.builtin.assert:\n    that:\n"
+                "      - not relay_production_operation_record_present | bool\n"
+                "      - relay_production_operation_continuation.backendAbsent\n")
+            tasks += self.include("production-operation-state-begin.yml")
+            result = self.run_tasks(fixture, tasks)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(fixture.record.read_bytes()), {
+                "schemaVersion": "1", "state": "RECOVERY_REQUIRED", "phase": "apply", "target_head": DESIRED})
+            # A later inspection recognizes the created desired reservation while
+            # retaining the original absence and original target in the receipt.
+            result = self.run_tasks(fixture, self.include("production-operation-state.yml"))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            fixture.select_desired()
+            variables = fixture.variables()
+            variables["relay_production_operation_clear_head"] = DESIRED
+            result = self.run_tasks(fixture, self.include("production-operation-state-clear.yml"), variables)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(fixture.record.exists())
+            receipt = json.loads(fixture.paths["receipt"].read_bytes())
+            self.assertEqual(receipt["original"], fixture.receipt["original"])
+            self.assertTrue(receipt["original"]["backendAbsent"])
+            self.assertEqual(receipt["original"]["backendBytes"], "")
+            self.assertFalse(fixture.paths["receipt"].with_name(fixture.paths["receipt"].stem + ".original.json").exists())
+
+    def test_gate_only_preflight_rejects_unproven_original_binding(self):
+        for damage in ("missing-gate", "changed-snapshot", "wrong-admission-uuid", "wrong-retained-target",
+                       "wrong-selected-target", "missing-receipt", "missing-authorization", "lost-original-record"):
+            with self.subTest(damage=damage), BoundedBackendFixture(gate_only=damage != "lost-original-record") as fixture:
+                variables = fixture.variables()
+                if damage == "missing-gate":
+                    fixture.paths["gate"].unlink()
+                elif damage == "changed-snapshot":
+                    fixture.gate["previousActive"]["production"]["active"] = False
+                    fixture.save_gate()
+                elif damage == "wrong-admission-uuid":
+                    variables["relay_admission_operation_id"] = "87654321-1234-1234-1234-123456789abc"
+                elif damage == "wrong-retained-target":
+                    variables["relay_bounded_recovery_binding"] = {**fixture.binding, "retainedTarget": "9" * 40}
+                elif damage == "wrong-selected-target":
+                    variables["relay_production_operation_target_head"] = "9" * 40
+                elif damage == "missing-receipt":
+                    fixture.paths["receipt"].unlink()
+                elif damage == "missing-authorization":
+                    variables["relay_admission_recovery_authorized"] = False
+                else:
+                    fixture.record.unlink()
+                result = self.run_tasks(fixture, self.include("production-operation-state.yml") +
+                    self.include("production-operation-state-begin.yml"), variables)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(fixture.record.exists())
+
+    def test_gate_only_begin_rechecks_absence_gate_and_receipt_under_lock(self):
+        for damage in ("gate-phase", "gate-snapshot", "receipt", "receipt-digest", "receipt-bytes",
+                       "receipt-maintenance", "concurrent-record", "dangling-record"):
+            with self.subTest(damage=damage), BoundedBackendFixture(gate_only=True) as fixture:
+                tasks = self.include("production-operation-state.yml")
+                if damage.startswith("gate-"):
+                    value = {**fixture.gate}
+                    if damage == "gate-phase":
+                        value["phase"] = "recovery-required"
+                    else:
+                        value["previousActive"] = {}
+                    path = fixture.paths["gate"]
+                elif damage == "receipt":
+                    value, path = {**fixture.receipt, "state": "complete"}, fixture.paths["receipt"]
+                elif damage == "receipt-digest":
+                    value, path = {**fixture.receipt, "desiredDigest": "9" * 64}, fixture.paths["receipt"]
+                elif damage == "receipt-bytes":
+                    value, path = fixture.receipt, fixture.paths["receipt"]
+                elif damage == "receipt-maintenance":
+                    binding = {**fixture.binding, "runnerMaintenance": {
+                        "operationId": OPERATION, "retainedTarget": ORIGINAL,
+                        "runners": {"production": {"runnerId": 55, "runnerName": "sample-production-runner"}}}}
+                    value, path = {**fixture.receipt, "binding": binding}, fixture.paths["receipt"]
+                else:
+                    value, path = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED", "phase": "apply",
+                                   "target_head": DESIRED}, fixture.record
+                if damage == "dangling-record":
+                    tasks += "- ansible.builtin.file:\n    state: link\n    force: true\n    src: /absent-relay-fixture\n    dest: " + json.dumps(str(path)) + "\n"
+                else:
+                    raw = json.dumps(value) + ("\n\n" if damage == "receipt-bytes" else "")
+                    tasks += "- ansible.builtin.copy:\n    mode: '0600'\n    dest: " + json.dumps(str(path)) + "\n    content: " + json.dumps(raw) + "\n"
+                tasks += self.include("production-operation-state-begin.yml")
+                result = self.run_tasks(fixture, tasks)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertRegex(result.stdout + result.stderr, "BOUNDED_RECOVERY_|PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID")
+                if damage not in ("concurrent-record", "dangling-record"):
+                    self.assertFalse(fixture.record.exists())
+                self.assertEqual(json.loads(fixture.paths["receipt"].read_bytes())["original"], fixture.receipt["original"])
+
+    def test_actual_gate_only_ansible_path_restores_six_known_runners_and_opens_same_operation(self):
+        from test_upgrade_lifecycle_activation import UpgradeActivationTests, service
+        sys.path.insert(0, str(ROOT.parent / "tests"))
+        from test_retained_activation import payload
+        with BoundedBackendFixture(gate_only=True, reserve=False) as fixture:
+            harness = UpgradeActivationTests()
+            self.addCleanup(harness.doCleanups)
+            original = {"reviewer.service": service(41, active=True, enabled="enabled"),
+                        "production.service": service(enabled="enabled"),
+                        "general.service": service(43, active=True, enabled="enabled"),
+                        **{"pool-" + str(i) + ".service": service(enabled="enabled") for i in range(2, 7)}}
+            maintenance = payload()["binding"]["runnerMaintenance"]
+            fixture.binding["runnerMaintenance"] = {**maintenance, "retainedTarget": ORIGINAL}
+            fixture.paths["gate"].unlink()
+            tasks, values, _ = harness.maintained_fixture(fixture.work, original, original, False, backend=fixture)
+            result = harness.run_play(fixture.work, tasks[:1], values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            fixture.gate = json.loads(fixture.paths["gate"].read_bytes())
+            saved = fixture.gate["previousActive"]
+            fixture.gate["phase"] = "recovery-required"
+            fixture.save_gate()
+            fixture.reserve()
+            repaired = {**original, "production.service": service(52, active=True, enabled="enabled"),
+                        **{"pool-" + str(i) + ".service": service(60 + i, active=True, enabled="enabled") for i in range(2, 7)}}
+            tasks, values, trace = harness.maintained_fixture(fixture.work, repaired, repaired, True, backend=fixture)
+            values.update(fixture.variables())
+            # The service adapter uses synthetic codex-relay unit names; all
+            # protected backend paths still use the unique fixture namespace.
+            values["relay_namespace"] = "codex-relay"
+            tasks = [{"ansible.builtin.include_tasks": str(ROOT / "tasks/production-operation-state.yml")},
+                     tasks[0], {"ansible.builtin.include_tasks": str(ROOT / "tasks/production-operation-state-begin.yml")},
+                     *tasks[1:]]
+            history = fixture.work / "history"
+            history.write_bytes(b"immutable historical attempts")
+            result = harness.run_play(fixture.work, tasks, values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("RELAY_UPGRADE_ACTIVATION_VALIDATED=", result.stdout)
+            self.assertFalse(trace.exists(), "healthy maintained processes must survive")
+            fixture.select_desired()
+            values["relay_production_operation_clear_head"] = DESIRED
+            result = harness.run_play(fixture.work, [{"ansible.builtin.include_tasks": str(
+                ROOT / "tasks/production-operation-state-clear.yml")}], values)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            helper = str(fixture.work / "relay-admission")
+            for arguments in (["phase", "--operation", OPERATION, "--phase", "verified"],
+                              ["resume", "--operation", OPERATION]):
+                subprocess.run([helper, *arguments], check=True, capture_output=True)
+                gate = json.loads(fixture.paths["gate"].read_bytes())
+                if arguments[0] == "phase":
+                    self.assertEqual((gate["operationId"], gate["phase"], gate["verifiedRevision"]),
+                                     (OPERATION, "verified", DESIRED))
+                    self.assertEqual(gate["previousActive"], saved)
+            gate = json.loads(fixture.paths["gate"].read_bytes())
+            self.assertEqual(gate["phase"], "open")
+            self.assertEqual(history.read_bytes(), b"immutable historical attempts")
+            self.assertFalse(fixture.record.exists())
+            self.assertEqual(json.loads(fixture.paths["receipt"].read_bytes())["original"], fixture.receipt["original"])
+            self.assertFalse(fixture.paths["receipt"].with_name(fixture.paths["receipt"].stem + ".original.json").exists())
 
     def test_new_target_retains_original_record_until_validated_archive_and_clear(self):
         with BoundedBackendFixture() as fixture:

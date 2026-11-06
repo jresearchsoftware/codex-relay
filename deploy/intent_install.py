@@ -513,6 +513,16 @@ def run(args, primitive, root, identity, *, guard_factory=None):
     require(os.sys.platform == 'linux', 'LINUX_CONTROLLER_REQUIRED')
     require(args.resolved_revision == identity['revision'], 'EXACT_PRODUCT_TARGET_REQUIRED')
     bounded_requested = getattr(args, 'authorize_install_recovery', False)
+    maintenance_path = getattr(args, 'retained_runner_maintenance', None)
+    require(maintenance_path is None or bounded_requested and not getattr(args, 'continue_install_recovery', False),
+            'RUNNER_MAINTENANCE_BOUNDED_RECOVERY_ONLY')
+    maintenance = None
+    if maintenance_path is not None:
+        from bounded_recovery import decode
+        with Path(maintenance_path).open('rb') as stream:
+            raw = stream.read(16385)
+        require(len(raw) <= 16384, 'RUNNER_MAINTENANCE_SIZE')
+        maintenance = decode(raw)
     require(not any(getattr(args, key, False) for key in vars(args)
                     if key.startswith('authorize_') and key != 'authorize_install_recovery'),
             'EXPERT_AUTHORIZATION_FLAGS_INVALID')
@@ -597,6 +607,8 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     'retainedTarget': args.install_recovery_target, 'installedRevision': args.install_recovery_target,
                     'controllerRevision': identity['revision'], 'desiredRevision': identity['revision'],
                     'gitConfigReceipt': copy.deepcopy(receipt)}
+                if maintenance is not None:
+                    bounded_binding['runnerMaintenance'] = maintenance
                 from bounded_recovery import remote_probe as bounded_probe
                 stage = 'bounded-recovery-proof'
                 bounded_proof = bounded_probe(target, key, config, bounded_binding, guard, pool_guard)

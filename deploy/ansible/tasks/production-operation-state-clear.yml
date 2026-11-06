@@ -30,7 +30,7 @@
     context = {'__name__': 'relay_bounded_recovery'}
     exec({{ lookup('file', '../../bounded_recovery.py') | to_json }}, context)
     proof = context['backend_validate'](*sys.argv[1:4])
-    if (sys.argv[4] != 'apply' or proof['originalTarget'] != sys.argv[5]
+    if (sys.argv[4] != 'apply' or (proof['desiredTarget'] if proof['backendAbsent'] else proof['originalTarget']) != sys.argv[5]
             or proof['operationId'] != '{{ relay_admission_operation_id }}'):
         raise SystemExit('PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID')
     context['backend_finalize'](*sys.argv[1:4])

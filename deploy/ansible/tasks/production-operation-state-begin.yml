@@ -68,6 +68,29 @@
       '{{ relay_workflow_consumer_revision }}'
     {% endif %}
 
+    {% if relay_bounded_recovery_binding | default({}) | length > 0 %}
+    # Both existing-record and gate-only continuation are revalidated under
+    # this lock. An absent original is not an ordinary fresh begin, and a
+    # concurrently created/disappeared record never inherits its authorization.
+    /usr/bin/python3 -I - "$record" '{{ relay_production_operation_target_head }}' \
+      '{{ relay_bounded_recovery_binding.operationId }}' <<'PY'
+    import json
+    import sys
+
+    context = {'__name__': 'relay_bounded_recovery'}
+    exec({{ lookup('file', '../../bounded_recovery.py') | to_json }}, context)
+    proof = context['backend_validate'](*sys.argv[1:4], require_applying=True,
+        expected_backend_absent={{ 'False' if relay_production_operation_record_present | default(false) | bool else 'True' }})
+    expected = json.loads({{ relay_production_operation_continuation | default({}) | to_json | to_json }})
+    if (proof != expected or '{{ relay_production_operation_phase }}' != 'apply'
+            or proof['originalTarget'] != '{{ relay_bounded_recovery_binding.retainedTarget }}'
+            or proof['desiredTarget'] != '{{ relay_bounded_recovery_binding.desiredRevision }}'
+            or proof['operationId'] != '{{ relay_admission_operation_id }}'
+            or {{ 'False' if relay_admission_recovery_authorized | default(false) | bool else 'True' }}):
+        raise SystemExit('PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID')
+    PY
+    {% endif %}
+
     if [[ -L "$record" ]]; then
       echo 'PRODUCTION_OPERATION_BEGIN_UNSAFE_RECORD' >&2
       exit 90
@@ -78,21 +101,6 @@
         echo 'PRODUCTION_OPERATION_BEGIN_CONCURRENT_RECORD' >&2
         exit 45
       }
-      {% if relay_bounded_recovery_binding | default({}) | length > 0 %}
-      # Repeat the protected receipt proof under the transition lock. The
-      # original record/head is immutable even when the selected target differs.
-      /usr/bin/python3 -I - "$record" '{{ relay_production_operation_target_head }}' \
-        '{{ relay_bounded_recovery_binding.operationId }}' "$expected_phase" "$expected_head" <<'PY'
-    import sys
-
-    context = {'__name__': 'relay_bounded_recovery'}
-    exec({{ lookup('file', '../../bounded_recovery.py') | to_json }}, context)
-    proof = context['backend_validate'](*sys.argv[1:4], require_applying=True)
-    if (sys.argv[4] != 'apply' or proof['originalTarget'] != sys.argv[5]
-            or proof['operationId'] != '{{ relay_admission_operation_id }}'):
-        raise SystemExit('PRODUCTION_OPERATION_CONTINUATION_BINDING_INVALID')
-    PY
-      {% endif %}
       /usr/bin/python3 - "$record" "$schema_version" "$expected_phase" "$expected_head" <<'PY'
     import json
     import os

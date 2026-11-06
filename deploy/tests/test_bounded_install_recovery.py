@@ -250,7 +250,7 @@ class Incident:
     def snapshot(self):
         return {str(path.relative_to(self.root)): (path.read_bytes(), path.stat().st_ino)
             for path in (self.gate, self.backend, self.consumer,
-                self.release / 'artifact-manifest.json', self.release / 'deployment-config.json')}
+                self.release / 'artifact-manifest.json', self.release / 'deployment-config.json') if path.exists()}
 
     def helper(self, action, *arguments, **options):
         import bounded_recovery
@@ -384,8 +384,12 @@ def test_native_reopen_and_unavailable_evidence_do_not_reuse_cached_route_dispos
     assert incident.snapshot() == before and incident.history() == history
 
 
-def test_bounded_bridge_keeps_original_operation_until_exact_final_pair_and_verified_gate(incident):
+@pytest.mark.parametrize('maintenance', [False, True])
+def test_bounded_bridge_keeps_original_operation_until_exact_final_pair_and_verified_gate(incident, maintenance):
     import bounded_recovery
+    if maintenance:
+        incident.binding['runnerMaintenance'] = {'operationId': OPERATION, 'retainedTarget': BASELINE,
+            'runners': {'production': {'runnerId': 55, 'runnerName': 'sample-production-runner'}}}
     before, history = incident.snapshot(), incident.history()
     proof = incident.helper('inspect')
     assert incident.snapshot() == before and not incident.receipt.exists()
@@ -416,6 +420,57 @@ def test_bounded_bridge_keeps_original_operation_until_exact_final_pair_and_veri
     gate = json.loads(incident.gate.read_bytes())
     assert (gate['operationId'], gate['target'], gate['phase']) == (OPERATION, incident.revision, 'verified')
     assert completed['original'] == reserved['original']
+    assert completed['binding'] == incident.binding
+
+
+def test_gate_only_retained_operation_preserves_absence_and_completes_same_uuid(incident):
+    import bounded_recovery
+    incident.backend.unlink()
+    incident.binding['runnerMaintenance'] = {'operationId': OPERATION, 'retainedTarget': BASELINE,
+        'runners': {'production': {'runnerId': 55, 'runnerName': 'sample-production-runner'}}}
+    before, history = incident.snapshot(), incident.history()
+    proof = incident.helper('inspect')
+    assert proof['original']['backendAbsent'] is True and proof['original']['backendBytes'] == ''
+    reserved = incident.helper('begin', proof)
+    assert incident.snapshot() == before and incident.history() == history
+    incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
+    incident.native('phase', options={'operationId': OPERATION, 'phase': 'applying'})
+    assert incident.helper('revalidate', reserved) == reserved
+    assert bounded_recovery.backend_validate(incident.backend, incident.revision, OPERATION,
+        root=incident.root, require_applying=True)['operationId'] == OPERATION
+    # Existing Ansible Begin creates this exact record under the existing locks.
+    write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                            'phase': 'apply', 'target_head': incident.revision})
+    assert incident.publish()['status'] == 'PUBLISHED'
+    incident.final_artifacts()
+    bounded_recovery.backend_finalize(incident.backend, incident.revision, OPERATION, root=incident.root)
+    assert not incident.backend.exists()
+    archive = incident.receipt.with_name(incident.receipt.name.removesuffix('.json') + '.original.json')
+    assert not archive.exists(), 'no fabricated archive for an absent original backend'
+    incident.native('phase', options={'operationId': OPERATION, 'phase': 'verified', 'revision': incident.revision})
+    completed = incident.helper('finalize', reserved)
+    assert completed['state'] == 'complete' and completed['original'] == proof['original']
+    assert incident.history() == history
+
+
+@pytest.mark.parametrize('damage', ['appeared', 'foreign-target', 'dangling-link'])
+def test_gate_only_backend_cannot_be_replaced_or_reinterpreted(incident, damage):
+    import bounded_recovery
+    incident.backend.unlink()
+    if damage == 'dangling-link':
+        incident.backend.symlink_to(incident.root / 'missing')
+        with pytest.raises(ValueError, match='PATH_UNSAFE'):
+            incident.helper('inspect')
+        return
+    reserved = incident.helper('begin', incident.helper('inspect'))
+    write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+                            'phase': 'apply', 'target_head': 'f' * 40})
+    if damage == 'appeared':
+        with pytest.raises(ValueError, match='ORIGINAL_EVIDENCE_CHANGED'):
+            incident.helper('revalidate', reserved)
+    else:
+        with pytest.raises(ValueError, match='BACKEND_BINDING_CHANGED'):
+            bounded_recovery.backend_validate(incident.backend, incident.revision, OPERATION, root=incident.root)
 
 
 @pytest.mark.parametrize('evidence', ['manifest', 'source', 'source-blob', 'snapshot', 'consumer',
@@ -591,7 +646,8 @@ def test_reserved_continuation_cannot_be_rebound_to_another_git_pair_or_operatio
     assert incident.receipt.read_bytes() == raw and incident.snapshot() == before and incident.history() == history
 
 
-def test_public_install_routes_explicit_recovery_with_original_uuid_and_frozen_git_pair(invocation, monkeypatch):
+@pytest.mark.parametrize('maintenance', [False, True])
+def test_public_install_routes_explicit_recovery_with_original_uuid_and_frozen_git_pair(invocation, monkeypatch, maintenance):
     """Outer public orchestration proof; its host transport is explicitly stubbed."""
     import bounded_recovery
     import install_recovery
@@ -601,6 +657,12 @@ def test_public_install_routes_explicit_recovery_with_original_uuid_and_frozen_g
     args.authorize_install_recovery = True
     args.install_recovery_operation = OPERATION
     args.install_recovery_target = BASELINE
+    declaration = {'operationId': OPERATION, 'retainedTarget': BASELINE,
+                   'runners': {'production': {'runnerId': 55, 'runnerName': 'sample-production-runner'}}}
+    if maintenance:
+        path = args.config.parent / 'owner-maintenance.json'
+        path.write_text(json.dumps(declaration))
+        args.retained_runner_maintenance = path
     before = observed(BASELINE, CONTRACT)
     before['blockers'] = [install_recovery.OPERATION_BLOCKER]
     after = observed(TARGET, CONTRACT)
@@ -616,7 +678,7 @@ def test_public_install_routes_explicit_recovery_with_original_uuid_and_frozen_g
         assert guard.poll() is None and pool_guard is None and not calls
         assert binding == {'operationId': OPERATION, 'retainedTarget': BASELINE,
             'installedRevision': BASELINE, 'controllerRevision': TARGET, 'desiredRevision': TARGET,
-            'gitConfigReceipt': receipt}
+            'gitConfigReceipt': receipt, **({'runnerMaintenance': declaration} if maintenance else {})}
         probes.append(copy.deepcopy(binding))
         return proof
 
