@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import shutil
+import subprocess
 
 import pytest
 
@@ -148,6 +150,23 @@ def test_old_bounded_bindings_are_unchanged_and_declarations_are_exact():
     binding['runnerMaintenance'] = {'operationId': OPERATION, 'retainedTarget': 'a' * 40, 'runners': {}}
     with pytest.raises(ValueError, match='RUNNER_MAINTENANCE_INVALID'):
         bounded_recovery.binding_valid(binding)
+
+
+def test_fixed_isolated_cli_cannot_write_bytecode_into_sealed_source(tmp_path):
+    import yaml
+    source = Path(activation.__file__).parent
+    staged = tmp_path / 'sealed-source'
+    staged.mkdir()
+    for name in ('retained_activation.py', 'bounded_recovery.py', 'config.py',
+                 'managed_pool.py', 'runner_self_update.py'):
+        shutil.copyfile(source / name, staged / name)
+    task = yaml.safe_load((source / 'ansible/tasks/upgrade-maintained-runners.yml').read_text())[0]
+    argv = task['ansible.builtin.command']['argv'][:-1] + [str(staged)]
+    before = {path.name: path.read_bytes() for path in staged.iterdir()}
+    result = subprocess.run(argv, input=b'{}', capture_output=True, timeout=30)
+    assert result.returncode == 1
+    assert result.stderr.strip() == b'RELAY_RETAINED_ACTIVATION_UNPROVEN'
+    assert {path.name: path.read_bytes() for path in staged.iterdir()} == before
 
 
 @pytest.mark.parametrize('damage,code', [(None, None), ('pool-id', 'ORIGINAL_RUNNER_ID_CHANGED'),

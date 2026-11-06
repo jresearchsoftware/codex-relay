@@ -6,6 +6,7 @@
     argv:
       - /usr/bin/python3
       - -I
+      - -B
       - -c
       - 'import sys; sys.path.insert(0, sys.argv[1]); from retained_activation import main; main()'
       - '{{ relay_intent_staged_release }}/reviewed-source/deploy'
