@@ -521,7 +521,7 @@ def backend_validate(record_path, desired_revision, operation_id, *, root=Path('
     return {'operationId': operation_id, 'originalTarget': binding['retainedTarget'],
             'desiredTarget': desired_revision, 'backendSha256': receipt['original']['backendSha256'],
             'backendAbsent': expected_backend is None,
-            'receiptSha256': sha(json.dumps(receipt, sort_keys=True).encode())}
+            'receiptSha256': sha(read(receipt_path, root, owner_uid, private=True))}
 
 
 def final_installation(namespace, receipt, root, owner_uid):

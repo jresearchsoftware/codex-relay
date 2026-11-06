@@ -218,7 +218,7 @@ class ProductionBoundedBackendExecutionTests(unittest.TestCase):
                 self.assertFalse(fixture.record.exists())
 
     def test_gate_only_begin_rechecks_absence_gate_and_receipt_under_lock(self):
-        for damage in ("gate-phase", "gate-snapshot", "receipt", "receipt-digest", "concurrent-record", "dangling-record"):
+        for damage in ("gate-phase", "gate-snapshot", "receipt", "receipt-digest", "receipt-bytes", "concurrent-record", "dangling-record"):
             with self.subTest(damage=damage), BoundedBackendFixture(gate_only=True) as fixture:
                 tasks = self.include("production-operation-state.yml")
                 if damage.startswith("gate-"):
@@ -232,13 +232,16 @@ class ProductionBoundedBackendExecutionTests(unittest.TestCase):
                     value, path = {**fixture.receipt, "state": "complete"}, fixture.paths["receipt"]
                 elif damage == "receipt-digest":
                     value, path = {**fixture.receipt, "desiredDigest": "9" * 64}, fixture.paths["receipt"]
+                elif damage == "receipt-bytes":
+                    value, path = fixture.receipt, fixture.paths["receipt"]
                 else:
                     value, path = {"schemaVersion": "1", "state": "RECOVERY_REQUIRED", "phase": "apply",
                                    "target_head": DESIRED}, fixture.record
                 if damage == "dangling-record":
                     tasks += "- ansible.builtin.file:\n    state: link\n    force: true\n    src: /absent-relay-fixture\n    dest: " + json.dumps(str(path)) + "\n"
                 else:
-                    tasks += "- ansible.builtin.copy:\n    mode: '0600'\n    dest: " + json.dumps(str(path)) + "\n    content: " + json.dumps(json.dumps(value)) + "\n"
+                    raw = json.dumps(value) + ("\n\n" if damage == "receipt-bytes" else "")
+                    tasks += "- ansible.builtin.copy:\n    mode: '0600'\n    dest: " + json.dumps(str(path)) + "\n    content: " + json.dumps(raw) + "\n"
                 tasks += self.include("production-operation-state-begin.yml")
                 result = self.run_tasks(fixture, tasks)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
