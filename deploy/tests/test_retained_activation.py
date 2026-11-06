@@ -46,6 +46,7 @@ class Evidence:
                         'status': 'online', 'busy': False}
                        for runner in value['binding']['runnerMaintenance']['runners'].values()]
         self.checks = 0
+        self.events = []
         self.reviewer_value = {'pid': '41', 'start': '4100', 'executable': 'a' * 64,
                                'config': 'b' * 64, 'unit': 'c' * 64}
 
@@ -56,7 +57,13 @@ class Evidence:
         return self.remote
 
     def runner(self, component, expected, identity, _contract):
-        return {'service': identity['service'], 'runnerId': expected['runnerId'], 'version': '2.338.2'}
+        self.events.append(component)
+        return {'service': identity['service'], 'runnerId': expected['runnerId'], 'version': '2.338.2',
+                'pid': '100', 'startTicks': '1000'}
+
+    def restore(self, expected, identity, contract):
+        self.events.append('restore-production')
+        self.remote[0]['status'] = 'online'
 
     def reviewer(self):
         return self.reviewer_value
@@ -79,7 +86,6 @@ def test_exact_six_owner_restored_runners_preserve_original_snapshot():
     ('wrong-operation', 'RUNNER_MAINTENANCE_INVALID'),
     ('wrong-target', 'RUNNER_MAINTENANCE_INVALID'),
     ('undeclared', 'DECLARED_ACTIVITY_MISMATCH'),
-    ('not-restored', 'PRODUCTION_STOP_CAUSE_UNPROVEN'),
     ('new-service', 'ORIGINAL_SERVICE_CHANGED'),
     ('changed-enable', 'ORIGINAL_SERVICE_CHANGED'),
     ('foreign-name', 'ORIGINAL_SERVICE_CHANGED'),
@@ -142,16 +148,28 @@ def test_recheck_authority_after_observations():
         activation.prove(value, native)
 
 
-def test_stopped_declared_production_never_becomes_inferred_activation_authority():
+def test_owner_selected_recover_restores_current_production_without_historical_liveness():
     value = payload()
     value['observed']['production']['active'] = False
     native = Evidence(value)
-    # Even synthetic online/idle registration cannot explain a missing local
-    # process or prove that admission DRAIN intentionally stopped it.
+    native.remote[0]['status'] = 'offline'
     before = copy.deepcopy(value)
-    with pytest.raises(ValueError, match='PRODUCTION_STOP_CAUSE_UNPROVEN'):
+    proof = activation.prove(value, native)
+    assert value == before
+    assert native.events.index('restore-production') == 5
+    value['before'] = proof
+    assert activation.prove(value, native) == proof
+    assert native.events.count('restore-production') == 1
+
+
+def test_lost_general_transport_cannot_trigger_production_restore():
+    value = payload()
+    value['observed']['production']['active'] = False
+    value['observed']['slot-pool-2']['active'] = False
+    native = Evidence(value)
+    with pytest.raises(ValueError, match='DECLARED_ACTIVITY_MISMATCH'):
         activation.prove(value, native)
-    assert value == before and native.checks == 0
+    assert 'restore-production' not in native.events
 
 
 def test_old_bounded_bindings_are_unchanged_and_declarations_are_exact():
@@ -174,6 +192,11 @@ def test_fixed_isolated_cli_cannot_write_bytecode_into_sealed_source(tmp_path):
         shutil.copyfile(source / name, staged / name)
     task = yaml.safe_load((source / 'ansible/tasks/upgrade-maintained-runners.yml').read_text())[0]
     argv = task['ansible.builtin.command']['argv'][:-1] + [str(staged)]
+    from jinja2 import Environment
+    environment = Environment()
+    environment.filters['to_json'] = json.dumps
+    argv[-2] = environment.from_string(argv[-2]).render(
+        playbook_dir=str(source / 'ansible'), lookup=lambda _kind, path: Path(path).read_text())
     before = {path.name: path.read_bytes() for path in staged.iterdir()}
     result = subprocess.run(argv, input=b'{}', capture_output=True, timeout=30)
     assert result.returncode == 1
@@ -214,3 +237,55 @@ def test_native_registration_proof_retains_protected_pool_id_and_effective_setti
     else:
         with pytest.raises(ValueError, match=code):
             native.runner('slot-pool-2', expected, identity, contract)
+
+
+@pytest.mark.parametrize('damage', [None, 'busy', 'identity', 'settings', 'authority', 'reviewer'])
+def test_native_restore_uses_existing_lock_and_start_gate_after_positive_current_proof(tmp_path, monkeypatch, damage):
+    from types import SimpleNamespace
+    value = payload()
+    native = activation.Native(value)
+    identities, contract = activation.services(value['config'])
+    identity = identities['production']
+    expected = value['binding']['runnerMaintenance']['runners']['production']
+    lock = tmp_path / 'operation.lock'; lock.write_bytes(b'')
+    real_open = os.open
+    monkeypatch.setattr(activation.retained, 'protect', lambda path, *_a, **_k: None)
+    def open_lock(path, flags):
+        assert str(path) == '/run/' + value['config']['environment']['namespace'] + '/production-operation.lock'
+        assert flags & os.O_NOFOLLOW
+        return real_open(lock, flags)
+    monkeypatch.setattr(activation.os, 'open', open_lock)
+    events = []
+    def authority():
+        events.append('authority')
+        if damage == 'authority' and events.count('authority') == 2:
+            raise ValueError('RELAY_RETAINED_ACTIVATION_WORK_OR_OPERATION_UNPROVEN')
+    native.authority = authority
+    native.primary = lambda _contract: {'pid': 20, 'startTicks': 2000}
+    def runner(*_a, **options):
+        events.append('stopped-proof' if options.get('stopped') else 'live-proof')
+        if damage == 'settings':
+            raise ValueError('RELAY_RETAINED_ACTIVATION_REGISTRATION_OR_UPDATE_SETTING_CHANGED')
+    native.runner = runner
+    reviews = []
+    def reviewer():
+        reviews.append(1)
+        return {'pid': 10 if damage != 'reviewer' or len(reviews) == 1 else 11}
+    native.reviewer = reviewer
+    calls = []
+    def remote():
+        calls.append(1)
+        return [{'id': expected['runnerId'] + (1 if damage == 'identity' else 0),
+                 'name': expected['runnerName'], 'status': 'offline' if len(calls) == 1 else 'online',
+                 'busy': damage == 'busy'}]
+    native.github = SimpleNamespace(runners=remote)
+    monkeypatch.setattr(activation, 'command', lambda argv, **_k: events.append(tuple(argv)))
+    if damage is None:
+        native.restore(expected, identity, contract)
+        assert ('/bin/systemctl', 'start', identity['service']) in events
+        assert events.index('stopped-proof') < events.index(('/bin/systemctl', 'start', identity['service']))
+        assert events[-1] == 'authority' and 'live-proof' in events
+    else:
+        with pytest.raises(ValueError):
+            native.restore(expected, identity, contract)
+        assert not any(isinstance(event, tuple) for event in events)

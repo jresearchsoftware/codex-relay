@@ -338,17 +338,51 @@ declaration; an interrupted maintained recovery needs diagnosis of its retained
 receipt and actual runtime before selecting any further supported action.
 
 `DRAIN` waits for admitted work and closes admission; it does not stop a Runner.
-If a declared restored Production Runner is now stopped, this route refuses with
-`RELAY_RETAINED_ACTIVATION_PRODUCTION_STOP_CAUSE_UNPROVEN`. A reserved receipt,
-desired-target backend, original inactive snapshot and maintenance declaration
-do not prove a controlled service stop or grant permission to start it. The
-maintenance proof is transient and records no durable stop intent or historical
-process identity. Preserve the original records and diagnose the actual service
-stop through protected owner evidence before selecting a separately authorized
-recovery action. Do not weaken current online/idle proof, invent old liveness,
-rewrite the receipt to a new controller/desired pair, or manually start a service
-as a workaround. This correction of backend revalidation alone does not qualify
-an interrupted maintained recovery or a new controller against an older receipt.
+An explicit owner-selected `recover` can also restore its declared existing
+Production Runner from a proved inactive/dead, process-free state. Historical
+stop attribution is not a prerequisite and no historical liveness is claimed.
+The controller first proves all maintained General transports, exact existing
+registration/settings/group, empty active/unknown work, unchanged live Reviewer,
+protected unit/Unix identity and the same applying operation. It then holds the
+existing production-operation lock and starts only that Production service
+through its normal readiness gate. Current online/idle registration and the new
+live process are proved before continuing. Failed/ambiguous state, busy or changed
+registrations, lost General transport or Reviewer still refuse. No General or
+Reviewer restart, reset-failed, re-registration or original snapshot edit occurs.
+The final proof compares the actual post-restoration PID/start identity; it never
+compares a nonexistent old process or restarts a lost process a second time.
+
+#### Interrupted Begin before product/consumer publication
+
+If APT fails after Begin while `current` still selects the retained product and
+the original consumer is unchanged, use the same explicit
+`--continue-install-recovery` authorization with an independently accepted
+corrected controller. The exact original config bytes, maintenance declaration,
+reserved receipt, desired-target backend and UUID must match. The controller
+proves its accepted public ancestry and the bounded installation-tail relationship,
+then obtains product bytes from the receipt's **original desired Git object**.
+Its corrected observation/orchestration code runs independently; the original
+receipt/controller, desired product/config pair and source history are never
+silently rebound. Full staging, live preflight, Writer locking, same-operation
+Apply, installed-pair verification and admission completion remain mandatory.
+The later consumer-publication frontier retains its own stricter proof and does
+not accept a new maintenance declaration.
+
+The fixed private `recover` route detects an existing protected reservation and
+selects this continuation while retaining the original final-pair readback. A new
+owner dispatch authenticates this invocation; it does not replace the original
+dispatch evidence in that receipt. Completing this old pair does not claim that
+the corrected controller was installed as the product. A subsequent separately
+authorized ordinary Apply can adopt the accepted correction as desired product.
+
+Before admission cutover, ordinary intent installation verifies signed APT
+metadata and prerequisite package acquisition using disposable lists/cache and
+download-only semantics. It neither installs packages nor changes live APT lists.
+A failed acquisition leaves the known-good runtime and original gate available;
+an already closed recovery gate stays closed. APT signatures/hashes remain
+mandatory during actual Apply as well. A later repository failure retains the
+same operation and known runtime for guarded continuation, never an automatic
+gate reset or blind retry.
 
 This differs from expert `reinstall-recover`, which dispositions a separate
 decommissioned clean-reinstall journal and does not install or activate its

@@ -6,7 +6,9 @@ entire bounded installer operation. Existing installed source stays immutable.
 """
 import os
 from pathlib import Path
+import re
 import stat
+import subprocess
 import tempfile
 
 import owner_lifecycle as owner
@@ -64,7 +66,27 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
             # root: recover the original template from fresh exact Git objects.
             original_source = owner.acquire_source(Path(temporary) / 'installed-source', repository, installed)
             original = render(original_source, install)
-            owner.require(previous in [original, desired], 'bootstrap-existing-helper-unrecognized')
+            # Apply may have refreshed the normal fixed helper before APT
+            # failed, while current still selects the old release. Its exact
+            # accepted template is also a valid bootstrap starting point.
+            recognized = previous in [original, desired, render(selected, install)]
+            if not recognized:
+                prior = set(re.findall(re.escape(str(stage)).encode()
+                    + rb'/([0-9a-f]{40})/deploy/owner_lifecycle[.]py', previous))
+                owner.require(len(prior) == 1, 'bootstrap-existing-helper-unrecognized')
+                prior_revision = prior.pop().decode()
+                if owner.git(selected, 'rev-parse', '--is-shallow-repository') == 'true':
+                    owner.git(selected, 'fetch', '--quiet', '--no-tags', '--unshallow',
+                              'https://github.com/' + repository + '.git', revision,
+                              environment={**owner.clean_environment(), 'HOME': str(selected),
+                                           'XDG_CONFIG_HOME': str(selected / '.xdg-unused')})
+                owner.require(subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-C', str(selected),
+                    'merge-base', '--is-ancestor', prior_revision, revision],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
+                    'bootstrap-previous-controller-not-accepted-ancestor')
+                prior_source = owner.acquire_source(Path(temporary) / 'previous-controller', repository, prior_revision)
+                recognized = previous == render(prior_source, install, stage / prior_revision)
+            owner.require(recognized, 'bootstrap-existing-helper-unrecognized')
             if destination.exists() or destination.is_symlink():
                 # An interrupted bootstrap is observable, never overwritten.
                 # Only an already published exact helper is idempotently reused.

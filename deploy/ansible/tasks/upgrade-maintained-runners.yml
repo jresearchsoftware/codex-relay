@@ -8,7 +8,14 @@
       - -I
       - -B
       - -c
-      - 'import sys; sys.path.insert(0, sys.argv[1]); from retained_activation import main; main()'
+      - >-
+        import sys, types; sys.path.insert(0, sys.argv[1]);
+        b = types.ModuleType('bounded_recovery');
+        exec({{ lookup('file', playbook_dir + '/../bounded_recovery.py') | to_json }}, b.__dict__);
+        sys.modules['bounded_recovery'] = b;
+        scope = {'__name__': 'retained_controller'};
+        exec({{ lookup('file', playbook_dir + '/../retained_activation.py') | to_json }}, scope);
+        scope['main']()
       - '{{ relay_intent_staged_release }}/reviewed-source/deploy'
     stdin: >-
       {{ {'config': relay_installed_deployment_config | from_json,
@@ -43,5 +50,5 @@
   ansible.builtin.set_fact:
     relay_upgrade_lifecycle_effective_active: >-
       {{ (relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_previous_active)) |
-         combine({item: relay_upgrade_lifecycle_observed_activity[item]}) }}
+         combine({item: relay_upgrade_lifecycle_observed_activity[item] | combine({'active': true})}) }}
   loop: '{{ relay_upgrade_lifecycle_maintenance_proof.runners.keys() | list }}'

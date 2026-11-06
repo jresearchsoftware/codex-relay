@@ -659,7 +659,12 @@ try {
     def bounded_recovery(self, config, binding, proof, *, action='begin'):
         """Run the frozen controller's fixed recovery adapter under its Writer lease."""
         require(self.holder is not None and self.holder.poll() is None, 'WRITER_LOCK_MISSING')
-        return self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/bounded_recovery.py', action],
+        # The qualified controller supplies the corrected reader. The staged
+        # product/source identity and original receipt remain independently frozen.
+        program = ('scope={"__name__":"bounded_controller"};exec('
+            + repr((Path(__file__).parent / 'bounded_recovery.py').read_text())
+            + ',scope);import json,sys;print(json.dumps(scope["main"]([sys.argv[1]])))')
+        return self.execute(['/usr/bin/python3', '-I', '-B', '-c', program, action],
             payload={'config': config, 'binding': binding, 'proof': proof, 'source': self.source,
                      'lease': self.lease_path, 'desiredDigest': self.desired_digest})
 

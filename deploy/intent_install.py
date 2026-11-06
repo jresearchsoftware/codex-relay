@@ -514,7 +514,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
     require(args.resolved_revision == identity['revision'], 'EXACT_PRODUCT_TARGET_REQUIRED')
     bounded_requested = getattr(args, 'authorize_install_recovery', False)
     maintenance_path = getattr(args, 'retained_runner_maintenance', None)
-    require(maintenance_path is None or bounded_requested and not getattr(args, 'continue_install_recovery', False),
+    require(maintenance_path is None or bounded_requested,
             'RUNNER_MAINTENANCE_BOUNDED_RECOVERY_ONLY')
     maintenance = None
     if maintenance_path is not None:
@@ -534,6 +534,16 @@ def run(args, primitive, root, identity, *, guard_factory=None):
     root = Path(root)
     if getattr(args, 'continue_install_recovery', False):
         require(bounded_requested, 'CONTINUATION_AUTHORIZATION_REQUIRED')
+        from pre_apply_recovery import selected, run as continue_pre_apply
+        config = loads(args.config.read_text(), root)
+        target = dict(config['target'])
+        if getattr(args, 'connection', None) is not None:
+            target['connection'] = args.connection
+        key = Path(target.get('identityFile', '/unused-local-identity')).expanduser()
+        qualify_identity(target, key)
+        if selected(target, key, config, args.install_recovery_target):
+            return continue_pre_apply(args, root, identity, guard_factory=guard_factory)
+        require(maintenance_path is None, 'RUNNER_MAINTENANCE_FRONTIER_UNSUPPORTED')
         from partial_install_recovery import run as continue_install
         return continue_install(args, root, identity, guard_factory=guard_factory)
     args.config = args.config.absolute()

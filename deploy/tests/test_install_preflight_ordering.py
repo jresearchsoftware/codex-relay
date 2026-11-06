@@ -143,6 +143,7 @@ def invocation(tmp_path, monkeypatch):
             injected(event)
         elif name == 'relay-intent-preflight.yml': injected('compatibility')
         elif name == 'relay-intent-prerequisites.yml': injected('prerequisites')
+        elif name == 'relay-intent-apt-preflight.yml': injected('apt-preflight')
         else:
             assert name == 'site.yml'
             installed_values = next(iter(json.loads(Path(argv[2]).read_text())['all']['children']['relay']['hosts'].values()))
@@ -170,7 +171,7 @@ def invocation(tmp_path, monkeypatch):
         os.umask(previous_umask)
 
 
-@pytest.mark.parametrize('failure', ['create', 'source-stage', 'desired', 'history', 'compatibility', 'host', 'capture', 'build-stage', 'seal'])
+@pytest.mark.parametrize('failure', ['create', 'source-stage', 'desired', 'history', 'compatibility', 'host', 'apt-preflight', 'capture', 'build-stage', 'seal'])
 def test_known_prerequisite_failure_keeps_old_entrypoint_open(invocation, failure):
     args, events, gate, state, records = invocation
     state['failure'] = failure
@@ -213,6 +214,7 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     backend.run(args)
     assert gate == {'phase': 'open', 'operation': None}
     assert events.index('build-stage') < events.index('quiesce')
+    assert events.index('apt-preflight') < events.index('capture') < events.index('quiesce')
     assert events.index('drain') < events.index('writer-lock') < events.index('final')
     assert events.index('final') < events.index('prepare-target') < events.index('backend')
     assert events.index('backend') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')

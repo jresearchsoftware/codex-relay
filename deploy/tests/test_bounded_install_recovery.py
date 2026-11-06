@@ -101,6 +101,7 @@ if(input.action==='seed') {
 else if(input.action==='transition') result=await control.transitionConsumer(input.options);
 else if(input.action==='recovery-target') result=await control.recoveryTarget(input.options);
 else if(input.action==='phase') result=await control.phase(input.options);
+else if(input.action==='resume') result=await control.resume(input.options);
 else if(input.action==='status') result=await control.status();
 else throw new Error('fixture-action');
 console.log(JSON.stringify(result));

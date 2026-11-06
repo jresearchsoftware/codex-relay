@@ -123,6 +123,7 @@ exit 0
         (self.root / "current").mkdir()
 
         context = {
+            "relay_namespace": "lifecycle",
             "relay_deployment_profile": "production",
             "relay_install_root": "/opt/lifecycle",
             "relay_config_root": "/opt/lifecycle",
@@ -164,6 +165,7 @@ exit 0
             "relay_reviewer_exec_start": "/usr/local/libexec/reviewer-process",
             "relay_runner_exec_start": "/usr/local/libexec/runner-process",
             "relay_runner_labels": ["codex-relay"],
+            "relay_runner_registration_scope": "organization",
             "relay_runner_registration_marker": "/run/lifecycle/runner/.runner",
             "relay_runner_credentials_marker": "/run/lifecycle/runner/.credentials",
             "relay_runner_enable_start_path": "/usr/local/libexec/relay-runner-enable-start",
@@ -250,7 +252,7 @@ exit 0
                 "--name",
                 self.name,
                 "--tmpfs",
-                "/run",
+                "/run:exec",
                 "--tmpfs",
                 "/run/lock",
                 "--tmpfs",
@@ -711,6 +713,134 @@ class ReviewerRunnerNativeSystemdLifecycleTests(unittest.TestCase):
                 fixture.systemctl("is-active", "relay-runner.service", check=False).stdout.strip(),
                 {"inactive", "failed"},
             )
+
+
+class InterruptedMaintainedRecoveryTests(unittest.TestCase):
+    def test_signed_apt_failure_restores_only_declared_production_through_real_start_gate(self):
+        if not docker_available():
+            self.skipTest('a disposable Docker systemd manager is required')
+        with DisposableSystemdLifecycle() as fixture:
+            qualification = fixture.root / 'qualification'
+            qualification.mkdir()
+            for name in ['retained_activation.py', 'bounded_recovery.py', 'runner_self_update.py',
+                         'managed_pool.py', 'config.py', 'apt_preflight.py']:
+                shutil.copyfile(ROOT.parent / name, qualification / name)
+            shutil.copyfile(ROOT.parent / 'tests/apt_fixture.py', qualification / 'apt_fixture.py')
+            fixture._exec_shell('DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gnupg', timeout=120)
+            fixture.systemctl('enable', 'reviewer-mcp.service', 'relay-runner.service', 'relay-general-runner.service')
+            fixture.write_operation('activate')
+            self.assertEqual(fixture.run_helper('relay-reviewer-activation-start').returncode, 0)
+            fixture.write_activation_marker()
+            fixture.remove(fixture.OPERATION_RECORD)
+            settings = {'agentId': 55, 'agentName': 'fixture-production', 'poolId': 5,
+                'poolName': 'fixture-production-group', 'gitHubUrl': 'https://github.com/example-org',
+                'workFolder': '/run/lifecycle/runner-work', 'disableUpdate': False}
+            fixture.write_registration_markers()
+            fixture.write_file('/run/lifecycle/runner/.runner', json.dumps(settings), owner='relay-runner:relay-runner')
+            fixture._exec_shell('mkdir /run/lifecycle/runner/bin; '
+                "printf '#!/bin/sh\necho 2.338.2\n' > /run/lifecycle/runner/bin/Runner.Listener; "
+                'chmod 0755 /run/lifecycle/runner/bin /run/lifecycle/runner/bin/Runner.Listener')
+            probe = fixture._run_docker(['exec', fixture.name, 'runuser', '-u', 'relay-runner', '--',
+                '/run/lifecycle/runner/bin/Runner.Listener', '--version'], check=False)
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            fixture.systemctl('start', 'relay-general-runner.service', 'relay-runner.service')
+            old = fixture.systemctl('show', '--property=MainPID', '--value', 'relay-runner.service').stdout.strip()
+            self.assertNotEqual(old, '0')
+            fixture.write_operation('apply')
+            # Controlled TEST disruption, followed by a real signed APT failure.
+            # This is current restoration, not a historical-process replay.
+            fixture.systemctl('stop', 'relay-runner.service')
+            script = r'''
+import hashlib, json, os, stat, subprocess, sys
+from pathlib import Path
+sys.path.insert(0,'/opt/lifecycle/qualification')
+from retained_activation import Native
+import apt_preflight
+import runner_self_update
+from apt_fixture import signed_repository
+# Docker's host cgroup namespace prefixes the manager's ordinary /system.slice.
+# Prove real process membership, then present the host-relative diagnostic path.
+inspect_runner=runner_self_update.inspect
+def container_inspect(*args,**kwargs):
+    value=inspect_runner(*args,**kwargs)
+    state=value['serviceState']
+    if state['MainPID']!='0':
+        group=state['ControlGroup']
+        assert group.endswith('/system.slice/relay-runner.service')
+        assert any(line.split(':',2)[2]==group for line in Path('/proc/'+state['MainPID']+'/cgroup').read_text().splitlines())
+        state['ControlGroup']='/system.slice/relay-runner.service'
+    return value
+runner_self_update.inspect=container_inspect
+operation='12345678-1234-4234-8234-123456789abc'
+gate=Path('/run/lifecycle/admission.json')
+gate.write_text(json.dumps({'operationId':operation,'phase':'applying','active':[],'unknown':[]}));gate.chmod(0o600)
+snapshot=Path('/run/lifecycle/original-activity.json')
+snapshot.write_text(json.dumps({'production':False,'general':True,'reviewer':True}));snapshot.chmod(0o600)
+saved=snapshot.read_bytes()
+record=Path('/run/lifecycle/operation-state.json').read_bytes()
+def observe(unit,user):
+    state=dict(s.split('=',1) for s in subprocess.check_output(['systemctl','show',unit,
+        '--property=ActiveState,SubState,MainPID,User'],text=True).splitlines())
+    assert state['ActiveState']=='active' and state['SubState']=='running' and state['User']==user
+    pid=state['MainPID'];assert int(pid)>0 and Path('/proc/'+pid).stat().st_uid!=0
+    return {'pid':pid,'start':Path('/proc/'+pid+'/stat').read_text().rsplit(') ',1)[1].split()[19]}
+reviewer=lambda:observe('reviewer-mcp.service','relay-reviewer')
+primary=lambda _contract:observe('relay-general-runner.service','relay-general-runner')
+before_reviewer,before_general=reviewer(),primary(None)
+native=Native({'config':{'environment':{'namespace':'lifecycle'},'consumer':{'paths':{'claimRoot':'/run/lifecycle/writer-claims'}}},
+    'binding':{'operationId':operation}})
+def authority():
+    info=gate.stat();assert info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600
+    value=json.loads(gate.read_text());assert value=={'operationId':operation,'phase':'applying','active':[],'unknown':[]}
+    assert Path('/run/lifecycle/operation-state.json').read_bytes()==record
+native.authority=authority;native.reviewer=reviewer;native.primary=primary
+class API:
+    busy=False
+    def in_group(self,group,runner):return group==5 and runner==55
+    def request(self,*_args):return {'name':'fixture-production-group','visibility':'selected','restricted_to_workflows':True}
+    def runners(self):
+        active=subprocess.run(['systemctl','is-active','relay-runner.service'],capture_output=True).returncode==0
+        return [{'id':55,'name':'fixture-production','status':'online' if active else 'offline','busy':self.busy}]
+native.github=API()
+identity={'root':'/run/lifecycle/runner','service':'relay-runner.service','user':'relay-runner',
+    'name':'fixture-production','group':'fixture-production-group','work':'/run/lifecycle/runner-work'}
+expected={'runnerId':55,'runnerName':'fixture-production'};contract={'organization':'example-org'}
+repo=Path('/run/lifecycle/apt-proof');repo.mkdir()
+generator=signed_repository(repo)
+try:
+    package,index,original,runner=next(generator)
+    index.write_bytes(original+b'inconsistent signed repository')
+    try:apt_preflight.verify([package],runner=runner)
+    except ValueError:pass
+    else:raise AssertionError('APT accepted mismatched signed metadata')
+    assert any('unexpected size' in text or 'Hash Sum mismatch' in text for text in runner.diagnostics)
+    assert reviewer()==before_reviewer and primary(None)==before_general
+    assert subprocess.run(['systemctl','is-active','relay-runner.service'],capture_output=True).returncode!=0
+    index.write_bytes(original)
+    assert apt_preflight.verify([package],runner=runner)['status']=='PASS'
+    native.github.busy=True
+    try:native.restore(expected,identity,contract)
+    except ValueError as error:assert str(error).endswith('RESTORE_REGISTRATION_UNPROVEN')
+    else:raise AssertionError('busy registration was restored')
+    assert subprocess.run(['systemctl','is-active','relay-runner.service'],capture_output=True).returncode!=0
+    native.github.busy=False
+    native.restore(expected,identity,contract)
+    proof=native.runner('production',expected,identity,contract)
+    assert reviewer()==before_reviewer and primary(None)==before_general
+    assert snapshot.read_bytes()==saved and Path('/run/lifecycle/operation-state.json').read_bytes()==record
+    print(json.dumps({'restored':True,'productionPid':proof['pid'],'reviewerPreserved':True,'generalPreserved':True,
+                      'originalEvidencePreserved':True,'aptIntegrityPreserved':True}))
+finally:
+    generator.close()
+'''
+            driver = fixture.root / 'prove-interrupted-restore.py'
+            driver.write_text(script, encoding='utf-8', newline='\n')
+            result = fixture._run_docker(['exec', fixture.name, 'python3', '-B',
+                                         '/opt/lifecycle/prove-interrupted-restore.py'], timeout=360)
+            proof = json.loads(result.stdout)
+            self.assertTrue(proof['restored'] and proof['aptIntegrityPreserved'])
+            self.assertNotEqual(proof['productionPid'], old)
+            self.assertNotEqual(fixture.main_process_uid('relay-runner.service'), '0')
 
 
 if __name__ == "__main__":

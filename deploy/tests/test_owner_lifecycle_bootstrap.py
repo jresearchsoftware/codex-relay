@@ -37,7 +37,8 @@ def protected_root():
         yield Path(directory)
 
 
-def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
+@pytest.mark.parametrize('normal_helper_refreshed,ancestor_result', [(False, 0), (True, 0), ('prior', 0), ('prior', 1)])
+def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root, normal_helper_refreshed, ancestor_result):
     root = protected_root
     install = root / 'opt/fixture'
     installed_source = install / 'releases' / OLD / 'reviewed-source'
@@ -56,7 +57,10 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
              'deployment_lock.py', 'git_intent.py', 'repository_source.py']
     for name in names:
         shutil.copyfile(REPO / 'deploy' / name, installed_source / 'deploy' / name)
-    helper.write_bytes(bootstrap.render(installed_source, install))
+    prior_revision = 'c' * 40
+    prior_root = root / 'var/lib/fixture/owner-lifecycle-controllers' / prior_revision
+    helper.write_bytes(bootstrap.render(REPO if normal_helper_refreshed else installed_source, install,
+                                       prior_root if normal_helper_refreshed == 'prior' else ''))
     helper.chmod(0o750)
     config = {'source': {'repository': 'https://github.com/example/product'}, 'consumer': {'owner': 'owner'},
               'environment': {'localApply': {'source': 'git', 'repository': 'example/config', 'configPath': 'prod.json'}}}
@@ -89,7 +93,18 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
          patch.object(bootstrap.owner, 'acquire_source', side_effect=fetch):
         template.write_text('{{ 1 / 0 }}\n')
         template.chmod(0o664)
-        assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
+        if normal_helper_refreshed == 'prior':
+            initial = helper.read_bytes()
+            with patch.object(bootstrap.owner, 'git', return_value='false'), \
+                 patch.object(bootstrap.subprocess, 'run', return_value=subprocess.CompletedProcess([], ancestor_result)):
+                if ancestor_result:
+                    with pytest.raises(ValueError, match='previous-controller-not-accepted-ancestor'):
+                        bootstrap.bootstrap(config, HEAD, filesystem_root=root)
+                    assert helper.read_bytes() == initial
+                    return
+                assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
+        else:
+            assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
         final = helper.read_bytes()
         assert (install / 'current').readlink() == before
         controller = root / 'var/lib/fixture/owner-lifecycle-controllers' / HEAD
@@ -106,7 +121,9 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root):
         assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' in normal.stderr
         assert bootstrap.bootstrap(config, HEAD, filesystem_root=root) == HEAD
         assert helper.read_bytes() == final
-        assert fetches == [('example/product', HEAD), ('example/product', OLD)] * 2
+        expected_fetches = [('example/product', HEAD), ('example/product', OLD)]
+        assert fetches == (expected_fetches + [('example/product', prior_revision)] + expected_fetches
+                           if normal_helper_refreshed == 'prior' else expected_fetches * 2)
         (controller / 'deploy/owner_lifecycle.py').write_text('# modified\n')
         with pytest.raises(ValueError, match='bootstrap-controller-drift'):
             bootstrap.bootstrap(config, HEAD, filesystem_root=root)

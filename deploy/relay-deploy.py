@@ -247,9 +247,9 @@ def arguments():
     p.add_argument('--install-recovery-operation', help='Exact original operation UUID; install recovery only')
     p.add_argument('--install-recovery-target', help='Immutable original product target; install recovery only')
     p.add_argument('--retained-runner-maintenance', type=Path,
-                   help='Owner declaration of exact already-restored Runner IDs for bounded install recovery')
+                   help='Owner declaration of exact existing Runner identities for bounded install recovery')
     p.add_argument('--continue-install-recovery', action='store_true',
-                   help='Finish the reserved post-consumer-publication operation without changing its frozen Git pair')
+                   help='Continue a proved reserved Begin or consumer-publication frontier with its frozen Git pair')
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
@@ -869,6 +869,12 @@ def run(args):
                         values['relay_intent_expected_installed_revision'] = backend_expected
                         inventory['all']['children']['relay']['hosts'][target['host']]['relay_intent_expected_installed_revision'] = backend_expected
                         preparation.host()
+                        # A transient signed-repository/hash failure must be
+                        # discovered while the known-good runtime and its gate
+                        # still retain their original state. No package installs
+                        # or live APT-list changes occur in this acquisition proof.
+                        args._intent_failure_stage = 'prerequisite-acquisition'
+                        preflight_play('relay-intent-apt-preflight.yml')
                         if (preparation.initial is not None and not args.authorize_lifecycle_recovery
                                 and not (serial_transition and getattr(pool_preflight_proof, 'operation_id', None))):
                             preparation.capture()
