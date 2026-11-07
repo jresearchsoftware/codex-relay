@@ -68,7 +68,8 @@ def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
     # Equal executable bytes cannot prove that a long-running Reviewer adopted
     # its changed configuration. Only the saved maintained-operation route may
     # explicitly adopt that configuration, using a fresh live process baseline.
-    config_adoption = 'runnerMaintenance' in binding and old_binary == new_binary
+    config_adoption = ('runnerMaintenance' in binding and old_binary == new_binary
+        and binding['installedRevision'] != binding['desiredRevision'])
     require(config_adoption or old_binary != new_binary and gate['phase'] == 'applying',
             'RUNTIME_ADOPTION_AMBIGUOUS')
     if config_adoption:

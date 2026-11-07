@@ -167,6 +167,23 @@ def _render_tasks():
     return tasks
 
 
+def _source_identity(revision):
+    return {'revision': revision, 'tree': revision,
+        'sourceTreeSha256': ('a' if revision == ORIGINAL else 'b') * 64,
+        'controllerSourceTreeSha256': 'c' * 64, 'codexLauncherSourceTreeSha256': 'd' * 64,
+        'reviewerSourceTreeSha256': 'e' * 64, 'reviewerBuildInputsTreeSha256': 'f' * 64}
+
+
+def _identity_tasks():
+    # Production binds these identities with host set_fact. Task vars do not
+    # override those facts, so a play-vars-only fixture misses that precedence.
+    return [{'ansible.builtin.include_tasks': str(
+        SOURCE / 'deploy/ansible/roles/relay_artifacts/tasks/resolve-identities.yml')},
+        {'ansible.builtin.assert': {'that': [
+            'hostvars[inventory_hostname].relay_release_commit == relay_source_identity.revision',
+            'hostvars[inventory_hostname].relay_release_sha256 == relay_source_identity.sourceTreeSha256']}}]
+
+
 def _inside_setup():
     activation, inputs = _modules()
     config = inputs(6, namespace='lifecycle')
@@ -193,7 +210,8 @@ def _inside_setup():
         relay_namespace='lifecycle', relay_admission_operation_id=OPERATION,
         relay_admission_recovery_authorized=True, relay_production_operation_target_head=DESIRED,
         relay_retained_reviewer_config_adoption=True,
-        relay_release_commit=ORIGINAL, relay_release_sha256='a' * 64)
+        relay_consumer_publication_continuation=True,
+        relay_source_identity=_source_identity(ORIGINAL))
     digest = hashlib.sha256(Path('/opt/lifecycle/reviewer-binary').read_bytes()).hexdigest()
     # Deliberate overlapping synthetic commit/tree strings also reject naive
     # global string replacement when reconstructing the original render.
@@ -208,8 +226,9 @@ def _inside_setup():
     Path('/opt/lifecycle/current').symlink_to('releases/' + ORIGINAL)
     state = {'config': config, 'variables': variables}
     Path('/etc/lifecycle').mkdir(mode=0o755)
-    _play(state, _render_tasks())
+    _play(state, [*_identity_tasks(), *_render_tasks()])
     original = Path('/etc/lifecycle/reviewer-mcp.json').read_text()
+    assert json.loads(original)['artifact'] == {'commit': ORIGINAL, 'sha256': 'a' * 64}
     _write('/etc/lifecycle/reviewer-activation-authorized', 'authorized\n')
     _write('/etc/lifecycle/synthetic-ca.pem', 'synthetic readable CA; no request is made\n', 0o644)
     _write('/opt/lifecycle/reviewer-app.env', 'GITHUB_APP_ID=' + str(variables['relay_reviewer_app_id']) +
@@ -315,10 +334,11 @@ def _inside_run():
     before = state['before']
     original = state['original']
     variables = state['variables']
-    variables.update(relay_release_commit=DESIRED, relay_release_sha256='b' * 64)
-    _play(state, _render_tasks())
+    variables.update(relay_source_identity=_source_identity(DESIRED))
+    _play(state, [*_identity_tasks(), *_render_tasks()])
     desired = Path('/etc/lifecycle/reviewer-mcp.json').read_text()
     assert desired != original
+    assert json.loads(desired)['artifact'] == {'commit': DESIRED, 'sha256': 'b' * 64}
     payload = _payload(state) | {'before': before}
     native = _boundary(activation, state)(payload)
     try:
@@ -379,7 +399,8 @@ def _inside_run():
     validation[0]['ansible.builtin.include_tasks'] = 'retained-test-maintained.yml'
     (tasks_root / 'retained-test-activate.yml').write_text(yaml.safe_dump(activate))
     (tasks_root / 'retained-test-validation.yml').write_text(yaml.safe_dump(validation))
-    sequence = [{'ansible.builtin.include_tasks': str(tasks_root / 'upgrade-lifecycle-observe.yml')},
+    sequence = [*_identity_tasks(),
+        {'ansible.builtin.include_tasks': str(tasks_root / 'upgrade-lifecycle-observe.yml')},
         *_render_tasks(), {'ansible.builtin.meta': 'flush_handlers'},
         {'ansible.builtin.include_tasks': str(tasks_root / 'retained-test-activate.yml')},
         {'ansible.builtin.include_tasks': str(tasks_root / 'retained-test-validation.yml')}]
@@ -390,7 +411,15 @@ def _inside_run():
     else:
         raise AssertionError('ordinary maintained decision silently allowed config adoption')
     assert native.reviewer()['pid'] == before['reviewer']['pid']
-    output = _play(state, sequence + [{'ansible.builtin.copy': {
+    output = _play(state, sequence + [{'ansible.builtin.assert': {'that': [
+        '(relay_retained_reviewer_original_config | from_json).artifact.commit == ' + json.dumps(ORIGINAL),
+        '(relay_retained_reviewer_original_config | from_json).artifact.sha256 == ' + json.dumps('a' * 64),
+        '(relay_retained_reviewer_desired_config | from_json).artifact.commit == ' + json.dumps(DESIRED),
+        '(relay_retained_reviewer_desired_config | from_json).artifact.sha256 == ' + json.dumps('b' * 64),
+        'relay_retained_reviewer_original_config != relay_retained_reviewer_desired_config',
+        'hostvars[inventory_hostname].relay_release_commit == relay_source_identity.revision',
+        'hostvars[inventory_hostname].relay_release_sha256 == relay_source_identity.sourceTreeSha256']}},
+        {'ansible.builtin.copy': {
         'dest': '/run/lifecycle/adoption-result.json', 'mode': '0600',
         'content': '{{ relay_retained_reviewer_adoption.stdout }}'}}])
     assert 'RELAY_UPGRADE_ACTIVATION_VALIDATED=' in output

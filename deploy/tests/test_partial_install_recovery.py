@@ -186,6 +186,32 @@ def maintained_frontier(incident, phase='recovery-required', *, unchanged_consum
 
 
 @pytest.mark.parametrize('phase', ['recovery-required', 'applying'])
+def test_same_artifact_maintenance_is_not_a_post_apply_configuration_transition(incident, phase):
+    # Reserve a valid operation for the already installed exact artifact; do
+    # not manufacture a transitioned receipt by rewriting protected history.
+    incident.config = copy.deepcopy(incident.original)
+    binding = incident.binding
+    binding.update(controllerRevision=BASELINE, desiredRevision=BASELINE,
+        runnerMaintenance={'operationId': OPERATION, 'retainedTarget': BASELINE,
+            'runners': {'production': {'runnerId': 55, 'runnerName': 'fixture-production'}}})
+    binding['gitConfigReceipt'].update(product_sha=BASELINE,
+        config_sha256=hashlib.sha256((json.dumps(incident.config, sort_keys=True) + '\n').encode()).hexdigest())
+    path = incident.release / 'artifact-manifest.json'
+    manifest = json.loads(path.read_bytes())
+    manifest.update(reviewerBinarySha256='a' * 64, gitConfigReceipt=binding['gitConfigReceipt'])
+    write(path, manifest)
+    receipt = incident.helper('begin', incident.helper('inspect'))
+    if phase == 'applying':
+        incident.native('phase', options={'operationId': OPERATION, 'phase': phase})
+    assert incident.helper('inspect') == receipt
+    before, history, reserved = incident.snapshot(), incident.history(), incident.receipt.read_bytes()
+    with pytest.raises(ValueError, match='PARTIAL_INSTALL_RUNTIME_ADOPTION_AMBIGUOUS'):
+        partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    assert incident.snapshot() == before and incident.history() == history
+    assert incident.receipt.read_bytes() == reserved
+
+
+@pytest.mark.parametrize('phase', ['recovery-required', 'applying'])
 def test_noop_consumer_publication_needs_no_fabricated_backup_or_desired_file(incident, phase):
     receipt = maintained_frontier(incident, phase, unchanged_consumer=True)
     desired = incident.config_root / ('.consumer-' + OPERATION + '.desired.json')
