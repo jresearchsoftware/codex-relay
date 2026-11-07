@@ -446,6 +446,9 @@ with its ordinary installed-source implementation.
 
 An unrecognized existing helper, unsafe code/path, changed source, busy lock or
 interrupted unpublished controller refuses with retained evidence for diagnosis.
+Existing-helper recognition accepts the exact Ansible template projection and
+the historical bootstrap projection from freshly acquired accepted source;
+it does not normalize whitespace or accept edited helper bytes.
 An already published identical controller/helper is verified and reused. This
 command is not an unqualified direct-root deployment fallback: bootstrap and the
 later genuine owner-triggered recovery each require their own existing protected

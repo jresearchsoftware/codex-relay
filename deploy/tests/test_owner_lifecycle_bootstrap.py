@@ -9,6 +9,8 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+from ansible.parsing.dataloader import DataLoader
+from ansible.template import Templar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import owner_lifecycle_bootstrap as bootstrap
@@ -29,6 +31,18 @@ def test_render_preserves_regular_route_and_limits_bootstrap_to_recover():
         assert subprocess.run(['/bin/bash', '-n'], input=content, text=True).returncode == 0
 
 
+@pytest.mark.parametrize('recovery_root', ['', '/var/lib/example/controllers/' + HEAD])
+def test_recognized_helpers_are_exact_ansible_or_bootstrap_projections(recovery_root):
+    values = {'relay_install_root': '/opt/example', 'relay_owner_lifecycle_recovery_root': recovery_root}
+    actual = Templar(loader=DataLoader(), variables=values).template(
+        (REPO / bootstrap.TEMPLATE).read_text(), preserve_trailing_newlines=True).encode()
+    candidates = bootstrap.recognized_renders(REPO, Path('/opt/example'), recovery_root)
+    assert actual in candidates
+    assert bootstrap.render(REPO, Path('/opt/example'), recovery_root) in candidates
+    assert actual + b'\n' not in candidates
+    assert actual.replace(b'cd /\n', b'cd /tmp\n') not in candidates
+
+
 @pytest.fixture
 def protected_root():
     if os.geteuid() != 0:
@@ -38,7 +52,9 @@ def protected_root():
 
 
 @pytest.mark.parametrize('normal_helper_refreshed,ancestor_result', [(False, 0), (True, 0), ('prior', 0), ('prior', 1)])
-def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root, normal_helper_refreshed, ancestor_result):
+@pytest.mark.parametrize('installed_renderer', ['bootstrap', 'ansible'])
+def test_bootstrap_only_refreshes_transport_and_rejects_drift(
+        protected_root, normal_helper_refreshed, ancestor_result, installed_renderer):
     root = protected_root
     install = root / 'opt/fixture'
     installed_source = install / 'releases' / OLD / 'reviewed-source'
@@ -59,8 +75,14 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(protected_root, no
         shutil.copyfile(REPO / 'deploy' / name, installed_source / 'deploy' / name)
     prior_revision = 'c' * 40
     prior_root = root / 'var/lib/fixture/owner-lifecycle-controllers' / prior_revision
-    helper.write_bytes(bootstrap.render(REPO if normal_helper_refreshed else installed_source, install,
-                                       prior_root if normal_helper_refreshed == 'prior' else ''))
+    helper_source = REPO if normal_helper_refreshed else installed_source
+    recovery_root = str(prior_root) if normal_helper_refreshed == 'prior' else ''
+    if installed_renderer == 'ansible':
+        helper.write_text(Templar(loader=DataLoader(), variables={
+            'relay_install_root': str(install), 'relay_owner_lifecycle_recovery_root': recovery_root,
+        }).template((helper_source / bootstrap.TEMPLATE).read_text(), preserve_trailing_newlines=True))
+    else:
+        helper.write_bytes(bootstrap.render(helper_source, install, recovery_root))
     helper.chmod(0o750)
     config = {'source': {'repository': 'https://github.com/example/product'}, 'consumer': {'owner': 'owner'},
               'environment': {'localApply': {'source': 'git', 'repository': 'example/config', 'configPath': 'prod.json'}}}
