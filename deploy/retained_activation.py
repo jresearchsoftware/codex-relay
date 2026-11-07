@@ -144,7 +144,7 @@ class Native:
             time.sleep(1)
 
     def transport_dependencies(self):
-        """Keep known General transports outside this restart's stop edges.
+        """Confine the loaded stop/restart propagation closure to controls.
 
         A retained Apply may have published its release before replacing a
         legacy General PartOf unit. Inspect the loaded graph, including
@@ -154,7 +154,12 @@ class Native:
         general = {identity['service'] for component, identity in identities.items() if component != 'production'}
         reviewer = compile_inputs(self.config).get('relay_reviewer_service_name', 'reviewer-mcp.service')
         controls = {reviewer, identities['production']['service']}
-        fields = {'LoadState', 'NeedDaemonReload', 'PartOf', 'Requires', 'BindsTo', 'PropagatesStopTo'}
+        # systemd exposes the effective inverse edges, including dependencies
+        # introduced by foreign units/drop-ins. Following forward PartOf or
+        # Requires would miss the units affected by restarting their parent.
+        propagation = {'ConsistsOf', 'RequiredBy', 'BoundBy', 'RequisiteOf', 'PropagatesStopTo'}
+        fields = {'LoadState', 'NeedDaemonReload', 'PartOf', 'Requires', 'BindsTo'} | propagation
+        graph = {}
         for unit in sorted(general | controls):
             rows = command(['/bin/systemctl', 'show', unit, '--property=' + ','.join(sorted(fields))]).decode().splitlines()
             pairs = [row.split('=', 1) for row in rows if '=' in row]
@@ -163,14 +168,23 @@ class Native:
             observed = dict(pairs)
             require(observed.keys() == fields and observed['LoadState'] == 'loaded'
                     and observed['NeedDaemonReload'] == 'no', 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNPROVEN')
+            graph[unit] = set().union(*(observed[field].split() for field in propagation))
             if unit in general:
                 require(not any(set(observed[field].split()) & controls for field in ['PartOf', 'Requires', 'BindsTo']),
                         'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
-            if unit in controls:
-                stop_targets = set(observed['PropagatesStopTo'].split())
-                require(not stop_targets & general,
-                        'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
-                require(stop_targets <= controls, 'CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE')
+        pending, visited = list(sorted(controls)), set()
+        while pending:
+            unit = pending.pop()
+            if unit in visited:
+                continue
+            visited.add(unit)
+            targets = graph[unit]
+            require(not targets & general, 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
+            # Refuse at the first foreign edge: all its downstream effects are
+            # already outside authority, so loading/traversing foreign units
+            # cannot make this restart eligible. Cycles among controls are safe.
+            require(targets <= controls, 'CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE')
+            pending.extend(sorted(targets - visited))
 
     def runners(self, contract):
         from pool_authorization import installation_authorization

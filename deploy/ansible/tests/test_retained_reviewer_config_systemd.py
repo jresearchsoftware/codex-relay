@@ -383,6 +383,46 @@ def _inside_run():
         dropin.parent.rmdir()
         subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
     assert {unit: _service(unit) for unit in processes} == processes
+    # Reverse PartOf is owned by the child, including a foreign child the
+    # configuration never named. Also cover an indirect chain into General.
+    # Do not actually restart these unsafe graphs: the product must refuse
+    # before effects, rather than relying on its final PID comparison.
+    for transitive in (False, True):
+        foreign_unit = 'retained-foreign-child.service'
+        foreign_path = Path('/etc/systemd/system') / foreign_unit
+        _write(foreign_path, '[Unit]\nPartOf=reviewer-mcp.service\n'
+               '[Service]\nExecStart=/bin/sleep infinity\n', 0o644)
+        if transitive:
+            _write(dropin, '[Unit]\nPartOf=' + foreign_unit + '\n', 0o644)
+        subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
+        subprocess.run(['/bin/systemctl', 'start', foreign_unit], check=True)
+        assert foreign_unit in _command([
+            '/bin/systemctl', 'show', 'reviewer-mcp.service', '--property=ConsistsOf', '--value']).split()
+        if transitive:
+            assert primary_unit in _command([
+                '/bin/systemctl', 'show', foreign_unit, '--property=ConsistsOf', '--value']).split()
+        protected = {unit: _service(unit) for unit in [*processes, foreign_unit]}
+        try:
+            try:
+                activation.adopt_config(payload, _boundary(activation, state)(payload))
+            except ValueError as error:
+                assert 'CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE' in str(error), str(error)
+            else:
+                raise AssertionError('foreign reverse/transitive PartOf allowed a destructive restart')
+            assert {unit: _service(unit) for unit in protected} == protected
+            assert Path(state['receiptPath']).read_text() == state['receiptBytes']
+            assert json.loads(STATE.read_text())['binding'] == state['binding']
+        finally:
+            if transitive:
+                dropin.unlink()
+                dropin.parent.rmdir()
+            foreign_path.unlink()
+            # Detach before stopping the fixture, preserving General even
+            # during TEST cleanup of the deliberately unsafe graph.
+            subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
+            subprocess.run(['/bin/systemctl', 'stop', foreign_unit], check=True)
+        assert {unit: _service(unit) for unit in processes} == processes
+        print('REAL_FOREIGN_TRANSITIVE_REFUSAL_PASS' if transitive else 'REAL_FOREIGN_PARTOF_REFUSAL_PASS')
     # The production decision remains closed unless the specific owner choice
     # is supplied; rendering alone cannot grant the guarded restart.
     variables.update(relay_upgrade_lifecycle_previous_active=state['previous'],

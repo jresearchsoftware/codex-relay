@@ -1558,6 +1558,12 @@ It renders the production Ansible configuration, performs the guarded activation
 and real final process proof. GitHub/admission and Runner registration transport
 remain isolated fixtures. Without the explicit ELF input this opt-in integration
 is skipped; ordinary unit tests do not replace its configuration-adoption evidence.
+Before adoption, the loaded systemd stop/restart propagation closure
+(`ConsistsOf`, `RequiredBy`, `BoundBy`, `RequisiteOf`, `PropagatesStopTo`) must
+remain within Reviewer and its authorized dependent Production service.
+A reachable General or foreign unit refuses before restart, including indirect
+paths. The integration tests direct foreign `PartOf` and foreign-to-General
+chains with unchanged process identities, then the permitted adoption path.
 
 The governed standalone CLI is pinned to **0.160.0**. The credential-free
 launcher default for new automatic invocations is native

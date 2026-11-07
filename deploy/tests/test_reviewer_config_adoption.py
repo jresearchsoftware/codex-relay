@@ -336,7 +336,8 @@ def test_native_known_general_restart_dependencies_are_refused(monkeypatch, comp
     units['reviewer'] = activation.compile_inputs(value['config']).get('relay_reviewer_service_name', 'reviewer-mcp.service')
     def command(argv):
         observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': '',
-                    'Requires': 'sysinit.target', 'BindsTo': '', 'PropagatesStopTo': ''}
+                    'Requires': 'sysinit.target', 'BindsTo': '', 'PropagatesStopTo': '',
+                    'ConsistsOf': '', 'RequiredBy': '', 'BoundBy': '', 'RequisiteOf': ''}
         if argv[2] == units[component]:
             observed[field] = units[control]
         return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
@@ -355,7 +356,8 @@ def test_native_control_restart_cannot_stop_an_explicit_foreign_unit(monkeypatch
              'reviewer': activation.compile_inputs(value['config']).get('relay_reviewer_service_name', 'reviewer-mcp.service')}
     def command(argv):
         observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': '',
-                    'Requires': '', 'BindsTo': '', 'PropagatesStopTo': ''}
+                    'Requires': '', 'BindsTo': '', 'PropagatesStopTo': '',
+                    'ConsistsOf': '', 'RequiredBy': '', 'BoundBy': '', 'RequisiteOf': ''}
         if argv[2] == units[component]:
             observed['PropagatesStopTo'] = units['production'] + ' ' + target
         return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
@@ -364,7 +366,7 @@ def test_native_control_restart_cannot_stop_an_explicit_foreign_unit(monkeypatch
         native.transport_dependencies()
 
 
-@pytest.mark.parametrize('damage', [None, 'reload', 'not-loaded', 'missing', 'duplicate', 'malformed'])
+@pytest.mark.parametrize('damage', [None, 'reload', 'not-loaded', 'missing', 'missing-reverse', 'duplicate', 'malformed'])
 def test_native_dependency_read_is_complete_and_does_not_reject_foreign_graphs(monkeypatch, damage):
     value = payload()
     native = activation.Native(value)
@@ -376,13 +378,16 @@ def test_native_dependency_read_is_complete_and_does_not_reject_foreign_graphs(m
         calls.append(argv)
         observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': 'foreign.service',
                     'Requires': 'sysinit.target foreign.service', 'BindsTo': 'unrelated.service',
-                    'PropagatesStopTo': '' if argv[2] in controls else 'foreign.service'}
+                    'PropagatesStopTo': '' if argv[2] in controls else 'foreign.service',
+                    'ConsistsOf': '', 'RequiredBy': '', 'BoundBy': '', 'RequisiteOf': ''}
         if damage == 'reload':
             observed['NeedDaemonReload'] = 'yes'
         elif damage == 'not-loaded':
             observed['LoadState'] = 'not-found'
         elif damage == 'missing':
             del observed['BindsTo']
+        elif damage == 'missing-reverse':
+            del observed['ConsistsOf']
         raw = '\n'.join(key + '=' + item for key, item in observed.items())
         if damage == 'duplicate':
             raw += '\nPartOf='
@@ -397,3 +402,47 @@ def test_native_dependency_read_is_complete_and_does_not_reject_foreign_graphs(m
         with pytest.raises(ValueError, match='GENERAL_DEPENDENCY_UNPROVEN'):
             native.transport_dependencies()
         assert len(calls) == 1
+
+
+@pytest.mark.parametrize('edge', ['ConsistsOf', 'RequiredBy', 'BoundBy', 'RequisiteOf', 'PropagatesStopTo'])
+@pytest.mark.parametrize('via_production', [False, True])
+@pytest.mark.parametrize('target', ['foreign.service', 'foreign.target', 'general'])
+def test_loaded_propagation_closure_refuses_foreign_and_general(monkeypatch, edge, via_production, target):
+    native = activation.Native(payload())
+    identities, _ = activation.services(native.config)
+    reviewer = activation.compile_inputs(native.config).get('relay_reviewer_service_name', 'reviewer-mcp.service')
+    production = identities['production']['service']
+    forbidden = identities['general']['service'] if target == 'general' else target
+    def command(argv):
+        fields = argv[3].removeprefix('--property=').split(',')
+        observed = dict.fromkeys(fields, '')
+        observed.update(LoadState='loaded', NeedDaemonReload='no')
+        if argv[2] == reviewer:
+            if via_production:
+                observed['ConsistsOf'] = production
+            else:
+                observed[edge] = forbidden
+        if argv[2] == production and via_production:
+            observed[edge] = forbidden
+        return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
+    monkeypatch.setattr(activation, 'command', command)
+    with pytest.raises(ValueError, match='GENERAL_DEPENDENCY_UNSAFE' if target == 'general' else 'FOREIGN_STOP_UNSAFE'):
+        native.transport_dependencies()
+
+
+def test_loaded_control_propagation_cycle_is_bounded(monkeypatch):
+    native = activation.Native(payload())
+    identities, _ = activation.services(native.config)
+    production = identities['production']['service']
+    reviewer = activation.compile_inputs(native.config).get('relay_reviewer_service_name', 'reviewer-mcp.service')
+    calls = []
+    def command(argv):
+        calls.append(argv[2])
+        observed = dict.fromkeys(argv[3].removeprefix('--property=').split(','), '')
+        observed.update(LoadState='loaded', NeedDaemonReload='no')
+        if argv[2] in [reviewer, production]:
+            observed['ConsistsOf'] = production if argv[2] == reviewer else reviewer
+        return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
+    monkeypatch.setattr(activation, 'command', command)
+    native.transport_dependencies()
+    assert len(calls) == len(set(calls)) == 8
