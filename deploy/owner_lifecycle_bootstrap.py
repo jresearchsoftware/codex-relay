@@ -20,11 +20,19 @@ from installed_config import protected_parents, read_protected
 TEMPLATE = 'deploy/ansible/roles/relay_runner/templates/relay-owner-lifecycle.j2'
 
 
-def render(root, install, recovery_root=''):
+def render(root, install, recovery_root='', *, trim_blocks=False):
     from jinja2 import Environment, StrictUndefined
-    return Environment(undefined=StrictUndefined, keep_trailing_newline=True).from_string(
+    return Environment(undefined=StrictUndefined, keep_trailing_newline=True,
+                       trim_blocks=trim_blocks).from_string(
         (root / TEMPLATE).read_text()).render(relay_install_root=str(install),
             relay_owner_lifecycle_recovery_root=str(recovery_root)).encode()
+
+
+def recognized_renders(root, install, recovery_root=''):
+    # Ansible's template action trims block newlines; historical bootstrap
+    # publication uses Jinja's default. Accept only these two exact projections
+    # from freshly acquired accepted source, never normalized helper bytes.
+    return [render(root, install, recovery_root, trim_blocks=value) for value in [False, True]]
 
 
 def bootstrap(config, revision, *, filesystem_root=Path('/')):
@@ -65,11 +73,11 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
             # their executable import closure. Never evaluate installed Jinja as
             # root: recover the original template from fresh exact Git objects.
             original_source = owner.acquire_source(Path(temporary) / 'installed-source', repository, installed)
-            original = render(original_source, install)
+            original = recognized_renders(original_source, install)
             # Apply may have refreshed the normal fixed helper before APT
             # failed, while current still selects the old release. Its exact
             # accepted template is also a valid bootstrap starting point.
-            recognized = previous in [original, desired, render(selected, install)]
+            recognized = previous in [*original, desired, *recognized_renders(selected, install)]
             if not recognized:
                 prior = set(re.findall(re.escape(str(stage)).encode()
                     + rb'/([0-9a-f]{40})/deploy/owner_lifecycle[.]py', previous))
@@ -85,7 +93,7 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
                     'bootstrap-previous-controller-not-accepted-ancestor')
                 prior_source = owner.acquire_source(Path(temporary) / 'previous-controller', repository, prior_revision)
-                recognized = previous == render(prior_source, install, stage / prior_revision)
+                recognized = previous in recognized_renders(prior_source, install, stage / prior_revision)
             owner.require(recognized, 'bootstrap-existing-helper-unrecognized')
             if destination.exists() or destination.is_symlink():
                 # An interrupted bootstrap is observable, never overwritten.
