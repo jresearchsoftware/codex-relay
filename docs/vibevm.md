@@ -174,9 +174,17 @@ python3 scripts/test-qualify-vibevm.py
 
 Structural mode reads committed inputs without a network or VibeVM. Optional
 tool mode rechecks the binary digest and uses isolated projects to exercise
-native clean/repeat install, existing-slot offline reinstall, generated routes and
-human-overlay behavior. Supplied source/distribution directories must first be
-acquired at the selected immutable identities. These commands describe the
+native clean/repeat install, relocation with the original source absent,
+existing-slot offline reinstall, generated routes and human-overlay behavior.
+Local registry URLs are absolute native location metadata. Before checking a
+relocated fixture, the probe re-resolves the relative registry through native
+installation; it requires unchanged content hashes, dependency graph, source
+revision, slots, routes and Skill bytes, allowing only the local source URL and
+lock generation timestamp to change. The missing-origin warning must appear
+before this repair and disappear afterward. See the
+[maintenance binding](self-adoption.md#deliberate-source-maintenance). Supplied
+source/distribution directories must first be acquired at the selected immutable
+identities. These commands describe the
 qualification contract; actual candidate results and warnings belong in its
 PR, native checks and Outcome. They do not qualify a model or Relay installation.
 Use the existing complete candidate checks rather than new per-topic rituals.

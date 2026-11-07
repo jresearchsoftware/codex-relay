@@ -95,9 +95,16 @@ and Skill projection are the bounded offline paths.
 The first-party native `source_url` is generated absolute location metadata and
 may name its generating checkout; it is not portable provenance or acceptance.
 Use exact export/registry/slot/Skill comparison and the owning Git commit for
-content identity. Shared lock identity retains its public URL, immutable revision
-and tree hash. Do not hand-edit generated URLs or change transport to make a
-check pass.
+content identity. VibeVM 1.0.11's local-source freshness check nevertheless needs
+that location to exist. For deliberate native maintenance after moving/copying
+a checkout, run the supported `install --no-default-registry --assume-yes`
+command there to resolve the relative registry and regenerate its lock location.
+The qualification probe does this in disposable copies before offline checks,
+verifying that only the local URL and generation timestamp change. It also moves
+a generated checkout with its origin absent, observes the missing-source warning,
+and verifies native repair. Ordinary offline file-reading startup needs no such
+command. Shared lock identity retains its public URL, immutable revision and
+tree hash. Do not hand-edit generated URLs or ignore freshness warnings.
 
 ## Qualification, failure and rollback
 
