@@ -2,7 +2,98 @@
 
 Relay qualifies an exact **0.160.0** installation, selected by the product
 deployment contract. Installation still uses `--release` and verifies the exact
-version. It does not follow latest or enable an automatic update policy.
+version. Runtime and installation never follow a floating latest or self-update.
+Routine source maintenance follows the separate development policy below.
+
+## Relay development maintenance policy
+
+This owner-approved policy applies to development of Relay itself, not arbitrary
+downstream consumer repositories. After independent acceptance of this rule
+change (Task #211), the next Relay product-changing Task whose completion
+includes an ordinary Apply must follow the routine process below. No additional
+maintenance Issue, Step, label, command or permission request is needed for a
+compatible bump. This rules-only Task changes no CLI version or feature flags;
+source-controlled development instructions need no Apply, package release or
+synthetic PROD job merely to take effect after acceptance.
+
+### Routine technical version maintenance
+
+Once per relevant implementation cycle, compare the exact selected CLI dependency
+with the official upstream stable release in
+[OpenAI Codex releases](https://github.com/openai/codex/releases). Freeze the
+candidate for that cycle; do not chase newer releases on each commit. Reuse
+`relay_codex_cli_version` in
+[deployment variables](../../deploy/ansible/group_vars/all.yml) and the existing
+[deployment contract](../../deploy/README.md#qualification), version assertions
+and compatibility machinery; add no parallel version registry or updater.
+
+Assess compatibility of the integration Relay actually uses: flags and
+configuration, defaults affecting supported behavior, JSON events and result
+handling, input, exit/failure and lifecycle behavior, and permission/trust
+boundaries. Use version-bound official release notes/source and the applicable
+existing [qualification](#qualification-and-limits), including the official CLI
+probe and affected launcher/result tests. Unchanged flag names alone do not
+establish compatibility. This bounded assessment preserves the existing
+integration; it neither guarantees every possible upstream behavior nor counts
+as the complete capability review below.
+
+When a newer stable candidate preserves that integration and passes applicable
+compatibility qualification, update the selected dependency and directly required
+version references in the same Task and PR. Preserve reproducible exact pinning,
+installation integrity and normal independent review of the exact result head.
+Use the Task's already authorized deployment path; do not self-update an executing
+worker, autonomously mutate PROD or add an Apply solely for a maintenance note.
+
+If the candidate is incompatible, qualification is unavailable or checking
+upstream fails, retain the previously qualified version and disclose the reason.
+Continue the main Task unless the existing version itself is a real blocker;
+do not weaken qualification or make an optional refresh an unrelated blocker.
+Record a concise `old version -> new version` note and compatibility evidence
+(or the retained version and reason) in the ordinary PR/Outcome, without a second
+publication or approval ritual. An older capability-review baseline does not
+block an otherwise compatible technical bump, and a bump does not advance it.
+
+### Separate periodic capability review
+
+The owner explicitly selects a review and target version through ordinary Task
+authority. There is no recurring service/schedule and no required review after
+every technical upgrade. Maintain these distinct facts in their existing owners:
+
+| Fact | Current evidence and owner |
+| --- | --- |
+| Selected/qualified CLI dependency | Exact **0.160.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
+| Capabilities reviewed through version X | **Unknown / not yet established.** The accepted integration evidence below establishes bounded compatibility and selected capability decisions, not a complete historical review interval. No evidenced reviewed-through version or review date is established here. |
+| Installed-host version | A separate observed fact from the specific host's installation/version evidence; neither source selection nor capability review proves it. |
+
+Recover an initial capability-review boundary only from actual accepted evidence;
+a qualified binary version is insufficient. If the boundary cannot be established,
+keep it unknown and have the owner select the initial review interval explicitly.
+Do not invent a baseline, backdate a review or treat this rules-only change as a
+new upstream capability audit.
+
+For a selected review with an evidenced baseline, examine the whole interval
+after that baseline through the chosen target: new flags/configuration options,
+relevant defaults, events and behavior changes, and native capabilities that
+could simplify Relay. Use official release notes and source/docs pinned to the
+relevant versions; today's moving documentation does not establish behavior in
+every older release. Record concise dispositions for relevant changes here:
+
+1. Not useful/applicable to Relay: briefly record why.
+2. Useful and small enough for the admitted review/update scope: implement and
+   validate in the same Task/PR.
+3. Useful but requiring substantial refactoring, a material architecture, trust
+   or behavior decision, or separate scope: create a dedicated GitHub Issue or
+   link an existing equivalent Issue, with motivation and the required decision.
+   Do not launch or implement that larger change as part of the review.
+
+Once the interval is genuinely covered and decisions/follow-up links are recorded,
+update the reviewed-through fact here with target version, review date,
+version-bound official source evidence and concise decisions. Reviewed means
+assessed, not that every feature is used. Advance the baseline even if no code
+changed or larger improvements remain in linked, unimplemented Issues;
+follow-up implementation is not a prerequisite to completing the review. Do not
+advance it for an unexamined or materially incomplete interval. Retain factual
+historical qualification and its limits when updating current facts.
 
 ## Established baseline
 
