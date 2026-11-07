@@ -208,6 +208,13 @@ CI, shared or cloud execution.
 
 ## Work within the admitted goal
 
+For Relay product-changing Tasks whose completion includes an ordinary Apply,
+check routine Codex CLI maintenance once per implementation cycle under the
+[CLI maintenance policy](docs/codex/cli-integration.md#relay-development-maintenance-policy).
+Compatible bumps belong in the same Task/PR under that standing authority;
+periodic capability review is a separate owner-selected process. This is Relay
+development policy, not a downstream consumer requirement.
+
 Use the canonical [progress-bounded execution policy](docs/execution-policy.md)
 for correction, stop, prior-state and work-preservation decisions.
 
