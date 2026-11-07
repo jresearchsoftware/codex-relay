@@ -1147,6 +1147,12 @@ for historical/live-effect checks, and verifies installation and services before
 admission resumes. It is a qualified owner operation, not an ordinary blind retry
 or a variant of the decommissioned-reinstall disposition above.
 
+An exact maintained post-Apply continuation can adopt an artifact-metadata-only
+Reviewer configuration change through the guarded Reviewer/Production restart.
+It proves both new processes and retains every General process and existing
+Runner registration. Other configuration, unit or environment drift remains a
+refusal; the linked recovery contract defines the frozen-pair and receipt checks.
+
 The ordinary Git-pair composition is described in the
 [installation guide](../docs/git-managed-installation.md). The retained
 installed-snapshot/checkout lifecycle below remains the current public PROD
@@ -1537,6 +1543,27 @@ node --import ./consumer/test-support/consumer-env.mjs --test deploy/ansible/tes
   deploy/ansible/tests/diagnostics-*.test.mjs deploy/ansible/tests/diagnostic-snapshot.test.mjs
 sudo python3 deploy/ansible/tests/installed_runtime_proof.py
 ```
+
+The retained Reviewer configuration integration uses a separate disposable
+systemd container and the actual candidate Reviewer binary. With Docker available,
+run it explicitly from a native Linux build checkout:
+
+```sh
+cargo build --manifest-path reviewer/Cargo.toml --locked
+RELAY_TEST_REVIEWER_BINARY="$PWD/reviewer/target/debug/reviewer-mcp-http" \
+  python3 -m pytest -q deploy/ansible/tests/test_retained_reviewer_config_systemd.py
+```
+
+It renders the production Ansible configuration, performs the guarded activation
+and real final process proof. GitHub/admission and Runner registration transport
+remain isolated fixtures. Without the explicit ELF input this opt-in integration
+is skipped; ordinary unit tests do not replace its configuration-adoption evidence.
+Before adoption, the loaded systemd stop/restart propagation closure
+(`ConsistsOf`, `RequiredBy`, `BoundBy`, `RequisiteOf`, `PropagatesStopTo`) must
+remain within Reviewer and its authorized dependent Production service.
+A reachable General or foreign unit refuses before restart, including indirect
+paths. The integration tests direct foreign `PartOf` and foreign-to-General
+chains with unchanged process identities, then the permitted adoption path.
 
 The governed standalone CLI is pinned to **0.160.0**. The credential-free
 launcher default for new automatic invocations is native

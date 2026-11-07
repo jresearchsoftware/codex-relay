@@ -264,18 +264,43 @@ class ProductionComposedLifecycleTests(unittest.TestCase):
             expect_success=False,
         )
 
+    @unittest.skipUnless(localhost_ansible_available(), "native Ansible evaluates the production role conditions")
     def test_ordinary_production_scope_includes_all_installed_components(self):
+        from ansible.parsing.dataloader import DataLoader
+        from ansible.playbook.conditional import Conditional
+        from ansible.template import Templar
+
         play = yaml.safe_load(self.site)[1]
         roles = {entry['role']: entry for entry in play['roles']}
-        for name in ('relay_codex_runtime', 'relay_controller', 'relay_base', 'relay_runtime', 'relay_artifacts'):
-            if name == 'relay_controller':
-                self.assertNotIn('when', roles[name])
-            else:
-                self.assertEqual(roles[name].get('when'),
-                    'not relay_consumer_publication_continuation | default(false) | bool')
         primary = next(task for task in play['post_tasks']
                        if task.get('ansible.builtin.include_role') == {'name': 'relay_runner'})
-        self.assertNotIn('when', primary)
+
+        def selected(task, variables):
+            loader = DataLoader()
+            condition = Conditional(loader=loader)
+            expressions = task.get('when', [])
+            condition.when = [expressions] if isinstance(expressions, str) else expressions
+            return condition.evaluate_conditional(Templar(loader=loader, variables=variables), variables)
+
+        components = ('relay_codex_runtime', 'relay_controller', 'relay_base', 'relay_runtime', 'relay_artifacts')
+        for variables in ({}, {'relay_retained_reviewer_config_adoption': True}):
+            for name in components:
+                self.assertTrue(selected(roles[name], variables), name)
+            self.assertTrue(selected(primary, variables))
+
+        # Existing consumer-publication recovery retains its controller and
+        # Runner composition. Only the specifically qualified post-Apply
+        # adoption skips effects already completed in the original operation.
+        publication = {'relay_consumer_publication_continuation': True}
+        self.assertTrue(selected(roles['relay_controller'], publication))
+        self.assertTrue(selected(primary, publication))
+        adoption = {**publication, 'relay_retained_reviewer_config_adoption': True}
+        for name in components:
+            self.assertFalse(selected(roles[name], adoption), name)
+        self.assertFalse(selected(primary, adoption))
+        aliases = next(task for task in play['post_tasks'] if task.get('ansible.builtin.include_tasks') ==
+                       'roles/relay_controller/tasks/verify-runtime-entrypoints.yml')
+        self.assertTrue(selected(aliases, adoption))
         self.assertIn('tasks/production-general-runner.yml', self.site)
         self.assertNotIn('relay_production_reviewer_restore_only', self.site)
 

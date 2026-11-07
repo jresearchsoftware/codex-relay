@@ -7,11 +7,14 @@ every live observation is repeated before final lifecycle validation.
 """
 import hashlib
 import fcntl
+from contextlib import contextmanager
+import copy
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 import sys
 import time
 
@@ -26,8 +29,8 @@ def require(condition, code):
         raise ValueError('RELAY_RETAINED_ACTIVATION_' + code)
 
 
-def command(argv, *, cwd=None):
-    result = subprocess.run(argv, capture_output=True, timeout=60, cwd=cwd,
+def command(argv, *, cwd=None, pass_fds=()):
+    result = subprocess.run(argv, capture_output=True, timeout=60, cwd=cwd, pass_fds=pass_fds,
                             env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
                                  'PYTHONDONTWRITEBYTECODE': '1'})
     require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'OBSERVATION_UNAVAILABLE')
@@ -74,6 +77,114 @@ class Native:
                 and status.get('phase') == 'applying' and status.get('active') == []
                 and status.get('unknown') == [] and status.get('previousActive') == original['previousActive'],
                 'WORK_OR_OPERATION_UNPROVEN')
+
+    @contextmanager
+    def operation_lock(self):
+        lock = Path('/run') / self.config['environment']['namespace'] / 'production-operation.lock'
+        retained.protect(lock, Path('/'), 0)
+        descriptor = os.open(lock, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield descriptor
+        finally:
+            os.close(descriptor)
+
+    def configuration_transition(self):
+        """Bind supplied render bytes to the frozen protected release artifacts.
+
+        The caller renders the authentic desired product template. The old
+        artifact identity is an allowed source transition, never an assertion
+        about configuration loaded by a historical process.
+        """
+        release = self.paths['install'] / 'releases' / self.binding['desiredRevision']
+        require(Path(self.payload['release']) == release, 'CONFIG_ADOPTION_RELEASE_CHANGED')
+        original = self.paths['install'] / 'releases' / self.binding['installedRevision']
+        manifests = [retained.decode(retained.read(path / 'artifact-manifest.json', Path('/'), 0))
+                     for path in [original, release]]
+        for manifest, revision in zip(manifests, [self.binding['installedRevision'], self.binding['desiredRevision']]):
+            require(manifest.get('commit') == revision
+                    and retained.DIGEST.fullmatch(manifest.get('releaseSourceTreeSha256', ''))
+                    and retained.DIGEST.fullmatch(manifest.get('reviewerBinarySha256', '')),
+                    'CONFIG_ADOPTION_ARTIFACT_UNPROVEN')
+        require(manifests[0]['reviewerBinarySha256'] == manifests[1]['reviewerBinarySha256'],
+                'CONFIG_ADOPTION_EXECUTABLE_CHANGED')
+        expected = configuration_transition(self.payload.get('reviewerConfigTransition'), *manifests)
+        current = retained.read(Path('/etc') / self.config['environment']['namespace'] / 'reviewer-mcp.json',
+                                Path('/'), 0)
+        require(current == expected['desired'], 'CONFIG_ADOPTION_DESIRED_CONFIG_CHANGED')
+        return expected
+
+    def restart_configuration(self, descriptor):
+        installed = self.paths['install'] / 'relay-reviewer-operation-restart'
+        helper = Path(self.payload.get('restart', str(installed)))
+        staged = (helper.name == 'reviewer-config-adoption-restart'
+                  and helper.parent.parent == self.paths['install'] / 'releases'
+                  and helper.parent.name.startswith('.stage-')
+                  and retained.UUID.fullmatch(helper.parent.name.removeprefix('.stage-')) is not None)
+        require(helper == installed or staged, 'CONFIG_ADOPTION_RESTART_PATH_UNPROVEN')
+        retained.read(helper, Path('/'), 0)
+        require(stat.S_IMODE(helper.stat().st_mode) == (0o700 if staged else 0o750),
+                'CONFIG_ADOPTION_RESTART_PATH_UNPROVEN')
+        command([str(helper), '--maintained-config-adoption', self.binding['operationId'], str(descriptor)],
+                pass_fds=(descriptor,))
+
+    def wait_production(self, expected):
+        """Observe the exact restarted registration; never repeat activation."""
+        deadline = time.monotonic() + 30
+        while True:
+            remote = [runner for runner in self.github.runners() if runner.get('id') == expected['runnerId']
+                      or runner.get('name') == expected['runnerName']]
+            require(len(remote) == 1 and remote[0].get('id') == expected['runnerId']
+                    and remote[0].get('name') == expected['runnerName']
+                    and remote[0].get('status') in ['offline', 'online']
+                    and remote[0].get('busy') is False, 'CONFIG_ADOPTION_PRODUCTION_REGISTRATION_UNPROVEN')
+            if remote[0]['status'] == 'online':
+                return
+            require(time.monotonic() < deadline, 'CONFIG_ADOPTION_PRODUCTION_NOT_ONLINE')
+            time.sleep(1)
+
+    def transport_dependencies(self):
+        """Confine the loaded stop/restart propagation closure to controls.
+
+        A retained Apply may have published its release before replacing a
+        legacy General PartOf unit. Inspect the loaded graph, including
+        drop-ins, rather than inferring completion from installed source.
+        """
+        identities, _ = services(self.config)
+        general = {identity['service'] for component, identity in identities.items() if component != 'production'}
+        reviewer = compile_inputs(self.config).get('relay_reviewer_service_name', 'reviewer-mcp.service')
+        controls = {reviewer, identities['production']['service']}
+        # systemd exposes the effective inverse edges, including dependencies
+        # introduced by foreign units/drop-ins. Following forward PartOf or
+        # Requires would miss the units affected by restarting their parent.
+        propagation = {'ConsistsOf', 'RequiredBy', 'BoundBy', 'RequisiteOf', 'PropagatesStopTo'}
+        fields = {'LoadState', 'NeedDaemonReload', 'PartOf', 'Requires', 'BindsTo'} | propagation
+        graph = {}
+        for unit in sorted(general | controls):
+            rows = command(['/bin/systemctl', 'show', unit, '--property=' + ','.join(sorted(fields))]).decode().splitlines()
+            pairs = [row.split('=', 1) for row in rows if '=' in row]
+            require(len(pairs) == len(rows) and len({key for key, _ in pairs}) == len(pairs),
+                    'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNPROVEN')
+            observed = dict(pairs)
+            require(observed.keys() == fields and observed['LoadState'] == 'loaded'
+                    and observed['NeedDaemonReload'] == 'no', 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNPROVEN')
+            graph[unit] = set().union(*(observed[field].split() for field in propagation))
+            if unit in general:
+                require(not any(set(observed[field].split()) & controls for field in ['PartOf', 'Requires', 'BindsTo']),
+                        'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
+        pending, visited = list(sorted(controls)), set()
+        while pending:
+            unit = pending.pop()
+            if unit in visited:
+                continue
+            visited.add(unit)
+            targets = graph[unit]
+            require(not targets & general, 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
+            # Refuse at the first foreign edge: all its downstream effects are
+            # already outside authority, so loading/traversing foreign units
+            # cannot make this restart eligible. Cycles among controls are safe.
+            require(targets <= controls, 'CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE')
+            pending.extend(sorted(targets - visited))
 
     def runners(self, contract):
         from pool_authorization import installation_authorization
@@ -219,7 +330,7 @@ class Native:
                 'unit': retained.sha(retained.read(Path('/etc/systemd/system') / unit, Path('/'), 0))}
 
 
-def prove(payload, native=None):
+def prove(payload, native=None, *, allow_restore=True):
     config, binding = payload['config'], retained.binding_valid(payload['binding'])
     declaration = binding.get('runnerMaintenance')
     require(declaration is not None, 'OWNER_DECLARATION_REQUIRED')
@@ -256,6 +367,7 @@ def prove(payload, native=None):
                     and stopped_production else ['online']) and matches[0].get('busy') is False,
                 'ONLINE_IDLE_REGISTRATION_UNPROVEN')
         if component == 'production' and stopped_production:
+            require(allow_restore, 'CONFIG_ADOPTION_RESTORE_FORBIDDEN')
             native.restore(expected, identity, contract)
         proof[component] = native.runner(component, expected, identity, contract)
     reviewer = native.reviewer()
@@ -265,11 +377,96 @@ def prove(payload, native=None):
     return {'runners': proof, 'reviewer': reviewer}
 
 
+def configuration_transition(value, original_manifest, desired_manifest):
+    """Accept only the exact rendered artifact-identity configuration change."""
+    require(isinstance(value, dict) and value.keys() == {'original', 'desired'}
+            and all(isinstance(raw, str) and len(raw.encode('utf-8')) <= retained.LIMIT
+                    for raw in value.values()), 'CONFIG_ADOPTION_RENDER_UNPROVEN')
+    raw = {key: text.encode('utf-8') for key, text in value.items()}
+    decoded = {key: retained.decode(text) for key, text in raw.items()}
+    for key, manifest in [('original', original_manifest), ('desired', desired_manifest)]:
+        require(isinstance(decoded[key], dict) and decoded[key].get('artifact') == {
+            'commit': manifest['commit'], 'sha256': manifest['releaseSourceTreeSha256']},
+            'CONFIG_ADOPTION_ARTIFACT_UNPROVEN')
+    require(decoded['original']['artifact'] != decoded['desired']['artifact']
+            and {key: item for key, item in decoded['original'].items() if key != 'artifact'}
+            == {key: item for key, item in decoded['desired'].items() if key != 'artifact'},
+            'CONFIG_ADOPTION_DELTA_UNSUPPORTED')
+    return raw
+
+
+def adopt_config(payload, native=None):
+    """Adopt one frozen artifact-only configuration through the existing lock.
+
+    The protected accepted controller renders the expected configuration; this
+    internal API is not an authority surface for arbitrary supplied renders.
+    This is a current-state, explicitly selected service transition. Strict
+    maintenance remains unchanged. No supplied after-proof can authorize a
+    process replacement, and the immutable continuation is never rewritten.
+    """
+    require(isinstance(payload.get('before'), dict)
+            and payload.get('observed', {}).get('production', {}).get('active') is True,
+            'CONFIG_ADOPTION_ACTIVE_PRODUCTION_REQUIRED')
+    require('production' in payload.get('binding', {}).get('runnerMaintenance', {}).get('runners', {}),
+            'CONFIG_ADOPTION_PRODUCTION_DECLARATION_REQUIRED')
+    native = native or Native(payload)
+    with native.operation_lock() as descriptor:
+        expected = native.configuration_transition()
+        baseline = copy.deepcopy(payload['before'])
+        require(baseline.get('reviewer', {}).get('config') in [retained.sha(expected[key])
+                                                            for key in ['original', 'desired']],
+                'CONFIG_ADOPTION_DESIRED_CONFIG_CHANGED')
+        # The same admitted Apply may have rendered the new bytes after the
+        # original maintenance proof. Only this exact artifact-only config
+        # digest is allowed to advance before the guarded process transition.
+        baseline['reviewer']['config'] = retained.sha(expected['desired'])
+        current_payload = {**payload, 'before': baseline}
+        before = copy.deepcopy(prove(current_payload, native, allow_restore=False))
+        _, contract = services(payload['config'])
+        primary = native.primary(contract)
+        native.transport_dependencies()
+        # Repeat the exact live proof at the effect boundary while retaining
+        # the same operation lock and the caller's protected Writer lease.
+        require(prove(current_payload, native, allow_restore=False) == before
+                and native.primary(contract) == primary, 'CONFIG_ADOPTION_RUNTIME_CHANGED')
+        require(native.configuration_transition() == expected, 'CONFIG_ADOPTION_CONFIG_CHANGED')
+        native.authority()
+        native.transport_dependencies()
+        native.restart_configuration(descriptor)
+        native.wait_production(payload['binding']['runnerMaintenance']['runners']['production'])
+        after = prove({**payload, 'before': None}, native, allow_restore=False)
+        require(native.configuration_transition() == expected
+                and native.primary(contract) == primary, 'CONFIG_ADOPTION_CONFIG_OR_TRANSPORT_CHANGED')
+        reviewer_before, reviewer_after = before['reviewer'], after['reviewer']
+        require(reviewer_after['pid'] != reviewer_before['pid']
+                and reviewer_after['start'] != reviewer_before['start']
+                and {key: item for key, item in reviewer_after.items() if key not in ['pid', 'start']}
+                == {key: item for key, item in reviewer_before.items() if key not in ['pid', 'start']},
+                'CONFIG_ADOPTION_REVIEWER_NOT_ADOPTED')
+        require(after['runners'].keys() == before['runners'].keys(), 'CONFIG_ADOPTION_RUNNER_SET_CHANGED')
+        for component, previous in before['runners'].items():
+            current = after['runners'][component]
+            if component == 'production':
+                require(current['pid'] != previous['pid'] and current['startTicks'] != previous['startTicks']
+                        and {key: item for key, item in current.items() if key not in ['pid', 'startTicks']}
+                        == {key: item for key, item in previous.items() if key not in ['pid', 'startTicks']},
+                        'CONFIG_ADOPTION_PRODUCTION_NOT_ADOPTED')
+            else:
+                require(current == previous, 'CONFIG_ADOPTION_GENERAL_TRANSPORT_CHANGED')
+        native.authority()
+        return {'before': before, 'after': after}
+
+
 def main():
     try:
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
         require(len(raw) <= 1024 * 1024, 'INPUT_LIMIT')
-        print(json.dumps(prove(retained.decode(raw)), sort_keys=True))
+        payload = retained.decode(raw)
+        action = payload.get('action', 'prove')
+        require(action in ['prove', 'prove-current', 'adopt-reviewer-config'], 'ACTION_INVALID')
+        result = (adopt_config(payload) if action == 'adopt-reviewer-config'
+                  else prove(payload, allow_restore=action != 'prove-current'))
+        print(json.dumps(result, sort_keys=True))
     except Exception as error:
         code = str(error)
         print(code if re.fullmatch(r'(RELAY_RETAINED_ACTIVATION|BOUNDED_RECOVERY|MANAGED_POOL|RUNNER_SELF_UPDATE)_[A-Z_]{1,96}', code)

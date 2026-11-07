@@ -18,7 +18,8 @@
         scope['main']()
       - '{{ relay_intent_staged_release }}/reviewed-source/deploy'
     stdin: >-
-      {{ {'config': relay_installed_deployment_config | from_json,
+      {{ {'action': ('prove-current' if relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool else 'prove'),
+          'config': relay_installed_deployment_config | from_json,
           'binding': relay_bounded_recovery_binding,
           'previous': relay_upgrade_lifecycle_previous_active,
           'observed': relay_upgrade_lifecycle_observed_activity,

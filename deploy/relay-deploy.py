@@ -566,6 +566,7 @@ def run(args):
             else getattr(args, 'intent_expected_installed_revision', '')),
         'relay_git_config_receipt': getattr(args, 'git_intent', {}),
         'relay_bounded_recovery_binding': bounded_binding or {},
+        'relay_retained_reviewer_config_adoption': bool((bounded_binding or {}).get('runnerMaintenance')),
         'relay_deployment_contract': deployment_contract,
         'relay_installation_state': getattr(args, '_intent_installation_state', {}),
         'relay_production_runner_enable_exact_head': revision,

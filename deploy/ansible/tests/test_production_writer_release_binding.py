@@ -90,10 +90,24 @@ class ProductionWriterReleaseBindingTests(unittest.TestCase):
         self.assertEqual(resolve_current_target(wrapper, release_n_plus_one), release_n_plus_one + HELPER_SUFFIX)
         self.assertIn("relay_writer_helper_release_path: '{{ relay_install_root }}/current" + HELPER_SUFFIX + "'", self.group_vars)
 
+    @unittest.skipUnless(localhost_ansible_available(), "native Ansible evaluates the controller role condition")
     def test_ordinary_apply_reconciles_the_full_writer_and_diagnostics_role(self):
+        from ansible.parsing.dataloader import DataLoader
+        from ansible.playbook.conditional import Conditional
+        from ansible.template import Templar
+
         role = next(entry for entry in yaml.safe_load(self.site)[1]['roles']
                     if entry['role'] == 'relay_controller')
-        self.assertNotIn('when', role)
+        loader = DataLoader()
+        condition = Conditional(loader=loader)
+        expressions = role.get('when', [])
+        condition.when = [expressions] if isinstance(expressions, str) else expressions
+        for variables in ({}, {'relay_retained_reviewer_config_adoption': True},
+                          {'relay_consumer_publication_continuation': True}):
+            self.assertTrue(condition.evaluate_conditional(Templar(loader=loader, variables=variables), variables))
+        adoption = {'relay_consumer_publication_continuation': True,
+                    'relay_retained_reviewer_config_adoption': True}
+        self.assertFalse(condition.evaluate_conditional(Templar(loader=loader, variables=adoption), adoption))
         self.assertIn('include_tasks: writer-entrypoint.yml', self.controller_tasks)
         self.assertIn('relay_diagnostics_root', self.controller_tasks)
         self.assertIn('state: absent', self.controller_tasks)

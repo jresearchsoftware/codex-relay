@@ -325,7 +325,7 @@ local version, and matching online/idle GitHub registration/group eligibility.
 Unavailable GitHub or Reviewer evidence refuses closed. Original transport
 checks extend to the restored pool members and Production process.
 
-This route preserves the live Reviewer and Runner processes. It is deliberately
+The unchanged-runtime maintenance route preserves the live Reviewer and Runner processes. It is deliberately
 limited to a correction whose staged Reviewer executable, configuration and unit
 remain identical to the running installation. A required Reviewer restart,
 configuration/unit change, lost listener, changed process or changed declaration
@@ -333,9 +333,35 @@ refuses instead of stopping repaired healthy runners. Ordinary upgrades retain
 their existing restart behavior. Continue only through a separately authorized
 owner operation with an independently accepted controller; this declaration does
 not authorize PROD work, admission reset, re-registration or deployment retry.
-The post-consumer-publication continuation flag does not accept a new maintenance
-declaration; an interrupted maintained recovery needs diagnosis of its retained
-receipt and actual runtime before selecting any further supported action.
+The post-consumer-publication continuation flag never accepts a changed maintenance
+declaration. An interrupted maintained recovery must use the exact declaration
+already preserved in its receipt, with current live proof before any further effect.
+
+An explicit retained continuation also supports the narrow case where Apply wrote
+the frozen desired Reviewer configuration but the maintained-runtime path left its
+old process running. Both releases must contain the identical Reviewer executable;
+the exact production-rendered configuration may differ only in `artifact.commit`
+and `artifact.sha256`, bound to their protected release manifests. Policy, bind,
+environment, unit, credentials and all other configuration changes refuse. The
+controller proves the existing Reviewer, Production and General processes and all
+Runner registrations under the existing locks, then uses the guarded Reviewer
+operation restart. Its normal `PartOf` dependency deliberately replaces the
+Production process as well. Both replacement processes must be independently
+proved healthy; every General process and all Runner IDs, names, groups, users,
+work roots and native-update settings stay fixed. An unchanged PID, no-op helper,
+foreign configuration or lost transport cannot become successful adoption.
+Before activation, effective General dependencies (including drop-ins) must not
+propagate the Reviewer/Production restart to those transports. Explicit stop
+propagation outside the two authorized services also refuses. This is a read-only
+eligibility check; it does not normalize or rewrite retained units.
+
+At the already-installed post-Apply frontier this continuation skips completed
+package, runtime, artifact and Runner reconciliation. It preserves the original
+UUID, receipt, backend evidence, first activation snapshot and frozen Git pair,
+then completes the existing final runtime/backend/admission sequence. It does not
+claim that an old process loaded newly written configuration. A failed or
+interrupted activation keeps admission closed and requires fresh readback before
+another explicitly authorized continuation; there is no automatic restart retry.
 
 `DRAIN` waits for admitted work and closes admission; it does not stop a Runner.
 An explicit owner-selected `recover` can also restore its declared existing
