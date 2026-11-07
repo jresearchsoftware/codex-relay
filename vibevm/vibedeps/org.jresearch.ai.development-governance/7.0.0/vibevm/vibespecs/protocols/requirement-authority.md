@@ -66,6 +66,25 @@ in-contract defects/protected obligations, discretionary scope proposals and
 routine implementation/testing choices within delegated scope. The last category
 needs no separate permission; proposals remain optional until accepted.
 
+Apply the same provenance rule to negative constraints in Tasks, Change Requests,
+Decisions and execution prompts. No-release, no-publication, no-host-inspection,
+diagnosis-only, no-recovery, no-in-scope-fixes, prohibited tools and extra holds
+need explicit owner direction, accepted contracts or actual protected boundaries;
+an assistant's defensive preference or implementation plan supplies none.
+Ordinary operations necessary for the owner-selected outcome, including accepted
+package versioning/publication and effective in-scope diagnostics, must not be
+excluded merely to keep work nominally small or documentation-only. Choosing safe
+implementation means within delegated scope is an engineering decision.
+
+Before publishing a proposed new restriction as authority, discuss its rationale
+and consequences with the owner if it materially narrows the requested result or
+available means. This does not require renewed approval for ordinary operations
+already covered by the goal and accepted governance. Preserve real safety,
+credential, production, cross-repository, immutable-history, independent-review
+and exact-head boundaries. Do not unilaterally erase an existing accepted
+restriction: reconcile conflicting historical authority through the project's
+existing trusted Decision mechanism under RA-005.
+
 Bound required proof to the deliverable and accountable component.
 An unrelated tool's cold installation, downstream
 application or consumer configuration is mandatory only within accepted scope or
@@ -79,6 +98,17 @@ agent-authored obligations with their origin and current owner direction. Preser
 binding canonical authority until any material discrepancy is resolved through
 existing owner Decision/contract mechanisms; neither silently ignore it nor
 execute another cycle solely to satisfy an unratified suggestion.
+
+Apply the same distinction to Task closure: optional future use or observation
+does not become a completion gate, while a genuine owner-required Apply or
+protected obligation remains binding until satisfied or explicitly revised.
+Use [TH-026](task-handoff.md#TH-026) for the existing closure field's on-merge
+and condition-verified timing. Verifying an already preauthorized condition
+needs no new owner choice or policy-change Decision; genuinely changed scope,
+conditions or authority still use the existing trusted Task Decision process.
+Missing intent cannot justify unsafe closure or an invented indefinite hold;
+neither result acceptance nor a reviewer/executor can silently change authority.
+This reference does not adopt Task Handoff in another consumer.
 
 Make consequential proposals and requested dispositions prominent and unambiguous:
 state the exact recommended outcome for each finding, especially scope changes,

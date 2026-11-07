@@ -59,6 +59,25 @@ jobs:
       - name: Test Node.js components
         run: npm test
 
+      - name: Qualify pinned governance and frozen product delivery
+        run: |
+          python3 scripts/build-project-guidance.py --check
+          python3 scripts/prepare-relay-self-adoption.py --check
+          python3 scripts/test-relay-guidance.py
+          python3 scripts/test-qualify-vibevm.py
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request
+          pin = json.loads(pathlib.Path("toolchain/vibevm.json").read_text())
+          artifact = pin["linux_x86_64_musl_binary"]
+          data = urllib.request.urlopen(artifact["url"], timeout=120).read()
+          if hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+              raise SystemExit("VibeVM release digest mismatch")
+          binary = pathlib.Path(os.environ["RUNNER_TEMP"]) / "relay-vibe"
+          binary.write_bytes(data)
+          binary.chmod(0o700)
+          PY
+          python3 scripts/qualify-vibevm.py --vibe "$RUNNER_TEMP/relay-vibe"
+
       - name: Qualify sandbox cleanup across synthetic Unix identities
         run: sudo python3 scripts/qualify-sandbox-cleanup.py
 

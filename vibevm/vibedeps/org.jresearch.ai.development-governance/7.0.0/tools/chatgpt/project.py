@@ -227,12 +227,16 @@ def maintain(root, binding_path, source_repository, accepted_sha, authority_anch
                           "NO_OP" if binding["cache_enabled"] else "DISABLED"),
               "diffs": diffs, "live_settings_verified": False,
               "application": (
-                  "generation alone creates no settings-application duty; only a Task including "
-                  "application of changed Instructions requires owner application and supported "
-                  "confirmation/readback; preserve unknown live rules"
+                  "for adopting projects intentionally using generated Project Instructions, "
+                  "changed complete text requires reconciliation after acceptance/integration "
+                  "and before Task closure, even without an explicit application clause; "
+                  "compare supported live evidence, present the entire raw Markdown replacement "
+                  "in one markdown fence if different or unconfirmed, and obtain owner "
+                  "application and supported confirmation/readback; preserve unknown live rules"
                   if "instructions.md" in changes else
                   "unchanged Instructions require no new application; any prior live-settings "
-                  "verification gap remains unresolved")}
+                  "verification gap remains unresolved; generation NO_OP does not discharge "
+                  "an earlier changed-text reconciliation obligation")}
     if update:
         for name in changes:
             path = directory / name

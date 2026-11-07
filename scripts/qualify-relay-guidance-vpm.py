@@ -422,7 +422,7 @@ def qualify(vibe):
               "candidate_source": "generated source proposal; local Git fixture, not external publication",
               "artifact_sha256": {key: hashlib.sha256(value).hexdigest() for key, value in candidate.items()},
               "consumer_adapter_sha256": hashlib.sha256(consumer_template.encode()).hexdigest(),
-              "dependency_transport": "two explicit immutable consumer roots; VibeVM 1.0.7 omits transitive Git declarations",
+              "dependency_transport": "two explicit immutable consumer roots; frozen product adapter retains its source declarations",
               "model_behavior": "UNVERIFIED: native tool and file qualification only",
               "evidence_directory": str(sandbox), "commands": reports}
     (sandbox / "qualification.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -431,7 +431,7 @@ def qualify(vibe):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vibe", required=True, type=Path, help="hash-pinned Linux musl VibeVM 1.0.7 binary")
+    parser.add_argument("--vibe", required=True, type=Path, help="hash-pinned Linux musl VibeVM binary from toolchain/vibevm.json")
     args = parser.parse_args()
     try:
         result = qualify(args.vibe.resolve())

@@ -1,14 +1,14 @@
 schema = 1
-source_hash = "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9"
+source_hash = "sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07"
 spec_format = "mixed"
 
 [[file]]
 path = "CHANGELOG.md"
-sha256 = "3ed7cbc90cca1b856df14a8fb810d7812fa73b7c144683abfc9c1fa65419a10e"
+sha256 = "87cb8e90c8217a8d5ceeb2ab8cfdd107119a69dfdeacede5746aca63902d227f"
 
 [[file]]
 path = "DISTRIBUTION.json"
-sha256 = "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9"
+sha256 = "bff287dbbdd7801b65d724eef0b0f34daed33157f1f90773cfd956471aecb47b"
 
 [[file]]
 path = "LICENSE"
@@ -16,27 +16,27 @@ sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
 
 [[file]]
 path = "README.md"
-sha256 = "2ac7b1be94aeff96a4b7622df0c62636c06d3f0112823f3337df3fd5bdc8dccb"
+sha256 = "feaa899eae73d74600991d71a021fd1db9dbfce55bcce26f9a96671ce247d30d"
 
 [[file]]
 path = "tools/chatgpt/README.md"
-sha256 = "d4ab1f5f0401a9d8afc6751ba37f1af3f35a17b13af62f3a0970d39f818fbf11"
+sha256 = "4e94c177ee49715812baa1740ab478b56667b0b019a197b717c8deb35f899c78"
 
 [[file]]
 path = "tools/chatgpt/base.md"
-sha256 = "4479c0afc65ab4f2c7ba1f7441ad093e2af9feff1cf16d9a2c730edfa62fb986"
+sha256 = "36a11dd6df4d51a4004803514649795efb2faee983d2f367a19ecc3a23a255b7"
 
 [[file]]
 path = "tools/chatgpt/project.py"
-sha256 = "5fe59c07ff19eb54c84e5c043a5d55a580a9075f75c9e6bf2d3a622130fc7342"
+sha256 = "e5cf6978ddbb8c63f713afccc62cd6c993e76f70074b57cd35bbf062c9f46668"
 
 [[file]]
 path = "vibe.toml"
-sha256 = "85e81ea11e6b25902237081fd8eb4f6b8d65aa1363c38cdfb12dff49ce747d08"
+sha256 = "92ebba86ec55d4f4687e41fbc6f65f921df36222b001349e8a97136831c6db04"
 
 [[file]]
 path = "vibevm/vibespecs/boot/development-governance.md"
-sha256 = "a3ee86004a8edb978f9f53b193f606c2899993e25d33906db46b3b74cee9cb9c"
+sha256 = "0cdc2aa91a81c69fbb108c7488c1827e06edcffa32c936f391c63f89ccaf52f9"
 
 [[file]]
 path = "vibevm/vibespecs/guides/engineering-methods.md"
@@ -44,11 +44,15 @@ sha256 = "01103c8d52ab6ebd1acfecbce35e7b425db4d747094c6a2ac76289b875906248"
 
 [[file]]
 path = "vibevm/vibespecs/guides/onboarding-examples.md"
-sha256 = "af33f3fb934af67193d158714189e48e61eb8a3419c8ab3e7629be01a518c952"
+sha256 = "0e5f9f995578fad9ac45e98691b31d036616f2aceb2470e3410d4aa618b54389"
 
 [[file]]
 path = "vibevm/vibespecs/guides/onboarding.md"
-sha256 = "f8c2715ae4ace8cae16fa29ced73b9e0d30ed5c577b1caf11aba5b934d9cf83f"
+sha256 = "ab05873ed59a2b849e7b6bb3ebff393babacc6746f41397229b158c41d6e8dd9"
+
+[[file]]
+path = "vibevm/vibespecs/guides/small-improvements.md"
+sha256 = "9526a80119602c1bd57f7ddf70cf22873ed7e6fcde636f8d9a54f9c66bc67084"
 
 [[file]]
 path = "vibevm/vibespecs/protocols/context-loading.md"
@@ -68,7 +72,7 @@ sha256 = "095605951df169b8ed37913d26c882e4ef6d0752563a49655fcf0164db1aa96f"
 
 [[file]]
 path = "vibevm/vibespecs/protocols/package-versioning.md"
-sha256 = "47d97b3a8f59b7a8e477eadee58c571d5512290fc3c241493f7d3c6c52adbef6"
+sha256 = "f4397c68b574780646e192beb71154cd2af1a29f00c63462be25f223d758a2de"
 
 [[file]]
 path = "vibevm/vibespecs/protocols/proportional-controls.md"
@@ -76,12 +80,16 @@ sha256 = "9d4995184b84665c3e1a8912d53438cdaa6e0b4fcef2af1f04e9111021e729ab"
 
 [[file]]
 path = "vibevm/vibespecs/protocols/requirement-authority.md"
-sha256 = "bec2211e7243a37e46ec9eaa493cf3ee41eff33205cd8d70542990bfa20b6b80"
+sha256 = "4a6f6751990b3d17a08277e06dfa72f95ce954ed9c578fe25412631e40641a44"
 
 [[file]]
 path = "vibevm/vibespecs/protocols/self-adoption.md"
 sha256 = "d49a3a8bdb648cfbc24a823e7f6e9abb6315f71ded6677453c0260849255ece4"
 
 [[file]]
+path = "vibevm/vibespecs/protocols/small-improvements.md"
+sha256 = "917088897f9b60a65682d4f673f0858abe3dd26b98dffb19c383cf44ba913291"
+
+[[file]]
 path = "vibevm/vibespecs/protocols/task-handoff.md"
-sha256 = "ceb56d8493d2da559b72fdd964eb01330de39d87a37076f74c44ebc844c481b9"
+sha256 = "fe61aada089de718eccddc0290536e0482ad1fa46904c5848449a56d948572ba"

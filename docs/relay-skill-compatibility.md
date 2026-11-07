@@ -11,10 +11,64 @@ workflow, schemas, actors and bindings. The consumer owns deliberate dependency
 selection, its reviewed `vibe.lock`, topic adoption and local policy. Neither a
 new Shared release nor a package range automatically updates those decisions.
 
+
+## Project migration from 5.0.0 through 7.0.0
+
+Task #213 changes repository governance and its pinned VibeVM to 1.0.11. It
+preserves the product Skill's `>=2.5.0` floor, standalone Shared 5.0.0 snapshot,
+included publisher closure and every frozen package byte. The root exact pin is
+an owner-selected reproducibility/policy constraint, not a claim that earlier
+Shared interfaces are unusable. The 2.5.0 floor evidence below remains actual
+layout/history evidence; no resolver exclusion or Shared major alone revises it.
+
+The complete applicable evolution was compared release by release using the
+[immutable 7.0.0 changelog](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/blob/77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0/CHANGELOG.md),
+full protocols, migration notes and Relay contracts. Accepted producer
+`bee96f1715142fde598318e7db402168dcfabf5f`, annotated tag object
+`a85505771b10fbd88d49185e6bf0545a7983b3a7`, peeled distribution
+`77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0`, receipt and complete payload agree.
+The [native identity contract](vibevm.md#selected-immutable-identities) records
+the distinct lock/tree identity. This assessment describes adoption; candidate
+text does not authorize the session producing it.
+
+| Evolution | Before → after; disposition and Relay binding |
+| --- | --- |
+| CL, CD, GH, IR, PC, SA | All six complete protocols are byte-identical from 5.0.0 through 7.0.0: **already satisfied**. Preserve topic triggers, stronger native actors/trust/security, independent review, protected effects and existing human contribution routes. No new settings audit or gate. |
+| 5.1.0 TH-026 / RA-006 | Added owner-selected holds, completion evidence and preauthorized release through trusted Decisions. Its closure wording is **superseded by 7.0.0** for project policy; the product's earlier qualified mechanism survives only through the canonical [legacy exception](relay-guidance-ownership.md#temporary-legacy-closure-binding). Historical/admitted authority is preserved. |
+| 5.2.0 Small Improvements / boot | **Optional, not adopted**. SI-001–008 and its guide are available; no scan, queue, label setup, automatic inclusion or additional consumer duty follows. The original nine topics retain their complete adoption. |
+| 5.2.1 TH-029 / ChatGPT projector | **Adopted conditional semantics, inactive here**. Explicit application scope is no longer the sole trigger: intentional generated Project Instructions users must reconcile changed complete effective text after acceptance/integration. Full replacement and supported confirmation/readback, unchanged-text exception and surviving prior gaps remain. This repository has no authored generated Project Instructions integration; bundled helpers/optional bootstrap do not establish it. No live Settings operation or synchronization is claimed. The PATCH label was an explicit upstream one-Task exception, not proof of unchanged behavior. |
+| 5.2.2 RA-006 | **Adopted** negative-constraint provenance: assistant preferences cannot create no-release/no-diagnostics/no-fixes restrictions. Task #213's actual owner-selected project-only/no-product-release boundary and protected permissions remain binding; the candidate cannot erase them. |
+| 5.2.3 TH-001–007/010 | **Adopted; native binding retained**. Routine dispatch of agreed actionable work needs no redundant Decision certifying the same start; Issue openness starts nothing. Native authenticated command, Writer Step/profile snapshot, replay protection and actor separation remain. Standalone work outside adopted Task Handoff needs no synthetic Step/Outcome. |
+| 6.0.0 PV-014 | **Adopted, already supported** by the accepted 2.5.0 floor history and missing ninth protocol at 2.4.0 below. Assess actually needed layout/interfaces/semantics; stricter prose is no invented interface failure. No automatic next-major cap or future-version promise. Root exact pin remains justified project policy. |
+| 6.0.0 PV-015/017 | **Adopted; delivery identities separated**. Range, root lock, explicit adoption and bundled snapshot are distinct. Native routing uses selected root 7.0.0; standalone uses its attributed 5.0.0. Missing selected state is an error, never permission to load a fixed snapshot. |
+| 6.0.0 PV-005/013/018 | **Adopted, already supported with build decoupling**. Inert included closure snapshots still need frozen integrity evidence. This root lock/toolchain update is outside delivered product bytes; no product release follows. Changing product guidance, requirements, bundled snapshot, shipped lock or packaging would need its own classified correction/release. The repository adapter preserves the existing generator and artifact identities. |
+| 7.0.0 TH-026 / RA-006 | **Adopted project meaning; product implementation deferred to #194**. The single field selects completing-merge versus condition-verified later timing. The canonical legacy exception governs actual current product execution. No new field, discretionary closure approval, unsupported runtime closing link or source-adoption rollout is introduced. |
+
+Important behavior and negative cases follow the same authority split:
+
+| Case | Shared 7.0.0 meaning / current product disposition |
+| --- | --- |
+| Completing versus intermediate PR; abandoned PR | Only a genuinely completing default-branch merge closes under the new meaning; intermediate/nonmerged results do not. Implementing native linkage is #194. Current source/runtime keeps its qualified non-closing linkage and trusted continuation. |
+| Delayed publication, required Apply, unmet/wrong-target condition | Outstanding real obligations keep the Task open. Source merge, optional future observation and a green Step are not proof. Task #213 has no product release or Apply deliverable; verification of accepted integration still remains required. |
+| Preauthorized condition satisfied | Shared 7 needs no policy conversion or repeated discretionary confirmation. Current execution uses the bounded legacy trusted mechanism; do not invent a replacement approval. Genuine changed scope/authority still needs its actual Decision. |
+| No PR, historical admissions, ambiguous metadata or uncertain mutation | Retain supported no-PR completion and original attempt authority; no synthetic PR, replay or old-body rewrite. Refuse unsafe closure, reconcile genuine missing intent and preserve reservations/readback instead of inventing an indefinite hold. #194 owns new/legacy runtime qualification. |
+| Root route missing, corrupt or replaced with bundled 5.0.0 | Existing structural counterexamples reject it; complete selected 7.0.0 is required. Frozen 5.0.0 remains build/release evidence and standalone delivery only. |
+| Changed frozen product snapshot/floor or merely newer Shared major | Artifact regeneration must preserve the current product exactly. A product-byte change cannot be reported as consumer-only; a newer Shared version alone creates no product release. |
+
+Source/tool probes establish the root7 + unchanged Relay4.1 file-routing and
+frozen-byte combination. Existing local legacy-authority/linkage/continuation
+suites check the unchanged implementation. They do not qualify a newly installed
+closure runtime. The accepted upstream Relay-only transition evidence covered
+frozen Relay3.0.0, not every later artifact; neither that evidence nor the open
+range is a blanket Shared7 product-compatibility promise. Actual installed
+identity, exact-head CI, independent acceptance and integration remain separate
+proofs. Runtime closure implementation, installed qualification and the new
+Skill's justified introducing-version floor remain #194.
+
 ## Required protocol semantics
 
 The Skill adopts these complete applicable topics for Relay product guidance.
-The rule groups below use the repository's adopted 5.0.0 addresses for comparison;
+The rule groups below retain the frozen product's 5.0.0 comparison addresses;
 they are not minimum-version requirements or a selective subset
 of an adopted protocol. Read the full relevant topic, including applicability,
 exceptions and stronger local boundaries. Installing the Skill does not adopt
@@ -63,7 +117,7 @@ The initial Step 1 rationale selected 4.0.0 from stricter review obligations.
 [Owner Decision 6364617205](https://github.com/jresearchsoftware/codex-relay/issues/174#issuecomment-6364617205)
 requires technical and behavioral compatibility instead. The stricter PC-013
 and IR-012–015 wording does not prevent the Skill from consuming older selected
-rules. Relay's own project-wide adoption now selects 5.0.0 under Task #186; it
+rules. Relay's project adoption selected 5.0.0 under Task #186 and now selects 7.0.0 under Task #213; it
 does not impose that producer policy as every consumer's dependency floor.
 
 | Accepted Shared version | Actual Skill compatibility |

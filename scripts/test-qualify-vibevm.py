@@ -48,7 +48,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["tree_hash"], QUALIFICATION.TREE_HASH)
         self.assertEqual(len(facts["route"]), 4)
         self.assertEqual(facts["project_skill"], "PASS")
-        self.assertEqual(facts["payload_files"], 20)
+        self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
         self.assertEqual(facts["first_party_version"], "4.1.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")
