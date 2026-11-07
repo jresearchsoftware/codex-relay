@@ -1,15 +1,18 @@
 """The precise post-rename frontier, with original protected bytes/processes."""
 import copy
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import selectors
+import subprocess
 import sys
 from types import SimpleNamespace
 
 import pytest
 
-from test_bounded_install_recovery import incident, BASELINE, OPERATION, write
+from test_bounded_install_recovery import incident, BASELINE, NODE, OPERATION, ROOT, write
 import partial_install_recovery as partial
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
@@ -146,3 +149,292 @@ def test_partial_frontier_rejects_altered_or_ambiguous_evidence_before_effects(i
     with pytest.raises((ValueError, FileNotFoundError)):
         partial.inspect(config, operation, BASELINE, root=incident.root)
     assert incident.snapshot() == before and incident.history() == history
+
+
+def maintained_frontier(incident, phase='recovery-required', *, unchanged_consumer=False):
+    # Original gate-only evidence stays absent; Begin has since created the
+    # exact desired Apply record. The original maintenance declaration is saved
+    # by the existing reservation, never inferred from live activity.
+    incident.backend.unlink()
+    incident.binding['runnerMaintenance'] = {'operationId': OPERATION, 'retainedTarget': BASELINE,
+        'runners': {'production': {'runnerId': 55, 'runnerName': 'fixture-production'}}}
+    if unchanged_consumer:
+        incident.config['consumer'] = copy.deepcopy(incident.original['consumer'])
+        raw = (json.dumps(incident.config, sort_keys=True) + '\n').encode()
+        incident.binding['gitConfigReceipt']['config_sha256'] = hashlib.sha256(raw).hexdigest()
+        path = incident.release / 'artifact-manifest.json'
+        manifest = json.loads(path.read_bytes()); manifest['reviewerBinarySha256'] = 'a' * 64
+        write(path, manifest)
+        receipt = incident.helper('begin', incident.helper('inspect'))
+        incident.native('recovery-target', options={'operationId': OPERATION, 'target': incident.revision})
+        incident.native('phase', options={'operationId': OPERATION, 'phase': 'applying'})
+        incident.final_artifacts()
+    else:
+        receipt = frontier(incident)
+    write(incident.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
+        'phase': 'apply', 'target_head': incident.revision})
+    publication = incident.publish()
+    if unchanged_consumer:
+        assert publication['status'] == 'UNCHANGED' and not incident.backup.exists()
+        (incident.config_root / ('.consumer-' + OPERATION + '.desired.json')).unlink()
+    path = incident.install / 'releases' / incident.revision / 'artifact-manifest.json'
+    manifest = json.loads(path.read_bytes()); manifest['reviewerBinarySha256'] = 'a' * 64
+    write(path, manifest)
+    if phase != 'applying':
+        incident.native('phase', options={'operationId': OPERATION, 'phase': phase})
+    return receipt
+
+
+@pytest.mark.parametrize('phase', ['recovery-required', 'applying'])
+def test_noop_consumer_publication_needs_no_fabricated_backup_or_desired_file(incident, phase):
+    receipt = maintained_frontier(incident, phase, unchanged_consumer=True)
+    desired = incident.config_root / ('.consumer-' + OPERATION + '.desired.json')
+    before, history, original = incident.snapshot(), incident.history(), incident.receipt.read_bytes()
+    value = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    assert value['reviewerConfigAdoption'] is True and value['consumerUnchanged'] is True
+    assert value['consumerSha256'] == receipt['original']['consumerSha256']
+    assert value['gate']['consumerDigest'] == receipt['desiredDigest']
+    assert incident.receipt.read_bytes() == original and incident.snapshot() == before and incident.history() == history
+    assert not incident.backup.exists() and not desired.exists()
+
+
+@pytest.mark.parametrize('change', ['consumer', 'gate-digest', 'backup-symlink', 'desired-symlink'])
+def test_noop_consumer_missing_evidence_exception_rejects_drift_and_dangling_links(incident, change):
+    maintained_frontier(incident, unchanged_consumer=True)
+    if change == 'consumer':
+        consumer = json.loads(incident.consumer.read_bytes()); consumer['defaultProfile']['effort'] = 'low'
+        write(incident.consumer, consumer, 0o644)
+    elif change == 'gate-digest':
+        gate = json.loads(incident.gate.read_bytes()); gate['consumerDigest'] = 'a' * 64
+        write(incident.gate, gate)
+    else:
+        path = incident.backup if change == 'backup-symlink' else (
+            incident.config_root / ('.consumer-' + OPERATION + '.desired.json'))
+        path.symlink_to('missing-private-evidence')
+    before, history, original = incident.snapshot(), incident.history(), incident.receipt.read_bytes()
+    with pytest.raises((ValueError, OSError)):
+        partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    assert incident.receipt.read_bytes() == original and incident.snapshot() == before and incident.history() == history
+
+
+@pytest.mark.parametrize('phase', ['recovery-required', 'applying'])
+def test_post_apply_maintained_frontier_keeps_original_absence_and_selects_config_adoption(incident, phase):
+    receipt = maintained_frontier(incident, phase)
+    before, history, reserved = incident.snapshot(), incident.history(), incident.receipt.read_bytes()
+    value = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    assert value['reviewerConfigAdoption'] is True and value['receipt'] == receipt
+    assert value['gate']['phase'] == phase and value['gate']['consumerDigest'] == receipt['desiredDigest']
+    assert value['receipt']['original']['backendAbsent'] is True
+    assert value['originalReviewerSha256'] == value['manifest']['reviewerBinarySha256']
+    assert incident.snapshot() == before and incident.history() == history
+    assert incident.receipt.read_bytes() == reserved
+
+
+@pytest.mark.parametrize('change', ['backend-absent', 'backend-target', 'gate-digest', 'current', 'consumer'])
+def test_post_apply_config_adoption_refuses_incomplete_or_changed_frontier(incident, change):
+    receipt = maintained_frontier(incident)
+    if change == 'backend-absent':
+        incident.backend.unlink()
+    elif change == 'backend-target':
+        record = json.loads(incident.backend.read_bytes()); record['target_head'] = BASELINE
+        write(incident.backend, record)
+    elif change == 'gate-digest':
+        gate = json.loads(incident.gate.read_bytes()); gate['consumerDigest'] = incident.digest
+        write(incident.gate, gate)
+    elif change == 'current':
+        current = incident.install / 'current'; current.unlink(); current.symlink_to('releases/' + BASELINE)
+    else:
+        consumer = json.loads(incident.consumer.read_bytes()); consumer['defaultProfile']['effort'] = 'low'
+        write(incident.consumer, consumer, 0o644)
+    before, history, reserved = incident.snapshot(), incident.history(), incident.receipt.read_bytes()
+    with pytest.raises((ValueError, FileNotFoundError)):
+        partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    assert incident.snapshot() == before and incident.history() == history
+    assert incident.receipt.read_bytes() == reserved and receipt['original']['backendAbsent'] is True
+
+
+@pytest.mark.parametrize(('unchanged_consumer', 'blocked'), [
+    (False, None), (False, 'authority'), (False, 'writer-lock-lost'),
+    (True, None), (True, 'unknown-work'), (True, 'writer-lock-lost')])
+def test_same_operation_apply_uses_live_writer_lease_and_current_native_admission(incident, monkeypatch, blocked, unchanged_consumer):
+    receipt = maintained_frontier(incident, unchanged_consumer=unchanged_consumer)
+    if blocked == 'unknown-work':
+        for path in (incident.claims / 'publication-v2').rglob('*.json'):
+            record = json.loads(path.read_bytes())
+            if record.get('envelope', {}).get('route') == 'manual':
+                record['publicationIntent'] = True
+                write(path, record)
+                break
+        else:
+            pytest.fail('missing fixture manual publication record')
+    gate_before = incident.gate.read_bytes()
+    original, history = incident.receipt.read_bytes(), incident.history()
+    lease = incident.root / 'config-adoption-writer.json'
+    holder = subprocess.Popen([sys.executable, '-I', str(ROOT / 'deploy/writer_lock_lease.py'),
+        '--hold', str(incident.lock), str(lease), OPERATION, incident.revision, receipt['desiredDigest']],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        with selectors.DefaultSelector() as events:
+            events.register(holder.stdout, selectors.EVENT_READ)
+            assert events.select(5), 'Writer holder readiness timed out'
+            assert holder.stdout.readline() == 'WRITER_LOCK_READY\n'
+        # The current reader executes as a real Node process; only public GitHub
+        # observations use the incident fixture's synthetic adapter.
+        def probe(*_args, **_options):
+            def read(_context):
+                try:
+                    value = incident.native('preflight',
+                        desired=json.loads(json.dumps(incident.config['consumer'], sort_keys=True)))
+                except AssertionError:
+                    raise ValueError('BOUNDED_RECOVERY_CURRENT_CONTROLLER_PROOF_UNAVAILABLE') from None
+                if blocked == 'writer-lock-lost':
+                    holder.kill(); holder.wait(timeout=5)
+                return value
+            return read
+        monkeypatch.setattr(partial.bounded, 'fixed_probe', probe)
+        native_run = subprocess.run
+        def run(argv, **options):
+            return native_run([str(NODE), *argv[1:]] if argv[0] == '/usr/bin/node' else argv, **options)
+        monkeypatch.setattr(partial.subprocess, 'run', run)
+        if blocked == 'authority':
+            incident.native_state['unavailable'] = True
+        if blocked:
+            code = 'WRITER_LOCK_LEASE_UNPROVEN|/proc/' if blocked == 'writer-lock-lost' else 'CURRENT_CONTROLLER_PROOF_UN'
+            with pytest.raises((ValueError, OSError), match=code):
+                partial.admission(incident.config, incident.controller, lease, OPERATION, 'apply', root=incident.root)
+            assert incident.gate.read_bytes() == gate_before
+        else:
+            result = partial.admission(incident.config, incident.controller, lease, OPERATION, 'apply', root=incident.root)
+            assert result['phase'] == 'applying' and result['target'] == incident.revision
+            assert result['operationId'] == OPERATION and result['consumerDigest'] == receipt['desiredDigest']
+            assert result['previousActive'] == json.loads(gate_before)['previousActive']
+            assert json.loads(incident.gate.read_bytes()) == result
+        assert incident.receipt.read_bytes() == original and incident.history() == history
+        assert json.loads(incident.backend.read_bytes())['target_head'] == incident.revision
+    finally:
+        holder.stdin.close()
+        holder.wait(timeout=5)
+        holder.stdout.close(); holder.stderr.close()
+
+
+def test_saved_maintenance_cannot_be_replaced_by_continuation_input(incident, monkeypatch):
+    maintained_frontier(incident)
+    observed = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    config_path = incident.root / 'input.json'
+    write(config_path, incident.config)
+    changed = copy.deepcopy(observed['receipt']['binding']['runnerMaintenance'])
+    changed['runners']['production']['runnerId'] += 1
+    declaration = incident.root / 'new-maintenance.json'; write(declaration, changed)
+    from test_intent_install import Guard
+    args = SimpleNamespace(authorize_install_recovery=True, continue_install_recovery=True,
+        resolved_revision=incident.revision, config=config_path, connection='local',
+        log_root=incident.root / 'logs', install_recovery_operation=OPERATION,
+        install_recovery_target=BASELINE, retained_runner_maintenance=declaration)
+    import intent_install
+    monkeypatch.setattr(intent_install, 'qualify_identity', lambda *_: None)
+    native_output = partial.subprocess.check_output
+    def output(argv, **options):
+        if 'rev-parse' in argv and argv[-1] == 'HEAD':
+            return incident.revision + '\n'
+        if 'status' in argv:
+            return ''
+        return native_output(argv, **options)
+    monkeypatch.setattr(partial.subprocess, 'check_output', output)
+    monkeypatch.setattr(partial, 'remote_inspect', lambda *_: observed)
+    monkeypatch.setattr(partial, 'accepted_controller', lambda *_: pytest.fail('changed declaration crossed authority gate'))
+    before, history = incident.snapshot(), incident.history()
+    with pytest.raises(ValueError, match='MAINTENANCE_DECLARATION_CHANGED'):
+        partial._run(args, ROOT, {'revision': incident.revision}, guard_factory=lambda *_: Guard())
+    assert incident.snapshot() == before and incident.history() == history
+
+
+def test_post_apply_orchestration_keeps_writer_through_tail_and_never_republishes_consumer(incident, monkeypatch, capsys):
+    """Exercise controller ordering with bounded transport/backend substitutes.
+
+    Native gate/lease and real systemd behavior have separate process tests; this
+    test proves the installer actually selects that route with the right inputs.
+    """
+    receipt = maintained_frontier(incident, unchanged_consumer=True)
+    config_path = incident.root / 'input.json'; write(config_path, incident.config)
+    observed = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
+    observed['manifest']['consumerRevision'] = incident.revision
+    from test_intent_install import Guard
+    args = SimpleNamespace(authorize_install_recovery=True, continue_install_recovery=True,
+        resolved_revision=incident.revision, config=config_path, connection='local',
+        log_root=incident.root / 'logs', install_recovery_operation=OPERATION,
+        install_recovery_target=BASELINE, retained_runner_maintenance=None,
+        consumer_root=ROOT, projection_output=None)
+    import install_preflight
+    import intent_install
+    import workflow_projection
+    events, preparations = [], []
+    class Preparation:
+        def __init__(self, target, key, values, identity, operation):
+            self.values, self.target, self.key = values, target, key
+            self.stage = values['relay_release_root'] + '/.fixture-controller-stage'
+            self.source, self.lease_path = self.stage + '/release/reviewed-source', self.stage + '/writer.json'
+            self.holder, self.initial = None, None
+            preparations.append(self)
+        def create(self):
+            events.append('create')
+        def admission_prefix(self):
+            return ['fixture-corrected-reader', self.lease_path, self.source]
+        def lock_writer(self):
+            assert self.holder is None
+            self.holder = Guard(); events.append('lock')
+        def release_writer(self):
+            if self.holder is not None:
+                self.holder = None; events.append('release')
+        def execute(self, _argv, *, payload=None):
+            assert self.holder is not None and self.holder.poll() is None
+            if payload is None:
+                assert _argv[-2:] == [self.values['relay_consumer_config_path']] * 2
+                return [receipt['desiredDigest']] * 2
+            command = payload.get('command', 'finalize')
+            events.append(command)
+            assert payload.get('operation', payload.get('binding', {}).get('operationId')) == OPERATION
+            if command == 'status':
+                return {'phase': 'open', 'consumerDigest': receipt['desiredDigest'], 'active': [], 'unknown': []}
+            return {}
+    monkeypatch.setattr(install_preflight, 'PreparedInstall', Preparation)
+    monkeypatch.setattr(intent_install, 'qualify_identity', lambda *_: None)
+    monkeypatch.setattr(workflow_projection, 'integration', lambda *_: {'next': 'fixture-independent-review'})
+    # The historical incident fixture uses a simplified attempts directory;
+    # backend inputs still use the production compiler's attempts-v2 contract.
+    compilation = copy.deepcopy(incident.config)
+    compilation['consumer']['paths']['attemptRoot'] += '-v2'
+    compiled = partial.compile_inputs(compilation)
+    monkeypatch.setattr(partial, 'compile_inputs', lambda _: dict(compiled))
+    monkeypatch.setattr(partial, 'remote_inspect', lambda *_: observed)
+    monkeypatch.setattr(partial, 'publish', lambda *_: pytest.fail('already published consumer was republished'))
+    native_output = partial.subprocess.check_output
+    monkeypatch.setattr(partial.subprocess, 'check_output', lambda argv, **options:
+        '' if 'status' in argv else native_output(argv, **options))
+    def backend(argv, _root, _environment, log, host, extra):
+        values = json.loads(Path(argv[argv.index('-i') + 1]).read_bytes())['all']['children']['relay']['hosts']
+        values = next(iter(values.values()))
+        name = Path(argv[argv.index('-i') + 2]).name
+        events.append(name)
+        if name == 'site.yml':
+            preparation = preparations[0]
+            assert preparation.holder is not None and host.poll() is None and extra.poll() is None
+            assert values['relay_intent_stage_root'] == preparation.stage
+            assert values['relay_intent_writer_lock_lease'] == preparation.lease_path
+            assert values['relay_intent_admission_prefix'] == preparation.admission_prefix()
+            assert values['relay_intent_staged_release'] == values['relay_install_root'] + '/releases/' + incident.revision
+            assert values['relay_intent_staged_release'] != preparation.stage + '/release'
+            assert values['relay_retained_reviewer_config_adoption'] is True
+            assert values['relay_bounded_recovery_binding'] == receipt['binding']
+        else:
+            assert name == 'relay-intent-stage.yml'
+        log.write('failed=0\nPRODUCTION_APPLY_VALIDATED=' + incident.revision + '\n')
+        return 0
+    monkeypatch.setattr(importlib.util, 'spec_from_file_location', lambda *_:
+        SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _: None)))
+    monkeypatch.setattr(importlib.util, 'module_from_spec', lambda _: SimpleNamespace(run_backend=backend))
+    partial._run(args, ROOT, {'revision': incident.revision}, guard_factory=lambda *_: Guard())
+    assert events == ['create', 'relay-intent-stage.yml', 'lock', 'apply', 'site.yml',
+        'verify', 'finalize', 'resume', 'status', 'release']
+    report = json.loads(capsys.readouterr().out.split('RELAY_INSTALL_RESULT=')[-1])
+    assert report['status'] == 'PASS' and report['strategy'] == 'maintained-reviewer-config-adoption'
+    assert report['operationId'] == OPERATION and report['product'] == incident.revision

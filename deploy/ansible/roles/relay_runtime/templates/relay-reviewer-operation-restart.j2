@@ -10,11 +10,15 @@ operation_lock='{{ relay_production_operation_lock_path }}'
 expected_listener='{{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}'
 operation_record='{{ relay_production_operation_record_path }}'
 admission_helper='{{ relay_install_root }}/relay-admission'
+maintained_admission=({{ relay_reviewer_config_adoption_admission_prefix | default([]) | map('quote') | join(' ') }})
 
 recover_active=false
+maintained_config_adoption=false
+inherited_operation_lock=''
 recovery_operation=''
 if [[ "$#" -ne 0 ]]; then
-  [[ "$#" -eq 2 && "$1" == --recover-active &&
+  [[ (( "$#" -eq 2 && "$1" == --recover-active ) ||
+      ( "$#" -eq 3 && "$1" == --maintained-config-adoption && "$3" =~ ^([3-9]|[1-9][0-9]{1,3})$ )) &&
      "$2" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
      "$(/usr/bin/id -u)" == 0 ]] || {
     echo 'REVIEWER_OPERATION_RESTART_ARGUMENTS_INVALID' >&2
@@ -22,6 +26,10 @@ if [[ "$#" -ne 0 ]]; then
   }
   recover_active=true
   recovery_operation="$2"
+  if [[ "$1" == --maintained-config-adoption ]]; then
+    maintained_config_adoption=true
+    inherited_operation_lock="$3"
+  fi
 fi
 
 [[ -f "$activation_marker" && ! -L "$activation_marker" ]] || exit 0
@@ -30,8 +38,23 @@ read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marke
 [[ "$(<"$activation_marker")" == authorized ]] || exit 0
 [[ ! -e "$recovery_off_marker" && ! -L "$recovery_off_marker" ]] || exit 0
 
-exec 9>"$operation_lock"
-/usr/bin/flock -n 9 || {
+if [[ "$maintained_config_adoption" == true ]]; then
+  # The controller holds this very open file description across its live
+  # before/after proof. Reopening it here would deadlock or lose that proof.
+  /usr/bin/python3 -c '
+import os, stat, sys
+fd = int(sys.argv[1]); path = sys.argv[2]
+opened, current = os.fstat(fd), os.lstat(path)
+if (not stat.S_ISREG(opened.st_mode) or not stat.S_ISREG(current.st_mode)
+        or opened.st_uid != 0 or current.st_uid != 0 or current.st_mode & 0o022
+        or opened.st_nlink != 1 or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+    raise SystemExit("REVIEWER_OPERATION_RESTART_LOCK_UNPROVEN")
+' "$inherited_operation_lock" "$operation_lock"
+else
+  exec 9>"$operation_lock"
+  inherited_operation_lock=9
+fi
+/usr/bin/flock -n "$inherited_operation_lock" || {
   echo 'REVIEWER_OPERATION_RESTART_LOCK_BUSY' >&2
   exit 44
 }
@@ -51,13 +74,22 @@ reviewer_was_active=false
 if /bin/systemctl is-active "$reviewer_service" >/dev/null 2>&1; then reviewer_was_active=true; fi
 runner_should_activate="$runner_was_active"
 if [[ "$recover_active" == true ]]; then
-  recovery_activity="$("$admission_helper" status --operation "$recovery_operation" |
+  admission_command=("$admission_helper")
+  if [[ "$maintained_config_adoption" == true ]]; then
+    [[ -n "${maintained_admission[0]:-}" ]] || {
+      echo 'REVIEWER_OPERATION_RESTART_MAINTENANCE_CONTEXT_MISSING' >&2
+      exit 49
+    }
+    admission_command=("${maintained_admission[@]}")
+  fi
+  recovery_activity="$("${admission_command[@]}" status --operation "$recovery_operation" |
     /usr/bin/python3 -c '
 import json, subprocess, sys
 gate = json.load(sys.stdin)
 with open(sys.argv[2], encoding="utf-8") as stream:
     record = json.load(stream)
 previous = gate.get("previousActive")
+maintained = sys.argv[4] == "true"
 target_matches = gate.get("target") == record.get("target_head")
 if not target_matches:
     # The immutable backend record retains its original target. Only the
@@ -80,14 +112,36 @@ if (gate.get("operationId") != sys.argv[1] or gate.get("phase") != "applying"
         or not isinstance(previous, dict) or previous.get("reviewer", {}).get("active") is not True
         or type(previous.get("production", {}).get("active")) is not bool):
     raise SystemExit("REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_UNPROVEN")
-print("true" if previous["production"]["active"] else "false")
+production = previous["production"]["active"]
+if maintained:
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("bounded_restart", sys.argv[3])
+    bounded = importlib.util.module_from_spec(spec); spec.loader.exec_module(bounded)
+    receipt_path = Path(sys.argv[2]).with_name(Path(sys.argv[2]).stem + "." + sys.argv[1] + ".continuation.json")
+    receipt = bounded.load_receipt(receipt_path, Path("/"), 0)
+    binding = receipt["binding"]
+    declaration = binding.get("runnerMaintenance", {})
+    if (receipt["state"] != "reserved" or binding["operationId"] != sys.argv[1]
+            or binding["desiredRevision"] != gate.get("target")
+            or declaration.get("operationId") != sys.argv[1]
+            or "production" not in declaration.get("runners", {})
+            or gate.get("active") != [] or gate.get("unknown") != []):
+        raise SystemExit("REVIEWER_OPERATION_RESTART_MAINTENANCE_UNPROVEN")
+    production = True
+print("true" if production else "false")
 ' "$recovery_operation" "$operation_record" \
-    '{{ relay_install_root }}/current/reviewed-source/deploy/bounded_recovery.py')"
+    '{{ relay_install_root }}/current/reviewed-source/deploy/bounded_recovery.py' "$maintained_config_adoption")"
   runner_should_activate="$recovery_activity"
   [[ "$runner_was_active" == false || "$runner_should_activate" == true ]] || {
     echo 'REVIEWER_OPERATION_RESTART_RECOVERY_INTENT_CHANGED' >&2
     exit 47
   }
+fi
+if [[ "$maintained_config_adoption" == true &&
+      ( "$reviewer_was_active" != true || "$runner_was_active" != true ) ]]; then
+  echo 'REVIEWER_OPERATION_RESTART_MAINTAINED_PROCESS_LOST' >&2
+  exit 48
 fi
 if [[ "$recover_active" == true && "$reviewer_was_active" == false ]]; then
   /bin/systemctl start "$reviewer_service"

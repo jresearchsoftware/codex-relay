@@ -105,13 +105,22 @@
     - role: relay_codex_runtime
       when: not relay_consumer_publication_continuation | default(false) | bool
     - role: relay_controller
+      when: not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
   post_tasks:
+    - name: Verify preserved runtime aliases without republishing completed consumer state
+      ansible.builtin.include_tasks: roles/relay_controller/tasks/verify-runtime-entrypoints.yml
+      when:
+        - relay_consumer_publication_continuation | default(false) | bool
+        - relay_retained_reviewer_config_adoption | default(false) | bool
+
     - name: Install the optional qualified parallel namespace primitive
       ansible.builtin.apt:
         name: bubblewrap
         state: present
-      when: relay_execution_slots is defined and relay_manage_base_packages | bool
+      when:
+        - relay_execution_slots is defined and relay_manage_base_packages | bool
+        - not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
     - name: Prove the primary runtime can enter its private process namespace
       ansible.builtin.command:
@@ -130,10 +139,13 @@
       loop_control:
         loop_var: relay_slot_inputs
         label: '{{ relay_slot_inputs.relay_execution_slot }}'
+      when: not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
     - name: Reconcile the separate general runner as ordinary installed state
       ansible.builtin.include_tasks: tasks/production-general-runner.yml
-      when: relay_deployment_profile == 'production'
+      when:
+        - relay_deployment_profile == 'production'
+        - not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
     # Run the production instance last: its observed lifecycle facts are the
     # ones consumed by the final production gate. General instance variables
@@ -141,13 +153,16 @@
     - name: Reconcile the primary runner software and preserve authorized state
       ansible.builtin.include_role:
         name: relay_runner
+      when: not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
     - name: Verify the complete installed execution pool before lifecycle activation
       ansible.builtin.include_tasks: tasks/execution-slot-topology.yml
 
     - name: Install the one shared physical General Runner pool without automatic credentials
       ansible.builtin.include_tasks: tasks/managed-pool.yml
-      when: relay_general_runner_pool is defined
+      when:
+        - relay_general_runner_pool is defined
+        - not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
 
     # Keep address-bound artifact refresh in the check path as well.  The copy
     # tasks are check-mode safe, so their changed count is the ordinary apply
@@ -155,7 +170,7 @@
     - name: Refresh and prove the current Reviewer bind state before handlers
       ansible.builtin.include_tasks: tasks/production-reviewer-bind-state.yml
       vars:
-        relay_production_reviewer_bind_refresh: true
+        relay_production_reviewer_bind_refresh: '{{ not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool) }}'
       when:
         - relay_deployment_profile == 'production'
 

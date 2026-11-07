@@ -1,0 +1,84 @@
+---
+# A maintained recovery may adopt only its exact frozen artifact metadata.
+# The running configuration is proved by a guarded restart, never by replacing
+# a digest in the maintenance baseline or editing the original receipt.
+- name: Read the authentic original Reviewer artifact identity
+  ansible.builtin.slurp:
+    src: '{{ relay_install_root }}/releases/{{ relay_bounded_recovery_binding.installedRevision }}/artifact-manifest.json'
+  register: relay_retained_reviewer_original_manifest
+  changed_when: false
+
+- name: Render the exact frozen Reviewer configuration with the production renderer
+  ansible.builtin.set_fact:
+    relay_retained_reviewer_desired_config: >-
+      {{ lookup('ansible.builtin.template', playbook_dir + '/roles/relay_runtime/templates/reviewer-mcp.json.j2', convert_data=False) }}
+
+- name: Bind the original configuration to its preserved artifact metadata
+  ansible.builtin.set_fact:
+    relay_retained_reviewer_original_config: >-
+      {{ lookup('ansible.builtin.template', playbook_dir + '/roles/relay_runtime/templates/reviewer-mcp.json.j2', convert_data=False) }}
+  vars:
+    relay_release_commit: '{{ relay_bounded_recovery_binding.installedRevision }}'
+    relay_release_sha256: '{{ (relay_retained_reviewer_original_manifest.content | b64decode | from_json).releaseSourceTreeSha256 }}'
+
+- name: Stage the accepted guarded configuration adoption helper
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runtime/templates/relay-reviewer-operation-restart.j2'
+    dest: '{{ relay_intent_stage_root }}/reviewer-config-adoption-restart'
+    owner: root
+    group: root
+    mode: '0700'
+  vars:
+    relay_reviewer_config_adoption_admission_prefix: '{{ relay_intent_admission_prefix }}'
+  when: relay_retained_reviewer_original_config != relay_retained_reviewer_desired_config
+
+- name: Adopt the frozen Reviewer configuration under the original operation lock
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -B
+      - -c
+      - >-
+        import sys, types; sys.path.insert(0, sys.argv[1]);
+        b = types.ModuleType('bounded_recovery');
+        exec({{ lookup('file', playbook_dir + '/../bounded_recovery.py') | to_json }}, b.__dict__);
+        sys.modules['bounded_recovery'] = b;
+        scope = {'__name__': 'retained_controller'};
+        exec({{ lookup('file', playbook_dir + '/../retained_activation.py') | to_json }}, scope);
+        scope['main']()
+      - '{{ relay_intent_staged_release }}/reviewed-source/deploy'
+    stdin: >-
+      {{ {'action': 'adopt-reviewer-config',
+          'config': relay_installed_deployment_config | from_json,
+          'binding': relay_bounded_recovery_binding,
+          'previous': relay_upgrade_lifecycle_previous_active,
+          'observed': relay_upgrade_lifecycle_effective_active | default(relay_upgrade_lifecycle_observed_activity),
+          'admission': relay_intent_admission_prefix,
+          'release': relay_install_root ~ '/releases/' ~ relay_bounded_recovery_binding.desiredRevision,
+          'listener': relay_reviewer_bind_address ~ ':' ~ relay_reviewer_bind_port,
+          'before': relay_upgrade_lifecycle_maintenance_proof,
+          'restart': relay_intent_stage_root ~ '/reviewer-config-adoption-restart',
+          'reviewerConfigTransition': {'original': relay_retained_reviewer_original_config,
+                                       'desired': relay_retained_reviewer_desired_config}} | to_json }}
+    stdin_add_newline: false
+  register: relay_retained_reviewer_adoption
+  changed_when: true
+  failed_when: false
+  no_log: true
+  when: relay_retained_reviewer_original_config != relay_retained_reviewer_desired_config
+
+- name: Require actual Reviewer and dependent Production configuration adoption
+  ansible.builtin.assert:
+    that:
+      - relay_retained_reviewer_adoption.rc == 0
+    fail_msg: >-
+      RELAY_UPGRADE_REVIEWER_CONFIG_ADOPTION_UNPROVEN:
+      {{ relay_retained_reviewer_adoption.stderr | default('') |
+         regex_findall('(?m)^(?:RELAY_RETAINED_ACTIVATION|BOUNDED_RECOVERY|MANAGED_POOL|RUNNER_SELF_UPDATE)_[A-Z_]{1,96}$') | join(',') }}
+  when: relay_retained_reviewer_original_config != relay_retained_reviewer_desired_config
+
+- name: Retain only the verified post-adoption maintenance proof
+  ansible.builtin.set_fact:
+    relay_upgrade_lifecycle_maintenance_proof: '{{ (relay_retained_reviewer_adoption.stdout | from_json).after }}'
+  when: relay_retained_reviewer_original_config != relay_retained_reviewer_desired_config

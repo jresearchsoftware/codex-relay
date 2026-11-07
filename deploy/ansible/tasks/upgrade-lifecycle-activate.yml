@@ -4,6 +4,12 @@
 # already active production runner under the existing transition lock.
 # For a SERIAL/pool transition these flags come from the separate target gate.
 # A new inactive pool transport is never activated by Reviewer restart here.
+- name: Adopt exact artifact-only Reviewer configuration during maintained recovery
+  ansible.builtin.include_tasks: upgrade-reviewer-config-adoption.yml
+  when:
+    - relay_upgrade_lifecycle_maintenance_proof is defined
+    - relay_retained_reviewer_config_adoption | default(false) | bool
+
 - name: Try-restart the previously active Reviewer and production dependency
   ansible.builtin.command:
     argv: >-

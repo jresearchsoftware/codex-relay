@@ -543,7 +543,6 @@ def run(args, primitive, root, identity, *, guard_factory=None):
         qualify_identity(target, key)
         if selected(target, key, config, args.install_recovery_target):
             return continue_pre_apply(args, root, identity, guard_factory=guard_factory)
-        require(maintenance_path is None, 'RUNNER_MAINTENANCE_FRONTIER_UNSUPPORTED')
         from partial_install_recovery import run as continue_install
         return continue_install(args, root, identity, guard_factory=guard_factory)
     args.config = args.config.absolute()

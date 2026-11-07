@@ -1,4 +1,4 @@
-"""Finish only the authenticated consumer-publication frontier of a reserved Apply.
+"""Finish authenticated post-Apply frontiers of the same reserved operation.
 
 The prior controller/final Git pair and immutable backend stay frozen. This
 controller supplies corrected observation/publication code, then runs the
@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import uuid
 
 import bounded_recovery as bounded
@@ -54,28 +55,50 @@ def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
     require(bounded.inspect(config, binding, root=root, owner_uid=owner_uid) == receipt, 'ORIGINAL_PROOF_CHANGED')
     bounded.final_installation(p['install'].name, receipt, root, owner_uid)
     gate = bounded.gate_value(bounded.read(p['gate'], root, owner_uid, private=True), binding)
-    require(gate['phase'] == 'applying' and gate['target'] == binding['desiredRevision'], 'FRONTIER_UNSUPPORTED')
+    require(gate['target'] == binding['desiredRevision'], 'FRONTIER_UNSUPPORTED')
     backup = p['config'] / ('consumer-before-' + operation + '.json')
-    require(bounded.sha(bounded.read(backup, root, owner_uid, private=True))
-            == receipt['original']['consumerSha256'], 'BEFORE_BACKUP_CHANGED')
     release = p['install'] / 'releases' / binding['desiredRevision']
     manifest, snapshot, _ = bounded.installed(release, binding['desiredRevision'], root, owner_uid)
     original_manifest, _, _ = bounded.installed(p['install'] / 'releases' / binding['installedRevision'],
         binding['installedRevision'], root, owner_uid)
     old_binary = original_manifest.get('reviewerBinarySha256', '')
     new_binary = manifest.get('reviewerBinarySha256', '')
-    # This frontier is the reported old-running-Reviewer shape. An already
-    # advanced process without proof of configuration reload is not permission
-    # to restart it again or to assume activation completed.
-    require(bounded.DIGEST.fullmatch(old_binary) and bounded.DIGEST.fullmatch(new_binary)
-            and old_binary != new_binary, 'RUNTIME_ADOPTION_AMBIGUOUS')
+    require(bounded.DIGEST.fullmatch(old_binary) and bounded.DIGEST.fullmatch(new_binary),
+            'RUNTIME_ADOPTION_AMBIGUOUS')
+    # Equal executable bytes cannot prove that a long-running Reviewer adopted
+    # its changed configuration. Only the saved maintained-operation route may
+    # explicitly adopt that configuration, using a fresh live process baseline.
+    config_adoption = 'runnerMaintenance' in binding and old_binary == new_binary
+    require(config_adoption or old_binary != new_binary and gate['phase'] == 'applying',
+            'RUNTIME_ADOPTION_AMBIGUOUS')
+    if config_adoption:
+        require(gate['phase'] in ['recovery-required', 'applying']
+                and gate['consumerDigest'] == receipt['desiredDigest'], 'FRONTIER_UNSUPPORTED')
+        bounded.backend_validate(p['record'], binding['desiredRevision'], operation,
+            root=root, owner_uid=owner_uid, expected_backend_absent=False)
     source = bounded.decode(bounded.read(release / 'reviewed-source/.relay-source.json', root, owner_uid))
     require(source.get('revision') == binding['desiredRevision'] and snapshot == config, 'FROZEN_PAIR_CHANGED')
     current = bounded.read(p['config'] / 'consumer.json', root, owner_uid)
-    desired = bounded.read(p['config'] / ('.consumer-' + operation + '.desired.json'), root, owner_uid, private=True)
-    require(current == desired, 'LIVE_CONSUMER_CHANGED')
+    original_gate = bounded.decode(__import__('base64').b64decode(receipt['original']['gateBytes']))
+    unchanged_consumer = (config_adoption and bounded.sha(current) == receipt['original']['consumerSha256']
+        and original_gate['consumerDigest'] == receipt['desiredDigest'] == gate['consumerDigest'])
+    # A completed no-op consumer publication creates no before backup and may
+    # remove its desired staging file. Only exact saved original bytes plus the
+    # original/desired gate digest equality can prove that diagnosed shape.
+    if backup.exists() or backup.is_symlink():
+        require(bounded.sha(bounded.read(backup, root, owner_uid, private=True))
+                == receipt['original']['consumerSha256'], 'BEFORE_BACKUP_CHANGED')
+    else:
+        require(unchanged_consumer, 'CONSUMER_EVIDENCE_MISSING')
+    desired_path = p['config'] / ('.consumer-' + operation + '.desired.json')
+    if desired_path.exists() or desired_path.is_symlink():
+        require(current == bounded.read(desired_path, root, owner_uid, private=True), 'LIVE_CONSUMER_CHANGED')
+    else:
+        require(unchanged_consumer, 'CONSUMER_EVIDENCE_MISSING')
     runtime = old_reviewer(p['install'].name, old_binary) if root == Path('/') else None
     return {'receipt': receipt, 'gate': gate, 'manifest': manifest, 'sourceIdentity': source,
+            'reviewerConfigAdoption': config_adoption,
+            'consumerUnchanged': unchanged_consumer,
             'consumerSha256': bounded.sha(current), 'originalReviewerSha256': old_binary, 'oldReviewer': runtime}
 
 
@@ -113,7 +136,10 @@ def unchanged_tail(root, desired, controller):
         'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml',
         'deploy/ansible/relay-intent-apt-preflight.yml',
         'deploy/ansible/tasks/upgrade-maintained-runners.yml',
-        'deploy/ansible/tasks/upgrade-lifecycle-validation.yml'}
+        'deploy/ansible/tasks/upgrade-lifecycle-validation.yml',
+        'deploy/ansible/tasks/upgrade-lifecycle-activate.yml',
+        'deploy/ansible/tasks/upgrade-reviewer-config-adoption.yml',
+        'deploy/ansible/roles/relay_runtime/templates/relay-reviewer-operation-restart.j2'}
     require(all(path in allowed or path.startswith('deploy/ansible/tests/') for path in changed),
             'INSTALLATION_TAIL_CHANGED')
 
@@ -149,24 +175,34 @@ def accepted_controller(root, binding, controller):
     return {'policy': 'accepted-ancestor', 'revision': controller, 'acceptedMain': row[0]}
 
 
-def admission(config, source, lease, operation, command):
-    """Fixed final commands with independent controller and frozen target."""
-    import os
+def admission(config, source, lease, operation, command, *, root=Path('/')):
+    """Fixed same-operation commands with independent controller/frozen target."""
     from writer_lock_lease import verify
-    root = Path('/')
+    root = Path(root)
     source = Path(source)
     bounded.protect(source, root, 0, directory=True)
     identity = bounded.decode(bounded.read(source / '.relay-source.json', root, 0))
     p = bounded.paths(config, {'operationId': operation}, root)
     receipt = bounded.load_receipt(p['receipt'], root, 0)
     binding = receipt['binding']
-    require(binding['operationId'] == operation and receipt['state'] in ['backend-complete', 'complete'], 'FINAL_RECEIPT_REQUIRED')
+    starting = command == 'apply'
+    require(binding['operationId'] == operation and receipt['state'] in
+            (['reserved'] if starting else ['backend-complete', 'complete']), 'FINAL_RECEIPT_REQUIRED')
     bounded.final_installation(p['install'].name, receipt, root, 0)
     verify(lease, p['gate'].parent / 'publication-v2.lock', operation=operation,
         target=identity['revision'], consumer_digest=receipt['desiredDigest'])
-    require(command in ['verify', 'resume', 'status']
+    require(command in ['apply', 'verify', 'resume', 'status']
             and (command != 'resume' or receipt['state'] == 'complete'), 'FINAL_COMMAND_INVALID')
-    arguments = {'verify': ['phase', '--operation', operation, '--phase', 'verified', '--revision', binding['desiredRevision']],
+    if starting:
+        observed = inspect(config, operation, binding['retainedTarget'], root=root)
+        require(observed['reviewerConfigAdoption'], 'CONFIG_ADOPTION_FRONTIER_REQUIRED')
+        probe = bounded.fixed_probe(config, binding, source, lease, receipt['desiredDigest'],
+                                    controller_revision=identity['revision'])
+        bounded.revalidate(config, binding, receipt, root=root, admission_probe=probe)
+        verify(lease, p['gate'].parent / 'publication-v2.lock', operation=operation,
+            target=identity['revision'], consumer_digest=receipt['desiredDigest'])
+    arguments = {'apply': ['phase', '--operation', operation, '--phase', 'applying'],
+        'verify': ['phase', '--operation', operation, '--phase', 'verified', '--revision', binding['desiredRevision']],
         'resume': ['resume', '--operation', operation], 'status': ['status']}[command]
     result = subprocess.run(['/usr/bin/node', str(source / 'controller/src/admission-cli.mjs'), *arguments],
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
@@ -174,7 +210,14 @@ def admission(config, source, lease, operation, command):
              'RELAY_REPOSITORY': config['environment'].get('repository', config['consumer'].get('repository'))},
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
     require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'FINAL_ADMISSION_FAILED')
-    return bounded.decode(result.stdout)
+    value = bounded.decode(result.stdout)
+    if starting:
+        verify(lease, p['gate'].parent / 'publication-v2.lock', operation=operation,
+            target=identity['revision'], consumer_digest=receipt['desiredDigest'])
+        expected = {**observed['gate'], 'phase': 'applying'}
+        require(value == expected and bounded.decode(bounded.read(p['gate'], root, 0, private=True)) == expected,
+                'SAME_OPERATION_APPLY_UNPROVEN')
+    return value
 
 
 def timing(value):
@@ -218,6 +261,7 @@ def run(args, root, identity, *, guard_factory=None):
     args._partial_stage = 'protected-frontier'
     args._partial_mutation_started = False
     args._partial_desired = 'unavailable'
+    args._partial_strategy = 'consumer-publication-continuation'
     try:
         return _run(args, root, identity, guard_factory=guard_factory)
     except Exception as error:
@@ -225,7 +269,7 @@ def run(args, root, identity, *, guard_factory=None):
         if not re.fullmatch(r'(?:PARTIAL_INSTALL|BOUNDED_RECOVERY|INSTALL_PREFLIGHT|WRITER_LOCK|CONSUMER_PUBLICATION)_[A-Z_]{1,100}', code):
             code = 'PARTIAL_INSTALL_PROOF_UNAVAILABLE'
         print('RELAY_INSTALL_FAILURE=' + json.dumps({'status': 'FAIL',
-            'strategy': 'consumer-publication-continuation', 'controller': identity['revision'],
+            'strategy': args._partial_strategy, 'controller': identity['revision'],
             'target': args._partial_desired, 'installed': args._partial_desired,
             'stage': args._partial_stage, 'cause': code,
             **({'controller_diagnostic': error.controller_diagnostic} if hasattr(error, 'controller_diagnostic') else {}),
@@ -269,6 +313,16 @@ def _run(args, root, identity, *, guard_factory=None):
         observed = proof()
         receipt, gate = observed['receipt'], observed['gate']
         binding = receipt['binding']
+        config_adoption = observed['reviewerConfigAdoption']
+        if config_adoption:
+            args._partial_strategy = 'maintained-reviewer-config-adoption'
+        maintenance_path = getattr(args, 'retained_runner_maintenance', None)
+        if maintenance_path is not None:
+            with Path(maintenance_path).open('rb') as stream:
+                maintenance_raw = stream.read(16385)
+            require(len(maintenance_raw) <= 16384, 'MAINTENANCE_DECLARATION_SIZE')
+            require(bounded.decode(maintenance_raw) == binding.get('runnerMaintenance'),
+                    'MAINTENANCE_DECLARATION_CHANGED')
         desired = binding['desiredRevision']
         args._partial_desired = desired
         require(hashlib.sha256(raw).hexdigest() == binding['gitConfigReceipt']['config_sha256'], 'CONFIG_BYTES_CHANGED')
@@ -302,7 +356,11 @@ def _run(args, root, identity, *, guard_factory=None):
             relay_runner_registration_enabled=False, relay_runner_registration_authorized=False,
             relay_production_runner_enable_authorized=False, relay_service_enabled=False,
             relay_runner_service_enabled=False, relay_production_defer_lifecycle=False,
-            relay_consumer_publication_continuation=True)
+            relay_consumer_publication_continuation=True,
+            relay_retained_reviewer_config_adoption=config_adoption)
+        if config_adoption:
+            values.update(relay_retained_reviewer_config_adoption_controller=identity['revision'],
+                relay_retained_reviewer_config_adoption_acceptance=controller_acceptance)
         staging_id = str(uuid.uuid4())
         preparation = PreparedInstall(target, key, values, identity, staging_id)
         stack.callback(preparation.release_writer)
@@ -315,6 +373,7 @@ def _run(args, root, identity, *, guard_factory=None):
                     'archive', identity['revision']], stdout=output, check=True)
             def backend(name, selected):
                 require(host.poll() is None and (pool is None or pool.poll() is None), 'HOST_LOCK_LOST')
+                require(preparation.holder is None or preparation.holder.poll() is None, 'WRITER_LOCK_LOST')
                 inventory = {'all': {'children': {'relay': {'hosts': {target['host']: {
                     **selected, **connection_vars(target, key)}}}}}}
                 (work / 'inventory.json').write_text(json.dumps(inventory))
@@ -322,10 +381,16 @@ def _run(args, root, identity, *, guard_factory=None):
                 from importlib.util import spec_from_file_location, module_from_spec
                 spec = spec_from_file_location('partial_backend', root / 'deploy/relay-deploy.py')
                 engine = module_from_spec(spec); spec.loader.exec_module(engine)
+                def guarded_poll():
+                    for holder in (pool, preparation.holder):
+                        if holder is not None and holder.poll() is not None:
+                            return holder.poll()
+                    return None
                 with log_path.open('w') as log:
                     code = engine.run_backend(['ansible-playbook', '-i', str(work / 'inventory.json'),
                         str(root / 'deploy/ansible' / name), '--limit', target['host']],
-                        root / 'deploy/ansible', backend_environment(), log, host, pool)
+                        root / 'deploy/ansible', backend_environment(), log, host,
+                        SimpleNamespace(poll=guarded_poll))
                 text = log_path.read_text()
                 require(code == 0 and 'failed=0' in text, 'BACKEND_FAILED_INSPECT_LOG')
                 return text
@@ -341,8 +406,16 @@ def _run(args, root, identity, *, guard_factory=None):
                 'lockPath': values['relay_writer_claim_root'] + '/publication-v2.lock',
                 'baselineDigest': gate['consumerDigest']}
             preparation.lock_writer()
+            final_command = ('import json,sys;sys.path.insert(0,sys.argv[1]);import partial_install_recovery as p;'
+                'v=json.load(sys.stdin);print(json.dumps(p.admission(**v)))')
+            def admitted(command):
+                return preparation.execute(['/usr/bin/python3', '-I', '-c', final_command, preparation.source + '/deploy'],
+                    payload={'config': config, 'source': preparation.source, 'lease': preparation.lease_path,
+                             'operation': binding['operationId'], 'command': command})
             publisher = preparation.source + '/deploy/ansible/scripts/publish_git_consumer.py'
             desired_path = values['relay_config_root'] + '/.consumer-' + binding['operationId'] + '.desired.json'
+            if observed['consumerUnchanged']:
+                desired_path = values['relay_consumer_config_path']
             digest_program = ('import{pathToFileURL}from"node:url";'
                 'const m=await import(pathToFileURL(process.argv[1]));'
                 'console.log(JSON.stringify(process.argv.slice(2).map(p=>m.consumerDigest(m.loadConsumer(p)))));')
@@ -351,17 +424,28 @@ def _run(args, root, identity, *, guard_factory=None):
             require(digests == [receipt['desiredDigest'], receipt['desiredDigest']], 'DESIRED_CONSUMER_CHANGED')
             # The authentic desired file survived this specific failure. No
             # reconstructed or host-derived desired configuration is accepted.
-            args._partial_stage = 'consumer-transition'
             args._partial_mutation_started = True
-            result = publish(preparation, ['/usr/bin/python3', '-I', publisher,
-                '--source', preparation.source, '--controller-revision', identity['revision'],
-                '--config-root', values['relay_config_root'], '--desired', desired_path,
-                '--claim-root', values['relay_writer_claim_root'], '--repository', values['relay_github_repository'],
-                '--operation', binding['operationId'], '--revision', desired,
-                '--writer-lock-lease', preparation.lease_path])
-            require(result.get('consumerDigest') == receipt['desiredDigest'], 'CONSUMER_TRANSITION_UNPROVEN')
-            transition_timing = timing(result.get('controllerTiming'))
-            preparation.release_writer()
+            transition_timing = None
+            if config_adoption:
+                args._partial_stage = 'same-operation-config-adoption-admission'
+                admitted('apply')
+            else:
+                args._partial_stage = 'consumer-transition'
+                result = publish(preparation, ['/usr/bin/python3', '-I', publisher,
+                    '--source', preparation.source, '--controller-revision', identity['revision'],
+                    '--config-root', values['relay_config_root'], '--desired', desired_path,
+                    '--claim-root', values['relay_writer_claim_root'], '--repository', values['relay_github_repository'],
+                    '--operation', binding['operationId'], '--revision', desired,
+                    '--writer-lock-lease', preparation.lease_path])
+                require(result.get('consumerDigest') == receipt['desiredDigest'], 'CONSUMER_TRANSITION_UNPROVEN')
+                transition_timing = timing(result.get('controllerTiming'))
+            if config_adoption:
+                values.update(relay_intent_writer_lock_lease=preparation.lease_path,
+                    relay_intent_admission_prefix=preparation.admission_prefix(),
+                    relay_intent_stage_root=preparation.stage,
+                    relay_intent_staged_release=values['relay_install_root'] + '/releases/' + desired)
+            else:
+                preparation.release_writer()
             values.update(relay_consumer_publication_source=preparation.source,
                 relay_consumer_publication_controller=identity['revision'])
             args._partial_stage = 'remaining-installation-and-runtime-validation'
@@ -371,13 +455,8 @@ def _run(args, root, identity, *, guard_factory=None):
             # archives the unchanged original backend before this final gate.
             args._partial_stage = 'final-admission-and-continuation-proof'
             preparation.initial['baselineDigest'] = receipt['desiredDigest']
-            preparation.lock_writer()
-            final_command = ('import json,sys;sys.path.insert(0,sys.argv[1]);import partial_install_recovery as p;'
-                'v=json.load(sys.stdin);print(json.dumps(p.admission(**v)))')
-            def admitted(command):
-                return preparation.execute(['/usr/bin/python3', '-I', '-c', final_command, preparation.source + '/deploy'],
-                    payload={'config': config, 'source': preparation.source, 'lease': preparation.lease_path,
-                             'operation': binding['operationId'], 'command': command})
+            if preparation.holder is None:
+                preparation.lock_writer()
             admitted('verify')
             finish = ('import json,sys;sys.path.insert(0,sys.argv[1]);import bounded_recovery as b;'
                 'p=json.load(sys.stdin);probe=b.fixed_probe(p["config"],p["binding"],p["source"],p["lease"],p["desiredDigest"],controller_revision=p["controllerRevision"]);'
@@ -391,7 +470,7 @@ def _run(args, root, identity, *, guard_factory=None):
             require(status['phase'] == 'open' and status['consumerDigest'] == receipt['desiredDigest']
                     and status['active'] == status['unknown'] == [], 'FINAL_ADMISSION_UNPROVEN')
             preparation.release_writer()
-            final_result = {'status': 'PASS', 'strategy': 'consumer-publication-continuation',
+            final_result = {'status': 'PASS', 'strategy': args._partial_strategy,
                 'controller': identity['revision'], 'retainedTarget': binding['retainedTarget'],
                 'controllerAcceptance': controller_acceptance,
                 **({'consumerTransitionTiming': transition_timing} if transition_timing is not None else {}),
