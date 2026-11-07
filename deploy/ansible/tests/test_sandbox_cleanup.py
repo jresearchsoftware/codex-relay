@@ -1,5 +1,6 @@
 """Native filesystem coverage of the fixed runtime-identity cleanup helper."""
 import importlib.util
+import hashlib
 import json
 import os
 import pwd
@@ -194,6 +195,40 @@ class SandboxCleanupTests(unittest.TestCase):
         finally:
             self.private.chmod(0o700)
         self.assertTrue((self.private / 'private-state').exists())
+
+    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'requires ordinary UID')
+    def test_unsearchable_directory_retains_stat_cause_without_permission_repair(self):
+        self.private.chmod(0o600)
+        try:
+            status, receipt = self.invoke()
+            self.assertEqual(status, 1)
+            self.assertEqual(receipt['code'], 'EACCES')
+            self.assertEqual(receipt['operation'], 'stat-entry')
+            self.assertEqual(receipt['syscall'], 'stat')
+            self.assertEqual(receipt['path'], '.codex-sandbox/home/tmp/arg0/<entry-' +
+                             hashlib.sha256(b'private-state').hexdigest()[:12] + '>')
+            self.assertEqual(self.private.stat().st_mode & 0o777, 0o600)
+            self.assertLess(len(json.dumps(receipt)), 512)
+            self.assertNotIn(str(self.base), json.dumps(receipt))
+        finally:
+            self.private.chmod(0o700)
+        self.assertTrue((self.private / 'private-state').exists())
+
+    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'requires ordinary UID')
+    def test_pool_permission_damage_fixture_allows_real_sandbox_cleanup(self):
+        # Run the actual incident-producing tests inside the sandbox, including
+        # both active/stopped unsearchable cases. Pytest success alone missed
+        # the permission residue in the original automatic attempts.
+        (self.sandbox / 'tmp').mkdir()
+        result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider',
+            str(ROOT.parent / 'tests/test_managed_pool.py'),
+            '-k', 'test_pool_external_relink_damage_requires_stopped_repair_without_mutation',
+            '--basetemp', str(self.sandbox / 'tmp/pytest')],
+            text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('12 passed', result.stdout)
+        self.assertEqual(self.invoke(), (0, {'schemaVersion': 1, 'status': 'removed'}))
+        self.assertFalse(self.sandbox.exists())
 
     def test_entry_bound_stops_and_retains_remaining_artifacts(self):
         self.helper.write_text(self.helper.read_text().replace('MAX_ENTRIES = 100000', 'MAX_ENTRIES = 1'))
