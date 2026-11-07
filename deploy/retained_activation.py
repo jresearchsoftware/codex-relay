@@ -143,6 +143,35 @@ class Native:
             require(time.monotonic() < deadline, 'CONFIG_ADOPTION_PRODUCTION_NOT_ONLINE')
             time.sleep(1)
 
+    def transport_dependencies(self):
+        """Keep known General transports outside this restart's stop edges.
+
+        A retained Apply may have published its release before replacing a
+        legacy General PartOf unit. Inspect the loaded graph, including
+        drop-ins, rather than inferring completion from installed source.
+        """
+        identities, _ = services(self.config)
+        general = {identity['service'] for component, identity in identities.items() if component != 'production'}
+        reviewer = compile_inputs(self.config).get('relay_reviewer_service_name', 'reviewer-mcp.service')
+        controls = {reviewer, identities['production']['service']}
+        fields = {'LoadState', 'NeedDaemonReload', 'PartOf', 'Requires', 'BindsTo', 'PropagatesStopTo'}
+        for unit in sorted(general | controls):
+            rows = command(['/bin/systemctl', 'show', unit, '--property=' + ','.join(sorted(fields))]).decode().splitlines()
+            pairs = [row.split('=', 1) for row in rows if '=' in row]
+            require(len(pairs) == len(rows) and len({key for key, _ in pairs}) == len(pairs),
+                    'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNPROVEN')
+            observed = dict(pairs)
+            require(observed.keys() == fields and observed['LoadState'] == 'loaded'
+                    and observed['NeedDaemonReload'] == 'no', 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNPROVEN')
+            if unit in general:
+                require(not any(set(observed[field].split()) & controls for field in ['PartOf', 'Requires', 'BindsTo']),
+                        'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
+            if unit in controls:
+                stop_targets = set(observed['PropagatesStopTo'].split())
+                require(not stop_targets & general,
+                        'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
+                require(stop_targets <= controls, 'CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE')
+
     def runners(self, contract):
         from pool_authorization import installation_authorization
         authorization = installation_authorization(self.config)
@@ -381,12 +410,14 @@ def adopt_config(payload, native=None):
         before = copy.deepcopy(prove(current_payload, native, allow_restore=False))
         _, contract = services(payload['config'])
         primary = native.primary(contract)
+        native.transport_dependencies()
         # Repeat the exact live proof at the effect boundary while retaining
         # the same operation lock and the caller's protected Writer lease.
         require(prove(current_payload, native, allow_restore=False) == before
                 and native.primary(contract) == primary, 'CONFIG_ADOPTION_RUNTIME_CHANGED')
         require(native.configuration_transition() == expected, 'CONFIG_ADOPTION_CONFIG_CHANGED')
         native.authority()
+        native.transport_dependencies()
         native.restart_configuration(descriptor)
         native.wait_production(payload['binding']['runnerMaintenance']['runners']['production'])
         after = prove({**payload, 'before': None}, native, allow_restore=False)

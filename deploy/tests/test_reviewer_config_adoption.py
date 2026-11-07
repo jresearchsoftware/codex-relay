@@ -40,6 +40,7 @@ class AdoptionEvidence(Evidence):
         self.restarted = False
         self.locked = False
         self.config_checks = 0
+        self.dependency_checks = 0
         self.reviewer_value['config'] = activation.retained.sha(value['reviewerConfigTransition']['desired'].encode())
         self.reviewer_value['environment'] = 'e' * 64
 
@@ -61,6 +62,13 @@ class AdoptionEvidence(Evidence):
 
     def primary(self, _contract):
         return {'pid': '202' if self.restarted and self.damage == 'primary' else '201', 'startTicks': '2010'}
+
+    def transport_dependencies(self):
+        assert self.locked and not self.restarted
+        self.dependency_checks += 1
+        activation.require(self.damage != 'dependency'
+                           and not (self.damage == 'dependency-race' and self.dependency_checks > 1),
+                           'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE')
 
     def runner(self, component, expected, identity, contract):
         proof = super().runner(component, expected, identity, contract)
@@ -113,6 +121,7 @@ def test_config_adoption_replaces_only_reviewer_and_production_processes():
     assert result['after']['reviewer']['pid'] == '51'
     assert result['after']['runners']['production']['pid'] == '110'
     assert native.events.count('restart') == 1
+    assert native.dependency_checks == 2
     for component in value['binding']['runnerMaintenance']['runners']:
         assert result['before']['runners'][component]['runnerId'] == result['after']['runners'][component]['runnerId']
         if component != 'production':
@@ -171,6 +180,7 @@ def test_failed_actual_adoption_never_returns_a_successful_new_baseline(damage, 
 @pytest.mark.parametrize('damage,code', [
     ('before', 'DESIRED_CONFIG_CHANGED'), ('stopped', 'ACTIVE_PRODUCTION_REQUIRED'),
     ('undeclared', 'PRODUCTION_DECLARATION_REQUIRED'), ('config-race', 'CONFIG_CHANGED'),
+    ('dependency', 'GENERAL_DEPENDENCY_UNSAFE'), ('dependency-race', 'GENERAL_DEPENDENCY_UNSAFE'),
 ])
 def test_pre_effect_refusals_preserve_processes(damage, code):
     value, native = fixture(damage)
@@ -311,3 +321,79 @@ def test_native_production_registration_wait_is_bounded_read_only_and_exact(monk
         with pytest.raises(ValueError, match=code):
             native.wait_production(expected)
         assert calls == ['read'] and sleeps == []
+
+
+@pytest.mark.parametrize('component,field,control', [
+    (component, field, control) for component in ['general', 'slot-pool-2']
+    for field in ['PartOf', 'Requires', 'BindsTo'] for control in ['reviewer', 'production']
+] + [(component, 'PropagatesStopTo', control) for component in ['reviewer', 'production']
+     for control in ['general', 'slot-pool-2']])
+def test_native_known_general_restart_dependencies_are_refused(monkeypatch, component, field, control):
+    value = payload()
+    native = activation.Native(value)
+    identities, _ = activation.services(value['config'])
+    units = {name: identity['service'] for name, identity in identities.items()}
+    units['reviewer'] = activation.compile_inputs(value['config']).get('relay_reviewer_service_name', 'reviewer-mcp.service')
+    def command(argv):
+        observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': '',
+                    'Requires': 'sysinit.target', 'BindsTo': '', 'PropagatesStopTo': ''}
+        if argv[2] == units[component]:
+            observed[field] = units[control]
+        return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
+    monkeypatch.setattr(activation, 'command', command)
+    with pytest.raises(ValueError, match='GENERAL_DEPENDENCY_UNSAFE'):
+        native.transport_dependencies()
+
+
+@pytest.mark.parametrize('component,target', [(component, target) for component in ['reviewer', 'production']
+                                            for target in ['foreign.service', 'foreign.target']])
+def test_native_control_restart_cannot_stop_an_explicit_foreign_unit(monkeypatch, component, target):
+    value = payload()
+    native = activation.Native(value)
+    identities, _ = activation.services(value['config'])
+    units = {'production': identities['production']['service'],
+             'reviewer': activation.compile_inputs(value['config']).get('relay_reviewer_service_name', 'reviewer-mcp.service')}
+    def command(argv):
+        observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': '',
+                    'Requires': '', 'BindsTo': '', 'PropagatesStopTo': ''}
+        if argv[2] == units[component]:
+            observed['PropagatesStopTo'] = units['production'] + ' ' + target
+        return '\n'.join(key + '=' + item for key, item in observed.items()).encode()
+    monkeypatch.setattr(activation, 'command', command)
+    with pytest.raises(ValueError, match='CONFIG_ADOPTION_FOREIGN_STOP_UNSAFE'):
+        native.transport_dependencies()
+
+
+@pytest.mark.parametrize('damage', [None, 'reload', 'not-loaded', 'missing', 'duplicate', 'malformed'])
+def test_native_dependency_read_is_complete_and_does_not_reject_foreign_graphs(monkeypatch, damage):
+    value = payload()
+    native = activation.Native(value)
+    identities, _ = activation.services(value['config'])
+    controls = {identities['production']['service'],
+                activation.compile_inputs(value['config']).get('relay_reviewer_service_name', 'reviewer-mcp.service')}
+    calls = []
+    def command(argv):
+        calls.append(argv)
+        observed = {'LoadState': 'loaded', 'NeedDaemonReload': 'no', 'PartOf': 'foreign.service',
+                    'Requires': 'sysinit.target foreign.service', 'BindsTo': 'unrelated.service',
+                    'PropagatesStopTo': '' if argv[2] in controls else 'foreign.service'}
+        if damage == 'reload':
+            observed['NeedDaemonReload'] = 'yes'
+        elif damage == 'not-loaded':
+            observed['LoadState'] = 'not-found'
+        elif damage == 'missing':
+            del observed['BindsTo']
+        raw = '\n'.join(key + '=' + item for key, item in observed.items())
+        if damage == 'duplicate':
+            raw += '\nPartOf='
+        elif damage == 'malformed':
+            raw += '\nunknown row'
+        return raw.encode()
+    monkeypatch.setattr(activation, 'command', command)
+    if damage is None:
+        native.transport_dependencies()
+        assert len(calls) == 8
+    else:
+        with pytest.raises(ValueError, match='GENERAL_DEPENDENCY_UNPROVEN'):
+            native.transport_dependencies()
+        assert len(calls) == 1

@@ -192,6 +192,7 @@ def _inside_setup():
     config['environment']['runner']['user'] = 'relay-runner'
     config['environment']['generalRunner']['user'] = 'relay-general-runner'
     from config import compile_inputs
+    identities, _ = activation.services(config)
     variables = {**yaml.safe_load((SOURCE / 'deploy/ansible/group_vars/all.yml').read_text()),
                  **compile_inputs(config)}
     variables.update(relay_config_root='/etc/lifecycle', relay_install_root='/opt/lifecycle',
@@ -206,7 +207,7 @@ def _inside_setup():
         relay_reviewer_relay_enabled=False, relay_tls_client_ca_file='/etc/lifecycle/synthetic-ca.pem',
         relay_upgrade_lifecycle_managed=True, relay_production_defer_lifecycle=False,
         relay_production_runner_service_name='relay-runner.service',
-        relay_general_runner_service_name='relay-general-runner.service',
+        relay_general_runner_service_name=identities['general']['service'],
         relay_namespace='lifecycle', relay_admission_operation_id=OPERATION,
         relay_admission_recovery_authorized=True, relay_production_operation_target_head=DESIRED,
         relay_retained_reviewer_config_adoption=True,
@@ -242,8 +243,7 @@ def _inside_setup():
         '[Unit]\nDescription=Disposable inactive manual outcome socket\n[Socket]\n'
         'ListenStream=/run/lifecycle/manual.sock\n[Install]\nWantedBy=sockets.target\n', 0o644)
     subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
-    identities, _ = activation.services(config)
-    units = {'production': 'relay-runner.service', 'general': 'relay-general-runner.service'}
+    units = {'production': identities['production']['service']}
     registrations = {}
     for index, (component, identity) in enumerate(identities.items(), 55):
         if component not in units:
@@ -359,6 +359,30 @@ def _inside_run():
     else:
         raise AssertionError('an unauthorized policy delta granted config adoption')
     assert native.reviewer()['pid'] == before['reviewer']['pid']
+    # A previous deployment may still have the old General PartOf relation at
+    # this frontier. Refuse before restarting Reviewer, while all transports
+    # remain intact; a failed after-proof would already be too late.
+    primary_unit = state['units']['general']
+    assert primary_unit == activation.services(state['config'])[0]['general']['service']
+    processes = {unit: _service(unit) for unit in ['reviewer-mcp.service', *state['units'].values()]}
+    dropin = Path('/etc/systemd/system') / (primary_unit + '.d') / 'retained-legacy-partof.conf'
+    _write(dropin, '[Unit]\nPartOf=reviewer-mcp.service\n', 0o644)
+    subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
+    assert 'reviewer-mcp.service' in _command([
+        '/bin/systemctl', 'show', primary_unit, '--property=PartOf', '--value']).split()
+    try:
+        try:
+            activation.adopt_config(payload, _boundary(activation, state)(payload))
+        except ValueError as error:
+            assert 'CONFIG_ADOPTION_GENERAL_DEPENDENCY_UNSAFE' in str(error), str(error)
+        else:
+            raise AssertionError('legacy General PartOf allowed a destructive Reviewer restart')
+        assert {unit: _service(unit) for unit in processes} == processes
+    finally:
+        dropin.unlink()
+        dropin.parent.rmdir()
+        subprocess.run(['/bin/systemctl', 'daemon-reload'], check=True)
+    assert {unit: _service(unit) for unit in processes} == processes
     # The production decision remains closed unless the specific owner choice
     # is supplied; rendering alone cannot grant the guarded restart.
     variables.update(relay_upgrade_lifecycle_previous_active=state['previous'],

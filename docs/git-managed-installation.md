@@ -350,6 +350,10 @@ Production process as well. Both replacement processes must be independently
 proved healthy; every General process and all Runner IDs, names, groups, users,
 work roots and native-update settings stay fixed. An unchanged PID, no-op helper,
 foreign configuration or lost transport cannot become successful adoption.
+Before activation, effective General dependencies (including drop-ins) must not
+propagate the Reviewer/Production restart to those transports. Explicit stop
+propagation outside the two authorized services also refuses. This is a read-only
+eligibility check; it does not normalize or rewrite retained units.
 
 At the already-installed post-Apply frontier this continuation skips completed
 package, runtime, artifact and Runner reconciliation. It preserves the original
