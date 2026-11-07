@@ -964,7 +964,7 @@ def test_pool_native_link_rejects_escape_alias_and_missing_target(tmp_path, targ
 
 @pytest.mark.parametrize('damage', ['missing', 'dangling', 'escape', 'empty', 'unsearchable', 'node-alias'])
 @pytest.mark.parametrize('active', [False, True])
-def test_pool_external_relink_damage_requires_stopped_repair_without_mutation(tmp_path, damage, active):
+def test_pool_external_relink_damage_requires_stopped_repair_without_mutation(tmp_path, request, damage, active):
     contract, template, arguments, member = install_fixture(tmp_path)
     fixture_package(tmp_path, member, arguments['runner_uid'])
     fixture_registration(tmp_path, contract, member, arguments['runner_uid'])
@@ -987,14 +987,35 @@ def test_pool_external_relink_damage_requires_stopped_repair_without_mutation(tm
             os.chown(runner / name, arguments['runner_uid'], -1, follow_symlinks=False)
     external = runner / 'externals.2.999.0'
     if damage == 'empty': (external / 'node24').rename(runner / 'retained-node')
-    elif damage == 'unsearchable': external.chmod(0o600)
+    elif damage == 'unsearchable':
+        original_mode = external.stat().st_mode & 0o7777
+        # Snapshot while descendants are still searchable by an ordinary UID.
+        before = unchanged_tree(tmp_path)
+        # This is deliberate fixture damage, not runtime state to permission-repair.
+        # Restore even after an assertion failure, before the enclosing Codex
+        # sandbox is cleaned by its unprivileged runtime identity.
+        request.addfinalizer(lambda: external.chmod(original_mode))
+        external.chmod(0o600)
+        damaged_stat = external.stat()
     elif damage == 'node-alias':
         node = external / 'node24/bin/node'; node.unlink(); node.symlink_to('/bin/true')
-    before = unchanged_tree(tmp_path)
+    if damage != 'unsearchable':
+        before = unchanged_tree(tmp_path)
     with pytest.raises(pool.PoolError, match='INSTALL_(ACTIVE_PACKAGE_UNPROVEN|REGISTERED_PACKAGE_REPAIR_REQUIRED|NATIVE_LAYOUT_UNSAFE)') as failure:
         pool.installation_plan(contract, template, **arguments)
     assert 'stopped-only repair required' in str(failure.value)
-    assert unchanged_tree(tmp_path) == before
+    if damage == 'unsearchable':
+        assert external.stat() == damaged_stat
+        assert external.stat().st_ctime_ns == damaged_stat.st_ctime_ns
+        external.chmod(original_mode)
+    after = unchanged_tree(tmp_path)
+    if damage == 'unsearchable':
+        # The fixture's chmod changes ctime. Its damaged metadata was checked
+        # above; every descendant and other entry still compares byte-for-byte.
+        key = str(external.relative_to(tmp_path))
+        before.pop(key)
+        after.pop(key)
+    assert after == before
 
 
 def test_known_protected_unit_can_receive_new_template_without_an_unbound_unit_bypass(tmp_path):
