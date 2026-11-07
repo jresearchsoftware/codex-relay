@@ -176,6 +176,9 @@ Structural mode reads committed inputs without a network or VibeVM. Optional
 tool mode rechecks the binary digest and uses isolated projects to exercise
 native clean/repeat install, relocation with the original source absent,
 existing-slot offline reinstall, generated routes and human-overlay behavior.
+Repeat install may refresh the native lock's `generated_at`; qualification allows
+only that valid timestamp change and requires an identical resolved graph, source
+locations, content hashes and materialized slots.
 Local registry URLs are absolute native location metadata. Before checking a
 relocated fixture, the probe re-resolves the relative registry through native
 installation; it requires unchanged content hashes, dependency graph, source

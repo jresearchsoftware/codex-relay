@@ -63,6 +63,18 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def check_repeat_lock(before, after):
+    """Native install refreshes generated_at, not the resolved content identity."""
+    previous, current = (tomllib.loads(data.decode()) for data in (before, after))
+    for lock in (previous, current):
+        timestamp = lock.get("meta", {}).get("generated_at")
+        require(isinstance(timestamp, str) and
+                re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp),
+                "Repeat install has invalid generation timestamp")
+        del lock["meta"]["generated_at"]
+    require(previous == current, "Repeat install changed the resolved lock identity")
+
+
 def managed(data):
     require(len(re.findall(rb"^</?vibevm>$", data, re.M)) == 2,
             "Expected exactly one native managed block")
@@ -469,9 +481,9 @@ def probe(vibe, pin, project_root=ROOT):
         clean_before = files_in(clean / "vibevm/vibedeps")
         clean_lock = (clean / "vibe.lock").read_bytes()
         run(clean, "repeat-install", "install", "--no-default-registry", "--assume-yes")
-        require(files_in(clean / "vibevm/vibedeps") == clean_before
-                and (clean / "vibe.lock").read_bytes() == clean_lock,
+        require(files_in(clean / "vibevm/vibedeps") == clean_before,
                 "Repeat install drifted from clean native generation")
+        check_repeat_lock(clean_lock, (clean / "vibe.lock").read_bytes())
         check_project(clean)
 
         run(project, "validate", "validate", "--path", ".", "--no-default-registry")
