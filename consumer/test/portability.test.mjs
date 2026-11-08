@@ -7,9 +7,9 @@ import { loadConsumer, validateConsumer, parseConsumerJson } from '../consumer-c
 import { fixture, memoryStore } from '../../controller/test/fixture.mjs';
 import { runAttempt } from '../../controller/src/attempt.mjs';
 import { assertPr, currentReview } from '../../controller/src/live-authority.mjs';
-import { validateEnvelope } from '../../controller/src/execution-contract.mjs';
+import { DEFAULT_NATIVE_VALIDATIONS, validateEnvelope } from '../../controller/src/execution-contract.mjs';
+import { extractAuthorityRecord, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { createGithubApi } from '../../controller/src/github-api.mjs';
-import { validateRemediationContract } from '../../contracts/src/contracts.mjs';
 import { parseEnv } from '../../controller/src/writer-auth.mjs';
 import { readDiagnosticsConfig } from '../../controller/src/diagnostics.mjs';
 
@@ -42,8 +42,10 @@ test(`same modules: ${CONSUMER.repository} Issue and remediation publication and
 });
 
 test('consumer profile is resolved once; repository API and credentials use only the configured identity', async t => {
-  const f = await fixture(t, { issueBody: '# Fixture task\nImplement the admitted goal.' });
+  const f = await fixture(t, { issueBody: 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement the admitted goal.' });
   assert.deepEqual(f.envelope.profile, CONSUMER.defaultProfile);
+  assert.deepEqual(f.envelope.request.authority_resolution.project_defaults.validation, [...DEFAULT_NATIVE_VALIDATIONS]);
+  assert.deepEqual(f.envelope.validation, [...DEFAULT_NATIVE_VALIDATIONS]);
   assert.equal(f.envelope.branch, `${CONSUMER.taskBranchPrefix}task-42`);
   const requests = [];
   const api = createGithubApi({ token: 'fixture', fetchImpl: async url => {
@@ -55,7 +57,22 @@ test('consumer profile is resolved once; repository API and credentials use only
   assert.ok(parseEnv(env, CONSUMER.paths.credentialKeyFile));
   assert.throws(() => parseEnv(env.replace(CONSUMER.writerApp.appId, CONSUMER.reviewerApp.appId), CONSUMER.paths.credentialKeyFile));
   assert.throws(() => parseEnv(env + '\nGITHUB_APP_ID=1', CONSUMER.paths.credentialKeyFile));
-  assert.throws(() => validateRemediationContract({ schema_version: '1.0', repository: 'foreign/repository', pull_request: 1 }, { pullRequest: 1 }));
+});
+
+test('declared consumer validation IDs remain explicit bounded obligations rather than added defaults', async t => {
+  const declared = CONSUMER.validationNames ?? [];
+  if (!declared.length) return;
+  const selected = declared.slice(0, 12);
+  const f = await fixture(t, { beforeAdmission({ fixtureDecision }) {
+    const value = extractAuthorityRecord(fixtureDecision.body);
+    const overBound = [...new Set([...DEFAULT_NATIVE_VALIDATIONS, ...declared])].slice(0, 13);
+    if (overBound.length === 13) assert.throws(() => renderAuthorityRecord({ ...value,
+      amendments: { ...value.amendments, validation: overBound } }), { code: 'AUTHORITY_RECORD_INVALID' });
+    value.amendments.validation = selected;
+    fixtureDecision.body = renderAuthorityRecord(value);
+  } });
+  assert.deepEqual(f.envelope.validation, selected);
+  assert.deepEqual(f.envelope.request.authority_resolution.project_defaults.validation, [...DEFAULT_NATIVE_VALIDATIONS]);
 });
 
 test('missing, malformed, unsafe and overlapping consumer configuration fails closed', () => {

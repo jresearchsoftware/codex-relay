@@ -120,7 +120,7 @@ class ProductionInstallCompositionTests(unittest.TestCase):
             directory = Path(tmp)
             (directory / 'vars').mkdir()
             shutil.copy(ROOT / 'vars/general-runner.yml', directory / 'vars')
-            for filename in ('main.yml', 'general-runtime.yml', 'general-validation.yml'):
+            for filename in ('main.yml', 'general-runtime.yml'):
                 write_yaml(directory / 'roles/relay_runner/tasks' / filename,
                            [{'ansible.builtin.fail': {'msg': 'unmaterialized dependency was used'}}])
             tasks = [{'ansible.builtin.include_tasks': str(ROOT / 'tasks/production-general-runner.yml')}]
@@ -136,9 +136,9 @@ class ProductionInstallCompositionTests(unittest.TestCase):
 
     def test_owner_lifecycle_paths_cannot_become_second_installers(self):
         runner_enable = (ROOT / 'relay-production-runner-enable.yml').read_text()
-        general_enable = (ROOT / 'relay-general-runner.yml').read_text()
+        self.assertFalse((ROOT / 'relay-general-runner.yml').exists())
         activation = (ROOT / 'relay-reviewer-activation.yml').read_text()
-        for source in (runner_enable, general_enable):
+        for source in (runner_enable,):
             self.assertIn('INSTALL_CURRENT_MAIN_FIRST', source)
             self.assertNotIn('ansible.builtin.unarchive', source)
             self.assertNotIn('ansible.builtin.get_url', source)

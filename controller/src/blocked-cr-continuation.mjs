@@ -16,7 +16,7 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
   const q = typed.request;
   const head = prior.outcome?.head;
   if (!lineage || lineage.attempt !== e.attemptId || lineage.step !== e.step || lineage.sha256 !== digest(e)
-    || step !== e.step + 1 || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
+    || !positive(step) || step <= e.step || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
     || e.target !== 'pull_request' || e.number !== pr.number || e.issueNumber !== q.task
     || e.branch !== q.branch || e.branch !== pr.head.ref || e.historicalBase !== q.base_sha
     || e.targetBase !== targetBase || pr.base.sha !== e.targetBase

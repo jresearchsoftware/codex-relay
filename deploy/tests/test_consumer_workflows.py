@@ -17,7 +17,7 @@ WORKFLOWS = ROOT / '.github/workflows'
 NODE = shutil.which('node')
 HEAD = 'a' * 40
 sys.path.insert(0, str(ROOT / 'deploy'))
-from workflow_projection import render
+from workflow_projection import render, general_pool_label
 
 
 def self_config():
@@ -72,20 +72,23 @@ class ConsumerWorkflowTests(unittest.TestCase):
         for value in (self.routing, self.recovery):
             with self.subTest(workflow=value['name']):
                 self.assertEqual(value['permissions'], permissions)
+                group = ('codex-relay-control-${{ github.run_id }}' if value is self.routing
+                         else 'codex-relay-recovery-${{ inputs.run_id }}')
                 self.assertEqual(value['concurrency'], {
-                    'group': 'codex-relay-control', 'cancel-in-progress': False, 'queue': 'max'})
+                    'group': group, 'cancel-in-progress': False, 'queue': 'max'})
                 job, step = control_step(value)
-                self.assertEqual(job['runs-on'], ['self-hosted', 'Linux', 'X64', 'codex-relay'])
+                self.assertEqual(job['runs-on'], {'group': 'relay-general',
+                    'labels': ['self-hosted', 'Linux', 'X64', general_pool_label(self_config())]})
                 self.assertNotIn('permissions', job)
                 self.assertNotIn('uses', step)
                 self.assertEqual(step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
                 self.assertEqual(step['env']['GITHUB_TOKEN'], '${{ github.token }}')
                 self.assertEqual(step['env']['RELAY_CONSUMER_CONFIG'], '/etc/codex-relay/consumer.json')
-                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v3')
+                self.assertEqual(step['env']['EXPECTED_WORKFLOW_CONTRACT'], 'relay-workflows-v4')
                 self.assertEqual(step['env']['NODE_OPTIONS'], '')
                 self.assertEqual(step['env']['NODE_PATH'], '')
-                self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', step['run'])
-                self.assertIn('test "$(/usr/bin/id -un)" = codex-relay-general-runner', step['run'])
+                self.assertIn('codex-relay-general-runner:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=primary', step['run'])
+                self.assertIn('case "$RUNNER_NAME:$(/usr/bin/id -un)" in', step['run'])
                 self.assertNotIn('${{', step['run'], 'Event/input values must not be interpolated into shell source')
                 self.assertNotIn('checkout', step['run'])
                 self.assertNotIn('sudo', step['run'], 'Only installed Relay helpers own privileged invocation')
@@ -249,13 +252,15 @@ for (const route of ['auto', 'manual']) {
         [target === 'issue' ? 'issue' : 'pull_request']: subject } };
     assert.equal(evaluate(routing['run-name'], github), labelRunName(launch, subject));
     if (target === 'issue') {
+      assert.equal(evaluate(routing['run-name'], github),
+        `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 27 · codex-ready-${route}`);
       const marker = 'Authority model: github-native-v1';
       for (const body of [`Example migration marker: \`${marker}\``, `Quoted marker: "${marker}"`,
         `Before ${marker}`, `> ${marker}`, `\\n${marker}\\n`,
         JSON.stringify(`\n${marker}\n`), `example authority model: GITHUB-NATIVE-V1`]) {
-        const legacy = { ...subject, body };
+        const unmarked = { ...subject, body };
         assert.equal(authorityMode(body), 'legacy');
-        assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: legacy } }), labelRunName(launch, legacy), body);
+        assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: unmarked } }), labelRunName(launch, unmarked), body);
       }
       for (const body of [marker, `${marker}\nCharter`, `Charter\n${marker}\nScope`, `Charter\n${marker}`,
         `${marker}\r\nCharter`, `Charter\r\n${marker}\r\nScope`, `Charter\r\n${marker}`, `\`\`\`\n${marker}\n\`\`\``]) {

@@ -1,4 +1,4 @@
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,18 +10,45 @@ import { createGitPublisher, collectProgress, gitEnvironment } from '../src/trus
 import { prepareCheckout } from '../src/attempt-runtime.mjs';
 import { dispatchRunName, labelRunName } from '../src/launch-metadata.mjs';
 import { REPOSITORY, WRITER, REVIEWER } from '../src/execution-contract.mjs';
+import { renderAuthorityRecord, sha256Body, resolveTaskAuthority, createAdmissionSnapshot } from '../../contracts/src/github-authority.mjs';
 
 const exec = promisify(execFile);
 const copy = v => structuredClone(v);
 const installedFixtureEventBase = Number.parseInt(process.env.INSTALLED_FIXTURE_EVENT_BASE ?? '1000', 10);
 let nextInstalledFixtureEventOffset = 0;
+// Pure current-runtime envelope for process/transport tests that need no Git
+// fixture. Its immutable request is built by the owning v4 resolver/snapshot.
+export function currentEnvelope(fields = {}) {
+  const e = { version: 2, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST,
+    runId: 9, step: 1, target: 'issue', number: 42, issueNumber: 42, route: 'auto',
+    branch: `${CONSUMER.taskBranchPrefix}test`, startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40),
+    targetBase: 'a'.repeat(40), profile: CONSUMER.defaultProfile, subagentsAllowed: true,
+    validation: ['diff-check'], ...fields };
+  e.attemptId ??= `run-${e.runId}`;
+  const body = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nExercise the bounded synthetic runtime.';
+  const parent = { kind: 'issue', number: e.issueNumber };
+  const resolved = resolveTaskAuthority([{ kind: 'issue-body', id: e.issueNumber, repository: REPOSITORY,
+    parent, author: { login: CONSUMER.owner, id: 700, type: 'User' }, body }], {
+    repository: REPOSITORY, task: e.issueNumber, charterId: e.issueNumber, charterBody: body,
+    trustedAuthor: { login: REVIEWER, id: 701, type: 'Bot' }, route: e.route, purpose: 'Exercise bounded synthetic runtime.',
+    projectDefaults: { model: e.profile.cliModelId, effort: e.profile.effort,
+      subagents: e.subagentsAllowed, validation: e.validation },
+    startingState: { branch: e.branch, base_sha: e.historicalBase, starting_head: e.startHead, existing_pr: null }
+  });
+  e.request = createAdmissionSnapshot(resolved, { step: e.step, attempt: e.attemptId, runId: e.runId, route: e.route });
+  e.requestReference = e.request.authority.charter;
+  e.authorityDigest = e.request.authority.sha256;
+  return e;
+}
 export function memoryStore() {
   const rows = new Map();
   return { get: async id => copy(rows.get(id) ?? null), put: async (id, r) => { rows.set(id, copy(r)); }, all: async () => copy([...rows.values()]) };
 }
-export async function fixture(t, { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
+export async function fixture(t, options = {}) {
+  const { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
   mainAdvance = false, unrelatedMain = false, nativeReview = false, deferAdmission = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
-  streamlinedAdmission = false, profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = {}) {
+  streamlinedAdmission = true, profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = options;
+  const syntheticAuthority = issueBody === undefined && options.streamlinedAdmission !== true;
   // The installed proof runs real code against the governed dispatch-work
   // root. Give each fixture its own admitted event namespace so a concurrent
   // test or a later proof subprocess cannot prepare, collect, or clean up
@@ -40,14 +67,20 @@ export async function fixture(t, { remediation = false, continuation = false, co
     GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z',
   });
   await command(source, ['push', remote, CONSUMER.baseBranch]); const base = await command(source, ['rev-parse', 'HEAD']);
-  const issue = { number: 42, labels: [{ name: `step-${step}` }], state: 'open', user: { login: CONSUMER.owner }, body: [
-    '# Task 42 test', `- Required starting base: \`${base}\``, `- Required branch: ${CONSUMER.taskBranchPrefix}test-42`,
-    '- Exact implementation thread: `Task 42 - Step 1 - core`', '- Issue closure policy: `close-authorized`',
-    '## Execution profile', `- Codex model: \`${profile.cliModelId}\``, `- Codex reasoning effort: \`${profile.effort}\``,
-    '## Validation', '- git diff --check' ].join('\n') };
+  const initialStep = syntheticAuthority && step > 1 ? step - 1 : null;
+  const issue = { id: 42, number: 42, title: 'core', labels: initialStep ? [{ name: `step-${initialStep}` }] : [],
+    state: 'open', user: { login: CONSUMER.owner, id: 700, type: 'User' }, body: [
+      'Authority model: github-native-v1', 'Issue closure policy: close-authorized',
+      'Implement the bounded synthetic repository work and preserve current execution boundaries.'
+    ].join('\n') };
   if (issueBody !== undefined) issue.body = issueBody;
   let pr = null; let nextComment = 1; const comments = []; let taskBranch = `${CONSUMER.taskBranchPrefix}test-42`;
-  let review;
+  let review; const authorityComments = [];
+  const reviewerIdentity = { login: REVIEWER, id: 701, type: 'Bot' };
+  const renderDecision = amendments => renderAuthorityRecord({ schema_version: '4.0', kind: 'decision',
+    repository: REPOSITORY, task: 42, parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(issue.body),
+    purpose: 'Select the exact synthetic source, profile and admitted scope.', amendments, supersedes: null, context: [] });
+
   let continuationHead;
   if (continuation) {
     await command(source, ['switch', '-c', taskBranch]);
@@ -57,29 +90,27 @@ export async function fixture(t, { remediation = false, continuation = false, co
     await command(source, ['push', remote, taskBranch]);
     continuationHead = await command(source, ['rev-parse', 'HEAD']);
     await command(source, ['switch', CONSUMER.baseBranch]);
-    issue.body += `\nImplementation continuation head: ${continuationHead}${continuationPr ? '\nImplementation pull request: #43' : ''}`;
+
   }
   if (remediation || (continuation && continuationPr)) {
     if (remediation) await command(source, ['push', remote, `${CONSUMER.baseBranch}:refs/heads/${CONSUMER.taskBranchPrefix}test-42`]);
-    pr = { number: 43, title: `Task 42 · Step ${step} · core`, labels: [{ name: `step-${step}` }], node_id: 'PR_node', state: 'open', merged: false, draft: false, body: 'Closes #42',
+    pr = { number: 43, title: `Task 42 · Step ${syntheticAuthority ? step : 1} · core`, labels: [], node_id: 'PR_node', state: 'open', merged: false, draft: false, body: 'Related to #42',
       base: { ref: CONSUMER.baseBranch, sha: base, repo: { full_name: REPOSITORY } },
       head: { ref: `${CONSUMER.taskBranchPrefix}test-42`, sha: continuationHead ?? base, repo: { full_name: REPOSITORY } }, mergeable: true };
-    if (remediation) review = { id: 17, user: { login: REVIEWER, id: 701, type: 'Bot' }, state: 'CHANGES_REQUESTED', commit_id: base, body: [
-      'F1: correct the documentation.', '```yaml', 'schema_version: "1.0"', 'change_request_id: CR-42-001',
-      `repository: ${REPOSITORY}`, 'pull_request: 43', `reviewed_head_sha: ${base}`, `required_starting_head: ${base}`,
-      `remediation_thread_title: Task 42 - Step ${step} - CR-42-001 core`, `codex_model: ${profile.cliModelId}`, `codex_effort: ${profile.effort}`,
-      'subagents_allowed: false', 'finding_ids: [F1]', 'required_validation: [diff-check]',
-      'success_token: READY', 'blocked_token: BLOCKED', '```' ].join('\n') };
+    if (remediation) {
+      const contract = { schema_version: '4.0', kind: 'change-request', repository: REPOSITORY, task: 42,
+        parent: { kind: 'pull_request', number: 43 }, charter_sha256: sha256Body(issue.body),
+        purpose: nativeReview ? 'Integration reconciliation' : 'core', branch: pr.head.ref, base_sha: base,
+        reviewed_head_sha: base, change_request_id: nativeReview ? 'CR-42-003' : 'CR-42-001', context: [],
+        findings: [{ id: 'F1', severity: 'major', problem: 'The documentation needs the scoped correction.',
+          impact: 'The synthetic accepted behavior is incomplete.', remediation: 'Correct the scoped documentation.',
+          acceptance_criteria: ['Publish the exact corrected source with the required validation.'] }] };
+      if (syntheticAuthority) contract.overrides = { model: profile.cliModelId, effort: profile.effort,
+        subagents: false, validation: ['diff-check'] };
+      review = { id: 17, user: reviewerIdentity, state: 'CHANGES_REQUESTED', commit_id: base,
+        body: renderAuthorityRecord(contract) };
+    }
   }
-  if (nativeReview && review) review.body = [
-    '## Change Request metadata', '- Change Request ID: CR-42-003', `- Target repository: ${REPOSITORY}`,
-    '- Target pull request: #43', `- Reviewed head SHA: ${base}`, '## Required remediation launch profile',
-    `- Thread name: Task 42 — Step ${step} — Integration reconciliation`, `- Codex model: ${profile.cliModelId}`,
-    `- Codex reasoning effort: ${profile.effort}`, `- Required starting head: ${base}`, '- Subagents: Off',
-    '## Findings', '### CR42-F1 — major — Reconcile current main',
-    '## Validation', 'Run routing, remediation, launcher, Ansible, Reviewer, workflow/static, git diff and secret checks.',
-    '## Outcome', 'Expected successful remediation outcome: `CR_42_003_REMEDIATED_PENDING_REVIEW`.'
-  ].join('\n');
   if (reviewBody !== undefined && review) review.body = reviewBody;
   if (instruction) (remediation ? review : issue).body += `\n${instruction}`;
   if (mainAdvance || unrelatedMain) {
@@ -107,6 +138,16 @@ export async function fixture(t, { remediation = false, continuation = false, co
       await command(source, ['push', remote, CONSUMER.baseBranch]);
     }
   }
+  let fixtureDecision;
+  if (syntheticAuthority) {
+    fixtureDecision = { id: 900, user: reviewerIdentity,
+      issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`,
+      body: renderDecision({ purpose: 'core', scope: ['Implement the scoped synthetic repository work.'],
+        model: profile.cliModelId, effort: profile.effort, subagents: !remediation, validation: ['diff-check'],
+        branch: taskBranch, base_sha: base, starting_head: continuationHead ?? base,
+        existing_pr: continuation && continuationPr ? 43 : null }) };
+    authorityComments.push(fixtureDecision);
+  }
   let checksReady = false; let pushes = 0; let staleObservation = false; let observedHead; let pushFailure = false;
   let observationFailure = null; const publicationOperations = [];
   const launch = { target: remediation ? 'pull_request' : 'issue', number: remediation ? 43 : 42, issueNumber: 42, step, route, ...(labelLaunch ? { transport: 'label' } : {}) };
@@ -126,11 +167,11 @@ export async function fixture(t, { remediation = false, continuation = false, co
     },
     async get(path) {
       if (/^\/issues\/comments\/[1-9][0-9]*$/.test(path)) {
-        const comment = comments.find(c => c.id === Number(path.split('/').at(-1)));
+        const comment = [...authorityComments, ...comments].find(c => c.id === Number(path.split('/').at(-1)));
         if (comment) return copy(comment);
       }
       if (path === '/issues/42') return copy(issue);
-      if (path === '/issues/43') return copy(pr);
+      if (pr && (path === '/issues/43' || path === `/issues/${pr.number}`)) return copy(pr);
       if (path.startsWith('/git/matching-refs/heads/')) {
         const prefix = path.slice('/git/matching-refs/heads/'.length);
         const rows = await command(root, ['ls-remote', '--heads', remote, `refs/heads/${prefix}*`]);
@@ -149,21 +190,26 @@ export async function fixture(t, { remediation = false, continuation = false, co
         }
         return { status: mergeBase === baseSha ? 'ahead' : 'diverged', base_commit: { sha: baseSha }, merge_base_commit: { sha: mergeBase } };
       }
-      if (path === '/pulls/43' && pr) return { ...copy(pr), head: { ...pr.head, sha: await remoteHead() } };
+      if (path === '/pulls/43/reviews/17' && review) return copy(review);
+      if (pr && (path === '/pulls/43' || path === `/pulls/${pr.number}`)) return { ...copy(pr), head: { ...pr.head, sha: await remoteHead() } };
       throw new Error(`Unexpected GET ${path}`);
     },
     async list(path) {
       if (path.endsWith('/events')) return copy(events);
       if (path === '/pulls/43/reviews') return review ? [copy(review)] : [];
+      if (/^\/pulls\/[0-9]+\/reviews$/.test(path)) return [];
       if (path.startsWith('/pulls?')) {
         if (!pr) return [];
+        const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+        if (query.get('head') && query.get('head') !== `${REPOSITORY.split('/')[0]}:${pr.head.ref}`) return [];
+        if (query.get('state') === 'open' && pr.state !== 'open') return [];
         // GitHub's PR list response omits detail-only mergeability fields.
         const summary = await this.get('/pulls/43');
         delete summary.mergeable;
         delete summary.mergeable_state;
         return [summary];
       }
-      if (path.endsWith('/comments')) return copy(comments);
+      if (path.endsWith('/comments')) return copy([...(path === '/issues/42/comments' ? authorityComments : []), ...comments]);
       throw new Error(`Unexpected list ${path}`);
     },
     async post(path, body) {
@@ -233,8 +279,8 @@ export async function fixture(t, { remediation = false, continuation = false, co
   const admissionControl = createAdmission ? await createAdmission({ root, store, journal }) : undefined;
   const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore, streamlinedAdmission });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
-  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead });
-  const admission = deferAdmission ? { envelope: await admitEnvelope(api, admissionRequest) }
+  await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead, base, fixtureDecision, authorityComments, renderDecision });
+  const admission = deferAdmission ? { envelope: await admitEnvelope(api, admissionRequest, { nextStep: step, streamlined: true }) }
     : await broker.invoke(admissionRequest);
   const { envelope } = admission;
   taskBranch = envelope.branch ?? taskBranch;
@@ -249,7 +295,7 @@ export async function fixture(t, { remediation = false, continuation = false, co
   const { name, email } = remediation ? CONSUMER.remediationIdentity : CONSUMER.writerIdentity;
   const identity = { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email };
   const commit = async (path = 'docs/work.md', text = 'changed\n') => { await writeFile(join(cwd, path), text); await command(cwd, ['add', path]); await command(cwd, ['commit', '-m', 'task progress'], identity); return command(cwd, ['rev-parse', 'HEAD']); };
-  return { root, remote, source, command, api, issue, pr, run, events, admissionRequest, admission, admissionControl, review, store, journal, lifecycleStore, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
+  return { root, remote, source, command, api, issue, pr, run, events, fixtureDecision, authorityComments, renderDecision, admissionRequest, admission, admissionControl, review, store, journal, lifecycleStore, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
     prepare: e => prepareCheckout(e, { root: workRoot, remote, token: null }),
     collect: e => collectProgress(cwd, e, { root, remote }),
     checksReady: () => { checksReady = true; }, pushes: () => pushes,

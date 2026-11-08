@@ -1,5 +1,6 @@
 """Version 1 deployment input. No playbooks, templates or backend variables in it."""
 from pathlib import Path, PurePosixPath
+import copy
 import json
 import ipaddress
 import re
@@ -52,6 +53,9 @@ def loads(raw, product_root):
     require(len(raw) <= 65536, 'size')
     require(not re.search(r'{{|{%|PRIVATE KEY|(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}', raw), 'literal-data-only')
     config = json.loads(raw, object_pairs_hook=unique_object)
+    require(isinstance(config, dict) and isinstance(config.get('consumer'), dict)
+            and isinstance(config['consumer'].get('generalRunnerPool'), dict),
+            'generalRunnerPool.required')
     derive_managed_pool_slots(config)
     validate(config, product_root)
     return config
@@ -75,8 +79,7 @@ def deployment_repository(config, repository=None):
 def derive_managed_pool_slots(config):
     """Stable internal routes; desired capacity never allocates per-repo runners."""
     consumer, environment = config.get('consumer', {}), config.get('environment', {})
-    if 'generalRunnerPool' not in consumer:
-        return
+    require(isinstance(consumer.get('generalRunnerPool'), dict), 'generalRunnerPool.required')
     supplied = consumer.get('executionSlots')
     general = environment.get('generalRunner', {})
     require(all(key in general for key in ['name', 'user']), 'generalRunnerPool.generalRunner')
@@ -101,6 +104,9 @@ def derive_managed_pool_slots(config):
 
 def validate(c, product_root):
     require(object_keys(c, ['schemaVersion', 'source', 'target', 'consumer', 'environment']), 'keys')
+    require(isinstance(c.get('consumer'), dict)
+            and isinstance(c['consumer'].get('generalRunnerPool'), dict), 'generalRunnerPool.required')
+    derive_managed_pool_slots(c)
     require(c['schemaVersion'] == 1, 'schemaVersion')
     source = c['source']
     require(object_keys(source, ['repository'], ['revision']), 'source')
@@ -158,19 +164,16 @@ def validate(c, product_root):
     else:
         require('group' not in g, 'generalRunner.group')
     pool = c['consumer'].get('generalRunnerPool')
-    if pool is not None:
-        require(all(value.split('/')[0] == repository.split('/')[0] for value in writer_repositories),
-                'generalRunnerPool.organization')
-        require(general_scope == 'organization', 'generalRunnerPool.organization-scope')
-        require(text(g['name'], r'[a-z][a-z0-9-]{0,54}'), 'generalRunnerPool.name')
-        require('instance' in e, 'generalRunnerPool.namespaced-instance')
-        app = g.get('poolApp')
-        require(object_keys(app, ['appId', 'installationId', 'privateKeyFile']), 'generalRunner.poolApp')
-        require(all(text(app[key], r'[1-9][0-9]{0,19}') for key in ['appId', 'installationId']),
-                'generalRunner.poolApp.identity')
-        require(absolute(app['privateKeyFile']), 'generalRunner.poolApp.privateKeyFile')
-    else:
-        require('poolApp' not in g, 'generalRunner.poolApp.requires-pool')
+    require(all(value.split('/')[0] == repository.split('/')[0] for value in writer_repositories),
+            'generalRunnerPool.organization')
+    require(general_scope == 'organization', 'generalRunnerPool.organization-scope')
+    require(text(g['name'], r'[a-z][a-z0-9-]{0,54}'), 'generalRunnerPool.name')
+    require('instance' in e, 'generalRunnerPool.namespaced-instance')
+    app = g.get('poolApp')
+    require(object_keys(app, ['appId', 'installationId', 'privateKeyFile']), 'generalRunner.poolApp')
+    require(all(text(app[key], r'[1-9][0-9]{0,19}') for key in ['appId', 'installationId']),
+            'generalRunner.poolApp.identity')
+    require(absolute(app['privateKeyFile']), 'generalRunner.poolApp.privateKeyFile')
     require(isinstance(r['labels'], list) and len(r['labels']) == 1
             and all(text(v, r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}') for v in r['labels']), 'runner.labels')
     users = [e['serviceUser'], e['reviewerUser'], r['user'], g['user'], c['consumer']['runtimeUser']]
@@ -181,25 +184,21 @@ def validate(c, product_root):
             'repositoryRuntimeUsers.isolated-users')
     require(r['name'] != g['name'], 'isolated-runner-names')
     slots = c['consumer'].get('executionSlots')
-    if slots is not None:
-        primary = slots[0]
-        require(primary['id'] == 'primary' and primary['runnerName'] == g['name']
-                and primary['runnerUser'] == g['user']
-                and primary['workGroup'] == e['codexWorkGroup'], 'executionSlots.primary')
-        require('instance' in e, 'executionSlots.namespaced-instance')
-        slot_users = [slot[key] for slot in slots for key in ['runnerUser', 'runtimeUser']]
-        protected_users = [e['serviceUser'], e['reviewerUser'], r['user']]
-        require(not set(slot_users) & set(protected_users), 'executionSlots.isolated-users')
-        if pool is None:
-            require(len(set(slot_users)) == len(slot_users), 'executionSlots.isolated-users')
-        groups = [slot['workGroup'] for slot in slots]
-        require((pool is not None or len(set(groups)) == len(groups))
-                and not set(groups) & set(slot_users + protected_users + list(runtime_users.values())),
-                'executionSlots.isolated-work-groups')
-        require(r['name'] not in [slot['runnerName'] for slot in slots], 'executionSlots.production-runner')
-        for slot in slots[1:]:
-            require(slot['paths'] == execution_slot_paths(e['namespace'], slot['id']),
-                    'executionSlots.fixed-paths')
+    primary = slots[0]
+    require(primary['id'] == 'primary' and primary['runnerName'] == g['name']
+            and primary['runnerUser'] == g['user']
+            and primary['workGroup'] == e['codexWorkGroup'], 'executionSlots.primary')
+    require('instance' in e, 'executionSlots.namespaced-instance')
+    slot_users = [slot[key] for slot in slots for key in ['runnerUser', 'runtimeUser']]
+    protected_users = [e['serviceUser'], e['reviewerUser'], r['user']]
+    require(not set(slot_users) & set(protected_users), 'executionSlots.isolated-users')
+    groups = [slot['workGroup'] for slot in slots]
+    require(not set(groups) & set(slot_users + protected_users + list(runtime_users.values())),
+            'executionSlots.isolated-work-groups')
+    require(r['name'] not in [slot['runnerName'] for slot in slots], 'executionSlots.production-runner')
+    for slot in slots[1:]:
+        require(slot['paths'] == execution_slot_paths(e['namespace'], slot['id']),
+                'executionSlots.fixed-paths')
     if 'instance' in e:
         instance = e['instance']
         require(object_keys(instance, ['reviewerPort', 'publicationEnabled']), 'instance')
@@ -236,11 +235,10 @@ def validate(c, product_root):
         require(text(unit, r'[A-Za-z0-9_.-]+\.service'), 'service')
     owned_paths = [prefix + e['namespace'] for prefix in ['/opt/', '/etc/', '/var/lib/', '/var/log/', '/run/']]
     owned_paths.append('/var/lib/' + e['namespace'] + '-deployment.lock')
-    if pool is not None:
-        require(e['namespace'] != 'codex-relay-pools', 'generalRunnerPool.namespace-collision')
-        owned_paths.extend(['/opt/codex-relay-pools/' + g['name'],
-                            '/var/lib/codex-relay-pools/' + g['name'],
-                            '/var/lib/codex-relay-pool-' + g['name'] + '-deployment.lock'])
+    require(e['namespace'] != 'codex-relay-pools', 'generalRunnerPool.namespace-collision')
+    owned_paths.extend(['/opt/codex-relay-pools/' + g['name'],
+                        '/var/lib/codex-relay-pools/' + g['name'],
+                        '/var/lib/codex-relay-pool-' + g['name'] + '-deployment.lock'])
     for owned in owned_paths:
         for protected in [ingress['ownershipRoot'], *ingress['protectedPaths']]:
             require(not (owned == protected or owned.startswith(protected + '/') or protected.startswith(owned + '/')), 'path-overlap')
@@ -309,10 +307,9 @@ def execution_slot_inputs(c, slot):
     e = c['environment']
     ns, slot_id = e['namespace'], slot['id']
     install, config, state = '/opt/' + ns + '/slots/' + slot_id, '/etc/' + ns + '/slots/' + slot_id, '/var/lib/' + ns + '/slots/' + slot_id
-    # Repository overrides follow the installation default runtime identity.
-    # An explicitly independent slot retains its own account and credential.
-    runtime_users = (c['consumer'].get('repositoryRuntimeUsers', {})
-                     if slot['runtimeUser'] == c['consumer']['runtimeUser'] else {})
+    # Derived managed slots share the installation's runtime identity and
+    # retain explicit repository overrides under the same protected consumer.
+    runtime_users = c['consumer'].get('repositoryRuntimeUsers', {})
     result = {
         'relay_execution_slot': slot_id, 'relay_execution_slot_install_root': install,
         'relay_execution_slot_isolation': True,
@@ -341,19 +338,16 @@ def execution_slot_inputs(c, slot):
         'relay_diagnostics_store_path': slot['paths']['diagnosticsStore'], 'relay_diagnostics_root': slot['paths']['diagnosticsRoot'],
         'relay_codex_sudoers_file': '/etc/sudoers.d/' + ns + '-slot-' + slot_id + '-codex',
     }
-    if 'generalRunnerPool' in c['consumer']:
-        number = 1 if slot_id == 'primary' else int(slot_id.removeprefix('pool-'))
-        result['relay_runner_service_name'] = e['generalRunner']['name'] + f'-pool-{number}.service'
-        result['relay_runner_service_unit_path'] = '/etc/systemd/system/' + result['relay_runner_service_name']
+    number = 1 if slot_id == 'primary' else int(slot_id.removeprefix('pool-'))
+    result['relay_runner_service_name'] = e['generalRunner']['name'] + f'-pool-{number}.service'
+    result['relay_runner_service_unit_path'] = '/etc/systemd/system/' + result['relay_runner_service_name']
     return result
 
 
 def execution_slot_label(c, slot):
     """A fixed native runner label, unique to repository, installation and slot."""
     import hashlib
-    identity = (c['environment']['generalRunner']['name'] + ':' + slot['id']
-                if 'generalRunnerPool' in c['consumer'] else
-                deployment_repository(c) + ':' + c['environment']['namespace'] + ':' + slot['id'])
+    identity = c['environment']['generalRunner']['name'] + ':' + slot['id']
     return 'relay-slot-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]
 
 
@@ -362,34 +356,11 @@ def general_pool_label(c):
     return 'relay-pool-' + hashlib.sha256(c['environment']['generalRunner']['name'].encode()).hexdigest()[:24]
 
 
-def select_execution_slot(c, slot_id='primary'):
-    """Resolve only an automatic runner from validated durable configuration."""
-    slots = c['consumer'].get('executionSlots', [])
-    require(slot_id == 'primary' or any(slot['id'] == slot_id for slot in slots), 'execution-slot')
-    if slot_id != 'primary':
-        return execution_slot_inputs(c, next(slot for slot in slots if slot['id'] == slot_id))
-    values = compile_inputs(c)
-    ns = c['environment']['namespace']
-    return {'relay_execution_slot': 'primary',
-            'relay_runner_name': values['relay_general_runner_name'],
-            'relay_runner_user': values['relay_general_runner_user'],
-            'relay_runner_group': values['relay_general_runner_user'],
-            'relay_runner_registration_scope': values['relay_general_runner_registration_scope'],
-            'relay_runner_registration_group': values['relay_general_runner_registration_group'],
-            'relay_runner_root': '/opt/' + ns + '/general-runner',
-            'relay_runner_work_root': '/var/lib/' + ns + '/general-runner/work',
-            'relay_runner_home': '/var/lib/' + ns + '/general-runner/home',
-            'relay_runner_service_name': values.get('relay_general_runner_service_name', 'relay-general-runner.service'),
-            'relay_runner_service_unit_path': '/etc/systemd/system/' + values.get('relay_general_runner_service_name', 'relay-general-runner.service'),
-            'relay_runner_registration_helper_path': '/opt/' + ns + '/relay-general-runner-registration',
-            'relay_runner_labels': values['relay_runner_labels'] + ([execution_slot_label(c, slots[0])] if slots else []),
-            'relay_runner_service_state_management': 'preserve', 'relay_runner_service_enabled': False,
-            'relay_runner_registration_enabled': False, 'relay_runner_registration_authorized': False,
-            'relay_runner_registration_completed': False}
-
-
 def compile_inputs(c):
-    """Private adapter. All backend paths and lifecycle mechanics are Relay-owned."""
+    """Compile current managed-pool inputs; historical readers use sealed source."""
+    require(isinstance(c.get('consumer', {}).get('generalRunnerPool'), dict), 'generalRunnerPool.required')
+    c = copy.deepcopy(c)
+    derive_managed_pool_slots(c)
     e, consumer, target = c['environment'], c['consumer'], c['target']
     repository = deployment_repository(c)
     ns = e['namespace']
@@ -518,14 +489,12 @@ def compile_inputs(c):
     require(consumer['paths']['attemptRoot'].endswith('/attempts-v2'), 'paths.attemptRoot')
     if 'validationNames' in consumer:
         result['relay_validation_names'] = consumer['validationNames']
-    if 'executionSlots' in consumer:
-        result['relay_execution_slots'] = consumer['executionSlots']
-        result['relay_execution_slot'] = 'primary'
-        result['relay_execution_slot_isolation'] = True
-        result['relay_general_runner_labels'] = e['runner']['labels'] + [execution_slot_label(c, consumer['executionSlots'][0])]
-        result['relay_additional_execution_slots'] = [execution_slot_inputs(c, slot) for slot in consumer['executionSlots'][1:]]
-    if 'generalRunnerPool' in consumer:
-        from managed_pool import pool_contract
-        result['relay_general_runner_pool'] = pool_contract(c)
-        result['relay_general_runner_service_name'] = result['relay_general_runner_pool']['members'][0]['service']
+    result['relay_execution_slots'] = consumer['executionSlots']
+    result['relay_execution_slot'] = 'primary'
+    result['relay_execution_slot_isolation'] = True
+    result['relay_general_runner_labels'] = e['runner']['labels'] + [execution_slot_label(c, consumer['executionSlots'][0])]
+    result['relay_additional_execution_slots'] = [execution_slot_inputs(c, slot) for slot in consumer['executionSlots'][1:]]
+    from managed_pool import pool_contract
+    result['relay_general_runner_pool'] = pool_contract(c)
+    result['relay_general_runner_service_name'] = result['relay_general_runner_pool']['members'][0]['service']
     return result

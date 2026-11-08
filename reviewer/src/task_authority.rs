@@ -2481,7 +2481,7 @@ pub(crate) async fn approved_continuation(
 }
 
 // Native source facts are not an execution receipt or owner authorization.
-// The owner continuation adapter must independently establish explicit
+// The owner orchestration must independently establish explicit
 // standalone permission and exclude an admitted attempt before any effect.
 // Missing Writer evidence alone never selects this path.
 async fn source_pr_continuation(

@@ -530,6 +530,26 @@ class PreparedProtocolTests(unittest.TestCase):
                 prepared.execute(['fixed-helper'])
         self.assertNotIn('/private/path', str(caught.exception))
 
+    def test_native_runner_resource_keeps_its_code_without_exposing_unsafe_resources(self):
+        prepared = self.prepared()
+        report = {'version': 1, 'status': 'FAIL', 'error_code': 'HOST_DESTINATION_PARENT_UNSAFE',
+                  'resource': 'member-primary-runner-bin-Runner.Listener',
+                  'next_action': 'repair-prerequisite-on-existing-installation'}
+        result = subprocess.CompletedProcess([], 1, json.dumps(report), '')
+        with patch('ansible_transport.run_target', return_value=result):
+            with self.assertRaisesRegex(RuntimeError, '^HOST_DESTINATION_PARENT_UNSAFE$') as caught:
+                prepared.execute(['fixed-helper'])
+        self.assertEqual(caught.exception.resource, report['resource'])
+        for resource in ('/private/Runner.Listener', 'Runner Listener', 'Runner.Listener\nprivate', 'R' * 129):
+            with self.subTest(resource=resource):
+                hostile = {**report, 'resource': resource}
+                result = subprocess.CompletedProcess([], 1, json.dumps(hostile), '')
+                with patch('ansible_transport.run_target', return_value=result):
+                    with self.assertRaisesRegex(RuntimeError, '^INSTALL_PREFLIGHT_PREREQUISITE_UNPROVEN$') as caught:
+                        prepared.execute(['fixed-helper'])
+                self.assertFalse(hasattr(caught.exception, 'resource'))
+                self.assertNotIn(resource, caught.exception.next_action)
+
     def test_holder_uses_qualified_four_argument_transport_and_fresh_final_needs_no_initial_consumer(self):
         prepared = self.prepared()
         prepared.initial = {'lockPath': '/claims/publication-v2.lock', 'baselineDigest': 'a' * 64}

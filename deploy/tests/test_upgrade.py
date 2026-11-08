@@ -48,7 +48,7 @@ class UpgradeCliTests(unittest.TestCase):
         self.assertFalse(values['relay_service_activation_authorized'])
         self.assertFalse(values['relay_runner_registration_authorized'])
         self.assertEqual(values['relay_runner_service_state_management'], 'preserve')
-        self.assertEqual(json.loads(values['relay_installed_deployment_config']), json.loads(self.config.read_text()))
+        self.assertEqual(json.loads(values['relay_installed_deployment_config']), deployment_tests.config.loads(self.config.read_text(), self.product))
 
     def test_upgrade_requires_explicit_authority_and_target(self):
         for arguments in [('--phase', 'upgrade', '--resolved-revision', self.revision),

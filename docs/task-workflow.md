@@ -12,8 +12,8 @@ provenance; product contracts remain the implementation references below.
 
 See the manual's [owner acceptance and execution routes](../packages/codex-relay/skill/references/workflow.md#owner-acceptance-and-execution-routes)
 for verified owner acceptance by merge, expressly authorized standalone/manual
-work and the distinction from Relay-admitted results. Internal continuation
-mechanics live in the [owner adapter contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+work and the distinction from Relay-admitted results. The supported direct GitHub owner
+sequence lives in the [continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
 
 ## From Task to completion through Relay
 

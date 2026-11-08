@@ -36,24 +36,24 @@ async function terminalFixture(t, options = {}) {
   const nativeComments = new Map();
   const f = await fixture(t, {
     continuation: options.continuation === true, continuationPr: false,
-    labelLaunch: options.snapshot === true, streamlinedAdmission: options.snapshot === true,
+    labelLaunch: true, streamlinedAdmission: true, issueBody: charter,
     createAdmission: async ({ root, store, journal }) => {
       await mkdir(join(root, 'gate'));
       const admission = createAdmissionControl({ root: join(root, 'gate'), consumerDigest: CONSUMER_DIGEST,
         store, journal, protectedRoot: false });
       await admission.initialize(); return admission;
     },
-    beforeAdmission: async ({ issue, api, continuationHead }) => {
-      const base = /Required starting base: `([^`]+)`/.exec(issue.body)[1];
+    beforeAdmission: async ({ issue, api, continuationHead, base }) => {
       issue.body = charter;
-      const request = { schema_version: '3.0', kind: 'task-request', repository: REPOSITORY, task: 42,
-        parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(charter), step: 1, route: 'auto',
-        purpose: 'Implement bounded work', scope: ['Implement the authorized change.'],
-        model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true, validation: ['diff-check', 'secret-scan'],
-        boundaries: ['No deployment, merge, release or Issue closure.'], decisions: [], context: [], supersedes: null,
-        branch: `${CONSUMER.taskBranchPrefix}test-42`, base_sha: base, starting_head: continuationHead ?? base, existing_pr: null,
-        issue_closure_policy: 'keep-open' };
-      requestComment = options.snapshot ? null : { id: 901, user: reviewer, body: renderAuthorityRecord(request),
+      const request = { schema_version: '4.0', kind: 'decision', repository: REPOSITORY, task: 42,
+        parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(charter),
+        purpose: 'Select the exact bounded work and source.', supersedes: null, context: [],
+        amendments: { purpose: 'Implement bounded work', scope: ['Implement the authorized change.'],
+          model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true, validation: ['diff-check', 'secret-scan'],
+          boundaries: ['No deployment, merge, release or Issue closure.'],
+          branch: `${CONSUMER.taskBranchPrefix}test-42`, base_sha: base,
+          starting_head: continuationHead ?? base, existing_pr: null } };
+      requestComment = { id: 901, user: reviewer, body: renderAuthorityRecord(request),
         issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42` };
       const list = api.list.bind(api); const get = api.get.bind(api); const post = api.post.bind(api);
       const patch = api.patch.bind(api);
@@ -141,7 +141,7 @@ async function assertHistorical(f) {
   assert.deepEqual(await f.api.get(`/issues/comments/${f.original.comment.id}`), f.original.comment);
 }
 
-test('terminal prepublication recovery publishes one successor for the original native Request and preserves the blocked history', async t => {
+test('terminal prepublication recovery publishes one successor for the original v4 admission and preserves the blocked history', async t => {
   const f = await terminalFixture(t); const { request } = await f.authorize();
   const result = await f.broker.invoke(request);
   assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
@@ -151,7 +151,7 @@ test('terminal prepublication recovery publishes one successor for the original 
   const successor = await f.api.get(`/issues/comments/${result.outcomeId}`);
   const typed = extractAuthorityRecord(successor.body);
   assert.equal(typed.status, 'implemented'); assert.equal(typed.attempt, f.envelope.attemptId);
-  assert.deepEqual(typed.request, f.envelope.requestReference);
+  assert.deepEqual(typed.authority, f.envelope.request.authority);
   assert.deepEqual(typed.parent, { kind: 'pull_request', number: 43 });
   assert.equal(typed.result.revision, f.head);
   assert.deepEqual(typed.result.identities, [{ kind: 'github-actions-run', id: '99' }]);

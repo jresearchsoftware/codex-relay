@@ -1,10 +1,10 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **7.0.0** as the single
+This repository deliberately adopts Shared Governance **7.0.1** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`bee96f1715142fde598318e7db402168dcfabf5f`; the distribution is
-`77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0`. Root [AGENTS](../AGENTS.md)
+`1110f10b996c2f81fa842e6339ab6d7c13111cd7`; the distribution is
+`f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all nine complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
@@ -25,12 +25,19 @@ handoff, bounded correction, preservation, results and continuation. Relay's
 [authority contract](../contracts/README.md#github-native-task-authority) owns
 Issue #N, trusted v4 Decisions, immutable admission, protected reservations and
 native identities/body digests. Writer alone allocates Step at consumed owner
-launch. Labels and titles project it. TH-002/006's ordinary dispatch needs no
+launch. The Issue's valid Step position is numbering input reconciled with
+successful admitted history; labels/titles project the durable result and grant
+no execution authority. TH-002/006's ordinary dispatch needs no
 extra Decision merely certifying that same start; the native authenticated
 command and immutable admission still implement the product trust boundary.
-Issue openness alone starts nothing. Retained v3 and legacy admissions preserve
-their selected Request, historical Step and exact recovery/publication bindings;
-shared adoption neither renumbers history nor qualifies an installation.
+Issue openness alone starts nothing. Current Node admits only v4; exact older
+operations preserve selected authority, Step and recovery/publication bindings
+through frozen original source. Historical Requests supply no current execution
+fields or extra migration gate. A selected trusted v3 Decision remains bounded
+provenance for an admitted v4 result; fresh admission requires every effective old
+field to be replaced by later active v4 authority. Fully shadowed existing evidence
+needs no new Decision or formal supersession. Shared adoption neither renumbers
+history nor qualifies an installation.
 
 The canonical [manual](../packages/codex-relay/skill/references/workflow.md)
 retains automatic, admitted-manual and explicitly authorized standalone routes.
@@ -96,7 +103,7 @@ component, environment and runtime entrypoints.
 
 ## Temporary legacy closure binding
 
-Repository development governance selects Shared 7.0.0. The supported product
+Repository development governance selects Shared 7.0.1. The supported product
 closure contract retains its previously qualified legacy flow. Task
 [#194](https://github.com/jresearchsoftware/codex-relay/issues/194) alone implements,
 qualifies and publishes the new product semantics; source adoption does not
@@ -104,7 +111,7 @@ activate them or authorize installation. Follow the existing
 [closure authoring](../contracts/README.md#closure-policy-authoring) and
 [trusted continuation](../contracts/README.md#authorized-continuation-after-independent-acceptance) contracts:
 non-closing PR references, explicit `closesTask: false`, neutral squash messages,
-effective completion evidence and trusted separate post-merge closure under the
+effective completion evidence and separately authorized owner post-merge closure under the
 effective `close-authorized` policy. No new closing-link instruction or fictitious
 closure approval is added. Historical/admitted authority and explicit holds stay
 intact. Missing or conflicting metadata prevents unsafe closure; its legacy
@@ -114,7 +121,7 @@ This is the already authorized Relay-only transition described in #194, limited
 to actually qualified legacy combinations and behavior. It remains permitted
 pending the first Relay release implementing and qualifying the new closure
 semantics, then for 60 calendar days from that release's **verified publication**.
-Shared 7.0.0 publication starts no clock. Record the actual release/source,
+Shared 7.0.1 publication starts no clock. Record the actual release/source,
 publication event and derived deadline in the existing Issue/release chronology
 when verified; no trigger date is asserted here. Removal requires a separately
 accepted future Shared release no earlier than the window's end; expiry does not
@@ -153,7 +160,7 @@ introduces no additional release gate. A consumer-only
 compatible or irrelevant Shared update needs no Relay release. Assess actually
 used protocol semantics, applicability, exceptions and product bindings; a change to Relay's own supported behavior, guidance, interfaces, requirements,
 packaging or shipped immutable bytes needs its own classified release (PV-018).
-The root 7.0.0 lock is outside that product; frozen standalone and included
+The root 7.0.1 lock is outside that product; frozen standalone and included
 release-evidence snapshots stay 5.0.0 and remain checked under PV-013. They never
 replace the native consumer's selected protocol authority (PV-015). See the
 [compatibility assessment](relay-skill-compatibility.md).

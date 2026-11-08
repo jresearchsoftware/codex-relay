@@ -224,7 +224,7 @@ async fn listed_schema_and_complete_calls_preserve_repository_for_both_actions()
     assert_eq!(result["result"]["content"][0]["text"], "PUBLISHED");
     let publications = state.reviews.lock().unwrap();
     assert_eq!(publications.len(), 1);
-    assert_consumer_admits(&arguments, &publications[0]);
+    assert_preserved_cr_publication(&arguments, &publications[0]);
 }
 
 #[tokio::test]

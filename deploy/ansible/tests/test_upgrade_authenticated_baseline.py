@@ -77,12 +77,12 @@ class UpgradeAuthenticatedBaselineTests(unittest.TestCase):
         for name, identity in identities.items():
             (units / name).write_text('[Service]\nUser=' + identity + '\n')
 
-    def verify(self, *, config=None, context=True, serial=False):
+    def verify(self, *, config=None, context=True):
         return upgrade.verify_desired(self.install, self.config_root, TARGET, PREVIOUS,
             boundary=self.root, expected_config=config or self.config,
             resource_probe=self.resources.prove_git_resource_boundary,
             consumer_resource_probe=self.resources.prove_consumer_resources,
-            consumer_baseline=self.context if context else None, qualified_serial_preflight=serial)
+            consumer_baseline=self.context if context else None)
 
     def test_invalid_canonical_bytes_use_only_gate_authenticated_baseline_without_writes(self):
         original, gate, link = self.canonical.read_bytes(), self.gate.read_bytes(), os.readlink(self.install / 'current')
@@ -135,17 +135,6 @@ class UpgradeAuthenticatedBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'UNSAFE_PATH'):
             self.verify()
 
-    def test_serial_owning_preflight_is_explicit_stage_bound_and_keeps_identity_checks(self):
-        self.canonical.write_text(json.dumps(self.config['consumer']))
-        wanted = deepcopy(self.config)
-        wanted['consumer']['generalRunnerPool'] = {'desiredCapacity': 2}
-        with self.assertRaisesRegex(ValueError, 'RESOURCE_MIGRATION_UNSUPPORTED'):
-            self.verify(config=wanted, context=False)
-        self.assertEqual(self.verify(config=wanted, context=False, serial=str(self.stage)), PREVIOUS)
-        with self.assertRaisesRegex(ValueError, 'SERIAL_PREFLIGHT_UNPROVEN'):
-            self.verify(config=self.config, context=False, serial=str(self.stage))
-        with self.assertRaisesRegex(ValueError, 'SERIAL_PREFLIGHT_UNPROVEN'):
-            self.verify(config=wanted, context=False, serial=str(self.root))
 
     def test_actual_ansible_rendered_private_baseline_command_executes_without_live_mutation(self):
         try:
@@ -163,7 +152,7 @@ class UpgradeAuthenticatedBaselineTests(unittest.TestCase):
         values = {'playbook_dir': str(ANSIBLE), 'relay_git_desired_state': True,
             'relay_install_root': logical(self.install), 'relay_config_root': logical(self.config_root),
             'relay_production_operation_target_head': TARGET, 'relay_intent_expected_installed_revision': PREVIOUS,
-            'relay_owner_apply_requested': True, 'relay_serial_pool_transition': False,
+            'relay_owner_apply_requested': True,
             'relay_installed_deployment_config': json.dumps(self.config),
             'relay_intent_preflight_consumer_path': logical(self.baseline),
             'relay_intent_preflight_baseline_digest': self.digest,

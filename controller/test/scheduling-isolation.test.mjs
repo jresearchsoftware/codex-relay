@@ -182,7 +182,7 @@ test('drain observes every admitted Task and pending recovery even after one con
     await f.broker.dispatch(f.ready(99, 42));
     const finish = async runId => {
       const record = await f.store.get(runId);
-      record.outcome = { status: 'BLOCKED', head: null, outcomeId: runId + 800 };
+      record.outcome = { status: 'BLOCKED', head: null, prNumber: null, outcomeId: runId + 800 };
       await f.store.put(runId, record);
       await f.journal.put(runId, { version: 2, envelope: record.envelope, outcome: record.outcome,
         execution: { reserved: true, returned: true, child: 'started', containment: 'reaped' } });

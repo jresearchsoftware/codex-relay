@@ -54,7 +54,7 @@ test('run-creation freshness stays bounded even after a valid queue wait', async
 test('a waiting run cannot consume a removed or replacement ready command', async () => {
   for (const transition of ['unlabeled', 'labeled']) {
     const f = readyCommand();
-    f.events.push({ ...f.event, id: 72, event: transition });
+    f.events.push({ ...f.event, id: 72, event: transition, created_at: new Date(Date.parse(f.event.created_at) + 1).toISOString() });
     await assert.rejects(revalidateReadyEvent(f.api, f.envelope), { code: 'READY_EVENT_STALE' });
     assert.deepEqual(f.mutations, []);
   }

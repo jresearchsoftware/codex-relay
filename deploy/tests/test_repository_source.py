@@ -217,7 +217,7 @@ class GitSourceTransportTests(unittest.TestCase):
         with self.assertRaises(source.ConsumerSourceError):
             source.github_api('GET', '/repos/' + REPOSITORY, 'a' * 16383 + '==')
     def test_git_fetch_has_plain_url_and_environment_only_auth_without_persistent_config(self):
-        with tempfile.TemporaryDirectory(prefix='relay-consumer-fetch-', dir='/tmp') as name:
+        with tempfile.TemporaryDirectory(prefix='relay-consumer-fetch-') as name:
             root = Path(name) / 'checkout'; calls = []
 
             def git(directory, *args, **kwargs):
@@ -255,7 +255,7 @@ class GitSourceTransportTests(unittest.TestCase):
              for i in range(int(env['GIT_CONFIG_COUNT']))]))
 
     def test_signer_uses_validated_fd_and_never_key_bytes_in_argv(self):
-        with tempfile.TemporaryDirectory(prefix='relay-consumer-key-', dir='/tmp') as name:
+        with tempfile.TemporaryDirectory(prefix='relay-consumer-key-') as name:
             root = Path(name); key = root / 'key.pem'; key.write_bytes(b'synthetic-local-key'); key.chmod(0o600)
             captured = []
 

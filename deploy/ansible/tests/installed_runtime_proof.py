@@ -464,7 +464,7 @@ def general_runner_proof(temp, values, env):
     }
     # Production's rule is rendered with its original identity, then the real
     # general role installs its rules and runtime state. The owner lifecycle
-    # grant is installed separately before the same effective-policy gate.
+    # grant is installed separately before concrete functional/protected access probes.
     tasks = [
         {'ansible.builtin.template': {
             'src': str(ROOT / 'roles/relay_runner/templates/relay-production-local-apply.sudoers.j2'),
@@ -477,7 +477,7 @@ def general_runner_proof(temp, values, env):
         {'ansible.builtin.template': {
             'src': str(ROOT / 'roles/relay_runner/templates/relay-owner-lifecycle.sudoers.j2'),
             'dest': '{{ relay_owner_lifecycle_sudoers_file }}', 'mode': '0440'}},
-        {'ansible.builtin.include_role': {'name': 'relay_runner', 'tasks_from': 'general-validation.yml'}},
+        {'ansible.builtin.include_tasks': str(ROOT / 'tests/fixtures/runtime-access.yml')},
     ]
     playbook = temp / 'general.yml'
     playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': general, 'tasks': tasks}]))

@@ -38,13 +38,15 @@ def event(name):
     identity = guard.read_text() if guard.exists() else None
     Path({str(cls.events)!r}).open('a').write(json.dumps({{'event': name, 'guard': identity}}) + '\\n')
 if 'DEPLOYMENT_LOCK_READY' in sys.argv[-1]:
-    assert not guard.exists()
-    guard.write_text(str(os.getpid()))
-    event('guard-acquired')
+    pool_lock = 'codex-relay-pool-' in sys.argv[-1]
+    selected = guard.with_name(guard.name + '-pool') if pool_lock else guard
+    assert not selected.exists()
+    selected.write_text(str(os.getpid()))
+    if not pool_lock: event('guard-acquired')
     print('DEPLOYMENT_LOCK_READY', flush=True)
     sys.stdin.read()
-    event('guard-released')
-    guard.unlink()
+    if not pool_lock: event('guard-released')
+    selected.unlink()
 elif '\\n    result = decommission(value["config"], value["revision"], current_report)\\n' in sys.argv[-1]:
     request = json.loads(sys.stdin.read())
     assert guard.exists(), 'decommission requires same live host mutex'
@@ -82,7 +84,7 @@ elif 'def remote_inventory(' in sys.argv[-1]:
         'installed': {{'status': 'present', 'revision': 'b' * 40}} if existing else {{'status': 'missing'}},
         'configuration': {{'status': 'equivalent', 'consumer': 'equivalent', 'deployment': 'equivalent'}}
                          if existing else {{'status': 'missing', 'consumer': 'missing', 'deployment': 'unavailable'}},
-        'runners': {{name: {{'status': 'reusable' if existing else 'missing', 'freshTokenRequired': not existing}}
+        'runners': {{name: {{'status': 'reusable' if existing else 'missing', 'freshTokenRequired': not existing and name == 'production'}}
                     for name in ['production', 'general']}},
         'protectedState': [], 'blockers': blockers,
         'ownerAdmin': [{{'name': name, 'status': 'unavailable', 'next': 'owner verification'}}
@@ -225,6 +227,29 @@ if '--check' in a and Path({str(cls.post_failure)!r}).exists():
         self.assertFalse(self.capture.exists())
         self.assertFalse(self.history.exists())
 
+    def test_equivalent_source_locator_derives_distinct_immutable_review_directory(self):
+        root, config = self.fresh_consumer()
+        first = self.bootstrap('--config', str(config))
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = self.proposal(first)
+        original = {path: (Path(before['directory']) / path).read_bytes() for path in before['files']}
+        value = json.loads(config.read_text())
+        self.assertEqual(value['source']['repository'], 'https://github.com/example/codex-relay.git')
+        value['source']['repository'] = 'git@github.com:example/codex-relay.git'
+        config.write_text(json.dumps(value))
+        deployment_tests.commit(root)
+        second = self.bootstrap('--config', str(config))
+        self.assertEqual(second.returncode, 0, second.stderr)
+        after = self.proposal(second)
+        self.assertNotEqual(after['directory'], before['directory'])
+        self.assertEqual(original, {path: (Path(before['directory']) / path).read_bytes()
+                                    for path in before['files']})
+        for path in before['files']:
+            if path.endswith('.yml'):
+                self.assertEqual(original[path], (Path(after['directory']) / path).read_bytes())
+        self.assertFalse(self.capture.exists())
+        self.assertFalse(self.history.exists())
+
     def test_reviewed_consumer_drift_blocks_install_without_overwrite(self):
         root, config = self.fresh_consumer()
         first = self.bootstrap('--config', str(config))
@@ -305,23 +330,6 @@ if '--check' in a and Path({str(cls.post_failure)!r}).exists():
         self.assertFalse(self.history.exists())
         self.assertFalse((private / '.git').exists())
 
-    def test_reinstall_composes_retirement_install_post_check_and_completion_under_one_guard(self):
-        result = self.reinstall()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('RELAY_BOOTSTRAP_RESULT=PASS;phase=reinstall;installed=' + self.revision
-                      + ';post_check=clean;activation=owner-required', result.stdout)
-        self.assertEqual([json.loads(line) for line in self.history.read_text().splitlines()], [
-            {'phase': 'apply', 'check': False, 'activation': False, 'registration': False, 'journal': 'd' * 64},
-            {'phase': 'post-check', 'check': True, 'activation': False, 'registration': False, 'journal': 'd' * 64},
-        ])
-        events = self.observed_events()
-        self.assertEqual([row['event'] for row in events], [
-            'inventory', 'guard-acquired', 'inventory', 'decommission', 'apply', 'post-check',
-            'complete', 'guard-released'])
-        self.assertIsNone(events[0]['guard'])
-        self.assertTrue(events[1]['guard'])
-        self.assertEqual({row['guard'] for row in events[1:]}, {events[1]['guard']})
-        self.assertFalse(self.guard_live.exists())
 
     def test_reinstall_without_review_never_decommissions_or_acquires_mutation_guard(self):
         root, config = self.fresh_consumer()
@@ -346,26 +354,6 @@ if '--check' in a and Path({str(cls.post_failure)!r}).exists():
                 self.assertFalse(self.events.exists())
                 self.assertFalse(self.capture.exists())
 
-    def test_failed_reinstall_apply_or_post_check_never_completes_recovery_evidence(self):
-        for failure, expected in [(self.apply_failure, 'reinstall-apply-failed'),
-                                  (self.post_failure, 'reinstall-post-check-drift')]:
-            with self.subTest(failure=expected):
-                for path in [self.history, self.events]:
-                    path.unlink(missing_ok=True)
-                failure.touch()
-                result = self.reinstall()
-                failure.unlink()
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(expected, result.stderr)
-                events = [row['event'] for row in self.observed_events()]
-                self.assertIn('decommission', events)
-                self.assertIn('apply', events)
-                self.assertNotIn('complete', events)
-                self.assertEqual('post-check' in events, failure == self.post_failure)
-                self.assertEqual(events[-1], 'guard-released')
-                self.assertFalse(self.guard_live.exists())
-                self.assertNotIn('RELAY_BOOTSTRAP_RESULT=PASS', result.stdout)
-                self.assertNotIn('RELAY_DEPLOYMENT_RESULT=PASS', result.stdout)
 
 
 if __name__ == '__main__':

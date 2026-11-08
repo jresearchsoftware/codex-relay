@@ -5,7 +5,7 @@
     file: '{{ playbook_dir }}/vars/general-runner.yml'
     name: relay_general_instance
 
-- name: Reconcile isolated general software without registration or activation
+- name: Reconcile the primary managed execution runtime without physical registration
   vars:
     relay_runner_name: '{{ relay_general_instance.relay_runner_name }}'
     relay_runner_registration_scope: '{{ relay_general_instance.relay_runner_registration_scope }}'
@@ -32,17 +32,6 @@
       ansible.builtin.include_role:
         name: relay_runner
         tasks_from: general-runtime.yml
-
-    - name: Install or reconcile the unregistered or registered general instance
-      ansible.builtin.include_role:
-        name: relay_runner
-      when: relay_general_runner_pool is not defined
-
-    - name: Prove the installed general and production privilege separation
-      ansible.builtin.include_role:
-        name: relay_runner
-        tasks_from: general-validation.yml
-      when: not ansible_check_mode | bool and relay_general_runner_pool is not defined
 
     - name: Record the credential-free general runner reconciliation
       ansible.builtin.debug:

@@ -1,9 +1,10 @@
 """Real composite admission/publisher proof in disposable Linux namespaces.
 
-The migration receipt and native GitHub responses are explicit synthetic
-fixtures. Retained source is the exact incident Git revision; its original
-reader, current installed composite reader, signing, stores, locks and publisher
-execute unchanged. This proves neither a real migration nor installed services.
+The migration receipt is an explicit synthetic fixture. Retained source is the
+exact incident Git revision; its original reader, current installed composite
+reader, stores, locks and publisher execute as real processes. Native historical
+Task lookups are rejected; eligibility comes from current effect evidence.
+This proves neither a real migration nor installed services.
 """
 import copy
 import fcntl
@@ -30,43 +31,9 @@ pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
     reason='real root mount/network/PID namespaces required')
 MIGRATION = '22345678-1234-4234-8234-123456789abc'
 
-# Only the GitHub HTTP boundary is synthetic. Native auth really parses the
-# fixture env, signs with its ephemeral RSA key and requests read-only scope.
+# No Task/status/auth reader is needed to classify idle historical receipts.
 NATIVE = r"""
-import {readFileSync,existsSync} from 'node:fs';
-import {renderAuthorityRecord,sha256Body} from './contracts/src/github-authority.mjs';
-const consumer=JSON.parse(readFileSync(process.env.RELAY_CONSUMER_CONFIG)),repository=consumer.repository;
-const owner={login:consumer.owner,id:100,type:'User'};
-const reviewer={login:consumer.reviewerApp.expectedActor,id:101,type:'Bot'};
-const body='Authority model: github-native-v1\nIssue closure policy: keep-open';
-const decision={schema_version:'4.0',kind:'decision',repository,task:1410,parent:{kind:'issue',number:1410},
- charter_sha256:sha256Body(body),purpose:'Withdraw this synthetic original route.',
- amendments:{boundaries:['No execution result or fresh admission is created.']},context:[],supersedes:null};
-const comment={id:10410,issue_url:`https://api.github.com/repos/${repository}/issues/1410`,
- user:reviewer,body:renderAuthorityRecord(decision)};
-globalThis.fetch=async(url,options={})=>{
- const path=new URL(url).pathname;let value;
- if(path===`/app/installations/${consumer.writerApp.installationId}/access_tokens`){
-  const p=JSON.parse(options.body);
-  if(options.method!=='POST'||JSON.stringify(p.permissions)!==JSON.stringify({metadata:'read',issues:'read',pull_requests:'read'}))
-   throw Error('fixture rejected expanded App authority');
-  value={token:'synthetic-read-only-fixture',expires_at:new Date(Date.now()+1800000).toISOString()};
- }else if(path===`/users/${encodeURIComponent(owner.login)}`)value=owner;
- else if(path===`/users/${encodeURIComponent(reviewer.login)}`)value=reviewer;
- else{
-  const m=path.match(/\/issues\/(\d+)(?:\/(events|comments))?$/);
-  if(!m)throw Error('fixture rejected unexpected native route');
-  const task=Number(m[1]),route=task===1410,kind=m[2];
-  const reopened=task===1401&&existsSync(new URL('./synthetic-reopened-task',import.meta.url));
-  if(kind==='events')value=route?[]:[{id:task,event:'closed',actor:owner,created_at:'2026-11-03T10:00:00Z'},
-   ...(reopened?[{id:task+1,event:'reopened',actor:owner,created_at:'2026-11-03T10:01:00Z'}]:[])];
-  else if(kind==='comments')value=route?[comment]:[];
-  else value={id:10000+task,number:task,body,state:route||reopened?'open':'closed',
-   state_reason:reopened?'reopened':route?null:task===1409?'not_planned':'completed',closed_by:route||reopened?null:owner,
-   url:`https://api.github.com/repos/${repository}/issues/${task}`};
- }
- return new Response(JSON.stringify(value));
-};
+globalThis.fetch=async()=>{throw Error('historical Task lookup is forbidden');};
 """
 
 
@@ -133,8 +100,15 @@ def harness(root, *, mixed=False):
     digest_program = "import{CONSUMER_DIGEST}from'./consumer/consumer.mjs';console.log(JSON.stringify(CONSUMER_DIGEST));"
     current_digest = node(incident.controller, consumer, digest_program)
     if mixed:
+        # Current pool rows are independently constructed v4 admissions. The
+        # sealed original inventory continues to use its original source bytes.
+        current_manual = node(incident.controller, consumer, r"""
+import{currentManualEnvelope}from'./fixture-current-envelope.mjs';
+const rows=JSON.parse(process.argv[1]);
+console.log(JSON.stringify(rows.map(record=>({...record,
+ envelope:currentManualEnvelope(record.envelope.runId,record.envelope.issueNumber)}))));
+""", json.dumps(current_manual))
         for record in current_manual:
-            record['envelope']['consumerDigest'] = current_digest
             write(incident.claims / 'publication-pool-v1' / (str(record['envelope']['runId']) + '.json'), record)
     pool_gate = incident.claims / 'admission-pool-v1.json'
     write(pool_gate, {**gate, 'operationId': OPERATION, 'phase': 'recovery-required', 'consumerDigest': current_digest})
@@ -183,37 +157,8 @@ console.log(JSON.stringify({source:await protectedSourceTreeSha256(source),
     write(release / 'artifact-manifest.json', manifest)
     config['source']['revision'] = incident.revision
     config['consumer']['defaultProfile']['effort'] = 'medium'
-    # Real native App auth uses only this ephemeral synthetic key; bytes never
-    # enter repository files, output or receipts.
-    key_path = Path(current['paths']['credentialKeyFile'])
-    generated = run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:2048'],
-        capture_output=True, check=True)
-    write(key_path, generated.stdout)
-    write(Path(current['paths']['credentialEnv']), ('GITHUB_APP_ID=' + current['writerApp']['appId'] + '\n'
-        'GITHUB_APP_INSTALLATION_ID=' + current['writerApp']['installationId'] + '\n'
-        'GITHUB_APP_PRIVATE_KEY_FILE=' + str(key_path) + '\n').encode())
-    preload = incident.controller / 'synthetic-native-preload.mjs'
-    native = NATIVE
-    if mixed:
-        native = native.replace("const path=new URL(url).pathname;let value;",
-            "const path=new URL(url).pathname;let value;"
-            "if(!path.includes('access_tokens'))await new Promise(r=>setTimeout(r,400));")
-    write(preload, native.encode(), 0o644)
-    acknowledge = r"""
-import{createInstalledTaskDisposition}from'./controller/src/installed-task-disposition.mjs';
-import{loadSerialPoolCompatibility,createCompatibilityStore}from'./controller/src/serial-pool-compatibility.mjs';
-import{CONSUMER}from'./consumer/consumer.mjs';
-import{createAttemptStore,createPublicationStore}from'./controller/src/attempt-store.mjs';
-const c=await loadSerialPoolCompatibility({consumer:CONSUMER});
-const s=createCompatibilityStore({compatibility:c,currentStore:createPublicationStore(c.current.storeRoot),
- originalStore:createAttemptStore(c.original.storeRoot)}),r=await s.get(410);
-const d=createInstalledTaskDisposition({historicalConsumer:c.originalConsumer,allowAcknowledgement:true});
-const source=await fetch(`https://api.github.com/repos/${CONSUMER.repository}/issues/1410/comments`).then(r=>r.json());
-const{sha256Body}=await import('./contracts/src/github-authority.mjs');
-console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:[{kind:'issue-comment',id:10410,
- parent:{kind:'issue',number:1410},sha256:sha256Body(source[0].body)}]})));
-"""
-    node(incident.controller, consumer, acknowledge, preload=preload)
+    preload = incident.controller / 'reject-historical-native-preload.mjs'
+    write(preload, NATIVE.encode(), 0o644)
     import bounded_recovery
     binding = {**incident.binding, 'gitConfigReceipt': {**incident.binding['gitConfigReceipt']}}
     desired_config = write(root / 'synthetic-desired-deployment.json', config)
@@ -245,7 +190,7 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
     assert not target_snapshot.exists() and not backup.exists()
     observed = probe({})
     assert observed['eligible'] and observed['active'] == observed['unknown'] == []
-    assert [row['reason'] for row in observed['manualAttempts']['historical']] == ['task-completed'] * 8 + ['task-not-planned', 'route-switch']
+    assert 'manualAttempts' not in observed
     proof = bounded_recovery.inspect(config, binding)
     bounded = bounded_recovery.begin(config, binding, proof, admission_probe=probe)
     command(['recovery-target', '--operation', OPERATION, '--target', incident.revision])
@@ -282,14 +227,19 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
         assert consumer.read_bytes() == desired.read_bytes()
         assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
         assert incident.history() == historical
-        reopened = incident.controller / 'synthetic-reopened-task'
-        write(reopened, b'explicit native-reopen fixture', 0o644)
+        # A pending current publication, unlike remote Task status, remains a
+        # real transition boundary even after the consumer bytes were renamed.
+        pending = incident.claims / 'publication-pool-v1' / '401.json'
+        original_pending = pending.read_bytes()
+        value = json.loads(original_pending)
+        value['commentIntent'] = {'pending': True}
+        write(pending, value)
         with pytest.raises(publisher.ConsumerPublicationError, match='TRANSITION_REQUIRES_RECOVERY'):
             publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
                 original['repository'], OPERATION, incident.revision, execute=execute)
         assert json.loads(pool_gate.read_bytes())['consumerDigest'] == current_digest
+        write(pending, original_pending)
         assert incident.history() == historical
-        reopened.unlink()
 
     result = publisher.publish(incident.controller, consumer.parent, desired, incident.claims,
         original['repository'], OPERATION, incident.revision, execute=execute)
@@ -298,7 +248,7 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
     assert node(incident.controller, target_snapshot, digest_program) == current_digest
     after = command(['consumer-transition-preflight', '--desired-digest', desired_digest])
     assert after['eligible'] and after['active'] == after['unknown'] == []
-    assert command(['status'])['manualAttempts']['historical'] == observed['manualAttempts']['historical']
+    assert 'manualAttempts' not in command(['status'])
     manual_store = 'publication-pool-v1' if mixed else 'publication-v2'
     assert all(json.loads((incident.claims / manual_store / (str(run_id) + '.json')).read_bytes()).get('outcome') is None
         for run_id in range(401, 411))
@@ -309,7 +259,7 @@ console.log(JSON.stringify(await d.acknowledge(r,{reason:'route-switch',sources:
         'applying', OPERATION, incident.revision, desired_digest)
     assert json.loads(incident.backend.read_bytes()) == {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
         'phase': 'apply', 'target_head': BASELINE}
-    print(json.dumps({'composite': True, 'mixed': mixed, 'records': 161, 'historical': 10, 'timings': timings, 'targetSnapshotCreated': True,
+    print(json.dumps({'composite': True, 'mixed': mixed, 'records': 161, 'quiescentHandoffs': 10, 'timings': timings, 'targetSnapshotCreated': True,
         'originalHistoryUnchanged': True, 'admission': 'applying'}))
 
 

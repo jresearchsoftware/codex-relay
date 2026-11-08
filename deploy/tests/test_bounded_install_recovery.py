@@ -33,70 +33,61 @@ pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
     reason='root/native Linux retained-operation process and filesystem qualification')
 
 
+# Current rows are actual v4 snapshots; immutable old rows are built only by
+# the independently archived original runtime below.
+CURRENT_MANUAL_ENVELOPE = r"""
+import {CONSUMER,CONSUMER_DIGEST} from './consumer/consumer.mjs';
+import {validateEnvelope} from './controller/src/execution-contract.mjs';
+import {resolveTaskAuthority,createAdmissionSnapshot} from './contracts/src/github-authority.mjs';
+export function currentManualEnvelope(runId,issueNumber) {
+ const body='Authority model: github-native-v1\nIssue closure policy: keep-open\nBounded synthetic manual qualification.';
+ const parent={kind:'issue',number:issueNumber},head='a'.repeat(40),route='manual';
+ const resolved=resolveTaskAuthority([{kind:'issue-body',id:issueNumber,repository:CONSUMER.repository,
+  parent,author:{login:CONSUMER.owner,id:700,type:'User'},body}],{
+  repository:CONSUMER.repository,task:issueNumber,charterId:issueNumber,charterBody:body,
+  trustedAuthor:{login:CONSUMER.reviewerApp.expectedActor,id:701,type:'Bot'},route,
+  purpose:'Bounded synthetic manual qualification.',projectDefaults:{model:CONSUMER.defaultProfile.cliModelId,
+   effort:CONSUMER.defaultProfile.effort,subagents:false,validation:['diff-check']},
+  startingState:{branch:CONSUMER.taskBranchPrefix+'qualification-'+runId,base_sha:head,starting_head:head,existing_pr:null}});
+ const request=createAdmissionSnapshot(resolved,{step:1,attempt:`run-${runId}`,runId,route});
+ return validateEnvelope({version:2,repository:CONSUMER.repository,consumerDigest:CONSUMER_DIGEST,
+  runId,attemptId:`run-${runId}`,route,target:'issue',number:issueNumber,issueNumber,step:1,
+  branch:request.branch,startHead:head,historicalBase:head,targetBase:head,profile:CONSUMER.defaultProfile,
+  subagentsAllowed:false,validation:['diff-check'],authorityDigest:request.authority.sha256,
+  request,requestReference:request.authority.charter});
+}
+"""
+
+
 DRIVER = r"""
 import {readFileSync} from 'node:fs';
 import {CONSUMER,CONSUMER_DIGEST} from './consumer/consumer.mjs';
 import {consumerDigest,validateConsumer} from './consumer/consumer-config.mjs';
 import {createPublicationStore,createAttemptStore} from './controller/src/attempt-store.mjs';
 import {createAdmissionControl,manualAdmissionComplete} from './controller/src/admission-control.mjs';
-import {createInstalledTaskDisposition} from './controller/src/installed-task-disposition.mjs';
-import {renderAuthorityRecord,sha256Body} from './contracts/src/github-authority.mjs';
+import {manualAttemptHasNoPendingEffects} from './controller/src/execution-effects.mjs';
+import {currentManualEnvelope} from './fixture-current-envelope.mjs';
 const input=JSON.parse(readFileSync(0,'utf8')), repository=CONSUMER.repository;
-const owner={login:CONSUMER.owner,id:100,type:'User'};
-const reviewer={login:CONSUMER.reviewerApp.expectedActor,id:101,type:'Bot'};
-const body='Authority model: github-native-v1\nIssue closure policy: keep-open';
-const state=input.nativeState??{};
-function comment(task) {
- const parent={kind:'issue',number:task};
- return {id:9000+task,issue_url:`https://api.github.com/repos/${repository}/issues/${task}`,
-  user:reviewer,body:renderAuthorityRecord({schema_version:'4.0',kind:'decision',repository,
-   task,parent,charter_sha256:sha256Body(body),purpose:'Withdraw the abandoned original route.',
-   amendments:{boundaries:['No relaunch and no fabricated terminal receipt.']},context:[],supersedes:null})};
-}
-const disposition=createInstalledTaskDisposition({allowAcknowledgement:input.action==='acknowledge',
- tokenFor:async()=> 'synthetic-fixture-token',fetchImpl:async(url)=>{
-  const path=new URL(url).pathname;
-  if(state.unavailable) return {ok:false};
-  let value;
-  if(path===`/users/${encodeURIComponent(owner.login)}`) value=owner;
-  else if(path===`/users/${encodeURIComponent(reviewer.login)}`) value=reviewer;
-  else {
-   const match=path.match(/\/issues\/(\d+)(?:\/(events|comments))?$/);
-   if(!match) throw new Error('fixture-native-route');
-   const task=Number(match[1]),kind=match[2],route=task===1410;
-   const closed=!route&&!state.reopened;
-   const issue={id:10000+task,number:task,body,state:closed?'closed':'open',
-    state_reason:closed?(task===1409?'not_planned':'completed'):null,
-    closed_by:closed?owner:null,url:`https://api.github.com/repos/${repository}/issues/${task}`};
-   if(kind==='events') value=closed?[{id:task,event:'closed',actor:owner,
-    created_at:'2026-11-03T10:00:00Z'}]:[];
-   else if(kind==='comments') value=route?[comment(task)]:[];
-   else value=issue;
-  }
-  return {ok:true,json:async()=>structuredClone(value)};
- }});
+// An idle upgrade is independent of remote historical Task state. Any native
+// status/auth request would fail this proof rather than produce eligibility.
+globalThis.fetch=async()=>{throw new Error('historical Task lookup is forbidden');};
 const store=createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
 const journal=createAttemptStore(CONSUMER.paths.attemptRoot);
 const control=createAdmissionControl({root:CONSUMER.paths.claimRoot,consumerDigest:CONSUMER_DIGEST,
- store,journal,manualAttemptDisposition:disposition.resolve});
+ store,journal});
 let result;
 if(input.action==='seed') {
  for(let runId=401;runId<=410;runId++) {
   const issueNumber=runId+1000;
-  await store.put(runId,{envelope:{version:2,repository,consumerDigest:CONSUMER_DIGEST,
-   runId,attemptId:`run-${runId}`,route:'manual',target:'issue',number:issueNumber,issueNumber,step:1},outcome:null});
+  await store.put(runId,{envelope:currentManualEnvelope(runId,issueNumber),outcome:null});
  }
  result={records:(await store.all()).length};
-} else if(input.action==='acknowledge') {
- const record=await store.get(410), source=comment(1410);
- result=await disposition.acknowledge(record,{reason:'route-switch',sources:[
-  {kind:'issue-comment',id:source.id,parent:{kind:'issue',number:1410},sha256:sha256Body(source.body)}]});
 } else if(input.action==='preflight') {
  result=await control.preflightConsumerTransition({desiredDigest:consumerDigest(validateConsumer(input.desired))});
 } else if(input.action==='classify') {
  result=[];
  for(const record of await store.all()) result.push({runId:record.envelope.runId,
-  complete:manualAdmissionComplete(record),reason:(await disposition.resolve(record))?.reason??null});
+  complete:manualAdmissionComplete(record),quiescent:manualAttemptHasNoPendingEffects(record)});
 } else if(input.action==='transition-check') result=await control.checkConsumerTransition(input.options);
 else if(input.action==='transition') result=await control.transitionConsumer(input.options);
 else if(input.action==='recovery-target') result=await control.recoveryTarget(input.options);
@@ -154,8 +145,12 @@ class Incident:
             assert not path.is_symlink()
             path.chmod(0o755 if path.is_dir() or path.stat().st_mode & 0o111 else 0o644)
         write(self.controller / '.relay-source.json', {'revision': self.revision}, 0o644)
+        write(self.controller / 'fixture-current-envelope.mjs', CURRENT_MANUAL_ENVELOPE.encode(), 0o644)
         write(self.controller / 'fixture-admission.mjs', DRIVER.encode(), 0o644)
         self.config = json.loads((ROOT / 'deploy/example.json').read_text())
+        # This original incident predates managed pools. Do not feed a current
+        # deployment default without rendered slots to its frozen old consumer.
+        self.config['consumer'].pop('generalRunnerPool', None)
         self.config['source']['revision'] = BASELINE
         self.config['environment']['namespace'] = self.namespace
         for name in self.config['consumer']['paths']:
@@ -198,7 +193,6 @@ class Incident:
         write(self.backend, {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
             'phase': 'apply', 'target_head': BASELINE})
         self.native('seed')
-        self.native('acknowledge')
         self.config['source']['revision'] = self.revision
         self.config['consumer']['defaultProfile']['effort'] = 'medium'
         config_raw = (json.dumps(self.config, sort_keys=True) + '\n').encode()
@@ -316,10 +310,10 @@ def incident():
         yield Incident(Path(temporary))
 
 
-def test_incident_uses_exact_old_source_and_ten_current_dispositions_without_terminal_receipts(incident):
+def test_incident_uses_exact_old_source_and_ten_current_quiescent_handoffs_without_terminal_receipts(incident):
     before = incident.history()
     rows = incident.native('classify')
-    assert [row['reason'] for row in rows] == ['task-completed'] * 8 + ['task-not-planned', 'route-switch']
+    assert len(rows) == 10 and all(row['quiescent'] for row in rows)
     assert all(row['complete'] is False for row in rows)
     observed = incident.probe({'operationId': OPERATION, 'target': BASELINE})
     assert observed['eligible'] is True and observed['unknown'] == [] and observed['active'] == []
@@ -363,7 +357,7 @@ def test_original_git_snapshot_does_not_replace_the_authentic_live_consumer_cont
 
 
 @pytest.mark.parametrize('effect', ['journal', 'publication', 'submission'])
-def test_real_preflight_rejects_conflicting_effects_even_with_native_closed_tasks(incident, effect):
+def test_real_preflight_rejects_conflicting_execution_or_publication_effects(incident, effect):
     record_path = incident.claims / 'publication-v2/401.json'
     record = json.loads(record_path.read_bytes())
     if effect == 'journal':
@@ -379,13 +373,14 @@ def test_real_preflight_rejects_conflicting_effects_even_with_native_closed_task
     assert not incident.backup.exists()
 
 
-def test_native_reopen_and_unavailable_evidence_do_not_reuse_cached_route_disposition(incident):
+def test_idle_recovery_never_reads_historical_native_task_status(incident):
     before, history = incident.snapshot(), incident.history()
-    incident.native_state['reopened'] = True
-    reopened = incident.probe({'operationId': OPERATION, 'target': BASELINE})
-    assert reopened['eligible'] is False and reopened['unknown'] == list(range(401, 410))
-    incident.native_state = {'unavailable': True}
-    assert incident.probe({'operationId': OPERATION, 'target': BASELINE})['eligible'] is False
+    # These old classifier inputs have no effect; the fixture rejects every
+    # fetch, so both observations must use current execution/effect facts only.
+    for native_state in [{'reopened': True}, {'unavailable': True}]:
+        incident.native_state = native_state
+        observed = incident.probe({'operationId': OPERATION, 'target': BASELINE})
+        assert observed['eligible'] and observed['unknown'] == observed['active'] == []
     assert incident.snapshot() == before and incident.history() == history
 
 
@@ -741,7 +736,7 @@ def test_public_install_routes_explicit_recovery_with_original_uuid_and_frozen_g
     proof = {'bounded': 'protected-target-proof'}
 
     def remote(_target, _key, _config, binding, guard, pool_guard):
-        assert guard.poll() is None and pool_guard is None and not calls
+        assert guard.poll() is None and pool_guard.poll() is None and not calls
         assert binding == {'operationId': OPERATION, 'retainedTarget': BASELINE,
             'installedRevision': BASELINE, 'controllerRevision': TARGET, 'desiredRevision': TARGET,
             'gitConfigReceipt': receipt, **({'runnerMaintenance': declaration} if maintenance else {})}
@@ -777,7 +772,7 @@ def test_public_install_without_new_flags_retains_original_same_target_recovery(
     proof = {'operationId': OPERATION, 'target': TARGET, 'installedRevision': BASELINE}
 
     def remote(_target, _key, _config, target, installed, guard, pool_guard):
-        assert target == TARGET and installed == BASELINE and guard.poll() is None and pool_guard is None
+        assert target == TARGET and installed == BASELINE and guard.poll() is None and pool_guard.poll() is None
         probes.append(target)
         return proof
 

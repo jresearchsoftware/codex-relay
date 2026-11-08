@@ -1,14 +1,14 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
-import { REPOSITORY, VERSION, WRITER, OWNER, digest, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
-import { canonicalAuthorityJson, validateAuthorityRecord, renderAuthorityRecord, sha256Body, authorityMode, admissionBinding } from '../../contracts/src/github-authority.mjs';
+import { REPOSITORY, VERSION, WRITER, digest, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
+import { canonicalAuthorityJson, sha256Body, authorityMode, admissionBinding } from '../../contracts/src/github-authority.mjs';
 import { admitEnvelope, revalidateReadyEvent, readyTransitions, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
 import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary, boundOutcomeBody } from './outcome.mjs';
-import { boundedThreadCorrelationIdentity, threadCorrelationIdentity } from './run-name.mjs';
+import { threadCorrelationIdentity } from './run-name.mjs';
 import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection } from './publication-recovery.mjs';
-import { assertStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
+import { assertStep, currentStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
 import { nonClosingTaskBody } from './task-relationship.mjs';
@@ -24,16 +24,11 @@ import { latestProjection, assertPublicationIsolation } from './publication-isol
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, streamlinedAdmission = true }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
-  const bindingLines = e => e.request?.kind === 'admission'
-    ? `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`
-    : e.requestReference ? `Execution request native ID: ${e.requestReference.id}\nExecution request digest: ${e.requestReference.sha256}\n` : '';
-  // The typed publisher projects the exact Request purpose, bounded by Unicode
-  // characters. Do not normalize it through the legacy prose-title parser.
-  const titleFor = e => secretFree(e.request
-    ? projectedRequestTitle(e.request)
-    : boundedThreadCorrelationIdentity(e.thread));
+  const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
+  const titleFor = e => secretFree(projectedRequestTitle(e.request));
+  const stepLabels = subject => labelNames(subject.labels).filter(stepLike).sort();
   async function publicationRecords(e) {
     if (!store.scan) return store.all();
     const rows = (await store.scan()).filter(row => row.repository === e.repository);
@@ -64,24 +59,24 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       await store.put(e.runId, r); return;
     }
     await revalidateAuthority(api, e);
+    const subject = await api.get(`/issues/${e.issueNumber}`);
+    if (r.stepProjectionFrom
+      && canonicalAuthorityJson(stepLabels(subject)) !== canonicalAuthorityJson(r.stepProjectionFrom)
+      && canonicalAuthorityJson(stepLabels(subject)) !== canonicalAuthorityJson([`step-${e.step}`]))
+      fail('STEP_LABEL_POSITION_CHANGED');
     await api.ensureStepLabel(e.step);
-    const targets = [e.issueNumber, ...(e.target === 'pull_request' ? [e.number] : e.continuation?.pullRequest ? [e.continuation.pullRequest] : [])];
-    for (const number of [...new Set(targets)]) {
-      const subject = await api.get(`/issues/${number}`);
-      // Individual label operations preserve a ready command (or unrelated
-      // owner label) added after this read. A labels-array PATCH can erase it.
-      for (const label of labelNames(subject.labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
-        await api.delete(`/issues/${number}/labels/${encodeURIComponent(label)}`);
-      if (!labelNames(subject.labels).includes(`step-${e.step}`))
-        await api.post(`/issues/${number}/labels`, { labels: [`step-${e.step}`] });
-      assertStep((await api.get(`/issues/${number}`)).labels, e.step);
-    }
+    // Individual label operations preserve a ready command (or unrelated
+    // owner label) added after this read. A labels-array PATCH can erase it.
+    for (const label of labelNames(subject.labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
+      await api.delete(`/issues/${e.issueNumber}/labels/${encodeURIComponent(label)}`);
+    if (!labelNames(subject.labels).includes(`step-${e.step}`))
+      await api.post(`/issues/${e.issueNumber}/labels`, { labels: [`step-${e.step}`] });
+    assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
     if (e.target === 'pull_request' || e.continuation?.pullRequest) {
       const number = e.target === 'pull_request' ? e.number : e.continuation.pullRequest;
-      await api.patch(`/pulls/${number}`, { title: titleFor(e) });
-      if ((await api.get(`/pulls/${number}`)).title !== titleFor(e)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
+      await mirrorStep(r, await api.get(`/pulls/${number}`), { advance: true });
     }
-    r.stepProjected = true; await store.put(e.runId, r);
+    r.stepProjected = true; delete r.stepProjectionFrom; await store.put(e.runId, r);
   }
   async function readyConsumptionFailure(r, code, { cause, transitions = [] } = {}) {
     const e = r.envelope;
@@ -112,11 +107,6 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   async function consumeReadyCommand(r) {
     const e = r.envelope;
     if (r.readyConsumed) return;
-    if (e.request?.kind !== 'admission' && !r.nativeAdmission) {
-      await api.delete(`/issues/${e.number}/labels/${e.readyLabel}`);
-      if (labelNames((await api.get(`/issues/${e.number}`)).labels).includes(e.readyLabel)) fail('READY_CONSUMPTION_UNCERTAIN');
-      r.readyConsumed = true; await store.put(e.runId, r); return;
-    }
     if (r.readyConsumption) return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN');
     // Projection and other native reads may have allowed a replacement. Check
     // again at the mutation boundary and reserve the single DELETE first.
@@ -156,20 +146,47 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       authorityDigest: e.authorityDigest, admittedEnvelope: e,
       request: { operation: 'begin-remediation', prNumber: e.number, reviewId: e.reviewId, head: e.startHead } });
   }
-  async function mirrorStep(r, pr) {
+  async function mirrorStep(r, pr, { advance = false, publishedTransition } = {}) {
     const e = await projectionFor(r.envelope);
     if (e.branch !== r.envelope.branch) return pr;
+    // Only the immediate metadata read after this Writer's verified non-force
+    // push may lag at either endpoint. This never authorizes Ready or a new head.
+    const ownTransition = publishedTransition && r.publishedHead === publishedTransition.head
+      && !r.publicationIntent && [publishedTransition.previous, publishedTransition.head].every(exactSha)
+      && [publishedTransition.previous, publishedTransition.head].includes(pr.head.sha);
+    const heads = ownTransition ? [publishedTransition.previous, publishedTransition.head] : [pr.head.sha];
+    const read = async () => {
+      const current = await api.get(`/pulls/${pr.number}`);
+      assertPr(current, pr.number);
+      if (current.head.ref !== e.branch || !heads.includes(current.head.sha)
+        || current.base.ref !== pr.base.ref || linkedIssue(current.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
+      return current;
+    };
     assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
     const labels = (await api.get(`/issues/${pr.number}`)).labels;
-    // Creation/recovery may finish a missing mirror, but never overwrite a
-    // conflicting Step. The Issue remains the durable anchor.
-    if (labelNames(labels).some(stepLike)) assertStep(labels, e.step);
-    else {
-      if (e.target !== 'issue') fail('STEP_LABEL_MISSING');
+    // A new durable admission may advance its bound PR. Result association and
+    // replay only repair missing same-Step metadata; conflicting labels stop.
+    if (labelNames(labels).some(stepLike)) {
+      const current = currentStep(labels);
+      if (advance ? current > e.step : current !== e.step) fail('STEP_LABEL_MISMATCH');
+    }
+    const observed = await read();
+    const identity = /^Task\s+#?([0-9]+)\s*[-–—:·|]+\s*Step\s+([0-9]+)\b/i.exec(observed.title ?? '');
+    if (identity && (Number(identity[1]) !== e.issueNumber
+      || (advance ? Number(identity[2]) > e.step : Number(identity[2]) !== e.step)))
+      fail('STEP_DISPLAY_MISMATCH');
+    for (const label of labelNames(labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
+      await api.delete(`/issues/${pr.number}/labels/${encodeURIComponent(label)}`);
+    if (!labelNames(labels).includes(`step-${e.step}`)) {
+      await api.ensureStepLabel(e.step);
       await api.post(`/issues/${pr.number}/labels`, { labels: [`step-${e.step}`] });
     }
     assertStep((await api.get(`/issues/${pr.number}`)).labels, e.step);
-    return pr;
+    if (observed.title !== titleFor(e)) await api.patch(`/pulls/${pr.number}`, { title: titleFor(e) });
+    const current = await read();
+    if (current.title !== titleFor(e)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
+    assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
+    return current;
   }
   function publicationFailure(code, { cause, diagnostic = {} } = {}) {
     const source = {
@@ -224,7 +241,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   async function pullRequest(r, publishedTransition = null) {
     const e = r.envelope;
     const existing = await existingPullRequest(r, { allowStepMirror: true, publishedTransition });
-    if (existing) return mirrorStep(r, existing);
+    if (existing) return mirrorStep(r, existing, { publishedTransition });
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
     const pr = await api.post('/pulls', { title: titleFor(await projectionFor(e, { sameBranch: true })), head: e.branch, base: CONSUMER.baseBranch, draft: true,
@@ -439,11 +456,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (existing) {
           const e = existing.envelope;
           if (e.target !== request.target || e.number !== request.number || e.route !== request.route
-            || (e.request?.kind !== 'admission' && e.step !== request.step) || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
+            || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
             || e.transport !== request.transport
             || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
           if (e.transport === 'label' && !existing.readyConsumed) {
-            if (e.request?.kind !== 'admission' && !existing.nativeAdmission) fail('READY_CONSUMPTION_UNCERTAIN');
             if (existing.readyConsumption) await consumeReadyCommand(existing);
             await revalidateReadyEvent(api, e);
             if (!existing.admissionBlock) await projectAdmittedStep(existing);
@@ -468,18 +484,18 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (request.route === 'auto' && !CONSUMER.executionSlots) await admission?.assertSlotComplete?.('primary');
         const subject = await api.get(request.target === 'issue' ? `/issues/${request.number}` : `/pulls/${request.number}`);
         let task = request.target === 'issue' ? request.number : null;
-        if (streamlinedAdmission && request.target === 'pull_request') {
+        if (request.target === 'pull_request') {
           try { task = linkedIssue(subject.body); } catch (error) { if (error.code !== 'CANONICAL_ISSUE_AMBIGUOUS') throw error; }
         }
         const charter = request.target === 'issue' ? subject : task ? await api.get(`/issues/${task}`) : null;
-        const nativeAdmission = streamlinedAdmission && charter !== null && authorityMode(charter.body) === 'github-native-v1';
+        const nativeAdmission = charter !== null && authorityMode(charter.body) === 'github-native-v1';
         const priorRecords = nativeAdmission ? (await publicationRecords({ repository: REPOSITORY, issueNumber: task }))
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.
-        const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task) : {};
+        const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, charter.labels) : {};
         const previousRecord = allocation.lineage ? priorRecords.find(record => record.envelope?.attemptId === allocation.lineage.attempt) : undefined;
-        const admitted = await admitEnvelope(api, request, { streamlined: streamlinedAdmission, nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
+        const admitted = await admitEnvelope(api, request, { nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
         const slotBound = { ...admitted, ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) };
         const envelope = admitted.blocked ? { ...blockedAdmissionEnvelope(admitted), ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) }
           : validateEnvelope(slotBound);
@@ -490,12 +506,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             const prior = previous.envelope;
             if (prior?.repository !== REPOSITORY) continue;
             if (prior.readyEventId === envelope.readyEventId) fail('READY_EVENT_ALREADY_CONSUMED');
-            if (nativeAdmission) continue;
-            if (!(prior.target === envelope.target && prior.number === envelope.number)
-              && !(positive(envelope.issueNumber) && prior.issueNumber === envelope.issueNumber)) continue;
-            const run = await api.getRun(prior.runId);
-            if (run.status !== 'completed' || !Number.isFinite(Date.parse(run.updated_at))
-              || Date.parse(envelope.readyEventAt) <= Date.parse(run.updated_at)) fail('READY_EVENT_QUEUED');
+
           }
         }
         // Keep lifecycle failure before execution reservation and ready-command
@@ -503,7 +514,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // without creating an unknown execution or publishing another review.
         if (!admitted.blocked) await prepareRemediation(envelope);
         if (envelope.transport === 'label') await revalidateReadyEvent(api, envelope);
+        if (!admitted.blocked && nativeAdmission) {
+          const current = await api.get(`/issues/${task}`);
+          if (envelope.issueNumber !== task || current.number !== task
+            || (charter.id !== undefined && current.id !== charter.id)
+            || canonicalAuthorityJson(stepLabels(current)) !== canonicalAuthorityJson(stepLabels(charter)))
+            fail('STEP_LABEL_POSITION_CHANGED');
+        }
         const r = { envelope, ...(nativeAdmission ? { nativeAdmission: true } : {}), ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
+          ...(!admitted.blocked && nativeAdmission ? { stepProjectionFrom: stepLabels(charter) } : {}),
           ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
           ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };
@@ -553,9 +572,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
                 || pr.user?.login !== WRITER || pr.user?.type !== 'Bot'
                 || pr.user?.id !== recovery.binding.writer.id
                 || !pr.body?.split(/\r?\n/).includes(`Attempt: ${e.attemptId}`)
-                || !pr.body?.split(/\r?\n/).includes(e.request?.kind === 'admission'
-                  ? `Execution admission digest: ${admissionBinding(e.request).sha256}`
-                  : `Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
+                || !pr.body?.split(/\r?\n/).includes(`Execution admission digest: ${admissionBinding(e.request).sha256}`)) fail('PR_AUTHORITY_CHANGED');
               return pr;
             };
             if (!recovery.outcome) {
@@ -766,6 +783,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope,
             { reporting: true, publicationTarget: request.submission.result.parent.kind === 'pull_request' ? request.submission.result.parent.number : undefined }),
           historical: async envelope => !await isCurrentProjection(envelope),
+          projectPullRequest: mirrorStep,
           transitionManual: async (record, pr, result, draft) => {
             if (!pr || pr.state !== 'open' || pr.merged) return;
             if (!await isCurrentProjection(e)) return;
@@ -777,77 +795,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
                 await assertManualPullRequestBinding(api, e, current, { unique: false }); return current; } });
           } }));
       }
-      if (request.operation === 'manual-outcome') {
-        // This publishes an owner-authored manual result, never Git objects,
-        // execution, approval, merge, deployment or closure. A native owner
-        // transport authorization is evidence, not a new execution request.
-        if (e.route !== 'manual' || e.request?.kind !== 'task-request' || !positive(request.authorizationId)) fail('MANUAL_OUTCOME_NOT_ADMITTED');
-        const source = await api.get(`/issues/comments/${request.authorizationId}`);
-        const owner = await api.userIdentity(OWNER);
-        if (source.id !== request.authorizationId || owner.login !== OWNER || owner.type !== 'User' || !positive(owner.id)
-          || source.user?.login !== OWNER || source.user?.id !== owner.id || source.user?.type !== 'User'
-          || source.issue_url !== `https://api.github.com/repos/${REPOSITORY}/issues/${e.issueNumber}`) fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID');
-        const match = /^```relay-manual-result\n([\s\S]*?)\n```\n?$/.exec(source.body ?? '');
-        if (!match) fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID');
-        let result; try { result = JSON.parse(match[1]); } catch { fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID'); }
-        if (canonicalAuthorityJson(result) !== match[1]) fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID');
-        validateAuthorityRecord(result, { repository: REPOSITORY, task: e.issueNumber, charterBody: (await api.get(`/issues/${e.issueNumber}`)).body });
-        if (result.kind !== 'outcome' || result.attempt !== e.attemptId
-          || canonicalAuthorityJson(result.request) !== canonicalAuthorityJson(e.requestReference)) fail('MANUAL_OUTCOME_AUTHORIZATION_INVALID');
-        if (r.manualResultAuthorization && (r.manualResultAuthorization.id !== source.id
-          || r.manualResultAuthorization.sha256 !== sha256Body(source.body))) fail('MANUAL_OUTCOME_AUTHORIZATION_CHANGED');
-        let pr = null;
-        if (result.parent.kind === 'pull_request') {
-          pr = await api.get(`/pulls/${result.parent.number}`);
-          if (pr.number !== result.parent.number || pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
-            || linkedIssue(pr.body) !== e.issueNumber || (e.branch && pr.head.ref !== e.branch)
-            || (result.result.kind === 'git' && result.result.revision !== pr.head.sha)
-            || !pr.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
-          const artifacts = (await api.list(`/pulls?state=all&head=${REPOSITORY.split('/')[0]}:${encodeURIComponent(pr.head.ref)}`))
-            .filter(candidate => candidate.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`));
-          if (artifacts.length !== 1 || artifacts[0].number !== pr.number) fail('PR_AMBIGUOUS');
-          if (result.status === 'implemented' && pr.state === 'open' && result.result.kind !== 'git') fail('PUBLISHED_HEAD_REQUIRED');
-          await rememberPullRequest(r, pr);
-        } else if (result.parent.number !== e.issueNumber || r.prNumber || r.prIntent || (e.branch && await existingPullRequest(r))) fail('PR_AUTHORITY_CHANGED');
-        r.manualResultAuthorization = { id: source.id, sha256: sha256Body(source.body) }; await store.put(e.runId, r);
-        const after = await api.get(`/issues/comments/${source.id}`);
-        if (sha256Body(after.body) !== r.manualResultAuthorization.sha256 || after.user?.id !== owner.id) fail('MANUAL_OUTCOME_AUTHORIZATION_CHANGED');
-        const transitionManual = async draft => {
-          if (!pr || pr.state !== 'open' || pr.merged) return;
-          if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
-          pr = await transitionPr({ api, store, key: e.runId, record: r, head: pr.head.sha, draft,
-            readPr: async () => {
-              await revalidateAuthority(api, e);
-              const current = await api.get(`/pulls/${pr.number}`); assertPr(current, pr.number);
-              if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber
-                || !current.body?.split(/\r?\n/).includes(`Execution request digest: ${e.requestReference.sha256}`)) fail('PR_AUTHORITY_CHANGED');
-              return current;
-            } });
-        };
-        if (result.status !== 'implemented') await transitionManual(true);
-        if (r.outcome) {
-          if (result.status === 'implemented') {
-            const durable = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
-            if (durable.user?.login !== WRITER || sha256Body(durable.body) !== r.outcome.bodySha256) fail('COMMENT_CONTENT_CHANGED');
-            await transitionManual(false);
-          }
-          return receipt(r.outcome);
-        }
-        const body = `## Codex Outcome\n\nStatus: ${result.status === 'implemented' ? 'IMPLEMENTED_PENDING_FRESH_REVIEW' : 'BLOCKED'}\nAttempt: ${e.attemptId}\nManual result source: #${source.id}\n\n${renderAuthorityRecord(result)}`;
-        let outcome = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, body);
-        const expectedBody = outcome.body;
-        outcome = await api.get(`/issues/comments/${outcome.id}`);
-        if (outcome.body !== expectedBody || outcome.user?.login !== WRITER) fail('COMMENT_CONTENT_CHANGED');
-        r.outcome = { status: result.status === 'implemented' ? 'IMPLEMENTED_PENDING_FRESH_REVIEW' : 'BLOCKED',
-          head: exactSha(result.result.revision) ? result.result.revision : null, prNumber: pr?.number ?? null,
-          outcomeId: outcome.id, bodySha256: sha256Body(outcome.body), manual: true };
-        await store.put(e.runId, r);
-        if (result.status === 'implemented') await transitionManual(false);
-        return receipt(r.outcome);
-      }
       if (request.operation === 'finish-no-change') {
         if (r.outcome) return receipt(r.outcome);
-        if (e.route !== 'auto' || !['task-request', 'admission'].includes(e.request?.kind)
+        if (e.route !== 'auto' || e.request?.kind !== 'admission'
           || e.target !== 'issue' || request.head !== e.startHead || r.publishedHead || r.publicationIntent) fail('NO_CHANGE_COMPLETION_INVALID');
         const pr = await existingPullRequest(r);
         if (pr && pr.head.sha !== e.startHead) fail('PR_HEAD_OBSERVATION_STALE');
@@ -881,11 +831,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           }
         }
         const url = e.reviewId ? `https://github.com/${REPOSITORY}/pull/${e.number}#pullrequestreview-${e.reviewId}` : `https://github.com/${REPOSITORY}/issues/${e.issueNumber}`;
-        const continuationBinding = e.request?.kind === 'admission' && e.reviewId && e.startHead !== e.request.reviewed_head_sha
+        const continuationBinding = e.reviewId && e.startHead !== e.request.reviewed_head_sha
           ? `Admitted source PR: https://github.com/${REPOSITORY}/pull/${e.number}\nAdmitted branch: ${e.branch}\nRequired starting head: ${e.startHead}\nOriginal CR reviewed head (finding provenance): ${e.request.reviewed_head_sha}\nUse the admitted starting head above; the original CR reviewed head remains finding provenance.\n` : '';
-        const requestBinding = e.request?.kind === 'admission'
-          ? `\nStable Task charter SHA-256: ${e.request.charter_sha256}\nEffective authority SHA-256: ${e.authorityDigest}\nExecution admission SHA-256: ${admissionBinding(e.request).sha256}\n${continuationBinding}Selected trusted Decisions: ${e.request.authority.decisions.map(ref => `https://github.com/${REPOSITORY}/issues/${ref.parent.number}#issuecomment-${ref.id} (SHA-256 ${ref.sha256})`).join('; ') || 'none'}\nRead the stable Task charter and these exact selected trusted sources. Verify currentness; historical prose and ordinary comments grant no execution authority.\n`
-          : e.requestReference ? `\nCurrent execution request: https://github.com/${REPOSITORY}/${e.requestReference.parent.kind === 'issue' ? 'issues' : 'pull'}/${e.requestReference.parent.number}#${e.requestReference.kind === 'review' ? 'pullrequestreview' : 'issuecomment'}-${e.requestReference.id}\nRequest SHA-256: ${e.requestReference.sha256}\nRead the stable Task charter plus this exact complete request and its selected source references. Verify it remains current; historical prose and ordinary comments grant no execution authority.\n` : '';
+        const requestBinding = `\nStable Task charter SHA-256: ${e.request.charter_sha256}\nEffective authority SHA-256: ${e.authorityDigest}\nExecution admission SHA-256: ${admissionBinding(e.request).sha256}\n${continuationBinding}Selected trusted Decisions: ${e.request.authority.decisions.map(ref => `https://github.com/${REPOSITORY}/issues/${ref.parent.number}#issuecomment-${ref.id} (SHA-256 ${ref.sha256})`).join('; ') || 'none'}\nRead the stable Task charter and these exact selected trusted sources. Verify currentness; historical prose and ordinary comments grant no execution authority.\n`;
         const body = `MANUAL_CODEX_HANDOFF_READY\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nModel: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\n\nCopyable prompt:\n\n\`\`\`text\nExecute the project-defined procedure for this canonical authority:\n${url}${requestBinding}\nThread: ${e.thread}\nCodex model: ${e.profile.cliModelId}\nCodex effort: ${e.profile.effort}\nSubagents: ${e.subagentsAllowed ? 'On' : 'Off'}\nFollow repository instructions and live authority. Commit and push safe task-owned work before handoff.\n\n${PROGRESS_BOUNDED_EXECUTION}\n\`\`\``;
         const promptStart = body.indexOf('```text\n');
         const prompt = `${compactManualPrompt(e, url)}\n`;
@@ -893,15 +841,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const safeFenceBody = `${body.slice(0, promptStart)}${fence}text\n${prompt}${fence}`;
         const visibleBody = safeFenceBody.replace(`Thread: ${e.thread}\n`, `Thread: ${safePublicationText(e.thread)}\n`)
           .replace('\n\nCopyable prompt:', `\nCanonical authority: ${url}\n\nCopyable prompt:`);
-        const outcomeBinding = e.request?.kind === 'admission' ? {
+        const outcomeBinding = {
           repository: REPOSITORY, task: e.issueNumber, run_id: e.runId,
           result: { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: e.issueNumber,
             parent: { kind: e.target === 'pull_request' ? 'pull_request' : 'issue', number: e.number },
             charter_sha256: e.request.charter_sha256, step: e.step, authority: e.request.authority,
             admission: admissionBinding(e.request), attempt: e.attemptId }
-        } : null;
-        const publicBinding = outcomeBinding
-          ? `\n\nManual Outcome binding: copy these admitted values unchanged into \`submit_manual_outcome\`. Set the final parent to the Task-owned PR when one exists, and add the status, result, summary, warnings and limitations from verified execution evidence. This binding is not an execution result.\n\n\`\`\`json\n${canonicalAuthorityJson(outcomeBinding)}\n\`\`\`` : '';
+        };
+        const publicBinding = `\n\nManual Outcome binding: copy these admitted values unchanged into \`submit_manual_outcome\`. Set the final parent to the Task-owned PR when one exists, and add the status, result, summary, warnings and limitations from verified execution evidence. This binding is not an execution result.\n\n\`\`\`json\n${canonicalAuthorityJson(outcomeBinding)}\n\`\`\``;
         const comment = await commentOnce(r, 'handoff', e.number, foldManualHandoff(visibleBody) + publicBinding, { legacyBody: body });
         return receipt({ status: 'handed-off', commentId: comment.id });
       }

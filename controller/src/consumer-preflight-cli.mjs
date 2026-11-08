@@ -160,8 +160,7 @@ try:
 except Exception:fail('CONSUMER_PREFLIGHT_OBSERVATION_FAILED')
 `;
 
-export async function consumerPreflight({ config, installRoot, stageRoot, desiredDigest, repository, writerLockLease,
-  retainCurrentDigest = false }) {
+export async function consumerPreflight({ config, installRoot, stageRoot, desiredDigest, repository, writerLockLease }) {
   require(process.getuid?.() === 0, 'CONSUMER_PREFLIGHT_ROOT_REQUIRED');
   require(digest(desiredDigest), 'ADMISSION_CONFIG_INVALID');
   const namespace = basename(installRoot);
@@ -196,9 +195,6 @@ export async function consumerPreflight({ config, installRoot, stageRoot, desire
     require(consumerDigest(baseline) === observed.gate.consumerDigest, 'CONSUMER_PREFLIGHT_BASELINE_GATE_MISMATCH');
   }
   const baselineDigest = consumerDigest(baseline);
-  // The owner orchestrator uses this only after independently proving an
-  // initial SERIAL migration that preserves the original consumer context.
-  const transitionDigest = retainCurrentDigest ? baselineDigest : desiredDigest;
   repository ??= baseline.repository;
   require(configuredRepositories(baseline).includes(repository), 'CONSUMER_PREFLIGHT_REPOSITORY_REQUIRED');
   const lock = await protectedPath(observed.lockPath);
@@ -216,7 +212,7 @@ export async function consumerPreflight({ config, installRoot, stageRoot, desire
     require(candidate.revision === observed.gate.target, 'CONSUMER_PREFLIGHT_LEASE_TARGET_CHANGED');
   }
   const payload = { clone, cloneSha256: cloneBytes ? sha(cloneBytes) : null, parentNamespace: await readlink('/proc/self/ns/mnt'),
-    config, node: process.execPath, cli: join(sourceRoot, 'controller/src/admission-cli.mjs'), desiredDigest: transitionDigest,
+    config, node: process.execPath, cli: join(sourceRoot, 'controller/src/admission-cli.mjs'), desiredDigest: desiredDigest,
     lockPath: observed.lockPath, lockDev: lock.dev, lockIno: lock.ino, baselineDigest,
     lease: writerLockLease ?? null, leaseModule, operationId: observed.gate.operationId, target: observed.gate.target };
   const command = clone ? '/usr/bin/unshare' : '/usr/bin/python3';
@@ -224,7 +220,7 @@ export async function consumerPreflight({ config, installRoot, stageRoot, desire
   const result = parseConsumerJson((await run(command, args, { input: JSON.stringify(payload), environment: {
     PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', PYTHONDONTWRITEBYTECODE: '1', RELAY_CONSUMER_CONFIG: config,
     RELAY_REPOSITORY: repository } })).toString());
-  require(result.currentDigest === baselineDigest && result.desiredDigest === transitionDigest
+  require(result.currentDigest === baselineDigest && result.desiredDigest === desiredDigest
     && result.phase === observed.gate.phase && result.operationId === observed.gate.operationId
     && result.target === observed.gate.target && typeof result.eligible === 'boolean'
     && ['active', 'unknown'].every(key => Array.isArray(result[key]) && result[key].length <= 10000
@@ -235,7 +231,7 @@ export async function consumerPreflight({ config, installRoot, stageRoot, desire
     && (await readProtected(identity.manifestPath)).equals(identity.manifestBytes)
     && (await readProtected(identity.identityPath)).equals(identity.identityBytes)
     && (!snapshotPath || (await readProtected(snapshotPath)).equals(snapshotBytes)), 'CONSUMER_PREFLIGHT_INPUT_CHANGED');
-  return { ...result, requestedDesiredDigest: desiredDigest, retainedCurrentDigest: retainCurrentDigest,
+  return { ...result,
     consumerRestoreRequired: clone !== null, actualDriftCategory, baselineDigest,
     effectiveConsumerPath: clone ?? config, claimRoot: baseline.paths.claimRoot, lockPath: observed.lockPath };
 }
@@ -245,10 +241,6 @@ export function parseConsumerPreflightArguments(args) {
     'desired-digest': 'desiredDigest', repository: 'repository', 'writer-lock-lease': 'writerLockLease' };
   const options = {};
   for (let index = 0; index < args.length;) {
-    if (args[index] === '--retain-current-digest') {
-      require(!Object.hasOwn(options, 'retainCurrentDigest'), 'CONSUMER_PREFLIGHT_ARGUMENTS_INVALID');
-      options.retainCurrentDigest = true; index++; continue;
-    }
     const field = args[index].startsWith('--') && names[args[index].slice(2)];
     require(field && index + 1 < args.length && !Object.hasOwn(options, field), 'CONSUMER_PREFLIGHT_ARGUMENTS_INVALID');
     options[field] = args[index + 1]; index += 2;

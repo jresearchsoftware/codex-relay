@@ -1,20 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { EXECUTION_DEFAULTS, resolveExecutionDefaults } from '../src/execution-defaults.mjs';
+import { EXECUTION_DEFAULTS, resolveExecutionDefaults, resolveExecutionProfile } from '../src/execution-defaults.mjs';
 import { validateConsumer, consumerDigest } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { parseIssueAuthority } from '../../runtime/src/issue-authority.mjs';
+import { renderAuthorityRecord, sha256Body } from '../src/github-authority.mjs';
+import { REPOSITORY, REVIEWER } from '../../controller/src/execution-contract.mjs';
 import { executeCodex } from '../../controller/src/attempt-runtime.mjs';
 import { fixture } from '../../controller/test/fixture.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
 
-test('ordinary project defaults match schema, deployment inputs and canonical policy', () => {
+test('ordinary project defaults match deployment authoring inputs and canonical policy', () => {
   assert.deepEqual(EXECUTION_DEFAULTS, { effort: 'xhigh', subagentsAllowed: true });
   const policy = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
   assert.match(policy, /default model is\s+`gpt-6\.1-sol`, the default reasoning effort is `xhigh` and the default Subagents\s+permission is `On`/);
   const example = JSON.parse(readFileSync(new URL('../../deploy/example.json', import.meta.url), 'utf8'));
-  assert.deepEqual(validateConsumer(example.consumer).defaultProfile, { cliModelId: 'gpt-6.1-sol', effort: 'xhigh' });
+  assert.deepEqual({ ...example.consumer.defaultProfile, effort: resolveExecutionDefaults(example.consumer.defaultProfile).effort }, { cliModelId: 'gpt-6.1-sol', effort: 'xhigh' });
   const backend = readFileSync(new URL('../../deploy/ansible/group_vars/all.yml', import.meta.url), 'utf8');
   assert.match(backend, /^relay_default_model: gpt-6\.1-sol$/m);
   assert.deepEqual(resolveExecutionDefaults({ effort: 'max', subagentsAllowed: false }),
@@ -48,25 +49,24 @@ test('delegation guidance selects assignment profiles and bounds context and aut
   }
 });
 
-test('Issue authority preserves explicit permissions and blocks ambiguous permissions', () => {
-  const parse = body => parseIssueAuthority(body, { issueNumber: 42, step: 1, targetBaseSha: 'a'.repeat(40) });
-  assert.equal(parse('# Task\nDo the work.').subagentsAllowed, true);
-  for (const [text, expected] of [['Off', false], ['On', true]]) {
-    assert.equal(parse(`# Task\nSubagents: ${text}`).subagentsAllowed, expected);
-  }
-  for (const text of ['Subagents: maybe', 'Subagents: Off\nSubagents: On', 'Subagents:']) {
-    assert.throws(() => parse(`# Task\n${text}`), { code: 'SUBAGENTS_PERMISSION_INVALID' });
-  }
+test('current profile resolution preserves explicit permissions and rejects ambiguous values', () => {
+  for (const allowed of [false, true]) assert.equal(resolveExecutionProfile({ decisions: { subagents: allowed } }).subagents, allowed);
+  for (const subagents of ['Off', 'maybe', null, 1])
+    assert.throws(() => resolveExecutionProfile({ decisions: { subagents } }), { code: 'AUTHORITY_PROFILE_INVALID' });
 });
 
-test('Issue defaults and explicit overrides reach the worker unchanged', async t => {
-  for (const [fields, effort, allowed] of [
-    ['', CONSUMER.defaultProfile.effort, true],
-    ['Codex effort: medium\nSubagents: On', 'medium', true],
-    ['Codex effort: max\nSubagents: Off', 'max', false],
-    ['Codex effort: high\nSubagents: On', 'high', true]
-  ]) {
-    const f = await fixture(t, { issueBody: `# Task 42\nImplement the goal.\nCodex model: explicit-model\n${fields}` });
+test('current admitted defaults and explicit Decision overrides reach the worker unchanged', async t => {
+  for (const [effort, allowed] of [[CONSUMER.defaultProfile.effort, true], ['medium', true], ['max', false], ['high', true]]) {
+    const f = await fixture(t, { profile: { cliModelId: 'explicit-model', effort }, beforeAdmission: ({ issue, api }) => {
+      const source = { id: 920, user: { login: REVIEWER, id: 701, type: 'Bot' },
+        issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`,
+        body: renderAuthorityRecord({ schema_version: '4.0', kind: 'decision', repository: REPOSITORY, task: 42,
+          parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(issue.body),
+          purpose: 'Select the authorized execution profile', amendments: { model: 'explicit-model', effort, subagents: allowed },
+          supersedes: null, context: [] }) };
+      const list = api.list.bind(api);
+      api.list = async path => path === '/issues/42/comments' ? [...await list(path), source] : list(path);
+    } });
     assert.deepEqual(f.envelope.profile, { cliModelId: 'explicit-model', effort });
     assert.equal(f.envelope.subagentsAllowed, allowed);
     await executeCodex(f.envelope, { runTask: async request => {

@@ -78,7 +78,6 @@ def retired(monkeypatch):
     monkeypatch.setattr(installation, 'ProtectedFiles', Files)
     monkeypatch.setattr(installation, 'original_installation', lambda _config: (original, {
         'revision': OLD, 'sourceRoot': source}))
-    monkeypatch.setattr(installation, 'original_gate', lambda *_args: None)
     monkeypatch.setattr(installation, 'SerialPoolHost', Host)
     monkeypatch.setattr(installation, 'SerialPoolGitHub', lambda value: value)
     monkeypatch.setattr(installation, 'current_source', lambda config, *, git_desired=False:
@@ -118,19 +117,6 @@ def test_completed_retirement_keeps_original_receipt_and_accepts_later_git_inten
     assert retired['calls'][0] == ('source', True)
 
 
-def test_original_incomplete_cutover_keeps_exact_config_and_digest(retired):
-    retired['gate'].update(phase='applying', operationId=OPERATION, target=CURRENT,
-                           consumerDigest=RECEIPT_DIGEST)
-    update(retired, 'gate')
-    retired['current_digest'][0] = RECEIPT_DIGEST
-    assert installation.preflight(retired['desired'], retired['api'], RECEIPT_DIGEST)['completionRequired'] is True
-    # A pending original cutover is not a later Git installation.
-    with pytest.raises(managed_pool.PoolError, match='NEW_GATE_UNPROVEN'):
-        installation.preflight(retired['desired'], retired['api'], DESIRED_DIGEST)
-    changed = copy.deepcopy(retired['desired'])
-    changed['consumer']['defaultProfile']['effort'] = 'high'
-    with pytest.raises(managed_pool.PoolError, match='NEW_GATE_UNPROVEN'):
-        installation.preflight(changed, retired['api'], RECEIPT_DIGEST)
 
 
 def test_current_gate_must_bind_actual_current_consumer_even_when_desired_matches_it(retired):
@@ -158,7 +144,7 @@ def test_expert_route_retains_original_owner_delta_gate(retired, monkeypatch):
     assert not retired['calls']
 
 
-def test_no_receipt_unmanaged_git_host_keeps_exact_original_history(tmp_path, monkeypatch):
+def test_no_receipt_unmanaged_git_host_rejects_new_migration(tmp_path, monkeypatch):
     namespace = 'relay-managed-fixture'
     current = tmp_path / namespace / 'current'
     current.mkdir(parents=True)
@@ -170,16 +156,16 @@ def test_no_receipt_unmanaged_git_host_keeps_exact_original_history(tmp_path, mo
     monkeypatch.setattr(installation, 'ProtectedFiles', Files)
     monkeypatch.setattr(installation, 'Path', lambda _value: tmp_path)
     def original(_config):
-        raise managed_pool.PoolError('EXACT_ORIGINAL_HISTORY_REQUIRED')
+        pytest.fail('fresh SERIAL migration must not load historical source')
     monkeypatch.setattr(installation, 'original_installation', original)
     calls = []
     def actual(config, *, git_desired=False):
         calls.append((config, git_desired))
-        return {'managed': True, 'digest': CURRENT_DIGEST, 'gate': {'consumerDigest': CURRENT_DIGEST}}
+        return {'managed': False, 'digest': CURRENT_DIGEST, 'gate': {'consumerDigest': CURRENT_DIGEST}}
     monkeypatch.setattr(installation, '_current_admission', actual)
-    with pytest.raises(managed_pool.PoolError, match='EXACT_ORIGINAL_HISTORY_REQUIRED'):
+    with pytest.raises(managed_pool.PoolError, match='SERIAL_TRANSITION_RETIRED'):
         installation.preflight(desired, object(), DESIRED_DIGEST)
-    assert not calls
+    assert calls == [(desired, True)]
 
 
 @pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0, reason='native protected source boundary')
@@ -349,6 +335,14 @@ def test_real_managed_git_preflight_uses_actual_node_and_legacy_guard_without_ow
         else:
             assert result['status'] == 'BLOCKED', result
             if fault in ['legacy-directory', 'legacy-service']:
-                assert 'SERIAL_TRANSITION_REQUIRED' in result['code']
+                assert 'SERIAL_TRANSITION_RETIRED' in result['code']
             elif fault == 'gate-mismatch':
                 assert 'ORIGINAL_READER_UNPROVEN' in result['code']
+
+def test_unfinished_original_cutover_is_not_a_new_migration_or_implicit_resume(retired):
+    retired['gate'].update(phase='applying', operationId=OPERATION, target=CURRENT)
+    update(retired, 'gate')
+    before = copy.deepcopy(retired['paths'])
+    with pytest.raises(managed_pool.PoolError, match='RETIRED_COMPLETION_UNPROVEN'):
+        installation.preflight(retired['desired'], retired['api'], DESIRED_DIGEST)
+    assert retired['paths'] == before

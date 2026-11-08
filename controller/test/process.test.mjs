@@ -1,3 +1,4 @@
+import { currentEnvelope } from './fixture.mjs';
 import { CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,9 +10,9 @@ import { createOnDemandDispatchAdapter } from '../src/github.mjs';
 import { REPOSITORY } from '../src/execution-contract.mjs';
 import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from '../src/diagnostic-fallback.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
-const envelope = { version: 2, consumerDigest: CONSUMER_DIGEST, repository: REPOSITORY, attemptId: 'run-9', step: 2, runId: 9,
+const envelope = currentEnvelope({ version: 2, consumerDigest: CONSUMER_DIGEST, repository: REPOSITORY, attemptId: 'run-9', step: 2, runId: 9,
   target: 'issue', number: 42, issueNumber: 42, route: 'auto', branch: 'codex/test', subagentsAllowed: true,
-  startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40), targetBase: 'b'.repeat(40), authorityDigest: 'c'.repeat(64), profile: { cliModelId: 'fixture-model', effort: 'high' }, validation: ['diff-check'] };
+  startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40), targetBase: 'b'.repeat(40), authorityDigest: 'c'.repeat(64), profile: { cliModelId: 'fixture-model', effort: 'high' }, validation: ['diff-check'] });
 function launch(code) {
   return (command, args, options) => {
     assert.equal(command, '/opt/relay-example/relay-codex-dispatch'); assert.deepEqual(args, []);
@@ -99,7 +100,7 @@ test('exit zero cannot replace an absent inner containment receipt', async () =>
 test('dispatcher refuses unresolved permission rather than supplying another default', async () => {
   const dispatcher = fixture({ spawnImpl: () => assert.fail('must not start') });
   for (const subagentsAllowed of [undefined, null, 'Off', 0]) {
-    await assert.rejects(dispatcher.dispatch({ ...envelope, subagentsAllowed }), { code: 'SUBAGENTS_PERMISSION_INVALID' });
+    await assert.rejects(dispatcher.dispatch({ ...envelope, subagentsAllowed }), { code: 'EXECUTION_ENVELOPE_INVALID' });
   }
 });
 test('specific safe worker failure and known cause survive the dispatcher', async () => {

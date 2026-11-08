@@ -103,6 +103,10 @@ class UpgradeActivationTests(unittest.TestCase):
             sys.path.insert(0, str(ROOT.parents[1] / 'deploy/tests'))
             from test_execution_slots import inputs
             consumer = inputs()['consumer']
+            # This service/gate unit fixture has two managed identities; full
+            # compiler topology and installed capacity have separate proofs.
+            consumer['executionSlots'] = consumer['executionSlots'][:2]
+            consumer['generalRunnerPool']['desiredCapacity'] = 2
             consumer_fixture.write_text(json.dumps(consumer))
         consumer_fixture.chmod(0o600)
         gate_helper.write_text('#!/bin/sh\nexport RELAY_CONSUMER_CONFIG=' + shlex.quote(str(
@@ -137,8 +141,8 @@ class UpgradeActivationTests(unittest.TestCase):
         }
         if execution_slots:
             values['relay_additional_execution_slots'] = [{
-                'relay_execution_slot': 'second',
-                'relay_runner_service_name': 'codex-relay-slot-second-runner.service'}]
+                'relay_execution_slot': 'pool-2',
+                'relay_runner_service_name': 'pool-2.service'}]
         return tasks, values, trace
 
     def maintained_fixture(self, root, initial, final, declaration, *, backend=None):
@@ -254,22 +258,22 @@ class UpgradeActivationTests(unittest.TestCase):
             root = Path(temporary)
             initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
                        'production.service': service(), 'general.service': service(),
-                       'codex-relay-slot-second-runner.service': service(44, active=True, enabled='enabled')}
+                       'pool-2.service': service(44, active=True, enabled='enabled')}
             final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled')}
             tasks, values, _ = self.fixture(root, initial, final, execution_slots=True)
             result = self.run_play(root, tasks, values)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             saved = json.loads((root / 'gate/admission-v1.json').read_text())['previousActive']
-            self.assertEqual(saved['slot-second'], {'active': True, 'enabled': 'enabled', 'load': 'loaded'})
+            self.assertEqual(saved['slot-pool-2'], {'active': True, 'enabled': 'enabled', 'load': 'loaded'})
 
     def test_replaced_extra_runner_transport_blocks_upgrade_completion(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
                        'production.service': service(), 'general.service': service(),
-                       'codex-relay-slot-second-runner.service': service(44, active=True, enabled='enabled')}
+                       'pool-2.service': service(44, active=True, enabled='enabled')}
             final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
-                     'codex-relay-slot-second-runner.service': service(54, active=True, enabled='enabled')}
+                     'pool-2.service': service(54, active=True, enabled='enabled')}
             tasks, values, _ = self.fixture(root, initial, final, execution_slots=True)
             result = self.run_play(root, tasks, values)
             self.assertNotEqual(result.returncode, 0)

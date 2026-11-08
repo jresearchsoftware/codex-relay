@@ -95,14 +95,14 @@ def test_real_old_validator_rejects_known_additive_target_but_target_interpreter
     assert target.contract(roots[TARGET], True) == 'relay-workflows-v4'
 
 
-def test_exact_historical_transition_plans_upgrade_with_unchanged_v3_and_selected_git_config(historical, tmp_path):
+def test_exact_historical_transition_plans_upgrade_with_reviewable_managed_target(historical, tmp_path):
     roots, _, _, config, consumer = historical
     before = {str(path.relative_to(consumer)): path.read_bytes() for path in consumer.rglob('*') if path.is_file()}
     desired, config_sha, raw = selected_git_config(tmp_path, config)
     # A stale external owner file is not consulted to choose desired values.
     (tmp_path / 'stale-owner.json').write_text(json.dumps(config))
     output = workflow_projection.integration(desired, TARGET, roots[TARGET], consumer, tmp_path / 'integration')
-    assert output['compatibility'] in ['compatible', 'stale-compatible']
+    assert output['compatibility'] == 'incompatible'  # Intact old v3 -> current managed v4 proposal.
     assert all((Path(output['directory']) / name).is_file() for name in output['files'])
     assert before == {str(path.relative_to(consumer)): path.read_bytes() for path in consumer.rglob('*') if path.is_file()}
     plan = intent_install.plan({'blockers': [], 'installed': {'status': 'present', 'revision': OLD}}, TARGET,

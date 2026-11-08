@@ -110,14 +110,14 @@ test('unknown original containment remains visible and prevents drain or verifie
   assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), f.originalBytes);
 });
 
-test('unknown digest holds its resource and global lifecycle, while independent admission stays available', async t => {
+test('active old-digest work holds its concrete resource while independent admission stays available', async t => {
   for (const old of [true, false]) await t.test(old ? 'original store' : 'current store', async t => {
     const f = await fixture(t);
     await f.gate.initialize();
     await (old ? f.originalStore : f.currentStore).put(33, record(33, 99, { digest: 'c'.repeat(64) }));
-    for (const action of [() => f.gate.status(), () => f.gate.assertTaskComplete(99), () => f.gate.assertSlotComplete('primary')]) {
-      await assert.rejects(action(), { code: 'ADMISSION_ATTEMPT_INVALID' });
-    }
+    assert.deepEqual((await f.gate.status()).active, [33]);
+    await assert.rejects(f.gate.assertTaskComplete(99), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
+    await assert.rejects(f.gate.assertSlotComplete('primary'), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
     await f.gate.read(); await f.gate.assertOpen(); await f.gate.initialize();
     await f.gate.assertTaskComplete(41); await f.gate.assertSlotComplete('pool-2');
     assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), f.originalBytes);
