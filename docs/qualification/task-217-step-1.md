@@ -69,3 +69,27 @@ and was interrupted after diagnosis. Qualification was moved into a private
 mount namespace with this run's own temporary directory mounted at `/tmp`;
 the shared host directory and other Tasks were untouched. This environment
 adjustment is test transport, not a product source change or repaired host state.
+
+The full deployment/Ansible run finished with **1982 passed, 726 skipped,
+19 deprecation warnings and 11 setup errors**. All setup errors are in
+`deploy/tests/test_pre_apply_recovery.py`: its imported root recovery fixture
+tries to create `/run/relay-bounded-install-*` under an ordinary UID. A scoped
+diagnostic with private `/run` progressed to `FIXED_ROOT_ADMISSION_REQUIRED`.
+Running that file as actual root with the isolated `/tmp` and `/run` and an
+exact source-directory Git trust override exposed `CONSUMER_CONFIG_INVALID`
+in the old recovery fixture and two existing controller-source/hostMutation
+assertion failures: **2 failed, 4 passed, 11 errors**. The identical command
+against a separate clean checkout of starting accepted source
+`6fb8fc447fe56d9e5d67dd539d8aad289faf0666` gave the same **2 failed, 4 passed,
+11 errors**. These are reproduced baseline fixture/qualification limitations,
+not demonstrated lock regressions. Repairing unrelated recovery behavior is
+outside Task 217's explicit lock/unlock scope.
+
+Cargo formatting, all 159 Rust tests, `scripts/qualify.py` (three-consumer
+qualification), candidate scanning and whitespace checks passed. The final
+validation tree was compared with the published Git tree, including file modes.
+The complete required validation set is **not green** because of the deployment
+suite errors. Preserve the useful implementation in the existing Draft PR and
+report a blocked execution claim; independent review and disposition of this
+baseline validation limitation remain outstanding. No merge, closure, PROD
+installation or independent acceptance is claimed.
