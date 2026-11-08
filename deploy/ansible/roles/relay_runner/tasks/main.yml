@@ -408,7 +408,16 @@
     group: '{{ relay_runner_group }}'
     # Preserve private 0600 service logs; remove excess access without adding it.
     mode: '{{ "0600" if item.mode == "0600" else "0640" }}'
-  loop: '{{ relay_runner_diagnostic_files.files | default([]) }}'
+  # Select repairs locally; compliant historical logs need no remote file call.
+  # Missing owner/group names are unknown metadata and must still be normalized.
+  loop: >-
+    {{ (
+      (relay_runner_diagnostic_files.files | default([]) | rejectattr('pw_name', 'defined') | list) +
+      (relay_runner_diagnostic_files.files | default([]) | selectattr('pw_name', 'defined') | rejectattr('pw_name', 'equalto', relay_runner_user) | list) +
+      (relay_runner_diagnostic_files.files | default([]) | rejectattr('gr_name', 'defined') | list) +
+      (relay_runner_diagnostic_files.files | default([]) | selectattr('gr_name', 'defined') | rejectattr('gr_name', 'equalto', relay_runner_group) | list) +
+      (relay_runner_diagnostic_files.files | default([]) | rejectattr('mode', 'in', ['0600', '0640']) | list)
+    ) | unique(case_sensitive=true, attribute='path') | list }}
   loop_control:
     label: '{{ item.path }}'
   when: relay_runner_installed_paths.results[2].stat.exists
@@ -452,7 +461,16 @@
     owner: '{{ relay_runner_user }}'
     group: '{{ relay_runner_group }}'
     mode: '{{ "0600" if item.mode == "0600" else "0640" }}'
-  loop: '{{ relay_runner_post_probe_diagnostic_files.files | default([]) }}'
+  # Select repairs locally; compliant historical logs need no remote file call.
+  # Missing owner/group names are unknown metadata and must still be normalized.
+  loop: >-
+    {{ (
+      (relay_runner_post_probe_diagnostic_files.files | default([]) | rejectattr('pw_name', 'defined') | list) +
+      (relay_runner_post_probe_diagnostic_files.files | default([]) | selectattr('pw_name', 'defined') | rejectattr('pw_name', 'equalto', relay_runner_user) | list) +
+      (relay_runner_post_probe_diagnostic_files.files | default([]) | rejectattr('gr_name', 'defined') | list) +
+      (relay_runner_post_probe_diagnostic_files.files | default([]) | selectattr('gr_name', 'defined') | rejectattr('gr_name', 'equalto', relay_runner_group) | list) +
+      (relay_runner_post_probe_diagnostic_files.files | default([]) | rejectattr('mode', 'in', ['0600', '0640']) | list)
+    ) | unique(case_sensitive=true, attribute='path') | list }}
   loop_control:
     label: '{{ item.path }}'
   when: relay_runner_installed_paths.results[2].stat.exists

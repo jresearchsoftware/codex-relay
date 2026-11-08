@@ -104,6 +104,14 @@ diagnostic. The initial failures occurred before host mutation; no Runner files
 or permissions were changed to make the check pass. Root Linux regression tests
 cover safe aliases, redirection/ownership/mode failures and standalone `-I` use.
 
+That real upgrade also exposed repeated remote file-module calls for every
+already-correct historical Runner diagnostic. Both existing scans and repair
+boundaries remain; their repair lists now select only missing/wrong owner or
+group metadata and modes outside `0600`/`0640`, deduplicated by the exact Linux
+path. This preserves private logs and post-probe repair while avoiding linear
+remote no-op work. Native root/nonroot checks measure the actual repair-item
+count, drift correction, check-mode preservation and repeated convergence.
+
 Generated ChatGPT Instructions differ. Generation and a subsequent NO_OP check
 do not prove live Settings application. TH-029 reconciliation remains an
 owner-reviewed/manual action after source acceptance/integration.
