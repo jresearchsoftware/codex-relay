@@ -244,6 +244,30 @@ through `submit_pr_review`, rather than an extra Task Approval. Neither approval
 form infers Task completion from `implemented` or `next: null`; owner orchestration
 checks applicable completion conditions and remaining work before closure.
 
+## Dedicated TEST qualification example
+
+For an owner-designated isolated disposable TEST environment and its explicitly
+selected dedicated repository, the current Issue #42 / PR #43 examples above may
+be used as one bounded qualification fixture. Follow
+[TEST Environment Authority](../docs/execution-policy.md#test-environment-authority)
+and hold the existing TEST claim. Within that verified boundary, create or amend
+the TEST Issue, branches and fixtures, publish trusted Decisions/CRs, manage TEST
+workflow runs, and obtain genuine negative or positive independent native reviews
+without another per-action owner prompt. Standing TEST authority supplies the
+publication agreement for an in-scope `REQUEST_CHANGES`; the evaluator must still
+establish the finding against current requirements and preserve its provenance.
+
+After correction, the independent evaluator assesses the complete exact result.
+Owner orchestration may squash the TEST-only PR using its approved current head,
+passing required checks, verified readiness/holds and native merge readback.
+An uncertain publication or merge is reconciled as the original operation, never
+repeated blindly. Issue #42 remains open when its policy is `keep-open`; closing
+other TEST-only Issues still follows their own closure authority. These actions
+retain actual actor permissions and native admission for Relay executions,
+preserve Writer/Reviewer separation and grant no product PR merge, PROD, external-repository or new
+credential/App/runner-ACL permission. A product-review preview remains scoped to
+the actual product review.
+
 ## Retained v3 compatibility examples
 
 The historical examples below retain their schema `3.0` fields and Request/CR

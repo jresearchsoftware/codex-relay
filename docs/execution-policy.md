@@ -140,9 +140,35 @@ usable; age alone never authorizes recovery.
 Within the sandbox, Codex may choose suitable tools and shells, manage services,
 edit or remove filesystem state, delete and recreate resources, rebuild,
 install, reinstall, upgrade, reset failed TEST state and run qualification.
-The authority includes TEST repositories, configuration, workflows and TEST
-PR creation, review and merge using already available permissions. A prohibition
-on product-source merge does not prohibit TEST repository merges.
+Standing owner authority for the explicitly selected dedicated TEST repositories
+also covers these GitHub operations within the verified boundary:
+
+- Create, update and close TEST-only Issues under their current closure policy;
+  manage TEST branches and fixtures, and publish trusted Decisions and CRs.
+- Manage TEST workflows and runs; create and review TEST PRs, including negative
+  or positive independent native TEST reviews.
+- Squash-merge TEST-only PRs after genuine independent exact-head approval and
+  required checks, with the expected-head guard and native merge readback; clean
+  or reset disposable TEST resources.
+
+No separate per-action owner confirmation is required. Established standing TEST
+authority supplies publication agreement for an in-scope independent
+`REQUEST_CHANGES`; it does not supply the substantive finding or independent
+verdict. An owner-required negative-review preview for a product PR remains
+binding for that product review and does not add a permission prompt to already
+authorized TEST fixtures. A prohibition on product-source merge does not prohibit
+qualified TEST repository integration.
+
+Verify the actual target and authenticated actor's existing permissions. Preserve
+current claim ownership, genuine native admission for Relay executions,
+worker/Writer/Reviewer separation and independence, required signatures and
+trusted native records, exact head/checks,
+readiness and applicable holds, closure policy and truthful evidence claims.
+Reconcile an uncertain external effect through its original operation and native
+readback; standing authority permits no duplicate launch/publication or invented
+completion. A repository name containing `test` alone proves no TEST boundary.
+This clarification creates no runtime approval stage and expands no credential,
+App or runner-ACL authority.
 
 Established standing owner authority may also include dedicated TEST GitHub App
 installations, selected TEST repository grants and TEST-only permissions, TEST
@@ -188,8 +214,8 @@ operations.
 
 An exact Task-authorized development candidate may be installed or exercised
 inside the sandbox before independent product acceptance. TEST operations do
-not grant product-source merge, PROD deployment, release, Issue closure or
-independent acceptance. Normal source checks and independent exact-head review
+not grant product-source merge, PROD deployment, release, product Task closure or
+product acceptance. Normal source checks and independent exact-head review
 remain binding. Writer retains responsibility for actual product and ordinary
 Relay publication; original admission, replay suppression, trusted Git import
 and protected credential boundaries remain intact. Resetting disposable TEST

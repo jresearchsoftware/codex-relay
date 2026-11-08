@@ -156,3 +156,17 @@ An already-admitted v3 attempt is different: use its exact original complete
 Request, references, Step, result transport and recovery contract. Leave those
 historical bytes intact. Neither that retained path nor installing this Skill
 authorizes a fresh old-style execution on a qualified v4 installation.
+
+## Dedicated TEST review and integration
+
+An owner explicitly designates `example-org/relay-testbed` and its isolated
+sandbox for qualification. Within that established standing authority, the
+executor may create a fixture Issue/Decision, launch it through genuine native
+admission, obtain independent TEST REQUEST_CHANGES, preserve a truthful blocked
+result, complete a later admitted correction, obtain exact-head TEST APPROVE
+and perform the already authorized expected-head squash/readback. No additional
+per-action owner prompt is needed for these TEST-only operations. Keep the
+Issue open when its closure policy says `keep-open`, preserve original native
+records and reconcile uncertain publication before dependent action. A separately
+required preview for negative findings on the actual product PR still applies
+to that product assessment; it does not govern this dedicated TEST fixture.

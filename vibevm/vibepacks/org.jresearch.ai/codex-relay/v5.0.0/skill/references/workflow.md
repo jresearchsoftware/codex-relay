@@ -221,6 +221,29 @@ without proving newly added requirements were performed or granting a revoked
 operation. Consumer-specific TEST/PROD, deployment, credentials and recovery
 authority must be explicit; the Skill creates none.
 
+## Isolated disposable TEST qualification
+
+The owning project's established authority must identify the concrete disposable
+TEST environment and dedicated TEST repositories. A repository name containing
+`test` alone establishes no boundary; this Skill designates no consumer resource.
+Where that verified authority grants full standing TEST control, it includes
+creation/modification of TEST-only Issues, branches, fixtures and trusted
+Decisions/CRs, native positive and
+negative independent reviews, workflow management/runs and creation, review and
+squash integration of TEST PRs. Do not request a separate confirmation for each
+of those already authorized operations. A preview rule for actual product
+findings does not add a per-review prompt to in-scope TEST fixtures.
+
+Preserve actual actor/tool permissions, Writer/Reviewer independence, genuine
+native admission, exact head/checks, trusted publication, Issue closure policy
+and recovery of the original uncertain operation. Claim shared TEST before use,
+restore/verify usability and release only that execution's claim. This authority
+does not extend to a product PR merge, PROD, external/ordinary consumer repositories outside the designated TEST boundary, or
+App/credential/runner-ACL changes outside independently established authority.
+An unavailable capability is a concrete boundary, not an invented approval stage.
+The source project's [TEST policy](https://github.com/jresearchsoftware/codex-relay/blob/main/docs/execution-policy.md#test-environment-authority)
+owns its concrete standing binding.
+
 ## Change Request and remediation
 
 Apply complete IR methodology to assessment and findings. A v4 native `CHANGES_REQUESTED`
