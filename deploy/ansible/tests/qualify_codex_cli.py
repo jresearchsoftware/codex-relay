@@ -50,7 +50,7 @@ def nested_objects(value):
             yield from nested_objects(child)
 
 
-def qualify_execution(binary, root):
+def qualify_execution(binary, root, version):
     """Exercise the production argv, changing only the provider to a local fake.
 
     The fake supplies responses, never executes model-selected tools and never
@@ -197,7 +197,7 @@ catch { process.exitCode = 2; }
             records = [json.loads(line) for line in rollouts[0].read_text().splitlines()]
             metadata = next(record["payload"] for record in records if record["type"] == "session_meta")
             context = next(record["payload"] for record in records if record["type"] == "turn_context")
-            assert metadata["id"] == identifier and metadata["cli_version"] == "0.160.0"
+            assert metadata["id"] == identifier and metadata["cli_version"] == version
             assert context["cwd"] == str(work)
             assert context["model"] == "gpt-6-astra" and context["effort"] == effort
             assert context["approval_policy"] == "never"
@@ -213,7 +213,7 @@ catch { process.exitCode = 2; }
 def qualify():
     variables = yaml.safe_load((REPO / "deploy/ansible/group_vars/all.yml").read_text())
     version = variables["relay_codex_cli_version"]
-    assert version == "0.160.0"
+    assert version == "0.167.0"
     # Use native Linux /tmp, not a caller TMPDIR that may inherit a checkout's
     # setgid bit/default ACL and invalidate the production umask probe.
     with tempfile.TemporaryDirectory(prefix="codex-cli-qualification-", dir="/tmp") as temporary:
@@ -268,7 +268,7 @@ def qualify():
         # A poisonous installed-user config must not enter the task's new home.
         # No existing user configuration or credentials are read or modified.
         (home / "config.toml").write_text("invalid = [\n")
-        qualify_execution(binary, root)
+        qualify_execution(binary, root, version)
         assert (home / "config.toml").read_text() == "invalid = [\n"
         assert not (home / "sessions").exists()
         print(f"CODEX_CLI_QUALIFICATION_PASS=version={version}; official-installer; release-symlink; deploy-umask=0077; package-roots=0700; real-jsonl; schema-request-and-semantic-parser; thread-id; native-usage-and-zero-default; model-effort-request; stdin; isolated-home; sandbox-policy; subagents=prompt-permission; nonzero-exit; model-call=none")

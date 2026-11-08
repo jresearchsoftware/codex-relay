@@ -146,7 +146,7 @@ test('rendered launcher still rejects outside workspaces and escaping input syml
   await assert.rejects(f.run('future-model', 'ultra', false, tmpdir()), error => {
     assert.match(error.stderr, /PATH_OUTSIDE_WORK_ROOT/); return true;
   });
-  await rm(f.input); await symlink('/etc/hostname', f.input);
+  await rm(f.input); await symlink(f.token, f.input);
   await assert.rejects(f.run('future-model', 'ultra'), error => {
     assert.match(error.stderr, /PATH_OUTSIDE_WORK_ROOT/);
     assert.match(error.stderr, /"childStarted":false/); return true;

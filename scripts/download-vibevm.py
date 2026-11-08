@@ -58,6 +58,13 @@ def release_bytes(artifact):
         raise ValueError("VibeVM pin is not a GitHub release asset URL")
     owner, repository, tag, name = match.groups()
     api = f"https://api.github.com/repos/{owner}/{repository}/releases"
+    # A reviewed immutable asset ID avoids a second metadata request when the
+    # tag endpoint is unavailable too. The pinned SHA-256 remains mandatory.
+    if "asset_id" in artifact:
+        asset_id = artifact["asset_id"]
+        if type(asset_id) is not int or asset_id <= 0:
+            raise ValueError("VibeVM pin has an invalid release asset ID")
+        return read_url(f"{api}/assets/{asset_id}")
     release = json.loads(read_url(f"{api}/tags/{tag}", "application/vnd.github+json"))
     assets = [asset for asset in release["assets"]
               if asset["name"] == name and asset["browser_download_url"] == artifact["url"]]

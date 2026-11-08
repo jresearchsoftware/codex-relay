@@ -84,6 +84,33 @@ class DownloadTests(unittest.TestCase):
                 self.assertFalse(self.destination.exists())
         self.sleep.assert_not_called()
 
+    def test_pinned_asset_id_avoids_unavailable_tag_metadata_and_checks_digest(self):
+        self.artifact["asset_id"] = 123
+        for data in (self.data, b"corrupt"):
+            with self.subTest(valid=data == self.data):
+                responses = [self.http_error(504) for _ in range(3)] + [io.BytesIO(data)]
+                with patch.object(DOWNLOAD.urllib.request, "urlopen", side_effect=responses) as requests:
+                    if data == self.data:
+                        DOWNLOAD.download(self.artifact, self.destination)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                            DOWNLOAD.download(self.artifact, self.destination)
+                calls = [call.args[0] for call in requests.call_args_list]
+                self.assertEqual([request.full_url for request in calls], [self.url] * 3 + [
+                    "https://api.github.com/repos/example/tool/releases/assets/123"])
+                self.assertTrue(all(request.get_header("Authorization") is None for request in calls))
+                self.assertEqual(self.destination.read_bytes(), self.data)
+
+    def test_invalid_pinned_asset_id_is_refused_before_api_access(self):
+        for asset_id in (True, 0, -1, "123"):
+            with self.subTest(asset_id=asset_id):
+                self.artifact["asset_id"] = asset_id
+                with patch.object(DOWNLOAD.urllib.request, "urlopen", side_effect=self.http_error(504)) as requests:
+                    with self.assertRaisesRegex(ValueError, "invalid release asset ID"):
+                        DOWNLOAD.download(self.artifact, self.destination)
+                self.assertEqual(requests.call_count, 3)
+                self.assertFalse(self.destination.exists())
+
     def test_api_transport_failure_has_bounded_attempts(self):
         with patch.object(DOWNLOAD.urllib.request, "urlopen", side_effect=self.http_error(504)) as requests:
             with self.assertRaises(urllib.error.HTTPError):

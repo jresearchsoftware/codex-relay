@@ -209,10 +209,26 @@ CR ID and actionable findings with bounded overrides. It has no Step and needs
 no successor public Task Request. Task-level `task-review` findings are evidence
 for future owner direction, not an executable PR CR.
 
-After publication the existing owner channel invokes the bounded Writer
-lifecycle action and verifies Draft for that exact CR/head before remediation.
-An uncertain transition stops continuation. The owner applies the appropriate
-ready command to the existing PR; Writer then admits and projects the new Step.
+For native Relay-admitted automatic remediation, the owner applies
+`codex-ready-auto` to the existing PR. The qualified routing path sends that
+command through Writer, which derives the bounded `begin-remediation` action
+from the verified current native CR, executes it and verifies Draft for the exact
+CR/head before admitting or reserving worker execution. No second manual Draft
+operation or direct Writer bypass is required. Reviewer publication returns
+`structuredContent.pr_lifecycle`; that returned action alone does not prove
+Writer executed it or changed the PR state.
+
+Writer re-reads executable authority and the exact target. Missing lifecycle
+capability, changed authority/head or a failed/uncertain transition stops
+continuation before execution; retain the same CR/head for supported recovery.
+The existing owner orchestration channel may also invoke the returned action
+through Writer and verify its result. Relay-admitted manual routing uses Writer's
+verified transition before publishing its handoff. Genuinely standalone/direct
+manual execution follows its explicitly authorized channel and available native
+PR capabilities; it cannot assume the automatic Writer transition or fabricate
+admission. This clarification adds no standalone routing or qualification.
+
+After successful preparation Writer admits and projects the new Step.
 Preserve the branch/PR and exact starting-head gate. The corrected head needs
 fresh independent review. Draft/Ready denotes execution handoff, not acceptance,
 passing CI or merge permission.

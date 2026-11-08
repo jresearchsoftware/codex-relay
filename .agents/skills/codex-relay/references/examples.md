@@ -52,10 +52,16 @@ completed-record marker. Record the candidate and comparison SHAs, triggering
 case, impact, evidence, provenance, bounded correction and acceptance evidence.
 Publish a native v4 `REQUEST_CHANGES`/`change-request` bound to that PR/head.
 
-The CR carries no future Step and creates no replacement Task Request. Owner
-orchestration verifies Writer's exact CR/head Draft transition, then applies the
-matching ready command to PR #43. Writer admits the next execution and supplies
-its Step. Keep the branch, PR and starting-head binding. Inner corrections and
+The CR carries no future Step and creates no replacement Task Request. For native
+automatic remediation, the owner applies `codex-ready-auto` to PR #43. Qualified
+routing sends it through Writer, which derives and executes `begin-remediation`
+from the current native CR and verifies the exact CR/head is Draft before
+admission or worker reservation. The Reviewer response alone is not proof of
+that transition; a failed or uncertain transition stops execution. No second
+manual Draft action is required. Writer admits the next execution and supplies
+its Step. Standalone/direct manual work follows its separately authorized
+channel, without assuming this automatic Writer preparation. Keep the branch,
+PR and starting-head binding. Inner corrections and
 tests stay in that execution. A new candidate requires fresh exact-head review.
 
 If the suggested correction instead changes the authorized export workflow,
