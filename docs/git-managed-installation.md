@@ -90,11 +90,11 @@ For a Git-managed install, the existing host/pool locks cover a read-only
 compatibility phase and real isolated candidate preparation before admission
 quiesces. The installer validates the frozen source/configuration pair, old
 resource and service bindings, Unix identities and destinations, retained
-attempt history, configured credential material, App access and applicable
-runner policy. A changed desired consumer requires terminal proof or a verified
-historical Task disposition for every manual attempt whose consumer binding
-would change. A code-only change keeps
-its original consumer binding and does not invent that additional barrier.
+current execution/publication effects, configured credential material, App
+access and applicable runner policy. A changed desired consumer requires the
+same idle-effect proof as drain. Old completed Task history or a clean manual
+handoff without result progress is not another installation prerequisite.
+Original attempt bindings remain unchanged by a consumer transition.
 
 On a proven fresh target with no current installation, the owning base-package
 task first prepares its product prerequisites. It creates no Relay accounts,
@@ -209,11 +209,11 @@ same-operation admission and continuation
 completion precede resume. Failures before verified resume keep admission closed;
 an interruption afterward requires current readback, with evidence preserved.
 
-Consumer-transition diagnostics contain bounded elapsed-time and native-reader,
-original-reader and composite-inventory counters. Historical envelopes are
-validated in bounded batches, with one composite snapshot and exact-record
-native disposition reuse per locked action. A subsequent action performs fresh
-Task reads; reopening, authority changes and pending/live effects remain blockers.
+Consumer-transition diagnostics contain bounded elapsed-time, original-reader
+and composite-inventory counters. Historical envelopes are structurally
+validated in bounded batches with one composite snapshot per locked action.
+Normal inventory performs no historical Task reads. Pending/live effects remain
+blockers; reopening a completed Task does not reactivate an old local effect.
 The controller observation ceiling is 180 seconds, matching preflight. Cancellation
 kills its process group, including original-reader descendants. This ceiling
 does not substitute for a short measured transition or establish recovery.
@@ -250,14 +250,11 @@ Git-config receipt, configuration snapshot, current consumer, source graph,
 credentials and exact backend/gate identity under the deployment locks. A missing
 consumer-before backup is not itself a blocker when these original/current
 contexts are authenticated. The corrected staged controller checks current
-Task dispositions and all live/publication effects under the real Writer mutex.
-It never replays Codex or invents native completion receipts.
-Closed Tasks use their current native disposition directly. An abandoned open
-route still needs the existing protected historical-disposition adapter's exact
-acknowledgement of active trusted Decisions, revalidated against current authority
-and local effects. An earlier in-memory diagnostic classification does not create
-that persistent acknowledgement. This is the existing Step 4 interpretation
-mechanism described below, not another owner Decision or terminal Outcome.
+live/publication effects under the real Writer mutex. It never replays Codex or
+invents native completion receipts. The corrected effect inventory does not
+require a closed Task or historical withdrawal acknowledgement for an otherwise
+idle manual handoff. Existing disposition evidence is retained for diagnostics,
+without creating an execution or cancellation receipt.
 
 One protected operation-specific continuation receipt preserves the original
 gate/backend bytes and binds the selected controller/final pair. The existing
@@ -495,62 +492,43 @@ publication lock and lifecycle UUID after complete drain proof. Existing
 envelopes, original source, native result receipts and recovery identities stay
 unchanged. Migrated SERIAL installations retain their original compatibility
 receipt and a hash-bound frozen target consumer snapshot; the live consumer
-and current pool gate are checked separately. Completed older pool records
-remain readable only with their exact terminal proof. New Writer mutations
+and current pool gate are checked separately. Older pool records remain readable
+under their structurally verified original identity for lineage and effect checks.
+Reading does not establish terminal completion. New Writer mutations
 must use the current digest. Known legacy runtime-directory hardening runs
 before admission; it preserves the proven lock inode and rejects other shapes.
 
-The digest-transition inventory includes manual history. Published pre-handoff
-refusals and completed historical Writer results keep their original receipt
-classification. A Task currently closed as `completed` or `not_planned` by its
-verified configured owner can make an otherwise abandoned manual handoff
-nonblocking. This records lifecycle eligibility, without asserting that the
-original execution completed or never started. No Outcome, cancellation,
-admission or journal is created or rewritten.
+The digest-transition inventory classifies current effects, including those
+retained under an older consumer digest. An untouched structurally valid manual
+handoff, with no matching runner journal or pending result/publication effect,
+does not reserve an installer resource. Its unknown historical execution stays
+unknown: no Outcome, cancellation, acknowledgement, admission or journal is
+created or rewritten. A complete trusted controller receipt supplies its own
+terminal containment/handoff proof. Earlier automatic records without that
+proof still need their original matching journal; missing evidence cannot prove
+an unknown child stopped.
 
-For an open Task, a protected owner adapter can acknowledge that particular
-attempt's withdrawal or route switch from exact existing trusted Task Decisions.
-The adapter interprets the explicit owner direction; the runtime does not infer
-permission from prose keywords, a newer Step, changed profile or a missing
-receipt. `createInstalledTaskDisposition({allowAcknowledgement:true})` supplies
-the root-only expert adapter. Under the existing Writer kernel lock, the adapter
-must verify the original record and absence of any matching runner journal,
-then call `acknowledge(record, {reason, sources})` with exact active native
-Decision references and recheck the journal. This optional internal operation
-uses already authorized direction; it requires no new owner prompt, Task,
-Decision or manual Start/Cancel ceremony. Workers and ordinary admission inputs
-cannot enable it.
+Pending native publication, incomplete ready consumption, ambiguous PR creation,
+result submission without complete receipts, interrupted recovery, real worker
+journals and conflicting ownership still block. An exited worker or closed Task
+does not resolve those effects. Physical-slot release remains separate from
+publication completion, and every exact ref/PR keeps its publication isolation.
+Old records remain read-only under a newer consumer digest. Replay/recovery
+still uses their original source, consumer, authority and operation identity.
 
-The small root-owned `historical-manual-dispositions-v1` cache beneath the
-existing claim root binds repository, Task, run/attempt, original consumer and
-record/envelope hashes to the exact native Task/Decision evidence. It is an
-auditable observation, never desired configuration or execution authority.
-Every preflight, final transition and later old-digest inventory rereads GitHub
-through a repository-scoped Writer App token with metadata, Issues and PR read
-permissions. Current Issue bytes,
-native owner identity, complete closure/reopen events, trusted Task authority
-and referenced PR authority must match. Reopening, changed authority, revoked
-sources or changed local effects invalidates reuse. An unavailable/incomplete
-native read fails with a specific `HISTORICAL_TASK_*` diagnostic; there is no
-offline freshness exemption. Closed Tasks use durable native state directly.
+The expert `createInstalledTaskDisposition({allowAcknowledgement:true})`
+adapter and any existing `historical-manual-dispositions-v1` observations remain
+available for explicit historical diagnosis. Their existing native freshness and
+original-record rules still apply when used; the cache supplies no execution
+authority or terminal Outcome. Ordinary installed admission, status, preflight
+and consumer transition no longer construct that reader or cache. They do not
+require historical GitHub reads, Task reclassification, closure or withdrawal
+acknowledgement to install an unrelated selected version.
 
-A real worker journal, active/uncertain execution, pending publication or
-recovery and conflicting ownership still block, even when the Task closes.
-Original identities and supported publication/recovery paths remain intact.
-`status` and preflight report `manualAttempts.historical` separately from
-`manualAttempts.actionable`; missing native receipts remain visible without
-reappearing as actionable blockers on unchanged-source upgrades. Ordinary
-automatic counts retain their meaning. Code-only Apply with an unchanged
-consumer digest preserves the old manual bindings without requiring a new
-digest transition.
-
-For same-consumer `status`, unavailable native Task authority is informational:
-`manualAttempts.errors` identifies the affected run and
-`HISTORICAL_TASK_AUTHORITY_UNAVAILABLE`; the attempt remains actionable and no
-historical disposition is claimed. Required transitions and old-digest
-eligibility still fail closed. Malformed evidence, unsafe cache and unreadable
-journals are never downgraded. A code-only operation does not gain a new native
-authority prerequisite merely from optional status diagnostics.
+GitHub remains the Task/Decision/PR/Outcome history. Installation keeps its own
+bounded same-operation state, and execution keeps only the existing coordination
+and recovery evidence needed to protect concrete effects. No historical records
+are deleted as part of this simplification.
 
 Fresh installation composes supported protected credential/TLS preparation,
 installation, activation, runner readiness and final verification when their

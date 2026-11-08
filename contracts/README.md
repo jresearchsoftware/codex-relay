@@ -769,3 +769,117 @@ response, missing native readback or changed authority returns a bounded
 Qualification uses injected bounded native adapters to exercise actual merges,
 closure and automatic/manual follow-up, including the no-PR acceptance path.
 It does not claim live consumer credential, service or GitHub qualification.
+
+### Bounded owner CLI for admitted v4 PR integration
+
+[`owner-continuation.mjs`](src/owner-continuation.mjs) supplies the concrete
+one-shot owner-channel merge adapter. The owner orchestration calls the connected
+Reviewer normally, then invokes this command in the same already-authorized
+continuation, without asking another Publish/merge/continue question:
+
+```sh
+RELAY_CONSUMER_CONFIG=/owner/selected/consumer.json \
+  node contracts/src/owner-continuation.mjs < owner-continuation.json
+```
+
+Use identifiable accepted source, or the specifically admitted qualification
+candidate inside isolated TEST. The configured repository, owner, separate
+Reviewer/Writer actors and base come from the existing consumer snapshot.
+The command uses the owner's existing `gh` authentication and verifies its
+native `/user` identity against the configured owner User. It never obtains
+Reviewer/Writer credentials, adds a server, or exposes a generic mutation API.
+An automatic worker must not receive the owner authentication or run this
+owner-channel command. Linux qualifies the runtime, filesystem and lock boundary.
+
+The bounded JSON input is:
+
+```json
+{
+  "repository": "example-org/sample-project",
+  "task": 23,
+  "pull_request": 25,
+  "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "authority_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "approval": {
+    "kind": "review",
+    "id": 501,
+    "parent": {"kind": "pull_request", "number": 25},
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "owner_assessment": {"hold": false, "protected_boundary": false}
+}
+```
+
+`owner_assessment` is the existing owner orchestration's transient interpretation
+of the canonical Task and applicable restrictions for this exact integration.
+It is an engineering input, not another user confirmation, trusted Decision,
+admission, persistent authority or Task completion assertion. Both booleans are
+explicit. Unknown interpretation stops with `OWNER_INTERPRETATION_REQUIRED`;
+never fill permissive defaults. If that authority requires an exact base, include
+`owner_assessment.exact_base_sha`; this CLI then stops with
+`OWNER_EXACT_BASE_CAPABILITY_UNAVAILABLE` before reservation or mutation.
+GitHub's squash endpoint provides an atomic head comparison, but no atomic base
+comparison. A final preflight read plus post-effect detection cannot satisfy an
+exact-base requirement. The shared helper's existing adapter contract remains
+unchanged; another qualified owner native port is required for that guarantee.
+The input binds repository, Task, native
+approval reference/body hash, exact reviewed head and effective authority digest;
+all native facts are re-read before reservation and before mutation. Changed
+authority or review bytes invalidates that assessment rather than granting new
+scope. Structured native continuation holds remain independently binding.
+
+After `PUBLICATION_UNCERTAIN`, reconcile the original identical Reviewer input
+through its supported native recovery, or obtain authoritative readback of its
+exact originally intended review body/operation marker. Preserve that original
+body hash in `approval.sha256`; do not adopt arbitrary newly observed review
+text or manufacture another approval. The CLI independently verifies the trusted
+native decisive approval, body hash, publication marker, exact authority marker
+and successful Reviewer check with that operation's `external_id`. It never
+posts a review. Missing or mismatched publication evidence stops before merge.
+
+The concrete adapter currently accepts an admitted schema-v4 Writer result PR.
+It selects the result bound to the reviewed PR and exact approved current
+authority before considering historical same-head Outcomes. Different parent
+or clearly older authority does not compete with that exact result; multiple
+same-authority same-head admissions remain ambiguous without native admission
+provenance and stop. It reuses native authority resolution and the shared continuation helper's
+`{mergeOnly:true}` mode: complete/remaining-work facts are omitted, closure and
+next-launch ports are absent, and integration returns only after a verified
+squash. The result explicitly reports
+`task_continuation: "OWNER_INTERPRETATION_CAPABILITY_REQUIRED"`; successful
+integration does not claim Task completion, closure, Apply or next admission.
+Standalone, retained-v3 and no-PR acceptance retain their existing supported
+contracts; this narrow CLI does not fabricate those bindings.
+
+Native reads verify same-repository Task/PR linkage, selected exact sources,
+current authority, Draft/Ready, mergeability, explicit non-closing links and
+complete exact-head required checks. Required checks come from active branch
+rules and the full legacy branch protection API, including bound App identities
+and classic status contexts. Unknown protection/check state fails visibly;
+required-workflow rules need a separately qualified reader and return
+`OWNER_REQUIRED_CHECKS_CAPABILITY_UNAVAILABLE`. Existing authority collection
+bounds apply: 500 entries per complete native collection and 500 selected native
+source records. No partial collection is accepted.
+
+The owner-local `~/.codex/relay-owner-actions/repositories/<owner>/<repo>/`
+journal uses the existing atomic-write and kernel-lock primitives, keyed by
+native approval ID. It retains only the exact bounded input/effect intent and
+receipt, never a mirror of Task history or credentials. Changed inputs,
+redirected/unreadable records and concurrent uncertainty fail closed. The input
+binding is persisted only when an effect is reserved. Cleared transient holds
+and preflight-only refusals do not pin a future assessment or require a new
+handoff; pending, uncertain and verified effects retain their exact binding. A reserved
+ambiguous merge is never repeated; authoritative PR/commit readback must prove
+the original exact head, owner merge actor, squash commit and observed preflight
+base parent before it is reconciled. That base readback detects a race after an
+effect; it does not claim atomic protection from base movement. Completed native GitHub records remain the
+integration truth; these receipts are not a new Task authority or future gate.
+The CLI prints one bounded JSON result and exits nonzero on a stopped result.
+
+The supported automatic call sequence belongs to owner orchestration with shell
+access. A remote connected Reviewer tool invocation alone cannot run a local
+owner command. Clients lacking that qualified owner shell adapter must disclose
+the capability boundary and preserve the approval/result, without claiming an
+automatic merge or handing merge authority to Reviewer, Writer or a worker.
+Synthetic HTTP/CLI tests qualify the source contract; actual isolated TEST
+GitHub integration evidence is separate from those tests and from PROD authority.

@@ -178,7 +178,23 @@ or implicit cancellation of the older attempt. New attempts have their own
 Steps and may duplicate computation; replay of one attempt never invokes the
 model again.
 
+Routine lifecycle drain and consumer transitions classify current operational
+effects. A clean manual handoff with no matching runner journal or pending
+result/publication effect does not require a historical Outcome, Task closure
+or withdrawal acknowledgement before an unrelated idle upgrade. Historical
+execution remains unknown; no cancellation or completion receipt is invented.
+Active/unknown workers, pending trusted publication/recovery, conflicting
+ownership and the original attempt's replay bindings remain protected.
+
 ## Execute and preserve progress
+
+Normally carry investigation, implementation, technical corrections and tests
+through one substantive execution Step to a complete candidate and Outcome.
+Ordinary test failures, retries and internal phases do not themselves require
+another Step. After resolving a blocker or finding, return to the complete
+effective Task goal and its remaining requirements. Stop at a real evidenced
+capability, authority, policy, trust or safety boundary. A genuinely new
+execution after a terminal result keeps the existing next-Step rule.
 
 Use complete Task Handoff and Context Loading for refresh, JIT completeness, correction and
 stop semantics. Relay's existing-PR starting-head gate inspects its
@@ -299,6 +315,40 @@ Native source tampering, wrong identity, conflicting CR, result/head mismatch
 and duplicate delivery still fail closed.
 
 ## Independent acceptance and authorized continuation
+
+On an installation supporting the owner continuation adapter, the owner
+orchestration caller invokes the selected product's
+`contracts/src/owner-continuation.mjs` immediately after verified native PR
+approval. For `PUBLICATION_UNCERTAIN`, first reconcile the exact original
+Reviewer input through its supported replay/readback; never post another review
+or treat the uncertain response as approval. The Reviewer remains the
+publication actor. Its `execution_supported: false` means that the Reviewer
+service itself performs no merge.
+
+The one-shot owner command uses the caller's existing owner-authenticated `gh`
+access and the selected `RELAY_CONSUMER_CONFIG`:
+
+```sh
+node /path/to/selected-product/contracts/src/owner-continuation.mjs < owner-continuation.json
+```
+
+The bounded input binds repository, Task, PR, expected head, effective authority
+digest and exact native approval/body hash. `owner_assessment` carries this
+caller's transient interpretation of current authority and any hold/protected
+boundary, bound to those same immutable facts; it is not another owner prompt,
+Decision or permission. The adapter independently rereads native authority,
+Writer Outcome/admission, trusted review/check, current head, readiness and
+checks, reserves the merge effect, performs guarded squash, and verifies it.
+It supplies no Task completion assertion, Issue closure or next execution.
+An ambiguous merge stays pending until authoritative readback resolves it.
+
+Invoke this within the already-authorized owner sequence without a separate
+merge confirmation. A remote connected Reviewer call alone cannot execute a
+local command. A caller without the configured owner command/transport must
+report that exact capability boundary; it cannot claim automatic continuation
+or replace the adapter with a direct GitHub merge call. Source support requires
+qualification and adoption of the selected adapter, independently of the
+Reviewer publication service and product-source acceptance.
 
 For an implementation PR, independent acceptance uses native exact-head
 `APPROVE`; genuine remediation findings use `REQUEST_CHANGES`. Another Task

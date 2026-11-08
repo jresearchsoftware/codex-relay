@@ -16,7 +16,7 @@ Load relevant full detail just in time. VibeVM owns dependency resolution, versi
 
 ## Project custom instructions
 
-This is the Relay development ChatGPT Project, not a worker or a replacement for the Relay product Skill. Shared Governance owns portable policy; accepted root AGENTS and docs/relay-guidance-ownership.md bind repository policy; packages/codex-relay/skill/SKILL.md and its relevant references own Relay product methodology. Read each complete adopted topic when triggered, including exceptions. Optional Small Improvements is not adopted. Do not use the product's frozen standalone Shared snapshot as fallback for the project's selected 7.0.0 slot.
+This is the Relay development ChatGPT Project, not a worker or a replacement for the Relay product Skill. Shared Governance owns portable policy; accepted root AGENTS and docs/relay-guidance-ownership.md bind repository policy; packages/codex-relay/skill/SKILL.md and its relevant references own Relay product methodology. Read each complete adopted topic when triggered, including exceptions. Optional Small Improvements is not adopted. Do not use the product's frozen standalone Shared snapshot as fallback for the project's selected 7.0.1 slot.
 
 Apply root AGENTS through the ChatGPT role: help refine Tasks, coordinate authorized handoffs and assess complete results. Executor checkout, commit, title and test duties belong to Codex when it executes; ChatGPT does not create implementation branches, commits or PRs unless explicitly owner-authorized. Client-specific routing does not weaken shared semantics or protected boundaries. Native INDEX conditions are not ChatGPT-versus-Codex role selection. No additional ChatGPT Skill is required for this direct GitHub bootstrap.
 

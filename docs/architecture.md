@@ -256,11 +256,16 @@ binding. Late original Outcomes preserve their admission and claims without
 changing a newer Step's Draft/Ready state or granting current-head acceptance.
 Historical unknown manual execution stays unknown: owner withdrawal revokes future
 permission and does not create a cancellation or negative-execution receipt.
-Lifecycle eligibility separately honors verified native Task closure or an exact
-protected interpretation of trusted withdrawal/route-switch Decisions. Its
-bounded cache revalidates live authority and original local effects at each use;
-it never supplies an execution Outcome. See the
-[historical disposition contract](git-managed-installation.md#strategy-compatibility-and-recovery).
+Lifecycle eligibility checks current operational effects rather than the old
+Task's completion. An untouched manual handoff with no matching runner journal
+or pending trusted effect is nonblocking, including after a consumer change;
+this proves neither cancellation nor execution completion. Completed trusted
+controller receipts remain usable without reopening old Task history. Pending
+publication/recovery, unknown children and conflicting ownership still hold the
+affected resources and full lifecycle drain. Optional historical disposition
+tools remain diagnostic; ordinary admission and upgrade do not load their cache
+or reread historical GitHub authority. See the
+[effect inventory contract](git-managed-installation.md#strategy-compatibility-and-recovery).
 
 | Owner | Record | Purpose |
 | --- | --- | --- |

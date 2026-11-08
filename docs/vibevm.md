@@ -1,10 +1,10 @@
 # Pinned governance and first-party Skill consumption
 
-Relay selects Shared Governance **7.0.0** for its project-wide adoption under
-Task [#213](https://github.com/jresearchsoftware/codex-relay/issues/213).
-Relay **4.1.1** retains Shared 5.0.0 for its standalone snapshot and
+Relay selects Shared Governance **7.0.1** for its project-wide adoption under
+Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
+Relay **4.2.0** retains Shared 5.0.0 for its standalone snapshot and
 publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
-frozen Relay 4.1.0 and earlier packages retain their original bytes.
+frozen Relay 4.1.1 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
 all nine applicable complete shared topics. The
 [ownership mapping](relay-guidance-ownership.md)
@@ -54,8 +54,8 @@ not actual model traversal or compliance.
 
 ## Selected immutable identities
 
-The [manifest](../vibe.toml) pins Shared `=7.0.0` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=4.1.1`,
+The [manifest](../vibe.toml) pins Shared `=7.0.1` by its anonymous public Git
+source and exact commit. The native local registry supplies Relay `=4.2.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -64,10 +64,10 @@ index and projected Skill belong to the same reviewable source change.
 
 | Identity | Selected value |
 | --- | --- |
-| Shared accepted producer source | `jresearchsoftware/shared-governance` `bee96f1715142fde598318e7db402168dcfabf5f` |
-| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0` |
-| Shared annotated tag | `v7.0.0`, tag object `a85505771b10fbd88d49185e6bf0545a7983b3a7`, peels to the distribution above |
-| Complete native distribution tree hash | `sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07` |
+| Shared accepted producer source | `jresearchsoftware/shared-governance` `1110f10b996c2f81fa842e6339ab6d7c13111cd7` |
+| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9` |
+| Shared annotated tag | `v7.0.1`, tag object `dddb250d5eb133347f0b1712740a96be7a1d823b`, peels to the distribution above |
+| Complete native distribution tree hash | `sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f` |
 | Relay guidance product-contract baseline | `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` |
 
 The producer source and distribution commit are distinct identities. The
@@ -78,7 +78,9 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 4.1.1 is a PATCH clarification of existing automatic Writer Draft
+Guidance 4.2.0 adds the bounded owner continuation command and compatible
+execution/lifecycle simplification, independently of the Shared 7.0.1 patch.
+Guidance 4.1.1 was a PATCH clarification of existing automatic Writer Draft
 preparation before remediation, with no new owner operation or runtime route.
 Accepted 4.1.0 added compatible ordinary Git-pair installer guidance and retained
 expert/other-consumer paths; neither version establishes private PROD activation. Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
@@ -103,6 +105,8 @@ See the [compatibility assessment](relay-skill-compatibility.md). Native executi
 reads locked committed files without resolving `latest`; an open-ended lower
 bound does not guarantee arbitrary future compatibility.
 
+The [7.0.0-to-7.0.1 assessment](relay-skill-compatibility.md#project-update-from-700-to-701)
+records the actual TH-010/013/026 clarification and unchanged authority boundaries.
 The complete [5.0.0-through-7.0.0 semantic assessment](relay-skill-compatibility.md#project-migration-from-500-through-700)
 distinguishes current project policy, conditional settings duties, unselected
 Small Improvements and the [bounded legacy runtime closure binding](relay-guidance-ownership.md#temporary-legacy-closure-binding).
@@ -164,7 +168,7 @@ line. Ignored `.vibe/` state and the persistent boot transaction lock are not
 runtime authority. Follow [self-adoption](self-adoption.md) for the first-party
 export and projection commands.
 
-The standalone exporter retains Shared 5.0.0 while the project lock selects 7.0.0.
+The standalone exporter retains Shared 5.0.0 while the project lock selects 7.0.1.
 The repository-only `build-project-guidance.py` adapter provides frozen build
 inputs to the unchanged product builder in disposable storage. It must reproduce
 the same product bytes and provenance. No unselected root 5.0.0 slot or orphan
@@ -172,6 +176,16 @@ warning is required: native install prunes it without changing frozen registry
 payloads. The verifier separately checks both complete immutable dependencies
 and active consumer routing. Neither build input nor nested release evidence is
 a runtime/policy fallback. Report actual native warnings and their impact.
+
+Task #199 retains the exact accepted 7.0.0 slot at its original path as inactive
+history. It is absent from the root lock and generated boot; native readers must
+use selected 7.0.1. The verifier accepts only those exact historical bytes when
+present and rejects a missing selected slot. Native `install` prunes inactive
+slots in disposable copies; preserving this source evidence does not require
+rewriting native output or making the historical slot a fallback. Preserve the
+committed historical slot when importing deliberate maintenance outputs. Native
+`check` may report this retained slot as orphaned; that warning describes inactive
+evidence, not a second selected dependency. Do not suppress unrelated warnings.
 
 Stage intended additions before structural qualification:
 

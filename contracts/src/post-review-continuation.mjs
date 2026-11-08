@@ -61,12 +61,12 @@ function standaloneSourcePr(receipt, state, binding, current, native) {
   }
 }
 
-function acceptedState(receipt, state, transition = null) {
+function acceptedState(receipt, state, transition = null, mergeOnly = false) {
   const binding = state?.binding;
   if (!binding || binding.repository !== receipt.repository || binding.task !== receipt.task
     || sha256Body(binding.charterBody) !== receipt.charter_sha256 || !Array.isArray(state.nativeRecords)
     || !same(state.currentApproval, receipt.approval)
-    || state.task?.number !== receipt.task || typeof state.task.remainingWork !== 'boolean'
+    || state.task?.number !== receipt.task || !mergeOnly && typeof state.task.remainingWork !== 'boolean'
     || typeof state.task.protectedBoundary !== 'boolean' || typeof state.task.hold !== 'boolean'
     || typeof state.task.closed !== 'boolean') stop('CONTINUATION_AUTHORITY_CHANGED');
   const native = state.nativeRecords.find(record => referenceKey(record) === referenceKey(receipt.approval));
@@ -85,7 +85,7 @@ function acceptedState(receipt, state, transition = null) {
       if (Object.hasOwn(receipt, 'source_pr')) standaloneSourcePr(receipt, state, binding, current, native);
       else if (!receipt.admission || receipt.admission.step < 1 || !Number.isSafeInteger(receipt.admission.step)
         || !/^[a-f0-9]{64}$/.test(receipt.admission.sha256)) stop('CONTINUATION_AUTHORITY_CHANGED');
-      if (typeof state.task.complete !== 'boolean') stop('CONTINUATION_COMPLETION_UNVERIFIED');
+      if (!mergeOnly && typeof state.task.complete !== 'boolean') stop('CONTINUATION_COMPLETION_UNVERIFIED');
     } else {
       current = selectCurrentRequest(state.nativeRecords, binding);
       if (!same(current.reference, transition?.reference ?? receipt.request)) stop('CONTINUATION_REQUEST_CHANGED');
@@ -203,7 +203,7 @@ function preparedRequest(selected, source, target, receipt) {
 // Owner-channel adapter only. These ports wrap the existing trusted native
 // publication journal/API; the worker must never receive them. The helper
 // neither loads credentials nor authors new scope, Requests or owner decisions.
-export async function continueAfterApproval(receipt, ports) {
+export async function continueAfterApproval(receipt, ports, { mergeOnly = false } = {}) {
   const actions = [];
   if (!receipt || receipt.publication_status !== 'verified' || !receipt.approval
     || !Number.isSafeInteger(receipt.approval.id) || receipt.approval.id < 1) {
@@ -214,7 +214,7 @@ export async function continueAfterApproval(receipt, ports) {
   }
   let preparedTransition = null;
   const read = async () => acceptedState(receipt, await ports.readCanonicalState({ repository: receipt.repository, task: receipt.task,
-    approval: receipt.approval, request: preparedTransition?.reference ?? receipt.request }), preparedTransition);
+    approval: receipt.approval, request: preparedTransition?.reference ?? receipt.request }), preparedTransition, mergeOnly);
   const act = async (kind, target, mutation, guard) => {
     if (typeof mutation !== 'function') stop('CONTINUATION_ADAPTER_UNAVAILABLE');
     const action = { kind, repository: receipt.repository, task: receipt.task, approval: receipt.approval, ...target };
@@ -248,6 +248,7 @@ export async function continueAfterApproval(receipt, ports) {
   };
   try {
     let accepted = await read();
+    if (mergeOnly && accepted.native.kind !== 'review') stop('CONTINUATION_PR_APPROVAL_REQUIRED');
     if (accepted.native.kind === 'review') {
       if (accepted.state.pr.merged === true) {
         if (!sha(accepted.state.pr.mergeCommitSha)) stop('CONTINUATION_MERGE_UNVERIFIED');
@@ -265,6 +266,9 @@ export async function continueAfterApproval(receipt, ports) {
           || accepted.state.pr.mergeCommitSha !== result.mergeCommitSha) stop('CONTINUATION_MERGE_UNVERIFIED');
       }
     }
+    // A bounded owner adapter can qualify integration independently of semantic
+    // Task completion. Do not fabricate completion or invoke closure/next ports.
+    if (mergeOnly) return { status: 'complete', actions, scope: 'merge-only' };
     accepted = await read();
     const closure = receipt.authority ? { policy: accepted.current.request.issue_closure_policy, warnings: accepted.current.warnings }
       : stableClosurePolicy(accepted.binding.charterBody);

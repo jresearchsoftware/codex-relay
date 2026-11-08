@@ -533,31 +533,32 @@ revision and no active or unknown attempts. The public deployment coordinator
 owns deployment authority and same-operation verification; the helper stores
 only lifecycle control state and reuses the existing attempt records.
 
-Changing the consumer digest additionally checks retained manual history,
-which ordinary automatic-drain status does not enumerate. A published Writer
-refusal before authority resolution and handoff is complete without a manual
-submission. Completed manual results retain their original v4 binding or v3
-publication receipts, including the earlier owner-authorization and sealed
-direct-result formats. Recognition never backfills or edits historical records.
-Missing native terminal receipts remain historical facts. For lifecycle
-eligibility, a verified owner closure (`completed`/`not_planned`) or an exact
-protected acknowledgement of existing trusted withdrawal/route-switch Decisions
-can disposition an abandoned manual attempt. The original record stays intact;
-`manualAdmissionComplete` does not become true. The
-[historical disposition contract](../docs/git-managed-installation.md#strategy-compatibility-and-recovery)
-defines the root-only adapter/cache, repository-scoped native reads and mandatory
-freshness. A newer Step or missing handoff receipt alone proves nothing about
-offline execution. Matching runner journals, live/unknown effects, unresolved
-publication, malformed receipts and conflicting identities still prevent drain
-or a digest transition. A code-only Apply with the same digest retains
-outstanding manual bindings and needs no new configuration-change barrier.
+Changing the consumer digest uses the same current-effect inventory as drain.
+An untouched manual handoff with structurally valid identity, no matching runner
+journal and no result/publication progress does not reserve an execution or
+installer resource. Its missing Outcome remains historical uncertainty; no
+cancellation, execution completion, acknowledgement or replacement receipt is
+created. Completed manual results retain their original v4 binding or v3
+publication receipts, including earlier owner-authorization and sealed direct
+formats. Old-digest records remain readable for lineage and effect checks;
+fresh mutations of an old attempt under a new digest remain forbidden.
+
+Matching runner journals, active/unknown execution, unresolved publication or
+recovery, malformed receipts and conflicting identities still prevent drain or
+a digest transition. A complete trusted controller lifecycle receipt proves its
+own containment and terminal handoff without requiring the obsolete runner
+journal again. Earlier records lacking that proof still need matching terminal
+evidence. The original records remain unchanged. The optional expert
+historical-disposition adapter remains available for explicit diagnosis; normal
+installed admission/status/transition does not construct its native reader or
+cache, and GitHub availability or reopening an old Task cannot block idle Apply.
 
 The root helper also exposes the read-only
 `consumer-transition-preflight --desired-digest SHA256` observation. It works
 independently of the current lifecycle phase and returns the current/desired
 digests, operation/target, active and unknown runs, `eligible`, and separate
-historical/actionable manual diagnostics. Valid active
-automatic work may still drain; unknown work and unresolved manual rebinding
+effect diagnostics. Valid active
+automatic work may still drain; unknown work and unresolved trusted effects
 make the proposed transition ineligible. This observation allocates no attempt,
 changes no gate and does not replace the strict final transition check.
 

@@ -1,10 +1,10 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **7.0.0** as the single
+This repository deliberately adopts Shared Governance **7.0.1** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`bee96f1715142fde598318e7db402168dcfabf5f`; the distribution is
-`77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0`. Root [AGENTS](../AGENTS.md)
+`1110f10b996c2f81fa842e6339ab6d7c13111cd7`; the distribution is
+`f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all nine complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
@@ -96,7 +96,7 @@ component, environment and runtime entrypoints.
 
 ## Temporary legacy closure binding
 
-Repository development governance selects Shared 7.0.0. The supported product
+Repository development governance selects Shared 7.0.1. The supported product
 closure contract retains its previously qualified legacy flow. Task
 [#194](https://github.com/jresearchsoftware/codex-relay/issues/194) alone implements,
 qualifies and publishes the new product semantics; source adoption does not
@@ -114,7 +114,7 @@ This is the already authorized Relay-only transition described in #194, limited
 to actually qualified legacy combinations and behavior. It remains permitted
 pending the first Relay release implementing and qualifying the new closure
 semantics, then for 60 calendar days from that release's **verified publication**.
-Shared 7.0.0 publication starts no clock. Record the actual release/source,
+Shared 7.0.1 publication starts no clock. Record the actual release/source,
 publication event and derived deadline in the existing Issue/release chronology
 when verified; no trigger date is asserted here. Removal requires a separately
 accepted future Shared release no earlier than the window's end; expiry does not
@@ -153,7 +153,7 @@ introduces no additional release gate. A consumer-only
 compatible or irrelevant Shared update needs no Relay release. Assess actually
 used protocol semantics, applicability, exceptions and product bindings; a change to Relay's own supported behavior, guidance, interfaces, requirements,
 packaging or shipped immutable bytes needs its own classified release (PV-018).
-The root 7.0.0 lock is outside that product; frozen standalone and included
+The root 7.0.1 lock is outside that product; frozen standalone and included
 release-evidence snapshots stay 5.0.0 and remain checked under PV-013. They never
 replace the native consumer's selected protocol authority (PV-015). See the
 [compatibility assessment](relay-skill-compatibility.md).

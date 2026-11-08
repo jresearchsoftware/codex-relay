@@ -45,8 +45,10 @@ test('scoped current operations preserve corrupt and incompatible unrelated rows
   assert.equal(await f.store.reserve(203, next), true);
   const rows = await f.store.scan();
   assert.ok(rows.find(row => row.runId === 201).error);
-  assert.equal(rows.find(row => row.runId === 202).error, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
-  await assert.rejects(f.store.get(201)); await assert.rejects(f.store.get(202)); await assert.rejects(f.store.all());
+  assert.equal(rows.find(row => row.runId === 202).error, null);
+  assert.equal((await f.store.get(202)).envelope.consumerDigest, 'f'.repeat(64));
+  await assert.rejects(f.store.put(202, await f.store.get(202)), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+  await assert.rejects(f.store.get(201)); await assert.rejects(f.store.all());
   assert.deepEqual(await readFile(corrupt), before);
 });
 

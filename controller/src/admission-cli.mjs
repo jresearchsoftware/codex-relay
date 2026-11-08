@@ -7,11 +7,10 @@ import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
-import { createAdmissionControl, manualAdmissionComplete, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
-import { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } from './manual-attempt-disposition.mjs';
-import { createInstalledTaskDisposition } from './installed-task-disposition.mjs';
-import { digest, fail } from './execution-contract.mjs';
+import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './manual-attempt-disposition.mjs';
+import { fail } from './execution-contract.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 
 const exec = promisify(execFile);
@@ -46,6 +45,20 @@ export function parseAdmissionArguments(args) {
   if (command === 'consumer-transition-preflight' && !/^[a-f0-9]{64}$/.test(options.desiredDigest)) fail('ADMISSION_CONFIG_INVALID');
   return { command, options };
 }
+// Retained runtimes own their original containment/source interpretation. This
+// adds current publication-effect checks without changing that historical code.
+export async function supplementOriginalInventory(inventory, records, { journal, task = null } = {}) {
+  const unknown = [...inventory.unknown];
+  for (const record of records) {
+    const e = record.envelope;
+    if (task !== null && e.issueNumber !== task) continue;
+    if (e.route === 'manual' ? await manualAttemptHasConflictingActivity(record, { journal })
+      : e.route === 'auto' && (attemptHasPendingPublicationEffects(record) && !activeControllerReservation(record)
+        || record.controllerLifecycle?.status === 'complete' && !terminalAdmissionOutcome(record))) unknown.push(e.runId);
+  }
+  return { ...inventory, unknown: [...new Set(unknown)].sort((a, b) => a - b) };
+}
+
 export function installedAdmissionControl() {
   // Keep the synchronous factory interface used by the protected Writer. Each
   // async action revalidates the protected migration context and whole stores;
@@ -58,25 +71,15 @@ export function installedAdmissionControl() {
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER,
       ...(name === 'transitionConsumer' ? { consumerTransition: args[0] } : {}) });
-    const disposition = createInstalledTaskDisposition({
-      historicalConsumer: compatibility?.originalConsumer ?? null });
-    // An action is one locked observation. Reuse exact record observations only
-    // inside it; the next action always constructs a fresh native reader.
-    const dispositions = new Map();
-    const manualAttemptDisposition = record => {
-      const key = digest(record);
-      if (!dispositions.has(key)) dispositions.set(key, disposition.resolve(record));
-      return dispositions.get(key);
-    };
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore), manualAttemptDisposition });
+        store: originalStore, journal: createSlotJournal(originalStore) });
       return admission[name](...args);
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
-    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition });
+    const composite = createCompatibilityStore({ compatibility, currentStore, originalStore });
     let records;
     const compositeRecords = () => records ??= composite.all();
     const currentJournal = createSlotJournal(currentStore);
@@ -84,7 +87,7 @@ export function installedAdmissionControl() {
       : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
     const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, manualAttemptDisposition,
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
@@ -92,41 +95,11 @@ export function installedAdmissionControl() {
         const records = task === null && slot === null ? await compositeRecords() : null;
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
         if (task !== null && CONSUMER.repository !== compatibility.receipt.repository) return { active: [], unknown: [] };
-        // Old runtime readers legitimately ignored manual handoffs. Add only
-        // concrete conflicting effects here on every global drain/resume; a
-        // missing manual Outcome alone remains a separate transition concern.
-        if (!resourceOnly) for (const record of records ?? await compositeRecords()) {
-          const e = record.envelope;
-          if (e.repository !== compatibility.receipt.repository || e.route !== 'manual'
-            || !compatibility.receipt.original.runs.some(run => run.runId === e.runId)
-            || task !== null && e.issueNumber !== task) continue;
-          if (await manualAttemptHasConflictingActivity(record, { journal: originalJournal }))
-            inventory.unknown.push(e.runId);
-        }
-        inventory.unknown = [...new Set(inventory.unknown)].sort((a, b) => a - b);
-        return inventory;
-      },
-      supplementalManualInventory: async ({ includeManual, manualDiagnostics }) => {
-        const unknown = [], historical = [], errors = [];
-        for (const record of await compositeRecords()) {
-          if (record.envelope.route !== 'manual') continue;
-          const e = record.envelope;
-          const original = e.repository === compatibility.receipt.repository
-            && compatibility.receipt.original.runs.some(run => run.runId === e.runId);
-          const journal = original ? originalJournal : currentJournal;
-          if (await manualAttemptHasConflictingActivity(record, { journal })) { unknown.push(e.runId); continue; }
-          if (manualAdmissionComplete(record)) continue;
-          let observed;
-          try { observed = await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition }); }
-          catch (error) {
-            if (!manualDiagnostics || includeManual || !original && e.consumerDigest !== CONSUMER_DIGEST
-              || error.code !== 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE') throw error;
-            errors.push({ runId: e.runId, code: error.code });
-          }
-          if (observed) historical.push({ runId: e.runId, issueNumber: e.issueNumber, reason: observed.reason });
-          else unknown.push(e.runId);
-        }
-        return { unknown, manualAttempts: { historical, actionable: unknown, ...(errors.length ? { errors } : {}) } };
+        if (resourceOnly) return inventory;
+        const originalRecords = (records ?? await compositeRecords()).filter(record =>
+          record.envelope.repository === compatibility.receipt.repository
+          && compatibility.receipt.original.runs.some(run => run.runId === record.envelope.runId));
+        return supplementOriginalInventory(inventory, originalRecords, { journal: originalJournal, task });
       } });
     return admission[name](...args);
   }]));

@@ -26,7 +26,7 @@ test('known malformed unrelated records hold only their Task and physical slot',
   old.controllerLifecycle.status = 'unrecognized'; old.envelope.consumerDigest = 'f'.repeat(64);
   await f.store.put(99, old);
   await f.gate.assertOpen(); await f.gate.assertTaskComplete(141); await f.gate.assertSlotComplete('pool-2');
-  await assert.rejects(f.gate.assertSlotComplete('primary'), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  await assert.rejects(f.gate.assertSlotComplete('primary'), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
   await assert.rejects(f.gate.status(), { code: 'ADMISSION_ATTEMPT_INVALID' });
 });
 
@@ -111,4 +111,24 @@ test('a corrupt other-repository namespace does not block a known independent Ta
   const gate = createAdmissionControl({ root: f.root, consumerDigest: CONSUMER_DIGEST, store, journal: f.journal, protectedRoot: false });
   await gate.assertTaskComplete(141);
   await assert.rejects(gate.assertSlotComplete('primary'), { code: 'ADMISSION_ATTEMPT_INVALID' });
+});
+
+
+test('a live controller keeps bounded drain while publication progresses, and a terminal pending effect stays unknown', async t => {
+  const f = await fixture(t);
+  for (const consumerDigest of [CONSUMER_DIGEST, 'f'.repeat(64)]) for (const fields of [
+    { publicationIntent: { head } }, { relationshipIntent: { number: 42 } },
+    { readinessIntent: { draft: false } }, { successOutcomeIntent: { head } },
+    { readyConsumption: { status: 'uncertain' } }
+  ]) {
+    const record = { ...attempt(99), ...fields }; record.envelope.consumerDigest = consumerDigest;
+    await f.store.put(99, record);
+    assert.deepEqual((await f.gate.status()).active, [99]); assert.deepEqual((await f.gate.status()).unknown, []);
+    assert.equal((await f.gate.preflightConsumerTransition({ desiredDigest: 'e'.repeat(64) })).eligible, true);
+    record.controllerLifecycle = { version: 1, status: 'complete', child: 'started', containment: 'reaped' };
+    record.outcome = { status: 'BLOCKED', head: null, prNumber: null, outcomeId: 99 };
+    await f.store.put(99, record);
+    assert.deepEqual((await f.gate.status()).active, []); assert.deepEqual((await f.gate.status()).unknown, [99]);
+    assert.equal((await f.gate.preflightConsumerTransition({ desiredDigest: 'e'.repeat(64) })).eligible, false);
+  }
 });

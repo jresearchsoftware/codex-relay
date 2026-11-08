@@ -10,6 +10,20 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
+Guidance **4.2.0** is a compatible **MINOR** from independently accepted
+**4.1.1** at source `512b2b5ea2867b92958580f17f6aee24c23b1fba`. It adds the
+bounded one-shot owner continuation command and describes the existing owner
+orchestration sequence through its actual execution boundary. It also clarifies
+one-Step execution persistence and removes completed-history reconciliation
+from idle lifecycle eligibility while preserving live/uncertain effects and
+original recovery identities. Both delivery forms retain the standalone Shared
+5.0.0 snapshot, native dependency floor and accepted authority/workflow pins.
+This release is required by the changed Relay workflow, independently of the
+project-only Shared 7.0.1 patch. The 4.2.0 source candidate does not itself
+publish a package, install an adapter, activate external client capabilities or
+authorize product-source merge or PROD Apply. Frozen 4.1.1 and earlier registry
+bytes remain unchanged.
+
 Guidance **4.1.1** is a **PATCH** from independently accepted **4.1.0**
 (source main `6fb8fc447fe56d9e5d67dd539d8aad289faf0666`). It corrects the
 manual and example to describe the existing qualified automatic remediation
@@ -25,7 +39,7 @@ Frozen accepted **4.1.0** and earlier registry bytes remain unchanged. The
 bundled Task authority schemas and SERIAL/parallel workflow identities retain
 their exact accepted `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` contract pin;
 this clarification needs no protocol change. Native source self-adoption uses
-4.1.1 without publishing a package or activating a service.
+4.2.0 without publishing a package or activating a service.
 
 Accepted **4.1.0** added compatible Task #63 intent-driven installation and
 private Git-pair Apply guidance, retaining expert phases and other consumers'
@@ -75,7 +89,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 4.1.1 is a candidate. Native source
+release. Before independent acceptance, 4.2.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -96,7 +110,7 @@ SemVer requirement from the standalone snapshot and its exact identities:
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -134,7 +148,7 @@ installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -165,7 +179,7 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's root policy selects Shared 7.0.0; the unchanged standalone snapshot
+future releases. Relay's root policy selects Shared 7.0.1; the unchanged standalone snapshot
 and release-closure evidence retain Shared 5.0.0. Other consumers
 retain their own deliberate selections.
 

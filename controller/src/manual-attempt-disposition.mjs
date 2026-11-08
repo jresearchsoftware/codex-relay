@@ -9,6 +9,13 @@ const effects = ['controllerLifecycle', 'outcome', 'manualSubmission', 'manualRe
 const readyEffectPending = record => record.readyConsumption !== undefined && record.readyConsumption !== null
   && record.readyConsumption.status !== 'consumed';
 
+// These are unresolved external effects, independent of Task status or digest.
+// A known released physical runner slot is classified separately.
+export function attemptHasPendingPublicationEffects(record) {
+  return ['publicationIntent', 'commentIntent', 'lifecycleIntent', 'relationshipIntent',
+    'readinessIntent', 'successOutcomeIntent'].some(key => Boolean(record[key])) || readyEffectPending(record);
+}
+
 function originalPullRequestBinding(record) {
   const e = record.envelope;
   const bindings = [e.target === 'pull_request' ? e.number : null,
@@ -37,6 +44,7 @@ export async function manualAttemptHasConflictingActivity(record, { journal } = 
     const { manualAdmissionComplete } = await import('./admission-control.mjs');
     if (!manualAdmissionComplete(record)) return true;
   }
+  if (!resultProgress && !manualAttemptHasNoPendingEffects(record)) return true;
   const e = record.envelope;
   return Boolean(journal && await journal.get(e.runId, e.repository));
 }

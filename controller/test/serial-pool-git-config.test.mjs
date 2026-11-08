@@ -6,7 +6,9 @@ import { consumerDigest, selectRepositoryConsumer } from '../../consumer/consume
 import { createCompatibilityStore, historicalOperationContext, loadSerialPoolCompatibility,
   verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
 import { serialPoolFixture } from './serial-pool-fixture.mjs';
-import { createAdmissionControl, manualAdmissionComplete } from '../src/admission-control.mjs';
+import { createAdmissionControl, manualAdmissionComplete, completedAdmissionRecord } from '../src/admission-control.mjs';
+import { manualAttemptHasConflictingActivity } from '../src/manual-attempt-disposition.mjs';
+import { supplementOriginalInventory } from '../src/admission-cli.mjs';
 
 const linux = process.platform === 'linux';
 const operationId = 'abcdef12-1234-1234-1234-123456789abc';
@@ -57,13 +59,15 @@ test('Git profile update preserves immutable SERIAL target and completed pool hi
     assert.deepEqual(await readFile(join(context.current.storeRoot, '200.json')), before);
   });
 
-test('old pool rows without exact terminal journal proof remain unresolved after config transition',
+test('old pool rows remain structurally readable without substituting for exact original terminal journal proof',
   { skip: !linux }, async t => {
     const f = await changedFixture(t); await completeCurrent(f, { mismatchedJournal: true });
     const context = await f.load();
     const store = createCompatibilityStore({ compatibility: context, currentStore: f.currentStore, originalStore: f.originalStore });
-    await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
-    await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+    const record = await store.get(200);
+    assert.ok((await store.all()).some(row => row.envelope.runId === 200));
+    assert.equal(await completedAdmissionRecord(record, f.journal), false);
+    await assert.rejects(store.put(200, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
   });
 
 test('completed prior manual pool result remains readable without manufacturing a worker journal',
@@ -81,7 +85,8 @@ test('completed prior manual pool result remains readable without manufacturing 
     await assert.rejects(store.put(202, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
     const unresolved = structuredClone(record); delete unresolved.manualResultAuthorization;
     await f.currentStore.put(202, unresolved);
-    await assert.rejects(store.get(202), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
+    assert.deepEqual(await store.get(202), unresolved);
+    assert.equal(await manualAttemptHasConflictingActivity(unresolved, { journal: f.journal }), true);
   });
 
 test('retained pool refusals and both original v3 manual receipts remain read-only after a Git profile change',
@@ -144,26 +149,27 @@ test('retained pool refusals and both original v3 manual receipts remain read-on
     for (const [original, mutate] of malformed) {
       const record = structuredClone(original); mutate(record); const id = record.envelope.runId;
       await f.currentStore.put(id, record); const observed = await readFile(path(id));
-      await assert.rejects(store.get(id), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
-      await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
-      assert.equal((await store.scan()).find(row => row.runId === id).error, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      assert.deepEqual(await store.get(id), record);
+      assert.ok((await store.all()).some(row => row.envelope.runId === id));
+      assert.equal((await store.scan()).find(row => row.runId === id).error, null);
+      assert.equal(await manualAttemptHasConflictingActivity(record, { journal: f.journal }), true);
+      await assert.rejects(store.put(id, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
       assert.deepEqual(await readFile(path(id)), observed);
       assert.deepEqual(await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json')), journalBefore);
       await f.currentStore.put(id, original);
     }
-    // The installed adapter's supplemental inventory uses the same classifier:
-    // these historical results are complete, while the original SERIAL handoff
-    // still needs its own terminal Outcome before any consumer transition.
-    const supplementalManualInventory = async () => (await store.all())
-      .filter(record => record.envelope.route === 'manual' && !manualAdmissionComplete(record))
-      .map(record => record.envelope.runId);
-    assert.deepEqual(await supplementalManualInventory(), [100]);
+    // Effect classification is separate from historical result completeness.
+    // The original manual handoff remains without an Outcome and holds no effect.
+    const supplementalInventory = async () => supplementOriginalInventory({ active: [], unknown: [] },
+      await store.all(), { journal: f.journal });
+    assert.deepEqual((await supplementalInventory()).unknown, []);
     const admission = createAdmissionControl({ root: dirname(f.poolGatePath), stateName: 'admission-pool-v1.json',
       consumerDigest: f.currentDigest, store: { all: async () => [] }, journal: f.journal,
-      protectedRoot: false, supplementalManualInventory });
+      protectedRoot: false, supplementalInventory });
     await admission.quiesce({ operationId, target }); await admission.drained({ operationId });
     await admission.phase({ operationId, phase: 'applying' });
-    await assert.rejects(admission.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+    await admission.checkConsumerTransition({ operationId, target });
+    assert.equal((await f.originalStore.get(100)).outcome, undefined);
     for (const [index, record] of records.entries())
       assert.deepEqual(await readFile(path(record.envelope.runId)), before[index]);
     assert.deepEqual(await readFile(join(f.at(f.currentConsumer.paths.attemptRoot), '200.json')), journalBefore);

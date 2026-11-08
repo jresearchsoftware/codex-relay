@@ -2,20 +2,21 @@
 
 Relay authors and consumes its product Skill. Portable producer/candidate
 semantics belong to the complete adopted pinned
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/self-adoption.md).
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md).
 This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **4.1.1** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **4.2.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
-adopts Shared **7.0.0**, with the exact Git identity in
+adopts Shared **7.0.1**, with the exact Git identity in
 [the identity contract](vibevm.md#selected-immutable-identities). The Relay product retains its own 5.0.0 snapshot for standalone and
 publisher closure evidence, retaining the native `>=2.5.0` floor and frozen
-historical releases. The earlier root Shared migration prepared no Skill release; Task #217
-prepares the 4.1.1 workflow clarification.
+historical releases. The earlier root Shared migration prepared no Skill release;
+Task #199 prepares the 4.2.0 compatible workflow addition independently of the
+project-only Shared 7.0.1 selection.
 
 The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
 changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4
@@ -31,7 +32,9 @@ Accepted 4.1.0 added compatible Task #63 installation guidance with retained
 expert paths. The 4.1.1 PATCH clarifies existing Writer Draft preparation for
 automatic remediation; it adds no owner action or runtime route. Neither version
 claims private PROD cutover. Source acceptance does not imply external publication
-or another consumer's adoption. Frozen 4.1.0 registry bytes remain unchanged.
+or another consumer's adoption. Frozen 4.1.1 and earlier registry bytes remain
+unchanged. The 4.2.0 candidate adds bounded owner continuation, one-Step
+persistence guidance and effect-scoped lifecycle eligibility.
 
 ## Accepted-source binding and ordinary use
 
@@ -42,8 +45,8 @@ references. Ordinary use needs no materializer, Python, registry, cache, network
 or additional owner command. Checkout/pull advances the accepted ready files.
 
 Relay's execution binding identifies the independently accepted source commit,
-separately from candidate root/nested AGENTS, boot and Skills. Task #217's execution freezes independently accepted Relay source
-`6fb8fc447fe56d9e5d67dd539d8aad289faf0666` before candidate edits;
+separately from candidate root/nested AGENTS, boot and Skills. Task #199's execution freezes independently accepted Relay source
+`512b2b5ea2867b92958580f17f6aee24c23b1fba` before candidate edits;
 the unchanged Skill product-contract baseline remains
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
@@ -73,14 +76,14 @@ For a project-only Shared update, use the existing frozen builder/registry
 The repository adapter `build-project-guidance.py` runs the unchanged frozen
 builder in a disposable root using the exact 5.0.0 release-evidence slot under
 `guidance/dependency-closure`. This preserves the builder's recorded provenance
-and every product artifact byte while keeping the active root graph at 7.0.0.
+and every product artifact byte while keeping the active root graph at 7.0.1.
 It supplies build inputs, never an alternate runtime/policy route. The verifier
 compares the complete standalone snapshot with its own accepted distribution
 and separately validates the root consumer lock/slot. Native install prunes the
 obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.1`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.2.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
 not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0` or `v4.1.0` bytes. Native VibeVM
 owns slot, lock, index,

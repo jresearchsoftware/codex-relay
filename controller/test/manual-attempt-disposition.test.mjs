@@ -47,9 +47,8 @@ test('historical disposition retains issued or unissued handoff bytes without fa
   const gate = await readFile(join(f.root, 'admission-v1.json'));
   const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
   assert.equal(result.eligible, true); assert.deepEqual(result.unknown, []);
-  assert.deepEqual(result.manualAttempts, { historical: [71, 93].map(runId => ({ runId, issueNumber: 42,
-    reason: 'task-completed' })), actionable: [] });
-  assert.ok(reads >= 2);
+  assert.deepEqual(result.manualAttempts, { historical: [], actionable: [] });
+  assert.equal(reads, 0);
   assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), gate);
   for (const [index, runId] of [71, 93].entries()) {
     const saved = await f.store.get(runId);
@@ -66,10 +65,10 @@ test('status separates missing historical receipts from actionable attempts with
   assert.deepEqual(status.manualAttempts, { historical: [{ runId: 71, issueNumber: 42,
     reason: 'owner-withdrawal' }], actionable: [93] });
   const preflight = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
-  assert.equal(preflight.eligible, false); assert.deepEqual(preflight.unknown, [93]);
+  assert.equal(preflight.eligible, true); assert.deepEqual(preflight.unknown, []);
 });
 
-test('optional status reports unavailable native evidence while required transitions remain fail closed', async t => {
+test('optional historical diagnosis does not become idle transition authority', async t => {
   let unavailable = true;
   const f = await fixture(t, async value => {
     if (unavailable) throw Object.assign(new Error('native unavailable'), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
@@ -82,16 +81,14 @@ test('optional status reports unavailable native evidence while required transit
     { runId: 71, code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' }
   ] });
   assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: oldDigest })).eligible, true);
-  await assert.rejects(f.control.preflightConsumerTransition({ desiredDigest: nextDigest }),
-    { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: nextDigest })).eligible, true);
   await f.control.quiesce({ operationId, target });
   assert.equal((await f.control.drained({ operationId })).drained, true);
-  await assert.rejects(f.control.checkConsumerTransition({ operationId, target }),
-    { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  await f.control.checkConsumerTransition({ operationId, target });
   unavailable = false;
   const next = f.create(nextDigest); await next.transitionConsumer({ operationId, previousDigest: oldDigest, target });
   unavailable = true;
-  await assert.rejects(next.status(), { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual((await next.status()).unknown, []);
 });
 
 test('status does not suppress invalid authority, unsafe caches, invalid dispositions or unreadable journals', async t => {
@@ -118,10 +115,7 @@ test('known original CR and Issue continuation PR identities do not imply unfini
   await f.store.put(71, cr); await f.store.put(72, continuation);
   const result = await f.control.preflightConsumerTransition({ desiredDigest: nextDigest });
   assert.equal(result.eligible, true); assert.deepEqual(result.unknown, []);
-  assert.deepEqual(result.manualAttempts.historical, [
-    { runId: 71, issueNumber: 42, reason: 'task-completed' },
-    { runId: 72, issueNumber: 42, reason: 'route-switch' }
-  ]);
+  assert.deepEqual(result.manualAttempts.historical, []);
   assert.deepEqual(await f.store.get(71), cr); assert.deepEqual(await f.store.get(72), continuation);
   for (const fields of [
     { prNumber: 57 }, { prNumber: 0 }, { prIntent: true }, { publishedHead: target },
@@ -132,22 +126,22 @@ test('known original CR and Issue continuation PR identities do not imply unfini
   assert.equal(manualAttemptHasNoPendingEffects({ ...record(73), prNumber: 55 }), false);
 });
 
-test('reopening or changed authority is re-read at final check, transition and later old-digest inventory', async t => {
+test('reopening historical Tasks cannot reacquire idle lifecycle resources', async t => {
   let historical = true, reads = 0;
   const f = await fixture(t, async value => { reads++; return historical ? observation(value, 'task-not-planned') : null; });
   await f.store.put(71, record(71));
   assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: nextDigest })).eligible, true);
   await f.control.quiesce({ operationId, target }); await f.control.drained({ operationId });
   historical = false;
-  await assert.rejects(f.control.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+  await f.control.checkConsumerTransition({ operationId, target });
   historical = true; await f.control.checkConsumerTransition({ operationId, target });
   const next = f.create(nextDigest);
   await next.transitionConsumer({ operationId, previousDigest: oldDigest, target });
   assert.deepEqual((await next.status()).manualAttempts.actionable, []);
   assert.equal((await next.preflightConsumerTransition({ desiredDigest: 'f'.repeat(64) })).eligible, true);
   historical = false;
-  await assert.rejects(next.status(), { code: 'ADMISSION_ATTEMPT_INVALID' });
-  assert.ok(reads >= 6);
+  assert.deepEqual((await next.status()).unknown, []);
+  assert.equal(reads, 2);
   assert.deepEqual(await f.store.get(71), record(71));
 });
 
@@ -304,4 +298,23 @@ test('supplemental optional diagnostics carry bounded source errors without weak
   assert.deepEqual(status.manualAttempts.errors, [{ runId: 88, code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' }]);
   await assert.rejects(control.preflightConsumerTransition({ desiredDigest: nextDigest }),
     { code: 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE' });
+});
+
+
+test('old-digest handoffs stay historical while malformed receipts and later worker effects still hold drain', async t => {
+  const f = await fixture(t);
+  const clean = record(71); clean.envelope.consumerDigest = nextDigest;
+  await f.store.put(71, clean);
+  const before = await readFile(join(f.root, 'records', '71.json'));
+  assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: nextDigest })).eligible, true);
+  assert.deepEqual((await f.control.status()).unknown, []);
+  const malformed = structuredClone(clean); malformed.commentBodies = { unsupported: {} };
+  await f.store.put(71, malformed);
+  assert.deepEqual((await f.control.status()).unknown, [71]);
+  await f.store.put(71, clean);
+  await f.journal.put(71, { envelope: clean.envelope, execution: { reserved: true, returned: false } });
+  assert.deepEqual((await f.control.status()).unknown, [71]);
+  assert.equal((await f.control.preflightConsumerTransition({ desiredDigest: nextDigest })).eligible, false);
+  assert.deepEqual(await readFile(join(f.root, 'records', '71.json')), before);
+  assert.equal((await f.store.get(71)).outcome, null);
 });

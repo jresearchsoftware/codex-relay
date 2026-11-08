@@ -21,7 +21,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/tools/chatgpt/project.py"
+GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py"
 SPEC = importlib.util.spec_from_file_location("shared_chatgpt_project", GENERATOR)
 PROJECTOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROJECTOR)

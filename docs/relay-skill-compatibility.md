@@ -12,6 +12,35 @@ selection, its reviewed `vibe.lock`, topic adoption and local policy. Neither a
 new Shared release nor a package range automatically updates those decisions.
 
 
+## Project update from 7.0.0 to 7.0.1
+
+Task #199 deliberately selects Shared 7.0.1 through the exact root Git pin,
+native schema-7 lock and materialized slot. The published annotated tag
+`v7.0.1` (`dddb250d5eb133347f0b1712740a96be7a1d823b`) peels to distribution
+`f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9`, whose receipt identifies accepted
+producer source `1110f10b996c2f81fa842e6339ab6d7c13111cd7`.
+The [immutable diff](https://github.com/jrs-vibevm/org.jresearch.ai.development-governance/compare/v7.0.0...v7.0.1)
+changes only Task Handoff among the nine adopted protocols; the other eight
+protocols, conditional boot and ChatGPT generator are byte-identical. Changelog,
+onboarding continuation example, version and publication receipt also change.
+
+| Changed clause | Assessment and retained Relay binding |
+| --- | --- |
+| TH-010 | Reconstruct the effective Task objective from the charter and applicable owner Decisions. A blocker, failed check or short next-Step purpose does not narrow it. Deliberately bounded diagnostic/research/repair Steps remain legitimate under actual owner scope, accepted process or an execution/authority boundary. Writer admission still fixes the execution scope. |
+| TH-013 | After removing an obstacle, continue remaining authorized work toward the agreed outcome or applicable review/handoff boundary. A local fix alone supplies no new stop rule. Existing scope, permission, protected-state and progress-bounded stops remain binding; no terminal-attempt replay is authorized. |
+| TH-026 | A cleared blocker is not Task completion. Reassess the actual remaining work and completion conditions; preserve independent acceptance, protected continuation and the temporary legacy closure binding. No new closure mechanism is introduced. |
+
+This clarification is compatible with repository governance: it preserves local
+authority, native admission, exact-head review and product boundaries. It adds no
+new topic, permission, mandatory owner approval, lower-bound incompatibility or
+release obligation. The governance-only update leaves frozen Relay 4.1.1 and its
+standalone Shared 5.0.0 snapshot unchanged. Task #199's separate supported Relay
+workflow addition is classified as 4.2.0 MINOR under PV-018; that release keeps
+the same standalone snapshot and native dependency floor. Shared 7.0.0 remains at
+its original slot solely as immutable inactive history requested by Task #199.
+The root lock, generated boot and native product routing select only 7.0.1;
+missing selected state must fail, never fall back to retained history.
+
 ## Project migration from 5.0.0 through 7.0.0
 
 Task #213 changes repository governance and its pinned VibeVM to 1.0.11. It
@@ -117,7 +146,7 @@ The initial Step 1 rationale selected 4.0.0 from stricter review obligations.
 [Owner Decision 6364617205](https://github.com/jresearchsoftware/codex-relay/issues/174#issuecomment-6364617205)
 requires technical and behavioral compatibility instead. The stricter PC-013
 and IR-012–015 wording does not prevent the Skill from consuming older selected
-rules. Relay's project adoption selected 5.0.0 under Task #186 and now selects 7.0.0 under Task #213; it
+rules. Relay's project adoption selected 5.0.0 under Task #186 and selected 7.0.0 under Task #213 and now selects 7.0.1 under Task #199; it
 does not impose that producer policy as every consumer's dependency floor.
 
 | Accepted Shared version | Actual Skill compatibility |

@@ -78,12 +78,12 @@ async function seedHistory(store) {
       sha256: 'e'.repeat(64), rendererVersion: 'human-v1' } } } : {}) });
 }
 
-test('open-gate preflight recognizes eleven retained receipts and blocks ten unresolved manual attempts read-only', async t => {
+test('open-gate preflight retains eleven receipts and ten idle manual histories without manufacturing completion', async t => {
   const f = await fixture(t); await seedHistory(f.store);
   const before = await snapshot(f.root);
   assert.deepEqual(await f.admission.preflightConsumerTransition({ desiredDigest }), {
     currentDigest, desiredDigest, consumerChange: true, phase: 'open', operationId: null, target: null,
-    active: [], unknown: Array.from({ length: 10 }, (_, index) => index + 12), eligible: false });
+    active: [], unknown: [], eligible: true });
   assert.deepEqual(await snapshot(f.root), before);
   assert.equal((await f.admission.status()).phase, 'open');
 });

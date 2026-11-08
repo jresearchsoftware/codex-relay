@@ -54,7 +54,7 @@ class CommittedFlowTests(unittest.TestCase):
                               (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
                               (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
                               (metadata["generated_by"].encode(), b"other"),
-                              (b'@=7.0.0', b'@=6.0.0'),
+                              (b'@=7.0.1', b'@=6.0.0'),
                               (b'file://', b'file:///changed/')):
             with self.subTest(field=before):
                 self.assertIn(before, original)
@@ -69,8 +69,20 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "4.1.1")
+        self.assertEqual(facts["first_party_version"], "4.2.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")
+
+    def test_historical_slot_is_immutable_and_never_a_missing_selected_fallback(self):
+        shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT,
+                        self.root / QUALIFICATION.HISTORICAL_SLOT)
+        QUALIFICATION.check_project(self.root)
+        history = self.root / QUALIFICATION.HISTORICAL_SLOT / "README.md"
+        original = history.read_bytes()
+        history.write_bytes(original + b"Changed historical evidence\n")
+        self.rejects()
+        history.write_bytes(original)
+        shutil.rmtree(self.root / QUALIFICATION.SLOT)
+        self.rejects()
 
     def test_missing_and_corrupt_payload_receipt_and_metadata(self):
         for name in QUALIFICATION.PAYLOAD | {QUALIFICATION.RECEIPT, QUALIFICATION.MARKER}:

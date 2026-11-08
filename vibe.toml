@@ -5,10 +5,10 @@ version = "0.0.0"
 spec_format = "mixed"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = { version = "=7.0.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0", auth = "none" }
+"org.jresearch.ai/development-governance" = { version = "=7.0.1", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9", auth = "none" }
 
 [requires.packages."flow:org.jresearch.ai/codex-relay"]
-version = "=4.1.1"
+version = "=4.2.0"
 link = "dynamic"
 
 [[registry]]

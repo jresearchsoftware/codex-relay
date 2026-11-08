@@ -133,7 +133,7 @@ test('rejected admission compatibility cannot hide a handoff, submitted result o
     assert.equal(manualAdmissionComplete(record), false, `rejection mutation ${index}`);
     await f.store.put(33, record); const records = JSON.stringify(await f.store.all());
     await assert.rejects(f.old.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
-    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), { code: 'ADMISSION_ATTEMPT_INVALID' });
+    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), { code: 'ADMISSION_NOT_DRAINED' });
     assert.deepEqual(await readFile(gate), before);
     assert.equal(JSON.stringify(await f.store.all()), records);
     assert.deepEqual(await f.journal.all(), []);
@@ -182,14 +182,14 @@ test('early direct-v3 result requires exact parent, body seal and human-v1 rende
   assert.equal(manualAdmissionComplete(current), false);
 });
 
-test('eight refusals and three completed legacy receipts do not resolve ten genuine manual handoffs', async t => {
+test('idle transition retains missing manual Outcomes without inventing completion or cancellation', async t => {
   const f = await setup(t);
   for (let id = 100; id < 107; id++) await f.store.put(id, rejectedManual(id));
   await f.store.put(107, sealedRejectedManual(107));
   for (let id = 108; id < 111; id++) await f.store.put(id, retainedManual(id));
   for (let id = 111; id < 121; id++) {
     const record = manual();
-    Object.assign(record.envelope, { runId: id, attemptId: `run-${id}` });
+    Object.assign(record.envelope, { runId: id, attemptId: `run-${id}`, target: 'issue', number: 42 });
     delete record.outcome; delete record.manualSubmission;
     record.handoffComplete = true;
     record.commentBodies = { handoff: { number: 42, sha256: 'a'.repeat(64), rendererVersion: 'human-v1' } };
@@ -202,10 +202,11 @@ test('eight refusals and three completed legacy receipts do not resolve ten genu
   assert.equal(rows.filter(manualAdmissionComplete).length, 11);
   assert.deepEqual(rows.filter(record => !manualAdmissionComplete(record)).map(record => record.envelope.runId),
     Array.from({ length: 10 }, (_, index) => 111 + index));
-  await assert.rejects(f.old.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
-  await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  await f.old.checkConsumerTransition({ operationId, target });
+  await f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest });
+  assert.deepEqual((await f.next.status()).unknown, []);
   assert.equal(JSON.stringify(await f.store.all()), before); assert.deepEqual(await f.journal.all(), []);
-  assert.deepEqual(await readFile(join(f.root, 'admission-v1.json')), gate);
+  assert.equal((await f.next.read()).consumerDigest, newDigest);
 });
 
 test('drained same-operation change preserves original automatic and manual receipts, supports replay and next admission', async t => {
@@ -235,13 +236,12 @@ test('pending manual handoff and any unpublished/uncertain original effect block
   }
 });
 
-test('automatic completion cannot be manufactured by lifecycle flag, changed journal envelope or unresolved publication', async t => {
+test('completed lifecycle history retains pending publication and handoff boundaries across consumer changes', async t => {
   const f = await setup(t);
-  for (const mutate of [(r, j) => { delete j.outcome; }, (r, j) => { j.envelope = { ...j.envelope, consumerDigest: newDigest }; },
-    r => { r.publicationIntent = { previous: target }; }, r => { r.handoffComplete = false; }]) {
+  for (const mutate of [r => { r.publicationIntent = { previous: target }; }, r => { r.handoffComplete = false; }]) {
     const { record, saved } = automatic(); mutate(record, saved); await f.store.put(31, record); await f.journal.put(31, saved);
     await assert.rejects(f.old.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
-    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), { code: 'ADMISSION_ATTEMPT_INVALID' });
+    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), { code: 'ADMISSION_NOT_DRAINED' });
     assert.equal((await f.old.read()).consumerDigest, oldDigest);
   }
 });
@@ -268,7 +268,8 @@ test('completed original prepublication recovery keeps its own exact journal and
   await f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest });
   assert.deepEqual((await f.next.status()).unknown, []);
   record.prepublicationRecovery.handoffProven = false; await f.store.put(31, record);
-  await assert.rejects(f.next.status(), { code: 'ADMISSION_ATTEMPT_INVALID' });
+  assert.deepEqual((await f.next.status()).unknown, [31]);
+  await assert.rejects(f.next.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
 });
 
 test('CLI transition arguments are bounded and retain the selected operation/revision/digest', () => {
@@ -277,4 +278,52 @@ test('CLI transition arguments are bounded and retain the selected operation/rev
   for (const args of [['consumer-transition', '--operation', operationId, '--revision', target],
     ['consumer-transition-check', '--operation', operationId, '--revision', target, '--program', '/tmp/other']])
     assert.throws(() => parseAdmissionArguments(args), { code: 'ADMISSION_ARGUMENTS_INVALID' });
+});
+
+
+test('completed lifecycle releases idle transition without rereading obsolete execution journals', async t => {
+  const f = await setup(t); const { record } = automatic(); await f.store.put(31, record);
+  const next = createAdmissionControl({ root: f.root, consumerDigest: newDigest, store: f.store,
+    journal: { get: async () => assert.fail('completed lifecycle does not reacquire obsolete runner evidence') },
+    protectedRoot: false, manualAttemptDisposition: async () => assert.fail('idle transition does not read historical GitHub authority') });
+  await next.transitionConsumer({ operationId, target, previousDigest: oldDigest });
+  assert.deepEqual((await next.status()).unknown, []);
+  await assert.rejects(next.complete({ runId: 31, attemptId: 'run-31' }), { code: 'CONSUMER_CONFIG_CHANGED' });
+  assert.deepEqual(await f.store.get(31), record);
+});
+
+
+test('completed old-digest automatic records cannot hide pending effects or unknown containment', async t => {
+  const f = await setup(t);
+  for (const fields of [
+    { relationshipIntent: { number: 42 } }, { readinessIntent: { draft: false } },
+    { successOutcomeIntent: { head: target } }, { readyConsumption: { status: 'uncertain' } },
+    { prepublicationRecovery: { complete: false } },
+    { controllerLifecycle: { version: 1, status: 'complete', child: 'started', containment: 'unknown' } }
+  ]) {
+    const { record } = automatic(); Object.assign(record, fields); await f.store.put(31, record);
+    assert.deepEqual((await f.old.status()).unknown, [31]);
+    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }),
+      { code: 'ADMISSION_NOT_DRAINED' });
+    assert.equal((await f.old.read()).consumerDigest, oldDigest);
+  }
+});
+
+
+test('malformed lifecycle terminal receipts cannot release either current or old-digest work', async t => {
+  const f = await setup(t);
+  for (const consumerDigest of [oldDigest, newDigest]) for (const mutate of [
+    record => { record.outcome = {}; }, record => { record.outcome.status = 'unknown'; },
+    record => { record.outcome.outcomeId = 0; }, record => { record.outcome.head = 'invalid'; },
+    record => { record.outcome.prNumber = 0; }, record => { record.outcome.bodySha256 = 'invalid'; }
+  ]) {
+    const { record } = automatic(); record.envelope.consumerDigest = consumerDigest; mutate(record);
+    await f.store.put(31, record);
+    assert.deepEqual((await f.old.status()).unknown, [31]);
+    assert.equal((await f.old.preflightConsumerTransition({ desiredDigest: newDigest })).eligible, false);
+    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }),
+      { code: 'ADMISSION_NOT_DRAINED' });
+  }
+  const { record } = automatic(); delete record.outcome.bodySha256; await f.store.put(31, record);
+  await f.old.checkConsumerTransition({ operationId, target });
 });
