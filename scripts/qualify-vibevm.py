@@ -75,6 +75,39 @@ def check_repeat_lock(before, after):
     require(previous == current, "Repeat install changed the resolved lock identity")
 
 
+def check_relocation_lock(before, after, source, label):
+    """Allow only native checkout metadata changes for the exact first-party package."""
+    previous, current = (tomllib.loads(data.decode()) for data in (before, after))
+    entries = []
+    for lock in (previous, current):
+        timestamp = lock.get("meta", {}).get("generated_at")
+        require(isinstance(timestamp, str) and
+                re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp),
+                label + " has invalid generation timestamp")
+        first = [entry for entry in lock.get("package", [])
+                 if entry.get("group") == "org.jresearch.ai" and entry.get("name") == "codex-relay"]
+        require(len(first) == 1, label + " has ambiguous first-party package identity")
+        first = first[0]
+        require(first.get("source_kind") in {"local", "registry"},
+                label + " has unsupported first-party source kind")
+        source_url = first.get("source_url", "")
+        location = urlsplit(source_url) if isinstance(source_url, str) else None
+        require(location is not None and location.scheme == "file" and not location.netloc
+                and not location.query and not location.fragment and location.path.startswith("/")
+                and unquote(location.path).endswith("/" + SELF_SOURCE.as_posix()),
+                label + " has invalid first-party registry location")
+        entries.append(first)
+    require(entries[1]["source_url"] == source.as_uri(),
+            label + " did not bind the relocated first-party source")
+    previous["meta"]["generated_at"] = current["meta"]["generated_at"]
+    entries[0]["source_url"] = entries[1]["source_url"]
+    # Native 1.0.11 resolves an existing LocalRegistry entry as local, while the
+    # committed/native-update lock may call that same in-tree source registry.
+    # Version, hashes, source refs, graph and every other package field stay exact.
+    entries[0]["source_kind"] = entries[1]["source_kind"]
+    require(current == previous, label + " changed more than native checkout metadata/timestamp")
+
+
 def managed(data):
     require(len(re.findall(rb"^</?vibevm>$", data, re.M)) == 2,
             "Expected exactly one native managed block")
@@ -450,13 +483,9 @@ def probe(vibe, pin, project_root=ROOT):
             # never rewrite the lock or ignore local_source_freshness findings.
             check_project(project)
             before = {name: read_file(project, name) for name in route_paths}
-            previous = tomllib.loads(before["vibe.lock"].decode())
             run(project, label, "install", "--no-default-registry", "--assume-yes", offline=False)
-            current = tomllib.loads(read_file(project, "vibe.lock").decode())
-            previous["meta"]["generated_at"] = current["meta"]["generated_at"]
-            first = next(entry for entry in previous["package"] if entry["name"] == "codex-relay")
-            first["source_url"] = (project / SELF_SOURCE).as_uri()
-            require(current == previous, label + " changed more than native checkout location/timestamp")
+            check_relocation_lock(before["vibe.lock"], read_file(project, "vibe.lock"),
+                                  project / SELF_SOURCE, label)
             for name, data in before.items():
                 if name != "vibe.lock":
                     require(read_file(project, name) == data, label + " changed ready bytes: " + name)

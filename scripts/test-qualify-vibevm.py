@@ -61,6 +61,37 @@ class CommittedFlowTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     QUALIFICATION.check_repeat_lock(original, original.replace(before, after))
 
+    def test_relocated_install_only_normalizes_native_first_party_checkout_metadata(self):
+        original = (self.root / "vibe.lock").read_bytes()
+        lock = tomllib.loads(original.decode())
+        first = next(entry for entry in lock["package"] if entry["name"] == "codex-relay")
+        source = self.root / QUALIFICATION.SELF_SOURCE
+        relocated = original.replace(first["source_url"].encode(), source.as_uri().encode())
+        relocated = relocated.replace(lock["meta"]["generated_at"].encode(), b"2030-01-02T03:04:05Z")
+        native = relocated.replace(b'source_kind = "registry"', b'source_kind = "local"')
+        QUALIFICATION.check_relocation_lock(original, relocated, source, "native-registry")
+        QUALIFICATION.check_relocation_lock(original, native, source, "native-local")
+        QUALIFICATION.check_relocation_lock(native, native, source, "repeat-local")
+        for before, after in ((b'source_kind = "local"', b'source_kind = "git"'),
+                              (b'source_kind = "local"', b'source_kind = "arbitrary"'),
+                              (first["content_hash"].encode(), b"sha256:" + b"0" * 64),
+                              (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
+                              (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
+                              (b'@=7.0.1', b'@=6.0.0'),
+                              (b'version = "5.0.0"', b'version = "5.0.1"'),
+                              (b'generated_by = "vibe 1.0.7"', b'generated_by = "other"'),
+                              (b'file://', b'file:///foreign/')):
+            with self.subTest(field=before):
+                self.assertIn(before, native)
+                with self.assertRaises(RuntimeError):
+                    QUALIFICATION.check_relocation_lock(original, native.replace(before, after), source, "changed")
+        for old in (original.replace(b'source_kind = "registry"', b'source_kind = "arbitrary"'),
+                    original.replace(b'file:///', b'file://foreign/'),
+                    original.replace(lock["meta"]["generated_at"].encode(), b"invalid")):
+            with self.subTest(original=old):
+                with self.assertRaises(RuntimeError):
+                    QUALIFICATION.check_relocation_lock(old, native, source, "invalid-original")
+
     def test_committed_files_need_no_tool_or_lifecycle_state(self):
         self.assertFalse((self.root / ".vibe").exists())
         facts = QUALIFICATION.check_project(self.root)
