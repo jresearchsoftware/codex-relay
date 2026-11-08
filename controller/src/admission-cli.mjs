@@ -7,9 +7,9 @@ import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
-import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
-import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './manual-attempt-disposition.mjs';
+import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 import { fail } from './execution-contract.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 
@@ -48,15 +48,26 @@ export function parseAdmissionArguments(args) {
 // Retained runtimes own their original containment/source interpretation. This
 // adds current publication-effect checks without changing that historical code.
 export async function supplementOriginalInventory(inventory, records, { journal, task = null } = {}) {
-  const unknown = [...inventory.unknown];
+  const unknown = new Set(inventory.unknown);
   for (const record of records) {
     const e = record.envelope;
     if (task !== null && e.issueNumber !== task) continue;
-    if (e.route === 'manual' ? await manualAttemptHasConflictingActivity(record, { journal })
-      : e.route === 'auto' && (attemptHasPendingPublicationEffects(record) && !activeControllerReservation(record)
-        || record.controllerLifecycle?.status === 'complete' && !terminalAdmissionOutcome(record))) unknown.push(e.runId);
+    if (e.route === 'manual') {
+      // Original source owns original result semantics. Current source only
+      // checks independent operational effects; it does not decode v3 again.
+      const untouched = record.admissionBlock || e.admissionBlock
+        ? await preAdmissionRefusalHasNoPendingEffects(record, { journal })
+        : manualAttemptHasNoPendingEffects(record) && !await journal.get(e.runId, e.repository);
+      if (untouched) unknown.delete(e.runId);
+      else if (unknown.has(e.runId) || !terminalAdmissionOutcome(record)
+        || attemptHasPendingPublicationEffects(record) || record.handoffComplete === false
+        || ['controllerLifecycle', 'prepublicationRecovery', 'publicationRecoveries', 'collection', 'execution']
+          .some(key => Boolean(record[key]))
+        || await journal.get(e.runId, e.repository)) unknown.add(e.runId);
+    } else if (e.route === 'auto' && (attemptHasPendingPublicationEffects(record) && !activeControllerReservation(record)
+      || record.controllerLifecycle?.status === 'complete' && !terminalAdmissionOutcome(record))) unknown.add(e.runId);
   }
-  return { ...inventory, unknown: [...new Set(unknown)].sort((a, b) => a - b) };
+  return { ...inventory, unknown: [...unknown].sort((a, b) => a - b) };
 }
 
 export function installedAdmissionControl() {

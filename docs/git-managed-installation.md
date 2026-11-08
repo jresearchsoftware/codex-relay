@@ -516,14 +516,12 @@ publication completion, and every exact ref/PR keeps its publication isolation.
 Old records remain read-only under a newer consumer digest. Replay/recovery
 still uses their original source, consumer, authority and operation identity.
 
-The expert `createInstalledTaskDisposition({allowAcknowledgement:true})`
-adapter and any existing `historical-manual-dispositions-v1` observations remain
-available for explicit historical diagnosis. Their existing native freshness and
-original-record rules still apply when used; the cache supplies no execution
-authority or terminal Outcome. Ordinary installed admission, status, preflight
-and consumer transition no longer construct that reader or cache. They do not
-require historical GitHub reads, Task reclassification, closure or withdrawal
-acknowledgement to install an unrelated selected version.
+Historical Task-disposition readers, withdrawal acknowledgement APIs and their
+cache have been removed. Existing protected cache bytes, if present, are inert
+historical evidence; installation does not mutate or consult them. Admission,
+status, preflight and consumer transition inspect only execution and publication
+effects. They require no historical Task reclassification to install an unrelated
+selected version.
 
 GitHub remains the Task/Decision/PR/Outcome history. Installation keeps its own
 bounded same-operation state, and execution keeps only the existing coordination

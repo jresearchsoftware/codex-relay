@@ -27,7 +27,7 @@ function automatic(runId = 31) {
   return { record: { envelope, outcome, controllerLifecycle: { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' } },
     saved: { version: VERSION, envelope, outcome, execution: null } };
 }
-function manual() {
+function manual(runId = 32) {
   const body = 'Authority model: github-native-v1\nIssue closure policy: keep-open';
   const parent = { kind: 'issue', number: 42 };
   const source = { charter: { kind: 'issue-body', id: 42, parent, sha256: sha256Body(body) },
@@ -37,12 +37,12 @@ function manual() {
     charter_sha256: sha256Body(body), purpose: 'Bounded qualification', scope: [], model: 'gpt-6.1-sol',
     effort: 'xhigh', subagents: false, validation: ['diff-check'], boundaries: [], branch: null,
     base_sha: null, starting_head: null, existing_pr: null, issue_closure_policy: 'keep-open',
-    continuation: { hold: false, next: null }, route: 'manual' } }, { step: 1, attempt: 'run-32', runId: '32' });
+    continuation: { hold: false, next: null }, route: 'manual' } }, { step: 1, attempt: `run-${runId}`, runId: String(runId) });
   const result = { schema_version: '4.0', kind: 'outcome', repository: 'example/sample', task: 42,
-    parent, charter_sha256: sha256Body(body), attempt: 'run-32', step: 1, status: 'implemented',
-    result: { kind: 'qualification', revision: null, identities: [{ kind: 'github-actions-run', id: '32' }] },
+    parent, charter_sha256: sha256Body(body), attempt: `run-${runId}`, step: 1, status: 'implemented',
+    result: { kind: 'qualification', revision: null, identities: [{ kind: 'github-actions-run', id: String(runId) }] },
     warnings: [], limitations: [], summary: 'Bounded result.', authority, admission: admissionBinding(request) };
-  return { envelope: { version: VERSION, consumerDigest: oldDigest, runId: 32, attemptId: 'run-32', route: 'manual',
+  return { envelope: { version: VERSION, consumerDigest: oldDigest, runId, attemptId: `run-${runId}`, route: 'manual',
     repository: 'example/sample', issueNumber: 42, step: 1, request },
     manualSubmission: { sha256: sha256Body(JSON.stringify(result)), parent, publishedResult: result },
     outcome: { manual: true, status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: null, prNumber: null, outcomeId: 13, bodySha256: 'e'.repeat(64) } };
@@ -56,33 +56,16 @@ function rejectedManual(runId = 33) {
     outcome: { status: 'BLOCKED', head: null, prNumber: null, outcomeId: runId + 1000, bodySha256: 'd'.repeat(64) } };
 }
 
-function retainedManual(runId = 34) {
-  const record = manual();
-  Object.assign(record.envelope, { runId, attemptId: `run-${runId}`,
-    request: { schema_version: '3.0', kind: 'task-request' }, requestReference: { sha256: 'a'.repeat(64) } });
-  delete record.manualSubmission; delete record.outcome.bodySha256;
-  record.manualResultAuthorization = { id: runId + 1000, sha256: 'b'.repeat(64) };
-  return record;
-}
-
-function retainedDirectManual(runId = 35) {
-  const record = retainedManual(runId); delete record.manualResultAuthorization;
-  record.outcome.bodySha256 = 'c'.repeat(64);
-  record.manualSubmission = { sha256: 'd'.repeat(64), parent: { kind: 'issue', number: 42 }, rendererVersion: 'human-v1' };
-  record.commentBodies = { outcome: { number: 42, sha256: record.outcome.bodySha256, rendererVersion: 'human-v1' } };
-  return record;
-}
-
 function sealedRejectedManual(runId = 36) {
   const record = rejectedManual(runId); delete record.outcome.bodySha256;
   record.commentBodies = { outcome: { number: 42, sha256: 'e'.repeat(64), rendererVersion: 'human-v1' } };
   return record;
 }
 
-test('mixed rejected-before-handoff and retained manual receipts permit exact transition without rewriting history', async t => {
+test('mixed current admitted and rejected-before-handoff manual receipts permit exact transition without rewriting history', async t => {
   const f = await setup(t); const auto = automatic();
   await f.store.put(31, auto.record); await f.journal.put(31, auto.saved);
-  for (const record of [manual(), rejectedManual(), retainedManual(), retainedDirectManual(), sealedRejectedManual()]) {
+  for (const record of [manual(), rejectedManual(), sealedRejectedManual()]) {
     assert.equal(manualAdmissionComplete(record), true);
     await f.store.put(record.envelope.runId, record);
   }
@@ -92,7 +75,7 @@ test('mixed rejected-before-handoff and retained manual receipts permit exact tr
   assert.deepEqual(await f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }), transitioned);
   assert.deepEqual((await f.next.status()).unknown, []);
   await assert.rejects(f.old.read(), { code: 'CONSUMER_CONFIG_CHANGED' });
-  for (const runId of [32, 33, 34, 35, 36])
+  for (const runId of [32, 33, 36])
     await assert.rejects(f.next.complete({ runId, attemptId: `run-${runId}` }), { code: 'CONSUMER_CONFIG_CHANGED' });
   assert.equal(JSON.stringify(await f.store.all()), before);
   assert.equal(JSON.stringify(await f.journal.all()), journalBefore);
@@ -140,53 +123,25 @@ test('rejected admission compatibility cannot hide a handoff, submitted result o
   }
 });
 
-test('only original unextended v3 authorization may omit the published body hash', () => {
-  assert.equal(manualAdmissionComplete(retainedManual()), true);
-  const mutations = [r => { r.envelope.request.schema_version = '4.0'; },
-    r => { r.envelope.request.kind = 'change-request'; }, r => { r.envelope.requestReference.sha256 = 'invalid'; },
-    r => { r.manualResultAuthorization.id = 0; }, r => { r.manualResultAuthorization.sha256 = 'invalid'; },
-    r => { r.manualSubmission = null; }, r => { r.commentBodies = {}; }, r => { r.outcome.extra = true; },
-    r => { r.outcome.bodySha256 = null; }, r => { r.outcome.bodySha256 = 'invalid'; },
-    r => { r.outcome.manual = false; }, r => { r.handoffComplete = false; },
-    r => { r.commentIntent = { key: 'outcome' }; }, r => { delete r.outcome; }];
-  for (const [index, mutate] of mutations.entries()) {
-    const record = retainedManual(); mutate(record);
-    assert.equal(manualAdmissionComplete(record), false, `authorization mutation ${index}`);
-  }
-  const incompleteModern = retainedManual(); incompleteModern.outcome.bodySha256 = 'e'.repeat(64);
-  incompleteModern.manualSubmission = { publishedResult: null };
-  assert.equal(manualAdmissionComplete(incompleteModern), false);
-});
-
-test('early direct-v3 result requires exact parent, body seal and human-v1 renderer and cannot substitute for v4', () => {
-  assert.equal(manualAdmissionComplete(retainedDirectManual()), true);
-  const pr = retainedDirectManual(); pr.outcome.prNumber = 43;
-  pr.manualSubmission.parent = { kind: 'pull_request', number: 43 }; pr.commentBodies.outcome.number = 43;
-  assert.equal(manualAdmissionComplete(pr), true);
-  const mutations = [r => { r.envelope.request.schema_version = '4.0'; },
-    r => { r.envelope.requestReference.sha256 = 'invalid'; }, r => { r.manualSubmission.sha256 = 'invalid'; },
-    r => { r.manualSubmission.publishedResult = null; }, r => { r.manualSubmission.rendererVersion = 'human-v2'; },
-    r => { r.manualSubmission.parent.number = 43; }, r => { r.manualSubmission.parent.kind = 'comment'; },
-    r => { r.manualSubmission.extra = true; }, r => { r.manualSubmission.parent.extra = true; },
-    r => { r.commentBodies.outcome.number = 43; }, r => { r.commentBodies.outcome.sha256 = 'e'.repeat(64); },
-    r => { r.commentBodies.outcome.rendererVersion = 'human-v2'; }, r => { delete r.commentBodies; },
-    r => { delete r.outcome.bodySha256; }, r => { r.outcome.manual = false; },
-    r => { r.handoffComplete = false; }, r => { r.lifecycleIntent = {}; }];
-  for (const [index, mutate] of mutations.entries()) {
-    const record = retainedDirectManual(); mutate(record);
-    assert.equal(manualAdmissionComplete(record), false, `direct-v3 mutation ${index}`);
-  }
-  const current = manual(); delete current.manualSubmission.publishedResult;
-  current.manualSubmission.rendererVersion = 'human-v1';
-  current.commentBodies = { outcome: { number: 42, sha256: current.outcome.bodySha256, rendererVersion: 'human-v1' } };
-  assert.equal(manualAdmissionComplete(current), false);
+test('current manual completion requires exact admission, complete result and durable native body proof', () => {
+  assert.equal(manualAdmissionComplete(manual()), true);
+  for (const mutate of [
+    value => { delete value.outcome.bodySha256; }, value => { value.outcome.bodySha256 = 'invalid'; },
+    value => { delete value.manualSubmission.publishedResult; }, value => { value.manualSubmission.publishedResult = null; },
+    value => { value.manualSubmission.publishedResult.schema_version = '3.0'; },
+    value => { value.manualSubmission.publishedResult.step = 2; },
+    value => { value.manualSubmission.publishedResult.authority.sha256 = 'f'.repeat(64); },
+    value => { value.manualSubmission.publishedResult.admission.sha256 = 'f'.repeat(64); },
+    value => { value.outcome.manual = false; }, value => { value.handoffComplete = false; },
+    value => { value.commentIntent = { key: 'outcome' }; }
+  ]) { const value = manual(); mutate(value); assert.equal(manualAdmissionComplete(value), false); }
 });
 
 test('idle transition retains missing manual Outcomes without inventing completion or cancellation', async t => {
   const f = await setup(t);
   for (let id = 100; id < 107; id++) await f.store.put(id, rejectedManual(id));
   await f.store.put(107, sealedRejectedManual(107));
-  for (let id = 108; id < 111; id++) await f.store.put(id, retainedManual(id));
+  for (let id = 108; id < 111; id++) await f.store.put(id, manual(id));
   for (let id = 111; id < 121; id++) {
     const record = manual();
     Object.assign(record.envelope, { runId: id, attemptId: `run-${id}`, target: 'issue', number: 42 });

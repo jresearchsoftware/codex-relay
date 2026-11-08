@@ -35,7 +35,7 @@ def test_existing_serial_state_blocks_without_opening_credentials_or_mutating_ev
     journal.write_text(json.dumps({'state': state, 'originalConsumerDigest': 'b' * 64}))
     before = observe(tmp_path)
     for _ in range(2):
-        with pytest.raises(pool.PoolError, match='MANAGED_POOL_SERIAL_TRANSITION_REQUIRED'):
+        with pytest.raises(pool.PoolError, match='MANAGED_POOL_SERIAL_TRANSITION_RETIRED'):
             migration.reject_serial_transition(contract, root=tmp_path, owner_uid=os.getuid())
         assert observe(tmp_path) == before
 
@@ -45,7 +45,7 @@ def test_original_serial_service_without_registration_is_also_preserved(tmp_path
     unit.parent.mkdir(parents=True)
     unit.write_text('[Service]\nExecStart=/original/general-runner/run.sh\n')
     before = observe(tmp_path)
-    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_REQUIRED'):
+    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_RETIRED'):
         migration.reject_serial_transition(contract, root=tmp_path, owner_uid=os.getuid())
     assert observe(tmp_path) == before
 
@@ -56,7 +56,7 @@ def test_protected_serial_snapshot_blocks_even_when_transport_was_already_stoppe
     value['consumer'].pop('generalRunnerPool')
     snapshot.write_text(json.dumps(value))
     before = observe(tmp_path)
-    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_REQUIRED'):
+    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_RETIRED'):
         migration.reject_serial_transition(contract, root=tmp_path, owner_uid=os.getuid())
     assert observe(tmp_path) == before
 
@@ -108,7 +108,7 @@ def test_authenticated_managed_legacy_guard_preserves_original_artifacts(tmp_pat
         path.parent.mkdir(parents=True)
         path.write_text('[Service]\nExecStart=/original/run.sh\n')
     before = observe(tmp_path)
-    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_REQUIRED'):
+    with pytest.raises(pool.PoolError, match='SERIAL_TRANSITION_RETIRED'):
         migration.reject_legacy_registration(contract, root=tmp_path, owner_uid=os.getuid())
     assert observe(tmp_path) == before
 

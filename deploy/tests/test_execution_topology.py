@@ -20,12 +20,11 @@ def tables():
              config['environment']['runner']['user']]
     names += [slot[key] for slot in config['consumer']['executionSlots'] for key in ['runnerUser', 'runtimeUser']]
     users = [SimpleNamespace(pw_name=name, pw_uid=1000 + index, pw_gid=2000 + index)
-             for index, name in enumerate(names)]
+             for index, name in enumerate(dict.fromkeys(names))]
     groups = [SimpleNamespace(gr_name=user.pw_name, gr_gid=user.pw_gid, gr_mem=[])
               for user in users]
-    groups += [SimpleNamespace(gr_name=slot['workGroup'], gr_gid=3000 + index,
-                               gr_mem=[slot['runnerUser'], slot['runtimeUser']])
-               for index, slot in enumerate(config['consumer']['executionSlots'])]
+    groups += [SimpleNamespace(gr_name=config['environment']['codexWorkGroup'], gr_gid=3000,
+                               gr_mem=[config['environment']['generalRunner']['user'], config['consumer']['runtimeUser']])]
     return config, users, groups
 
 
@@ -36,31 +35,27 @@ def test_valid_topology_uses_real_numeric_separation_and_only_its_work_membershi
 
 
 def test_fresh_numeric_preflight_allows_absent_accounts_without_creating_them():
-    assert topology.numeric_preflight(inputs(), [], []) == {'existingUsers': 0, 'numericIdentity': 'distinct'}
-
-
-def test_existing_foreign_numeric_alias_blocks_before_account_reconciliation():
-    config, users, groups = tables()
-    users.append(SimpleNamespace(pw_name='another-installation', pw_uid=users[-1].pw_uid, pw_gid=4000))
-    with pytest.raises(ValueError, match='UID_ALIAS'):
-        topology.numeric_preflight(config, users, groups)
+    assert topology.numeric_preflight(inputs(), [], []) == {'existingUsers': 0, 'numericIdentity': 'shared-pool'}
 
 
 @pytest.mark.parametrize('mutation', [
     lambda users, groups: setattr(users[-1], 'pw_uid', users[-2].pw_uid),
-    lambda users, groups: users.append(SimpleNamespace(pw_name='foreign-alias', pw_uid=users[-1].pw_uid, pw_gid=4000)),
-    lambda users, groups: setattr(groups[-1], 'gr_gid', groups[-2].gr_gid),
-    lambda users, groups: groups.append(SimpleNamespace(gr_name='foreign-alias', gr_gid=groups[-1].gr_gid, gr_mem=[])),
-    lambda users, groups: groups[-1].gr_mem.append(users[0].pw_name),
-    lambda users, groups: groups[0].gr_mem.append(users[-1].pw_name),
-    lambda users, groups: groups[-3].gr_mem.append(users[0].pw_name),
+    lambda users, groups: setattr(users[-1], 'pw_uid', users[1].pw_uid),
     lambda users, groups: setattr(users[-1], 'pw_uid', 0),
+    lambda users, groups: groups[-1].gr_mem.remove(users[-1].pw_name),
+    lambda users, groups: groups.pop(),
 ])
-def test_numeric_aliases_foreign_members_and_extra_groups_fail_closed(mutation):
+def test_current_pool_requires_distinct_protected_identities_and_work_access(mutation):
     config, users, groups = tables()
     mutation(users, groups)
     with pytest.raises(ValueError, match='EXECUTION_SLOT_'):
         topology.identities(config, users, groups)
+
+
+def test_shared_runtime_keeps_unrelated_existing_groups():
+    config, users, groups = tables()
+    groups.append(SimpleNamespace(gr_name='owner-approved-group', gr_gid=5000, gr_mem=[users[-1].pw_name]))
+    assert topology.identities(config, users, groups)[0][users[-1].pw_name] is users[-1]
 
 
 @pytest.mark.parametrize('grant', ['user:9999:rwx', 'group:9999:r-x',

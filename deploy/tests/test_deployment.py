@@ -61,7 +61,7 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaises(config.InvalidConfig):
                 config.validate(invalid, ROOT)
 
-    def test_general_runner_scope_defaults_to_repository_and_org_group_is_independent(self):
+    def test_managed_general_runner_group_is_independent_of_production(self):
         import yaml
         from ansible.parsing.dataloader import DataLoader
         from ansible.template import Templar
@@ -71,7 +71,7 @@ class ConfigurationTests(unittest.TestCase):
         defaults = yaml.safe_load((backend / 'group_vars/all.yml').read_text())
         general = yaml.safe_load((backend / 'vars/general-runner.yml').read_text())
         reconciliation = yaml.safe_load((backend / 'tasks/production-general-runner.yml').read_text())[1]
-        for extra in [{}, {'scope': 'repository'}, {'scope': 'organization', 'group': 'consumer-general'}]:
+        for extra in [{'scope': 'organization', 'group': 'consumer-general'}]:
             with self.subTest(extra=extra):
                 current = copy.deepcopy(c)
                 current['environment']['generalRunner'].update(extra)
@@ -80,7 +80,7 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertEqual(compiled['relay_runner_registration_scope'], 'organization')
                 self.assertEqual(compiled['relay_runner_registration_group'], c['environment']['runner']['group'])
                 self.assertEqual(compiled['relay_production_runner_registration_group'], c['environment']['runner']['group'])
-                scope, group = extra.get('scope', 'repository'), extra.get('group', '')
+                scope, group = extra['scope'], extra['group']
                 self.assertEqual(compiled['relay_general_runner_registration_scope'], scope)
                 self.assertEqual(compiled['relay_general_runner_registration_group'], group)
                 # Both ordinary apply's scoped include and the public enable
@@ -98,7 +98,7 @@ class ConfigurationTests(unittest.TestCase):
         c = json.loads((ROOT / 'deploy/example.json').read_text())
         production_group = c['environment']['runner']['group']
         for extra in [
-            {'scope': 'enterprise'}, {'scope': 'organization'}, {'group': 'unused'},
+            {'scope': 'enterprise'}, {'scope': 'repository'},
             {'scope': 'repository', 'group': ''}, {'scope': 'repository', 'group': 'unused'},
             {'scope': 'organization', 'group': ''}, {'scope': 'organization', 'group': "group'command"},
             {'scope': 'organization', 'group': production_group},
@@ -241,6 +241,9 @@ class EntrypointTests(unittest.TestCase):
         for name in ['deploy', 'consumer', 'controller', 'runtime', 'contracts', 'reviewer']:
             shutil.copytree(ROOT / name, cls.product / name,
                             ignore=shutil.ignore_patterns('__pycache__', 'target', '.pytest_cache'))
+        (cls.product / 'deploy/managed_pool_transport.py').write_text(
+            'def preflight_pool(*args, **kwargs): return "MANAGED_POOL_PREFLIGHT=PASS"\n'
+            'def reconcile_pool(*args, **kwargs): return \'MANAGED_POOL_RESULT={"capacity":1}\'\n')
         cls.revision = commit(cls.product)
         cls.consumer = cls.base / 'consumer'
         cls.consumer.mkdir()
@@ -393,7 +396,7 @@ if a[a.index('-i')+2].endswith('relay-production-bootstrap-disposition.yml'):
             values = json.loads(self.capture.read_text())
             self.assertEqual(values['ansible_connection'], 'local')
             self.assertNotIn('ansible_ssh_private_key_file', values)
-            self.assertEqual(json.loads(values['relay_installed_deployment_config']), json.loads(self.config.read_text()))
+            self.assertEqual(json.loads(values['relay_installed_deployment_config']), config.loads(self.config.read_text(), self.product))
             self.assertFalse(values['relay_service_activation_authorized'])
         finally:
             self.key.write_bytes(key)

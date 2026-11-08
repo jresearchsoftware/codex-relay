@@ -116,7 +116,7 @@ async fn two_consumer_same_artifact_reviewer_to_writer_qualification() {
             policy.actor
         );
         let publication = state.reviews.lock().unwrap()[0].clone();
-        assert_consumer_admits_with_config(&args, &publication, consumer);
+        assert_preserved_cr_publication_with_config(&args, &publication, consumer);
         rpc(
             &http,
             &url,

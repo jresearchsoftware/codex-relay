@@ -105,32 +105,21 @@ limitations. That comment is evidence, not a typed Writer Outcome.
 Independent native `APPROVE` uses the normal `submit_pr_review` call. Reviewer
 returns current authority and a `source_pr` binding, with
 `owner_authorization: explicit-standalone-required`, without creating admission
-or Outcome records. The owner channel reads the existing Task permission and
-execution evidence before supplying these internal canonical facts:
+or Outcome records. The owner channel verifies explicit current Task permission, source provenance,
+required exact-head checks, warnings, readiness, holds and closure restrictions
+through the supported GitHub connector. Once genuine native approval is durable,
+it performs the already-authorized squash with `merge_method: "squash"` and
+`expected_head_sha: candidateB`, then reads back the same PR and squash commit.
+See the [continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+No separate owner merge command, local journal or another confirmation is needed.
+If Reviewer publication is uncertain, recover the original operation; if merge
+is uncertain, reconcile its GitHub effect before any dependent action.
 
-```js
-// Computed by the trusted owner adapter from verified native/current evidence.
-// Do not copy these booleans from a caller receipt or ordinary comment.
-state.standaloneAuthorization = {
-  authority_sha256: receipt.authority.sha256,
-  pullRequest: 43,
-  headSha: candidateB,
-  authorized: true,
-  admittedExecution: false,
-  warningsDispositioned: true
-};
-const result = await continueAfterApproval(receipt, ownerNativePorts);
-```
-
-The adapter also supplies verified owner and PR identity, current native review,
-`closesTask: false`, exact-head required checks, readiness and protected holds
-as described in the [continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
-The helper reserves and rechecks before squash, verifies the merged result and
-does not repeat an uncertain or completed mutation. No extra owner confirmation
-is needed. A retained v3 manual Request can be bound for exact historical result
-acceptance; this does not publish a new v3 Request or route a Relay execution.
-An automatic/admitted manual result or a genuine no-PR Task result instead keeps
-its real Writer Outcome and acceptance path.
+An automatic/admitted manual result keeps its real Writer Outcome and recovery
+path. A genuine no-PR result uses native Task Approval without a fabricated PR.
+Integration does not itself authorize Issue closure, another execution, release
+or Apply. Deliberative acceptance requires the intended owner discussion and
+trusted Decision before formal `APPROVE`.
 
 ## Current v4 independent PR Change Request
 

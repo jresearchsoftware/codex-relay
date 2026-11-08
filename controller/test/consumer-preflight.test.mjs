@@ -7,6 +7,7 @@ import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { installedAdmissionControl, parseAdmissionArguments } from '../src/admission-cli.mjs';
 import { VERSION } from '../src/execution-contract.mjs';
+import { admissionBinding, authoritySourceDigest, createAdmissionSnapshot, sha256Body } from '../../contracts/src/github-authority.mjs';
 
 const currentDigest = 'a'.repeat(64), desiredDigest = 'b'.repeat(64);
 const operationId = '12345678-1234-1234-1234-123456789abc', target = 'c'.repeat(40);
@@ -52,28 +53,33 @@ function rejected(runId, sealed = false) {
   return record;
 }
 
-function completedManual(runId, direct = false) {
-  const record = { envelope: { ...envelope(runId),
-    request: { schema_version: '3.0', kind: 'task-request' },
-    requestReference: { sha256: 'e'.repeat(64) } },
-    outcome: { ...terminal(runId), status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', manual: true } };
-  if (direct) {
-    record.manualSubmission = { sha256: 'f'.repeat(64), parent: { kind: 'issue', number: 42 },
-      rendererVersion: 'human-v1' };
-    record.commentBodies = { outcome: { number: 42, sha256: record.outcome.bodySha256,
-      rendererVersion: 'human-v1' } };
-  } else {
-    delete record.outcome.bodySha256;
-    record.manualResultAuthorization = { id: runId + 2000, sha256: 'f'.repeat(64) };
-  }
-  return record;
+function completedManual(runId) {
+  const body = 'Authority model: github-native-v1\nIssue closure policy: keep-open';
+  const parent = { kind: 'issue', number: 42 };
+  const source = { charter: { kind: 'issue-body', id: 42, parent, sha256: sha256Body(body) },
+    decisions: [], change_request: null, compatibility_request: null };
+  const authority = { ...source, sha256: authoritySourceDigest(source) };
+  const request = createAdmissionSnapshot({ authority, request: { repository: 'example/sample', task: 42,
+    charter_sha256: sha256Body(body), purpose: 'Bounded qualification', scope: [], model: 'gpt-6.1-sol',
+    effort: 'xhigh', subagents: false, validation: ['diff-check'], boundaries: [], branch: null,
+    base_sha: null, starting_head: null, existing_pr: null, issue_closure_policy: 'keep-open',
+    continuation: { hold: false, next: null }, route: 'manual' } }, { step: runId, attempt: `run-${runId}`, runId: String(runId) });
+  const result = { schema_version: '4.0', kind: 'outcome', repository: 'example/sample', task: 42,
+    parent, charter_sha256: sha256Body(body), attempt: `run-${runId}`, step: runId, status: 'implemented',
+    result: { kind: 'qualification', revision: null, identities: [{ kind: 'github-actions-run', id: String(runId) }] },
+    warnings: [], limitations: [], summary: 'Bounded result.', authority, admission: admissionBinding(request) };
+  const current = { envelope: { ...envelope(runId), step: runId, request },
+    manualSubmission: { sha256: sha256Body(JSON.stringify(result)), parent, publishedResult: result },
+    outcome: { manual: true, status: 'IMPLEMENTED_PENDING_FRESH_REVIEW', head: null, prNumber: null,
+      outcomeId: runId + 1000, bodySha256: 'e'.repeat(64) } };
+  return current;
 }
 
 async function seedHistory(store) {
   for (let id = 1; id <= 8; id++) await store.put(id, rejected(id, id === 8));
-  for (let id = 9; id <= 11; id++) await store.put(id, completedManual(id, id === 11));
+  for (let id = 9; id <= 11; id++) await store.put(id, completedManual(id));
   for (let id = 12; id <= 21; id++) await store.put(id, { envelope: { ...envelope(id),
-    request: { schema_version: id < 17 ? '3.0' : '4.0', kind: id < 17 ? 'task-request' : 'admission' } },
+    request: completedManual(id).envelope.request },
     outcome: null, ...(id < 20 ? { commentBodies: { handoff: { number: 42,
       sha256: 'e'.repeat(64), rendererVersion: 'human-v1' } } } : {}) });
 }
@@ -142,27 +148,6 @@ test('preflight preserves exact gate identity in every lifecycle phase and alloc
   await f.admission.phase({ operationId, phase: 'verified', revision: target }); await check('verified');
 });
 
-test('supplemental SERIAL automatic inventory and manual classifier remain separate and are deduplicated', async t => {
-  let manualReads = 0;
-  const f = await fixture(t, {
-    supplementalVerify: async () => {},
-    supplementalInventory: async input => {
-      assert.deepEqual(input, { task: null, slot: null, resourceOnly: false });
-      return { active: [41], unknown: [42] };
-    },
-    supplementalManualInventory: async () => { manualReads++; return [43, 43]; }
-  });
-  await f.store.put(43, { envelope: envelope(43), outcome: null });
-  const before = await snapshot(f.root);
-  const unchanged = await f.admission.preflightConsumerTransition({ desiredDigest: currentDigest });
-  assert.deepEqual(unchanged.active, [41]); assert.deepEqual(unchanged.unknown, [42]);
-  assert.equal(unchanged.eligible, false); assert.equal(manualReads, 0);
-  const changed = await f.admission.preflightConsumerTransition({ desiredDigest });
-  assert.deepEqual(changed.active, [41]); assert.deepEqual(changed.unknown, [42, 43]);
-  assert.equal(changed.eligible, false); assert.equal(manualReads, 1);
-  assert.deepEqual(await snapshot(f.root), before);
-});
-
 test('invalid digests, malformed attempts and invalid supplemental identities fail closed without writes', async t => {
   const f = await fixture(t); const before = await snapshot(f.root);
   for (const digest of [undefined, null, '', 'A'.repeat(64), 'a'.repeat(63), {}])
@@ -172,10 +157,7 @@ test('invalid digests, malformed attempts and invalid supplemental identities fa
   const malformed = await snapshot(f.root);
   await assert.rejects(f.admission.preflightConsumerTransition({ desiredDigest }), { code: 'ADMISSION_ATTEMPT_INVALID' });
   assert.deepEqual(await snapshot(f.root), malformed);
-  const extra = await fixture(t, { supplementalManualInventory: async () => ['private/path'] });
-  const extraBefore = await snapshot(extra.root);
-  await assert.rejects(extra.admission.preflightConsumerTransition({ desiredDigest }), { code: 'ADMISSION_ATTEMPT_INVALID' });
-  assert.deepEqual(await snapshot(extra.root), extraBefore);
+
 });
 
 test('CLI advertises the read-only preflight and accepts exactly one canonical desired digest', () => {

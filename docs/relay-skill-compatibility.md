@@ -35,7 +35,7 @@ authority, native admission, exact-head review and product boundaries. It adds n
 new topic, permission, mandatory owner approval, lower-bound incompatibility or
 release obligation. The governance-only update leaves frozen Relay 4.1.1 and its
 standalone Shared 5.0.0 snapshot unchanged. Task #199's separate supported Relay
-workflow addition is classified as 4.2.0 MINOR under PV-018; that release keeps
+workflow/API retirement is classified as 5.0.0 MAJOR under PV-002/PV-018; it keeps
 the same standalone snapshot and native dependency floor. Shared 7.0.0 remains at
 its original slot solely as immutable inactive history requested by Task #199.
 The root lock, generated boot and native product routing select only 7.0.1;

@@ -110,7 +110,7 @@ test('observation cannot replace the exact published candidate or reconcile chan
     attemptId: f.envelope.attemptId, head: base };
   await assert.rejects(f.broker.invoke(request), { code: 'COMPLETED_PUBLICATION_REQUIRED' });
   f.issue.body += '\nChanged scope'; request.head = f.outcome.head;
-  await assert.rejects(f.broker.invoke(request), { code: 'AUTHORITY_CHANGED' });
+  await assert.rejects(f.broker.invoke(request), { code: 'AUTHORITY_SOURCE_MISMATCH' });
   assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
 });
 

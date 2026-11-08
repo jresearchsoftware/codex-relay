@@ -1,4 +1,4 @@
-"""Native filesystem qualification of retirement and interruption containment."""
+"""Retained original filesystem retirement/recovery; no current fresh SERIAL route."""
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -65,7 +65,7 @@ class Systemd:
 
 @pytest.fixture
 def installation(tmp_path, request):
-    config = json.loads((ROOT / 'deploy/example.json').read_text())
+    config = json.loads((ROOT / 'deploy/tests/fixtures/retained-serial-deployment.json').read_text())
     root = tmp_path
     if os.getuid() == 0:
         directory = tempfile.TemporaryDirectory(prefix='relay-reinstall-test-', dir='/run')
@@ -333,9 +333,22 @@ def test_legacy_directory_replacement_before_chmod_is_rejected(installation, mon
 
 
 def add_execution_slot(value):
-    from test_execution_slots import inputs
+    import config
     old_names = reinstall.unit_names(value.config)
-    topology = inputs()
+    # An explicit old topology is retained evidence, not current input.
+    topology = json.loads(json.dumps(value.config))
+    e, c = topology['environment'], topology['consumer']
+    e['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
+    fields = ['workRoot', 'attemptRoot', 'dispatch', 'launcher',
+              'diagnosticsConfig', 'diagnosticsStore', 'diagnosticsRoot']
+    c['executionSlots'] = [
+        {'id': 'primary', 'runnerName': e['generalRunner']['name'],
+         'runnerUser': e['generalRunner']['user'], 'runtimeUser': c['runtimeUser'],
+         'workGroup': e['codexWorkGroup'], 'paths': {key: c['paths'][key] for key in fields}},
+        {'id': 'second', 'runnerName': 'sample-second', 'runnerUser': 'sample-second-runner',
+         'runtimeUser': 'sample-second-codex', 'workGroup': 'sample-second-work',
+         'paths': config.execution_slot_paths(e['namespace'], 'second')},
+    ]
     value.config['environment']['instance'] = topology['environment']['instance']
     value.config['consumer']['executionSlots'] = topology['consumer']['executionSlots']
     new_names = reinstall.unit_names(value.config)
@@ -1260,27 +1273,3 @@ def test_direct_credential_helper_refuses_pending_reinstall_before_creating_file
     assert result.returncode == 51
     assert 'CREDENTIAL_PROVISIONING_REINSTALL_RECOVERY_REQUIRED' in result.stdout
     assert sorted(value.root.rglob('*')) == before
-
-
-@pytest.mark.skipif(not shutil.which('ansible-playbook'), reason='native Ansible required')
-@pytest.mark.parametrize('shape', ['regular', 'symlink'])
-def test_general_runner_gate_prevents_activation_after_apply_clears_its_record(installation, shape):
-    value = installation
-    if shape == 'regular':
-        value.paths['journal'].write_text('{"stage":"DECOMMISSIONED"}')
-    else:
-        value.paths['journal'].symlink_to(value.root / 'missing-journal')
-    source = yaml.safe_load((ROOT / 'deploy/ansible/relay-general-runner.yml').read_text())[0]['tasks']
-    names = ['Inspect the outer clean-reinstall recovery boundary before general activation',
-             'Refuse activation while clean reinstall still requires recovery']
-    tasks = [next(task for task in source if task['name'] == name) for name in names]
-    activated = value.root / 'activation-mutation'
-    tasks.append({'ansible.builtin.file': {'path': str(activated), 'state': 'touch'}})
-    playbook = value.root / 'general-runner-guard.yml'
-    playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
-                         'vars': {'relay_state_root': str(value.paths['state'])}, 'tasks': tasks}]))
-    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
-                            capture_output=True, text=True)
-    assert result.returncode != 0
-    assert 'GENERAL_RUNNER_CLEAN_REINSTALL_PENDING' in result.stdout
-    assert not activated.exists()

@@ -20,19 +20,41 @@ def json_bytes(value):
 
 
 def inventory(directory):
-    result = {}
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError(f"Expected ordinary guidance directory: {directory}")
+    files = {}
     for path in sorted(directory.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"Symlink in guidance input: {path}")
         if path.is_file():
-            result[path.relative_to(directory).as_posix()] = path.read_bytes()
-    return result
+            files[path.relative_to(directory).as_posix()] = path.read_bytes()
+        elif not path.is_dir():
+            raise ValueError(f"Non-ordinary guidance input: {path}")
+    return files
 
 
-def assemble():
-    metadata = json.loads((ROOT / "guidance/source.json").read_text())
+def read_file(root, relative):
+    path = root
+    for part in Path(relative).parts:
+        path /= part
+        if path.is_symlink():
+            raise ValueError(f"Symlink in guidance input: {path}")
+    if not path.is_file():
+        raise ValueError(f"Missing ordinary guidance input: {path}")
+    return path.read_bytes()
+
+
+def materialize(files, destination):
+    for name, data in files.items():
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+
+def assemble(root=ROOT):
+    metadata = json.loads((root / "guidance/source.json").read_text())
     name = metadata["name"]
-    slot = ROOT / "vibevm/vibedeps" / metadata["shared_coordinate"].replace("/", ".") / metadata["shared_version"]
+    slot = root / "guidance/dependency-closure/vibevm/vibedeps" / metadata["shared_coordinate"].replace("/", ".") / metadata["shared_version"]
     shared = inventory(slot)
     shared.pop(".vibe-slot.toml", None)
     # Match the pinned tool's native Linux tree recipe, not receipt payload hashing.
@@ -45,24 +67,24 @@ def assemble():
     # Complete bytes and producer identity are also checked by qualify-vibevm.py.
     if metadata["shared_source_revision"] not in json.dumps(receipt):
         raise ValueError("Shared accepted producer revision is missing from receipt")
-    skill = inventory(ROOT / "packages/codex-relay/skill")
+    skill = inventory(root / "packages/codex-relay/skill")
     if "SKILL.md" not in skill:
         raise ValueError("Missing canonical native Skill source")
     source_files = {"packages/codex-relay/skill/" + key: digest(value) for key, value in skill.items()}
     for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json",
                  "deploy/workflows/contract.json", "toolchain/vibevm.json"):
         # Read accepted Git blob bytes, independent of Windows checkout newline conversion.
-        data = subprocess.check_output(["git", "show", metadata["contract_revision"] + ":" + path], cwd=ROOT)
+        data = subprocess.check_output(["git", "show", metadata["contract_revision"] + ":" + path], cwd=root)
         skill["references/product/" + Path(path).name] = data
         source_files[path] = digest(data)
     workflow = json.loads(skill["references/product/contract.json"])
     if (metadata["workflow_contract"] != workflow["parallelWorkflowContract"] or
             metadata["serial_workflow_contract"] != workflow["workflowContract"]):
         raise ValueError("Workflow pins differ from the selected accepted Relay contract")
-    installer = (ROOT / "guidance/project.py").read_bytes()
+    installer = (root / "guidance/project.py").read_bytes()
     source_files["guidance/project.py"] = digest(installer)
-    source_files["guidance/source.json"] = digest((ROOT / "guidance/source.json").read_bytes())
-    source_files["scripts/build-relay-guidance.py"] = digest(Path(__file__).read_bytes())
+    source_files["guidance/source.json"] = digest((root / "guidance/source.json").read_bytes())
+    source_files["scripts/build-relay-guidance.py"] = digest(read_file(root, "scripts/build-relay-guidance.py"))
     protocols = ("task-handoff", "independent-review", "contract-and-decision-maintenance",
                  "context-loading", "proportional-controls", "requirement-authority",
                  "package-versioning", "self-adoption", "github-repository-governance")
@@ -144,9 +166,9 @@ spec_format = "mixed"
 "org.jresearch.ai/{name}" = {{ version = "={metadata['version']}", git = "REPLACE_WITH_SELECTED_RELAY_DISTRIBUTION_GIT_URL", rev = "REPLACE_WITH_IMMUTABLE_RELAY_DISTRIBUTION_COMMIT", auth = "none" }}
 "{metadata['shared_coordinate']}" = {{ version = "={metadata['shared_version']}", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "{metadata['shared_distribution_revision']}", auth = "none" }}
 '''.encode()
-    expected.update({"vpm/" + path: data for path, data in inventory(ROOT / "guidance/dependency-closure").items()})
-    expected["vpm/LICENSES.json"] = (ROOT / "guidance/licenses.json").read_bytes()
-    expected["vpm/LICENSE"] = (ROOT / "LICENSE").read_bytes()
+    expected.update({"vpm/" + path: data for path, data in inventory(root / "guidance/dependency-closure").items()})
+    expected["vpm/LICENSES.json"] = (root / "guidance/licenses.json").read_bytes()
+    expected["vpm/LICENSE"] = (root / "LICENSE").read_bytes()
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 
 Generated source candidate for `org.jresearch.ai/{name}`. It describes accepted
@@ -169,28 +191,31 @@ Ordinary Codex use reads the resulting files offline. See the source repository'
     return expected
 
 
+def build(root=ROOT, check=False):
+    expected = assemble(root)
+    output = root / 'guidance/artifacts'
+    actual = inventory(output) if output.exists() else {}
+    changed = sorted(name for name in actual.keys() | expected.keys()
+                     if actual.get(name) != expected.get(name))
+    if not check:
+        unknown = sorted(actual.keys() - expected.keys())
+        if unknown:
+            raise ValueError('Preserve unexpected guidance artifacts: ' + ', '.join(unknown))
+        materialize({name: expected[name] for name in changed}, output)
+    return {'guidance': ('FAIL' if changed else 'PASS') if check else 'GENERATED',
+            'changed': changed, 'files': len(expected)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="compare committed artifacts without writing")
+    parser.add_argument('--check', action='store_true', help='compare committed artifacts without writing')
     args = parser.parse_args()
-    expected = assemble()
-    actual = inventory(OUTPUT) if OUTPUT.exists() else {}
-    changed = sorted(path for path in set(actual) | set(expected) if actual.get(path) != expected.get(path))
-    if args.check:
-        print(json.dumps({"guidance": "FAIL" if changed else "PASS", "changed": changed, "files": len(expected)}))
-        return bool(changed)
-    # This command only owns generated artifacts, never consumer or authoring input files.
-    for path in set(actual) - set(expected):
-        (OUTPUT / path).unlink()
-    for path, data in expected.items():
-        target = OUTPUT / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-    print(json.dumps({"guidance": "GENERATED", "files": len(expected), "changed": changed}))
-    return False
+    report = build(check=args.check)
+    print(json.dumps(report))
+    return args.check and bool(report['changed'])
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except (ValueError, OSError, KeyError, subprocess.SubprocessError) as error:

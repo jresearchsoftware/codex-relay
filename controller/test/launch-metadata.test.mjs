@@ -29,17 +29,17 @@ test('workflow marker examples retain display but cannot downgrade the current b
     for (const instruction of ['Example migration marker: `Authority model: github-native-v1`',
       'Literal example: \\nAuthority model: github-native-v1\\n']) {
       let context;
-      await assert.rejects(fixture(t, { route, labelLaunch: true, streamlinedAdmission: true, instruction,
-        beforeAdmission: value => { context = value; value.run.display_title = issueLabelRunName(value.issue, route); } }),
+      await assert.rejects(fixture(t, { route, labelLaunch: true, streamlinedAdmission: true, issueBody: instruction,
+        beforeAdmission: value => { context = value; value.issue.labels.unshift({ name: 'step-1' }); value.run.display_title = issueLabelRunName(value.issue, route); } }),
       { code: 'CURRENT_PROTOCOL_REQUIRED' });
-      assert.match(context.run.display_title, / · step-1 · codex-ready-/);
+      assert.equal(context.run.display_title, (route === 'manual' ? 'Manual handoff' : 'Auto implementation') + ' · Task 42 · codex-ready-' + route);
       assert.equal(await context.store.get(99), null);
       assert.ok(context.issue.labels.some(label => label.name === `codex-ready-${route}`));
     }
   }
 });
 
-test('workflow exact LF and CRLF markers admit native work without using stale Step labels', async t => {
+test('workflow exact LF and CRLF markers admit native work using the owner-maintained Step position', async t => {
   for (const route of ['auto', 'manual']) {
     for (const newline of ['\n', '\r\n']) {
       const issueBody = ['Authority model: github-native-v1', '', 'Issue closure policy: keep-open', '', 'Implement the admitted goal.'].join(newline);
@@ -51,22 +51,22 @@ test('workflow exact LF and CRLF markers admit native work without using stale S
         } });
       assert.equal(f.run.display_title, `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 42 · codex-ready-${route}`);
       assert.equal(f.envelope.request.kind, 'admission');
-      assert.equal(f.envelope.step, 1);
-      assert.deepEqual(f.issue.labels.map(label => label.name), ['step-1']);
+      assert.equal(f.envelope.step, 901);
+      assert.deepEqual(f.issue.labels.map(label => label.name), ['step-901']);
       assert.equal(f.comments.length, 0);
     }
   }
 });
 
 test('a current broker refuses legacy authority before checking obsolete Step display', async t => {
-  await assert.rejects(fixture(t, { labelLaunch: true, streamlinedAdmission: true,
+  await assert.rejects(fixture(t, { labelLaunch: true, streamlinedAdmission: true, issueBody: 'Unmarked historical charter.',
     beforeAdmission: ({ run }) => { run.display_title = 'Auto implementation · Task 42 · codex-ready-auto'; } }),
   { code: 'CURRENT_PROTOCOL_REQUIRED' });
 });
 
 test('workflow case-insensitive marker matching cannot admit malformed dedicated authority', async t => {
   await assert.rejects(fixture(t, { labelLaunch: true, streamlinedAdmission: true,
-    instruction: 'authority model: github-native-v1',
+    issueBody: 'authority model: github-native-v1',
     beforeAdmission: ({ issue, run }) => { run.display_title = issueLabelRunName(issue, 'auto'); } }),
   { code: 'AUTHORITY_MODEL_INVALID' });
 });
@@ -92,20 +92,21 @@ test('missing and unsafe launch metadata cannot be replaced by a Step default', 
   }
 });
 
-test('legacy terminal/non-routing envelopes remain readable while new dispatches require supplied Step', async t => {
+test('current envelopes require their admitted Step and do not reinterpret old event identities', async t => {
   const f = await fixture(t);
   assert.throws(() => validateEnvelope({ ...f.envelope, step: undefined }), { code: 'EXECUTION_ENVELOPE_INVALID' });
   const legacy = { ...f.envelope, attemptId: 'event-7', eventId: 7, step: undefined };
-  assert.equal(validateEnvelope(legacy), legacy);
+  assert.throws(() => validateEnvelope(legacy), { code: 'EXECUTION_ENVELOPE_INVALID' });
+  assert.equal(validateEnvelope(f.envelope), f.envelope);
   assert.throws(() => validateEnvelope({ ...legacy, attemptId: 'event-8' }), { code: 'EXECUTION_ENVELOPE_INVALID' });
 });
 
 test('a new Issue with no paths, base, branch or profile publishes task-required repository files on its default branch', async t => {
-  const f = await fixture(t, { step: 12, issueBody: '# Implement the admitted goal\nIssue closure policy: keep-open' });
+  const f = await fixture(t, { step: 12, issueBody: 'Authority model: github-native-v1\n# Implement the admitted goal\nIssue closure policy: keep-open' });
   assert.equal(f.envelope.branch, 'codex/task-42');
   assert.equal(f.envelope.startHead, f.envelope.targetBase);
   assert.deepEqual(f.envelope.profile, CONSUMER.defaultProfile);
-  assert.ok(!f.envelope.warnings.some(w => ['branch', 'accepted starting base', 'closure'].includes(w.field)));
+  assert.ok(!(f.envelope.admission?.warnings ?? []).some(w => ['branch', 'accepted starting base', 'closure'].includes(w.field)));
   const result = await runAttempt({ ...f, journal: f.journal, execute: async () => {
     await f.commit('unanticipated-required-file.mjs', '// required by the admitted goal\n');
     return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
@@ -126,27 +127,27 @@ test('native dispatch binds owner, workflow, main, target, phase, Task and Step 
     const api = { ...f.api, getRun: async () => ({ ...f.run, ...delta }) };
     await assert.rejects(admitEnvelope(api, f.admissionRequest), { code: 'OWNER_RUN_NOT_ADMITTED' });
   }
-  for (const delta of [{ step: 3 }, { issueNumber: 43, number: 43 }, { route: 'manual' },
+  for (const delta of [{ issueNumber: 43, number: 43 }, { route: 'manual' },
     { target: 'pull_request', number: 43 }]) {
     await assert.rejects(admitEnvelope(f.api, { ...f.admissionRequest, ...delta }), { code: 'OWNER_RUN_NOT_ADMITTED' });
     await assert.rejects(f.broker.invoke({ ...f.admissionRequest, ...delta }), { code: 'RUN_BINDING_CHANGED' });
   }
 });
 
-test('fresh owner dispatch retries keep Step; explicit continuation changes current metadata and CR without history lookup', async t => {
+test('same dispatch replay keeps its admitted Step; new owner dispatch advances the Issue position', async t => {
   const f = await fixture(t, { remediation: true, step: 5 });
-  for (const [runId, step] of [[100, 5], [101, 23], [102, 2]]) {
-    const request = { ...f.admissionRequest, runId, step };
-    // A new CR phase has a new native publication identity. Reusing the same
-    // review for different authority would corrupt its exact lifecycle receipt.
-    if (f.issue.labels[0].name !== `step-${step}`) { f.review.id++; f.pr.draft = false; }
-    f.issue.labels = f.pr.labels = [{ name: `step-${step}` }];
-    f.review.body = f.review.body.replace(/Step [0-9]+/, `Step ${step}`);
+  const first = await f.broker.invoke(f.admissionRequest);
+  assert.equal(first.resumed, true); assert.equal(first.envelope.step, 5);
+  for (const [runId, position, expected] of [[100, 5, 6], [101, 23, 24]]) {
+    const request = { ...f.admissionRequest, runId, step: null };
+    f.issue.labels = [{ name: `step-${position}` }];
     Object.assign(f.run, { id: runId, display_title: dispatchRunName(request) });
     const { envelope } = await f.broker.invoke(request);
-    assert.equal(envelope.step, step);
+    assert.equal(envelope.step, expected);
     assert.equal(envelope.attemptId, `run-${runId}`);
-    assert.match(envelope.thread, new RegExp(`^Task 42 — Step ${step} — CR-42-001 core$`));
+    assert.ok(envelope.thread.startsWith(`Task 42 — Step ${expected} — CR-42-001`));
+    const replay = await f.broker.invoke(request);
+    assert.equal(replay.resumed, true); assert.equal(replay.envelope.step, expected);
   }
   assert.equal(f.comments.length, 0);
 });
@@ -174,7 +175,7 @@ test('remediation run uses linked Issue identity and supplied Step in PR metadat
     return { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped',
       result: { status: 'success', summary: 'Completed admitted remediation.', validation: ['local checks passed'] } };
   } });
-  assert.equal(title, 'Task 42 · Step 42 · CR-42-001 core');
+  assert.equal(title, 'Task 42 · Step 42 · CR-42-001 · core');
   assert.equal(f.pushes(), 1);
   assert.equal(f.comments.filter(c => c.body.startsWith('## Codex Outcome')).length, 1);
 });

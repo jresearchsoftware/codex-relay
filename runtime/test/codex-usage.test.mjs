@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { currentEnvelope } from '../../controller/test/fixture.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -88,14 +89,7 @@ test('native usage survives semantic validation failure and nonzero child exit',
 });
 
 test('automatic execution transports runtime evidence separately from worker result on both paths', async () => {
-  const e = { target: 'issue', subagentsAllowed: false, attemptId: 'run-99' };
-  // checkoutPath validates a full envelope, so use the public fixture envelope
-  // fields without starting a process or touching a checkout.
-  const { CONSUMER, CONSUMER_DIGEST } = await import('../../consumer/consumer.mjs');
-  Object.assign(e, { version: 2, repository: CONSUMER.repository, consumerDigest: CONSUMER_DIGEST,
-    profile: CONSUMER.defaultProfile, runId: 99, step: 1, number: 42, issueNumber: 42, route: 'auto',
-    startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40), targetBase: 'a'.repeat(40),
-    authorityDigest: 'b'.repeat(64), branch: `${CONSUMER.taskBranchPrefix}usage`, validation: ['diff-check'] });
+  const e = currentEnvelope({ subagentsAllowed: false, runId: 99 });
   const usage = usageFromCodexJsonLines(stream(counts));
   const result = await executeCodex(e, { runTask: async ({ evidence }) => {
     evidence.codexUsage = usage; return semantic;

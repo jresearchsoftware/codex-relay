@@ -10,19 +10,20 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **4.2.0** is a compatible **MINOR** from independently accepted
-**4.1.1** at source `512b2b5ea2867b92958580f17f6aee24c23b1fba`. It adds the
-bounded one-shot owner continuation command and describes the existing owner
-orchestration sequence through its actual execution boundary. It also clarifies
-one-Step execution persistence and removes completed-history reconciliation
-from idle lifecycle eligibility while preserving live/uncertain effects and
-original recovery identities. Both delivery forms retain the standalone Shared
-5.0.0 snapshot, native dependency floor and accepted authority/workflow pins.
-This release is required by the changed Relay workflow, independently of the
-project-only Shared 7.0.1 patch. The 4.2.0 source candidate does not itself
-publish a package, install an adapter, activate external client capabilities or
-authorize product-source merge or PROD Apply. Frozen 4.1.1 and earlier registry
-bytes remain unchanged.
+Guidance **5.0.0** is a **MAJOR** from independently accepted **4.1.1**
+at source `512b2b5ea2867b92958580f17f6aee24c23b1fba`. It removes the unused
+post-review continuation API, owner adapter/CLI and merge journal, and historical
+Task-disposition readers/cache. Ordinary authorized owner orchestration now uses
+the GitHub connector directly. Fresh routed Step numbering incorporates the
+canonical Issue's valid position, including standalone iterations; Writer also
+projects already admitted manual result PR metadata. These are deliberate
+supported workflow/API changes, so a compatible MINOR label is insufficient.
+Both delivery forms retain their standalone Shared 5.0.0 snapshot, native
+dependency floor and immutable contract pins. The project deliberately selects
+Shared 7.0.1 independently. The prior 4.2.0 branch candidate was never accepted;
+5.0.0 replaces it. Frozen 4.1.1 and earlier registry bytes remain unchanged.
+Generation does not publish, install or activate the candidate, reconcile live
+client settings, merge the product PR or authorize PROD Apply.
 
 Guidance **4.1.1** is a **PATCH** from independently accepted **4.1.0**
 (source main `6fb8fc447fe56d9e5d67dd539d8aad289faf0666`). It corrects the
@@ -39,7 +40,7 @@ Frozen accepted **4.1.0** and earlier registry bytes remain unchanged. The
 bundled Task authority schemas and SERIAL/parallel workflow identities retain
 their exact accepted `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` contract pin;
 this clarification needs no protocol change. Native source self-adoption uses
-4.2.0 without publishing a package or activating a service.
+5.0.0 without publishing a package or activating a service.
 
 Accepted **4.1.0** added compatible Task #63 intent-driven installation and
 private Git-pair Apply guidance, retaining expert phases and other consumers'
@@ -89,7 +90,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 4.2.0 is a candidate. Native source
+release. Before independent acceptance, 5.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -153,8 +154,8 @@ and [native accepted-source binding](self-adoption.md#accepted-source-binding-an
 Use the existing Task/PR and checks:
 
 ```sh
-python3 scripts/build-project-guidance.py
-python3 scripts/build-project-guidance.py --check
+python3 scripts/build-relay-guidance.py
+python3 scripts/build-relay-guidance.py --check
 python3 scripts/test-relay-guidance.py
 python3 scripts/qualify-vibevm.py
 python3 scripts/test-qualify-vibevm.py

@@ -7,7 +7,7 @@ import { createCompatibilityStore, historicalOperationContext, loadSerialPoolCom
   verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
 import { serialPoolFixture } from './serial-pool-fixture.mjs';
 import { createAdmissionControl, manualAdmissionComplete, completedAdmissionRecord } from '../src/admission-control.mjs';
-import { manualAttemptHasConflictingActivity } from '../src/manual-attempt-disposition.mjs';
+import { manualAttemptHasConflictingActivity } from '../src/execution-effects.mjs';
 import { supplementOriginalInventory } from '../src/admission-cli.mjs';
 
 const linux = process.platform === 'linux';

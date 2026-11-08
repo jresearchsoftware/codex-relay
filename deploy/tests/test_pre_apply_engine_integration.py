@@ -195,7 +195,7 @@ def test_real_engine_keeps_frozen_product_and_original_operation(
         assert events.index('receipt:revalidate') < events.index('controller:phase') < events.index('backend')
         assert events.index('backend') < events.index('final-git-pair-readback') < events.index('phase:verified')
         assert events.index('phase:verified') < events.index('receipt:finalize') < events.index('resume')
-    assert len(engines) == 1 and archives and guard.releases == 1
+    assert len(engines) == 1 and archives and guard.releases == 2
     assert receipt == original and history == [{'runId': 7, 'terminal': True}]
     assert 'quiesce' not in events and 'abort' not in events
     assert state['preparation'].operation == operation

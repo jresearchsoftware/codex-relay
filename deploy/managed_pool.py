@@ -516,9 +516,7 @@ def installed_main(revision):
     github.qualify(contract)
     from serial_pool_installation import preflight, current_consumer_digest
     transition = preflight(config, github, current_consumer_digest(config, source))
-    if transition is not None and transition.get('phase') != 'retired':
-        require(transition.get('phase') in ['stopped', 'target-ready', 'remove-intent'],
-                'SERIAL_TRANSITION_STOP_UNPROVEN')
+    require(transition is None or transition.get('phase') == 'retired', 'SERIAL_TRANSITION_RETIRED')
     root = Path('/var/lib/codex-relay-pools') / contract['name']
     protected_parents(root)
     descriptor = os.open(root / 'pool.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)

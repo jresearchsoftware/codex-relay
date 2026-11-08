@@ -123,6 +123,10 @@ for (const changed of ['closed', 'replaced']) {
       const rows = await list(path);
       return path.startsWith('/pulls?') ? changed === 'closed' ? [] : rows.map(pr => ({ ...pr, number: 44 })) : rows;
     };
+    if (changed === 'replaced') {
+      const get = f.api.get.bind(f.api);
+      f.api.get = async path => path === '/pulls/44' ? { ...await get('/pulls/43'), number: 44 } : get(path);
+    }
     const { request } = await f.authorize();
     await assert.rejects(f.broker.invoke(request), { code: changed === 'closed' ? 'PR_PUBLICATION_UNCERTAIN' : 'PR_AUTHORITY_CHANGED' });
     assert.equal(f.pushes(), 2); // first publication and failed next push only
@@ -191,10 +195,11 @@ test('recovery revalidates live Issue/PR/Reviewer authority before pushing', asy
   const f = await uncertain(t); const { request } = await f.authorize();
   const body = f.issue.body;
   f.issue.body += '\nA changed implementation requirement.';
-  await assert.rejects(f.broker.invoke(request), { code: 'AUTHORITY_CHANGED' });
-  f.issue.body = body; f.review.state = 'APPROVED';
-  await assert.rejects(f.broker.invoke(request), { code: 'CURRENT_CHANGE_REQUEST_MISSING' });
-  f.review.state = 'CHANGES_REQUESTED';
+  await assert.rejects(f.broker.invoke(request), { code: 'AUTHORITY_SOURCE_MISMATCH' });
+  f.issue.body = body; const reviewBody = f.review.body;
+  f.review.body += '\nChanged trusted reviewed source.';
+  await assert.rejects(f.broker.invoke(request), { code: 'AUTHORITY_SOURCE_MISMATCH' });
+  f.review.body = reviewBody;
   const get = f.api.get.bind(f.api);
   f.api.get = async path => { const value = await get(path); return path === '/pulls/43' ? { ...value, state: 'closed' } : value; };
   await assert.rejects(f.broker.invoke(request), { code: 'PR_NOT_ADMITTED' });
@@ -266,7 +271,7 @@ test('recovery does not push when the last authority/comment/ref observation cha
   const wrap = modify => createPublicationBroker({ api: f.api, store: f.store,
     publisher: { inspect: (e, bundle, fn) => f.publisher.inspect(e, bundle, g => fn(modify(g))) } });
   const originalBody = f.issue.body;
-  await assert.rejects(wrap(g => { f.issue.body += '\nChanged during inspection.'; return g; }).dispatch(request), { code: 'AUTHORITY_CHANGED' });
+  await assert.rejects(wrap(g => { f.issue.body += '\nChanged during inspection.'; return g; }).dispatch(request), { code: 'AUTHORITY_SOURCE_MISMATCH' });
   f.issue.body = originalBody;
   const authorization = comment.body;
   await assert.rejects(wrap(g => { comment.body = 'Revoked'; return g; }).dispatch(request), { code: 'RECOVERY_OWNER_AUTHORIZATION_INVALID' });

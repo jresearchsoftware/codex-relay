@@ -235,9 +235,9 @@ def test_canonical_managed_snapshot_replays_owning_loader_before_template(explic
 
     direct = projected_consumer(snapshot, ROOT)
     assert direct == installed, 'the failure is order, not a changed resource or policy value'
-    assert consumer_digest(direct, ROOT) != authentic_digest
-    assert list(direct['executionSlots'][0]) != list(installed['executionSlots'][0])
-    assert list(direct['executionSlots'][0]['paths']) != list(installed['executionSlots'][0]['paths'])
+    assert consumer_digest(direct, ROOT) == authentic_digest
+    assert list(direct['executionSlots'][0]) == list(installed['executionSlots'][0])
+    assert list(direct['executionSlots'][0]['paths']) == list(installed['executionSlots'][0]['paths'])
 
     restored = drift._render_original(snapshot, ROOT)
     assert json.dumps(restored) == json.dumps(installed)

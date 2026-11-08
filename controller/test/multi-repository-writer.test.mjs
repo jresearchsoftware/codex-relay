@@ -77,7 +77,7 @@ test('same run and Task numbers retain separate records, journals and Step linea
       record.outcome = { status: 'BLOCKED', head: null, prNumber: null, outcomeId: 1 };
       record.controllerLifecycle = { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' };
       await store.put(99, record);
-      const next = nextAdmissionStep(await store.all(), 42, { automaticCompletionVerified: true });
+      const next = nextAdmissionStep(await store.all(), 42);
       assert.equal(next.step, ${index === 0 ? 8 : 4});
       assert.equal(next.lineage.step, record.envelope.step);
       await assert.rejects(store.put(99, { envelope: { repository: targets.find(target => target !== repository) } }),

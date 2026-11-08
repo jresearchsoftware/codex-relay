@@ -37,7 +37,7 @@ def rendered(root, *, git_desired=True, expected='none'):
         'relay_config_root': str(root / 'etc/relay-fixture'),
         'relay_production_operation_target_head': REVISION,
         'relay_intent_expected_installed_revision': expected,
-        'relay_owner_apply_requested': True, 'relay_serial_pool_transition': False,
+        'relay_owner_apply_requested': True,
         'relay_installed_deployment_config': json.dumps({'environment': {'namespace': 'relay-fixture'}})}
     template = Templar(loader=loader, variables=variables)
     return (template.template(task['ansible.builtin.command']['argv']),

@@ -24,7 +24,7 @@ def test_generated_candidate_admission_has_one_consumer_binding_and_valid_module
 
 
 @pytest.mark.parametrize('slot, expected', [('primary', '/var/lib/codex-relay/dispatch/attempts-v2'),
-                                          ('second', '/var/lib/codex-relay/slots/second/dispatch/attempts-v2'),
+                                          ('pool-2', '/var/lib/codex-relay/slots/pool-2/dispatch/attempts-v2'),
                                           ('foreign', None)])
 def test_candidate_recovery_journal_reads_only_the_original_protected_configured_slot(slot, expected):
     source = clean_reinstall.recovery_admission_program(inputs())

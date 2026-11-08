@@ -31,7 +31,7 @@ test('ready label admits charter-only work once, allocates Step under Writer res
   assert.deepEqual((await f.store.get(99)).envelope.request, snapshot);
 });
 
-test('a new native manual admission derives its next Step from prior Writer admission rather than a stale label', async t => {
+test('a new native manual admission preserves a later owner-maintained standalone Step position', async t => {
   const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true,
     beforeAdmission: async ({ issue, run, store, api }) => {
       issue.labels = [{ name: 'step-900' }, { name: 'codex-ready-manual' }];
@@ -40,7 +40,7 @@ test('a new native manual admission derives its next Step from prior Writer admi
       // Prior command completion is independently read through the existing run adapter.
       api.getRun = async id => structuredClone(id === 98 ? { ...run, id, status: 'completed', updated_at: '2026-09-04T11:59:00Z' } : run);
     } });
-  assert.equal(f.envelope.step, 5); assert.equal(currentStep(f.issue.labels), 5);
+  assert.equal(f.envelope.step, 901); assert.equal(currentStep(f.issue.labels), 901);
   assert.equal(f.envelope.request.lineage.step, 4);
 });
 
@@ -59,7 +59,20 @@ test('manual handoff exposes exact public Outcome bindings without a private jou
   assert.equal(binding.result.attempt, f.envelope.attemptId);
   assert.ok(body.indexOf('Manual Outcome binding:') > body.indexOf('</details>'));
   assert.match(body, /This binding is not an execution result/);
+  assert.ok(body.includes(`Admitted branch: ${f.envelope.branch}; base SHA: ${f.envelope.historicalBase}`));
+  assert.ok(body.includes(`Required starting head: ${f.envelope.startHead}`));
+  assert.ok(body.includes('source PR: none (new source work)'));
   await runAttempt({ ...f, admissionResumed: true });
   assert.equal(f.comments.length, 1);
   assert.equal(f.comments[0].body, body);
+});
+
+test('an incomplete stored Git start cannot be published as a ready manual handoff', async t => {
+  const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true });
+  const record = await f.store.get(f.envelope.runId);
+  record.envelope.historicalBase = null;
+  await f.store.put(f.envelope.runId, record);
+  await assert.rejects(f.broker.invoke({ operation: 'handoff', runId: f.envelope.runId, attemptId: f.envelope.attemptId }),
+    { code: 'EXECUTION_ENVELOPE_INVALID' });
+  assert.equal(f.comments.length, 0);
 });

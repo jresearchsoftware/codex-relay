@@ -424,3 +424,25 @@ test('a retained pre-admission refusal is idle only before any execution or publ
   assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, []);
   assert.deepEqual(await readFile(join(ctx.original.storeRoot, '101.json')), before);
 });
+
+test('current effect overlay clears an original manual PR refusal without rewriting frozen history', { skip: !linux }, async t => {
+  const f = await fixture(t); const admissionBlock = { code: 'CANONICAL_ISSUE_AMBIGUOUS' };
+  const refused = { envelope: { ...f.records[2].envelope, route: 'manual', target: 'pull_request',
+    number: 55, issueNumber: null, request: null, branch: null, startHead: null, authorityDigest: null,
+    admissionBlock }, admissionBlock };
+  const frozenInventory = { active: [], unknown: [101] };
+  const options = { journal: f.journal };
+  assert.deepEqual(await supplementOriginalInventory(frozenInventory, [refused], options), { active: [], unknown: [] });
+  for (const mutate of [
+    r => { r.commentIntent = { key: 'outcome' }; },
+    r => { r.readyConsumption = { status: 'uncertain' }; },
+    r => { r.manualSubmission = { sha256: 'a'.repeat(64) }; },
+    r => { r.envelope.admissionBlock = { code: 'CHANGED' }; }
+  ]) {
+    const pending = structuredClone(refused); mutate(pending);
+    assert.deepEqual((await supplementOriginalInventory(frozenInventory, [pending], options)).unknown, [101]);
+  }
+  await f.journal.put(101, { version: 2, envelope: refused.envelope, execution: { reserved: true } });
+  assert.deepEqual((await supplementOriginalInventory(frozenInventory, [refused], options)).unknown, [101]);
+  assert.deepEqual(frozenInventory, { active: [], unknown: [101] });
+});

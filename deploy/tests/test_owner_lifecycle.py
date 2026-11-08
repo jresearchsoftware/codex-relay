@@ -36,7 +36,7 @@ def copy_projection_source(destination):
 
 class OwnerLifecycleTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix='relay-owner-fixture-', dir='/tmp')
+        temporary = tempfile.TemporaryDirectory(prefix='relay-owner-fixture-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.config = json.loads((ROOT / 'deploy/example.json').read_text())
@@ -235,9 +235,10 @@ class OwnerLifecycleTests(unittest.TestCase):
                 self.assertEqual(self.primitive, [])
                 self.assertEqual(self.active_locks, [])
 
-    def test_unconfigured_apply_and_pool_stop_or_resume_keep_existing_path(self):
+    def test_managed_apply_preflights_while_stop_and_resume_keep_existing_path(self):
         self.run_owner()
-        self.assertEqual(self.preflights, [])
+        self.assertEqual(len(self.preflights), 1)
+        self.preflights.clear()
         self.remote_head = HEAD
         self.configure_pool()
         self.run_owner(action='stop')
@@ -416,7 +417,7 @@ class PublicMainTests(unittest.TestCase):
 
 class OwnerPoolPreflightProcessTests(unittest.TestCase):
     def test_selected_source_preflight_process_preserves_private_stdin_and_fixed_errors(self):
-        with tempfile.TemporaryDirectory(prefix='owner-preflight-process-', dir='/tmp') as temporary:
+        with tempfile.TemporaryDirectory(prefix='owner-preflight-process-') as temporary:
             source = Path(temporary)
             module = source / 'managed_pool_transport.py'
             for error, expected in [
@@ -446,7 +447,7 @@ class OwnerPoolPreflightProcessTests(unittest.TestCase):
 
 class OwnerProjectionPreflightProcessTests(unittest.TestCase):
     def test_malformed_oversized_or_private_target_errors_are_fixed(self):
-        with tempfile.TemporaryDirectory(prefix='owner-projection-process-', dir='/tmp') as temporary:
+        with tempfile.TemporaryDirectory(prefix='owner-projection-process-') as temporary:
             source = Path(temporary)
             copy_projection_source(source)
             valid = (ROOT / 'deploy/example.json').read_text()

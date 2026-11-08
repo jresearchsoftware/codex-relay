@@ -50,7 +50,7 @@ class PoolPreflightCliTests(unittest.TestCase):
                      'MANAGED_POOL_GROUP_UNTRUSTED_WORKFLOW_REF',
                      'MANAGED_POOL_API_UNPROVEN_INSPECT_BEFORE_RETRY',
                      'MANAGED_POOL_OWNER_APP_KEY_UNAVAILABLE_ON_OWNER_EXECUTION_HOST',
-                     'MANAGED_POOL_SERIAL_TRANSITION_REQUIRED',
+                     'MANAGED_POOL_SERIAL_TRANSITION_RETIRED',
                      'MANAGED_POOL_HOST_GUARD_LOST_INSPECT_BEFORE_RETRY']:
             for phase in ['apply', 'upgrade']:
                 with self.subTest(code=code, phase=phase):

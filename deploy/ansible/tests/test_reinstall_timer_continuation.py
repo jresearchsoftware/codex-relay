@@ -185,10 +185,24 @@ def test_rendered_timer_has_independent_start_anchor_and_valid_fixed_unit(tmp_pa
     runtime.mkdir(mode=0o700)
     # User-mode offline analysis keeps runtime scratch state within this owned
     # fixture; it parses the same timer options without requiring host /run.
-    result = subprocess.run(['systemd-analyze', '--user', 'verify', str(timer), str(service)],
+    command = ['systemd-analyze', '--user', 'verify', str(timer), str(service)]
+    environment = {**os.environ, 'SYSTEMD_LOG_COLOR': '0',
+                   'XDG_RUNTIME_DIR': str(runtime), 'HOME': str(tmp_path)}
+    result = subprocess.run(command,
                             capture_output=True, text=True, timeout=20,
-                            env={**os.environ, 'SYSTEMD_LOG_COLOR': '0',
-                                 'XDG_RUNTIME_DIR': str(runtime)})
+                            env=environment)
+    if result.returncode and 'Failed to setup working directory: Permission denied' in result.stderr:
+        # systemd 252 uses /tmp for offline manager scratch even with TMPDIR.
+        # Keep that scratch in a disposable namespace when the host's /tmp is
+        # unavailable to this UID; do not change host directory permissions.
+        scratch = tmp_path / 'analyzer-tmp'
+        scratch.mkdir(mode=0o700)
+        helper = ('import os,subprocess,sys;'
+                  'subprocess.run(["/bin/mount","--bind",sys.argv[1],"/tmp"],check=True);'
+                  'os.execvp(sys.argv[2],sys.argv[2:])')
+        result = subprocess.run(['/usr/bin/unshare', '--user', '--map-root-user', '--mount', '--fork',
+                                 sys.executable, '-c', helper, str(scratch), *command],
+                                capture_output=True, text=True, timeout=20, env=environment)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

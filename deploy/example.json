@@ -56,7 +56,10 @@
       "credentialKeyFile": "/etc/codex-relay/writer-credentials/github-app-private-key.pem",
       "claimRoot": "/var/lib/codex-relay/writer-claims"
     },
-    "validationWorkflow": ".github/workflows/relay-exact-head-validation.yml"
+    "validationWorkflow": ".github/workflows/relay-exact-head-validation.yml",
+    "generalRunnerPool": {
+      "desiredCapacity": 1
+    }
   },
   "environment": {
     "namespace": "codex-relay",
@@ -74,7 +77,14 @@
     },
     "generalRunner": {
       "user": "relay-general-runner",
-      "name": "relay-general"
+      "name": "relay-general",
+      "scope": "organization",
+      "group": "relay-general",
+      "poolApp": {
+        "appId": "103",
+        "installationId": "203",
+        "privateKeyFile": "/owner-private/runner-app.pem"
+      }
     },
     "reviewerBind": {
       "mode": "docker_gateway",
@@ -102,6 +112,10 @@
       "configPath": "deploy/relay.json"
     },
     "codexTokenRequired": false,
-    "compatibilityLinks": {}
+    "compatibilityLinks": {},
+    "instance": {
+      "reviewerPort": 8787,
+      "publicationEnabled": true
+    }
   }
 }

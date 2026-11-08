@@ -31,8 +31,7 @@ async function originalRun(api, e) {
 // caller-selected checkout. The old terminal evidence is not rewritten.
 export async function prepublicationState({ api, journal, record: r, head }) {
   const e = r.envelope;
-  const snapshot = e.request?.kind === 'admission';
-  if (e.route !== 'auto' || e.target !== 'issue' || !['task-request', 'admission'].includes(e.request?.kind)
+  if (e.route !== 'auto' || e.target !== 'issue' || e.request?.kind !== 'admission'
     || !e.requestReference || !exactSha(head) || head === e.startHead
     || r.admissionBlock || r.publicationIntent || r.publishedHead || r.finalHead
     || r.successOutcomeIntent || r.publicationRecoveries?.length
@@ -61,7 +60,7 @@ export async function prepublicationState({ api, journal, record: r, head }) {
   // Older terminal writers sealed the native body in commentBodies before
   // storing their four-field outcome. Read that original proof without
   // backfilling either historical record or masking a present invalid hash.
-  const terminalBodySha256 = snapshot && !Object.hasOwn(r.outcome, 'bodySha256')
+  const terminalBodySha256 = !Object.hasOwn(r.outcome, 'bodySha256')
     && r.commentBodies?.outcome?.number === e.issueNumber
     ? r.commentBodies.outcome.sha256 : r.outcome.bodySha256;
   if (writer.login !== WRITER || writer.type !== 'Bot' || !positive(writer.id)
@@ -72,20 +71,19 @@ export async function prepublicationState({ api, journal, record: r, head }) {
       || outcome.body?.startsWith('## Relay Codex Outcome\n'))
     || !outcome.body.endsWith(`<!-- relay:${e.attemptId}:outcome -->`)
     || (terminalBodySha256 && sha256Body(outcome.body) !== terminalBodySha256)
-    || (snapshot && !/^[a-f0-9]{64}$/.test(terminalBodySha256 ?? ''))
+    || !/^[a-f0-9]{64}$/.test(terminalBodySha256 ?? '')
     || !Number.isFinite(Date.parse(outcome.created_at)) || !Number.isFinite(Date.parse(outcome.updated_at))) fail('RECOVERY_TERMINAL_OUTCOME_CHANGED');
   const typed = extractAuthorityRecord(outcome.body);
   if (typed?.kind !== 'outcome' || typed.status !== 'blocked' || typed.task !== e.issueNumber
     || typed.attempt !== e.attemptId
-    || (snapshot ? typed.schema_version !== '4.0' || typed.step !== e.step
+    || (typed.schema_version !== '4.0' || typed.step !== e.step
       || canonicalAuthorityJson(typed.authority) !== canonicalAuthorityJson(e.request.authority)
-      || canonicalAuthorityJson(typed.admission) !== canonicalAuthorityJson(admissionBinding(e.request))
-      : canonicalAuthorityJson(typed.request) !== canonicalAuthorityJson(e.requestReference))
+      || canonicalAuthorityJson(typed.admission) !== canonicalAuthorityJson(admissionBinding(e.request)))
     || typed.parent.kind !== 'issue' || typed.parent.number !== e.issueNumber) fail('RECOVERY_TERMINAL_OUTCOME_CHANGED');
   await revalidateAuthority(api, e);
   const binding = { operation: 'recover-prepublication', repository: REPOSITORY,
     task: e.issueNumber, step: e.step,
-    ...(snapshot ? { authority: e.request.authority, admission: admissionBinding(e.request) } : { request: e.requestReference }), runId: e.runId,
+    authority: e.request.authority, admission: admissionBinding(e.request), runId: e.runId,
     attemptId: e.attemptId, branch: e.branch, remote: REMOTE,
     previous: e.continuation ? e.startHead : null, head, startingHead: e.startHead,
     authorityDigest: e.authorityDigest, consumerDigest: e.consumerDigest,

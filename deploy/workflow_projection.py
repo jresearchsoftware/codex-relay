@@ -4,6 +4,7 @@ The public deployment entrypoint validates the selected clean source and exact
 revision before calling this module. Rendering never resolves a moving ref or
 fetches anything. The manifest is a drift baseline, not acceptance authority.
 """
+import copy
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ import shlex
 import stat
 import tempfile
 
-from config import require, unique_object, execution_slot_label, general_pool_label, deployment_repository
+from config import require, unique_object, execution_slot_label, general_pool_label, deployment_repository, derive_managed_pool_slots
 
 
 MANIFEST = '.github/relay-workflows.json'
@@ -24,7 +25,9 @@ DIGEST = re.compile(r'[0-9a-f]{64}')
 MAX_BYTES = 65536
 
 
-def contract(source_root, parallel=False):
+def contract(source_root, parallel=True):
+    # The older field remains a historical wire format. Current projection
+    # always selects the managed contract; capacity 1 uses that same contract.
     value = json.loads(_read(Path(source_root) / 'deploy/workflows/contract.json'),
                        object_pairs_hook=unique_object)
     require(isinstance(value, dict) and set(value) in [{'workflowContract'}, {'workflowContract', 'parallelWorkflowContract'}]
@@ -79,7 +82,11 @@ def _path(root, relative):
 
 
 def render(config, revision, source_root, repository=None, *, deployment=False):
-    """Return deterministic managed bytes; config must have passed config.load."""
+    """Return deterministic current pool bytes from validated owner inputs."""
+    require(isinstance(config.get('consumer', {}).get('generalRunnerPool'), dict),
+            'generalRunnerPool.required')
+    config = copy.deepcopy(config)
+    derive_managed_pool_slots(config)
     require(isinstance(revision, str) and REVISION.fullmatch(revision), 'workflow-exact-revision')
     source_root = Path(source_root)
     consumer, environment = config['consumer'], config['environment']
@@ -90,21 +97,18 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
     else:
         repository = deployment_repository(config, repository)
     general, production = environment['generalRunner'], environment['runner']
-    slots = consumer.get('executionSlots')
-    managed_pool = consumer.get('generalRunnerPool')
+    slots = consumer['executionSlots']
     labels = ['self-hosted', 'Linux', 'X64', *production['labels']]
-    general_labels = (['self-hosted', 'Linux', 'X64', general_pool_label(config)]
-                      if managed_pool else labels)
-    general_runs_on = ({'group': general['group'], 'labels': general_labels}
-                       if general.get('scope', 'repository') == 'organization' else general_labels)
+    general_labels = ['self-hosted', 'Linux', 'X64', general_pool_label(config)]
+    general_runs_on = {'group': general['group'], 'labels': general_labels}
     values = {
-        'WORKFLOW_CONTRACT': contract(source_root, bool(slots)),
+        'WORKFLOW_CONTRACT': contract(source_root, True),
         'REPOSITORY': repository, 'OWNER': consumer['owner'],
         'BASE_BRANCH': consumer['baseBranch'],
         'BASE_BRANCH_YAML': json.dumps(consumer['baseBranch']),
         'NAMESPACE': environment['namespace'],
-        'CONTROL_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
-        'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-control'),
+        'CONTROL_GROUP_YAML': json.dumps(environment['namespace'] + '-control-${{ github.run_id }}'),
+        'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}'),
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
         'OWNER_RECOVERY_GUARD': '',
@@ -114,72 +118,38 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         'PRODUCTION_RUNS_ON_YAML': json.dumps({'group': production['group'], 'labels': labels}),
         'GENERAL_RUNNER_NAME': shlex.quote(general['name']),
         'GENERAL_RUNNER_USER': shlex.quote(general['user']),
-        'GENERAL_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
-                                '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
-        'RECOVERY_RUNNER_GUARD': 'test "$RUNNER_NAME" = ' + shlex.quote(general['name']) + '\n'
-                                 '          test "$(/usr/bin/id -un)" = ' + shlex.quote(general['user']),
         'PRODUCTION_RUNNER_NAME': shlex.quote(production['name']),
         'PRODUCTION_RUNNER_USER': shlex.quote(production['user']),
     }
-    if slots:
-        # Native groups are repository-local. The configured finite runner pool
-        # bounds active controllers. Independent owner commands for the same
-        # Task may overlap; trusted admission owns physical resource conflicts
-        # and Writer owns exact publication targets and event deduplication.
-        values['CONTROL_GROUP_YAML'] = json.dumps(environment['namespace'] + '-control-${{ github.run_id }}')
-        values['RECOVERY_GROUP_YAML'] = json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}')
-        lines = ['case "$RUNNER_NAME:$(/usr/bin/id -un)" in']
-        lines.extend('            ' + shlex.quote(slot['runnerName'] + ':' + slot['runnerUser'])
-                     + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
-        lines.extend(['            *) echo RELAY_RUNNER_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
-        values['GENERAL_RUNNER_GUARD'] = '\n'.join(lines)
-        # The ordinary collector must run on the original immutable slot. A
-        # general pool label could place recovery on a different runner, where
-        # the original private journal and checkout are deliberately unreadable.
-        recovery_targets = {}
-        for slot in slots:
-            slot_labels = [*labels, execution_slot_label(config, slot)]
-            recovery_targets[slot['id']] = ({'group': general['group'], 'labels': slot_labels}
-                                            if general.get('scope', 'repository') == 'organization'
-                                            else slot_labels)
-        targets = json.dumps(recovery_targets, separators=(',', ':'))
-        values['RECOVERY_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + targets + "')[inputs.execution_slot || 'primary'] }}")
-        values['RECOVERY_SLOT_INPUT'] = '\n'.join([
-            '      execution_slot:',
-            '        description: Original execution slot from the retained attempt; primary for historical attempts',
-            '        required: false', '        default: primary', '        type: choice',
-            '        options: ' + json.dumps([slot['id'] for slot in slots]),
-        ])
-        values['RECOVERY_SLOT_ENV'] = '          RECOVERY_SLOT: ${{ inputs.execution_slot || \'primary\' }}'
-        lines = ['case "$RECOVERY_SLOT:$RUNNER_NAME:$(/usr/bin/id -un)" in']
-        lines.extend('            ' + shlex.quote(':'.join([slot['id'], slot['runnerName'], slot['runnerUser']]))
-                     + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
-        lines.extend(['            *) echo RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
-        values['RECOVERY_RUNNER_GUARD'] = '\n'.join(lines)
-        if managed_pool:
-            # Capacity contraction may retire the original physical runner.
-            # Any active pool member can transport recovery; trusted Writer
-            # resolves the immutable original execution slot from its claim.
-            values['RECOVERY_RUNS_ON_YAML'] = json.dumps(general_runs_on)
-            values['RECOVERY_SLOT_INPUT'] = ''
-            values['RECOVERY_SLOT_ENV'] = ''
-            values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
+    # Native groups are repository-local. The configured finite runner pool
+    # bounds active controllers. Independent owner commands for the same
+    # Task may overlap; trusted admission owns physical resource conflicts
+    # and Writer owns exact publication targets and event deduplication.
+    values['CONTROL_GROUP_YAML'] = json.dumps(environment['namespace'] + '-control-${{ github.run_id }}')
+    values['RECOVERY_GROUP_YAML'] = json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}')
+    lines = ['case "$RUNNER_NAME:$(/usr/bin/id -un)" in']
+    lines.extend('            ' + shlex.quote(slot['runnerName'] + ':' + slot['runnerUser'])
+                 + ') export RELAY_EXECUTION_SLOT=' + shlex.quote(slot['id']) + ' ;;' for slot in slots)
+    lines.extend(['            *) echo RELAY_RUNNER_SLOT_IDENTITY_MISMATCH >&2; exit 1 ;;', '          esac'])
+    values['GENERAL_RUNNER_GUARD'] = '\n'.join(lines)
+    # Any active pool member transports recovery; Writer selects the
+    # immutable original execution slot from its retained claim.
+    values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
     if deployment:
         templates = {PRODUCTION: 'deployment'}
-        if managed_pool:
-            # Maintained registrations must remain online/idle. Carry recovery
-            # on the existing original primary transport, never a restored peer
-            # whose own lifecycle job would invalidate that proof.
-            primary = next(slot for slot in slots if slot['id'] == 'primary')
-            recovery_runs_on = {'group': general['group'], 'labels': [
-                *general_labels, execution_slot_label(config, primary)]}
-            selectors = json.dumps({'recover': recovery_runs_on, 'ordinary': general_runs_on}, separators=(',', ':'))
-            values['GENERAL_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + selectors
-                + "')[inputs.action == 'recover' && 'recover' || 'ordinary'] }}")
-            values['OWNER_RECOVERY_GUARD'] = ('if [[ "$RELAY_LIFECYCLE_ACTION" == recover ]]; then\n'
-                + '            test "$RELAY_EXECUTION_SLOT" = primary || { echo RELAY_RECOVERY_PRIMARY_TRANSPORT_REQUIRED >&2; exit 1; }\n'
-                + '          fi')
+        # Maintained registrations must remain online/idle. Carry recovery
+        # on the existing original primary transport, never a restored peer
+        # whose own lifecycle job would invalidate that proof.
+        primary = next(slot for slot in slots if slot['id'] == 'primary')
+        recovery_runs_on = {'group': general['group'], 'labels': [
+            *general_labels, execution_slot_label(config, primary)]}
+        selectors = json.dumps({'recover': recovery_runs_on, 'ordinary': general_runs_on}, separators=(',', ':'))
+        values['GENERAL_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + selectors
+            + "')[inputs.action == 'recover' && 'recover' || 'ordinary'] }}")
+        values['OWNER_RECOVERY_GUARD'] = ('if [[ "$RELAY_LIFECYCLE_ACTION" == recover ]]; then\n'
+            + '            test "$RELAY_EXECUTION_SLOT" = primary || { echo RELAY_RECOVERY_PRIMARY_TRANSPORT_REQUIRED >&2; exit 1; }\n'
+            + '          fi')
     elif environment['localApply'].get('source') == 'installed' and repository == deployment_repository(config):
         require(PRODUCTION not in templates and PRODUCTION != consumer['validationWorkflow'],
                 'workflow-production-path-conflict')
@@ -215,8 +185,7 @@ def integration(config, revision, source_root, consumer_root, output_root):
     if previous is None:
         compatibility = 'missing'
     else:
-        require(previous['sourceRepository'] == expected['sourceRepository']
-                and previous['consumerRepository'] == expected['consumerRepository'], 'workflow-consumer-binding')
+        _binding(previous, expected)
         compatibility = ('incompatible' if previous.get('workflowContract') != expected['workflowContract'] else
                          'compatible' if previous == expected else 'stale-compatible')
     destination = Path(output_root).absolute()
@@ -247,10 +216,39 @@ def integration(config, revision, source_root, consumer_root, output_root):
                     'The completed host installation does not need another installer run.'}
 
 
+def _source_repository_identity(locator):
+    """Identify only supported, unambiguous GitHub HTTPS and SCP-style SSH URLs.
+
+    Keep the accepted locator spelling in the output manifest. Transport
+    equivalence permits a reviewed update; it does not make old manifest bytes
+    the deterministic target or weaken managed-file/concurrent-change checks.
+    """
+    match = (re.fullmatch(r'(?:https://github\.com/|git@github\.com:)'
+                         r'([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)', locator)
+             if isinstance(locator, str) else None)
+    require(match is not None, 'workflow-source-repository')
+    owner, repository = match.groups()
+    repository = repository.removesuffix('.git')
+    require(owner not in {'.', '..'} and repository not in {'', '.', '..'},
+            'workflow-source-repository')
+    # GitHub repository paths are case-insensitive; URLs with other hosts,
+    # credentials, ports, escapes, suffix paths, queries or fragments do not
+    # match the deliberately narrow supported locator grammar above.
+    return owner.lower(), repository.lower()
+
+
+def _binding(previous, expected):
+    require(previous['consumerRepository'] == expected['consumerRepository']
+            and _source_repository_identity(previous['sourceRepository'])
+                == _source_repository_identity(expected['sourceRepository']),
+            'workflow-consumer-binding')
+
+
 def _manifest(config, source_root, rendered, repository=None):
+    _source_repository_identity(config['source']['repository'])
     # Digests retain an independent purpose: refuse edits to the previous
     # managed baseline before writing a new proposal. No product SHA pin.
-    return {'schemaVersion': 2, 'workflowContract': contract(source_root, bool(config['consumer'].get('executionSlots'))),
+    return {'schemaVersion': 2, 'workflowContract': contract(source_root, True),
             'sourceRepository': config['source']['repository'],
             'consumerRepository': deployment_repository(config, repository),
             'files': {path: sha256(data) for path, data in sorted(rendered.items())}}
@@ -272,6 +270,7 @@ def _existing(root):
             and isinstance(manifest[identity], str)
             and (REVISION.fullmatch(manifest[identity]) if legacy else
                  re.fullmatch(r'relay-workflows-v[1-9][0-9]*', manifest[identity])), 'workflow-manifest-version')
+    _source_repository_identity(manifest['sourceRepository'])
     files = manifest['files']
     require(isinstance(files, dict) and 2 <= len(files) <= 3, 'workflow-manifest-files')
     observed = {MANIFEST: raw}
@@ -323,8 +322,7 @@ def project(config, revision, source_root, consumer_root, repository=None):
     expected = _manifest(config, source_root, rendered, repository)
     previous, observed = _existing(root)
     if previous:
-        require(previous['consumerRepository'] == expected['consumerRepository']
-                and previous['sourceRepository'] == expected['sourceRepository'], 'workflow-consumer-binding')
+        _binding(previous, expected)
         require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
     else:
         for path in rendered:
@@ -381,8 +379,7 @@ def prepare(config, revision, source_root, consumer_root, output_root, repositor
         verify(config, revision, source_root, consumer_root, repository)
         return {'state': 'ready', 'revision': revision}
     if previous:
-        require(previous['consumerRepository'] == expected['consumerRepository']
-                and previous['sourceRepository'] == expected['sourceRepository'], 'workflow-consumer-binding')
+        _binding(previous, expected)
         require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
     for root in [Path(source_root).resolve(), consumer_root.resolve()]:
         require(not output_root.resolve().is_relative_to(root), 'projection-output-outside-checkouts')

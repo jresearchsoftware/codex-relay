@@ -427,15 +427,13 @@ class PreparedInstall:
     def create(self):
         return self.action('create')
 
-    def consumer(self, *, final=False, serial=False):
+    def consumer(self, *, final=False):
         argv = ['/usr/bin/node', self.source + '/controller/src/consumer-preflight-cli.mjs',
                 '--config', self.values['relay_consumer_config_path'], '--install-root', self.values['relay_install_root'],
                 '--stage-root', self.stage, '--desired-digest', self.desired_digest,
                 '--repository', self.values['relay_github_repository']]
         if self.holder:
             argv += ['--writer-lock-lease', self.lease_path]
-        if serial:
-            argv += ['--retain-current-digest']
         receipt = self.execute(argv)
         require(receipt['eligible'], 'CONSUMER_HISTORY_REQUIRES_OLD_VERSION_RESOLUTION')
         if final:
@@ -616,16 +614,13 @@ try {
             holder.stdin.close()
             require(holder.wait(timeout=30) == 0, 'WRITER_LOCK_LOST_INSPECT_BEFORE_RETRY')
 
-    def final(self, *, serial=False, fresh=False):
-        if not serial and not fresh:
+    def final(self, *, fresh=False):
+        if not fresh:
             require(self.holder is not None and self.holder.poll() is None, 'WRITER_LOCK_MISSING')
             if getattr(self, 'retained_proof', None) is not None:
                 self.consumer_retained(self.retained_proof, final=True)
             else:
                 self.consumer(final=True)
-        elif serial:
-            receipt = self.consumer(serial=True)
-            require(not receipt['consumerRestoreRequired'], 'SERIAL_CONSUMER_DRIFT_UNPROVEN')
         self.host(final=True)
         self.verify_stage()
         if self.captured:

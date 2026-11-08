@@ -4,15 +4,16 @@ import { readFileSync } from 'node:fs';
 import { canonicalAuthorityJson, extractAuthorityRecord, renderAuthorityRecord, sha256Body } from '../src/github-authority.mjs';
 import { foldManualHandoff, renderPublication, safePublicationText } from '../src/publication-rendering.mjs';
 
-const input = JSON.parse(readFileSync(new URL('./fixtures/github-task-request-v3-input.json', import.meta.url), 'utf8'));
-const ref = { kind: 'issue-comment', id: 101, parent: input.parent, sha256: 'b'.repeat(64) };
-const common = kind => ({ schema_version: '3.0', kind, repository: input.repository, task: input.task,
+const shared = JSON.parse(readFileSync(new URL('../fixtures/publication-rendering.json', import.meta.url), 'utf8'));
+const input = { ...shared.cases.find(item => item.name === 'outcome-v4').record,
+  summary: 'The exact admitted source result is complete.', warnings: [], limitations: [] };
+const common = kind => ({ schema_version: '4.0', kind, repository: input.repository, task: input.task,
   parent: input.parent, charter_sha256: input.charter_sha256 });
 const warning = { source: 'run:123:<details>', impact: 'Unobserved candidate bytes must not be accepted.',
   resolution: 'Unresolved; no cleanup was authorized.', next_action: 'Inspect retained bytes before another attempt.',
   evidence_gaps: ['Root qualification is unavailable.'] };
-const result = { kind: 'no-change', revision: input.starting_head, identities: [{ kind: 'github-actions-run', id: '123' }] };
-const outcome = overrides => ({ ...common('outcome'), request: ref, attempt: 'run-123', status: 'blocked', result,
+const result = { kind: 'no-change', revision: input.result.revision, identities: [{ kind: 'github-actions-run', id: '123' }] };
+const outcome = overrides => ({ ...input, status: 'blocked', result,
   summary: 'Stopped at the admitted access boundary.', warnings: [warning], limitations: ['No installation was performed.'], ...overrides });
 const beforeMachine = body => body.slice(0, body.indexOf('<details'));
 
@@ -24,7 +25,7 @@ test('normal native rendering is deterministic, human-first and byte-exact canon
   assert.equal((body.match(/<details>/g) ?? []).length, 1);
   assert.ok(!body.includes('<details open>'));
   assert.ok(body.includes(`\n${canonicalAuthorityJson(input)}\n`));
-  for (const value of [...input.scope, ...input.boundaries, input.purpose]) assert.ok(beforeMachine(body).includes(safePublicationText(value)));
+  for (const value of [input.summary]) assert.ok(beforeMachine(body).includes(safePublicationText(value)));
   assert.match(beforeMachine(body), /Task \d+ — Step \d+/);
 });
 
@@ -44,8 +45,7 @@ test('CR problem, impact, correction, criteria and evidence remain outside the f
   const finding = { id: 'F1', severity: 'blocker', problem: 'The public interface cannot represent the selected targets.',
     impact: 'Installation would require unsupported edits.', remediation: 'Carry targets through the supported interface.',
     acceptance_criteria: ['Legacy and two-target paths pass qualification.'], evidence: ['Comparison SHA aaaa.'] };
-  const record = { ...input, kind: 'change-request', parent: { kind: 'pull_request', number: 87 },
-    existing_pr: 87, reviewed_head_sha: input.starting_head, change_request_id: 'CR-23-001', findings: [finding], supersedes: ref };
+  const record = { ...shared.cases.find(item => item.name === 'cr-v4').record, findings: [finding] };
   const body = renderAuthorityRecord(record);
   assert.deepEqual(extractAuthorityRecord(body), record);
   for (const value of [finding.problem, finding.impact, finding.remediation, ...finding.acceptance_criteria, ...finding.evidence])
@@ -56,7 +56,7 @@ test('CR problem, impact, correction, criteria and evidence remain outside the f
 test('Decision amendments are visible without allocating a Step', () => {
   const record = { ...common('decision'), purpose: 'Permit the next bounded source change.',
     amendments: { purpose: 'New purpose.', scope: ['New bounded scope.'], boundaries: ['Preserve external authority.'],
-      issue_closure_policy: 'keep-open', continuation: { hold: true, task_complete: false, next: null } }, context: [], supersedes: null };
+      issue_closure_policy: 'keep-open', continuation: { hold: true, next: null } }, context: [], supersedes: null };
   const body = renderAuthorityRecord(record);
   assert.deepEqual(extractAuthorityRecord(body), record);
   assert.ok(!beforeMachine(body).includes('Step'));
@@ -75,13 +75,11 @@ test('untrusted HTML, Markdown, links, mentions and authority fences are inert v
   assert.deepEqual(extractAuthorityRecord(body), outcome({ summary: malicious }));
 });
 
-test('historical fixture, native body hashes and historical references stay unchanged', () => {
+test('historical native bytes remain opaque evidence and cannot be republished by current code', () => {
   const old = readFileSync(new URL('./fixtures/github-task-request-v3.md', import.meta.url), 'utf8');
-  assert.equal(renderAuthorityRecord(input, { rendererVersion: 'legacy-v1' }), old);
-  assert.deepEqual(extractAuthorityRecord(old), input);
-  assert.equal(sha256Body(old), sha256Body(renderAuthorityRecord(input, { rendererVersion: 'legacy-v1' })));
-  assert.notEqual(sha256Body(old), sha256Body(renderAuthorityRecord(input)));
-  assert.throws(() => renderAuthorityRecord(input, { rendererVersion: 'unknown' }), { code: 'AUTHORITY_RENDERER_UNSUPPORTED' });
+  assert.equal(extractAuthorityRecord(old), null);
+  const historical = JSON.parse(readFileSync(new URL('./fixtures/github-task-request-v3-input.json', import.meta.url), 'utf8'));
+  assert.throws(() => renderAuthorityRecord(historical), { code: 'AUTHORITY_RECORD_INVALID' });
 });
 
 test('empty optional evidence does not invent successful tests; malformed records fail validation', () => {
@@ -151,7 +149,7 @@ test('longer handoff delimiter preserves literal fences and malicious HTML insid
 
 test('shared Node/Rust fixture matches current presentation and canonical round trips', () => {
   const fixture = JSON.parse(readFileSync(new URL('../fixtures/publication-rendering.json', import.meta.url), 'utf8'));
-  for (const item of fixture.cases) {
+  for (const item of fixture.cases.filter(item => item.record.schema_version === '4.0')) {
     assert.equal(renderAuthorityRecord(item.record), item.body, item.name);
     assert.deepEqual(extractAuthorityRecord(item.body), item.record, item.name);
   }

@@ -1,18 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { currentEnvelope } from './fixture.mjs';
 import { boundOutcomeBody, workerOutcomeClaims } from '../src/outcome.mjs';
-import { admissionBinding, authoritySourceDigest, createAdmissionSnapshot, extractAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
+import { admissionBinding, extractAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
 
-const request = JSON.parse(readFileSync(new URL('../../contracts/test/fixtures/github-task-request-v3-input.json', import.meta.url), 'utf8'));
 test('new admission Outcome binds protected snapshot instead of manufacturing a public Request', () => {
-  const source = { charter: { kind: 'issue-body', id: request.task, parent: request.parent, sha256: request.charter_sha256 },
-    decisions: [], change_request: null, compatibility_request: null };
-  const authority = { ...source, sha256: authoritySourceDigest(source) };
-  const snapshot = createAdmissionSnapshot({ request: { ...request, continuation: { hold: false, next: null } }, authority },
-    { step: 2, attempt: 'run-456', runId: '456' });
-  const e = { request: snapshot, requestReference: source.charter, step: 2, repository: request.repository,
-    issueNumber: request.task, attemptId: snapshot.attempt, runId: 456, startHead: request.starting_head, executionSlot: 'second', admission: { warnings: [] } };
+  const e = currentEnvelope({ runId: 456, step: 2, executionSlot: 'second', admission: { warnings: [] } });
+  const snapshot = e.request; const authority = snapshot.authority;
   const body = boundOutcomeBody(e, 'Recorded worker validation claims.', { head: e.startHead });
   const record = extractAuthorityRecord(body);
   assert.match(body.slice(0, body.indexOf('<details>')), /Execution slot: second/);
@@ -23,14 +17,12 @@ test('new admission Outcome binds protected snapshot instead of manufacturing a 
   assert.ok(!Object.hasOwn(record, 'request'));
 });
 test('automatic Outcome keeps one canonical machine block and initially visible warnings', () => {
-  const e = { request, requestReference: { kind: 'issue-comment', id: 101, parent: request.parent, sha256: 'c'.repeat(64) },
-    repository: request.repository, issueNumber: request.task, attemptId: 'run-123', runId: 123,
-    startHead: request.starting_head, admission: { warnings: [{ code: 'ISSUE_CLOSURE_POLICY_INVALID' }] } };
+  const e = currentEnvelope({ runId: 123, admission: { warnings: [{ code: 'ISSUE_CLOSURE_POLICY_INVALID' }] } });
   const body = boundOutcomeBody(e, '## Codex Outcome\n\nWorker summary (claim): No source change.',
     { head: e.startHead, status: 'blocked', executionWarnings: ['UNCOMMITTED_WORK_REMAINS'] });
   const record = extractAuthorityRecord(body);
   assert.equal(record.kind, 'outcome');
-  assert.equal(record.request.sha256, e.requestReference.sha256);
+  assert.deepEqual(record.admission, admissionBinding(e.request));
   assert.equal((body.match(/^```relay-authority$/gm) ?? []).length, 1);
   const visible = body.slice(0, body.indexOf('<details>'));
   assert.match(visible, /Uncommitted checkout work requires reconciliation before acceptance/);

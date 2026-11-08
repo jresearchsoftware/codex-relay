@@ -21,24 +21,19 @@ import { admissionWarningSummary, emitAdmissionWarnings, terminalOutcomeBody, wo
 import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
 
 import { fixture, memoryStore } from './fixture.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 const exec = promisify(execFile);
 
-test('new Issue admission safely defaults recoverable metadata and publishes warning-ready authority', async t => {
-  const f = await fixture(t, { issueBody: [
-    '# Task 42 defaulted admission',
-    'Implement the admitted goal.'
-  ].join('\n') });
+test('current v4 charter resolves profile defaults and exposes an invalid closure warning', async t => {
+  const f = await fixture(t, { issueBody: 'Authority model: github-native-v1\nImplement the admitted goal.' });
   assert.equal(f.envelope.startHead, f.envelope.targetBase);
   assert.equal(f.envelope.branch, 'codex/task-42');
-  assert.equal(f.envelope.thread, 'Task 42 — Step 1 — defaulted admission');
+  assert.equal(f.envelope.request.kind, 'admission');
   assert.equal(f.envelope.closure, 'Related to #42');
-  assert.deepEqual(f.envelope.profile, { cliModelId: 'example-model', effort: 'xhigh' });
+  assert.deepEqual(f.envelope.profile, CONSUMER.defaultProfile);
   assert.equal(f.envelope.subagentsAllowed, true);
   assert.ok(!('allowedPaths' in f.envelope));
-  assert.ok(f.envelope.admission.warnings.some(warning => warning.code === 'CODEX_MODEL_DEFAULTED'));
-  assert.ok(f.envelope.admission.warnings.some(warning => warning.code === 'CODEX_EFFORT_DEFAULTED'));
-  assert.ok(!f.envelope.admission.warnings.some(warning => ['accepted starting base', 'branch'].includes(warning.field)));
-  assert.ok(f.envelope.admission.warnings.some(warning => warning.code === 'ISSUE_CLOSURE_POLICY_DEFAULTED'));
+  assert.ok(f.envelope.admission.warnings.some(warning => warning.code === 'ISSUE_CLOSURE_POLICY_INVALID'));
   const emitted = [];
   assert.equal(emitAdmissionWarnings(f.envelope.admission.warnings, value => emitted.push(value)), f.envelope.admission.warnings.length);
   assert.ok(emitted.every(value => value.startsWith('::warning title=Codex admission::')));
@@ -47,41 +42,21 @@ test('new Issue admission safely defaults recoverable metadata and publishes war
   assert.ok(body.includes(`Warning summary: ${admissionWarningSummary(f.envelope.admission.warnings)}`));
 });
 
-test('safe admission blockers publish exactly one truthful terminal Outcome without worker authority', async t => {
-  const f = await fixture(t, { issueBody: [
-    '# Task 42 malformed starting head',
-    'Accepted starting main: not-a-sha'
-  ].join('\n') });
-  assert.equal(f.envelope.admissionBlock.code, 'ISSUE_STARTING_HEAD_INVALID');
-  assert.equal(f.comments.filter(comment => comment.body.includes('## Codex Outcome')).length, 1);
-  assert.match(f.comments[0].body, /Status: BLOCKED/);
-  assert.match(f.comments[0].body, /Token: IMPLEMENTATION_BLOCKED/);
-  assert.match(f.comments[0].body, /Admission status: BLOCKED_BEFORE_WORKER/);
-  assert.match(f.comments[0].body, /Requested model: UNAVAILABLE; effort: UNAVAILABLE/);
-  assert.match(f.comments[0].body, /Historical reviewed\/starting head: UNAVAILABLE/);
-  const resumed = await f.broker.invoke(f.admissionRequest);
-  assert.equal(resumed.status, 'BLOCKED');
-  assert.equal(f.comments.filter(comment => comment.body.includes('## Codex Outcome')).length, 1);
-});
-
-test('a live malformed starting head terminalizes as a normal blocked Outcome', async t => {
+test('a changed immutable live charter blocks the worker and preserves the publication boundary', async t => {
   const f = await fixture(t); const journal = f.journal;
-  f.issue.body += '\nAccepted starting main: malformed';
-  const result = await runAttempt({ ...f, journal, execute: () => assert.fail('head blocker must not launch the worker') });
-  assert.equal(result.status, 'BLOCKED');
-  assert.equal(f.comments.filter(comment => comment.body.includes('## Codex Outcome')).length, 1);
-  assert.match(f.comments[0].body, /Terminal code: ISSUE_STARTING_HEAD_INVALID/);
-  assert.match(f.comments[0].body, /Admission status: COMPLETED/);
+  f.issue.body += '\nChanged current authority bytes.';
+  await assert.rejects(runAttempt({ ...f, journal,
+    execute: () => assert.fail('changed authority must not launch the worker') }), { code: 'AUTHORITY_SOURCE_MISMATCH' });
+  assert.equal(f.pushes(), 0); assert.equal(f.comments.length, 0);
+  assert.equal((await journal.get(99)).execution, null);
 });
 
-test('ambiguous remediation authority publishes one blocked Outcome on the fixed PR without guessing its head', async t => {
-  const f = await fixture(t, { remediation: true, reviewBody: 'The reviewed identity is not present.' });
-  assert.equal(f.envelope.admissionBlock.code, 'CURRENT_METADATA_MISSING');
-  assert.equal(f.comments.filter(comment => comment.body.includes('## Codex Outcome')).length, 1);
-  assert.match(f.comments[0].body, /Token: REMEDIATION_BLOCKED/);
-  assert.match(f.comments[0].body, /Admission status: BLOCKED_BEFORE_WORKER/);
-  assert.match(f.comments[0].body, /Historical reviewed\/starting head: UNAVAILABLE/);
-  assert.doesNotMatch(f.comments[0].body, /Starting head: [a-f0-9]{40}/);
+test('missing current native CR refuses admission without guessing a reviewed head or publishing an Outcome', async t => {
+  let context;
+  await assert.rejects(fixture(t, { remediation: true, reviewBody: 'The reviewed identity is not present.',
+    beforeAdmission: value => { context = value; } }), { code: 'CURRENT_PROTOCOL_REQUIRED' });
+  assert.equal(await context.store.get(99), null);
+  assert.equal((await context.api.list('/issues/43/comments')).filter(value => value.user?.login === WRITER).length, 0);
 });
 
 function helperFailureSpawn(payload) {
@@ -181,7 +156,7 @@ test('automatic finish still refuses a stale PR-head observation before readines
   assert.match(f.comments[0].body, /Durable\/published head: [a-f0-9]{40}/);
 });
 test('manual routing remains a handoff and does not enter automatic completion', async t => {
-  const f = await fixture(t); const envelope = { ...f.envelope, route: 'manual' };
+  const f = await fixture(t, { route: 'manual' }); const envelope = f.envelope;
   let observed;
   const result = await runAttempt({ envelope, broker: { invoke: async request => {
     observed = request; return { status: 'handed-off' };
@@ -585,7 +560,7 @@ test('one native dispatch cannot be presented as another run', async t => {
 test('authority mutation blocks publication before mutation', async t => {
   const f = await fixture(t); await f.prepare(f.envelope); await f.commit(); const p = await f.collect(f.envelope);
   f.issue.body += '\nOwner changed the goal.';
-  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_CHANGED' }); assert.equal(f.pushes(), 0);
+  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_SOURCE_MISMATCH' }); assert.equal(f.pushes(), 0);
 });
 
 test('live goal edit rejects stale admitted progress before any publication mutation', async t => {
@@ -593,17 +568,17 @@ test('live goal edit rejects stale admitted progress before any publication muta
   const before = await f.remoteHead(); const record = await f.store.get(99);
   f.issue.body += '\nNew required behavior.';
   f.api.post = f.api.delete = f.api.ready = async () => assert.fail('publication mutation');
-  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_CHANGED' });
+  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_SOURCE_MISMATCH' });
   assert.equal(f.pushes(), 0); assert.equal(await f.remoteHead(), before);
   assert.deepEqual(await f.store.get(99), record);
 });
 
-test('a live PR closure edit rejects stale remediation progress before publication', async t => {
+test('a live PR Task linkage edit rejects stale remediation progress before publication', async t => {
   const f = await fixture(t, { remediation: true }); await f.prepare(f.envelope); await f.commit(); const p = await f.collect(f.envelope);
   const get = f.api.get.bind(f.api);
-  f.api.get = async path => { const value = await get(path); return path === '/pulls/43' ? { ...value, body: 'Related to #42' } : value; };
+  f.api.get = async path => { const value = await get(path); return path === '/pulls/43' ? { ...value, body: 'Related to #42\nRelated to #44' } : value; };
   f.api.post = f.api.delete = f.api.ready = async () => assert.fail('publication mutation');
-  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_CHANGED' });
+  await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'CANONICAL_ISSUE_AMBIGUOUS' });
   assert.equal(f.pushes(), 0); assert.equal(await f.remoteHead(), f.envelope.startHead);
 });
 
@@ -616,19 +591,12 @@ for (const remediation of [false, true]) {
     source.body = source.body.replace('Process *.md files.', 'Process .md files.');
     f.api.post = f.api.delete = f.api.ready = async () => assert.fail('publication mutation');
     await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: 99,
-      attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_CHANGED' });
+      attemptId: f.envelope.attemptId, bundle: p.bundle }), { code: 'AUTHORITY_SOURCE_MISMATCH' });
     assert.equal(f.pushes(), 0); assert.equal(await f.remoteHead(), before);
     assert.deepEqual(await f.store.get(99), record);
   });
 }
 
-test('cosmetic Issue formatting still permits durable publication', async t => {
-  const f = await fixture(t); await f.prepare(f.envelope); await f.commit(); const p = await f.collect(f.envelope);
-  f.issue.body = f.issue.body.replace('## Execution profile', '### **Execution profile**')
-    .replace('## Validation', '### **Validation**').replace('- git diff --check', '* **git diff --check**');
-  const r = await f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: p.bundle });
-  assert.equal(r.publishedHead, p.head); assert.equal(await f.remoteHead(), p.head); assert.equal(f.pushes(), 1);
-});
 test('a secret introduced and then removed still blocks all publication', async t => {
   const f = await fixture(t); await f.prepare(f.envelope);
   const synthetic = ['gh', 'p_', 'A'.repeat(24)].join('');

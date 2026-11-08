@@ -33,10 +33,10 @@ SNAPSHOT_DIGEST = 'd' * 64
 def pair():
     config = {'source': {'repository': 'https://github.com/example/product.git', 'revision': HEAD},
               'consumer': {'owner': 'Owner'}, 'environment': {'localApply': {
-                  'source': 'git', 'repository': 'example/private-config', 'configPath': 'test/relay.json'}}}
+                  'source': 'git', 'repository': 'example-org/private-config', 'configPath': 'test/relay.json'}}}
     raw = (json.dumps(config, indent=2) + '\n').encode()
     receipt = {'product_repository': 'example/product', 'product_sha': HEAD,
-               'config_repository': 'example/private-config', 'config_path': 'test/relay.json',
+               'config_repository': 'example-org/private-config', 'config_path': 'test/relay.json',
                'config_sha': CONFIG_HEAD, 'config_blob_sha': BLOB,
                'config_sha256': hashlib.sha256(raw).hexdigest(),
                'source_policy': 'test-qualified-exact', 'workflow_run_id': 123, 'action': 'apply'}
@@ -49,7 +49,7 @@ def test_exact_test_evidence_preserves_pin_without_mutating_input_or_receipt(pai
     config, raw, receipt, _ = pair
     before = copy.deepcopy((config, receipt))
     locator = expected_locator(config, HEAD, receipt, raw)
-    assert locator == {'repository': 'example/private-config', 'configPath': 'test/relay.json',
+    assert locator == {'repository': 'example-org/private-config', 'configPath': 'test/relay.json',
                        'owner': 'Owner', 'productRepository': 'example/product', 'qualificationProductSha': HEAD}
     assert (config, receipt) == before
 
@@ -91,7 +91,7 @@ def test_changed_raw_bytes_revision_or_non_git_source_cannot_retain_pin(pair):
 @pytest.mark.parametrize('placement', ['localApply', 'source', 'root'])
 def test_git_input_cannot_introduce_qualification_or_receipt_policy(placement):
     config = json.loads((ROOT / 'deploy/example.json').read_text())
-    config['environment']['localApply'] = {'source': 'git', 'repository': 'example/private-config',
+    config['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/private-config',
                                          'configPath': 'test/relay.json'}
     target = {'localApply': config['environment']['localApply'], 'source': config['source'], 'root': config}[placement]
     target['qualificationProductSha' if placement == 'localApply' else 'source_policy'] = (
@@ -190,7 +190,7 @@ def resume_cli(tmp_path, monkeypatch):
     real_fstat = os.fstat
     config = configuration.load(ROOT / 'deploy/example.json', ROOT)
     config['source'] = {'repository': 'https://github.com/' + config['consumer']['repository'], 'revision': 'main'}
-    config['environment']['localApply'] = {'source': 'git', 'repository': 'example/private-config',
+    config['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/private-config',
                                          'configPath': 'test/relay.json'}
     config_path = tmp_path / 'desired.json'
     consumer = tmp_path / 'consumer'
@@ -240,7 +240,7 @@ def resume_cli(tmp_path, monkeypatch):
         state['manifest'].append('read')
         raw = config_path.read_bytes()
         receipt = {'product_repository': config['source']['repository'].removeprefix('https://github.com/'),
-            'product_sha': HEAD, 'config_repository': 'example/private-config', 'config_path': 'test/relay.json',
+            'product_sha': HEAD, 'config_repository': 'example-org/private-config', 'config_path': 'test/relay.json',
             'config_sha': CONFIG_HEAD, 'config_blob_sha': BLOB, 'config_sha256': hashlib.sha256(raw).hexdigest(),
             'source_policy': 'accepted-main', 'workflow_run_id': 12, 'action': 'apply'}
         return json.dumps({'commit': HEAD, 'resolvedRevision': HEAD, 'installedRevision': HEAD,
@@ -259,11 +259,12 @@ def resume_cli(tmp_path, monkeypatch):
     monkeypatch.setattr(backend, 'run_backend', protected_postcheck)
 
     def invoke(integration, *, git_mode=True, mismatch=False):
-        config['environment']['localApply'] = ({'source': 'git', 'repository': 'example/private-config',
+        config['environment']['localApply'] = ({'source': 'git', 'repository': 'example-org/private-config',
             'configPath': 'test/relay.json'} if git_mode else {'source': 'installed'})
         config_path.write_text(json.dumps(config))
         if integration == 'stale-compatible':
             previous = copy.deepcopy(config)
+            previous['consumer'].pop('executionSlots')
             previous['environment']['generalRunner']['name'] += '-previous'
             workflow_projection.project(previous, 'e' * 40, ROOT, consumer)
         else:

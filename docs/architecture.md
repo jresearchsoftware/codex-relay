@@ -12,12 +12,17 @@ with applicable native CR overrides, trusted Decisions, project defaults and
 supported system defaults resolved once at admission. Consumer policy remains
 owner-controlled; publication does not infer actual runtime model/effort.
 
+New installations and executions use one managed General Runner pool and the
+current github-native-v1/schema-v4 model. Capacity one uses the same pool.
+Fresh SERIAL installation, migration and scheduling paths are retired.
+
 This document describes the current source design. It does not establish that
 an existing paired runtime was upgraded or qualified. Already-admitted native
-schema-v3 or legacy attempts retain their exact compatible completion,
-publication and recovery paths. A paired, qualified v4 installation gates fresh
-execution and new durable Decision/Request/CR publication to the current v4 path;
-unmarked Tasks and fresh v3/legacy chains require explicit migration or stop.
+schema-v3 or legacy attempts retain exact completion, publication and recovery
+through their frozen original source. A paired, qualified v4 installation gates fresh
+execution and new durable Decision/CR publication to the current v4 path;
+unmarked Tasks require explicit migration, and a current decisive remediation CR
+must be schema v4. Historical Request bytes supply no fresh execution authority.
 Reserved old Decision publication and exact old admitted-result acceptance keep
 their historical contract.
 
@@ -44,11 +49,14 @@ Selected ordinary comments are contextual evidence. The trusted controller/Write
 resolves effective authority at admission and stores one immutable execution
 snapshot in existing protected records. New public complete Task Requests are
 unnecessary; the worker never reconstructs authority from discussion history.
-Unmarked Tasks retain legacy parsing for historical verification and exact
-already-admitted attempts. Fresh work on them cannot enter the qualified v4
-installation until the owner explicitly migrates authority. Native schema-v3
-records remain valid historical/in-flight inputs; compatibility does not permit
-fresh v3 execution chains or conflicting authority paths for one launch.
+The current Node runtime accepts only v4 admissions and has no legacy Issue,
+Request or CR2 execution parser. Exact older operations use their frozen original
+source. Historical v3 Requests/CRs remain opaque to current admission. A selected
+trusted v3 Decision may remain a native provenance reference: exact admitted v4
+result recovery verifies its original bytes, and fresh admission requires later
+active v4 Decisions to replace every effective historical field. Existing fully
+shadowed fields need no extra Decision or formal supersession; unhandled effective
+v3 semantics stop with `CURRENT_PROTOCOL_REQUIRED`.
 The [product user manual](../packages/codex-relay/skill/references/workflow.md)
 explains the current human path.
 
@@ -73,6 +81,17 @@ lineage and admitted Step in its protected execution snapshot. It consumes the
 ready event after reservation. `step-N` is a display projection in the new path,
 never launch permission or an independent execution authority.
 
+At a genuinely new routed admission, Writer reads the canonical Issue's single
+valid `step-N` position under its existing serialization lock and compares it
+with successful durable admissions. The next Step is N+1; without a label it is
+last admitted Step+1, or 1 when neither exists. An owner-maintained position
+above Writer history permits standalone iterations. A position below successful
+history, malformed/conflicting labels, overflow or a concurrent position change
+fails with an actionable diagnostic. Rejected launches allocate no Step;
+same-attempt replay/recovery retains its Step. The label supplies numbering,
+never execution or admission authority. Writer projects the position only after
+durable admission and verifies the native result.
+
 Only admission of a genuinely new execution allocates the next Step. Issue
 creation, Decision/review publication, ready-label application and Actions
 routing allocate none. Iterative local corrections stay in the active attempt.
@@ -96,28 +115,25 @@ changed branch/base and replayed events fail closed. Original CR, journal and
 Outcome bytes remain unchanged; no new CR is needed solely for the published
 blocked head. This path does not change retained v3/legacy admission semantics.
 
-Retained schema-v3 Request/CRs keep their original Step projection and linear
-Request supersession semantics. Legacy owner new-phase preparation retains its
-separate N+1 procedure. Their review repair/recovery never retroactively acquires
-new admission semantics.
-A legacy published record lacking its pre-publication Step anchor stops with
-`LEGACY_STEP_BINDING_REQUIRED` unless its projection is already synchronized.
-Explicit bounded owner migration repair preserves that review ID and Step before
-replay of the original Reviewer payload; it does not launch execution.
+Exact older executions retain their original Step and authority under the frozen
+runtime; no current owner new-phase helper or old Request selector creates a new
+execution. Native Reviewer recovery remains independent: a reserved old review
+keeps its original publication body, native ID and Step/projection anchor. A
+missing historical anchor may return `LEGACY_STEP_BINDING_REQUIRED`; reconcile
+that same operation under its original authority before replaying the original
+Reviewer payload. Recovery grants no launch or Step increment.
 
-A trusted Task Decision/effective charter or compatible complete v3 Request,
-or legacy Issue-body fields, can explicitly authorize implementation continuation
-from an existing task branch at one exact
-starting head, binding its current PR when one exists
-under the [controller contract](../controller/README.md#issue-authorized-implementation-continuation).
-Admission checks the live branch ref and unique open PR, including repository,
-base, Task, Step and title bindings, and pins the admitted PR number. This remains
-Issue implementation with the Writer identity; it requires no Reviewer CR and
-grants no remediation integration merge. New source admissions allocate a fresh
-Step for each genuinely new execution; compatible v3/legacy attempts retain
-their admitted Step and applicable successor-Request/N+1 rules.
-Legacy fresh Issue defaults and manual handoff remain available, using existing
-attempt records and services.
+Current charter semantics and trusted Decision starting facts can authorize
+implementation continuation from an existing task branch at one exact head,
+binding its current PR when one exists under the
+[controller contract](../controller/README.md#issue-authorized-implementation-continuation).
+Writer can retain its proven prior published head when the same current branch
+continues and no new trusted starting pin replaces it. Admission checks the live
+ref and unique open PR, including repository, base, Task, exact head and compatible
+metadata, then pins the PR number and projects the new admitted Step/title. This
+remains Issue implementation with Writer identity, needs no Reviewer CR and grants
+no remediation integration merge. Each genuinely new execution receives a fresh
+Step; exact replay/recovery retains the original admission.
 Writer requires the admitted starting head, or its own later published head, as
 the exact previous remote ref and reobserves it before continuation's non-force
 push. Ref observations and the push do not provide atomic compare-and-swap against
@@ -178,7 +194,8 @@ one trusted Issue Task Approval bound to current authority/admission, the exact
 Writer Outcome and identical immutable results, including when a disposable
 artifact PR was closed. Task findings are review evidence; further execution
 requires owner-authorized direction and a new admission, not a duplicate public
-Request. Compatible v3 acceptance still binds its unchanged Request/Outcome.
+Request. Native acceptance of an already-admitted v3 result still binds its unchanged
+Request/Outcome; it does not admit new old-schema work.
 
 Manual routing publishes a copyable handoff and ends automatic ownership. The
 owner-launched session follows its live authority. Preserve the
@@ -197,13 +214,14 @@ and replay state, then publishes one canonical Writer-Bot Outcome. It does not
 require a preceding owner-authored `relay-manual-result` transport comment.
 Claims and verified bindings remain separate from independent proof of the
 claimed operations. The worker's ordinary broker cannot invoke this capability;
-Reviewer never obtains Writer private credentials. Legacy/v3 transport stays
-readable and recoverable without rewriting any old owner or Bot record.
+Reviewer never obtains Writer private credentials. Exact old transport recovery
+uses the retained original runtime, and native Reviewer reserved publication and
+result acceptance preserve old owner/Bot records without rewriting them.
 
 Explicitly owner-authorized standalone source PRs use native source/review
 binding instead of the admitted manual-result transport. Reviewer binds the
 verified owner-created PR and exact current Task sources in its native approval;
-the existing owner continuation adapter verifies standalone permission,
+owner orchestration verifies standalone permission,
 non-admitted provenance and warning disposition before exact-head squash.
 Native authorship and missing Outcomes alone do not establish these facts.
 No admission, Writer Outcome, Step, service or ordinary-comment authority is
@@ -262,9 +280,9 @@ or pending trusted effect is nonblocking, including after a consumer change;
 this proves neither cancellation nor execution completion. Completed trusted
 controller receipts remain usable without reopening old Task history. Pending
 publication/recovery, unknown children and conflicting ownership still hold the
-affected resources and full lifecycle drain. Optional historical disposition
-tools remain diagnostic; ordinary admission and upgrade do not load their cache
-or reread historical GitHub authority. See the
+affected resources and full lifecycle drain. Historical Task-disposition readers, acknowledgement caches and their diagnostic
+ports have been removed. Admission and idle upgrade inspect current effects
+without rereading historical GitHub Task authority. See the
 [effect inventory contract](git-managed-installation.md#strategy-compatibility-and-recovery).
 
 | Owner | Record | Purpose |

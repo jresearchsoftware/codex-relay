@@ -350,27 +350,3 @@ def test_normalized_v4_transports_reject_stale_installed_v3_contract(installed_r
                     else 'RELAY_REPOSITORY_INTEGRATION_OUTDATED')
         assert expected in result.stderr
         assert not calls(result)
-
-
-def test_normalized_serial_self_consumer_keeps_single_runner_v3_transport(installed_runtime):
-    execute, _ = installed_runtime
-    raw = json.loads((ROOT / 'deploy/example.json').read_text())
-    raw['source']['repository'] = 'https://github.com/' + raw['consumer']['repository'] + '.git'
-    raw['environment']['localApply'] = {'source': 'installed'}
-    value = normalized(raw)
-    assert 'executionSlots' not in value['consumer']
-    general = value['environment']['generalRunner']
-    for workflow in workflows(value).values():
-        job, = workflow['jobs'].values()
-        selected = step(workflow)
-        assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'relay']
-        assert selected['env']['EXPECTED_WORKFLOW_CONTRACT'] == 'relay-workflows-v3'
-        assert selected['run'].startswith('test "$RUNNER_NAME" = relay-general\n'
-                                           'test "$(/usr/bin/id -un)" = relay-general-runner\n')
-        result = execute(selected, general['name'], general['user'], RELAY_EXECUTION_SLOT='')
-        assert result.returncode == 0, result.stderr
-        assert len(calls(result)) == 1
-        assert calls(result)[0]['slot'] == ''
-        blocked = execute(selected, general['name'] + '-2', general['user'])
-        assert blocked.returncode != 0
-        assert not calls(blocked)

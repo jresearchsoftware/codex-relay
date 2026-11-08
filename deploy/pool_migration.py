@@ -1,8 +1,8 @@
-"""Read-only stop for an unqualified SERIAL-to-pool configuration transition.
+"""Read-only guard against adopting retired SERIAL state as a fresh pool.
 
-Changing the consumer digest also changes admission and original-attempt
-recovery bindings. Registration-name changes or stopping the old service cannot
-establish that compatibility. Preserve all original state before owner design.
+Original credentials, gates and journals remain untouched. A current managed
+installation must prove its own protected resources or sealed retired context;
+this guard offers no new migration or retry path.
 """
 from contextlib import ExitStack, contextmanager
 import os
@@ -39,7 +39,7 @@ def _legacy_boundary(contract, root, owner_uid):
         # never opened, repaired, moved or reinterpreted as pool ownership.
         legacy = present(['opt', namespace, 'general-runner'])
         legacy |= present(['etc', 'systemd', 'system', namespace + '-general-runner.service'])
-        require(not legacy, 'SERIAL_TRANSITION_REQUIRED')
+        require(not legacy, 'SERIAL_TRANSITION_RETIRED')
         yield namespace, descriptor, stack
 
 
@@ -72,5 +72,5 @@ def reject_serial_transition(contract, *, root=Path('/'), owner_uid=0):
         raw, _ = _read(release, 'deployment-config.json', {0o600}, owner_uid, private=True)
         config = _json(raw)
         require(isinstance(config.get('consumer'), dict), 'SERIAL_STATE_UNPROVEN')
-        require('generalRunnerPool' in config['consumer'], 'SERIAL_TRANSITION_REQUIRED')
+        require('generalRunnerPool' in config['consumer'], 'SERIAL_TRANSITION_RETIRED')
         require(_peer(opt, namespace, contract, owner_uid) is not None, 'SERIAL_STATE_UNPROVEN')

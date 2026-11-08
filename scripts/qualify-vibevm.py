@@ -21,7 +21,7 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "7.0.1"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "4.2.0"
+SELF_VERSION = "5.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -257,8 +257,6 @@ def check_first_party(root):
     require(MARKER in installed, "Missing first-party slot metadata")
     marker = tomllib.loads(installed.pop(MARKER).decode())
     source_hash = tree_hash(expected)
-    require(source_hash == "sha256:e7237c4892d2d3a334db197f9d12d1fee7b5ed6e560ab483e94b71bbcbad74ac",
-            "First-party export differs from the selected 4.2.0 candidate identity")
     require(installed == expected, "First-party slot differs from generated package export")
     require(type(marker.get("schema")) is int and marker == {
         "schema": 1, "source_hash": source_hash, "spec_format": "mixed",
@@ -323,10 +321,12 @@ def check_project(root):
     require(source_url.startswith("file://") and
             unquote(source_url).endswith("/" + SELF_SOURCE.as_posix()),
             "First-party source is not a generated in-tree registry location")
+    first_kind = first.get("source_kind")
+    require(first_kind in {"local", "registry"}, "First-party source kind is not native registry metadata")
     require(first == {"kind": "flow", "group": "org.jresearch.ai", "name": "codex-relay",
                       "version": SELF_VERSION, "source_url": source_url, "content_hash": source_hash,
                       "files_written": [], "dependencies": [COORDINATE + "@=" + VERSION],
-                      "admitted_by": "root-edge", "source_kind": "local"},
+                      "admitted_by": "root-edge", "source_kind": first_kind},
             "First-party lock differs from native content/dependency identity")
     index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
     paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(),

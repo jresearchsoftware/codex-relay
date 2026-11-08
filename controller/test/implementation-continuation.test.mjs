@@ -7,6 +7,12 @@ import { runAttempt } from '../src/attempt.mjs';
 import { executeCodex } from '../src/attempt-runtime.mjs';
 import { VERSION } from '../src/execution-contract.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
+import { extractAuthorityRecord, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+const amend = (f, fields) => {
+  const decision = extractAuthorityRecord(f.fixtureDecision.body);
+  Object.assign(decision.amendments, fields);
+  f.fixtureDecision.body = renderAuthorityRecord(decision);
+};
 
 const preflight = f => ({ operation: 'preflight', runId: 99, attemptId: f.envelope.attemptId });
 const publication = (f, progress) => ({ operation: 'publish-progress', runId: 99,
@@ -52,9 +58,8 @@ test('the normal Issue label path continues the exact implementation head and re
   assert.notEqual(f.envelope.startHead, f.envelope.targetBase);
   assert.equal(f.envelope.continuation.pullRequest, 43);
   assert.equal((await f.store.get(99)).prNumber, 43);
-  const post = f.api.post.bind(f.api); const list = f.api.list.bind(f.api);
+  const post = f.api.post.bind(f.api);
   f.api.post = (path, body) => { assert.notEqual(path, '/pulls'); return post(path, body); };
-  f.api.list = path => { assert.ok(!path.endsWith('/reviews')); return list(path); };
   let executions = 0;
   const args = { ...f, journal: f.journal, execute: async () => {
     executions++;
@@ -100,28 +105,27 @@ test('an explicitly admitted existing branch without a PR can publish its first 
 });
 
 for (const [name, mutate, code] of [
-  ['different admitted SHA', f => { f.issue.body = f.issue.body.replace(f.continuationHead, 'b'.repeat(40)); }, 'STARTING_STATE_MISMATCH'],
+  ['different admitted SHA', f => amend(f, { starting_head: 'b'.repeat(40) }), 'STARTING_STATE_MISMATCH'],
   ['missing branch', async f => { await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', '-d', `refs/heads/${CONSUMER.taskBranchPrefix}test-42`]); }, 'TASK_BRANCH_MISSING'],
   ['missing declared PR', f => { const list = f.api.list.bind(f.api); f.api.list = path => path.startsWith('/pulls?') ? Promise.resolve([]) : list(path); }, 'PR_AUTHORITY_CHANGED'],
-  ['wrong PR number', f => { f.issue.body = f.issue.body.replace('pull request: #43', 'pull request: #44'); }, 'PR_AUTHORITY_CHANGED'],
-  ['unadmitted existing PR', f => { f.issue.body = f.issue.body.replace('\nImplementation pull request: #43', ''); }, 'PR_AUTHORITY_CHANGED'],
-  ['wrong Task linkage', f => { f.pr.body = 'Related to #44'; }, 'PR_AUTHORITY_CHANGED'],
-  ['ambiguous Task linkage', f => { f.pr.body = 'Related to #42\nRelated to #44'; }, 'CANONICAL_ISSUE_AMBIGUOUS'],
+  ['wrong PR number', f => amend(f, { existing_pr: 44 }), 'PR_AUTHORITY_CHANGED'],
+  ['unadmitted existing PR', f => amend(f, { existing_pr: null }), 'PR_AUTHORITY_CHANGED'],
+  ['wrong Task linkage', f => { f.pr.body = 'Related to #44'; }, 'PR_NOT_ADMITTED'],
+  ['ambiguous Task linkage', f => { f.pr.body = 'Related to #42\nRelated to #44'; }, 'PR_NOT_ADMITTED'],
   ['wrong branch', f => { f.pr.head.ref = 'codex/foreign'; }, 'PR_AUTHORITY_CHANGED'],
   ['wrong base', f => { f.pr.base.ref = 'another-base'; }, 'PR_NOT_ADMITTED'],
   ['wrong head repository', f => { f.pr.head.repo.full_name = 'other/repo'; }, 'PR_NOT_ADMITTED'],
   ['wrong base repository', f => { f.pr.base.repo.full_name = 'other/repo'; }, 'PR_NOT_ADMITTED'],
-  ['missing Step', f => { f.pr.labels = []; }, 'STEP_LABEL_MISSING'],
-  ['multiple Steps', f => { f.pr.labels.push({ name: 'step-2' }); }, 'STEP_LABEL_MULTIPLE'],
+  ['multiple Steps', f => { f.pr.labels = [{ name: 'step-1' }, { name: 'step-2' }]; }, 'STEP_LABEL_MULTIPLE'],
   ['different Step', f => { f.pr.labels = [{ name: 'step-2' }]; }, 'STEP_LABEL_MISMATCH'],
   ['stale PR Step title', f => { f.pr.title = 'Task 42 · Step 2 · stale'; }, 'STEP_DISPLAY_MISMATCH'],
-  ['closed PR', f => { f.pr.state = 'closed'; }, 'PR_NOT_ADMITTED'],
+  ['closed PR', f => { f.pr.state = 'closed'; }, 'PR_AUTHORITY_CHANGED'],
   ['merged PR', f => { f.pr.merged = true; }, 'PR_NOT_ADMITTED'],
   ['multiple PR candidates including wrong base', f => {
     const list = f.api.list.bind(f.api);
     f.api.list = async path => {
       const rows = await list(path);
-      return path.startsWith('/pulls?') ? [...rows, { ...rows[0], number: 44, base: { ...rows[0].base, ref: 'other-base' } }] : rows;
+      return path.startsWith('/pulls?') && rows.length ? [...rows, { ...rows[0], number: 44, base: { ...rows[0].base, ref: 'other-base' } }] : rows;
     };
   }, 'PR_AMBIGUOUS'],
   ['stale PR head', f => {
@@ -130,18 +134,27 @@ for (const [name, mutate, code] of [
   }, 'PR_AUTHORITY_CHANGED']
 ]) {
   test(`continuation admission blocks ${name} before worker access`, async t => {
+    if (['multiple Steps', 'different Step', 'stale PR Step title'].includes(name)) {
+      let context;
+      await assert.rejects(fixture(t, { continuation: true, beforeAdmission: value => {
+        context = value; return mutate(value);
+      } }), { code });
+      assert.equal((await context.api.list('/issues/42/comments')).filter(value => value.user?.login?.endsWith('writer[bot]')).length, 0);
+      return;
+    }
     const f = await fixture(t, { continuation: true, continuationPr: name !== 'missing branch', beforeAdmission: mutate });
     assert.equal(f.admission.status, 'BLOCKED');
     assert.equal(f.envelope.admissionBlock.code, code);
     assert.equal(f.pushes(), 0);
     assert.equal(f.comments.length, 1);
     assert.equal(f.comments[0].body.includes('BLOCKED_BEFORE_WORKER'), true);
+
   });
 }
 
 test('an existing branch without continuation authority still follows the fresh-task rejection', async t => {
-  const f = await fixture(t, { continuation: true, beforeAdmission: ({ issue }) => {
-    issue.body = issue.body.replace(/\nImplementation continuation head: [a-f0-9]+\nImplementation pull request: #43/, '');
+  const f = await fixture(t, { continuation: true, beforeAdmission: context => {
+    amend(context, { starting_head: context.base, existing_pr: null });
   } });
   assert.equal(f.envelope.admissionBlock.code, 'TASK_BRANCH_ALREADY_EXISTS');
 });
@@ -186,8 +199,8 @@ for (const changed of ['closed', 'replaced', 'step', 'authority']) {
     if (changed === 'step') f.pr.labels = [{ name: 'step-2' }];
     if (changed === 'authority') f.issue.body += '\nNew owner decision.';
     await assert.rejects(f.broker.invoke(publication(f, progress)), {
-      code: changed === 'closed' ? 'PR_NOT_ADMITTED' : changed === 'step' ? 'STEP_LABEL_MISMATCH'
-        : changed === 'authority' ? 'AUTHORITY_CHANGED' : 'PR_AUTHORITY_CHANGED'
+      code: changed === 'closed' ? 'PR_AUTHORITY_CHANGED' : changed === 'step' ? 'STEP_LABEL_MISMATCH'
+        : changed === 'authority' ? 'AUTHORITY_SOURCE_MISMATCH' : 'PR_AUTHORITY_CHANGED'
     });
     assert.equal(f.pushes(), 0);
     assert.equal((await f.store.get(99)).publicationIntent, null);

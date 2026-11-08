@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "codex-relay",
-  "version": "4.2.0",
+  "version": "5.0.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
   "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
   "workflow_contract": "relay-workflows-v4",
@@ -13,6 +13,6 @@
   "shared_source_revision": "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
   "shared_distribution_revision": "30a23f467c30c41fec918204cbbf2ecfffd7bef5",
   "shared_distribution_tree_hash": "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
-  "publication": "Frozen 4.2.0 source candidate; MINOR addition of bounded owner continuation and compatible execution/lifecycle simplification; retained manual/standalone routes, diagnostic history and protocol pins; no external publication, deployment or consumer adoption claim",
+  "publication": "Frozen 5.0.0 source candidate; MAJOR retirement of unused post-review engines and historical-disposition APIs, current Step-label numbering and shared manual PR projection; exact admitted legacy recovery retained only where actually needed; no external publication, deployment or adoption claim",
   "shared_requirement": ">=2.5.0"
 }

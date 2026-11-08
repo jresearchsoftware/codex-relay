@@ -35,7 +35,7 @@ def invocation(tmp_path, monkeypatch):
     os.umask(previous_umask)
     config = json.loads((ROOT / 'deploy/example.json').read_text())
     config['target']['connection'] = 'local'
-    config['environment']['localApply'] = {'source': 'git', 'repository': 'example/deployment',
+    config['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/deployment',
                                           'configPath': 'prod/relay.json'}
     path = tmp_path / 'desired.json'
     path.write_text(json.dumps(config))
@@ -45,18 +45,24 @@ def invocation(tmp_path, monkeypatch):
     args = backend.arguments()
     args.intent_install, args.intent_expected_installed_revision = True, OLD
     args.git_intent = {'product_repository': 'example/codex-relay', 'product_sha': TARGET,
-        'config_repository': 'example/deployment', 'config_path': 'prod/relay.json',
+        'config_repository': 'example-org/deployment', 'config_path': 'prod/relay.json',
         'config_sha': 'd' * 40, 'config_blob_sha': 'e' * 40,
         'config_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
         'source_policy': 'accepted-main', 'workflow_run_id': 7, 'action': 'apply'}
     guard = SimpleNamespace(poll=lambda: None)
-    args._intent_host_guard, args._intent_pool_guard = guard, None
+    args._intent_host_guard, args._intent_pool_guard = guard, guard
     events, records = [], [{'runId': 7, 'terminal': True}]
     gate = {'phase': 'open', 'operation': None}
     state = {'failure': None, 'stage_calls': 0, 'preparation': None, 'consumer_change': False, 'installed': OLD}
     identity = {'revision': TARGET, 'tree': 'f' * 40}
     monkeypatch.setattr(backend, 'source_identity', lambda _: identity)
     monkeypatch.setattr(backend, 'clean_git', lambda _: CONSUMER)
+    import managed_pool_transport
+    monkeypatch.setattr(managed_pool_transport, 'preflight_pool',
+                        lambda *_args, **_kwargs: 'MANAGED_POOL_PREFLIGHT=PASS')
+    monkeypatch.setattr(managed_pool_transport, 'reconcile_pool',
+                        lambda *_args, **_kwargs: 'MANAGED_POOL_RESULT={"capacity":1}')
+
     # The controller's invocation lock is private to this synthetic fixture,
     # including when the same suite is exercised by root and an ordinary UID.
     monkeypatch.setattr(backend.tempfile, 'gettempdir', lambda: str(tmp_path))
@@ -322,31 +328,3 @@ def test_same_consumer_replacement_releases_retirement_lock_and_checks_installed
     assert events.index('final') < events.index('decommission') < events.index('backend') < events.index('complete')
     assert events.count('writer-lock') == events.count('writer-release') == 2
     assert events.index('decommission') < events.index('after-retirement') < events.index('backend')
-
-
-def test_serial_transition_revalidates_frozen_bytes_before_old_runner_stop(invocation, monkeypatch):
-    import config as configuration
-    import managed_pool_transport
-    from test_managed_pool import inputs
-    args, events, gate, state, _records = invocation
-    desired = json.loads(args.config.read_text())
-    pool = inputs()
-    desired['consumer']['generalRunnerPool'] = pool['consumer']['generalRunnerPool']
-    desired['environment']['instance'] = pool['environment']['instance']
-    desired['environment']['generalRunner'] = pool['environment']['generalRunner']
-    desired['environment']['localApply']['repository'] = desired['consumer']['repository'].split('/')[0] + '/deployment'
-    args.git_intent['config_repository'] = desired['environment']['localApply']['repository']
-    configuration.derive_managed_pool_slots(desired)
-    args.config.write_text(json.dumps(desired))
-    args.git_intent['config_sha256'] = hashlib.sha256(args.config.read_bytes()).hexdigest()
-    args._intent_pool_guard = args._intent_host_guard
-    monkeypatch.setattr(managed_pool_transport, 'preflight_pool', lambda *_args, **_kwargs:
-                        managed_pool_transport.PreflightProof('required', '1' * 64))
-    monkeypatch.setattr(managed_pool_transport, 'transition_pool', lambda *_args, **_kwargs:
-                        pytest.fail('changed frozen input reached SERIAL stop'))
-    state['failure'] = 'config-drift'
-    with pytest.raises(ValueError, match='frozen-git-inputs-changed-before-cutover'):
-        backend.run(args)
-    assert gate == {'phase': 'open', 'operation': None}
-    assert not getattr(args, '_intent_mutation_started', False)
-    assert 'quiesce' not in events and 'backend' not in events

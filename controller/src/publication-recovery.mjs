@@ -23,13 +23,11 @@ export const recoveryAuthorizationBody = binding =>
 async function authorize(api, e, authorizationId, binding, last) {
   if (!positive(authorizationId)) fail('RECOVERY_OWNER_AUTHORIZATION_REQUIRED');
   const run = await api.getRun(e.runId);
-  const transportMatches = e.attemptId === `run-${e.runId}`
-    ? e.transport === 'label'
+  const transportMatches = e.attemptId === `run-${e.runId}` && (e.transport === 'label'
       ? run.event === (e.target === 'issue' ? 'issues' : 'pull_request_target')
         && run.display_title === e.runName && positive(e.readyEventId)
         && (run.head_branch === CONSUMER.baseBranch || e.target === 'pull_request' && run.head_branch === e.branch)
-      : run.event === 'workflow_dispatch' && run.head_branch === CONSUMER.baseBranch && run.display_title === dispatchRunName(e)
-    : positive(e.eventId) && e.attemptId === `event-${e.eventId}` && run.event === (e.target === 'issue' ? 'issues' : 'pull_request');
+      : run.event === 'workflow_dispatch' && run.head_branch === CONSUMER.baseBranch && run.display_title === dispatchRunName(e));
   if (run.id !== e.runId || run.repository?.full_name !== REPOSITORY || run.actor?.login !== OWNER
     || (run.triggering_actor && run.triggering_actor.login !== OWNER) || run.status !== 'completed'
     || run.path !== CONSUMER.routingWorkflow || !positive(run.run_attempt)

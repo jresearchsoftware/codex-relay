@@ -15,11 +15,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 import inventory
 import ansible_transport
+import config as deployment_config
+import managed_pool
 
 
 @pytest.fixture
 def target(tmp_path):
-    config = json.loads((ROOT / 'deploy/example.json').read_text())
+    config = deployment_config.load(ROOT / 'deploy/example.json', ROOT)
     tmp_path.chmod(0o700)
     ids = {name: (os.getuid(), os.getgid()) for name in [
         config['environment']['runner']['user'], config['environment']['generalRunner']['user'],
@@ -58,6 +60,23 @@ def installed(target, snapshot=True):
 
 
 def runner(target, general=False):
+    if general:
+        contract = managed_pool.pool_contract(target.config)
+        state = {'version': 1, 'binding': managed_pool.binding(contract),
+                 'ownerRepository': contract['repository'],
+                 'desiredCapacity': contract['desiredCapacity'], 'consumers': {}, 'members': {}}
+        first = None
+        for number, member in enumerate(contract['members'][:contract['desiredCapacity']], 1):
+            state['members'][member['id']] = {'phase': 'ready', 'runnerId': 123 + number}
+            marker = {'gitHubUrl': 'https://github.com/' + contract['organization'],
+                      'agentName': member['name'], 'agentId': 123 + number,
+                      'workFolder': member['state'] + '/work', 'poolName': contract['group']}
+            marked = write(target, member['root'] + '/.runner', marker)
+            first = first or marked
+            write(target, member['root'] + '/.credentials', 'PRIVATE_FIXTURE_NEVER_READ')
+            write(target, member['root'] + '/.credentials_rsaparams', 'PRIVATE_RSA_FIXTURE_NEVER_READ')
+        write(target, '/var/lib/codex-relay-pools/' + contract['name'] + '/pool.json', state)
+        return first
     suffix = 'general-runner' if general else 'runner'
     intent = target.config['environment']['generalRunner' if general else 'runner']
     scope = intent.get('scope', 'repository')
@@ -75,18 +94,9 @@ def observe(target, config=None):
     return inventory.inspect(config or target.config, root=target.root, owner_uid=os.getuid(), user_ids=target.ids)
 
 
-def test_parallel_inventory_binds_each_slot_without_reading_registration_credentials(target, monkeypatch):
-    from test_execution_slots import inputs
-    target.config = inputs()
-    slot = target.config['consumer']['executionSlots'][1]
-    target.ids.update({slot['runnerUser']: (os.getuid(), os.getgid()),
-                       slot['runtimeUser']: (os.getuid(), os.getgid())})
-    marker = {'gitHubUrl': 'https://github.com/' + target.config['consumer']['repository'],
-              'agentName': slot['runnerName'], 'agentId': 124,
-              'workFolder': '/var/lib/codex-relay/slots/second/runner/work'}
-    root = '/opt/codex-relay/slots/second/runner'
-    write(target, root + '/.runner', marker)
-    write(target, root + '/.credentials', 'PRIVATE_SLOT_FIXTURE_NEVER_READ')
+def test_managed_inventory_binds_physical_pool_without_reading_registration_credentials(target, monkeypatch):
+    target.config['consumer']['generalRunnerPool']['desiredCapacity'] = 2
+    runner(target, True)
     before = snapshot(target.root)
     read = inventory.Probe.read
     def bounded_read(self, value, **kwargs):
@@ -94,10 +104,12 @@ def test_parallel_inventory_binds_each_slot_without_reading_registration_credent
         return read(self, value, **kwargs)
     monkeypatch.setattr(inventory.Probe, 'read', bounded_read)
     report = observe(target)
-    assert report['runners']['slot-second']['status'] == 'reusable'
+    assert set(report['runners']) == {'production', 'general'}
+    assert [row['id'] for row in report['runners']['general']['members']] == ['primary', 'pool-2']
+    assert report['runners']['general']['status'] == 'reusable'
     assert inventory._validate_report(report, target.config) == report
     assert snapshot(target.root) == before
-    report['runners'].pop('slot-second')
+    report['runners'].pop('general')
     with pytest.raises(ValueError, match='inventory-runners-proof'):
         inventory._validate_report(report, target.config)
 
@@ -115,7 +127,9 @@ def test_fresh_target_reports_missing_inputs_without_creating_anything(target):
     assert report['status'] == 'observed'
     assert report['installed'] == {'status': 'missing'}
     assert report['configuration']['status'] == 'missing'
-    assert all(row['status'] == 'missing' and row['freshTokenRequired'] for row in report['runners'].values())
+    assert all(row['status'] == 'missing' for row in report['runners'].values())
+    assert report['runners']['production']['freshTokenRequired']
+    assert not report['runners']['general']['freshTokenRequired']
     assert report['readOnly'] and report['mutationAuthorized'] is False
     assert all(item['status'] == 'unavailable' and item['next'] for item in report['ownerAdmin'])
     assert snapshot(target.root) == before
@@ -273,7 +287,7 @@ def test_missing_one_runner_requires_only_its_token(target):
     assert report['runners']['production']['status'] == 'reusable'
     assert not report['runners']['production']['freshTokenRequired']
     assert report['runners']['general']['status'] == 'missing'
-    assert report['runners']['general']['freshTokenRequired']
+    assert not report['runners']['general']['freshTokenRequired']
 
 
 def test_existing_unregistered_runner_package_is_missing_registration(target):
@@ -285,7 +299,9 @@ def test_existing_unregistered_runner_package_is_missing_registration(target):
 @pytest.mark.parametrize('shape', ['regular', 'dangling'])
 def test_rsa_only_runner_state_is_preserved_as_ambiguous_without_secret_reads(target, monkeypatch, general, shape):
     suffix = 'general-runner' if general else 'runner'
-    rsa = write(target, '/opt/codex-relay/' + suffix + '/.credentials_rsaparams', 'PRIVATE_RSA_FIXTURE_NEVER_READ')
+    runner_root = ('/opt/codex-relay-pools/' + target.config['environment']['generalRunner']['name'] + '/runners/primary'
+                   if general else '/opt/codex-relay/runner')
+    rsa = write(target, runner_root + '/.credentials_rsaparams', 'PRIVATE_RSA_FIXTURE_NEVER_READ')
     if shape == 'dangling':
         rsa.unlink()
         rsa.symlink_to(rsa.with_name('missing-private-key'))

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAttempt } from '../src/attempt.mjs';
-import { fixture } from './fixture.mjs';
+import { fixture, currentEnvelope } from './fixture.mjs';
 
 const failure = code => Object.assign(new Error(code), { code });
 const result = e => ({ version: e.version, attemptId: e.attemptId,
@@ -80,7 +80,7 @@ test('two controllers cannot initialize the same checkout path concurrently', as
 
 test('independent same-Task attempts initialize distinct retained checkouts concurrently', async t => {
   const f = await fixture(t);
-  const sibling = { ...f.envelope, runId: 100, attemptId: 'run-100', step: f.envelope.step + 1 };
+  const sibling = currentEnvelope({ ...f.envelope, runId: 100, attemptId: 'run-100', step: f.envelope.step + 1 });
   const [left, right] = await Promise.all([f.prepare(f.envelope), f.prepare(sibling)]);
   assert.notEqual(left, right); assert.equal(f.envelope.issueNumber, sibling.issueNumber);
   await writeFile(join(left, 'docs/work.md'), 'first attempt retained work\n');

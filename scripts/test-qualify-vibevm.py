@@ -69,7 +69,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "4.2.0")
+        self.assertEqual(facts["first_party_version"], "5.0.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")
 
     def test_historical_slot_is_immutable_and_never_a_missing_selected_fallback(self):

@@ -297,7 +297,7 @@ def fresh_completion(config, report, args):
     state = {item['name']: item['status'] for item in report.get('protectedState', [])}
     environment = config['environment']
     phases = []
-    for name in ['runner_registration_token', 'general_runner_registration_token']:
+    for name in ['runner_registration_token']:
         token = getattr(args, name, None)
         require(token is None or (isinstance(token, str) and 0 < len(token) <= 4096
                 and all(33 <= ord(character) <= 126 for character in token)), 'REGISTRATION_TOKEN_INVALID')
@@ -336,11 +336,6 @@ def fresh_completion(config, report, args):
     phases.append(('activate', 'primary'))
     runners = report.get('runners', {})
     specifications = [('production', 'runner-register', 'runner_registration_token', 'primary')] if automatic else []
-    if automatic and 'generalRunnerPool' not in config['consumer']:
-        specifications += [('general', 'general-runner-register', 'general_runner_registration_token', 'primary')]
-        specifications += [('slot-' + slot['id'], 'general-runner-register',
-                            'general_runner_registration_token', slot['id'])
-                           for slot in config['consumer'].get('executionSlots', [])[1:]]
     for name, phase, token, slot in specifications:
         row = runners.get(name, {})
         require(row.get('status') in ['missing', 'reusable'], 'RUNNER_REGISTRATION_STATE_UNPROVEN')
@@ -349,10 +344,7 @@ def fresh_completion(config, report, args):
                 'Provide the matching optional ephemeral runner registration token with qualified repository/group '
                 'access, or restore the intended reusable registration; then use the same ordinary install command.')
         phases.append((phase, slot))
-        if name == 'production':
-            phases.append(('runner-enable', slot))
-        else:
-            phases.append(('general-runner-enable', slot))
+        phases.append(('runner-enable', slot))
     return phases
 
 
@@ -363,8 +355,7 @@ def phase_arguments(args, phase, receipt, consumer, expected, guard, pool_guard,
             setattr(inner, key, False)
     authorizations = {'bootstrap': 'bootstrap', 'reinstall': 'reinstall', 'upgrade': 'upgrade',
         'activate': 'reviewer_activation', 'runner-register': 'runner_register',
-        'general-runner-register': 'general_runner_register', 'runner-enable': 'runner_enable',
-        'general-runner-enable': 'general_runner_enable', **{name: name.replace('-', '_') for name in [
+        'runner-enable': 'runner_enable', **{name: name.replace('-', '_') for name in [
             'reviewer-credentials', 'writer-credentials', 'codex-credentials',
             'tls-prepare', 'tls-dry-run', 'tls-issue', 'ingress']}}
     for name in set(authorizations.values()):
@@ -376,8 +367,7 @@ def phase_arguments(args, phase, receipt, consumer, expected, guard, pool_guard,
     inner.intent_expected_installed_revision = expected
     inner.git_intent, inner.git_config_receipt = copy.deepcopy(receipt), None
     inner.consumer_root, inner.projection_output = Path(consumer), None
-    inner.execution_slot = slot
-    inner.runner_registration_token = inner.general_runner_registration_token = None
+    inner.runner_registration_token = None
     inner._intent_host_guard, inner._intent_pool_guard = guard, pool_guard
     inner._intent_fresh_bootstrap = fresh and phase == 'bootstrap'
     inner._intent_defer_pool_reconcile = fresh and 'generalRunnerPool' in getattr(args, '_intent_consumer', {})
@@ -595,8 +585,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
         artifact = integration(config, identity['revision'], root, consumer, output)
         factory = guard_factory or (lambda target, key, namespace: hold_install_guard(target, key, namespace, root))
         runner_token = getattr(args, 'runner_registration_token', None)
-        general_token = getattr(args, 'general_runner_registration_token', None)
-        args.runner_registration_token = args.general_runner_registration_token = None
+        args.runner_registration_token = None
         args._intent_consumer = config['consumer']
         with ExitStack() as locks:
             stage = 'host-lock'
@@ -667,10 +656,6 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     inner._intent_bounded_recovery_proof = copy.deepcopy(bounded_proof)
                 if phase == 'runner-register' and report.get('runners', {}).get('production', {}).get('status') != 'reusable':
                     inner.runner_registration_token = runner_token
-                if phase == 'general-runner-register':
-                    name = 'general' if slot == 'primary' else 'slot-' + slot
-                    if report.get('runners', {}).get(name, {}).get('status') != 'reusable':
-                        inner.general_runner_registration_token = general_token
                 try:
                     if phase == 'managed-pool':
                         from managed_pool_transport import reconcile_pool
@@ -682,7 +667,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                         primitive(inner)
                 finally:
                     mutation = mutation or getattr(inner, '_intent_mutation_started', False)
-                    inner.runner_registration_token = inner.general_runner_registration_token = None
+                    inner.runner_registration_token = None
                 require(guard.poll() is None and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
                 stage = 'installed-readback'
                 observed = remote_inventory(target, key, config, git_desired=True)

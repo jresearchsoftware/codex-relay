@@ -25,12 +25,19 @@ handoff, bounded correction, preservation, results and continuation. Relay's
 [authority contract](../contracts/README.md#github-native-task-authority) owns
 Issue #N, trusted v4 Decisions, immutable admission, protected reservations and
 native identities/body digests. Writer alone allocates Step at consumed owner
-launch. Labels and titles project it. TH-002/006's ordinary dispatch needs no
+launch. The Issue's valid Step position is numbering input reconciled with
+successful admitted history; labels/titles project the durable result and grant
+no execution authority. TH-002/006's ordinary dispatch needs no
 extra Decision merely certifying that same start; the native authenticated
 command and immutable admission still implement the product trust boundary.
-Issue openness alone starts nothing. Retained v3 and legacy admissions preserve
-their selected Request, historical Step and exact recovery/publication bindings;
-shared adoption neither renumbers history nor qualifies an installation.
+Issue openness alone starts nothing. Current Node admits only v4; exact older
+operations preserve selected authority, Step and recovery/publication bindings
+through frozen original source. Historical Requests supply no current execution
+fields or extra migration gate. A selected trusted v3 Decision remains bounded
+provenance for an admitted v4 result; fresh admission requires every effective old
+field to be replaced by later active v4 authority. Fully shadowed existing evidence
+needs no new Decision or formal supersession. Shared adoption neither renumbers
+history nor qualifies an installation.
 
 The canonical [manual](../packages/codex-relay/skill/references/workflow.md)
 retains automatic, admitted-manual and explicitly authorized standalone routes.
@@ -104,7 +111,7 @@ activate them or authorize installation. Follow the existing
 [closure authoring](../contracts/README.md#closure-policy-authoring) and
 [trusted continuation](../contracts/README.md#authorized-continuation-after-independent-acceptance) contracts:
 non-closing PR references, explicit `closesTask: false`, neutral squash messages,
-effective completion evidence and trusted separate post-merge closure under the
+effective completion evidence and separately authorized owner post-merge closure under the
 effective `close-authorized` policy. No new closing-link instruction or fictitious
 closure approval is added. Historical/admitted authority and explicit holds stay
 intact. Missing or conflicting metadata prevents unsafe closure; its legacy

@@ -14,7 +14,12 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => hash(JSON.stringify(value));
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const operationId = '12345678-1234-1234-1234-123456789abc';
-export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = 'HEAD' } = {}) {
+// These fixtures exercise immutable pre-cutover rows through their actual old
+// runtime. Pin its qualified starting revision so a current-source commit cannot
+// silently replace the original legacy/v3 decoder. Explicit old revisions remain
+// available to source-specific replay tests.
+const retainedOriginalRevision = '3f4d4348cfb05866b2108eadcc35b7a17153ff14';
+export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = retainedOriginalRevision } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-serial-compat-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const ownerUid = process.getuid(); const namespace = 'relay-compat';

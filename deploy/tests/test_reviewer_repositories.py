@@ -135,11 +135,15 @@ def test_actual_preflight_then_config_render_supports_two_targets(tmp_path, inst
     path = config_root / 'reviewer-mcp.json'
     path.write_text(json.dumps(installed))
     before = path.read_bytes()
-    variables = values(inputs([PRIMARY, SECOND]))
+    fixture = 'fixture-' + uuid.uuid4().hex[:12]
+    public = inputs([PRIMARY, SECOND])
+    public['environment']['generalRunner']['name'] = fixture
+    public['consumer'].pop('executionSlots')
+    variables = values(public)
     variables.update(relay_config_root=str(config_root), relay_install_root=str(tmp_path / 'install'),
-                     relay_reviewer_user='fixture-' + uuid.uuid4().hex[:12])
+                     relay_reviewer_user=fixture)
     for key in list(variables):
-        if key.endswith('_service_name') or key == 'relay_reviewer_recovery_timer_name':
+        if (key.endswith('_service_name') and key != 'relay_general_runner_service_name') or key == 'relay_reviewer_recovery_timer_name':
             variables[key] = variables['relay_reviewer_user'] + '-' + variables[key]
     preflight = yaml.safe_load((BACKEND / 'roles/relay_preflight/tasks/main.yml').read_text())[0]
     playbook = tmp_path / 'preflight.yml'

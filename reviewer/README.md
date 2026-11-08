@@ -326,14 +326,16 @@ the admitted path, not source fallback.
 `owner_authorization: explicit-standalone-required` makes the remaining trust
 condition visible. The conditional `automatic_continuation_authorized` policy
 does not assert that a missing Outcome proves no admission or that PR authorship
-proves permission. The existing owner adapter must verify those semantic facts
+proves permission. The owner orchestration must verify those semantic facts
 from canonical authority and actual execution evidence, together with warning
 disposition, before any effect. There is no additional review input, owner
 confirmation or public result transport. Ordinary result comments never become
 Writer Outcomes or Task Approvals. See the
-[owner adapter contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
-Synthetic publication/continuation tests do not qualify a live owner adapter,
-App permissions, installed service or GitHub merge.
+[owner continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance).
+The owner uses the supported GitHub connector directly with an exact-head
+squash and authoritative readback; no local merge command or journal is needed.
+Synthetic Reviewer publication tests do not qualify App permissions, an
+installed service or an actual GitHub merge.
 
 `submit_manual_outcome` accepts only `{repository, task, run_id, result}`;
 `task` and `run_id` are positive safe integers, and `result` is the canonical

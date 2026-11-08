@@ -6,41 +6,29 @@ import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { main } from '../src/entrypoint.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { OWNER, REPOSITORY, REVIEWER } from '../src/execution-contract.mjs';
-import { projectedRequestTitle } from '../src/step-metadata.mjs';
 import { labelRunName } from '../src/launch-metadata.mjs';
-import { renderAuthorityRecord, nativeReference, sha256Body } from '../../contracts/src/github-authority.mjs';
+import { renderAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
 import { fixture } from './fixture.mjs';
 
 const failure = code => Object.assign(new Error(code), { code });
 const copy = value => structuredClone(value);
-async function continuation(t, { route, labelLaunch = true, typed = true } = {}) {
-  const f = await fixture(t, { remediation: true, deferAdmission: true, route, labelLaunch,
+async function continuation(t, { route, labelLaunch = true } = {}) {
+  const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nCorrect the bounded PR finding.';
+  const f = await fixture(t, { issueBody: charter, remediation: true, deferAdmission: true, route, labelLaunch,
     createAdmission: async ({ root, store, journal }) => {
       const claims = join(root, 'claims'); await mkdir(claims);
       const admission = createAdmissionControl({ root: claims, store, journal, consumerDigest: CONSUMER_DIGEST, protectedRoot: false });
       await admission.initialize(); return admission;
     },
-    beforeAdmission: ({ issue, pr, review, api, run }) => {
-      if (!typed) return;
-      issue.body = 'Authority model: github-native-v1\nIssue closure policy: keep-open\n\nCorrect the bounded PR finding.';
-      const common = { schema_version: '3.0', repository: REPOSITORY, task: 42,
-        charter_sha256: sha256Body(issue.body), route, scope: ['Correct the exact reviewed finding.'],
-        model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true, validation: ['diff-check'],
-        boundaries: ['Repository only; preserve protected boundaries.'], decisions: [], context: [],
-        branch: pr.head.ref, base_sha: pr.base.sha, starting_head: review.commit_id, issue_closure_policy: 'keep-open' };
-      const initial = { ...common, kind: 'task-request', parent: { kind: 'issue', number: 42 }, step: 1,
-        purpose: 'Implement bounded work', existing_pr: null, supersedes: null };
-      const comment = { id: 901, body: renderAuthorityRecord(initial), user: copy(review.user) };
-      const request = { ...common, kind: 'change-request', parent: { kind: 'pull_request', number: 43 }, step: 2,
-        purpose: 'Correct bounded finding', existing_pr: 43,
-        supersedes: nativeReference({ kind: 'issue-comment', id: comment.id, parent: initial.parent, body: comment.body }),
-        change_request_id: 'CR-42-001', reviewed_head_sha: review.commit_id,
+    beforeAdmission: ({ pr, review, run }) => {
+      review.body = renderAuthorityRecord({ schema_version: '4.0', kind: 'change-request', repository: REPOSITORY, task: 42,
+        charter_sha256: sha256Body(charter), parent: { kind: 'pull_request', number: 43 },
+        purpose: 'Correct the bounded finding', branch: pr.head.ref, base_sha: pr.base.sha,
+        change_request_id: 'CR-42-001', reviewed_head_sha: review.commit_id, context: [],
+        overrides: { model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true, validation: ['diff-check'] },
         findings: [{ id: 'F1', severity: 'major', problem: 'Incorrect behavior.', impact: 'The feature fails.',
-          remediation: 'Correct the bounded behavior.', acceptance_criteria: ['The affected checks pass.'] }] };
-      review.body = renderAuthorityRecord(request); pr.title = projectedRequestTitle(request);
+          remediation: 'Correct the bounded behavior.', acceptance_criteria: ['The affected checks pass.'] }] });
       if (labelLaunch) run.display_title = labelRunName({ route, target: 'pull_request', number: 43 }, pr);
-      const list = api.list.bind(api);
-      api.list = async path => path === '/issues/42/comments' ? [copy(comment), ...await list(path)] : list(path);
     } });
   const event = { repository: { full_name: REPOSITORY }, sender: { login: OWNER },
     ...(labelLaunch ? { action: 'labeled', label: { name: `codex-ready-${route}` }, pull_request: copy(f.pr) }
@@ -74,9 +62,9 @@ async function continuation(t, { route, labelLaunch = true, typed = true } = {})
 }
 
 for (const route of ['auto', 'manual']) {
-  for (const typed of [false, true]) for (const labelLaunch of [false, true]) {
-    test(`production ${route} ${typed ? 'typed' : 'legacy'} ${labelLaunch ? 'label' : 'dispatch'} verifies Draft before continuation`, async t => {
-      const f = await continuation(t, { route, typed, labelLaunch });
+  for (const labelLaunch of [false, true]) {
+    test(`production ${route} v4 ${labelLaunch ? 'label' : 'dispatch'} verifies Draft before continuation`, async t => {
+      const f = await continuation(t, { route, labelLaunch });
       const original = copy(f.review); const draft = f.api.draft; let mutations = 0;
       f.api.draft = async id => {
         mutations++; assert.equal(id, 'PR_node'); assert.equal(await f.store.get(99), null);
@@ -135,22 +123,26 @@ for (const route of ['auto', 'manual']) {
   }
 
   test(`production ${route} binds the Draft transition to the admitted authority snapshot`, async t => {
-    const f = await continuation(t, { route, typed: false });
+    const f = await continuation(t, { route });
     const get = f.lifecycleStore.get;
     f.lifecycleStore.get = async key => { f.issue.body += '\nChanged owner scope.'; return get(key); };
     f.api.draft = () => assert.fail('changed authority drafted');
-    await assert.rejects(main(f.options), { code: 'AUTHORITY_CHANGED' });
+    await assert.rejects(main(f.options), { code: 'AUTHORITY_SOURCE_MISMATCH' });
     assert.deepEqual(f.counts(), { executions: 0, preparations: 0, handoffs: 0 });
     assert.equal(f.comments.length, 0); assert.equal(await f.store.get(99), null);
   });
 
   test(`production ${route} rejects an untrusted native Reviewer identity before Draft or continuation`, async t => {
-    const f = await continuation(t, { route, typed: false });
+    const f = await continuation(t, { route });
     f.api.userIdentity = async () => ({ login: REVIEWER, id: 702, type: 'Bot' });
     f.api.draft = () => assert.fail('untrusted review drafted');
-    await assert.rejects(main(f.options), { code: 'CURRENT_CHANGE_REQUEST_MISSING' });
+    const result = await main(f.options);
+    assert.equal(result.status, 'BLOCKED');
+    assert.equal(result.envelope.admissionBlock.code, 'CURRENT_CHANGE_REQUEST_MISSING');
     assert.deepEqual(f.counts(), { executions: 0, preparations: 0, handoffs: 0 });
-    assert.equal(f.comments.length, 0); assert.equal(await f.store.get(99), null);
+    assert.equal(f.comments.length, 1, 'One truthful pre-execution refusal, with no executable admission');
+    assert.equal((await f.store.get(99)).admissionBlock.code, 'CURRENT_CHANGE_REQUEST_MISSING');
+    assert.equal(await f.journal.get(99), null);
   });
 }
 

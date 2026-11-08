@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONSUMER } from '../../consumer/consumer.mjs';
+import { projectedRequestTitle } from '../src/step-metadata.mjs';
 import { REPOSITORY } from '../src/execution-contract.mjs';
 import { fixture } from './fixture.mjs';
 
@@ -81,7 +82,7 @@ function supplyExistingCurrentPull(f) {
       supplied = true;
       // Another actor may publish the compatible PR after the branch push but
       // before Writer's first lookup. Writer has made no PR creation intent.
-      await f.api.post('/pulls', { title: 'Existing compatible task PR', head: f.envelope.branch,
+      await f.api.post('/pulls', { title: projectedRequestTitle(f.envelope.request), head: f.envelope.branch,
         base: CONSUMER.baseBranch, draft: true, body: 'Closes #42' });
     }
     return list(path);
@@ -222,12 +223,12 @@ test('blocked publication targets and drafts only the current PR among historica
   surface.assertHistoryUntouched();
 });
 
-for (const [name, corrupt, code] of [
+for (const [name, corrupt, code, terminalCode = code] of [
   ['head repository', pr => { pr.head.repo.full_name = 'other/repository'; }, 'PR_NOT_ADMITTED'],
   ['base repository', pr => { pr.base.repo.full_name = 'other/repository'; }, 'PR_NOT_ADMITTED'],
   ['base branch', pr => { pr.base.ref = 'other-base'; }, 'PR_NOT_ADMITTED'],
-  ['head branch', pr => { pr.head.ref = `${CONSUMER.taskBranchPrefix}other-task`; }, 'PR_AUTHORITY_CHANGED'],
-  ['Issue linkage', pr => { pr.body = 'Closes #99'; }, 'PR_AUTHORITY_CHANGED']
+  ['head branch', pr => { pr.head.ref = `${CONSUMER.taskBranchPrefix}other-task`; }, 'PR_NOT_ADMITTED', 'PR_NOT_ADMITTED'],
+  ['Issue linkage', pr => { pr.body = 'Closes #99'; }, 'PR_NOT_ADMITTED', 'PR_NOT_ADMITTED']
 ]) {
   test(`current PR resolution preserves the ${name} binding`, async t => {
     const f = await fixture(t); const surface = publicationApi(f, [priorPull(f)]);
@@ -235,7 +236,7 @@ for (const [name, corrupt, code] of [
     const before = surface.mutations.length;
     surface.current = pr => { const changed = structuredClone(pr); corrupt(changed); return changed; };
     await assert.rejects(f.broker.invoke(request), { code });
-    await assert.rejects(f.broker.invoke(terminal(f)), { code });
+    await assert.rejects(f.broker.invoke(terminal(f)), { code: terminalCode });
     assert.equal(surface.mutations.length, before); assert.equal(surface.creations().length, 1);
     assert.equal(f.pushes(), 1); surface.assertHistoryUntouched();
   });
