@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("relay_project", ROOT / "guidance/project.py")
 project = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(project)
+builder_spec = importlib.util.spec_from_file_location("project_guidance_builder",
+                                                    ROOT / "scripts/build-project-guidance.py")
+builder = importlib.util.module_from_spec(builder_spec)
+builder_spec.loader.exec_module(builder)
 
 
 class ProjectionTests(unittest.TestCase):
@@ -211,8 +215,74 @@ class ProjectionTests(unittest.TestCase):
 
 
 class GeneratedTests(unittest.TestCase):
+    def build_fixture(self):
+        storage = ROOT / ".vibe"
+        storage.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="relay-guidance-test-", dir=storage)
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        files = {name: builder.read_file(ROOT, name) for name in (
+            "scripts/build-relay-guidance.py", "guidance/source.json", "guidance/project.py",
+            "guidance/licenses.json", "LICENSE")}
+        for relative in ("packages/codex-relay/skill", "guidance/dependency-closure", "guidance/artifacts"):
+            files.update({str(Path(relative) / name): data
+                          for name, data in builder.inventory(ROOT / relative).items()})
+        # A project selects Shared 7 while the frozen Relay delivery retains 5.
+        # The old root slot is deliberately absent; native acquisition owns it.
+        files["vibe.toml"] = b'[requires.packages]\n"org.jresearch.ai/development-governance" = "=7.0.0"\n'
+        files["vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/consumer.txt"] = b"Native Shared 7\n"
+        builder.materialize(files, root)
+        return root
+
+    def test_project_shared_update_preserves_every_frozen_delivery_byte(self):
+        root = self.build_fixture()
+        old_slot = root / "vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0"
+        native_before = builder.inventory(root / "vibevm/vibedeps")
+        artifacts_before = builder.inventory(root / "guidance/artifacts")
+        self.assertFalse(old_slot.exists())
+        self.assertEqual(builder.build(root, check=True)["guidance"], "PASS")
+        self.assertEqual(builder.build(root)["changed"], [])
+        self.assertEqual(builder.inventory(root / "guidance/artifacts"), artifacts_before)
+        self.assertEqual(builder.inventory(root / "vibevm/vibedeps"), native_before)
+        self.assertFalse(old_slot.exists())
+        provenance = json.loads(artifacts_before["standalone/codex-relay/PROVENANCE.json"])
+        self.assertEqual(provenance["shared_version"], "5.0.0")
+        self.assertEqual(provenance["shared_requirement"], ">=2.5.0")
+        self.assertEqual(provenance["source_files"]["scripts/build-relay-guidance.py"],
+                         hashlib.sha256((root / "scripts/build-relay-guidance.py").read_bytes()).hexdigest())
+
+    def test_project_builder_rejects_changed_frozen_shared_input(self):
+        root = self.build_fixture()
+        snapshot = root / ("guidance/dependency-closure/vibevm/vibedeps/"
+                           "org.jresearch.ai.development-governance/5.0.0/README.md")
+        before = builder.inventory(root / "guidance/artifacts")
+        snapshot.write_bytes(snapshot.read_bytes() + b"\nChanged snapshot\n")
+        with self.assertRaisesRegex(ValueError, "Shared distribution bytes differ"):
+            builder.build(root)
+        self.assertEqual(builder.inventory(root / "guidance/artifacts"), before)
+
+    def test_project_builder_exposes_product_changes_and_preserves_unknown_outputs(self):
+        root = self.build_fixture()
+        source = root / "packages/codex-relay/skill/SKILL.md"
+        source.write_bytes(source.read_bytes() + b"\nChanged product source\n")
+        before = builder.inventory(root / "guidance/artifacts")
+        report = builder.build(root, check=True)
+        self.assertEqual(report["guidance"], "FAIL")
+        self.assertIn("standalone/codex-relay/SKILL.md", report["changed"])
+        self.assertIn("vpm/skill/PROVENANCE.json", report["changed"])
+        self.assertEqual(builder.inventory(root / "guidance/artifacts"), before)
+        unknown = root / "guidance/artifacts/local-notes.txt"
+        unknown.write_bytes(b"Preserve local notes\n")
+        with self.assertRaisesRegex(ValueError, "Preserve unexpected guidance artifacts"):
+            builder.build(root)
+        self.assertEqual(builder.inventory(root / "guidance/artifacts"),
+                         {**before, "local-notes.txt": b"Preserve local notes\n"})
+        unknown.unlink()
+        self.assertIn("standalone/codex-relay/SKILL.md", builder.build(root)["changed"])
+        self.assertEqual(builder.build(root, check=True)["guidance"], "PASS")
+
     def test_generated_forms_preserve_product_bytes_and_distinct_protocol_sources(self):
-        completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-relay-guidance.py"), "--check"],
+        completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-project-guidance.py"), "--check"],
                                    capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         standalone = ROOT / "guidance/artifacts/standalone/codex-relay"

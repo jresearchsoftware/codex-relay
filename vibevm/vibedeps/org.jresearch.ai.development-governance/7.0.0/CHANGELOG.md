@@ -1,5 +1,180 @@
 # Development Governance changelog
 
+## 7.0.0
+
+MAJOR: replaces the timing and hold-release meaning within existing
+[TH-026](vibevm/vibespecs/protocols/task-handoff.md#TH-026). The single existing
+`Issue closure policy` attribute has two values: `close-authorized` closes on
+successful default-branch merge of the designated completing PR via `Closes #N`
+or its supported native closing link; `keep-open` uses a non-closing reference
+and closes after its adjacent human-readable condition is verified. Neither
+value requires another discretionary owner confirmation. Condition satisfaction
+uses the existing trusted closure path without a new policy-change Decision;
+genuine changes in scope, conditions or authority still require one. RA-006's
+closure reference is aligned with that distinction.
+
+Compared with 6.0.0, adopters must reconcile PR closing linkage, final-versus-
+intermediate PR designation and conditional later closure. A producer Task
+including publication selects `keep-open` until verified publication of the
+exact accepted revision/version. The old contract allowed separate closure
+after completion under `close-authorized`, including post-merge obligations,
+and a trusted policy-release Decision for `keep-open`. Replacing those supported
+paths is incompatible even though it removes repeated permission friction.
+This is neither PATCH nor an optional MINOR addition. Existing review/merge and
+completion records carry the evidence; no new field, checker, registry, daemon,
+test framework or approval stage is introduced.
+
+Required exact-head acceptance, protected merge authority, actual completion,
+no-PR results and historical/admitted authority remain intact. Closing an
+unmerged PR does not close its Task; only a genuinely completing PR in a multi-PR
+Task closes it. Missing metadata fails safe without inventing an owner-selected
+hold. Frozen releases and old Issue/Step history are not rewritten or replayed.
+Consumers separately reconcile their bindings and qualify runtime changes;
+publishing this package does not implement them or grant a universal grace period.
+The [bounded examples](vibevm/vibespecs/guides/onboarding-examples.md#9-single-field-task-closure)
+exercise these cases without relying on a producer's product-specific rules.
+
+TH-026 and RA-006 retain their addresses and semantic ownership; TH-026's earlier
+closure timing/release wording is superseded in this version. No rule ID is
+retired or reused. All other protocols, conditional topic routing, public
+inventory, license, client tools and adoption boundaries are preserved.
+
+## 6.0.0
+
+MAJOR: extends existing Package Versioning with explicit compatibility-evidence
+and delivery-authority obligations for its adopters. [PV-014](vibevm/vibespecs/protocols/package-versioning.md#PV-014)
+requires a floor grounded in the actually used interfaces, layout, paths,
+identifiers, semantics and behavior, relevant accepted history and proportionate
+evidence. Constraint rationale distinguishes real incompatibility from an
+authored resolver exclusion and preserves justified security, contract and
+reproducibility pins/bounds. Neither open-ended ranges nor next-major caps are
+universal; unknown future releases are not promised compatible.
+
+[PV-015](vibevm/vibespecs/protocols/package-versioning.md#PV-015) distinguishes
+range, consumer lock, explicit adoption and bundled snapshot. Resolved delivery
+uses the selected consumer identity without a competing fixed-policy fallback;
+self-contained delivery may use its deliberate attributed immutable snapshot.
+PV-013 retains checks for every actually included dependency, even an inert
+release-evidence snapshot. New [PV-018](vibevm/vibespecs/protocols/package-versioning.md#PV-018)
+assesses deliberate updates against the used contract and local bindings.
+PV-005 retains producer cadence: compatible or irrelevant upstream changes can
+need only a reviewed consumer update; actual dependent-product behavior,
+interfaces, guidance, packaging or shipped-byte changes need its own correction
+and classified release. PV-017 connects the native lock/slot route to these rules.
+
+Compared with 5.2.3's general actual-compatibility and lock/adoption guidance,
+adopters must now supply the explicit floor/constraint rationale and check which
+dependency source each delivery form uses. This tightens mandatory lifecycle
+assessment and supported routing, so it is not classified as an editorial fix or
+merely an optional addition. Use existing change/release review and focused
+evidence; there is no new operator command, recurring compatibility matrix, cold
+installation gate, attestation, registry or approval service. Consumers reconcile
+these duties and their existing local bindings in their own reviewed update.
+The [worked examples](vibevm/vibespecs/guides/onboarding-examples.md#8-package-consumer-compatibility-and-delivery-choices)
+cover both failure kinds, compatible majors, real incompatibility and both
+delivery forms without an additional normative topic.
+
+All previous rule IDs remain resolvable; PV-018 is new and supersedes none.
+The other nine protocols, topic adoption, source/publication authority, independent
+review, security, license/redistribution, manifest and frozen-closure obligations
+remain intact. No consumer is automatically migrated and no historical work is
+retroactively judged under this extension. Frozen versions retain their bytes.
+
+## 5.2.3
+
+PATCH: TH-001–007/010 clarify ordinary Task dispatch without a redundant admission
+Decision. An agreed, actionable open Task can wait and then start through a
+deliberate owner handoff within current permissions. Readiness is not execution;
+Issue openness alone dispatches nothing. This repairs the interpretation of the
+existing routine-action exception in TH-005, adopted applicability in TH-001 and
+execution-cycle meaning in TH-006, consistent with PC-010 and RA-006. It adds no
+mandatory operator work, state, record, label or approval stage. Substantive
+scope, policy, permission and material post-result choices still require their
+applicable Decisions; existing explicit holds are not retrospectively waived.
+
+Standalone work outside an adopted governed workflow needs no synthetic Step or
+Outcome. Adopted Steps, terminal results, same-result recovery, independent review
+and protected effects retain their meaning. Product-owned authenticated start,
+Step/profile snapshots, Writer/Reviewer separation and anti-duplicate trust
+controls remain intact. No existing Task is automatically started or accepted,
+and no other consumer is migrated. Rule IDs, all other protocols, conditional
+topic routing, PR Draft/Ready and effective-Instructions reconciliation remain
+unchanged. Frozen versions retain their bytes and chronology.
+
+## 5.2.2
+
+PATCH: RA-006 clarifies that its existing requirement-provenance rule covers
+negative constraints in Tasks, Change Requests, Decisions and execution prompts.
+Agent preferences cannot prohibit ordinary operations covered by the selected
+outcome and accepted governance. Material new restrictions need owner discussion
+before publication as authority; accepted restrictions and protected boundaries
+retain their existing Decision, review and exact-head requirements. This repairs
+the interpretation of RA-002/005/006 and PC-004/013 without adding mandatory
+operator work, a new permission ritual, reviewer gate or state machine. Other
+protocols, applicability, publication and deliberate consumer adoption are unchanged.
+
+## 5.2.1
+
+PATCH by an explicit single-task owner exception to [PV-002](vibevm/vibespecs/protocols/package-versioning.md#PV-002).
+The [Task 74 owner Decision](https://github.com/jresearchsoftware/shared-governance/issues/74#issuecomment-6386467528)
+identifies this as repair of the originally intended requirement, narrowed during
+translation into Task 62/PR 63. Accepted 5.2.0 visibly documented the narrower
+explicit-application condition; this release changes the published workflow
+obligation and would ordinarily require MAJOR under PV-002. The owner selects
+5.2.0 -> 5.2.1 for this correction only. PV-002 remains the general rule; the PATCH
+label does not claim unchanged consumer-facing behavior. Historical 5.0.0/5.2.0
+acceptance, releases and Task records retain their meaning.
+
+TH-029 replaces the explicit-application-scope exemption for adopting
+projects intentionally using generated ChatGPT Project Instructions. A task changing
+its complete effective desired text must reconcile live Settings after source
+acceptance/integration and before completion, even without an application clause.
+Present the full raw replacement in one markdown fence when different or unconfirmed;
+the owner applies/reconciles unknown live rules and supplies supported readback or
+attributable confirmation of live content. Keep unresolved verification visible.
+Unchanged text, cache-only and SHA-only changes create no new application duty;
+earlier mismatches/gaps remain. The projector reports this boundary without reading
+live Settings or judging completion. RA-006 remains unchanged. Consumers must
+intentionally update under their own authority and assess this changed obligation;
+producer publication neither migrates them nor activates their live Settings.
+No automatic Settings writes, recurring verification service or new approval loop.
+
+## 5.2.0
+
+MINOR: adds separately adopted [Small Improvements — SI-001–SI-008](vibevm/vibespecs/protocols/small-improvements.md)
+and a [usage and consumer-migration guide](vibevm/vibespecs/guides/small-improvements.md).
+The exact `small-improvement` Issue label is the discovery key; the title prefix
+is optional. Adopters inspect open labeled Issues when preparing suitable
+source-changing Tasks, first source-changing Steps or relevant CRs, notify the
+owner with IDs/proposed inclusion, and implement only accepted receiving scope.
+Combined implementation, normal tests and one independent PR review preserve
+existing gates. Source Issues stay open until accepted integration, with explicit
+deferral, cancellation, partial-work and supersession dispositions.
+
+Availability does not activate SI, including for existing TH/CD/RA adopters.
+The nine earlier protocols keep their accepted 5.1.0 bytes and applicability.
+The compact boot adds only a conditional SI route. No label creation, consumer migration, bot,
+controller, automatic injection, new per-item execution cycle or review stage
+follows from an update. Separately authorized consumer adoption reconciles proven
+duplicates while retaining broader local planning rules and native authority.
+The existing onboarding guide's 2.6.0 catalog remains a dated nine-topic inventory;
+its instruction to inventory later topics includes SI in this version.
+All existing rule IDs remain; SI IDs are new and supersede none.
+
+## 5.1.0
+
+MINOR: TH-026 adds compatible guidance and examples for owner-selected temporary
+keep-open holds, verified preauthorized release through existing trusted Task
+Decisions, and resolving missing closure conditions in existing result review.
+Accepted 5.0.0 already requires actual completion, hold reassessment, no repeated
+authorization and no agent-invented gates. This addition preserves those duties
+and local timing/mechanisms; it introduces no universal authoring field, new
+review duty or completion gate. Close-authorized still waits for completion,
+acceptance/integration and protected obligations. RA-006 applies its existing
+obligation provenance rule to closure. Consumers retain their local authority and
+separately reviewed adoption; no runtime/state-machine change, automatic policy
+mutation, topic adoption or live settings application follows.
+
 ## 5.0.0
 
 MAJOR: RA-006 prevents agent-authored obligation expansion across Task authoring,

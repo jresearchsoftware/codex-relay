@@ -12,6 +12,9 @@ and protected actions. Those mechanisms implement the shared Step semantics
 below; they do not silently redefine them.
 This protocol works manually; it grants no execution, review, merge, release,
 installation, consumer-adoption or closure permission.
+An Issue alone does not adopt this workflow. Standalone/manual work outside an
+adopted Task Handoff binding needs no synthetic Step numbering or Outcome protocol;
+use its actual project authority, result evidence and review requirements.
 
 ## Stable charter and chronological authority
 
@@ -32,28 +35,49 @@ public discussion, contribution attribution or decision provenance. Preserve
 or link meaningful earlier discussion as appropriate. Preliminary thoughts and
 editorial refinements do not each need a formal Decision.
 
+An ordinary, sufficiently specified open Task whose work is agreed may wait in
+a queue and then be deliberately handed to an executor under [TH-006](#TH-006).
+Ready is not running; running is not a separate approval gate. Absence of a Step
+or execution evidence does not by itself prohibit starting the Task or make it
+"NOT ADMITTED". A real manual assignment, authorized launch event, active Step
+where used, or verifiable execution artifacts can establish that work started.
+Creating or opening an Issue alone neither dispatches work nor authorizes an
+agent to start autonomously.
+
+Reserve an explicit Draft / On Hold / needs owner decision distinction for
+unagreed ideas, incomplete requirements, unresolved material choices, genuinely
+blocked dependencies or expressly restricted actions. Preserve those holds;
+reconcile existing explicit restrictions under current canonical owner authority
+before affected work. This guidance is no retrospective waiver. These Task
+distinctions are separate from the result PR Draft/Ready lifecycle in
+[TH-028](#TH-028); no new state machine, label scheme or admission record is required.
+
 <a id="TH-003"></a>
 **TH-003 — Historical charter and authorized amendments.**
 
 From first authorized execution onward, keep the body as the stable historical
-charter. Append substantive changes to scope, requirements, permissions,
-completion/closure conditions or newly admitted work as explicit owner-authorized
-Task Decision comments in chronological order. Another tracker needs equivalently
-durable, clearly linked decision records. Do not prepend later directions or
+charter. Append substantive changes to scope, requirements, permissions, policy,
+protected boundaries, completion/closure conditions or materially new work as
+explicit owner-authorized Task Decision comments in chronological order. Another
+tracker needs equivalently durable, clearly linked decision records. Do not prepend later directions or
 rewrite the charter after Outcomes. Only narrowly non-semantic editorial body
 corrections are permitted; they must not obscure changed authority.
+Routine dispatch within existing authority follows [TH-006](#TH-006); it does
+not need a second Decision merely to certify the start.
 
 <a id="TH-004"></a>
 **TH-004 — Effective chronological authority.**
 
 Completion or reopening preserves the original charter and historical execution
-and acceptance. Append reasons, changes and new admissions as subsequent
-Decisions; reopening resets neither Step numbering nor accepted history.
+and acceptance. Append substantive reasons, authority changes and materially new
+work as subsequent Decisions; reopening resets neither Step numbering nor
+accepted history and does not itself dispatch execution.
 Resolve effective current authority from the original charter plus applicable
 authorized Decisions, including explicit supersession or revocation. Neither
 the latest body alone nor every conversational comment defines that authority.
 Outcomes and reviews are evidence and assessment, not automatic scope permission;
-historical discussion, prompt snapshots and upstream analysis supply none.
+historical discussion, copied prompt snapshots and upstream analysis do not
+themselves authorize a fresh execution.
 
 <a id="TH-005"></a>
 **TH-005 — Readable owner Decisions.**
@@ -71,10 +95,27 @@ already-authorized actions.
 **TH-006 — Authorized execution cycle.**
 
 Identify the Task, current work unit/Step and meaningful purpose explicitly.
-A Step is one separately authorized architect/owner-to-executor work iteration:
+A Step is one authorized architect/owner-to-executor work iteration:
 hand off a bounded Task objective, investigate/implement, test and correct as
 needed, then return a terminal execution result for assessment (an Outcome,
 BLOCKED or another explicitly recognized terminal handoff).
+
+For ordinary agreed work, an owner instruction such as "start Task N" or an
+intentional handoff of its actionable Issue to a manual executor is sufficient
+launch authorization within current project permissions and protected boundaries.
+Do not require that dispatch plus a separate admission transition, Owner Decision
+comment, typed record or operator action merely to certify the same start.
+An adopted Step convention may assign its identity as part of dispatch; it need
+not be allocated in advance. Apply [PC-010](proportional-controls.md#PC-010) and
+[RA-006](requirement-authority.md#RA-006) to redundant start requirements.
+
+Keep substantive Decisions under [TH-003](#TH-003) and the project's actual
+authorization mechanism. Authenticated admission/start events, protected Step
+and profile snapshots, Writer/Reviewer separation, anti-duplicate execution and
+native trust boundaries remain product-owned. A manual assignment cannot bypass
+them for a product-bound attempt. Neither Issue openness nor routine dispatch
+grants deployment, credentials, production, release, approval, merge, publication
+or other protected effects beyond existing authority.
 
 <a id="TH-007"></a>
 **TH-007 — Next Step after terminal result.**
@@ -84,6 +125,9 @@ the next Step, even for the same goal, findings, branch or PR. Internal
 implementation/testing/corrections and ordinary clarifications during the active
 execution retain its Step. Carry an admitted develop/test/fix cycle to a useful
 result; do not invent separate coding, testing or research Steps as ceremony.
+A new post-result handoff within existing authority needs no redundant admission
+Decision. Materially new scope, permissions, policy or unresolved owner choices
+still need the applicable substantive Decision before affected execution.
 
 <a id="TH-008"></a>
 **TH-008 — Recovery identity and Step boundaries.**
@@ -122,8 +166,10 @@ execute the admitted Step and publish its result for independent assessment.
 Do not restate accessible goals, requirements, investigation steps, test matrices,
 boundaries or publication contracts, even when duplication seems helpful.
 Read the complete relevant discussion, Decisions, Outcomes/reviews and linked
-records, not just the body. After an Outcome use a new small handoff and the
-corresponding admission, not a rewritten charter.
+records, not just the body. After an Outcome use a new small authorized handoff
+for the next Step under [TH-006](#TH-006)–[TH-008](#TH-008), retaining the charter.
+Add a Decision only for substantive changes that require one under current
+authority, not merely to repeat an explicit routine start instruction.
 
 <a id="TH-011"></a>
 **TH-011 — Routing facts and delegation boundary.**
@@ -398,6 +444,63 @@ reconcile apparent self-expansion through existing Decisions. Reassess concrete
 completion conditions, remaining work and holds at meaningful transitions; do
 not close with known remaining work or copy a stale disposition indefinitely.
 
+For a binding using `Issue closure policy`, retain that one existing attribute:
+`Issue closure policy: close-authorized` or `Issue closure policy: keep-open`.
+It selects **when** the Issue closes; neither value asks the owner to authorize
+the same completion again. Add no second machine-readable closure field or
+closure-type system. Non-GitHub/no-PR work uses its supported project binding.
+
+`close-authorized` means closure on successful merge of the designated completing
+PR. On GitHub, use `Closes #N` or its supported native closing link so GitHub
+closes the Issue when that PR merges to the default branch. Merely closing an
+unmerged or abandoned PR does not close the Task. Designate a closing PR only
+when the actual work has reached the accepted completion boundary and that merge
+will complete the Task. Required independent exact-head acceptance, checks and
+protected merge authority still apply. With multiple PRs, only the PR that
+genuinely completes all Task work may carry the closing link; intermediate PRs
+use non-closing references. Where there is no result PR, use the existing
+owner-authorized completion path without fabricating a PR.
+
+`keep-open` means no closure on merge, followed by closure when the explicitly
+stated condition is verified. Use `Related to #N` or another non-closing PR
+reference. State the actual remaining obligation and sufficient evidence in
+ordinary human-readable text adjacent to the one closure field, in the charter
+or applicable trusted Decision. Once that preauthorized condition is satisfied,
+required acceptance/integration is complete and no actual Task work or protected
+hold remains, the owner-facing continuation closes the Issue through the
+supported trusted mechanism. Record the verification in the existing Task
+chronology; no new owner-choice prompt, policy-change Decision or conversion to
+`close-authorized` is required merely to carry out that permission. A genuine
+later change to scope, conditions or authority still uses the existing trusted
+owner Decision process. Executors, CRs and reviewers cannot silently waive it.
+Report missing capability or authority without bypassing protected boundaries.
+
+Choose `keep-open` with the publication condition for a producer Task whose
+deliverable includes publishing the accepted package. Source acceptance and PR
+merge do not prove successful publication of the exact accepted revision/version;
+failed, delayed or unknown publication leaves that obligation outstanding.
+Likewise, an owner-run Apply condition requires the actual successful run,
+intended revision/target and material warning disposition. A failed or unknown
+Apply does not satisfy it. Later consumer adoption is separate unless actually
+included in the Task. Unrelated repository PRs and optional future usage or
+observation do not invent completion holds.
+
+Missing, invalid or conflicting metadata must fail safe against automatic
+closure. Reconcile genuinely missing intent through existing Task authority at
+the relevant authoring/review/continuation point. A protective refusal to close
+is not evidence that the owner selected `keep-open`, and must not become a
+perpetual procedural hold, invented condition or second approval ritual. Reuse
+clear existing permission; obtain an actual missing owner decision only when
+needed. This adds no scheduled review duty, universal form or checker.
+
+Preserve historical and already-admitted Task authority, explicit earlier holds,
+terminal Step/Outcome identity and immutable releases. Do not rewrite old Issue
+bodies, replay terminal Steps or silently reinterpret their closure terms under
+this change. Reconcile a genuine authority change through the existing trusted
+Decision mechanism. New shared guidance alone neither modifies nor qualifies a
+consumer runtime; consumer adoption and supported version-specific mechanisms
+remain separately owned.
+
 <a id="TH-027"></a>
 **TH-027 — Proportionate local bindings.**
 
@@ -410,17 +513,37 @@ Shared-protocol adoption, a product upgrade and client-adapter compatibility are
 separate project-owned decisions; none implies the others.
 
 <a id="TH-029"></a>
-**TH-029 — Conditional generated client settings reconciliation.**
+**TH-029 — Effective Project Instructions change and live reconciliation.**
 
-When a Task includes applying changed generated client instructions, integration
-of desired-state files alone does not complete that obligation. For ChatGPT
-Project Instructions, compare the accepted desired complete text with live project
-settings through supported evidence. If different, surface the complete updated
-text for owner manual application, preserving/reconciling unknown live rules,
-and obtain supported confirmation/readback before claiming application or closing
-the Task. Disclose unavailable live reads or uncertain confirmation as an evidence
-gap; source files, receipt metadata and merge never prove settings synchronization.
-When effective text is unchanged and no application gap remains, no manual settings
-action is needed. Tasks that do not include application acquire no such obligation.
-Use the existing client binding and Task records; no automatic settings access,
-new approval loop or recurring hash-only update is required.
+For projects intentionally using generated ChatGPT Project Instructions and
+adopting this rule, a Task that changes its project's complete effective desired
+Instructions text includes live settings reconciliation in its completion path.
+This applies to changes through shared/base, project/custom, local binding,
+accepted dependencies or any other effective generation input. Omitting an
+explicit application clause does not waive the obligation.
+
+Generate and validate the complete desired text in the ordinary reviewable source
+change. After proper acceptance/integration, compare the accepted complete text
+with supported evidence of the live Project Settings. If different or not confirmed
+current, present the entire raw Markdown replacement as one complete copyable
+`markdown` fenced block, without clipping, a patch or a partial replacement. The
+owner reviews and manually applies it, preserving/reconciling unknown live rules.
+Obtain supported readback or sufficiently attributable owner-confirmed live content
+before claiming that settings match or closing the Task. Unavailable live access
+or uncertain confirmation remains a disclosed evidence gap; source files, receipt
+metadata, generation and merge never prove settings synchronization.
+
+If the complete effective Instructions text is unchanged, no new manual settings
+application or hash/receipt-only update is required. This includes no-op,
+Sources-cache-only and dependency/binding changes with identical resulting text.
+An earlier unresolved live-settings mismatch or verification gap remains for
+disposition; a later generation NO_OP does not discharge it.
+
+Keep an applicable Task open while required application/verification is outstanding,
+including after PR approval and merge. Once accepted source integration, effective
+live-text reconciliation and other real obligations are verified, ordinary
+already-authorized closure needs no additional discretionary owner prompt.
+Use the existing client binding and Task records, without automatic settings
+writes, a daemon, external verification service, new approval loop or generator-only
+closure gate. A producer release or another project's change neither updates nor
+activates a consumer's Settings; separate consumer adoption authority remains intact.

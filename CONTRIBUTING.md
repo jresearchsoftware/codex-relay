@@ -15,7 +15,7 @@ describe the owner's optional Codex workflow, not human contribution gates.
 ## Keep workflow documentation current
 
 For governed Relay changes, the complete adopted shared
-[Contract/Decision Maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+[Contract/Decision Maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
 owns same-change human guidance (CD-007). Keep the authored
 [product manual](packages/codex-relay/skill/references/workflow.md) and its
 examples aligned with affected native Task/Decision/CR/Outcome/continuation
@@ -82,7 +82,8 @@ download locked build dependencies. No model calls or live GitHub writes occur.
 The [Public CI workflow](.github/workflows/relay-exact-head-validation.yml) runs the Node,
 Cargo, qualification, candidate-scan and whitespace commands above for pull
 requests targeting `main` and pushes to `main`. The complete deployment pytest
-suite remains separate. The candidate job also runs the root synthetic sandbox
+suite remains separate. The candidate job verifies the pinned VibeVM binary and governance/file-routing
+probes, frozen product regeneration and focused regression suites. It also runs the root synthetic sandbox
 cleanup qualification on its disposable hosted runner. Its stable
 check name is `Candidate checks`. PR runs check out the exact PR head; push runs
 check out the pushed commit. The whitespace step also checks the committed diff

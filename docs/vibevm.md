@@ -1,8 +1,8 @@
 # Pinned governance and first-party Skill consumption
 
-Relay selects Shared Governance **5.0.0** for its project-wide adoption under
-Task [#186](https://github.com/jresearchsoftware/codex-relay/issues/186).
-Relay **4.1.0** also selects Shared 5.0.0 for its standalone snapshot and
+Relay selects Shared Governance **7.0.0** for its project-wide adoption under
+Task [#213](https://github.com/jresearchsoftware/codex-relay/issues/213).
+The unchanged Relay **4.1.0** product selects Shared 5.0.0 for its standalone snapshot and
 publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
 frozen Relay 4.0.0 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
@@ -36,7 +36,7 @@ admission, Writer/Reviewer publication, exact-result identity and protected
 operations remain Relay product mechanisms.
 
 The generated index uses `kind = "static"` for package pointers with VibeVM
-1.0.7, even when a package declares `boot_snippet.link = "dynamic"`. These
+1.0.11, even when a package declares `boot_snippet.link = "dynamic"`. These
 short pointers perform conditional Markdown routing; no executable resolver
 runs during startup. A client entering through CLAUDE/GEMINI follows
 [00-core](../vibevm/vibespecs/boot/00-core.md) to human AGENTS once, without a
@@ -54,7 +54,7 @@ not actual model traversal or compliance.
 
 ## Selected immutable identities
 
-The [manifest](../vibe.toml) pins Shared `=5.0.0` by its anonymous public Git
+The [manifest](../vibe.toml) pins Shared `=7.0.0` by its anonymous public Git
 source and exact commit. The native local registry supplies Relay `=4.1.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
@@ -64,10 +64,10 @@ index and projected Skill belong to the same reviewable source change.
 
 | Identity | Selected value |
 | --- | --- |
-| Shared accepted producer source | `jresearchsoftware/shared-governance` `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9` |
-| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `30a23f467c30c41fec918204cbbf2ecfffd7bef5` |
-| Shared annotated tag | `v5.0.0`, tag object `bca9d83e969e6c489fc4474115134c9a8c7b1f24`, peels to the distribution above |
-| Complete native distribution tree hash | `sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9` |
+| Shared accepted producer source | `jresearchsoftware/shared-governance` `bee96f1715142fde598318e7db402168dcfabf5f` |
+| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0` |
+| Shared annotated tag | `v7.0.0`, tag object `a85505771b10fbd88d49185e6bf0545a7983b3a7`, peels to the distribution above |
+| Complete native distribution tree hash | `sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07` |
 | Relay guidance product-contract baseline | `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` |
 
 The producer source and distribution commit are distinct identities. The
@@ -88,8 +88,8 @@ The earlier 3.0.0 was a major release because it removes the native
 Skill's bundled Shared protocol paths and changes its packaging/routing
 contract, independently of Shared version arithmetic. Frozen first-party
 1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain intact for historical identity
-and rollback; they are not active requirements. The current exporter uses the
-selected Shared 5.0.0 root slot. Earlier Shared selections remain in Git history
+and rollback; they are not active requirements. The frozen product exporter uses its
+own Shared 5.0.0 release-evidence slot through the repository build adapter. Earlier Shared selections remain in Git history
 and frozen historical Relay packages. Project version `0.0.0`
 does not identify a Relay release.
 
@@ -102,23 +102,38 @@ See the [compatibility assessment](relay-skill-compatibility.md). Native executi
 reads locked committed files without resolving `latest`; an open-ended lower
 bound does not guarantee arbitrary future compatibility.
 
-The complete frozen 4.0.0-to-5.0.0 protocol comparison and semantic disposition
-are in that assessment: six topics are byte-identical; RA-006 and its TH-002/026
-and IR-013 references preserve obligation provenance and explicit dispositions.
-TH-029 applies only when a Task includes applying generated client settings.
-Neither Task #186's consumer update nor Task #182's Skill release includes live
-settings application. The optional bundled Shared ChatGPT projector changes
-its receipt/status/update contract, which determines the new Relay package's
-major version; native slot/Skill receipts and Relay's own standalone installer
-retain their contracts. Task #186's consumer-only update had no package delta.
-Task #182 prepares a new package for the existing automatic Shared Publisher
-path after independent source acceptance; publication is verified separately.
+The complete [5.0.0-through-7.0.0 semantic assessment](relay-skill-compatibility.md#project-migration-from-500-through-700)
+distinguishes current project policy, conditional settings duties, unselected
+Small Improvements and the [bounded legacy runtime closure binding](relay-guidance-ownership.md#temporary-legacy-closure-binding).
+The earlier 4.0.0-to-5.0.0 assessment remains historical product evidence.
+The root update does not change the standalone snapshot, release-evidence lock,
+Skill requirement, package bytes or installed runtime identity.
 
-The [tool pin](../toolchain/vibevm.json) remains VibeVM 1.0.7, source
-`b6659978453f50e6d1d4d99626d70b980a2c5847`, Linux x86_64 musl binary SHA-256
-`20d111df02eb28040ef4cb766bfcb0bde8ff4427b031f88f33eacb3711c3e240`.
-No binary is committed or installed by Relay. Tool alpha/version metadata does
-not replace the bounded local content verification.
+The [tool pin](../toolchain/vibevm.json) selects exact VibeVM **1.0.11**, lightweight
+Git tag `v1.0.11`, source `5e470926ad0f34d61e37d387ce4b7c153356a804`.
+The actual Linux x86_64 musl bootstrap binary SHA-256 is
+`5fe5b3efeb2eab7c7c49a8dc864864ffacac08a9d7be3dc9df0bc0bb15a8bd58`.
+Its upstream `DISTRIBUTIONS.json` SHA-256 is
+`a11b0812d6ee675eeb58166a066500f5c1bf02705608d1de6725e087e9d713e6`;
+manifest `source_commit`, bootstrap component digest, Git tag and actual
+`vibe 1.0.11` output agree. Release assets are mutable upstream, so the exact
+digest remains required. No binary is committed or installed by Relay.
+
+For 1.0.7 → 1.0.11, the used install/reinstall/validate/check/Skill commands and
+schema-7 lock/slot/boot layout remain compatible. 1.0.8 changes application
+installer/launcher/index contracts and adds optional `required_by`; this passive
+flow/Skill graph has no application packages or old user-application state to
+migrate. Unrelated app features remain unused. 1.0.9's JSON-versus-human output
+change requires selecting `--json` explicitly; probes already do. 1.0.10 adds
+remote lock/slot hash rejection and refuses forced same-version drift; probes
+now expect the remote hash error. 1.0.11 repairs GitHub/GitVerse Git-source cloning
+regressed in 1.0.9/10; the anonymous pinned GitHub acquisition exercises that
+path. Boot and Linux tree-hash recipes match the old source. Optional remap and
+reverse-dependency lock fields are absent for this graph; no unrelated capability
+is adopted. Native updating an existing lock preserves its historical
+`generated_by = "vibe 1.0.7"` header; clean 1.0.11 generation records 1.0.11.
+That retained header is not actual executable-version proof. Historical product
+closure locks and shipped tool references remain frozen independently.
 
 ## Admitted maintenance and qualification
 
@@ -138,12 +153,14 @@ line. Ignored `.vibe/` state and the persistent boot transaction lock are not
 runtime authority. Follow [self-adoption](self-adoption.md) for the first-party
 export and projection commands.
 
-The current standalone exporter and project lock select the same exact Shared
-5.0.0 distribution. No retained unselected root slot or expected orphan warning
-is needed. Native install prunes obsolete root slots without changing frozen
-historical registry payloads. The verifier checks the standalone snapshot's
-complete bytes against the accepted distribution and separately verifies native
-consumer lock/slot routing. Report any actual native warning and its impact.
+The standalone exporter retains Shared 5.0.0 while the project lock selects 7.0.0.
+The repository-only `build-project-guidance.py` adapter provides frozen build
+inputs to the unchanged product builder in disposable storage. It must reproduce
+the same product bytes and provenance. No unselected root 5.0.0 slot or orphan
+warning is required: native install prunes it without changing frozen registry
+payloads. The verifier separately checks both complete immutable dependencies
+and active consumer routing. Neither build input nor nested release evidence is
+a runtime/policy fallback. Report actual native warnings and their impact.
 
 Stage intended additions before structural qualification:
 
@@ -157,9 +174,20 @@ python3 scripts/test-qualify-vibevm.py
 
 Structural mode reads committed inputs without a network or VibeVM. Optional
 tool mode rechecks the binary digest and uses isolated projects to exercise
-native maintenance, existing-slot offline reinstall, generated routes and
-human-overlay behavior. Supplied source/distribution directories must first be
-acquired at the selected immutable identities. These commands describe the
+native clean/repeat install, relocation with the original source absent,
+existing-slot offline reinstall, generated routes and human-overlay behavior.
+Repeat install may refresh the native lock's `generated_at`; qualification allows
+only that valid timestamp change and requires an identical resolved graph, source
+locations, content hashes and materialized slots.
+Local registry URLs are absolute native location metadata. Before checking a
+relocated fixture, the probe re-resolves the relative registry through native
+installation; it requires unchanged content hashes, dependency graph, source
+revision, slots, routes and Skill bytes, allowing only the local source URL and
+lock generation timestamp to change. The missing-origin warning must appear
+before this repair and disappear afterward. See the
+[maintenance binding](self-adoption.md#deliberate-source-maintenance). Supplied
+source/distribution directories must first be acquired at the selected immutable
+identities. These commands describe the
 qualification contract; actual candidate results and warnings belong in its
 PR, native checks and Outcome. They do not qualify a model or Relay installation.
 Use the existing complete candidate checks rather than new per-topic rituals.

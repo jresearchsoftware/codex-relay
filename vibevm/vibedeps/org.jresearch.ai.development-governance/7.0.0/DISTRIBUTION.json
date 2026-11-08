@@ -1,0 +1,33 @@
+{
+  "package": "org.jresearch.ai/development-governance",
+  "payload_sha256": "3eff2ae300602e812b99539b18fe3d8232c92191ec1e5515c156a6754be51257",
+  "schema": 1,
+  "sha256": {
+    "CHANGELOG.md": "87cb8e90c8217a8d5ceeb2ab8cfdd107119a69dfdeacede5746aca63902d227f",
+    "LICENSE": "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853",
+    "README.md": "feaa899eae73d74600991d71a021fd1db9dbfce55bcce26f9a96671ce247d30d",
+    "tools/chatgpt/README.md": "4e94c177ee49715812baa1740ab478b56667b0b019a197b717c8deb35f899c78",
+    "tools/chatgpt/base.md": "36a11dd6df4d51a4004803514649795efb2faee983d2f367a19ecc3a23a255b7",
+    "tools/chatgpt/project.py": "e5cf6978ddbb8c63f713afccc62cd6c993e76f70074b57cd35bbf062c9f46668",
+    "vibe.toml": "92ebba86ec55d4f4687e41fbc6f65f921df36222b001349e8a97136831c6db04",
+    "vibevm/vibespecs/boot/development-governance.md": "0cdc2aa91a81c69fbb108c7488c1827e06edcffa32c936f391c63f89ccaf52f9",
+    "vibevm/vibespecs/guides/engineering-methods.md": "01103c8d52ab6ebd1acfecbce35e7b425db4d747094c6a2ac76289b875906248",
+    "vibevm/vibespecs/guides/onboarding-examples.md": "0e5f9f995578fad9ac45e98691b31d036616f2aceb2470e3410d4aa618b54389",
+    "vibevm/vibespecs/guides/onboarding.md": "ab05873ed59a2b849e7b6bb3ebff393babacc6746f41397229b158c41d6e8dd9",
+    "vibevm/vibespecs/guides/small-improvements.md": "9526a80119602c1bd57f7ddf70cf22873ed7e6fcde636f8d9a54f9c66bc67084",
+    "vibevm/vibespecs/protocols/context-loading.md": "b45a2a73017e3cee690e1b030094c8c237527604f0321ba4f431cbd4e3cc123a",
+    "vibevm/vibespecs/protocols/contract-and-decision-maintenance.md": "9ebf6f5760e7368d1091f6033e8d5c4d1d6d64bc82c3537b8f9af1c28cafdd3b",
+    "vibevm/vibespecs/protocols/github-repository-governance.md": "d65dc2acd6bacdacd06f47e010b210ce046384998f73ebfe3b0e7842f885a016",
+    "vibevm/vibespecs/protocols/independent-review.md": "095605951df169b8ed37913d26c882e4ef6d0752563a49655fcf0164db1aa96f",
+    "vibevm/vibespecs/protocols/package-versioning.md": "f4397c68b574780646e192beb71154cd2af1a29f00c63462be25f223d758a2de",
+    "vibevm/vibespecs/protocols/proportional-controls.md": "9d4995184b84665c3e1a8912d53438cdaa6e0b4fcef2af1f04e9111021e729ab",
+    "vibevm/vibespecs/protocols/requirement-authority.md": "4a6f6751990b3d17a08277e06dfa72f95ce954ed9c578fe25412631e40641a44",
+    "vibevm/vibespecs/protocols/self-adoption.md": "d49a3a8bdb648cfbc24a823e7f6e9abb6315f71ded6677453c0260849255ece4",
+    "vibevm/vibespecs/protocols/small-improvements.md": "917088897f9b60a65682d4f673f0858abe3dd26b98dffb19c383cf44ba913291",
+    "vibevm/vibespecs/protocols/task-handoff.md": "fe61aada089de718eccddc0290536e0482ad1fa46904c5848449a56d948572ba"
+  },
+  "source_path": "packages/development-governance",
+  "source_repository": "https://github.com/jresearchsoftware/shared-governance",
+  "source_revision": "bee96f1715142fde598318e7db402168dcfabf5f",
+  "version": "7.0.0"
+}

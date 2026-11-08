@@ -8,7 +8,7 @@ test inputs. `VERIFIED` means supported by the stated hypothetical observation;
 it never describes an inspection of a real external project by these examples.
 `READY` is a verdict for the explicitly chosen scope, not a sixth evidence state.
 
-Each walk starts with the same ordinary request: **“Onboard this project to
+Each onboarding walk starts with the same ordinary request: **“Onboard this project to
 Shared Governance.”** The operator reads the project's accepted authority,
 discovers the relevant paths, recommends choices, gets owner disposition and
 separates authorized file work from protected setup. A plan can be complete while
@@ -251,3 +251,65 @@ their accepted routes; newly available topics remain passive. Any ordinary updat
 checks follow Grove's existing update contract. “All files installed” establishes
 neither adoption nor readiness. Onboarding is NOT APPLICABLE to this event, and a
 future explicit request starts with current authority and decision-relevant facts.
+
+## 8. Package consumer compatibility and delivery choices
+
+**Discover and choose.** Hazel already adopts Package Versioning and its local
+independent review/release rules. Its adapter consumes a fictional guidance
+package, MapFlow. The owner authorizes a dependency compatibility correction;
+this is not a request to adopt more topics or change repository settings. These
+bounded source/behavior walks apply [PV-014](../protocols/package-versioning.md#PV-014)
+through [PV-018](../protocols/package-versioning.md#PV-018), with invented versions
+and observations rather than a universal compatibility matrix.
+
+| Observed contract and evidence | Deliberate action and release consequence |
+| --- | --- |
+| The adapter reads `protocols/context.md` and its documented section identifier. Accepted MapFlow history first provides both, with the needed behavior, in 1.4.0. Direct inspection of 1.3.0 shows the file absent. | Set the functional floor from 1.4.0 and explain this evidence in the existing change. A later prose edit or stricter unrelated policy does not move that floor. If newer identifiers are merely an avoidable implementation choice, assess supported older references before claiming a higher minimum. |
+| Hazel's manifest says `>=2.0.0`; a resolver rejects 1.4.0. Inspection and a focused walk establish that 1.4.0 supplies every interface and behavior actually needed. No separate accepted policy excludes it. | The resolver proves only the authored exclusion. Correct the needless constraint under Hazel's authority, with its compatibility rationale. A shipped adapter manifest change requires the adapter's normal classified release; no frozen version is rewritten. Retain a stricter constraint if an actual security or policy obligation justifies it. |
+| MapFlow 2.0.0 breaks an unused generator but preserves the adapter's paths, identifiers and used semantics. Relevant applicability, exceptions and Hazel's local binding remain compatible. The root consumer lock and slot sit outside the adapter artifact. | Review the consumer's selected dependency/lock/materialized-state update. Keep the adapter's unchanged version and shipped bytes. No adapter release or gate in MapFlow's producer is needed solely because a new major exists. No new topic is adopted, and the result says nothing about unknown MapFlow 3.0.0. |
+| MapFlow 2.1.0 actually removes the adapter's required path or changes a used return value's meaning. | Diagnose the real interface/behavior incompatibility, preserve the last supported selected state, and reconcile the requirement or adapter through the existing authorized change. Corrected adapter behavior, guidance or packaging needs its own appropriately classified release and independent assessment. A wider range or passing install cannot supply the missing contract. |
+| The native adapter consumes the root's resolved MapFlow 2.0.0. Its release also carries a nested frozen 1.4.0 snapshot solely as publisher closure evidence. | The root lock and matching selected slot govern native reads. The nested snapshot stays inert but still receives included-closure and redistribution checks. A missing selected slot requires supported restoration, never a silent fallback to 1.4.0 or a second boot route. |
+| A separate self-contained adapter artifact deliberately bundles and attributes MapFlow 1.4.0 for offline use. | Its documented bundled snapshot is the source for that form. A consumer's unrelated root lock does not silently replace it. Updating that bundle to compatible 2.0.0 changes shipped immutable bytes and requires a new classified adapter release; retaining the bundle does not require a release just because 2.0.0 is available. |
+| An accepted security boundary excludes a functional old dependency, or an exact pin preserves an approved reproducible artifact. | Preserve and explain that constraint. Compatibility does not waive security, license/redistribution, manifest validity, included frozen closure, first-source freeze or authorized publication requirements. Use existing evidence and review; add no cold installation ritual or per-dependency attestation. |
+
+**Handoff.** The range records permitted selections; the consumer lock records
+the exact resolution; explicit adoption records applicable policy and bindings;
+the delivery contract identifies any bundled source. Actual source/behavior
+evidence supports the chosen floor and assessed update. Native and self-contained
+forms may serve the same supported workflow with different inventories and
+provenance. Report changed consumer contract and operator work in Hazel's existing
+review, preserving stronger local authority. These examples establish no live
+consumer migration, release, native test result or independent acceptance.
+
+## 9. Single-field Task closure
+
+Iris has deliberately adopted Task Handoff and uses ordinary GitHub Issues and
+independent PR review, without Relay. These synthetic walks apply
+[TH-026](../protocols/task-handoff.md#TH-026); they grant no execution or merge
+authority and assert no live GitHub test result. The field selects closure
+timing, not whether to ask permission again. For example, a publication Task's
+charter contains one field followed by ordinary text:
+
+```text
+Issue closure policy: keep-open
+
+Keep this Issue open until the accepted package version is successfully
+published from its verified accepted revision. Once that is verified and
+no Task work remains, close through the ordinary authorized continuation.
+```
+
+| Actual Task/result boundary | Supported action and expected disposition |
+| --- | --- |
+| `close-authorized`; the designated final PR contains all work, exact-head acceptance and required checks are satisfied, and merge completes the Task. | Use `Closes #N` or the supported native closing link. The authorized default-branch merge closes the Issue. No second owner-choice prompt or separate closure ritual follows. |
+| That PR is closed without merging, including abandonment. | The Issue stays open. PR closure proves neither integration nor Task completion. Reconcile any cancellation or changed goal through actual owner authority. |
+| Two implementation PRs are needed; the first is accepted and merged but the second remains unfinished. | The first uses `Related to #N`. Only the PR that genuinely reaches the accepted completion boundary may carry the closing link. Each result keeps its own exact-head review/checks; an intermediate merge does not complete the Task. |
+| An accepted analytical result has no PR and no remaining work or protected hold. | Use the existing owner-authorized no-PR completion path and exact-result evidence. Invent no PR, commit or closing link. |
+| The publication charter above has an accepted, merged source PR, but the package publication is delayed, failed or unknown. | Use a non-closing PR reference and retain the open Issue. Verify the exact accepted revision/version's publication through normal release evidence; source merge alone is insufficient. Once all stated conditions pass, record that evidence and close without a new Decision merely releasing the condition. |
+| `keep-open` names a required Apply; it fails, targets the wrong revision/environment, or its result is unknown. | Keep the Issue open. A successful run at the intended revision/target and disposition of material warnings must satisfy the real condition. A genuine later change or cancellation needs an owner Decision, not an invented success claim. |
+| An old admitted Task used `close-authorized` for separate closure after a required Apply, or retained an explicit earlier hold. | Preserve its historical charter, admitted authority and qualified mechanism. Do not retrofit merge closure, rewrite the body, waive the hold or replay a terminal Step. Reconcile any actual authority change through its trusted Decision path. |
+| Closure metadata is absent or contradictory. | Prevent automatic closure and reconcile genuinely missing intent from current authority. Do not attribute an invented `keep-open` choice to the owner or turn the fail-safe into a permanent procedural hold. Clear existing permission needs no second confirmation. |
+
+Iris's package publication does not adopt the package in another consumer.
+Unrelated PRs and optional future usage are not remaining Task obligations.
+Consumer automation must separately implement and qualify changed timing; these
+walks do not create a compatibility exception for an older runtime.

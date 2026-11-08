@@ -1,7 +1,7 @@
 # Development Governance
 
 `org.jresearch.ai/development-governance` is one passive MIT-licensed VibeVM
-flow. One manifest version covers its conditional boot, nine protocols, optional
+flow. One manifest version covers its conditional boot, ten protocols, optional
 operator guides and manually invoked [ChatGPT maintenance assets](tools/chatgpt/README.md).
 It has no hooks, executable capabilities, dependencies or native Codex Skills.
 Ordinary reading requires no Python, VibeVM command or external service.
@@ -11,6 +11,27 @@ obligations and migration, including the 2.7.0 → 3.0.0 transition. It is part 
 the package payload. This README is the current overview; actual acceptance and
 publication evidence remains in source Issues/PRs, workflows and distribution
 tags. Frozen historical versions retain their original bytes.
+
+Version 7.0.0 changes the existing [TH-026 closure clause](vibevm/vibespecs/protocols/task-handoff.md#TH-026):
+`close-authorized` closes on merge of the designated completing PR; `keep-open`
+uses a non-closing reference and closes after its stated condition is verified.
+The one existing Issue field controls timing, with no repeated permission prompt
+or second field. Publication deliverables use `keep-open` until the exact accepted
+package is published. This is MAJOR against 6.0.0's separate post-completion
+closure and policy-release path. Existing/admitted authority and immutable releases
+retain their meaning; consumer runtime adoption/qualification remains separate.
+See the [closure examples](vibevm/vibespecs/guides/onboarding-examples.md#9-single-field-task-closure)
+and changelog for operator impact and migration.
+
+Version 6.0.0 extends [Package Versioning](vibevm/vibespecs/protocols/package-versioning.md#PV-014)
+with evidence-based dependency floors, justified constraints, explicit resolved
+versus bundled authority and deliberate update/release decisions. A compatible
+upstream major can leave a dependent product unchanged; changes to that product's
+own contract or shipped bytes still require its classified release. The added
+mandatory rationale and delivery-source assessment make this MAJOR against 5.2.3.
+Existing lifecycle review carries the work, without another approval stage or
+universal test matrix. See the installed changelog and
+[bounded dependency examples](vibevm/vibespecs/guides/onboarding-examples.md#8-package-consumer-compatibility-and-delivery-choices).
 
 Version 4.0.0 adds [PC-013](vibevm/vibespecs/protocols/proportional-controls.md#PC-013)
 and tightens [IR-012–IR-015](vibevm/vibespecs/protocols/independent-review.md#IR-012):
@@ -24,13 +45,14 @@ approval/wait stage or topic adoption; see the 3.0.0 → 4.0.0 changelog entry.
 | --- | --- |
 | [Proportional controls — PC](vibevm/vibespecs/protocols/proportional-controls.md) | Proposed security, validation or operator controls, including behaviorally free hardening. |
 | [Requirement authority — RA](vibevm/vibespecs/protocols/requirement-authority.md) | Binding requirements versus revisable engineering choices. |
-| [Package versioning — PV](vibevm/vibespecs/protocols/package-versioning.md) | Explicitly adopted package lifecycle, preparation, versions and consumer updates. |
+| [Package versioning — PV](vibevm/vibespecs/protocols/package-versioning.md) | Explicitly adopted package lifecycle, preparation, versions, dependency compatibility and consumer updates. |
 | [Task handoff — TH](vibevm/vibespecs/protocols/task-handoff.md) | Explicitly adopted Task/Step authority, Outcome, independent-review handoff, acceptance and continuation. |
 | [Producer self-adoption — SA](vibevm/vibespecs/protocols/self-adoption.md) | Explicitly adopted use of guidance a producer authors, with accepted-source/candidate separation. |
 | [GitHub repository governance — GH](vibevm/vibespecs/protocols/github-repository-governance.md) | Explicitly adopted workflow/protection decisions preserving PR, direct-main, distribution and mixed paths. |
 | [Independent review — IR](vibevm/vibespecs/protocols/independent-review.md) | Explicitly adopted assessment methodology, evidence, complete affected behavior, findings and rereview. |
 | [Contract and decision maintenance — CD](vibevm/vibespecs/protocols/contract-and-decision-maintenance.md) | Explicitly adopted material contract changes, durable decisions and same-change human guidance. |
 | [Context loading — CL](vibevm/vibespecs/protocols/context-loading.md) | Explicitly adopted decision-relevant startup, triggered complete detail and targeted mutable refresh. |
+| [Small improvements — SI](vibevm/vibespecs/protocols/small-improvements.md) | Separately adopted owning-repository Issue capture, labeled discovery and authorized inclusion in a future suitable source change. |
 
 Installing/updating the package and following a cross-topic reference do not
 adopt a topic. Each consumer owns accepted human instructions, local authority,
@@ -40,6 +62,14 @@ migration adopts shared content and removes genuine duplicates together.
 Task Handoff requires independent assessment under project rules; consumers
 select Independent Review separately for its shared methodology. That method
 adds no universal owner-wait or publication permission rule.
+
+Version 5.2.0 adds the separately opt-in SI topic and its
+[usage/migration guide](vibevm/vibespecs/guides/small-improvements.md).
+Adopters use the exact `small-improvement` label, notify the owner with candidate
+IDs while preparing suitable source-changing work, and obtain receiving scope
+authority before combined implementation/review. Unfinished Issues remain open
+and traceable. Existing topic adopters acquire no additional scan or workflow;
+CD/TH/RA keep their semantic ownership. This compatible addition is MINOR.
 
 For adopted Task Handoff, [TH-028](vibevm/vibespecs/protocols/task-handoff.md#TH-028)
 adds executor-owned Draft/Ready handoff for applicable implementation PRs: Draft

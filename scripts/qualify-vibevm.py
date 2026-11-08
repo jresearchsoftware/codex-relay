@@ -18,7 +18,7 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "5.0.0"
+VERSION = "7.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
 SELF_VERSION = "4.1.0"
@@ -38,19 +38,20 @@ GUIDES = tuple("vibevm/vibespecs/guides/" + name + ".md" for name in
                ("engineering-methods", "onboarding", "onboarding-examples"))
 PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
            "tools/chatgpt/README.md", "tools/chatgpt/base.md", "tools/chatgpt/project.py",
-           *PROTOCOLS, *GUIDES}
+           *PROTOCOLS, *GUIDES, "vibevm/vibespecs/protocols/small-improvements.md",
+           "vibevm/vibespecs/guides/small-improvements.md"}
 # Accepted producer exports omit only their generated local client routes.
 SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/INDEX.md",
                "vibevm/vibespecs/boot/.vibe-boot-artifacts.lock"}
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "30a23f467c30c41fec918204cbbf2ecfffd7bef5"
+DISTRIBUTION_REVISION = "77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9"
-PAYLOAD_HASH = "f4ad03a0137bd0d4c8cab58fa7d42ccbe0bb3aba2315cb9c96f5f93c7ea86275"
-RECEIPT_HASH = "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9"
-TREE_HASH = "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9"
+SOURCE_REVISION = "bee96f1715142fde598318e7db402168dcfabf5f"
+PAYLOAD_HASH = "3eff2ae300602e812b99539b18fe3d8232c92191ec1e5515c156a6754be51257"
+RECEIPT_HASH = "bff287dbbdd7801b65d724eef0b0f34daed33157f1f90773cfd956471aecb47b"
+TREE_HASH = "sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -60,6 +61,18 @@ BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def check_repeat_lock(before, after):
+    """Native install refreshes generated_at, not the resolved content identity."""
+    previous, current = (tomllib.loads(data.decode()) for data in (before, after))
+    for lock in (previous, current):
+        timestamp = lock.get("meta", {}).get("generated_at")
+        require(isinstance(timestamp, str) and
+                re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp),
+                "Repeat install has invalid generation timestamp")
+        del lock["meta"]["generated_at"]
+    require(previous == current, "Repeat install changed the resolved lock identity")
 
 
 def managed(data):
@@ -104,36 +117,45 @@ def files_in(directory, ignore_git=False):
 
 
 def tree_hash(files):
-    """VibeVM 1.0.7's Linux legacy tree recipe, including the distribution receipt."""
+    """VibeVM's unchanged Linux legacy tree recipe, including the distribution receipt."""
     digest = hashlib.sha256()
     for name in sorted(files, key=lambda name: Path(name).parts):
         digest.update(name.encode() + b"\0" + files[name] + b"\0")
     return "sha256:" + digest.hexdigest()
 
 
-def check_package(directory):
+def check_package(directory, *, standalone=False):
+    # Build/release evidence is a separate frozen delivery, never a policy fallback.
+    version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
+        ("5.0.0", "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
+         "f4ad03a0137bd0d4c8cab58fa7d42ccbe0bb3aba2315cb9c96f5f93c7ea86275",
+         "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9",
+         "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9")
+        if standalone else (VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH))
+    payload = PAYLOAD - {"vibevm/vibespecs/protocols/small-improvements.md",
+                         "vibevm/vibespecs/guides/small-improvements.md"} if standalone else PAYLOAD
     files = files_in(directory)
-    require(set(files) == PAYLOAD | {RECEIPT, MARKER}, "Unexpected or missing passive slot files")
-    hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(PAYLOAD)}
+    require(set(files) == payload | {RECEIPT, MARKER}, "Unexpected or missing passive slot files")
+    hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(payload)}
     payload_hash = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    require(payload_hash == PAYLOAD_HASH, "Payload differs from the accepted whole-package identity")
+    require(payload_hash == payload_hash_expected, "Payload differs from the accepted whole-package identity")
     receipt = json.loads(files[RECEIPT])
-    require(receipt == {"package": COORDINATE, "payload_sha256": PAYLOAD_HASH, "schema": 1,
+    require(receipt == {"package": COORDINATE, "payload_sha256": payload_hash_expected, "schema": 1,
                         "sha256": hashes, "source_path": "packages/development-governance",
-                        "source_repository": SOURCE_REPOSITORY, "source_revision": SOURCE_REVISION,
-                        "version": VERSION}, "Receipt differs from accepted source/path/hash identity")
-    require(hashlib.sha256(files[RECEIPT]).hexdigest() == RECEIPT_HASH, "Receipt bytes differ")
+                        "source_repository": SOURCE_REPOSITORY, "source_revision": source_revision,
+                        "version": version}, "Receipt differs from accepted source/path/hash identity")
+    require(hashlib.sha256(files[RECEIPT]).hexdigest() == receipt_hash, "Receipt bytes differ")
     materialized = {name: data for name, data in files.items() if name != MARKER}
-    require(tree_hash(materialized) == TREE_HASH, "Materialized tree differs from the locked identity")
+    require(tree_hash(materialized) == tree_hash_expected, "Materialized tree differs from the locked identity")
     marker = tomllib.loads(files[MARKER].decode())
     require(type(marker.get("schema")) is int
-            and marker == {"schema": 1, "source_hash": TREE_HASH, "spec_format": "mixed",
+            and marker == {"schema": 1, "source_hash": tree_hash_expected, "spec_format": "mixed",
                            "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
                                     for name, data in sorted(materialized.items())]},
             "Slot metadata differs from the complete materialized payload")
     manifest = tomllib.loads(files["vibe.toml"].decode())
     require(manifest == {"package": {"group": "org.jresearch.ai", "name": "development-governance",
-                                     "version": VERSION, "kind": "flow", "format": "simple", "epoch": 1,
+                                     "version": version, "kind": "flow", "format": "simple", "epoch": 1,
                                      "publish": False, "frozen": True,
                                      "description": "Passive cross-project AI-development governance flow protocol.",
                                      "license": "MIT"},
@@ -190,12 +212,14 @@ def check_first_party_registry(root, expected):
 
 def check_standalone_snapshot(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
-    require(metadata["shared_version"] == VERSION
-            and metadata["shared_source_revision"] == SOURCE_REVISION
-            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
-            and metadata["shared_distribution_tree_hash"] == TREE_HASH,
+    require(metadata["shared_version"] == "5.0.0"
+            and metadata["shared_source_revision"] == "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9"
+            and metadata["shared_distribution_revision"] == "30a23f467c30c41fec918204cbbf2ecfffd7bef5"
+            and metadata["shared_distribution_tree_hash"] ==
+                "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
             "Standalone selection differs from the accepted immutable Shared snapshot")
-    files = check_package(root / SLOT)
+    snapshot = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0")
+    files = check_package(root / "guidance/artifacts/vpm" / snapshot, standalone=True)
     files.pop(MARKER)
     standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
     require(files == standalone, "Standalone payload differs from the accepted immutable Shared snapshot")
@@ -215,6 +239,8 @@ def check_first_party(root):
     require(MARKER in installed, "Missing first-party slot metadata")
     marker = tomllib.loads(installed.pop(MARKER).decode())
     source_hash = tree_hash(expected)
+    require(source_hash == "sha256:bd1c15a6f15246798eaa66fa434e843eb57db2a4ca084dc79420277d29979385",
+            "Project-only migration must preserve the frozen Relay 4.1.0 artifact")
     require(installed == expected, "First-party slot differs from generated package export")
     require(type(marker.get("schema")) is int and marker == {
         "schema": 1, "source_hash": source_hash, "spec_format": "mixed",
@@ -260,7 +286,9 @@ def check_project(root):
     first = next((entry for entry in packages if entry.get("name") == "codex-relay"), None)
     require(set(lock) == {"meta", "package"} and set(lock["meta"]) == {
         "generated_by", "generated_at", "schema_version", "root_dependencies"}
-        and lock["meta"]["generated_by"] == "vibe 1.0.7"
+        # Native install preserves the old meta header when updating an existing
+        # schema-7 lock; a clean 1.0.11 install writes its actual new version.
+        and lock["meta"]["generated_by"] in {"vibe 1.0.7", "vibe 1.0.11"}
         and type(lock["meta"]["schema_version"]) is int and lock["meta"]["schema_version"] == 7
         and isinstance(lock["meta"]["generated_at"], str)
         and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["meta"]["generated_at"])
@@ -285,7 +313,7 @@ def check_project(root):
     index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
     paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(),
              (SELF_SLOT / SELF_BOOT).as_posix(), (BOOT / SOURCES[1]).as_posix()]
-    # Native v1.0.7 emits static here despite boot_snippet.link = "dynamic".
+    # Native v1.0.11 emits static here despite boot_snippet.link = "dynamic".
     require(type(index.get("schema")) is int
             and index == {"schema": 1, "entry": [{"path": name, "kind": "static"} for name in paths]},
             "Generated INDEX differs from the actual native route")
@@ -308,7 +336,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "standalone_snapshot": VERSION}
+            "project_skill": "PASS", "standalone_snapshot": "5.0.0"}
 
 
 def compare_inputs(root, source, distribution):
@@ -351,11 +379,13 @@ def probe(vibe, pin, project_root=ROOT):
         env["VIBEVM_USER_CONFIG"] = str(root / "settings/config.toml")
         reports = {}
 
-        def run(project, label, *arguments, collision=False, incomplete=False):
-            result = subprocess.run([str(vibe), "--offline", "--json", *arguments], cwd=project, env=env,
+        def run(project, label, *arguments, collision=False, incomplete=False, hash_mismatch=False, source_mismatch=False, offline=True):
+            result = subprocess.run([str(vibe), *(["--offline"] if offline else []), "--json", *arguments], cwd=project, env=env,
                                     text=True, capture_output=True, timeout=120)
-            if collision or incomplete:
-                evidence = "malformed <vibevm> block" if collision else "slot missing"
+            if collision or incomplete or hash_mismatch or source_mismatch:
+                evidence = ("malformed <vibevm> block" if collision else
+                            "lock_slot_hash" if hash_mismatch else
+                            "lock_hash_mismatch" if source_mismatch else "slot missing")
                 require(result.returncode != 0 and evidence in result.stdout + result.stderr,
                         label + " did not refuse the expected malformed/incomplete state")
                 reports[label] = {"exit": result.returncode, "refused": evidence}
@@ -391,6 +421,46 @@ def probe(vibe, pin, project_root=ROOT):
             for name, data in expected.items():
                 require(read_file(project, name) == data, "Authored/generated bytes drifted: " + name)
 
+        def rebind(project, label):
+            # LocalRegistry deliberately serializes an absolute file:// source.
+            # A copied checkout must resolve it again through native install;
+            # never rewrite the lock or ignore local_source_freshness findings.
+            check_project(project)
+            before = {name: read_file(project, name) for name in route_paths}
+            previous = tomllib.loads(before["vibe.lock"].decode())
+            run(project, label, "install", "--no-default-registry", "--assume-yes", offline=False)
+            current = tomllib.loads(read_file(project, "vibe.lock").decode())
+            previous["meta"]["generated_at"] = current["meta"]["generated_at"]
+            first = next(entry for entry in previous["package"] if entry["name"] == "codex-relay")
+            first["source_url"] = (project / SELF_SOURCE).as_uri()
+            require(current == previous, label + " changed more than native checkout location/timestamp")
+            for name, data in before.items():
+                if name != "vibe.lock":
+                    require(read_file(project, name) == data, label + " changed ready bytes: " + name)
+            check_project(project)
+
+        # Reproduce a real checkout move with its origin absent, not merely a
+        # copy whose original local registry remains accessible on this host.
+        origin = root / "origin"
+        copy_project(project_root, origin)
+        rebind(origin, "origin-install")
+        relocated = root / "relocated"
+        origin.rename(relocated)
+        result = subprocess.run([str(vibe), "--offline", "--json", "check", "--path", "."],
+                                cwd=relocated, env=env, text=True, capture_output=True, timeout=120)
+        report = json.loads(result.stdout)
+        require(result.returncode == 0 and not result.stderr.strip()
+                and report["summary"] == {"error": 0, "warning": 1, "info": 0}
+                and len(report["findings"]) == 1
+                and report["findings"][0]["check"] == "local_source_freshness"
+                and "no longer on disk" in report["findings"][0]["message"],
+                "Moved checkout did not expose its missing original source: " + result.stdout + result.stderr)
+        reports["relocation-before-install"] = report
+        rebind(relocated, "relocation-install")
+        run(relocated, "relocation-check", "check", "--path", ".")
+        rebind(project, "checkout-install")
+        original = {name: read_file(project, name) for name in route_paths}
+
         def rejected(label):
             try:
                 check_project(project)
@@ -398,6 +468,23 @@ def probe(vibe, pin, project_root=ROOT):
                 reports[label] = {"local_verifier": "rejected"}
             else:
                 raise RuntimeError(label + " was accepted by the local verifier")
+
+        clean = root / "clean"
+        copy_project(project_root, clean)
+        (clean / "vibe.lock").unlink()
+        import shutil
+        shutil.rmtree(clean / "vibevm/vibedeps")
+        run(clean, "clean-install", "install", "--no-default-registry", "--assume-yes", offline=False)
+        check_project(clean)
+        require(tomllib.loads((clean / "vibe.lock").read_text())["meta"]["generated_by"] == version,
+                "Clean install did not record the verified tool version")
+        clean_before = files_in(clean / "vibevm/vibedeps")
+        clean_lock = (clean / "vibe.lock").read_bytes()
+        run(clean, "repeat-install", "install", "--no-default-registry", "--assume-yes")
+        require(files_in(clean / "vibevm/vibedeps") == clean_before,
+                "Repeat install drifted from clean native generation")
+        check_repeat_lock(clean_lock, (clean / "vibe.lock").read_bytes())
+        check_project(clean)
 
         run(project, "validate", "validate", "--path", ".", "--no-default-registry")
         run(project, "check", "check", "--path", ".")
@@ -427,6 +514,17 @@ def probe(vibe, pin, project_root=ROOT):
         unchanged(original)
         check_project(project)
 
+        # 1.0.10+ must refuse changed same-version source before copying any slot.
+        source_readme = project / SELF_SOURCE / "README.md"
+        source_before = source_readme.read_bytes()
+        source_readme.write_bytes(source_before + b"\nSynthetic same-version source drift\n")
+        unchanged_before = {name: read_file(project, name) for name in original}
+        run(project, "force-reinstall-source-drift", "reinstall", ".", "--force", "--assume-yes",
+            source_mismatch=True)
+        unchanged(unchanged_before)
+        source_readme.write_bytes(source_before)
+        check_project(project)
+
         # Counterexamples bind local verification to admitted bytes, not upstream check.
         for label, name, data in [
                 ("corrupt-payload", (SLOT / PROTOCOLS[1]).as_posix(), b"Altered passive protocol\n"),
@@ -440,7 +538,8 @@ def probe(vibe, pin, project_root=ROOT):
             path.unlink() if data is None else path.write_bytes(data)
             rejected(label)
             if label in {"missing-payload", "corrupt-lock"}:
-                run(project, label + "-upstream-check", "check", "--path", ".")
+                run(project, label + "-upstream-check", "check", "--path", ".",
+                    hash_mismatch=label == "corrupt-lock")
             path.write_bytes(original[name])
         displaced = root / "displaced-slot"
         (project / SLOT).rename(displaced)
@@ -461,7 +560,7 @@ def probe(vibe, pin, project_root=ROOT):
         print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
                           "offline_file_reads": "PASS", "exact_regeneration": "PASS",
                           "overlays_and_collisions": "PASS",
-                          "upstream_check_limitations": "accepts missing INDEX/payload and divergent lock hash",
+                          "upstream_check_limitations": "accepts missing INDEX/payload; rejects divergent remote lock/slot hash",
                           "upstream_acquisition_limitations": "offline reinstall needs an existing slot; upstream install/check is not accepted-source verification",
                           "model_behavior": "UNVERIFIED: no Codex/provider execution", "reports": reports}))
 
@@ -470,7 +569,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=ROOT,
                         help="complete ready checkout/isolated fixture to verify (default: this checkout)")
-    parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.7 binary")
+    parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.11 binary")
     parser.add_argument("--source-dir", type=Path, help="optional accepted source package directory for whole-payload byte comparison")
     parser.add_argument("--distribution-dir", type=Path, help="optional acquired public distribution directory for whole-payload/receipt byte comparison")
     args = parser.parse_args()

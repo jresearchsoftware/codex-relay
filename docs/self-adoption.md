@@ -2,7 +2,7 @@
 
 Relay authors and consumes its product Skill. Portable producer/candidate
 semantics belong to the complete adopted pinned
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0/vibevm/vibespecs/protocols/self-adoption.md).
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/self-adoption.md).
 This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
@@ -11,10 +11,10 @@ The first-party `org.jresearch.ai/codex-relay` **4.1.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
-adopts Shared **5.0.0**, with the exact Git identity in
-[the identity contract](vibevm.md#selected-immutable-identities). The new Relay
-release also selects that snapshot for standalone and publisher closure
-evidence, retaining the native `>=2.5.0` floor and frozen historical releases.
+adopts Shared **7.0.0**, with the exact Git identity in
+[the identity contract](vibevm.md#selected-immutable-identities). The unchanged Relay product selects its own 5.0.0 snapshot for standalone and
+publisher closure evidence, retaining the native `>=2.5.0` floor and frozen
+historical releases. The root migration prepares no new Skill release.
 
 The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
 changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4
@@ -39,9 +39,8 @@ references. Ordinary use needs no materializer, Python, registry, cache, network
 or additional owner command. Checkout/pull advances the accepted ready files.
 
 Relay's execution binding identifies the independently accepted source commit,
-separately from candidate root/nested AGENTS, boot and Skills. Task #63's
-execution freezes accepted Relay source
-`b92d7f551b7f95be76e5f64587c40f9bd5d69f14` for this execution;
+separately from candidate root/nested AGENTS, boot and Skills. Task #213's execution freezes accepted Relay source
+`e4f2b61fc50219a997c5f8c31494dc4cc2a1446a` before candidate edits;
 the unchanged Skill product-contract baseline remains
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
@@ -57,7 +56,7 @@ identities in `guidance/source.json`. During admitted maintenance, use the
 hash-checked executable from `toolchain/vibevm.json`:
 
 ```sh
-python3 scripts/build-relay-guidance.py
+python3 scripts/build-project-guidance.py
 python3 scripts/prepare-relay-self-adoption.py
 /absolute/path/to/pinned/vibe --json install --no-default-registry --assume-yes
 /absolute/path/to/pinned/vibe --offline --json skill install \
@@ -68,11 +67,14 @@ python3 scripts/qualify-vibevm.py
 
 For a project-only Shared update, use the existing frozen builder/registry
 `--check` modes; no Relay artifact generation or version change is needed.
-The current exporter reads the exact Shared 5.0.0 root slot selected in
-`guidance/source.json`. Native install can prune the obsolete unselected 4.0.0
-root slot; historical release payloads remain in the frozen registry. The
-verifier compares the complete standalone snapshot with the accepted 5.0.0
-distribution and validates consumer routing separately.
+The repository adapter `build-project-guidance.py` runs the unchanged frozen
+builder in a disposable root using the exact 5.0.0 release-evidence slot under
+`guidance/dependency-closure`. This preserves the builder's recorded provenance
+and every product artifact byte while keeping the active root graph at 7.0.0.
+It supplies build inputs, never an alternate runtime/policy route. The verifier
+compares the complete standalone snapshot with its own accepted distribution
+and separately validates the root consumer lock/slot. Native install prunes the
+obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
 export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.0`. It performs no
@@ -84,7 +86,7 @@ in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the
 standalone export and external consumer instructions.
 
 The root relative `[[registry]]` composes local first-party discovery with the
-explicit anonymous Shared Git root. **Do not pass `--registry`**: VibeVM 1.0.7
+explicit anonymous Shared Git root. **Do not pass `--registry`**: The retained mixed-graph interface
 bypasses Git-source composition in that mode and cannot resolve this mixed graph.
 Initial acquisition may contact the pinned public commit; cold offline resolution
 with an empty cache is not promised. Existing-slot reinstall, retained-file reads
@@ -93,9 +95,16 @@ and Skill projection are the bounded offline paths.
 The first-party native `source_url` is generated absolute location metadata and
 may name its generating checkout; it is not portable provenance or acceptance.
 Use exact export/registry/slot/Skill comparison and the owning Git commit for
-content identity. Shared lock identity retains its public URL, immutable revision
-and tree hash. Do not hand-edit generated URLs or change transport to make a
-check pass.
+content identity. VibeVM 1.0.11's local-source freshness check nevertheless needs
+that location to exist. For deliberate native maintenance after moving/copying
+a checkout, run the supported `install --no-default-registry --assume-yes`
+command there to resolve the relative registry and regenerate its lock location.
+The qualification probe does this in disposable copies before offline checks,
+verifying that only the local URL and generation timestamp change. It also moves
+a generated checkout with its origin absent, observes the missing-source warning,
+and verifies native repair. Ordinary offline file-reading startup needs no such
+command. Shared lock identity retains its public URL, immutable revision and
+tree hash. Do not hand-edit generated URLs or ignore freshness warnings.
 
 ## Qualification, failure and rollback
 

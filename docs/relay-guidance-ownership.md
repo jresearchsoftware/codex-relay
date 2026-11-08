@@ -1,10 +1,10 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **5.0.0** as the single
+This repository deliberately adopts Shared Governance **7.0.0** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9`; the distribution is
-`30a23f467c30c41fec918204cbbf2ecfffd7bef5`. Root [AGENTS](../AGENTS.md)
+`bee96f1715142fde598318e7db402168dcfabf5f`; the distribution is
+`77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all nine complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
@@ -16,7 +16,7 @@ Shared dependency. No fixed bundled native route supersedes that selection.
 The historical
 [Task #108 analysis](task-handoff-methodology-analysis.md) and earlier
 [2.1.0 assessment](vibevm-semantic-coverage.md) remain evidence, not active policy.
-The one-time migration comparison belongs in its PR/review, not a new ledger.
+The bounded [migration assessment](relay-skill-compatibility.md#project-migration-from-500-through-700) records semantic dispositions; it is not a second rule owner.
 
 ## Native authority and compatibility
 
@@ -25,7 +25,10 @@ handoff, bounded correction, preservation, results and continuation. Relay's
 [authority contract](../contracts/README.md#github-native-task-authority) owns
 Issue #N, trusted v4 Decisions, immutable admission, protected reservations and
 native identities/body digests. Writer alone allocates Step at consumed owner
-launch. Labels and titles project it. Retained v3 and legacy admissions preserve
+launch. Labels and titles project it. TH-002/006's ordinary dispatch needs no
+extra Decision merely certifying that same start; the native authenticated
+command and immutable admission still implement the product trust boundary.
+Issue openness alone starts nothing. Retained v3 and legacy admissions preserve
 their selected Request, historical Step and exact recovery/publication bindings;
 shared adoption neither renumbers history nor qualifies an installation.
 
@@ -69,21 +72,20 @@ original-run binding and the UI-only access limit remain Relay-specific.
 The complete candidate commands in AGENTS are this product's qualification set,
 not a new consumer prerequisite.
 
-RA-006 governs obligation origin when authoring Tasks, defining acceptance,
-classifying findings or considering continuation (TH-002/026 and IR-013).
-Reconcile material scope discrepancies through existing trusted Decisions;
-routine in-scope implementation/testing needs no new permission. Proposals
-cannot create required proof or completion gates, and existing protected
-obligations cannot be discarded as proposals. Make consequential per-finding
-dispositions explicit; a general request to fix findings does not accept a
-hidden deferral or new requirement.
+RA-006 owns obligation provenance, including negative restrictions; Relay's
+trusted Decisions reconcile material discrepancies. Explicit owner boundaries
+remain binding, including Task #213's project-only migration and separate
+Task #194 implementation/release scope.
 
-TH-029 applies only to a Task that actually includes applying generated client
-instructions. Such work needs supported live comparison and application
-confirmation through its authorized client binding. This project's Shared
-dependency update includes no live ChatGPT settings action, receipt migration
-or replacement ledger. Guidance generation and source acceptance alone supply
-no settings-application proof.
+TH-029 now applies when an adopting project intentionally uses generated ChatGPT
+Project Instructions and a Task changes its complete effective desired text,
+even without an explicit application clause. This repository has no authored
+generated Project Instructions integration; bundled tools and optional product
+bootstrap do not establish one. No live Settings mutation or synchronization
+claim follows from this migration. Future applicable work follows the complete
+selected TH-029, including unchanged-text and unresolved-gap handling.
+Optional Small Improvements is not adopted; its new files/boot route create no
+queue scan, label management or automatic scope inclusion.
 
 Shared Contract/Decision Maintenance owns material-contract authorization,
 durable accepted decisions and same-change human guidance. Relay binds this to
@@ -92,12 +94,37 @@ manual/component contracts and old-attempt compatibility. Shared Context Loading
 owns startup/JIT/completeness/refresh; AGENTS retains concrete architecture,
 component, environment and runtime entrypoints.
 
-Task Handoff completion is bound to Relay's single effective closure-policy
-field, [closure authoring](../contracts/README.md#closure-policy-authoring),
-trusted owner completion and exact-result independent acceptance. Finite Apply
-can be a preauthorized completion condition; no completed Step, merge or source
-candidate proves it happened. Protected host/deployment/recovery permissions
-remain in the [deployment contract](../deploy/README.md).
+## Temporary legacy closure binding
+
+Repository development governance selects Shared 7.0.0. The supported product
+closure contract retains its previously qualified legacy flow. Task
+[#194](https://github.com/jresearchsoftware/codex-relay/issues/194) alone implements,
+qualifies and publishes the new product semantics; source adoption does not
+activate them or authorize installation. Follow the existing
+[closure authoring](../contracts/README.md#closure-policy-authoring) and
+[trusted continuation](../contracts/README.md#authorized-continuation-after-independent-acceptance) contracts:
+non-closing PR references, explicit `closesTask: false`, neutral squash messages,
+effective completion evidence and trusted separate post-merge closure under the
+effective `close-authorized` policy. No new closing-link instruction or fictitious
+closure approval is added. Historical/admitted authority and explicit holds stay
+intact. Missing or conflicting metadata prevents unsafe closure; its legacy
+fail-safe is not proof of an owner-selected indefinite hold.
+
+This is the already authorized Relay-only transition described in #194, limited
+to actually qualified legacy combinations and behavior. It remains permitted
+pending the first Relay release implementing and qualifying the new closure
+semantics, then for 60 calendar days from that release's **verified publication**.
+Shared 7.0.0 publication starts no clock. Record the actual release/source,
+publication event and derived deadline in the existing Issue/release chronology
+when verified; no trigger date is asserted here. Removal requires a separately
+accepted future Shared release no earlier than the window's end; expiry does not
+automatically remove the fallback. This exception extends to no other protocol,
+consumer or unknown version. The product floor is not blanket compatibility proof.
+
+Shared TH-026/RA-006 owns the target single-field meaning, including completing
+versus intermediate results, condition verification and no-PR work. Runtime
+implementation/qualification of those changes remains #194. Protected
+host/deployment/recovery permissions remain in the [deployment contract](../deploy/README.md).
 
 ## Package, producer and repository bindings
 
@@ -124,9 +151,11 @@ for retry identity, native/offline limits and immutable-tag safeguards.
 This integration changes no Shared protocol adoption or release authority and
 introduces no additional release gate. A consumer-only
 compatible or irrelevant Shared update needs no Relay release. Assess actually
-used protocol semantics, applicability, exceptions and product bindings; only
-a material required Relay behavior, guidance, interface or packaging change
-justifies a new Relay version. See the
+used protocol semantics, applicability, exceptions and product bindings; a change to Relay's own supported behavior, guidance, interfaces, requirements,
+packaging or shipped immutable bytes needs its own classified release (PV-018).
+The root 7.0.0 lock is outside that product; frozen standalone and included
+release-evidence snapshots stay 5.0.0 and remain checked under PV-013. They never
+replace the native consumer's selected protocol authority (PV-015). See the
 [compatibility assessment](relay-skill-compatibility.md).
 
 Shared Producer Self-Adoption owns accepted-source/candidate separation and

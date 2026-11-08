@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
+import tomllib
 import unittest
 
 SPEC = importlib.util.spec_from_file_location("qualification", Path(__file__).with_name("qualify-vibevm.py"))
@@ -42,13 +43,31 @@ class CommittedFlowTests(unittest.TestCase):
         with self.assertRaises((RuntimeError, ValueError, OSError)):
             QUALIFICATION.check_project(self.root)
 
+    def test_repeat_install_only_allows_valid_generation_timestamp_changes(self):
+        original = (self.root / "vibe.lock").read_bytes()
+        metadata = tomllib.loads(original.decode())["meta"]
+        timestamp = metadata["generated_at"].encode()
+        refreshed = original.replace(timestamp, b"2030-01-02T03:04:05Z")
+        QUALIFICATION.check_repeat_lock(original, original)
+        QUALIFICATION.check_repeat_lock(original, refreshed)
+        for before, after in ((timestamp, b"invalid"),
+                              (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
+                              (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
+                              (metadata["generated_by"].encode(), b"other"),
+                              (b'@=7.0.0', b'@=6.0.0'),
+                              (b'file://', b'file:///changed/')):
+            with self.subTest(field=before):
+                self.assertIn(before, original)
+                with self.assertRaises(RuntimeError):
+                    QUALIFICATION.check_repeat_lock(original, original.replace(before, after))
+
     def test_committed_files_need_no_tool_or_lifecycle_state(self):
         self.assertFalse((self.root / ".vibe").exists())
         facts = QUALIFICATION.check_project(self.root)
         self.assertEqual(facts["tree_hash"], QUALIFICATION.TREE_HASH)
         self.assertEqual(len(facts["route"]), 4)
         self.assertEqual(facts["project_skill"], "PASS")
-        self.assertEqual(facts["payload_files"], 20)
+        self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
         self.assertEqual(facts["first_party_version"], "4.1.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")

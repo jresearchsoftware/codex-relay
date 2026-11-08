@@ -71,6 +71,16 @@ entrypoints, contributor paths and client instruction hierarchy remain intact;
 installation/update does not activate it. It adds no runtime retrieval or boot
 command and grants no new authority.
 
+For capturing deferred small source corrections and preparing suitable
+source-changing Tasks, first source-changing Steps or relevant CRs, read
+[small improvements](../protocols/small-improvements.md) only when the owning
+project separately adopts that topic. Use its exact Issue label for discovery
+and propose inclusion to the owner; existing Task authority remains intact.
+Installation/update, Task Handoff adoption and this route do not activate it.
+Analysis-only work skips its scan; broader accepted local planning rules remain.
+Its [usage guide](../guides/small-improvements.md) illustrates deliberate adoption
+and separately authorized consumer deduplication. Unrelated tasks skip it.
+
 When a person explicitly requests project onboarding, for example “Onboard this
 project to Shared Governance,” read the [onboarding procedure](../guides/onboarding.md).
 Skip that detail in ordinary sessions and on package install/update alone.
