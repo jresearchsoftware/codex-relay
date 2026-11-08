@@ -222,3 +222,13 @@ bindings as well as package files; `vibe clean` alone is not policy rollback.
 Preserve human overlays and unrelated work. This maintenance path performs no
 external publication, service deployment, client-settings change or protected
 consumer operation.
+
+## ChatGPT Project consumer
+
+Relay's [ChatGPT consumer binding](../chatgpt/README.md) reuses the selected
+Shared Governance generator for human-owned custom text and complete desired
+Instructions, with optional Sources. It consumes accepted committed native
+closure; it does not run a second resolver or change live Project settings.
+Review generated diffs with source changes, then perform owner-controlled live
+reconciliation after acceptance/integration where required. Codex native boot
+and the versioned Relay product bundle retain their existing owners.
