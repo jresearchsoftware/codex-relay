@@ -3,6 +3,7 @@
   "source_repository": "https://github.com/vibevm/vibevm",
   "source_revision": "5e470926ad0f34d61e37d387ce4b7c153356a804",
   "linux_x86_64_musl_binary": {
+    "asset_id": 704909893,
     "url": "https://github.com/vibevm/vibevm/releases/download/v1.0.11/vibe-bootstrap-x86_64-unknown-linux-musl",
     "sha256": "5fe5b3efeb2eab7c7c49a8dc864864ffacac08a9d7be3dc9df0bc0bb15a8bd58"
   }

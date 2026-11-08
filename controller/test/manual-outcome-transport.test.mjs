@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,9 +92,14 @@ test('fixed client CLI rejects extra arguments and oversized streamed input with
   }
 });
 
-test('manual root helper refuses a nonroot caller before Writer access', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+test('manual root helper refuses a nonroot caller before Writer access', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async t => {
   const helper = fileURLToPath(new URL('../src/manual-outcome-helper.mjs', import.meta.url));
-  const config = fileURLToPath(new URL('../../consumer/fixtures/example.json', import.meta.url));
+  const root = await mkdtemp(join(tmpdir(), 'relay-manual-config-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const config = join(root, 'consumer.json');
+  // Source fixtures can be group writable in governed checkouts. The helper
+  // must load a valid private fixture before this test reaches its UID gate.
+  await writeFile(config, await readFile(new URL('../../consumer/fixtures/example.json', import.meta.url)), { mode: 0o600 });
   for (const arguments_ of [[], ['arbitrary-operation']]) {
     const result = spawnSync(process.execPath, [helper, ...arguments_], { input: '{}', encoding: 'utf8',
       env: { PATH: '/usr/bin:/bin', RELAY_CONSUMER_CONFIG: config }, timeout: 5000 });

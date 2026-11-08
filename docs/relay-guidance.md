@@ -10,22 +10,28 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **4.1.0** is a compatible additive candidate for the Task #63 ordinary
-intent-driven installation and private Git-pair Apply guidance. Existing expert
-phases and other consumers' owner-file/checkout paths remain supported. No
-mandatory private repository is imposed on public consumers. The new wording
-adds post-install integration artifacts, same-operation config changes and safe
-cutover boundaries without granting deployment or external policy authority.
-Source support still needs independently accepted compatible product installation
-and qualification; this guidance candidate does not claim PROD cutover.
+Guidance **4.1.1** is a **PATCH** from independently accepted **4.1.0**
+(source main `6fb8fc447fe56d9e5d67dd539d8aad289faf0666`). It corrects the
+manual and example to describe the existing qualified automatic remediation
+route: the owner's PR `codex-ready-auto` command goes through Writer, which
+executes and verifies Draft preparation before admission/worker execution.
+Reviewer publication returns an action, not evidence of its execution. This
+adds no command, mandatory owner operation, protocol or runtime mechanism and
+preserves Relay-admitted manual and genuinely standalone/direct manual paths.
+The classification covers both delivery forms and their unchanged included
+Shared snapshot, installer and dependency contract.
 
-Frozen accepted **4.0.0** registry bytes remain unchanged. The bundled Task
-authority schemas and SERIAL/parallel workflow identities retain their exact
-accepted `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` contract pin; Task #63 changes
-installer composition rather than those protocol identities. Candidate
-installation wording is not a claim that the older pinned product already
-implements the new installer. Native source self-adoption uses a new 4.1.0
-identity and does not publish a package or activate any service.
+Frozen accepted **4.1.0** and earlier registry bytes remain unchanged. The
+bundled Task authority schemas and SERIAL/parallel workflow identities retain
+their exact accepted `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` contract pin;
+this clarification needs no protocol change. Native source self-adoption uses
+4.1.1 without publishing a package or activating a service.
+
+Accepted **4.1.0** added compatible Task #63 intent-driven installation and
+private Git-pair Apply guidance, retaining expert phases and other consumers'
+owner-file/checkout paths. Source support still requires separately accepted
+compatible product installation and qualification; neither that release nor
+4.1.1 establishes private PROD cutover.
 
 Guidance **4.0.0** ships the immutable Shared Governance 5.0.0 standalone
 snapshot and clarifies the existing
@@ -69,7 +75,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 4.1.0 is a candidate. Native source
+release. Before independent acceptance, 4.1.1 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

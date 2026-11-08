@@ -2,9 +2,9 @@
 
 Relay selects Shared Governance **7.0.0** for its project-wide adoption under
 Task [#213](https://github.com/jresearchsoftware/codex-relay/issues/213).
-The unchanged Relay **4.1.0** product selects Shared 5.0.0 for its standalone snapshot and
+Relay **4.1.1** retains Shared 5.0.0 for its standalone snapshot and
 publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
-frozen Relay 4.0.0 and earlier packages retain their original bytes.
+frozen Relay 4.1.0 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
 all nine applicable complete shared topics. The
 [ownership mapping](relay-guidance-ownership.md)
@@ -55,7 +55,7 @@ not actual model traversal or compliance.
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=7.0.0` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=4.1.0`,
+source and exact commit. The native local registry supplies Relay `=4.1.1`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -78,16 +78,17 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 4.1.0 adds the compatible ordinary Git-pair installer guidance and keeps
-expert/other-consumer paths. Its source candidate does not establish private
-PROD activation. Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
+Guidance 4.1.1 is a PATCH clarification of existing automatic Writer Draft
+preparation before remediation, with no new owner operation or runtime route.
+Accepted 4.1.0 added compatible ordinary Git-pair installer guidance and retained
+expert/other-consumer paths; neither version establishes private PROD activation. Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
 the standalone snapshot; see its
 [whole-package classification](relay-guidance.md#version-and-provenance). Guidance 3.1.0
 added compatible explicit manual publication to accepted 3.0.0.
 The earlier 3.0.0 was a major release because it removes the native
 Skill's bundled Shared protocol paths and changes its packaging/routing
 contract, independently of Shared version arithmetic. Frozen first-party
-1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain intact for historical identity
+1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0 and 4.1.0 registry payloads remain intact for historical identity
 and rollback; they are not active requirements. The frozen product exporter uses its
 own Shared 5.0.0 release-evidence slot through the repository build adapter. Earlier Shared selections remain in Git history
 and frozen historical Relay packages. Project version `0.0.0`
@@ -118,6 +119,16 @@ Its upstream `DISTRIBUTIONS.json` SHA-256 is
 manifest `source_commit`, bootstrap component digest, Git tag and actual
 `vibe 1.0.11` output agree. Release assets are mutable upstream, so the exact
 digest remains required. No binary is committed or installed by Relay.
+
+Public CI uses [the credential-free download helper](../scripts/download-vibevm.py)
+with three attempts per endpoint and a 30-second request timeout for transient
+HTTP/transport failures. If the pinned browser download remains unavailable,
+it uses reviewed release asset ID `704909893` through GitHub's anonymous API,
+avoiding the separately observed tag-metadata HTTP 504. The asset ID was verified
+against the exact 1.0.11 release, browser URL and digest. Pins without an asset ID
+still resolve the exact tag and asset; no moving release or alternate host is used.
+Both routes must match the unchanged pinned SHA-256 before writing an executable;
+missing assets, permanent HTTP failures and digest mismatches fail validation.
 
 For 1.0.7 → 1.0.11, the used install/reinstall/validate/check/Skill commands and
 schema-7 lock/slot/boot layout remain compatible. 1.0.8 changes application

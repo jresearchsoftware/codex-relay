@@ -594,9 +594,13 @@ separate workflow or retrospective rewrite of historical Issues.
 A successful native PR `REQUEST_CHANGES` begins the next remediation ownership
 cycle. Both legacy and typed publication receipts carry a bounded
 `pr_lifecycle` Writer action identifying only the PR, native CR review and exact
-head. The owner orchestration channel calls the
+head. For native automatic remediation, the owner's `codex-ready-auto` command on
+the existing PR routes through Writer, which derives and executes that action
+from the verified current native CR before admission or worker reservation. No
+second manual Draft operation is required. The owner orchestration channel can
+also call the
 [Writer lifecycle continuation](../controller/README.md#publication-execution-handoff-and-integration-readiness)
-immediately after publication, before launch or manual remediation handoff.
+directly after publication, before launch or manual remediation handoff.
 Writer independently re-reads current executable authority and verifies Draft
 for that exact target. A failed/uncertain transition stops continuation and is
 recoverable for the same current CR/head. Reviewer remains the review authority

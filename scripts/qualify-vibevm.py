@@ -21,7 +21,7 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "7.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "4.1.0"
+SELF_VERSION = "4.1.1"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -203,9 +203,13 @@ def check_first_party_registry(root, expected):
     frozen_files = files_in(root / frozen)
     require(tree_hash(frozen_files) == "sha256:3e892b02e6f6d3b0b6a1a64840af96b1da91f2af136297cac1bf37b5f326baeb",
             "Frozen accepted 4.0.0 registry changed")
+    installation = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.0")
+    installation_files = files_in(root / installation)
+    require(tree_hash(installation_files) == "sha256:bd1c15a6f15246798eaa66fa434e843eb57db2a4ca084dc79420277d29979385",
+            "Frozen accepted 4.1.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
@@ -239,8 +243,8 @@ def check_first_party(root):
     require(MARKER in installed, "Missing first-party slot metadata")
     marker = tomllib.loads(installed.pop(MARKER).decode())
     source_hash = tree_hash(expected)
-    require(source_hash == "sha256:bd1c15a6f15246798eaa66fa434e843eb57db2a4ca084dc79420277d29979385",
-            "Project-only migration must preserve the frozen Relay 4.1.0 artifact")
+    require(source_hash == "sha256:d9e85f939816b7f048e77f0e5608720498272118a7fecc35cc973fb3c9934730",
+            "First-party export differs from the selected 4.1.1 candidate identity")
     require(installed == expected, "First-party slot differs from generated package export")
     require(type(marker.get("schema")) is int and marker == {
         "schema": 1, "source_hash": source_hash, "spec_format": "mixed",

@@ -7,14 +7,15 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **4.1.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **4.1.1** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
 adopts Shared **7.0.0**, with the exact Git identity in
-[the identity contract](vibevm.md#selected-immutable-identities). The unchanged Relay product selects its own 5.0.0 snapshot for standalone and
+[the identity contract](vibevm.md#selected-immutable-identities). The Relay product retains its own 5.0.0 snapshot for standalone and
 publisher closure evidence, retaining the native `>=2.5.0` floor and frozen
-historical releases. The root migration prepares no new Skill release.
+historical releases. The earlier root Shared migration prepared no Skill release; Task #217
+prepares the 4.1.1 workflow clarification.
 
 The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
 changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4
@@ -26,9 +27,11 @@ and selected Shared slot through `references/shared-protocols.md`. Standalone
 includes a self-contained immutable Shared 5.0.0 snapshot, so the complete
 Skill trees differ while retaining the same product contract. Frozen accepted
 1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain unchanged.
-The compatible 4.1.0 candidate adds Task #63 installation guidance with retained
-expert paths; it does not claim that private PROD cutover has occurred. Source acceptance does
-not imply external publication or another consumer's adoption.
+Accepted 4.1.0 added compatible Task #63 installation guidance with retained
+expert paths. The 4.1.1 PATCH clarifies existing Writer Draft preparation for
+automatic remediation; it adds no owner action or runtime route. Neither version
+claims private PROD cutover. Source acceptance does not imply external publication
+or another consumer's adoption. Frozen 4.1.0 registry bytes remain unchanged.
 
 ## Accepted-source binding and ordinary use
 
@@ -39,8 +42,8 @@ references. Ordinary use needs no materializer, Python, registry, cache, network
 or additional owner command. Checkout/pull advances the accepted ready files.
 
 Relay's execution binding identifies the independently accepted source commit,
-separately from candidate root/nested AGENTS, boot and Skills. Task #213's execution freezes accepted Relay source
-`e4f2b61fc50219a997c5f8c31494dc4cc2a1446a` before candidate edits;
+separately from candidate root/nested AGENTS, boot and Skills. Task #217's execution freezes independently accepted Relay source
+`6fb8fc447fe56d9e5d67dd539d8aad289faf0666` before candidate edits;
 the unchanged Skill product-contract baseline remains
 `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
@@ -77,9 +80,9 @@ and separately validates the root consumer lock/slot. Native install prunes the
 obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.1`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0` or `v4.0.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0` or `v4.1.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

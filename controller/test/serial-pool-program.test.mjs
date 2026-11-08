@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { copyFile, readFile, rm } from 'node:fs/promises';
+import { chmod, copyFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { historicalProgram, originalProgram } from '../src/serial-pool-program.mjs';
@@ -207,8 +207,12 @@ test('real archived Writer broker reads and replays the original envelope in its
 
 test('retained release containing the adapter verifies its exact graph before preserving original SERIAL context', { skip: !linux }, async t => {
   const f = await serialPoolFixture(t);
-  for (const name of ['serial-pool-compatibility.mjs', 'transition-timing.mjs'])
-    await copyFile(join(moduleRoot, 'controller/src', name), join(f.sourceRoot, 'controller/src', name));
+  for (const name of ['serial-pool-compatibility.mjs', 'transition-timing.mjs']) {
+    const destination = join(f.sourceRoot, 'controller/src', name);
+    await copyFile(join(moduleRoot, 'controller/src', name), destination);
+    // Model the protected installed source, regardless of checkout modes.
+    await chmod(destination, 0o644);
+  }
   f.receipt.original.sourceTreeSha256 = await protectedSourceTreeSha256(f.sourceRoot, f.options);
   await f.write(f.receiptPath, f.receipt, 0o644);
   await assert.rejects(loadSerialPoolCompatibility({ ...f.options, consumerPath: f.oldConsumerPath, consumer: undefined }),

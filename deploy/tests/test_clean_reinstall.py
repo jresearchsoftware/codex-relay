@@ -355,7 +355,9 @@ def add_execution_slot(value):
     (runner / '.runner').write_text('preserved exact slot registration')
     (runner / '.credentials').write_text('protected slot credential fixture')
     uid = next(iter(value.user_ids.values()))
-    os.chown(runner, uid, uid)
+    if os.getuid() == 0:
+        os.chown(runner, uid, uid)
+    assert runner.stat().st_uid == uid
     for name in [slot['runnerUser'], slot['runtimeUser']]:
         value.user_ids[name] = uid
     (value.root / 'etc/systemd/system' / unit).write_text(

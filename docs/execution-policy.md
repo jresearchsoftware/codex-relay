@@ -118,12 +118,16 @@ untested deployment or erase an external prerequisite. Fresh real Relay
 executions still require genuine native admission and preserve original events.
 
 A shared disposable TEST installation has at most one owner Task at a time.
-Establish its allocation before use, return it to normal working TEST state
-and release ownership on handback. Competing Tasks wait or report BLOCKED.
+Before use, atomically claim the [shared TEST marker](test-environment-lock.md).
+The claim is sufficient allocation within existing TEST authority; no separate
+owner assignment is required. Return TEST to usable state and release the exact
+execution's claim on completion or handled failure. A competitor reports BLOCKED
+with the holder and does not access TEST; no queue or silent takeover.
 The owner Task may recreate its dedicated sandbox without preserving its
 preexisting disposable state or requesting permission for each operation;
-preserve evidence required by the qualification being performed. An atomic
-lease or semaphore is unnecessary unless actual concurrent demand warrants it.
+preserve evidence required by the qualification being performed. Interrupted
+ownership remains visible until its holder is confirmed stopped and TEST is
+usable; age alone never authorizes recovery.
 
 Within the sandbox, Codex may choose suitable tools and shells, manage services,
 edit or remove filesystem state, delete and recreate resources, rebuild,

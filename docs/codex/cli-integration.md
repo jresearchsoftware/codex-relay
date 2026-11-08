@@ -1,6 +1,6 @@
 # Governed Codex CLI integration
 
-Relay qualifies an exact **0.160.0** installation, selected by the product
+Relay qualifies an exact **0.167.0** installation, selected by the product
 deployment contract. Installation still uses `--release` and verifies the exact
 version. Runtime and installation never follow a floating latest or self-update.
 Routine source maintenance follows the separate development policy below.
@@ -8,13 +8,14 @@ Routine source maintenance follows the separate development policy below.
 ## Relay development maintenance policy
 
 This owner-approved policy applies to development of Relay itself, not arbitrary
-downstream consumer repositories. After independent acceptance of this rule
-change (Task #211), the next Relay product-changing Task whose completion
-includes an ordinary Apply must follow the routine process below. No additional
-maintenance Issue, Step, label, command or permission request is needed for a
-compatible bump. This rules-only Task changes no CLI version or feature flags;
-source-controlled development instructions need no Apply, package release or
-synthetic PROD job merely to take effect after acceptance.
+downstream consumer repositories. When implementing a Relay product change that
+will require a subsequent owner-controlled Apply after accepted merge, follow
+the routine process below, even when Apply is not a Task completion action.
+Documentation-only changes do not trigger this maintenance. Implementation,
+independent source acceptance and owner-performed Apply remain separate; this
+policy grants no deployment authority. No additional maintenance Issue, Step,
+label, command or permission request is needed for a compatible bump. Source-controlled development instructions need no Apply,
+package release or synthetic PROD job merely to take effect after acceptance.
 
 ### Routine technical version maintenance
 
@@ -41,8 +42,9 @@ When a newer stable candidate preserves that integration and passes applicable
 compatibility qualification, update the selected dependency and directly required
 version references in the same Task and PR. Preserve reproducible exact pinning,
 installation integrity and normal independent review of the exact result head.
-Use the Task's already authorized deployment path; do not self-update an executing
-worker, autonomously mutate PROD or add an Apply solely for a maintenance note.
+Any later Apply uses its separately owner-authorized deployment path; do not
+self-update an executing worker, autonomously mutate PROD or add an Apply to the
+Task solely for maintenance.
 
 If the candidate is incompatible, qualification is unavailable or checking
 upstream fails, retain the previously qualified version and disclose the reason.
@@ -61,7 +63,7 @@ every technical upgrade. Maintain these distinct facts in their existing owners:
 
 | Fact | Current evidence and owner |
 | --- | --- |
-| Selected/qualified CLI dependency | Exact **0.160.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
+| Selected/qualified CLI dependency | Exact **0.167.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
 | Capabilities reviewed through version X | **Unknown / not yet established.** The accepted integration evidence below establishes bounded compatibility and selected capability decisions, not a complete historical review interval. No evidenced reviewed-through version or review date is established here. |
 | Installed-host version | A separate observed fact from the specific host's installation/version evidence; neither source selection nor capability review proves it. |
 
@@ -94,6 +96,19 @@ changed or larger improvements remain in linked, unimplemented Issues;
 follow-up implementation is not a prerequisite to completing the review. Do not
 advance it for an unexamined or materially incomplete interval. Retain factual
 historical qualification and its limits when updating current facts.
+
+## Task 217 routine maintenance
+
+On 2026-11-08, one official stable comparison froze **0.167.0** (released
+2026-11-06) against **0.160.0**. The bounded version-bound source assessment,
+official installer/loopback CLI probe and affected launcher/result tests support
+updating the exact selected dependency to 0.167.0 in the same PR. See the
+[qualification evidence](../qualification/task-217-cli-maintenance.md) for the
+exact sources, observed behavior, environment accommodations and limits.
+This is routine compatibility maintenance, not a periodic capability audit;
+the reviewed-through baseline remains unknown. Historical 0.160.0 evidence
+below retains its original version binding. Source acceptance proves no installed
+host update or Apply; those remain separately owner-controlled.
 
 ## Established baseline
 

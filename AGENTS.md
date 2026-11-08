@@ -212,10 +212,13 @@ CI, shared or cloud execution.
 
 ## Work within the admitted goal
 
-For Relay product-changing Tasks whose completion includes an ordinary Apply,
-check routine Codex CLI maintenance once per implementation cycle under the
+For Relay product changes that will require a subsequent owner-controlled Apply
+after accepted merge, check routine Codex CLI maintenance once per implementation
+cycle under the
 [CLI maintenance policy](docs/codex/cli-integration.md#relay-development-maintenance-policy).
-Compatible bumps belong in the same Task/PR under that standing authority;
+This applies even when Apply is not a Task completion action and grants no Apply
+authority. Compatible bumps belong in the same Task/PR under that standing
+authority;
 periodic capability review is a separate owner-selected process. This is Relay
 development policy, not a downstream consumer requirement.
 

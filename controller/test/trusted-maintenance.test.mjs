@@ -14,7 +14,7 @@ test('trusted fetch finishes without detached maintenance before checkout access
   const trace = join(f.root, 'git-events.jsonl');
   // Trace2 reads its destination before command-line/local config. A test-only
   // shim sets the trace after the production helper filters its environment.
-  const executable = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const executable = execFileSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
   const bin = join(f.root, 'bin'); await mkdir(bin);
   const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
   await writeFile(join(bin, 'git'), `#!/bin/sh\nexport GIT_TRACE2_EVENT=${quote(trace)}\nexec ${quote(executable)} "$@"\n`, { mode: 0o755 });
