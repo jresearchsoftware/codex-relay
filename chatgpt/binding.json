@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "repository": "jresearchsoftware/codex-relay",
+  "navigation_ref": "main",
+  "mode": "orchestration-review",
+  "role": "ChatGPT assists owner planning, orchestration and independent assessment; Codex implements within its admitted execution.",
+  "permissions": ["discussion", "assessment", "orchestration", "authorized-publication", "authorized-integration", "authorized-continuation"],
+  "native": "materialized",
+  "local_sources": [
+    "docs/relay-guidance-ownership.md",
+    "packages/codex-relay/skill/SKILL.md",
+    "packages/codex-relay/skill/references/workflow.md"
+  ],
+  "character_budget": 8000,
+  "cache_enabled": false,
+  "cache_selection": []
+}
