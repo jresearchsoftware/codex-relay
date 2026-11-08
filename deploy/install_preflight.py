@@ -408,7 +408,7 @@ class PreparedInstall:
                     and type(report['version']) is int and report['version'] == 1
                     and report['status'] == 'FAIL' and isinstance(report['error_code'], str)
                     and re.fullmatch(r'HOST_[A-Z_]{1,100}', report['error_code'])
-                    and isinstance(report['resource'], str) and re.fullmatch(r'[a-z0-9][a-z0-9_.:-]{0,127}', report['resource'])
+                    and isinstance(report['resource'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', report['resource'])
                     and isinstance(report['next_action'], str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,159}', report['next_action'])):
                 error = RuntimeError(report['error_code'])
                 error.resource = report['resource']

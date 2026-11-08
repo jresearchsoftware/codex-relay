@@ -22,6 +22,38 @@ export function terminalAdmissionOutcome(record) {
     && (outcome.prNumber === null || positive(outcome.prNumber))
     && (!Object.hasOwn(outcome, 'bodySha256') || configDigest(outcome.bodySha256)));
 }
+// Writer stores this refusal before reserving any executable admission and
+// before commentOnce reserves a native publication. Missing Outcome alone is
+// not an external effect; any execution/result/publication progress is distinct.
+export async function preAdmissionRefusalHasNoPendingEffects(record, { journal } = {}) {
+  const e = record?.envelope, block = record?.admissionBlock;
+  if (!e || e.version !== VERSION || !positive(e.runId) || e.attemptId !== `run-${e.runId}`
+    || !['auto', 'manual'].includes(e.route) || !['issue', 'pull_request'].includes(e.target) || !positive(e.number)
+    || !block || typeof block !== 'object' || Array.isArray(block) || !e.admissionBlock
+    || !/^[A-Z][A-Z0-9_]{0,79}$/.test(block.code ?? '')
+    || canonicalAuthorityJson(block) !== canonicalAuthorityJson(e.admissionBlock)
+    || e.request || e.branch !== null || e.startHead !== null || e.authorityDigest !== null
+    || record.outcome !== undefined && record.outcome !== null
+    || record.handoffComplete !== undefined && record.handoffComplete !== null
+    || record.prNumber !== undefined && record.prNumber !== null
+    || attemptHasPendingPublicationEffects(record)
+    || ['controllerLifecycle', 'prIntent', 'manualSubmission', 'manualResultAuthorization',
+      'publishedHead', 'finalHead', 'prepublicationRecovery', 'publicationRecoveries', 'collection', 'execution']
+      .some(key => Boolean(record[key]))
+    || record.commentBodies !== undefined && record.commentBodies !== null
+      && (typeof record.commentBodies !== 'object' || Array.isArray(record.commentBodies)
+        || Object.keys(record.commentBodies).length !== 0)) return false;
+  return Boolean(journal) && !await journal.get(e.runId, e.repository);
+}
+export async function admissionRefusalHasConflictingActivity(record, { journal } = {}) {
+  if (await preAdmissionRefusalHasNoPendingEffects(record, { journal })) return false;
+  return !terminalAdmissionOutcome(record) || record.handoffComplete === false
+    || attemptHasPendingPublicationEffects(record)
+    || ['controllerLifecycle', 'prIntent', 'manualSubmission', 'manualResultAuthorization',
+      'publishedHead', 'finalHead', 'prepublicationRecovery', 'publicationRecoveries', 'collection', 'execution']
+      .some(key => Boolean(record[key]))
+    || Boolean(journal && await journal.get(record.envelope.runId, record.envelope.repository));
+}
 export function activeControllerReservation(record) {
   return record?.controllerLifecycle?.version === 1 && record.controllerLifecycle.status === 'active' && !record.outcome;
 }
@@ -342,10 +374,14 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         continue;
       }
       if (e.route !== 'auto') continue;
-      if (resourceOnly && record.admissionBlock) continue;
       if (resourceOnly) {
         let released;
-        try { released = await resourceReleased(record); }
+        try {
+          // A refusal reserves no worker. Publication-only uncertainty holds its
+          // native effect, while contradictory execution evidence holds the slot.
+          released = record.admissionBlock && !record.controllerLifecycle
+            && !await journal.get(e.runId, e.repository) ? true : await resourceReleased(record);
+        }
         catch (error) {
           throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE'), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
             details: { conflictingRunId: e.runId, repository: e.repository, resource: slot,
@@ -362,7 +398,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         continue;
       }
       if (record.admissionBlock) {
-        if (!terminalAdmissionOutcome(record) || record.handoffComplete === false) unknown.push(e.runId);
+        if (await admissionRefusalHasConflictingActivity(record, { journal })) unknown.push(e.runId);
         continue;
       }
       const recovery = record.prepublicationRecovery;

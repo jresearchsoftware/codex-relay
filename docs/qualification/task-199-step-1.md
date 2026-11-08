@@ -43,6 +43,14 @@ still unknown. The candidate writes no cancellation, negative-start proof,
 fictional Outcome or historical acknowledgement. Completed records, native
 authority, original source and recovery identities are not rewritten or deleted.
 
+The same distinction covers a matched pre-admission refusal: Writer records it
+before reserving executable authority and persists native comment intent before
+POST. A refusal with neither execution/result progress nor publication/journal
+effects is idle even when its terminal Outcome was never published. Actual
+pending effects remain blocking. Qualification includes retained classifiers
+from both the accepted baseline and a committed candidate, because fixtures
+that archive Git HEAD must exercise both source identities.
+
 The current and preserved original SERIAL classifiers both retain pending
 relationship/readiness/success-Outcome/ready-consumption effects. Malformed
 terminal receipts remain unresolved. Physical containment/collection can release
@@ -85,6 +93,16 @@ mount namespace supplies ordinary tmpfs `/tmp` semantics for the final tests
 without changing the workstation's global directory or weakening assertions.
 Root-dependent skips and any remaining installed/client limitations must be
 reported with the final result.
+
+The actual idle TEST upgrade exposed an existing host-preflight false refusal
+for the native Actions Runner updater's same-instance `bin.2.338.2` alias on
+primary and pool-2. The candidate reuses the existing Runner package helper's
+real-file boundary only for configured Listener entrypoints, observes alias and
+resolved metadata for final revalidation, and keeps general parent-alias refusal.
+It also preserves the bounded uppercase logical resource name in the installer
+diagnostic. The initial failures occurred before host mutation; no Runner files
+or permissions were changed to make the check pass. Root Linux regression tests
+cover safe aliases, redirection/ownership/mode failures and standalone `-I` use.
 
 Generated ChatGPT Instructions differ. Generation and a subsequent NO_OP check
 do not prove live Settings application. TH-029 reconciliation remains an

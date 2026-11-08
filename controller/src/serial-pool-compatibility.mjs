@@ -406,8 +406,31 @@ export async function invokeOriginalReader(context, { operation, envelope, task 
   // retained journal cannot occupy a distinct managed slot merely because it
   // is unavailable or has unresolved logical publication.
   if (operation === 'inventory' && slot !== null && slot !== 'primary') return { active: [], unknown: [] };
-  if (operation === 'inventory') await readProtectedStore(verified, verified.original.storeRoot);
-  return originalCall(verified, { operation, envelope, task, slot, resourceOnly }, settings.get(verified));
+  const records = operation === 'inventory' ? await readProtectedStore(verified, verified.original.storeRoot) : null;
+  const result = await originalCall(verified, { operation, envelope, task, slot, resourceOnly }, settings.get(verified));
+  if (records) {
+    const { preAdmissionRefusalHasNoPendingEffects, admissionRefusalHasConflictingActivity } = await import('./admission-control.mjs');
+    const journal = createAttemptStore(physical(verified.root, verified.originalConsumer.paths.attemptRoot),
+      { repository: verified.receipt.repository });
+    const idleRefusals = new Set(), unknown = new Set(result.unknown);
+    for (const record of records) {
+      const e = record.envelope;
+      if (!record.admissionBlock || task !== null && e.issueNumber !== task
+        || slot !== null && slot !== 'primary') continue;
+      if (resourceOnly) {
+        if (!record.controllerLifecycle && !await journal.get(e.runId, e.repository)) idleRefusals.add(e.runId);
+        else unknown.add(e.runId);
+        continue;
+      }
+      if (await preAdmissionRefusalHasNoPendingEffects(record, { journal })) idleRefusals.add(e.runId);
+      else if (await admissionRefusalHasConflictingActivity(record, { journal })) unknown.add(e.runId);
+    }
+    // Old classifiers can require a terminal Outcome even before the Writer
+    // reserved a publication. Remove only this proven no-effect refusal shape;
+    // original validation, active work and every uncertain effect stay intact.
+    return { ...result, unknown: [...unknown].filter(runId => !idleRefusals.has(runId)).sort((a, b) => a - b) };
+  }
+  return result;
 }
 
 async function verifyOriginalStoreOwnership(context) {

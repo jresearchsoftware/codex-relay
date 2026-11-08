@@ -327,3 +327,27 @@ test('malformed lifecycle terminal receipts cannot release either current or old
   const { record } = automatic(); delete record.outcome.bodySha256; await f.store.put(31, record);
   await f.old.checkConsumerTransition({ operationId, target });
 });
+
+
+test('an exact pre-admission refusal remains idle without an Outcome while real effect progress still blocks', async t => {
+  const f = await setup(t), admissionBlock = { code: 'OWNER_DECISION_REQUIRED' };
+  const refused = { envelope: { ...automatic().record.envelope, repository: 'example/sample', issueNumber: 42,
+    target: 'issue', number: 42, request: null, branch: null, startHead: null, authorityDigest: null, admissionBlock },
+    admissionBlock, outcome: null, readyConsumption: { status: 'consumed' } };
+  await f.store.put(31, refused);
+  assert.deepEqual((await f.old.status()).unknown, []); await f.old.checkConsumerTransition({ operationId, target });
+  for (const fields of [
+    { commentIntent: { key: 'outcome' } }, { prIntent: true }, { handoffComplete: false },
+    { readyConsumption: { status: 'uncertain' } }, { outcome: {} },
+    { controllerLifecycle: { version: 1, status: 'active' } },
+    { envelope: { ...refused.envelope, admissionBlock: { code: 'DIFFERENT_REFUSAL' } } }
+  ]) {
+    await f.store.put(31, { ...refused, ...fields });
+    assert.deepEqual((await f.old.status()).unknown, [31]);
+    await assert.rejects(f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest }),
+      { code: 'ADMISSION_NOT_DRAINED' });
+  }
+  await f.store.put(31, refused);
+  await f.next.transitionConsumer({ operationId, target, previousDigest: oldDigest });
+  assert.deepEqual(await f.store.get(31), refused); assert.deepEqual(await f.journal.all(), []);
+});

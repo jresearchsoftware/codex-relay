@@ -65,6 +65,7 @@ def target(tmp_path):
     for relative in ['deploy/ansible/roles/relay_runtime/files/relay-app-qualification.py',
                      'deploy/ansible/tools/tls-source-validate.py', 'deploy/ansible/tools/tls-webroot-bootstrap.py',
                      'deploy/ansible/tools/bootstrap_guard.py', 'deploy/managed_pool.py',
+                     'deploy/ansible/roles/relay_runner/files/relay-intent-package.py',
                      'deploy/ansible/roles/relay_runner/templates/relay-managed-pool.service.j2']:
         source = DEPLOY.parent / relative
         write('/candidate/' + relative, source.read_bytes(), 0o644)
@@ -95,6 +96,77 @@ def target(tmp_path):
         return host.inspect_inputs(values, '/candidate', **arguments)
     return {'root': root, 'values': values, 'users': users, 'groups': groups, 'path': path, 'write': write,
             'inspect': inspect, 'apps': observed, 'services': services, 'execute': execute}
+
+
+def native_runner_alias(f, spelling='relative'):
+    runner = host.runner_targets(f['values'])[0]
+    root = f['path'](runner['root']); versioned = root / 'bin.2.338.2'
+    versioned.mkdir(parents=True)
+    uid = f['users'][runner['user']]['uid']
+    os.chown(versioned, uid, uid)
+    listener = versioned / 'Runner.Listener'; listener.write_bytes(b'synthetic runner'); listener.chmod(0o755)
+    os.chown(listener, uid, uid)
+    alias = root / 'bin'
+    alias.symlink_to('bin.2.338.2' if spelling == 'relative' else runner['root'] + '/bin.2.338.2', target_is_directory=True)
+    os.lchown(alias, uid, uid)
+    return runner, alias, versioned, listener, uid
+
+
+@pytest.mark.parametrize('spelling', ['relative', 'absolute'])
+def test_native_runner_alias_is_readonly_observed_and_limited_to_runner_listener(target, spelling):
+    f = target
+    runner, alias, versioned, listener, uid = native_runner_alias(f, spelling)
+    before = snapshot(f['root'])
+    first = f['inspect'](); second = f['inspect']()
+    assert first == second and snapshot(f['root']) == before
+    with pytest.raises(host.HostPreflightError, match='HOST_DESTINATION_PARENT_UNSAFE'):
+        host.Probe(f['root'], 0).inspect('ordinary-managed-path', runner['root'] + '/bin/Runner.Listener')
+    alias.unlink(); alias.symlink_to('bin.2.338.2'); os.lchown(alias, uid, uid)
+    assert f['inspect']()['observedSha256'] != first['observedSha256']
+    first = f['inspect']()['observedSha256']
+    listener.write_bytes(b'changed synthetic runner')
+    assert f['inspect']()['observedSha256'] != first
+
+
+@pytest.mark.parametrize('change', ['escape', 'foreign-absolute', 'nonversioned', 'owner', 'directory-owner',
+                                  'listener-owner', 'writable-directory', 'writable-listener',
+                                  'redirected-listener', 'redirected-directory'])
+def test_native_runner_alias_rejects_unsafe_layout(target, change):
+    f = target
+    runner, alias, versioned, listener, uid = native_runner_alias(f)
+    if change in ('escape', 'foreign-absolute', 'nonversioned'):
+        alias.unlink()
+        alias.symlink_to({'escape': '../bin.2.338.2', 'foreign-absolute': '/foreign/bin.2.338.2',
+                          'nonversioned': 'current'}[change])
+        os.lchown(alias, uid, uid)
+    elif change == 'owner': os.lchown(alias, 0, 0)
+    elif change == 'directory-owner': os.chown(versioned, 0, 0)
+    elif change == 'listener-owner': os.chown(listener, 0, 0)
+    elif change == 'writable-directory': versioned.chmod(0o777)
+    elif change == 'writable-listener': listener.chmod(0o777)
+    elif change == 'redirected-listener':
+        other = versioned / 'other'; other.write_bytes(b'other')
+        listener.unlink(); listener.symlink_to('other')
+    elif change == 'redirected-directory':
+        listener.unlink(); versioned.rmdir(); versioned.symlink_to('foreign')
+    with pytest.raises(host.HostPreflightError, match='HOST_RUNNER_NATIVE_LAYOUT_UNSAFE|HOST_CREDENTIAL_OWNER_INVALID'):
+        f['inspect']()
+
+
+def test_native_runner_layout_qualification_loads_without_python_module_search_path(target):
+    f = target
+    runner, alias, versioned, listener, uid = native_runner_alias(f)
+    program = """import importlib.util,sys,json
+from pathlib import Path
+s=importlib.util.spec_from_file_location('host_probe',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+p=m.Probe(Path(sys.argv[2]),0)
+p.inspect_runner_listener('configured-runner',sys.argv[3],int(sys.argv[4]),'/candidate')
+print(json.dumps({'status':'PASS','observations':len(p.observed)}))
+"""
+    result = subprocess.run(['/usr/bin/python3', '-I', '-B', '-c', program, str(DEPLOY / 'host_preflight.py'),
+                             str(f['root']), runner['root'], str(uid)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['status'] == 'PASS'
 
 
 def test_all_selected_app_repositories_and_readonly_stable_receipt(target):

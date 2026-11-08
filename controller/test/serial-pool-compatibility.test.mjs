@@ -200,7 +200,7 @@ test('declared aliases require the protected root owner even when target bytes m
     await assert.rejects(protectedSourceTreeSha256(sourceRoot, options), { code: 'SERIAL_POOL_COMPATIBILITY_SOURCE_LINK_INVALID' });
   });
 
-test('original complete/legacy/manual/partial blocked records retain their exact context and bytes', { skip: !linux }, async t => {
+test('original complete/legacy/manual/unexecuted refusal records retain their exact context and bytes', { skip: !linux }, async t => {
   const f = await fixture(t); const before = await readFile(f.gatePath); const ctx = await f.load();
   const inventory = await invokeOriginalReader(ctx, { operation: 'inventory' });
   assert.deepEqual(inventory.active, []); assert.deepEqual(inventory.unknown, []);
@@ -396,4 +396,31 @@ test('original SERIAL pending publication effects hold lifecycle while contained
   await f.originalStore.put(99, f.records[0]);
   await gate.checkConsumerTransition({ operationId, target });
   assert.equal((await gate.drained({ operationId })).drained, true);
+});
+
+
+test('a retained pre-admission refusal is idle only before any execution or publication effect', { skip: !linux }, async t => {
+  const f = await fixture(t); const ctx = await f.load();
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, []);
+  const refused = structuredClone(f.records[2]);
+  assert.equal(refused.outcome, null);
+  const before = await readFile(join(ctx.original.storeRoot, '101.json'));
+  for (const mutate of [
+    record => { record.outcome = {}; }, record => { record.handoffComplete = false; },
+    record => { record.prIntent = true; }, record => { record.controllerLifecycle = { version: 1, status: 'active' }; },
+    record => { record.commentIntent = { key: 'outcome' }; }, record => { record.readyConsumption = { status: 'uncertain' }; },
+    record => { record.commentBodies = { outcome: { number: 43, sha256: 'a'.repeat(64), rendererVersion: 'human-v1' } }; }
+  ]) {
+    const pending = structuredClone(refused); mutate(pending); await f.originalStore.put(101, pending);
+    assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, [101]);
+    assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory', resourceOnly: true, slot: 'primary' })).unknown,
+      pending.controllerLifecycle ? [101] : []);
+  }
+  await f.originalStore.put(101, refused);
+  await f.journal.put(101, { version: 2, envelope: refused.envelope, execution: { reserved: true, returned: false } });
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, [101]);
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory', resourceOnly: true, slot: 'primary' })).unknown, [101]);
+  await rm(join(f.at(f.currentConsumer.paths.attemptRoot), '101.json'));
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, []);
+  assert.deepEqual(await readFile(join(ctx.original.storeRoot, '101.json')), before);
 });

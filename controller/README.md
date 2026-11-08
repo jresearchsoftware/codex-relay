@@ -553,6 +553,12 @@ historical-disposition adapter remains available for explicit diagnosis; normal
 installed admission/status/transition does not construct its native reader or
 cache, and GitHub availability or reopening an old Task cannot block idle Apply.
 
+A matched pre-admission refusal with no executable admission, journal, lifecycle,
+result progress or native mutation intent is also idle without inventing an
+Outcome. Writer reserves comment intent before POST, so absent terminal history
+is distinct from an unresolved send. Existing native effects and contradictory
+worker evidence retain their holds, including through the original SERIAL reader.
+
 The root helper also exposes the read-only
 `consumer-transition-preflight --desired-digest SHA256` observation. It works
 independently of the current lifecycle phase and returns the current/desired

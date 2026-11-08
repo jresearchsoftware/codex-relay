@@ -87,8 +87,10 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   const terminal = { envelope: envelope(99), outcome,
     controllerLifecycle: { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' } };
   const manual = { envelope: envelope(100, { route: 'manual' }) };
+  const admissionBlock = { code: 'OWNER_DECISION_REQUIRED' };
   const blocked = { envelope: { version: 2, repository: originalConsumer.repository, consumerDigest: oldDigest,
-    runId: 101, attemptId: 'run-101', route: 'auto', issueNumber: 43 }, admissionBlock: { code: 'OWNER_DECISION_REQUIRED' } };
+    runId: 101, attemptId: 'run-101', route: 'auto', issueNumber: 43, target: 'issue', number: 43,
+    branch: null, startHead: null, authorityDigest: null, admissionBlock }, admissionBlock, outcome: null };
   const legacy = { envelope: envelope(102), outcome };
   const records = [terminal, manual, blocked, legacy];
   const originalStore = createAttemptStore(join(claimRoot, 'publication-v2'), { repository: originalConsumer.repository });
