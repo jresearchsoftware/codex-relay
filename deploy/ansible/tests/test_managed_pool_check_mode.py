@@ -60,8 +60,11 @@ def member(tmp_path):
         'ansible_remote_tmp': str(tmp_path / 'remote-tmp'),
     }
     tasks = yaml.safe_load(MEMBER_TASKS.read_text())
-    # Only relocate the fixed unit destination/template and its root ownership.
+    # Relocate the fixed unit destination/template and its root ownership.
+    # A development login may not have the installed runner's same-name group.
     # All task ordering, conditions, modules and package verification stay real.
+    directories = next(task['ansible.builtin.file'] for task in tasks if 'ansible.builtin.file' in task)
+    directories['group'] = os.getgid()
     unit = next(task['ansible.builtin.template'] for task in tasks if 'ansible.builtin.template' in task)
     unit.update(src=str(TEMPLATE), dest=str(units / 'synthetic-pool-1.service'),
                 owner=os.getuid(), group=os.getgid())

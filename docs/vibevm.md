@@ -119,6 +119,13 @@ manifest `source_commit`, bootstrap component digest, Git tag and actual
 `vibe 1.0.11` output agree. Release assets are mutable upstream, so the exact
 digest remains required. No binary is committed or installed by Relay.
 
+Public CI uses [the credential-free download helper](../scripts/download-vibevm.py)
+with three attempts per endpoint and a 30-second request timeout for transient
+HTTP/transport failures. If the pinned browser download remains unavailable,
+it resolves the same tag and asset through GitHub's anonymous release API.
+Both routes must match the unchanged pinned SHA-256 before writing an executable;
+missing assets, permanent HTTP failures and digest mismatches fail validation.
+
 For 1.0.7 → 1.0.11, the used install/reinstall/validate/check/Skill commands and
 schema-7 lock/slot/boot layout remain compatible. 1.0.8 changes application
 installer/launcher/index contracts and adds optional `required_by`; this passive

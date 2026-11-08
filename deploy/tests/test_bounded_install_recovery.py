@@ -305,6 +305,10 @@ class Incident:
 
 @pytest.fixture
 def incident():
+    # Importing this fixture does not import this module's pytestmark. Keep the
+    # native privilege boundary when another test module reuses the fixture.
+    if sys.platform != 'linux' or os.geteuid() != 0:
+        pytest.skip('root/native Linux retained-operation process and filesystem qualification')
     if not NODE.is_file():
         pytest.skip('set RELAY_QUALIFIED_NODE to a qualified Node 22 executable')
     assert subprocess.check_output([str(NODE), '--version'], text=True).startswith('v22.')

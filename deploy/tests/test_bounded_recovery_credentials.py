@@ -13,7 +13,7 @@ import bounded_recovery as recovery
 
 
 @pytest.fixture
-def credentials(tmp_path):
+def credentials(tmp_path, monkeypatch):
     namespace = 'bounded-credential-fixture'
     config = {'environment': {'namespace': namespace, 'reviewerUser': pwd.getpwuid(os.geteuid()).pw_name},
               'consumer': {'paths': {}}}
@@ -21,6 +21,13 @@ def credentials(tmp_path):
     directory.mkdir(parents=True)
     path = directory / 'github-app.env'
     path.write_bytes(b'SYNTHETIC_NON_SECRET=fixture\n')
+    # Installed reviewers have a same-name group; development logins may use a
+    # differently named primary group. Supply that installed NSS fixture while
+    # retaining the real file's owner and group for the credential checks.
+    reviewer = config['environment']['reviewerUser']
+    lookup = grp.getgrnam
+    reviewer_group = grp.struct_group((reviewer, 'x', path.stat().st_gid, []))
+    monkeypatch.setattr(grp, 'getgrnam', lambda name: reviewer_group if name == reviewer else lookup(name))
     return config, path
 
 
