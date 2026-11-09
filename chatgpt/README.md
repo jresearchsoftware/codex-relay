@@ -1,7 +1,7 @@
 # Relay's ChatGPT Project Instructions
 
 This directory is Relay's consumer binding for the accepted Shared Governance
-7.0.0 generator. It is repository guidance, not a new Relay Skill release or
+7.0.1 generator. It is repository guidance, not a new Relay Skill release or
 runtime change. The [Task 101 Decision](https://github.com/jresearchsoftware/codex-relay/issues/101#issuecomment-6718773565)
 authorizes this integration. Candidate files do not govern their own execution
 or review. Source acceptance, live settings application and Task completion are
@@ -21,7 +21,7 @@ the generator nor duplicates the product bundle owned by Task 91.
 Use Python 3.11+ and Git only at maintenance time. Ordinary chats read accepted
 files through supported GitHub capabilities. No VibeVM binary, new registry,
 background service or per-message integrity check is required. Read the
-[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/tools/chatgpt/README.md)
+[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/README.md)
 for input validation, exit codes, exact diffs and cache removal behavior.
 
 First establish the independently accepted exact source and authority through
@@ -30,7 +30,7 @@ the current Task/review and Git evidence. Freeze that source for the effort;
 from the repository root (replace both placeholders with verified values):
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/tools/chatgpt/project.py update \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py update \
   --repository . --binding chatgpt/binding.json \
   --accepted-sha <accepted-full-SHA> --authority-anchor <current-authority-URL>
 ```
@@ -97,7 +97,7 @@ Instructions text or selected Sources need owner action.
 For an owner-provided export, exact comparison is available without UI writes:
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/tools/chatgpt/project.py compare \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py compare \
   --repository . --binding chatgpt/binding.json --live-export /path/to/owner-export.md --live-format raw
 ```
 

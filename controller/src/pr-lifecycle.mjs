@@ -1,6 +1,5 @@
-import { assertPr, currentReview, linkedIssue, readAuthority, revalidateAuthority } from './live-authority.mjs';
-import { currentStep } from './step-metadata.mjs';
-import { digest, exactSha, fail, positive, validateEnvelope, NATIVE_VALIDATIONS, OWNER, REVIEWER, REPOSITORY } from './execution-contract.mjs';
+import { assertPr, currentReview, linkedIssue, revalidateAuthority } from './live-authority.mjs';
+import { digest, exactSha, fail, positive, validateEnvelope, NATIVE_VALIDATIONS, OWNER, REVIEWER, REPOSITORY, requireCurrentProtocol } from './execution-contract.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { authorityMode, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { readTaskAuthority } from './task-authority.mjs';
@@ -55,14 +54,14 @@ export async function beginRemediation({ api, store, request, authorityDigest, a
           || authorityMode(issue.body) !== 'github-native-v1') fail('ISSUE_NOT_ADMITTED');
         // Reviewer publication drafts the reviewed PR before any execution.
         // Resolve sources/profile directly: no Request, snapshot or Step exists.
-        const typed = await readTaskAuthority(api, issue, pr, { streamlined: true,
+        const typed = await readTaskAuthority(api, issue, pr, {
           projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
             subagents: true, validation: [...NATIVE_VALIDATIONS] },
           startingState: { branch: pr.head.ref, base_sha: pr.base.sha, starting_head: pr.head.sha, existing_pr: pr.number } });
         if (typed.request.kind !== 'change-request' || typed.request.parent.number !== pr.number) fail('CURRENT_CHANGE_REQUEST_MISSING');
         if (typed.request.branch !== pr.head.ref) fail('STARTING_STATE_MISMATCH');
         authority = { ...typed, pr, review: typed.record, startHead: typed.request.reviewed_head_sha };
-      } else authority = await readAuthority(api, 'pull_request', pr.number, { step: currentStep(pr.labels) });
+      } else requireCurrentProtocol();
     }
     const publisher = await api.userIdentity(REVIEWER);
     // Typed records retain the verified native publisher as `author`; legacy

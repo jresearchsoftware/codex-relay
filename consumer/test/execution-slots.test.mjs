@@ -205,6 +205,7 @@ test('shared runner UID selects configured slots and recovers the original slot 
     import { callerExecutionSlot, assertWriterSlot } from './controller/src/privileged-writer-helper.mjs';
     import { CONSUMER, CONSUMER_DIGEST } from './consumer/consumer.mjs';
     import { publicationRecoveryJournal, recoverAttemptPublication } from './controller/src/recover-attempt-publication.mjs';
+    import { currentEnvelope } from './controller/test/fixture.mjs';
     const uidForUser = user => user === 'relay-runner' ? 1201 : 1301;
     const resolveSlot = options => callerExecutionSlot({ ...options, uidForUser });
     for (const slotId of ['primary', 'second']) {
@@ -232,11 +233,11 @@ test('shared runner UID selects configured slots and recovers the original slot 
       { callerUid: '1201', resolveSlot, store });
     assert.equal(CONSUMER.generalRunnerPool.desiredCapacity,1);
     assert.equal(CONSUMER_DIGEST,${JSON.stringify(admittedDigest)});
-    const envelope = {version:2,consumerDigest:${JSON.stringify(admittedDigest)},repository:CONSUMER.repository,
+    const envelope = currentEnvelope({consumerDigest:${JSON.stringify(admittedDigest)},repository:CONSUMER.repository,
       executionSlot:'second',attemptId:'run-9',runId:9,step:1,target:'issue',number:42,issueNumber:42,
       route:'auto',branch:CONSUMER.taskBranchPrefix+'task-42',subagentsAllowed:true,
       startHead:'a'.repeat(40),historicalBase:'a'.repeat(40),targetBase:'b'.repeat(40),
-      authorityDigest:'c'.repeat(64),profile:{cliModelId:'fixture-model',effort:'high'},validation:['diff-check']};
+      profile:{cliModelId:'fixture-model',effort:'high'},validation:['diff-check']});
     const outcome={status:'IMPLEMENTED_PENDING_FRESH_REVIEW',head:'d'.repeat(40)};
     const record={version:2,envelope,execution:{reserved:true,returned:true,child:'started',containment:'reaped'},outcome};
     let locked=false; const journal={get:async()=>{assert.ok(locked);return record;},withLock:async(id,fn)=>{

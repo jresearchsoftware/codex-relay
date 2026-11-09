@@ -208,6 +208,9 @@ def invocation(tmp_path, monkeypatch):
         args._test_completed = True
         return {'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(receipt)}
     monkeypatch.setattr(install, 'complete_fresh', complete)
+    import managed_pool_transport
+    monkeypatch.setattr(managed_pool_transport, 'reconcile_pool',
+                        lambda *_args, **_kwargs: 'MANAGED_POOL_RESULT={"capacity":1}')
     return args, config, receipt, artifact
 
 
@@ -233,7 +236,7 @@ def test_one_operation_binds_git_pair_and_produces_post_install_artifact(invocat
     monkeypatch.setattr(inventory, 'remote_inventory', probe)
     calls = []
     install.run(args, calls.append, ROOT, {'revision': TARGET})
-    assert len(calls) == (10 if old_revision is None else 1)
+    assert len(calls) == (8 if old_revision is None else 1)
     inner = calls[0]
     assert inner.git_intent == receipt and inner.intent_install
     assert inner.phase == ('bootstrap' if old_revision is None else 'apply' if old_revision == TARGET else 'upgrade')
@@ -264,7 +267,7 @@ def test_ordinary_install_uses_original_uuid_for_proven_same_target_recovery(
     operation = '12345678-1234-4234-8234-123456789abc'
     def recovery_probe(_target, _key, _config, target, expected, guard, pool_guard):
         assert target == TARGET and expected == old_revision and guard.poll() is None
-        assert pool_guard is None
+        assert pool_guard is not None and pool_guard.poll() is None
         assert not calls, 'the held-lock proof must precede every mutation'
         return {'operationId': operation, 'target': target, 'installedRevision': expected}
     monkeypatch.setattr(install_recovery, 'remote_probe', recovery_probe)
@@ -477,8 +480,6 @@ def native_composition(invocation, monkeypatch, before=None):
             state['protectedState'].append({'name': name, 'status': 'reusable-metadata'})
         if inner.phase == 'runner-register':
             state['runners']['production'] = {'status': 'reusable'}
-        if inner.phase == 'general-runner-register':
-            state['runners']['general'] = {'status': 'reusable'}
         if fail['after']:
             fail['after'](inner, state)
     def complete(_target, _key, _config, _revision, wanted, guard, pool_guard):
@@ -511,13 +512,11 @@ def test_fresh_install_composes_all_configured_phases_and_isolates_optional_toke
                                for role in ['reviewer', 'writer', 'codex']]
     before['runners'] = {'production': {'status': 'missing'}, 'general': {'status': 'missing'}}
     args.runner_registration_token = 'ephemeral-production-value'
-    args.general_runner_registration_token = 'ephemeral-general-value'
     state, calls, _, primitive = native_composition(invocation, monkeypatch, before)
     install.run(args, primitive, ROOT, {'revision': TARGET})
     assert [call.phase for call in calls] == ['bootstrap', 'reviewer-credentials', 'writer-credentials',
         'codex-credentials', 'apply', 'tls-prepare', 'tls-dry-run', 'tls-issue', 'tls-check',
-        'ingress', 'activate', 'runner-register', 'runner-enable', 'general-runner-register',
-        'general-runner-enable', 'post-check']
+        'ingress', 'activate', 'runner-register', 'runner-enable', 'post-check']
     for call in calls:
         enabled = {name for name, value in vars(call).items() if name.startswith('authorize_') and value}
         expected = {'activate': 'authorize_reviewer_activation'}.get(call.phase,
@@ -526,11 +525,10 @@ def test_fresh_install_composes_all_configured_phases_and_isolates_optional_toke
         assert call.git_intent == receipt and call.resolved_revision == TARGET
         assert call._intent_fresh_bootstrap == (call.phase == 'bootstrap')
         assert call.runner_registration_token == ('ephemeral-production-value' if call.phase == 'runner-register' else None)
-        assert call.general_runner_registration_token == ('ephemeral-general-value' if call.phase == 'general-runner-register' else None)
     assert state['installed']['installationState']['stage'] == 'ready'
     assert all(guard.releases == 1 for guard in args._test_guards)
     output = capsys.readouterr().out
-    assert 'ephemeral-production-value' not in output and 'ephemeral-general-value' not in output
+    assert 'ephemeral-production-value' not in output
 
 
 def test_false_publication_still_activates_reviewer_and_reuses_validated_registrations(invocation, monkeypatch):
@@ -540,12 +538,11 @@ def test_false_publication_still_activates_reviewer_and_reuses_validated_registr
     before = fresh_report()
     before['protectedState'] = [row for row in before['protectedState'] if row['name'] != 'writer-installed-key']
     args.runner_registration_token = 'unused-production-token'
-    args.general_runner_registration_token = 'unused-general-token'
     _, calls, _, primitive = native_composition(invocation, monkeypatch, before)
     install.run(args, primitive, ROOT, {'revision': TARGET})
     assert 'activate' in [call.phase for call in calls]
     assert 'writer-credentials' not in [call.phase for call in calls]
-    assert all(call.runner_registration_token is None and call.general_runner_registration_token is None for call in calls)
+    assert all(call.runner_registration_token is None for call in calls)
     assert config['environment']['instance']['publicationEnabled'] is False
 
 

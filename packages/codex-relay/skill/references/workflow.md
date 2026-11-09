@@ -55,7 +55,7 @@ results retain typed Task Approval.
 
 Source acceptance, installation, deployment and release are separate facts and
 permissions. A route choice adds no operational or credential authority, and
-source support does not qualify an installed Reviewer or owner adapter.
+source support does not qualify installed Reviewer or GitHub connector permissions.
 
 ## Authority, actors and capabilities
 
@@ -122,12 +122,16 @@ durably creates the sole immutable admission snapshot, including sources,
 profile, scope, boundaries, validation, exact starting state, route, attempt/run
 and Step. Rejected routing does not allocate Step.
 
-Task Handoff's "Step as an authorized execution cycle" section owns cycle and navigation semantics. Relay's protected
-Writer allocates Step 1 at first admission and the next Step for each genuinely
-new execution, including after BLOCKED. Same-attempt replay/recovery cannot
-launch another worker. Approval, charter/Decision/CR publication and ready-label
-display allocate no Step. Native titles and `step-N` labels project protected
-admission state; never infer identity from the largest historical number.
+At a genuinely new routed admission, Writer reads the canonical Issue's single
+valid `step-N` position under its existing serialization lock and compares it
+with successful durable admissions. The next Step is N+1; without a label it is
+last admitted Step+1, or 1 when neither exists. An owner-maintained position
+above Writer history permits standalone iterations. A position below successful
+history, malformed/conflicting labels, overflow or a concurrent position change
+fails with an actionable diagnostic. Rejected launches allocate no Step;
+same-attempt replay/recovery retains its Step. The label supplies numbering,
+never execution or admission authority. Writer projects the position only after
+durable admission and verifies the native result.
 
 Profile resolution is applicable CR overrides, trusted Decisions, consumer
 defaults, then supported system defaults. Resolve once at admission; no silent
@@ -147,25 +151,25 @@ information but do not preallocate Step.
 
 ### Manual result PR Step labels
 
-Automatic Step-label/title projection remains deferred to
-[Task #177](https://github.com/jresearchsoftware/codex-relay/issues/177).
-Manual Codex creating a new Relay-admitted result PR must add the exact `step-S`
-label already present on the canonical Task Issue. Set it during PR creation
-where supported, or immediately afterward and before result handoff. Verify the Issue and PR labels
-against the trusted admitted Step; never infer or allocate Step from a label,
-title or history. Missing, conflicting or mismatched Issue/admission metadata
-must be reported and reconciled before proceeding, not guessed. A manual Codex
-executor using an existing Task-owned PR must also check its label against the
-Issue and admitted Step before final handoff. Do not bulk-edit historical PRs.
+An ordinary authorized participant or Codex may create a manual result PR.
+When Writer validates its exact repository, Task, admitted branch/head and base,
+it uses the shared projection path to apply the already-admitted `step-S` label
+and bounded canonical title. This covers admission-bound PRs, delayed result
+association and same-Step repair of a missing projection. It allocates no Step
+and does not restrict PR author identity or require Writer-created manual PRs.
+A conflicting Step or Task title requires reconciliation; it is never silently
+overwritten. Late original results cannot restore an older Step's projections.
 
-This manual responsibility does not restrict PR authorship: any participant or
-bot with ordinary GitHub permission may create a PR; Writer need not create it.
-If a new result PR reaches independent review without the label, Reviewer may
-add it through supported GitHub tools only after verifying the canonical Issue,
-protected admitted Step, PR binding and exact current head, then recheck the
-native Reviewer target. Stop on mismatched or uncertain metadata; never override
-a conflicting label. Independent native exact-head review and Writer/Reviewer
-separation remain required.
+This completes the interim manual labeling responsibility from Task #182 and
+Task #177: manual executors supply an accurately bound result; Writer owns the
+verified projection at binding/publication. There is no historical bulk relabel,
+continuous synchronizer or additional owner gate. One canonical Outcome,
+Draft/Ready ownership and independent exact-head acceptance remain unchanged.
+
+This Writer responsibility applies to Relay-admitted results. Explicitly
+authorized standalone/manual work keeps owner-maintained numbering and ordinary
+GitHub metadata permissions, with no fabricated admission or Writer receipt.
+Its Issue position can become the numbering input of a later genuine admission.
 
 ### Independent attempts
 
@@ -178,7 +182,23 @@ or implicit cancellation of the older attempt. New attempts have their own
 Steps and may duplicate computation; replay of one attempt never invokes the
 model again.
 
+Routine lifecycle drain and consumer transitions classify current operational
+effects. A clean manual handoff with no matching runner journal or pending
+result/publication effect does not require a historical Outcome, Task closure
+or withdrawal acknowledgement before an unrelated idle upgrade. Historical
+execution remains unknown; no cancellation or completion receipt is invented.
+Active/unknown workers, pending trusted publication/recovery, conflicting
+ownership and the original attempt's replay bindings remain protected.
+
 ## Execute and preserve progress
+
+Normally carry investigation, implementation, technical corrections and tests
+through one substantive execution Step to a complete candidate and Outcome.
+Ordinary test failures, retries and internal phases do not themselves require
+another Step. After resolving a blocker or finding, return to the complete
+effective Task goal and its remaining requirements. Stop at a real evidenced
+capability, authority, policy, trust or safety boundary. A genuinely new
+execution after a terminal result keeps the existing next-Step rule.
 
 Use complete Task Handoff and Context Loading for refresh, JIT completeness, correction and
 stop semantics. Relay's existing-PR starting-head gate inspects its
@@ -200,6 +220,29 @@ boundaries. A later Decision may allow truthful reporting of the original work
 without proving newly added requirements were performed or granting a revoked
 operation. Consumer-specific TEST/PROD, deployment, credentials and recovery
 authority must be explicit; the Skill creates none.
+
+## Isolated disposable TEST qualification
+
+The owning project's established authority must identify the concrete disposable
+TEST environment and dedicated TEST repositories. A repository name containing
+`test` alone establishes no boundary; this Skill designates no consumer resource.
+Where that verified authority grants full standing TEST control, it includes
+creation/modification of TEST-only Issues, branches, fixtures and trusted
+Decisions/CRs, native positive and
+negative independent reviews, workflow management/runs and creation, review and
+squash integration of TEST PRs. Do not request a separate confirmation for each
+of those already authorized operations. A preview rule for actual product
+findings does not add a per-review prompt to in-scope TEST fixtures.
+
+Preserve actual actor/tool permissions, Writer/Reviewer independence, genuine
+native admission, exact head/checks, trusted publication, Issue closure policy
+and recovery of the original uncertain operation. Claim shared TEST before use,
+restore/verify usability and release only that execution's claim. This authority
+does not extend to a product PR merge, PROD, external/ordinary consumer repositories outside the designated TEST boundary, or
+App/credential/runner-ACL changes outside independently established authority.
+An unavailable capability is a concrete boundary, not an invented approval stage.
+The source project's [TEST policy](https://github.com/jresearchsoftware/codex-relay/blob/main/docs/execution-policy.md#test-environment-authority)
+owns its concrete standing binding.
 
 ## Change Request and remediation
 
@@ -300,6 +343,19 @@ and duplicate delivery still fail closed.
 
 ## Independent acceptance and authorized continuation
 
+The owner orchestration uses the supported GitHub connector directly for
+already-authorized integration after genuine independent native approval. There
+is no local owner merge command, post-review engine, action journal or background
+service. Reviewer publishes acceptance; the owner channel performs integration;
+protected Writer retains admitted execution and publication recovery.
+
+After `PUBLICATION_UNCERTAIN`, reconcile the original identical Reviewer
+operation through supported replay/readback, preserving its exact intended
+body and operation identity. Do not post another review or treat an uncertain
+response as approval. Reviewer `execution_supported: false` means that the
+Reviewer itself performs no merge; it does not prevent authorized owner use of
+the GitHub connector.
+
 For an implementation PR, independent acceptance uses native exact-head
 `APPROVE`; genuine remediation findings use `REQUEST_CHANGES`. Another Task
 Approval for that PR is unnecessary. Genuine
@@ -348,64 +404,57 @@ its recommendation or authorize implementation, deployment or release. Owner
 discussion or a Decision alone does not allocate Step. After genuine approval,
 only already-authorized continuation below may proceed.
 
-The owner continuation path re-reads effective authority, exact acceptance/head,
-required checks, readiness, completion, holds and protected boundaries. Only
-already-authorized integration proceeds through that channel; v4 direction has
-`hold` and optional trusted `next`, no competing `task_complete` or future Step.
-Reviewer publishes acceptance and its bounded continuation policy; it performs
-neither merge nor closure. A native `APPROVE` binds one reviewed head and
-permits the separately authorized **squash-only** continuation when required
-native checks are complete and passing, mergeability/readiness are verified,
-and no hold or protected boundary applies. Unresolved checks, unknown readiness
-or a moved candidate stop continuation. Ordinary base movement is allowed
-where current exact-head checks and readiness remain safe; preserve any explicit
-exact-base reconciliation policy.
+### Owner integration through the GitHub connector
 
-Migrated PRs use `Related to #N`; trusted native `closesTask` must be explicitly
-`false` before squash. `true` or unknown blocks the merge. The owner helper uses
-neutral squash title/body rather than inheriting closing keywords. Explicit
-Issue closure stays a separate action. Legacy linkage behavior retains its
-original contract.
+After durable genuine approval, complete the already-authorized owner sequence
+without another ceremonial merge prompt:
 
-For an owner-created standalone source PR, Reviewer verifies the configured
-owner's native User identity, same repository, branch and exact head, and binds
-current canonical authority plus `source_pr` provenance in the native review.
-This replaces only the execution-result binding; it fabricates no admission or
-Writer Outcome. An exact retained manual Request may remain its compatibility
-source. Unrelated historical Requests do not become current authority, and
-fresh v4 work needs no fictitious Step or new v3 Request.
+1. Refresh effective canonical Task/Decision authority, native independent
+   approval and the exact reviewed/current PR head, source provenance, required
+   native checks, Draft/Ready, mergeability, warnings, explicit holds and
+   protected boundaries. Changed authority requiring acceptance or a moved
+   candidate needs fresh applicable review; incomplete/failing required checks,
+   unknown readiness or a hold stop integration. Ordinary base movement is
+   allowed only where current exact-head checks and readiness remain safe.
+   Preserve an explicit exact-base requirement: the connector's atomic head
+   comparison does not supply an atomic base comparison.
+2. Verify closure restrictions. Under the current migrated-Task compatibility
+   binding, use `Related to #N`, establish that the PR does not implicitly close
+   the Task, and supply a neutral squash title/body. Removing the old helper
+   does not implement Task #194 or authorize Issue closure.
+3. Use the connector's `merge_pull_request` with `merge_method: "squash"`, the
+   canonical repository/PR and `expected_head_sha` equal to the full approved
+   SHA. Supply explicit neutral `commit_title`/`commit_message` where required
+   by the closure binding. Do not omit the head guard or replace squash with
+   another merge method or unattended auto-merge.
+4. Read back the same PR and merge commit; verify merged state, approved head,
+   destination and squash SHA before dependent work. A lost or uncertain merge
+   response requires authoritative GitHub reconciliation of that original
+   effect. Never blindly repeat it, switch verdict or launch/close while its
+   effect is unknown. Report a missing permission or readback capability as the
+   exact boundary; do not claim completion from a successful tool call alone.
 
-The existing trusted owner adapter separately verifies explicit standalone
-permission in current canonical authority, no admitted Relay execution for that
-result, and disposition of ordinary owner result warnings plus required native
-evidence. Its internal `standaloneAuthorization` binds the exact
-`authority_sha256`, `pullRequest` and `headSha`, with `authorized: true`,
-`admittedExecution: false` and `warningsDispositioned: true`. Native owner,
-head repository and branch must match the receipt; retained manual Requests
-also bind Task/PR Step. These are adapter facts from existing evidence, not a
-new owner prompt, public comment or registry. Missing, ambiguous or revoked
-facts stop before mutation. An ordinary owner Outcome remains ordinary
-evidence; it cannot become a Writer Outcome or Task Approval.
+The [component contract](https://github.com/jresearchsoftware/codex-relay/blob/main/contracts/README.md#authorized-continuation-after-independent-acceptance)
+provides the connector argument example and detailed evidence boundaries.
+GitHub records are the durable integration evidence; no owner-local merge
+journal or replacement orchestration service is required.
 
-Known same-result Writer evidence or execution markers, including blocked or
-stale results, retain their admitted result/recovery path. A source receipt
-cannot downgrade an admitted result. Current migrated routes keep exact-head
-checks, warning disposition, holds, neutral squash messages and closure boundaries;
-only the explicitly supported standalone source path omits the admission/Writer
-receipt. A retained Request naming only an old Request as its next action may
-complete an authorized squash, then stops follow-up with
-`CONTINUATION_NEXT_AUTHORITY_INVALID` until current v4 direction replaces or
-clears that follow-up. Do not silently discard it or launch a fresh v3 chain.
+For an explicitly permitted owner-created standalone source PR, Reviewer
+verifies native owner, same repository, branch and exact head and binds current
+canonical authority plus `source_pr` provenance. This supplies no admission or
+Writer Outcome. The owner verifies standalone permission, absence of an admitted
+execution for that result, warnings and the same integration gates through
+existing evidence. An exact retained manual Request may remain a historical
+compatibility source; fresh work creates no fictitious Step or v3 Request.
 
-Owner continuation reserves each operation before mutation, re-reads current
-authority/facts after reservation and records/verifies the native result before
-the next action. It reconciles already-completed operations without repeating
-them. Uncertain approval, an ambiguous earlier mutation, missing readback,
-changed authority or an uncertain response stops dependent progress and
-preserves completed actions. Do not blindly retry merge, close or launch, fall
-back to another verdict, or re-execute the accepted current Request as its own
-next action. Already-authorized current v4 next direction can use existing
-owner ports without a new public Request or preallocated Step.
+Known same-result Writer evidence or execution markers retain their admitted
+result and recovery path, including blocked or stale results. An ordinary owner
+comment cannot replace a Writer Outcome or Task Approval. Genuine no-PR results
+keep their native Task Approval path and require no synthetic merge. Further
+execution uses existing current admission authority rather than an old helper's
+launch ports. Review, integration, Issue closure, further admission, release and
+deployment remain distinct permissions. Reassess actual remaining work and
+holds after verified integration under the supported closure contract.
 
 ## Decisions, closure and subsequent work
 

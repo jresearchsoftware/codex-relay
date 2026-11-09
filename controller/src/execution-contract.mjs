@@ -3,9 +3,9 @@ import { safeBranch as safeConsumerBranch } from '../../consumer/consumer-config
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createHash } from 'node:crypto';
 import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
-import { NATIVE_CR_VALIDATIONS } from '../../contracts/src/executable-cr.mjs';
+import { EXECUTION_DEFINITION } from '../../contracts/src/execution-defaults.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
-import { validateAuthorityRecord, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
 export const OWNER = CONSUMER.owner;
@@ -15,7 +15,10 @@ export const BASE_BRANCH = CONSUMER.baseBranch;
 export const VERSION = 2;
 // Consumer-owned validationWorkflow implements declared names. These IDs are
 // validation obligations, never executable shell or proof that a check passed.
-export const NATIVE_VALIDATIONS = new Set(NATIVE_CR_VALIDATIONS);
+export const DEFAULT_NATIVE_VALIDATIONS = Object.freeze([...EXECUTION_DEFINITION.input_schema.properties.required_validation.items.enum]);
+// Declaring supported consumer IDs does not make every ID a default obligation.
+// Decisions and CRs select their bounded required list from this allowlist.
+export const NATIVE_VALIDATIONS = new Set([...DEFAULT_NATIVE_VALIDATIONS, ...(CONSUMER.validationNames ?? [])]);
 // These are authority or semantic decisions that the controller can expose as
 // a truthful BLOCKED domain result without pretending that a worker ran or
 // that a protected boundary was crossed. Runtime/transport failures are not in
@@ -110,37 +113,33 @@ export function safePath(value) {
     && !value.split('/').some(p => p === '' || p === '.' || p === '..' || p.toLowerCase() === '.git');
 }
 export function validateEnvelope(e) {
-  // New dispatches are keyed by native run ID. Keep the former event envelope
-  // readable for terminal replay and the separately authorized non-routing
-  // smoke; neither path invents Step metadata for a new automatic admission.
+  // Only the current immutable admission enters this runtime. Exact older
+  // operations are routed to their frozen original source before this boundary.
   const nativeDispatch = e && positive(e.step) && e.attemptId === `run-${e.runId}`;
-  const legacyEvent = e && positive(e.eventId) && e.attemptId === `event-${e.eventId}`;
-  const manualNoSource = e?.route === 'manual' && ['task-request', 'admission'].includes(e?.request?.kind)
+  const manualNoSource = e?.route === 'manual' && e?.request?.kind === 'admission'
     && e.branch === null && e.startHead === null && e.historicalBase === null;
   if (!e || e.version !== VERSION || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
     || (Object.hasOwn(e, 'executionSlot') && (!CONSUMER.executionSlots || !CONSUMER.executionSlots.some(slot => slot.id === e.executionSlot)))
     || !safeModel(e.profile?.cliModelId) || !safeEffort(e.profile?.effort)
-    || !positive(e.runId) || (!nativeDispatch && !legacyEvent)
+    || !positive(e.runId) || !nativeDispatch
     || !['issue', 'pull_request'].includes(e.target) || !positive(e.number) || !positive(e.issueNumber)
     || !['auto', 'manual'].includes(e.route) || (!manualNoSource && (!exactSha(e.startHead) || !exactSha(e.historicalBase)))
     || !exactSha(e.targetBase) || typeof e.authorityDigest !== 'string'
     || !/^[a-f0-9]{64}$/.test(e.authorityDigest)) fail('EXECUTION_ENVELOPE_INVALID');
   if (!manualNoSource) branchName(e.branch);
-  if (e.request) {
-    const validator = e.request.kind === 'admission' ? validateAdmissionSnapshot : validateAuthorityRecord;
-    validator(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
-    if (e.request.step !== e.step || e.request.route !== e.route || e.request.branch !== e.branch
-      || e.request.starting_head !== e.startHead || e.request.base_sha !== e.historicalBase
-      || e.request.model !== e.profile.cliModelId || e.request.effort !== e.profile.effort
-      || e.request.subagents !== e.subagentsAllowed || !e.requestReference
-      || !/^[a-f0-9]{64}$/.test(e.requestReference.sha256 ?? '')) fail('EXECUTION_ENVELOPE_INVALID');
-    if (e.request.kind === 'admission' && (e.request.authority.sha256 !== e.authorityDigest
-      || e.request.attempt !== e.attemptId || e.request.run_id !== String(e.runId)
-      || canonicalAuthorityJson(e.requestReference) !== canonicalAuthorityJson(e.request.authority.change_request ?? e.request.authority.charter))) fail('EXECUTION_ENVELOPE_INVALID');
-  }
+  if (e.request?.kind !== 'admission' || e.request.schema_version !== '4.0') fail('EXECUTION_ENVELOPE_INVALID');
+  validateAdmissionSnapshot(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
+  if (e.request.step !== e.step || e.request.route !== e.route || e.request.branch !== e.branch
+    || e.request.starting_head !== e.startHead || e.request.base_sha !== e.historicalBase
+    || e.request.model !== e.profile.cliModelId || e.request.effort !== e.profile.effort
+    || e.request.subagents !== e.subagentsAllowed || !e.requestReference
+    || !/^[a-f0-9]{64}$/.test(e.requestReference.sha256 ?? '')) fail('EXECUTION_ENVELOPE_INVALID');
+  if (e.request.authority.sha256 !== e.authorityDigest
+    || e.request.attempt !== e.attemptId || e.request.run_id !== String(e.runId)
+    || canonicalAuthorityJson(e.requestReference) !== canonicalAuthorityJson(e.request.authority.change_request ?? e.request.authority.charter)) fail('EXECUTION_ENVELOPE_INVALID');
   if (e.continuation && (e.target !== 'issue' || !exactSha(e.continuation.head) || e.continuation.head !== e.startHead
     || (e.continuation.pullRequest !== null && !positive(e.continuation.pullRequest)))) fail('EXECUTION_ENVELOPE_INVALID');
-  if (nativeDispatch && typeof e.subagentsAllowed !== 'boolean') fail('SUBAGENTS_PERMISSION_INVALID');
+  if (typeof e.subagentsAllowed !== 'boolean') fail('SUBAGENTS_PERMISSION_INVALID');
   if (!Array.isArray(e.validation) || !e.validation.length || e.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
   return e;
 }

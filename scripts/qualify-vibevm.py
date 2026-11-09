@@ -18,10 +18,10 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "7.0.0"
+VERSION = "7.0.1"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "4.1.1"
+SELF_VERSION = "5.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
@@ -46,12 +46,12 @@ SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/IND
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "77119c2aa93ac9b27ed68e2de8d12ea5d1e497b0"
+DISTRIBUTION_REVISION = "f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "bee96f1715142fde598318e7db402168dcfabf5f"
-PAYLOAD_HASH = "3eff2ae300602e812b99539b18fe3d8232c92191ec1e5515c156a6754be51257"
-RECEIPT_HASH = "bff287dbbdd7801b65d724eef0b0f34daed33157f1f90773cfd956471aecb47b"
-TREE_HASH = "sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07"
+SOURCE_REVISION = "1110f10b996c2f81fa842e6339ab6d7c13111cd7"
+PAYLOAD_HASH = "af758c7c375f54741e46b8c0bfa1ea5311d315839aeae385b3d0ffd468473c36"
+RECEIPT_HASH = "f4a568278ba45cc6bd64280f4fae74a337de3d3c9384e0e72bd5912e74487c61"
+TREE_HASH = "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -73,6 +73,39 @@ def check_repeat_lock(before, after):
                 "Repeat install has invalid generation timestamp")
         del lock["meta"]["generated_at"]
     require(previous == current, "Repeat install changed the resolved lock identity")
+
+
+def check_relocation_lock(before, after, source, label):
+    """Allow only native checkout metadata changes for the exact first-party package."""
+    previous, current = (tomllib.loads(data.decode()) for data in (before, after))
+    entries = []
+    for lock in (previous, current):
+        timestamp = lock.get("meta", {}).get("generated_at")
+        require(isinstance(timestamp, str) and
+                re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp),
+                label + " has invalid generation timestamp")
+        first = [entry for entry in lock.get("package", [])
+                 if entry.get("group") == "org.jresearch.ai" and entry.get("name") == "codex-relay"]
+        require(len(first) == 1, label + " has ambiguous first-party package identity")
+        first = first[0]
+        require(first.get("source_kind") in {"local", "registry"},
+                label + " has unsupported first-party source kind")
+        source_url = first.get("source_url", "")
+        location = urlsplit(source_url) if isinstance(source_url, str) else None
+        require(location is not None and location.scheme == "file" and not location.netloc
+                and not location.query and not location.fragment and location.path.startswith("/")
+                and unquote(location.path).endswith("/" + SELF_SOURCE.as_posix()),
+                label + " has invalid first-party registry location")
+        entries.append(first)
+    require(entries[1]["source_url"] == source.as_uri(),
+            label + " did not bind the relocated first-party source")
+    previous["meta"]["generated_at"] = current["meta"]["generated_at"]
+    entries[0]["source_url"] = entries[1]["source_url"]
+    # Native 1.0.11 resolves an existing LocalRegistry entry as local, while the
+    # committed/native-update lock may call that same in-tree source registry.
+    # Version, hashes, source refs, graph and every other package field stay exact.
+    entries[0]["source_kind"] = entries[1]["source_kind"]
+    require(current == previous, label + " changed more than native checkout metadata/timestamp")
 
 
 def managed(data):
@@ -124,7 +157,10 @@ def tree_hash(files):
     return "sha256:" + digest.hexdigest()
 
 
-def check_package(directory, *, standalone=False):
+HISTORICAL_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0")
+
+
+def check_package(directory, *, standalone=False, historical=False):
     # Build/release evidence is a separate frozen delivery, never a policy fallback.
     version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
         ("5.0.0", "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
@@ -132,6 +168,13 @@ def check_package(directory, *, standalone=False):
          "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9",
          "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9")
         if standalone else (VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH))
+    if historical:
+        require(not standalone, "Historical project evidence is not standalone delivery")
+        version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
+            "7.0.0", "bee96f1715142fde598318e7db402168dcfabf5f",
+            "3eff2ae300602e812b99539b18fe3d8232c92191ec1e5515c156a6754be51257",
+            "bff287dbbdd7801b65d724eef0b0f34daed33157f1f90773cfd956471aecb47b",
+            "sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07")
     payload = PAYLOAD - {"vibevm/vibespecs/protocols/small-improvements.md",
                          "vibevm/vibespecs/guides/small-improvements.md"} if standalone else PAYLOAD
     files = files_in(directory)
@@ -207,9 +250,13 @@ def check_first_party_registry(root, expected):
     installation_files = files_in(root / installation)
     require(tree_hash(installation_files) == "sha256:bd1c15a6f15246798eaa66fa434e843eb57db2a4ca084dc79420277d29979385",
             "Frozen accepted 4.1.0 registry changed")
+    remediation = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v4.1.1")
+    remediation_files = files_in(root / remediation)
+    require(tree_hash(remediation_files) == "sha256:d9e85f939816b7f048e77f0e5608720498272118a7fecc35cc973fb3c9934730",
+            "Frozen accepted 4.1.1 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
@@ -243,8 +290,6 @@ def check_first_party(root):
     require(MARKER in installed, "Missing first-party slot metadata")
     marker = tomllib.loads(installed.pop(MARKER).decode())
     source_hash = tree_hash(expected)
-    require(source_hash == "sha256:d9e85f939816b7f048e77f0e5608720498272118a7fecc35cc973fb3c9934730",
-            "First-party export differs from the selected 4.1.1 candidate identity")
     require(installed == expected, "First-party slot differs from generated package export")
     require(type(marker.get("schema")) is int and marker == {
         "schema": 1, "source_hash": source_hash, "spec_format": "mixed",
@@ -309,10 +354,12 @@ def check_project(root):
     require(source_url.startswith("file://") and
             unquote(source_url).endswith("/" + SELF_SOURCE.as_posix()),
             "First-party source is not a generated in-tree registry location")
+    first_kind = first.get("source_kind")
+    require(first_kind in {"local", "registry"}, "First-party source kind is not native registry metadata")
     require(first == {"kind": "flow", "group": "org.jresearch.ai", "name": "codex-relay",
                       "version": SELF_VERSION, "source_url": source_url, "content_hash": source_hash,
                       "files_written": [], "dependencies": [COORDINATE + "@=" + VERSION],
-                      "admitted_by": "root-edge", "source_kind": "local"},
+                      "admitted_by": "root-edge", "source_kind": first_kind},
             "First-party lock differs from native content/dependency identity")
     index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
     paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(),
@@ -328,9 +375,14 @@ def check_project(root):
     blocks = [managed(read_file(root, name))[0] for name in AGENTS]
     require(len(set(blocks)) == 1 and hashlib.sha256(blocks[0]).hexdigest() == NATIVE_BLOCK_HASH,
             "Native redirects differ from the accepted generated block")
+    # Task #199 preserves this exact accepted slot as inactive historical evidence.
+    # Native maintenance may prune it; it never enters the selected graph or routes.
+    historical_files = (check_package(root / HISTORICAL_SLOT, historical=True)
+                        if (root / HISTORICAL_SLOT).exists() else {})
     require(set(files_in(root / "vibevm/vibedeps")) == {
         (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files} | {
-        (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}},
+        (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}} | {
+        (HISTORICAL_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in historical_files},
             "Unexpected materialized dependency graph")
     for relative in ("vibevm/vibespecs/WAL.md", "vibevm/vibespecs/WAL.xml",
                      ".agents/skills/proportional-controls", ".agents/skills/.proportional-controls.vibe-skill-receipt.toml"):
@@ -431,13 +483,9 @@ def probe(vibe, pin, project_root=ROOT):
             # never rewrite the lock or ignore local_source_freshness findings.
             check_project(project)
             before = {name: read_file(project, name) for name in route_paths}
-            previous = tomllib.loads(before["vibe.lock"].decode())
             run(project, label, "install", "--no-default-registry", "--assume-yes", offline=False)
-            current = tomllib.loads(read_file(project, "vibe.lock").decode())
-            previous["meta"]["generated_at"] = current["meta"]["generated_at"]
-            first = next(entry for entry in previous["package"] if entry["name"] == "codex-relay")
-            first["source_url"] = (project / SELF_SOURCE).as_uri()
-            require(current == previous, label + " changed more than native checkout location/timestamp")
+            check_relocation_lock(before["vibe.lock"], read_file(project, "vibe.lock"),
+                                  project / SELF_SOURCE, label)
             for name, data in before.items():
                 if name != "vibe.lock":
                     require(read_file(project, name) == data, label + " changed ready bytes: " + name)

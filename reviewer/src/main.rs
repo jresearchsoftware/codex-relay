@@ -1414,74 +1414,35 @@ mod tests {
         .unwrap()
     }
 
-    fn assert_consumer_admits(arguments: &Value, publication: &Value) {
-        assert_consumer_admits_with_config(arguments, publication, "example");
+    // These fixtures exercise retained native publication/replay only. Current
+    // Node execution accepts v4 admissions; it is not a second legacy consumer.
+    fn assert_preserved_cr_publication(arguments: &Value, publication: &Value) {
+        assert_preserved_cr_publication_with_config(arguments, publication, "example");
     }
-    fn assert_consumer_admits_with_config(arguments: &Value, publication: &Value, consumer: &str) {
-        use std::{
-            io::Write,
-            process::{Command, Stdio},
-        };
-        let driver = fixture_path("../../test-support/roundtrip-driver.mjs");
-        // Source fixtures are data, not installed protected configuration. Copy
-        // them with safe permissions so governed group-writable checkouts can
-        // exercise the real loader without relaxing its admission boundary.
-        static CONFIG_SEQUENCE: std::sync::atomic::AtomicUsize =
-            std::sync::atomic::AtomicUsize::new(0);
-        let config_path = std::env::temp_dir().join(format!(
-            "relay-roundtrip-{}-{}.json",
-            std::process::id(),
-            CONFIG_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        let mut options = fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        options
-            .open(&config_path)
-            .unwrap()
-            .write_all(
-                &fs::read(
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join(format!("../consumer/fixtures/{consumer}.json")),
-                )
-                .unwrap(),
+    fn assert_preserved_cr_publication_with_config(
+        arguments: &Value,
+        publication: &Value,
+        consumer: &str,
+    ) {
+        let config: Value = serde_json::from_str(
+            &fs::read_to_string(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("../consumer/fixtures/{consumer}.json")),
             )
-            .unwrap();
-        let mut child = Command::new("node")
-            .env("RELAY_CONSUMER_CONFIG", &config_path)
-            .arg(driver)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Node contract consumer");
-        child
-            .stdin
-            .take()
+            .unwrap(),
+        )
+        .unwrap();
+        let names = executable_cr::validation_names(&config);
+        assert_eq!(publication["event"], "REQUEST_CHANGES");
+        assert_eq!(publication["commit_id"], arguments["expected_head_sha"]);
+        assert!(publication["body"]
+            .as_str()
             .unwrap()
-            .write_all(
-                &serde_json::to_vec(&json!({"arguments":arguments,"publication":publication,
-                    "projectionTitle": step_sync::projection_title(24, arguments).unwrap()}))
-                .unwrap(),
-            )
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        fs::remove_file(config_path).unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .contains("REVIEWER_PUBLICATION_REMEDIATION_ROUNDTRIP_PASS"));
+            .starts_with(&review_body(&names, arguments)));
     }
 
     #[tokio::test]
-    async fn structured_cr_is_published_canonically_and_admitted_by_the_current_consumer() {
+    async fn retained_structured_cr_is_published_canonically_and_replayed_once() {
         let state = MockState::default();
         let (http, url) = client_with_state(true, None, state.clone()).await;
         let args = cr_fixture();
@@ -1512,11 +1473,11 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with(&review_body(&[], &args)));
-        assert_consumer_admits(&args, &reviews[0]);
+        assert_preserved_cr_publication(&args, &reviews[0]);
     }
 
     #[tokio::test]
-    async fn omitted_execution_fields_publish_resolved_metadata_and_roundtrip_to_worker() {
+    async fn retained_omitted_execution_fields_publish_resolved_metadata() {
         for omitted in [
             vec!["codex_effort"],
             vec!["subagents_allowed"],
@@ -1558,14 +1519,18 @@ mod tests {
             );
             let reviews = state.reviews.lock().unwrap();
             assert_eq!(reviews.len(), 1);
-            assert_consumer_admits(&args, &reviews[0]);
+            assert_preserved_cr_publication(&args, &reviews[0]);
             // A configured synthetic consumer effort must not re-default the
             // already resolved Reviewer profile on its next admission hop.
             let mut canary_args = args.clone();
             canary_args["repository"] = json!("harmless-lab/relay-canary");
             let canary_publication = json!({"event":"REQUEST_CHANGES", "commit_id":HEAD,
                 "body":review_body(&[], &canary_args)});
-            assert_consumer_admits_with_config(&canary_args, &canary_publication, "canary");
+            assert_preserved_cr_publication_with_config(
+                &canary_args,
+                &canary_publication,
+                "canary",
+            );
         }
     }
 
@@ -1595,7 +1560,7 @@ mod tests {
         );
         let reviews = state.reviews.lock().unwrap();
         assert_eq!(reviews.len(), 1);
-        assert_consumer_admits(&args, &reviews[0]);
+        assert_preserved_cr_publication(&args, &reviews[0]);
         assert!(state
             .requests
             .lock()
@@ -1750,7 +1715,7 @@ mod tests {
                     ),
                     Ok(())
                 );
-                assert_consumer_admits(
+                assert_preserved_cr_publication(
                     &args,
                     &json!({"event":"REQUEST_CHANGES", "commit_id":HEAD,"body":review_body(&[], &args)}),
                 );
@@ -1768,7 +1733,7 @@ mod tests {
             ),
             Ok(())
         );
-        assert_consumer_admits(
+        assert_preserved_cr_publication(
             &args,
             &json!({"event":"REQUEST_CHANGES", "commit_id":HEAD,"body":review_body(&[], &args)}),
         );

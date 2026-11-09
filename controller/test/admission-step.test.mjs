@@ -13,6 +13,21 @@ test('a charter, Decision and ready label do not allocate a Step before durable 
   assert.equal(records.length, 2);
 });
 
+test('one Task-wide sequence accepts owner-maintained standalone positions without fabricating admissions', () => {
+  const records = [admitted(3)];
+  const before = structuredClone(records);
+  for (const [history, labels, step] of [
+    [[], [], 1], [records, [], 4], [records, ['step-3'], 4], [records, ['step-5'], 6],
+    [[], [{ name: 'step-5' }, { name: 'other' }], 6]
+  ]) assert.equal(nextAdmissionStep(history, 42, labels).step, step);
+  assert.deepEqual(records, before);
+  assert.throws(() => nextAdmissionStep(records, 42, ['step-2']), { code: 'STEP_LABEL_BEHIND_ADMISSION' });
+  for (const labels of [['step-3', 'step-5'], ['Step-3'], ['step-0'], ['step-x'], ['step-03']])
+    assert.throws(() => nextAdmissionStep(records, 42, labels), error => ['STEP_LABEL_MULTIPLE', 'STEP_LABEL_INVALID'].includes(error.code));
+  assert.throws(() => nextAdmissionStep([], 42, [`step-${Number.MAX_SAFE_INTEGER}`]), { code: 'AUTHORITY_STEP_INVALID' });
+  assert.throws(() => nextAdmissionStep([], 42, ['step-9007199254740992']), { code: 'STEP_LABEL_INVALID' });
+});
+
 test('a new execution after BLOCKED receives a fresh Step bound to the prior admitted attempt', () => {
   const previous = admitted(3);
   assert.deepEqual(nextAdmissionStep([previous], 42), { step: 4,

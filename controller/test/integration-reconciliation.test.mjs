@@ -68,7 +68,7 @@ test('dirty PR admission still binds owner transport and exact reviewed head', a
     const value = await get(path);
     return path === '/pulls/43' ? { ...value, head: { ...value.head, sha: f.envelope.targetBase } } : value;
   } };
-  assert.equal((await admitEnvelope(changedHead, f.admissionRequest)).block.code, 'STARTING_STATE_MISMATCH');
+  assert.equal((await admitEnvelope(changedHead, f.admissionRequest, { nextStep: 3 })).block.code, 'AUTHORITY_CONTINUATION_INVALID');
 });
 
 for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-issue', 'head', 'review', 'main', 'unrelated-main']) {
@@ -80,7 +80,7 @@ for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-iss
     if (change === 'repository') f.pr.head.repo.full_name = 'unrelated/repository';
     if (change === 'base-branch') f.pr.base.ref = 'other';
     if (change === 'linked-issue') f.pr.body = 'Closes #42\nRelated to #44';
-    if (change === 'review') f.review.state = 'APPROVED';
+    if (change === 'review') f.review.body += '\nChanged review authority.';
     if (change === 'head') {
       const get = f.api.get.bind(f.api);
       f.api.get = async path => {
@@ -98,9 +98,10 @@ for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-iss
   });
 }
 
-test('fresh implementation still rejects a stale explicitly admitted base', async t => {
+test('fresh implementation retains the selected historical base and separately freezes current main', async t => {
   const f = await fixture(t, { mainAdvance: true });
-  assert.equal(f.envelope.admissionBlock.code, 'STARTING_STATE_MISMATCH');
+  assert.equal(f.envelope.historicalBase, f.envelope.request.base_sha);
+  assert.notEqual(f.envelope.historicalBase, f.envelope.targetBase);
   assert.equal(f.pushes(), 0);
 });
 
@@ -130,9 +131,10 @@ for (const kind of ['wrong-parent', 'reversed-parents', 'octopus', 'second-merge
     }
     const tree = await f.command(f.cwd, ['write-tree']);
     let parents = [previous, f.envelope.targetBase];
-    if (kind === 'wrong-parent') parents[1] = f.envelope.historicalBase;
+    const originalBase = await f.command(f.cwd, ['merge-base', f.envelope.startHead, f.envelope.targetBase]);
+    if (kind === 'wrong-parent') parents[1] = originalBase;
     if (kind === 'reversed-parents') parents.reverse();
-    if (kind === 'octopus') parents.push(f.envelope.historicalBase);
+    if (kind === 'octopus') parents.push(originalBase);
     const merge = await f.command(f.cwd, ['commit-tree', tree, ...parents.flatMap(p => ['-p', p]), '-m', 'candidate resolution'], kind === 'identity' ? {} : f.identity);
     await f.command(f.cwd, ['update-ref', `refs/heads/${f.envelope.branch}`, merge]);
     if (kind === 'secret') await f.commit('docs/work.md', 'removed later\n');

@@ -1,8 +1,7 @@
-"""Fixed owner adapters for the registered SERIAL runner transition.
+"""Read-only ownership checks for a retained, retired SERIAL runner.
 
-The transition core owns durable stop/removal reservations and gate drain.
-These adapters reobserve the exact retained runner and never remove local
-registration credentials, runner files or execution evidence.
+Current managed-pool operations verify its stopped service, protected metadata
+and absent native registration. No signal, disable or DELETE is available here.
 """
 import hashlib
 import json
@@ -12,7 +11,6 @@ import pwd
 import re
 import stat
 
-from config import compile_inputs
 from managed_pool import Host, require
 
 
@@ -37,7 +35,7 @@ def _object(raw):
 
 
 class SerialPoolGitHub:
-    """Scope-correct native identity observation and one exact-id removal."""
+    """Read-only native observation of the sealed original runner identity."""
     def __init__(self, api):
         self.api = api
 
@@ -70,22 +68,13 @@ class SerialPoolGitHub:
                 'SERIAL_TRANSITION_REMOTE_BINDING_UNPROVEN')
         return {key: value[key] for key in ['id', 'name', 'busy']}
 
-    def remove_legacy(self, binding):
-        # Called only after the core's durable remove-intent and target-ready
-        # proof. An uncertain DELETE is reobserved by that original operation;
-        # this adapter never retries it or cleans local credential markers.
-        value = self.observe_legacy(binding)
-        require(value is not None and value['busy'] is False, 'SERIAL_TRANSITION_LEGACY_BUSY')
-        result = self.api.request('DELETE', self._prefix(binding) + '/' + str(binding['runnerId']))
-        require(result is None, 'SERIAL_TRANSITION_REMOVE_UNCERTAIN_INSPECT_BEFORE_RETRY')
-
 
 class SerialPoolHost:
     def __init__(self, github, *, root=Path('/'), owner_uid=0, identity=None,
-                 host_factory=Host, pool_ready=None):
+                 host_factory=Host):
         self.github, self.root, self.owner_uid = github, Path(root), owner_uid
         self.identity = identity or pwd.getpwnam
-        self.host_factory, self.readiness = host_factory, pool_ready
+        self.host_factory = host_factory
         self.configurations = {}
 
     def _path(self, logical):
@@ -168,13 +157,16 @@ class SerialPoolHost:
         require(re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace)
                 and 'generalRunnerPool' not in original_config['consumer']
                 and 'executionSlots' not in original_config['consumer'], 'SERIAL_TRANSITION_ORIGINAL_NOT_SERIAL')
-        values = compile_inputs(original_config)
+        # Derive only the sealed historical service identity. Current managed
+        # compilation must not accept a SERIAL configuration for new work.
+        service = (namespace + '-general-runner.service'
+                   if original_config['environment'].get('instance') else 'relay-general-runner.service')
         user = self.identity(general['user'])
         require(user.pw_uid > 0, 'SERIAL_TRANSITION_RUNNER_IDENTITY_CHANGED')
         member = {'runnerName': general['name'], 'runnerUser': general['user'], 'runnerUid': user.pw_uid,
                   'root': '/opt/' + namespace + '/general-runner',
                   'state': '/var/lib/' + namespace + '/general-runner',
-                  'service': values.get('relay_general_runner_service_name', 'relay-general-runner.service'),
+                  'service': service,
                   'scope': general.get('scope', 'repository'), 'repository': original_config['consumer']['repository']}
         member['organization'] = member['repository'].split('/')[0]
         member['unit'] = '/etc/systemd/system/' + member['service']
@@ -237,24 +229,6 @@ class SerialPoolHost:
                 'SERIAL_TRANSITION_LEGACY_BINDING_CHANGED')
         return current, self.host_factory({'runnerUser': binding['runnerUser']})
 
-    def stop_legacy(self, binding):
-        current, host = self._bound(binding)
-        require(current['ownWorker'] is False, 'SERIAL_TRANSITION_LEGACY_WORKER_PRESENT')
-        def remote_idle():
-            remote = self.github.observe_legacy(binding)
-            return remote is not None and remote['busy'] is False
-        require(remote_idle(), 'SERIAL_TRANSITION_LEGACY_BUSY')
-        if host.service(binding).get('ActiveState') in ['inactive', 'failed']:
-            # A registered SERIAL listener may already be inactive but enabled.
-            # The core has durably reserved stop-intent; disable its proven
-            # unit without sending any signal, then reobserve the stop proof.
-            require(host.removal_stopped(binding), 'SERIAL_TRANSITION_STOP_UNCERTAIN_INSPECT_BEFORE_RETRY')
-            if self._enablement(host, binding) != 'disabled':
-                host.command(['/usr/bin/systemctl', 'disable', binding['service']])
-        else:
-            require(host.stop_idle(binding, remote_idle), 'SERIAL_TRANSITION_STOP_UNCERTAIN_INSPECT_BEFORE_RETRY')
-        require(host.removal_stopped(binding) and self._enablement(host, binding) == 'disabled',
-                'SERIAL_TRANSITION_STOP_UNCERTAIN_INSPECT_BEFORE_RETRY')
 
     def _enablement(self, host, binding):
         raw = host.command(['/usr/bin/systemctl', 'show', binding['service'], '-p', 'UnitFileState'],
@@ -266,7 +240,3 @@ class SerialPoolHost:
     def legacy_stopped(self, binding):
         current, host = self._bound(binding)
         return current['ownWorker'] is False and host.removal_stopped(binding) and self._enablement(host, binding) == 'disabled'
-
-    def pool_ready(self, config):
-        require(self.readiness is not None, 'SERIAL_TRANSITION_TARGET_READINESS_UNPROVEN')
-        return self.readiness(config) is True

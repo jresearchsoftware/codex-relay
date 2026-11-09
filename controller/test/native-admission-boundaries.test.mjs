@@ -36,7 +36,7 @@ function nextReady(f, runId = 100) {
   f.api.getRun = async id => copy(id === 99 ? previous : next);
   f.events.splice(0, f.events.length, { id: 72, event: 'labeled', actor: { login: CONSUMER.owner, type: 'User' },
     label: { name: 'codex-ready-auto' }, created_at: '2026-09-04T12:03:00Z' });
-  f.issue.labels = [{ name: 'step-900' }, { name: 'codex-ready-auto' }];
+  f.issue.labels = [{ name: `step-${f.envelope.step}` }, { name: 'codex-ready-auto' }];
   return { ...f.admissionRequest, runId, step: null };
 }
 
@@ -222,36 +222,6 @@ test('standalone v4 CR Draft transition reserves exact authority without allocat
     } });
   assert.equal(f.envelope.step, 1);
   assert.equal(mutations, 1);
-});
-
-test('retained v3 admission replays under upgraded broker without adopting new Decisions or a new Step', async t => {
-  let source;
-  const f = await fixture(t, { labelLaunch: true, streamlinedAdmission: false,
-    beforeAdmission: ({ api, issue }) => {
-      const base = /Required starting base: `([^`]+)`/.exec(issue.body)[1];
-      issue.body = charter;
-      source = { id: 901, user: actor, issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`,
-        body: render({ ...common('task-request'), schema_version: '3.0', step: 1, route: 'auto', purpose: 'Original admitted implementation',
-          scope: ['Original authorized scope'], model: 'original-model', effort: 'high', subagents: false,
-          validation: ['diff-check'], boundaries: ['No production'], decisions: [], context: [], supersedes: null,
-          branch: `${CONSUMER.taskBranchPrefix}test-42`, base_sha: base, starting_head: base, existing_pr: null, issue_closure_policy: 'keep-open' }) };
-      const list = api.list.bind(api);
-      api.list = async path => path === '/issues/42/comments' ? [source, ...await list(path)] : list(path);
-    } });
-  let calls = 0;
-  const result = await runAttempt({ ...f, execute: async e => { calls++; return { version: 2, attemptId: e.attemptId,
-    child: 'started', containment: 'reaped', result: { status: 'success', summary: 'Original no-change result.', validation: [] } }; } });
-  const original = copy((await f.store.get(99)).envelope);
-  const list = f.api.list.bind(f.api);
-  f.api.list = async path => path === '/issues/42/comments' ? [decision({ model: 'new-model' }, 902), ...await list(path)] : list(path);
-  const upgraded = createPublicationBroker({ api: f.api, store: f.store, publisher: f.publisher, journal: f.journal,
-    lifecycleStore: f.lifecycleStore, streamlinedAdmission: true });
-  const replay = await upgraded.dispatch(f.admissionRequest);
-  assert.equal(replay.resumed, true); assert.deepEqual(replay.envelope, original);
-  assert.equal(replay.envelope.request.schema_version, '3.0');
-  assert.deepEqual(await runAttempt({ ...f, broker: { invoke: request => upgraded.dispatch(request) }, admissionResumed: true,
-    execute: () => assert.fail('historical replay executed') }), result);
-  assert.equal(calls, 1);
 });
 
 test('concurrent delivery of one native command serializes through OS flock and admits it once', async t => {

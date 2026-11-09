@@ -11,39 +11,23 @@ v4 installation or a second execution path for a migrated Task.
 
 Native Reviewer identity/head selection and common attempt orchestration live in
 `../controller/src`. This directory owns shared Task/Decision/CR validation,
-post-review continuation and the repository secret scanner. Native review content
+execution metadata and the repository secret scanner. Native review content
 is authority; incidental Markdown and thread-title
 dash style do not define a security boundary. Execution state and Outcome publication belong to the controller. Run `npm test`.
 
-Legacy executable `REQUEST_CHANGES` uses contract `2.0`. The Reviewer caller sends
-`change_request` as structured tool input; repository, PR and reviewed/starting
-head come from the trusted top-level target fields. Reviewer validates the
-complete input before any GitHub request and renders both the readable native
-review and its `reviewer-executable-cr` JSON block. The native review is the
-only Change Request authority. The caller does not author headings or YAML.
+Legacy executable `REQUEST_CHANGES` records used contract `2.0`, rendered by
+Reviewer from structured `change_request` input into a native review and its
+`reviewer-executable-cr` block. Their [bounded definition](../reviewer/src/executable-cr-v2.json)
+and immutable fixtures remain owned by the Rust Reviewer for exact reserved
+publication recovery and already admitted result acceptance. The current Node
+controller has no CR2/YAML parser or fresh legacy execution path. Recover an
+original old attempt through its retained original runtime and bindings; do not
+convert it into a new admission.
 
-The shared [bounded definition](../reviewer/src/executable-cr-v2.json)
-supplies the tool's typed schema, bounds and native validation names to Rust and
-Node. It is included in both runtime source identities. Both validators support
-only the keywords and formats in that checked-in definition. Text limits count
-UTF-8 bytes; descriptions are single-line NFC text. Findings retain their supplied
-stable IDs (a letter followed by letters, digits, `_` or `-`), up to 30 findings.
-Validation is a nonempty set of supported native check names, independently of
-repeated compatibility prose. Additional starting-state requirements may be
-empty because the exact starting head is already bound. Effort and Subagents
-may be omitted by authors. The shared schema encodes the execution defaults
-from [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal); Node admission and
-Rust rendering use those same values. Reviewer renders resolved launch metadata;
-downstream validation and worker launch preserve it, including explicit overrides.
-Existing rendered reviews keep their explicit values; the historical fixture
-still tests its intentional overrides. Authoring defaults affect unresolved
-fields only. Use the paired Reviewer/Node revision for the new optional fields.
-For legacy CRs, Step is a positive safe integer matching the current remediation
-launch profile and persistent Issue/PR labels. A new CR uses current N+1; execution and CR
-transport retries keep that CR's Step. History never supplies Step.
-Model and effort remain bounded argument identifiers with backend capability
-truth. Subagents permission is separate. There is no task path allowlist or
-interactive review profile.
+Fresh native reviews and admissions use the schema-v4 contract below. Model,
+effort and Subagents defaults come from [AGENTS.md](../AGENTS.md#work-within-the-admitted-goal),
+and explicit trusted overrides stay bound to the admission snapshot. A requested
+validation identifier records a required check, not evidence that it ran.
 
 Validation names are bounded identifiers, not proof that a check ran or that
 this repository supplies a consumer's deployment checks:
@@ -65,179 +49,52 @@ undeclared IDs are rejected by both sides. No ID is interpreted as a shell comma
 consumer validation code owns its meaning. See the
 [integration contract](../docs/integration-reference.md#consumer-validation-identifiers).
 
-The `2.0` native representation, historical enum and byte-for-byte fixture are
-preserved: configured vocabulary is an extension, not a new serialization.
-Old binaries fail closed on extended config/custom IDs; deploy the paired
-Reviewer/Node revision before opting in. Existing configs with no declarations
-keep their behavior and consumer digest. A changed config requires attempt
-reconciliation. The shared schema is a `contracts/` concern even though its
-physical JSON file remains under `reviewer/src/` for Rust compilation.
-
-Only request applicable checks. A consumer must supply its own checks and
-report their results; this candidate does not include deployment roles or
-pretend that local tests satisfy an installed-runtime proof.
-
-The consumer checks the canonical JSON encoding, including duplicate keys,
-version and target binding, and reads findings and validation directly from it.
-Existing `1.0` YAML/native reviews remain readable through the historical parser;
-the retained legacy Reviewer path publishes only `2.0` executable CRs. Current
-qualified v4 publication uses typed schema-v4 native reviews; old schema-v3
-reviews remain historical/in-flight inputs. Unknown versions,
-multiple execution blocks and mixtures of old/new contracts fail closed.
-
-The [semantic input fixture](test/fixtures/executable-cr-v2-input.json) and
-[canonical native form](test/fixtures/executable-cr-v2.md) cover launch metadata
-and native review authority admission. All identities and task numbers are synthetic. Node tests admit that form through the current routing
-controller. Rust tests compare the rendered bytes, intercept the actual mock
-GitHub publication and pipe it into that same consumer, and reject the shared
-invalid corpus before any mock GitHub request. Run `npm test` here and
-`cargo fmt --check && cargo test --locked` in `reviewer/`; Cargo tests
-require Node for the cross-language checks. Consumer native exact-head CI must retain a separate installed-runtime proof
-boundary; local tests do not qualify its deployment adapters.
+The historical `2.0` representation and byte-for-byte fixtures remain unchanged.
+The schema is shared historical evidence even though its physical JSON file
+lives under `reviewer/src/` for Rust compilation. Current Node admission validates
+schema-v4 snapshots and does not round-trip old executable CRs. Consumer native
+exact-head CI and installed-runtime qualification remain separate evidence.
 
 ## Owner Step metadata procedure
 
-Steps decompose progress toward the Task's authorized goal and boundaries as
-work evolves; completing a Step does not complete the Task. One Codex thread
-may span successive Steps. Historical Task descriptions do not govern future
-Step decomposition. See [Task identity and startup rename](../AGENTS.md#task-identity-and-startup-rename).
-For legacy Tasks, the Issue body remains the current Task contract; the native
-review body is the sole executable CR authority, with the canonical Issue linked
-for Task identity.
-Implementation branch, commit and PR flow remains Codex-owned under
-[the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
+Steps describe progress toward the Task's authorized goal; completing a Step
+does not complete the Task. One Codex thread may span successive Steps. The
+current v4 Writer allocates a new Step at execution admission from canonical
+Issue position and successful prior admissions. Labels and bounded titles
+project that admitted identity. Decisions, CR publication and metadata-only
+changes allocate no Step. See the [current Step contract](#github-native-task-authority)
+and [manual result PR procedure](../packages/codex-relay/skill/references/workflow.md#manual-result-pr-step-labels).
 
-Owner `advance-phase` and `keep-step` procedures in this section describe the
-retained legacy contract. They cannot admit fresh legacy work on a qualified v4
-installation. Historical schema-v3 migrated Tasks resolve Step from their complete
-trusted Request and advance through an explicit successor Request; their typed
-publisher projects labels and the existing PR title. Current v4 admission instead
-allocates Step in Writer. Legacy owner helpers reject migrated Tasks.
-Both authority models retain same-CR publication recovery without an increment.
-
-Task producers and updates preserve exactly one explicit `Issue closure policy`
-field in the canonical Issue: `keep-open`, or `close-authorized` only with owner
-authority. Approval, Step completion and CR outcome tokens do not authorize
-closure. Missing, malformed or conflicting metadata selects `keep-open` with
-a visible warning; record owner reconciliation in the Issue body.
-`keep-open` means known work or evidence remains after implementation. Nearby
-prose should explain why the Issue stays open and what outcome would make closure appropriate.
-This adds no required structured field, parser gate or automatic closure rule.
-For new Task Decisions and complete Task Requests, also apply the
-[closure authoring guidance](#closure-policy-authoring); the canonical Issue
-remains the closure authority.
-
-### Executable CR publication and synchronization
-
-1. For a **new** executable CR, read the current linked Issue and PR, requiring
-   exactly one valid `step-N` on each, with equal N. Put N+1 in structured
-   `change_request.step` and its launch thread title. Preserve exact reviewed
-   head, findings, profile, validation and boundary authority. The optional owner
-   `prepare` helper performs these authoring reads without mutating metadata.
-2. Publish through the reserved Reviewer tool. The Reviewer validates the exact
-   repository, linked Issue, PR and reviewed head before native publication.
-   After verified publication, the same Reviewer operation ensures `step-(N+1)`
-   exists, replaces each target's Step label while preserving unrelated labels,
-   updates the bounded `Task <Issue> · Step <N+1> · <CR ID> · <CR purpose>` PR title and
-   re-reads the targets. Successful `REQUEST_CHANGES` includes verified metadata
-   synchronization; ordinary owner orchestration no longer performs post-CR writes.
-3. A failed or uncertain review publication uses the existing duplicate/recovery
-   path. Partial synchronization also resumes that **same native review ID** and
-   authored Step, allowing only N or N+1, without another review or increment.
-   Changed head/review/binding or malformed/multiple labels fails closed. Apply
-   the ready label only after synchronization succeeds. `APPROVE` changes no Step.
-
-The Reviewer App now needs `actions:read` for admission/active-work reads and
-`issues:write` for bounded Step label synchronization, alongside existing
-`metadata:read`, `pull_requests:write` and `checks:write`. Tokens remain restricted
-to the configured repository. These source permissions do not approve a live
-App permission update or deployment; an existing consumer requires separately
-authorized permission reconciliation and upgrade. Native CR versions `1.0`
-(readable) and `2.0` (published) remain unchanged.
-
-### Explicit owner new-phase preparation
-
-For an explicitly owner-authorized **new implementation phase** of the same Task,
-including a reopened or split continuation, deterministic preparation reads the
-canonical Issue's current Step N and advances precisely to N+1. An existing PR
-is optional; when supplied it must link that exact Issue in the configured
-repository and keep its branch, base and head binding. Preserve unrelated labels
-and update only the bounded canonical Task/Issue/Step PR title. No phase is
-inferred from history, prose, prior Outcomes or a largest-ever Step.
-
-For [Issue-authorized implementation continuation](../controller/README.md#issue-authorized-implementation-continuation),
-record the current goal and explicit starting head, existing branch and applicable
-PR binding in the canonical Issue. An execution retry or continuation of the same
-unfinished phase keeps the current Step. Only an explicitly owner-authorized new
-implementation phase advances it through this procedure, including the existing
-PR when one is present. This uses Issue authority without manufacturing a Reviewer
-CR; metadata preparation alone grants no launch authority.
-
-[`step-synchronization.mjs`](src/step-synchronization.mjs) verifies `/user` is the
-configured human owner (`User`), rejecting Writer/Reviewer App identities. Its
-bounded request accepts only the stated operation and fields:
-
-- `{operation:"prepare",pullRequest}`: read-only N+1 authoring assistance for a new CR.
-- `{operation:"advance-phase",issueNumber,currentStep,newPhaseAuthorized:true}`:
-  explicit owner new-phase preparation. Optional `pullRequest` requires a
-  single-line NFC `purpose` of 1–512 UTF-8 bytes; the helper constructs and bounds
-  the title instead of accepting arbitrary titles or other metadata.
-- `{operation:"keep-step",issueNumber,currentStep,pullRequest?}`: explicit read-only
-  bypass for execution retries and continuation within the same phase. Never call
-  `advance-phase` for those retries.
-- `{operation:"recover-legacy-review",pullRequest,reviewId,legacyPublicationRecoveryAuthorized:true}`:
-  exceptional, explicitly owner-authorized migration reconciliation only, as
-  described below; it does not replace normal Reviewer post-CR synchronization.
-
-`currentStep` binds the exact N to N+1 operation. A partial native label/title
-failure can resume that same request with only N/N+1 labels; repeating it cannot
-advance to N+2. Re-read verification exposes partial failures before launch.
-Phase requests cannot supply labels, body changes, arbitrary metadata or review
-IDs. The separate legacy recovery request accepts only the exact review ID and
-explicit migration authorization, never a new CR or arbitrary metadata. The
-former owner `synchronize` operation is retired; Reviewer publication is the sole normal post-CR metadata writer.
-
-The optional Linux adapter uses the caller's ordinary owner `GITHUB_TOKEN`:
-
-```sh
-node contracts/src/step-synchronization.mjs < metadata-request.json
-```
-
-This helper grants no launch, review publication, merge, deployment or Issue-close
-capability. Step labels alone never launch work. GitHub has no transaction across
-an Issue and PR; serialize metadata operations and retain fail-closed admission
-until labels, title and applicable authority agree.
+Historical legacy and schema-v3 attempts retain their original Issue/Request/CR,
+Step, branch, head and native publication bindings. Their original qualified
+runtime owns exact replay or recovery. Approval, a label repair or recovery of
+that same operation never increments its Step or authorizes another execution.
+The former Node owner metadata helpers and their `prepare`, `advance-phase`,
+`keep-step` and `recover-legacy-review` CLI operations are retired from the
+current product; they are not a migration or fresh-work interface.
 
 ### Legacy publication migration recovery
 
-New Reviewer operations retain the exact Issue/PR Step binding and initial PR
-title before native publication. A historical published SQLite record may lack
-that binding or its initial-title field. The
-Reviewer may accept such a record only when both labels and the canonical
-explicit-CR-ID title are already synchronized; it never invents an old anchor
-or silently mutates a newly linked Issue. Existing authority hashes must still
-match when upgrading an older anchor. Otherwise it returns
-`LEGACY_STEP_BINDING_REQUIRED` and preserves the original native review.
+An uncertain original Reviewer publication resumes its existing reserved native
+operation with the original payload and read-back checks. A missing historical
+binding, changed reviewed head, malformed labels or ambiguous native effect
+requires owner reconciliation within that operation's authority. Do not invent
+a replacement review, attempt or metadata journal to recover it. A historical
+SQLite publication without its original Step/title anchor may resume only when
+the exact labels and canonical title are already synchronized and its authority
+hashes still match. Otherwise `LEGACY_STEP_BINDING_REQUIRED` preserves the review
+for explicitly authorized reconciliation of that original binding. Replay then
+keeps the original native review ID, payload and Step; it grants no new review or
+execution. This is native Reviewer publication recovery, not the retired owner
+metadata CLI or a fresh legacy admission route.
 
-After this error, the owner can explicitly authorize the bounded
-`recover-legacy-review` helper operation. It verifies the configured `/user`
-human owner, exact current decisive Reviewer `CHANGES_REQUESTED` ID, repository,
-PR, canonical linked Issue and unchanged reviewed head. Step comes solely from
-that same executable review body. Only its N/N+1 metadata is eligible; unrelated
-labels and current Task/CR authority are preserved. The helper re-reads binding,
-review, labels and canonical title after updates. Repeating this migration repair
-cannot author a review, infer a Step, advance again or launch work.
-
-Then replay the **original Reviewer payload** through its existing
-publication-recovery path, retaining the same native review ID and Step.
-Changed authority, missing/malformed/multiple labels or ambiguous publication
-needs owner reconciliation. Do not invoke this exception for current Reviewer
-operations or normal post-CR synchronization; the former general `synchronize`
-owner operation remains retired.
-
-Remediation follows [progress-bounded execution](../docs/execution-policy.md)
-inside the admitted worker. Contract counts and Step metadata bind authority;
-they do not limit local correction iterations or authorize automatic retries.
+Task producers preserve exactly one explicit `Issue closure policy` field in
+the canonical Issue: `keep-open`, or `close-authorized` with owner authority.
+Missing, malformed or conflicting closure metadata selects `keep-open` with a
+visible warning. Step completion, approval and CR outcome tokens do not authorize
+closure. Apply the [closure authoring guidance](#closure-policy-authoring) to
+trusted v4 Decisions. Implementation branch, commit and PR flow remains governed
+by [the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
 
 ## GitHub-native Task authority
 
@@ -251,7 +108,7 @@ or controller heuristic. The two models are never combined for execution.
 
 ### Streamlined schema 4.0 admissions
 
-The qualified `relay-workflows-v3` controller/Writer pair resolves new native
+The qualified `relay-workflows-v4` controller/Writer pair resolves new native
 admissions from the unchanged `github-native-v1` charter and trusted Task
 Decisions. Schema version `4.0` explicitly distinguishes this path from retained
 schema-v3 records; it requires no new charter marker or public Task Request.
@@ -261,37 +118,33 @@ Step only when it durably admits a new execution under the existing lock.
 Replay/recovery of that attempt retains its snapshot and Step; a genuinely new
 execution after `BLOCKED` receives the next Step.
 
-The qualified v4 pair rejects fresh unmarked/legacy Task admission and new v3
-Task Request/CR execution chains with `CURRENT_PROTOCOL_REQUIRED`. New work on
-an older Task must resolve current v4 authority or stop for explicitly
-owner-authorized migration; the gate cannot infer migration from typed comments,
-Step metadata or a ready label. Fresh durable Decision/Request/CR publication
-follows the same boundary, including new schema-v3 Decisions. Historical
-parsing/verification and reserved exact-operation recovery remain available,
-as do safe completion and Outcome publication for an
-exact already-admitted old attempt. These operations preserve original bytes,
-source bindings and Step and cannot create another execution. Result acceptance
-remains available for exact old admitted attempts, including schema-v3 acceptance
-records. Older qualified installations keep their reviewed contract;
-this is not a general upgrade bridge
-or a blanket historical support cutoff.
+The qualified v4 pair rejects fresh unmarked Task admission with
+`CURRENT_PROTOCOL_REQUIRED`. New work on an older Task requires current native
+charter authority or explicitly owner-authorized migration; typed comments, Step
+metadata and a ready label cannot migrate it. A current decisive remediation CR
+must be schema v4. Fresh durable Decision/CR publication also uses v4; exact
+reserved old publication recovery and old admitted-result acceptance retain their
+original contract. Exact schema-v3/legacy execution completion and Outcome recovery
+use the frozen original source, preserving bodies, source bindings and Step.
+They cannot create another execution or qualify a component upgrade.
 
 The shared [schema-v4 definition](src/github-authority-v4.json) has public
 `decision`, `change-request`, `outcome`, `task-approval` and `task-review` records,
-plus the internal `admission_schema`. Schema-v3 Task Requests and results remain
-readable, and already-admitted schema-v3 attempts retain their original selector,
-exact body digests and replay/publication rules. Fresh v4 admission does not
-select a v3 Request as compatibility input or inherit its execution fields.
-When a marked Task has v3 Request history, an active trusted Task-scoped v4
-Decision newer than the latest v3 Request must explicitly amend purpose or scope
-to establish current v4 direction. A closure/profile-only amendment is
-insufficient. The latest applicable v3 CR also stops fresh admission; a current
-v4 CR can become current while preserving historical records. This is current v4
-authority selection, not automatic conversion or rewriting of old records.
-Retained snapshots keep their original exact compatibility references and Step.
-A public Request is not a new-work prerequisite. The qualified paired upgrade
-is still required before the new contract is used; standalone or partially
-upgraded components provide no
+plus the internal `admission_schema`. Historical v3 Requests/CRs are opaque to
+current Node admission: it selects no old Request, inherits no old execution
+fields and imposes no new Decision requirement merely because that history exists.
+Original old attempts retain their selector and exact replay/publication rules
+through original source; native Reviewer keeps bounded old result acceptance.
+
+A trusted historical schema-v3 Decision can remain a provenance reference. Exact
+admitted v4 result handling verifies the original selected native identity and body
+hash. Fresh admission is permitted when later active v4 Decisions already replace
+every effective historical amendment field, without another Decision or formal
+supersession. Still-effective unhandled v3 semantics stop with
+`CURRENT_PROTOCOL_REQUIRED`; they are not silently dropped or used as a fresh
+old-schema execution model. Retained snapshots keep original exact source
+references and Step. A public complete Request is unnecessary. A qualified paired
+upgrade remains required; standalone or partially upgraded components supply no
 admission authority.
 
 Trusted non-superseded Decisions are applied in ascending native comment-ID
@@ -436,8 +289,14 @@ launches execution nor silently rewrites a previously selected Request.
 Selected discussion, previous Outcomes and review findings remain evidence.
 They cannot supply omitted executable fields or grant implicit scope.
 
-The shared [definition](src/github-authority-v1.json) is included by Rust and
-read by Node. All records use schema version `3.0` and one canonical
+The retained [definition](src/github-authority-v1.json) is included by Rust
+for exact old record validation; original runtime source owns old admitted
+execution. Current Node treats old records as opaque historical evidence, apart
+from an exact selected v3 Decision needed to read or recover an admitted v4
+authority source. A later trusted v4 Decision may already replace every effective
+historical field; that existing evidence permits fresh admission without another
+Decision or formal supersession. Still-effective unhandled v3 semantics stop with
+`CURRENT_PROTOCOL_REQUIRED`. These historical records use schema version `3.0` and one canonical
 `relay-authority` JSON fence. The representation rejects unknown properties,
 unsupported versions, duplicate JSON keys, multiple execution blocks and
 legacy/new mixtures. Strings use bounded UTF-8 bytes and single-line NFC text.
@@ -539,7 +398,9 @@ its existing exact-head native review operation.
 [`github-authority.mjs`](src/github-authority.mjs) exposes
 `authorityMode`, `stableClosurePolicy`, `validateAuthorityRecord`,
 `extractAuthorityRecord`, `renderAuthorityRecord`, `nativeReference`,
-`resolveRequestContext`, `selectCurrentRequest` and `validateTaskApproval`.
+`resolveRequestContext` and `selectCurrentRequest`. Independent Task Approval
+validation/publication belongs to the Rust Reviewer; there is no duplicate
+Node acceptance validator or post-review execution engine.
 The selector consumes bounded trusted API records and a trusted binding,
 returns `{request,record,reference,selectedContext,decisions,warnings}`, and
 returns `null` only for a legacy charter. It throws a bounded authority error
@@ -614,158 +475,89 @@ of current checks, mergeability or independent review acceptance.
 
 ### Authorized continuation after independent acceptance
 
-This section specifies the native Relay continuation helper. Repository owner
-acceptance by verified merge and ordinary authorized standalone/manual work
-follow the [Task workflow policy](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
-Missing historical native receipts do not reverse that owner acceptance or
-manufacture execution evidence. The source-PR path below supports explicitly
-authorized standalone work without an execution receipt.
+The ordinary owner orchestration uses the supported GitHub connector directly.
+It interprets existing canonical authority and acts within that authority; there
+is no Relay post-review engine, owner merge CLI, action-port interface or local
+merge journal. The independent Reviewer publishes acceptance, the owner channel
+performs authorized integration, and protected Writer continues to own admitted
+execution and Outcome publication/recovery. Removing a continuation helper does
+not transfer owner credentials or merge authority to Reviewer, Writer or workers.
 
-The complete Request, authored Step and `task_complete` details below describe
-the retained schema 3.0 path. Schema 4.0 uses the exact authority/admission/Outcome
-binding, verified canonical completion and `{hold,next}` direction described in
-[streamlined admissions](#streamlined-schema-40-admissions); its continuation
-does not prepare another public Request or allocate a Step.
+For Direct work, verified independent native exact-head `APPROVE` may be followed
+by the already-authorized integration without another ceremonial merge prompt.
+For Deliberative work, first provide the substantive non-approving assessment,
+conduct the intended owner discussion and record the required trusted Task
+Decision. Only then may the independent evaluator publish formal approval of
+the still-current exact result. Acceptance of report quality alone does not
+adopt its recommendation or authorize implementation, integration or deployment.
 
-Retained Task Requests and Change Requests may include
-`continuation: {hold,task_complete,next}`. All three fields are explicit when
-present; absence means `hold: false`, `task_complete: false`, `next: null`.
-`next` is null, `{task,request}` identifying an already-published exact current
-Request in the same repository, or `{task,direction,step}` for bounded
-after-acceptance preparation of the same Task. The direction is a selected
-trusted Task Issue Decision already normalized into the complete accepted
-snapshot. Its explicit Step is the same Step or precisely the next Step. Decisions may amend continuation
-only when the next complete snapshot normalizes that amendment. Approval cannot
-invent continuation, grant new scope, replace a Request or manufacture a PR.
+The owner uses this bounded sequence through the existing connector:
 
-The existing owner orchestration channel calls
-[`continueAfterApproval`](src/post-review-continuation.mjs) immediately after a
-verified independent native publication. It executes the already-authorized
-operations through the owner's existing bounded native adapters; it does not
-ask for another Publish/merge/continue confirmation. The Reviewer service
-remains the publication actor, and the owner channel remains the merge/closure
-and launch actor. The helper introduces no credentials, runtime service,
-installation step, generic mutation endpoint, authority registry or new
-owner input. It is never made available to the worker.
+1. Verify durable publication of the original independent native approval:
+   trusted Reviewer identity, decisive state, exact reviewed head, effective
+   Task authority and required native acceptance evidence. Resolve
+   `PUBLICATION_UNCERTAIN` through replay/readback of the **original identical
+   Reviewer operation**, including its intended body/operation identity. Never
+   post another review or treat an uncertain response as approval.
+2. Refresh the canonical Task and trusted Decisions, result provenance, exact
+   PR repository/branch/head, approval, required native checks, Draft/Ready,
+   mergeability, explicit holds and protected boundaries. Dispose of material
+   warnings and visible evidence gaps. An amended authority needing fresh
+   acceptance, moved head, incomplete/failing required check, unknown readiness
+   or hold stops integration. Ordinary base movement is acceptable only under
+   the applicable exact-head/readiness policy. A required exact-base guarantee
+   needs a supported atomic capability; `expected_head_sha` alone cannot provide
+   it. Missing connector permissions or native evidence remain explicit gaps.
+3. Verify applicable closure restrictions before merging. The currently
+   supported migrated-Task closure binding still requires verified non-closing
+   PR linkage (`Related to #N`) and a neutral squash title/body. Neither helper
+   retirement nor Shared Governance adoption implements Task #194, changes the
+   Task's closure policy, or authorizes closing it. Resolve an implicit closing
+   link before integration under existing owner authority.
+4. Call the connector's `merge_pull_request` with `merge_method: "squash"` and
+   `expected_head_sha` equal to the full independently approved/current SHA.
+   Supply a neutral explicit `commit_title` and `commit_message` where required
+   by that closure binding. GitHub rejects a moved head; do not omit the guard,
+   enable unattended auto-merge or substitute another merge method.
+5. Read back the same native PR and merge commit. Verify merged state, the
+   approved head, destination/base repository, returned merge SHA and squash
+   commit before any dependent action. If the response is lost or uncertain,
+   inspect authoritative GitHub PR/commit records for that original operation.
+   Do not blindly repeat a merge, declare failure/success from transport status
+   alone, close the Task or launch follow-up while its effect is unresolved.
 
-For native PR `APPROVE`, the helper re-reads the current decisive native verdict,
-its trusted Bot author, the canonical Task/Request and charter, exact approved
-head, live PR/Task binding, current mergeability/readiness and required check
-completeness at that head. With no hold or protected boundary it performs an
-exact-head squash merge, then verifies the native merged result. For migrated
-Tasks, trusted native `closesTask` must be explicitly false before squash; true
-or unknown blocks the merge. Typed PRs use a related reference and the helper
-supplies a deterministic neutral squash title/body instead of inheriting
-source closing keywords. Explicit Issue closure remains a separate action
-after Task completion and closure authority. Legacy merge message/reference
-behavior is preserved. Ordinary base
-movement is allowed when current readiness and exact-head checks remain safe.
-An explicitly required exact-base reconciliation policy is preserved; unknown
-base/readiness state or changed facts after reservation stops the action.
-No synthetic merge, stale-head approval or review fallback is supplied.
+For example, after those gates are satisfied, the existing connector accepts:
 
-For an owner-created **standalone manual source PR**, native source facts replace
-the execution-result binding only. Reviewer verifies the configured owner's
-native User identity, same repository, branch and exact head, resolves current
-charter/Decision authority, and binds both that authority and source-PR
-provenance in its native review. Its `source_pr` receipt contains repository,
-number, head SHA, branch and native author; it contains no admission or Writer
-Outcome. An exact retained manual Request can remain the compatibility source;
-fresh v4 work does not publish a new v3 Request or allocate a fictitious Step.
-An unrelated historical Request does not become current source authority.
-
-This is a conditional merge policy, not proof that source authorship or an
-absent Outcome authorizes standalone execution. The existing trusted owner
-`readCanonicalState` port must verify explicit standalone permission in the
-current canonical authority, establish that the result is not an admitted Relay
-attempt, and disposition warnings from the ordinary owner result and required
-native evidence. It supplies `standaloneAuthorization` with the exact
-`authority_sha256`, `pullRequest`, `headSha`, `authorized: true`,
-`admittedExecution: false` and `warningsDispositioned: true`. Missing, ambiguous
-or revoked facts stop before mutation. These are internal adapter facts, like
-the existing completion and protected-boundary facts, not a new owner prompt,
-comment, registry or service. `binding.trustedOwner` and the PR's native
-`author`, `headRepository` and `branch` must also match the receipt. Retained
-manual Requests additionally bind the Task/PR `step`.
-
-The tradeoff is deliberate: GitHub proves source/review identities; the trusted
-owner channel interprets existing explicit Task permission and execution
-provenance. Neither component upgrades an ordinary result comment to typed
-authority. Same-PR/current-Request/head Writer results or execution markers
-retain their admitted result/recovery path, including blocked or stale results;
-automatic and Relay-admitted manual executions still require a Writer Outcome.
-The helper rechecks these facts after reservation and keeps exact-head checks,
-warning disposition, holds, `closesTask: false`, neutral squash messages,
-completion/closure conditions and retry reconciliation. A receipt alone cannot
-downgrade an admitted approval into standalone provenance.
-If a retained Request names only another old Request as its next action, source
-acceptance does not silently drop it or launch a fresh v3 chain: the squash can
-complete, then follow-up stops with `CONTINUATION_NEXT_AUTHORITY_INVALID` until
-current v4 direction is available. A current trusted continuation Decision can
-explicitly replace or clear that old follow-up.
-
-An implemented no-PR result follows the same path through trusted native Task
-Approval and its exact Writer Outcome. Task Approval does not substitute for a
-PR review or authorize merging an artifact PR. Closure occurs only under the
-effective `close-authorized` policy, verified Task completion, no
-remaining work and a verified native acceptance result. `keep-open` always
-preserves the Issue and does not prevent a separately authorized next action.
-The retained schema 3.0 path also requires its explicit `task_complete` flag.
-
-A selected exact next Request routes to automatic launch or a manual handoff
-without another owner prompt. The helper checks its own Task charter, current
-native Request and protected boundaries, and rechecks it after action
-reservation. The target can be another Task. Same-Task direction preparation invokes the
-existing bounded `prepareNextAuthority` owner port only after acceptance and
-verified merge, while the old Request is still current. It must preserve the
-complete accepted purpose, scope, profile, validation and boundaries, use the
-explicit target Step, supersede the accepted Request and consume continuation
-to its inactive defaults. Git starting facts may be refreshed through trusted
-owner preparation; material phase changes require a separately authorized
-Request. PR-scoped Decision amendments require explicit equivalence in the
-selected Task direction before carrying their semantics into Task scope.
-Conflicting selected continuation amendments stop preparation; the helper
-does not create another owner Decision to override them. It verifies the new
-current native Request before launch and rechecks that exact prepared identity
-after reservation. Publishing a superseding same-Task Request before merge
-invalidates the accepted source and stops every action. The helper refuses
-re-executing the accepted current Request as its own next action. A known
-same-Task next phase keeps the Issue open.
-
-The callable interface is:
-
-```js
-import { continueAfterApproval } from './contracts/src/post-review-continuation.mjs';
-const result = await continueAfterApproval(verifiedPublicationReceipt, ownerNativePorts);
+```json
+{
+  "repository_full_name": "example-org/sample-project",
+  "pr_number": 25,
+  "merge_method": "squash",
+  "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "commit_title": "Implement the accepted change (#25)",
+  "commit_message": "Related to #23"
+}
 ```
 
-The publication receipt identifies repository, Task, exact native approval
-reference and, for PR acceptance, reviewed head. Schema 4.0 binds exact authority
-sources and execution admission; retained schema 3.0 binds the exact Request
-reference and charter digest. Standalone source PR receipts carry exact
-authority and `source_pr` in place of admission/Outcome, plus the same verified
-native approval reference. Legacy native PR acceptance retains its existing canonical
-`authority_digest` with a null typed Request reference; it does not migrate
-implicitly. Required ports are `readCanonicalState`, `reserveAction` and
-`recordActionResult`. The relevant bounded action ports are `mergeSquash`,
-`closeIssue`, `readNextAuthority`, `prepareNextAuthority`, `launchRequest`,
-schema 4.0 `launchAuthority`, and
-`manualHandoff`.
-`readCanonicalState` supplies trusted native records/binding, the current
-native approval reference, exact PR/check facts and canonical remaining-work,
-hold and protected-boundary decisions. For legacy work it supplies the existing
-authority digest and accepted continuation, rather than inventing typed scope.
-These facts come from the already-authorized owner channel, never worker JSON
-or free-form instruction interpretation inside the helper.
+This is an example tool argument, not an executable permission or a stored
+receipt. Existing native GitHub records supply durable integration evidence;
+no owner-local merge state is created or required. If readback cannot establish
+whether a prior mutation happened, report the exact missing evidence and stop
+dependent progress rather than attempting a replacement operation.
 
-Action ports use the existing caller publication-intent/native-receipt journal.
-The helper reserves a deterministic operation identity before mutation,
-re-reads authority after reservation, retains the native result before the next
-action and reconciles already-completed actions without replay. A failed or
-uncertain native approval, ambiguous existing mutation, uncertain mutation
-response, missing native readback or changed authority returns a bounded
-`{status:"stopped",reason,actions}` result. Known completed progress remains in
-`actions`; no blind retry, fallback verdict or unrecorded scope advance occurs.
-Qualification uses injected bounded native adapters to exercise actual merges,
-closure and automatic/manual follow-up, including the no-PR acceptance path.
-It does not claim live consumer credential, service or GitHub qualification.
+An owner-created standalone source PR retains its explicit standalone Task
+permission, native owner/repository/branch/head provenance and independent
+source-PR acceptance. It fabricates neither admission nor Writer Outcome. A
+known admitted result retains its real Writer Outcome and publication recovery;
+ordinary owner commentary cannot downgrade it to standalone work. Genuine
+no-PR results use exact native Task Approval of their Writer result and require
+no artificial PR or merge. Missing historical receipts do not undo separately
+established owner acceptance by verified merge.
+
+Integration, Issue closure, further admission, package release and deployment
+remain distinct permissions and facts. After verified integration, reassess
+actual completion, remaining work and current holds under the Task's supported
+closure contract. Further work uses the existing authorized admission path;
+there is no automatic launch, prepared successor Request or preallocated Step
+from an approval. No extra owner-choice prompt is needed for an action already
+clearly authorized, and no action may infer new authority from approval alone.

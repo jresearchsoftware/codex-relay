@@ -19,7 +19,6 @@ import managed_pool
 import pool_eligibility
 import workflow_projection
 from test_managed_pool import inputs, MemoryState, Remote, Host
-from test_execution_slots import inputs as explicit_inputs
 
 
 def shared():
@@ -145,14 +144,9 @@ def test_checkout_configuration_keeps_pair_only_contract_and_has_no_third_workfl
         config.validate(value, ROOT)
 
 
-@pytest.mark.parametrize('topology', ['default', 'managed', 'independent'])
+@pytest.mark.parametrize('topology', ['default', 'managed'])
 def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_identity(topology):
     value = shared()
-    if topology == 'independent':
-        value = explicit_inputs()
-        del value['consumer']['repository']
-        value['consumer']['repositories'] = ['example-org/first', 'example-org/second']
-        value['environment']['repository'] = 'example-org/first'
     value['consumer']['repositoryRuntimeUsers'] = {'example-org/second': 'second-runtime'}
     config.validate(value, ROOT)
     compiled = config.compile_inputs(value)
@@ -162,9 +156,9 @@ def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_ide
         include, = yaml.safe_load((ROOT / 'deploy/ansible/tasks/execution-slot.yml').read_text())
         variables['relay_slot_inputs'] = slot
         variables.update(Templar(loader=DataLoader(), variables=variables).template(include['vars']))
-        expected_map = {} if topology == 'independent' else value['consumer']['repositoryRuntimeUsers']
+        expected_map = value['consumer']['repositoryRuntimeUsers']
         assert variables['relay_repository_runtime_users'] == expected_map
-        assert variables['relay_additional_runtime_users'] == ([] if topology == 'independent' else ['second-runtime'])
+        assert variables['relay_additional_runtime_users'] == ['second-runtime']
     template = (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2').read_text()
     templar = Templar(loader=DataLoader(), variables=variables)
     launcher = templar.template(template, convert_data=False)
@@ -174,7 +168,7 @@ def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_ide
     runtime = variables['relay_codex_user']
     assert {profile['repository']: profile['user'] for profile in rendered} == {
         'example-org/first': runtime,
-        'example-org/second': runtime if topology == 'independent' else 'second-runtime',
+        'example-org/second': 'second-runtime',
     }
     assert {profile['root'] for profile in rendered} == {
         variables['relay_dispatch_work_root'] + '/repositories/' + repository
@@ -182,22 +176,14 @@ def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_ide
     sudoers = templar.template(
         (ROOT / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex.sudoers.j2').read_text(),
         convert_data=False)
-    if topology == 'independent':
-        assert f'ALL=({runtime}:{variables["relay_codex_work_group"]})' in sudoers
-        assert 'second-runtime' not in sudoers
-        assert 'const TOKEN_FILE = "' + variables['relay_codex_access_token_file'] + '";' in launcher
-    else:
-        assert f'ALL=({runtime},second-runtime:{variables["relay_codex_work_group"]})' in sudoers
+    assert f'ALL=({runtime},second-runtime:{variables["relay_codex_work_group"]})' in sudoers
 
 
-def test_repository_runtime_users_keep_all_explicit_slot_work_groups_separate():
-    value = explicit_inputs()
-    del value['consumer']['repository']
-    value['consumer']['repositories'] = ['example-org/first', 'example-org/second']
-    value['environment']['repository'] = 'example-org/first'
+def test_repository_runtime_users_cannot_alias_the_managed_work_group():
+    value = shared()
     value['consumer']['repositoryRuntimeUsers'] = {
         'example-org/second': value['consumer']['executionSlots'][1]['workGroup']}
-    with pytest.raises(config.InvalidConfig, match='executionSlots.isolated-work-groups'):
+    with pytest.raises(config.InvalidConfig, match='repositoryRuntimeUsers.isolated-users'):
         config.validate(value, ROOT)
 
 

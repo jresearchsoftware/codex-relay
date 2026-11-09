@@ -13,7 +13,7 @@ async function manualBroker(t, race) {
   const decisions = [];
   const f = await fixture(t, { issueBody: charter, route: 'manual', labelLaunch: true, streamlinedAdmission: true });
   const e = f.envelope;
-  const pr = { number: 43, node_id: 'PR_manual', state: 'open', merged: false, draft: true,
+  const pr = { number: 43, node_id: 'PR_manual', state: 'open', merged: false, draft: true, labels: [], title: 'Manual implementation',
     body: 'Related to #42', base: { ref: CONSUMER.baseBranch, sha: e.historicalBase, repo: { full_name: REPOSITORY } },
     head: { ref: e.branch, sha: e.startHead, repo: { full_name: REPOSITORY } } };
   const result = { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: 42,
@@ -26,14 +26,23 @@ async function manualBroker(t, race) {
   const originalGet = f.api.get.bind(f.api);
   const originalList = f.api.list.bind(f.api);
   const originalPost = f.api.post.bind(f.api);
+  const originalPatch = f.api.patch.bind(f.api);
   const originalIdentity = f.api.userIdentity.bind(f.api);
   const originalPut = f.store.put.bind(f.store);
-  f.api.get = path => path === '/pulls/43' ? Promise.resolve(copy(pr)) : originalGet(path);
+  f.api.get = path => ['/pulls/43', '/issues/43'].includes(path) ? Promise.resolve(copy(pr)) : originalGet(path);
+  f.api.patch = async (path, body) => {
+    if (path === '/pulls/43' && Object.keys(body).every(key => key === 'title')) { Object.assign(pr, body); return copy(pr); }
+    return originalPatch(path, body);
+  };
   f.api.list = path => path.startsWith('/pulls?') ? assert.fail('An explicit new v4 PR must not scan unrelated PRs')
     : path === '/pulls/43/reviews' ? Promise.resolve([])
     : path === '/issues/42/comments' ? originalList(path).then(values => [...decisions, ...values]) : originalList(path);
   f.api.userIdentity = login => login === WRITER ? Promise.resolve({ login, type: 'Bot', id: 702 }) : originalIdentity(login);
   f.api.post = async (path, body) => {
+    if (path === '/issues/43/labels') {
+      for (const name of body.labels) if (!pr.labels.some(label => label.name === name)) pr.labels.push({ name });
+      return copy(pr.labels);
+    }
     assert.equal(path, '/issues/43/comments');
     posts++;
     const comment = await originalPost(path, body);
@@ -72,6 +81,37 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
   assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
+});
+
+for (const creator of [{ login: 'authorized-human', type: 'User' }, { login: 'authorized-bot[bot]', type: 'Bot' }]) {
+  test(`Writer binds a delayed manual PR by ${creator.type} and repairs missing admitted metadata before Outcome/Ready`, async t => {
+    const f = await manualBroker(t);
+    f.pr.user = creator;
+    await f.invoke();
+    assert.deepEqual(f.pr.labels, [{ name: `step-${f.envelope.step}` }]);
+    assert.match(f.pr.title, new RegExp(`^Task 42 · Step ${f.envelope.step} · `));
+    assert.equal(f.pr.head.sha, f.result.result.revision);
+    assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
+    f.pr.labels = []; f.pr.title = 'Missing projection after an interrupted metadata repair';
+    await f.invoke();
+    assert.deepEqual(f.pr.labels, [{ name: `step-${f.envelope.step}` }]);
+    assert.match(f.pr.title, new RegExp(`^Task 42 · Step ${f.envelope.step} · `));
+    assert.equal(f.posts(), 1); assert.equal(f.ready(), 1);
+    assert.equal((await f.store.get(f.envelope.runId)).envelope.step, f.envelope.step);
+  });
+}
+
+for (const [name, mutate, code] of [
+  ['different Step', pr => { pr.labels = [{ name: 'step-9' }]; }, 'STEP_LABEL_MISMATCH'],
+  ['ambiguous Steps', pr => { pr.labels = [{ name: 'step-1' }, { name: 'step-9' }]; }, 'STEP_LABEL_MULTIPLE'],
+  ['malformed Step', pr => { pr.labels = [{ name: 'step-invalid' }]; }, 'STEP_LABEL_INVALID'],
+  ['conflicting title', pr => { pr.title = 'Task 41 · Step 1 · unrelated'; }, 'STEP_DISPLAY_MISMATCH']
+]) test(`manual PR projection rejects ${name} without publishing or becoming Ready`, async t => {
+  const f = await manualBroker(t);
+  mutate(f.pr);
+  await assert.rejects(f.invoke(), { code });
+  assert.equal(f.posts(), 0); assert.equal(f.ready(), 0); assert.equal(f.pr.draft, true);
+  assert.equal((await f.store.get(f.envelope.runId)).manualSubmission, undefined);
 });
 
 test('manual successful Outcome remains review-ready under new Deliberative approval constraints, including replay', async t => {

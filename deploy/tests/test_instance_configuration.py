@@ -39,13 +39,13 @@ def render(public, filename):
         (BACKEND / filename).read_text(), convert_data=False)
 
 
-def test_legacy_identities_and_isolated_rendered_units_do_not_overlap():
+def test_current_instance_units_and_publication_controls_are_namespaced():
     legacy = config.load(ROOT / 'deploy/example.json', ROOT)
     isolated = inputs()
     template = 'roles/relay_runtime/templates/'
     legacy_recovery = render(legacy, template + 'reviewer-mcp-recovery.timer.j2')
     isolated_recovery = render(isolated, template + 'reviewer-mcp-recovery.timer.j2')
-    assert 'Unit=reviewer-mcp-recovery.service' in legacy_recovery
+    assert 'Unit=codex-relay-reviewer-recovery.service' in legacy_recovery
     assert 'Unit=codex-relay-reviewer-recovery.service' in isolated_recovery
     assert 'REVIEWER_RELAY_ENABLED=true' in render(legacy, template + 'relay.env.j2')
     assert 'REVIEWER_RELAY_ENABLED=false' in render(isolated, template + 'relay.env.j2')
@@ -247,13 +247,16 @@ def test_actual_first_preflight_task_binds_the_installed_repository(tmp_path, in
     config_root.mkdir()
     (config_root / 'reviewer-mcp.json').write_text(json.dumps({'repository': installed_repository}))
     fixture = 'fixture-' + uuid.uuid4().hex[:12]
+    public = inputs()
+    public['environment']['generalRunner']['name'] = fixture
+    public['consumer'].pop('executionSlots')
     values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()),
-              **config.compile_inputs(inputs()), 'relay_github_repository': 'example/first',
+              **config.compile_inputs(public), 'relay_github_repository': 'example/first',
               'relay_reviewer_repositories': ['example/first'],
               'relay_config_root': str(config_root), 'relay_install_root': str(tmp_path / 'install'),
               'relay_reviewer_user': fixture}
     for key in list(values):
-        if key.endswith('_service_name') or key == 'relay_reviewer_recovery_timer_name':
+        if (key.endswith('_service_name') and key != 'relay_general_runner_service_name') or key == 'relay_reviewer_recovery_timer_name':
             values[key] = fixture + '-' + values[key]
     task = yaml.safe_load((BACKEND / 'roles/relay_preflight/tasks/main.yml').read_text())[0]
     playbook = tmp_path / 'preflight.yml'

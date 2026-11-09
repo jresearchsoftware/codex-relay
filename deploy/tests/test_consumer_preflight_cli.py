@@ -186,17 +186,11 @@ class ConsumerPreflightCliTests(unittest.TestCase):
         self.assertFalse(list(self.stage.glob('consumer-context-*')))
         self.assertEqual(self.protected_snapshot(), before)
 
-    def test_proved_serial_migration_availability_option_retains_the_authenticated_current_digest(self):
-        self.configuration.write_bytes(b'{ invalid live JSON')
+    def test_retired_serial_digest_override_is_rejected_without_changes(self):
         before = self.protected_snapshot()
         result = self.run_cli(extra=['--retain-current-digest'])
-        self.assertEqual(result.returncode, 0, result.stderr)
-        value = json.loads(result.stdout)
-        self.assertTrue(value['eligible'])
-        self.assertTrue(value['retainedCurrentDigest'])
-        self.assertEqual(value['requestedDesiredDigest'], 'f' * 64)
-        self.assertEqual(value['desiredDigest'], self.digest)
-        self.assertEqual(value['unknown'], [])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('CONSUMER_PREFLIGHT_ARGUMENTS_INVALID', result.stderr)
         self.assertEqual(self.protected_snapshot(), before)
 
     def test_missing_tampered_snapshot_or_gate_mismatch_never_changes_live_state(self):

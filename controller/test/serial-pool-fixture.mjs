@@ -14,7 +14,12 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => hash(JSON.stringify(value));
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const operationId = '12345678-1234-1234-1234-123456789abc';
-export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = 'HEAD' } = {}) {
+// These fixtures exercise immutable pre-cutover rows through their actual old
+// runtime. Pin its qualified starting revision so a current-source commit cannot
+// silently replace the original legacy/v3 decoder. Explicit old revisions remain
+// available to source-specific replay tests.
+const retainedOriginalRevision = '3f4d4348cfb05866b2108eadcc35b7a17153ff14';
+export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = retainedOriginalRevision } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-serial-compat-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const ownerUid = process.getuid(); const namespace = 'relay-compat';
@@ -87,8 +92,10 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   const terminal = { envelope: envelope(99), outcome,
     controllerLifecycle: { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' } };
   const manual = { envelope: envelope(100, { route: 'manual' }) };
+  const admissionBlock = { code: 'OWNER_DECISION_REQUIRED' };
   const blocked = { envelope: { version: 2, repository: originalConsumer.repository, consumerDigest: oldDigest,
-    runId: 101, attemptId: 'run-101', route: 'auto', issueNumber: 43 }, admissionBlock: { code: 'OWNER_DECISION_REQUIRED' } };
+    runId: 101, attemptId: 'run-101', route: 'auto', issueNumber: 43, target: 'issue', number: 43,
+    branch: null, startHead: null, authorityDigest: null, admissionBlock }, admissionBlock, outcome: null };
   const legacy = { envelope: envelope(102), outcome };
   const records = [terminal, manual, blocked, legacy];
   const originalStore = createAttemptStore(join(claimRoot, 'publication-v2'), { repository: originalConsumer.repository });

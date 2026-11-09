@@ -81,6 +81,9 @@ export async function main(selectedRequest) {
   const { repository: selectedRepository, ...operationRequest } = request;
   request = operationRequest;
   if (request?.operation === 'manual-outcome-direct') fail('MANUAL_CAPABILITY_REQUIRED');
+  // New executions use the single managed-pool model (including capacity one).
+  // Exact already-admitted recovery below retains its original context.
+  if (request?.operation === 'admit' && !CONSUMER.generalRunnerPool) fail('CURRENT_EXECUTION_POOL_REQUIRED');
   const historical = await historicalProgram({ kind: 'writer', request, consumer: CONSUMER,
     consumerPath: process.env.RELAY_CONSUMER_CONFIG });
   if (historical.handled) return historical.value;

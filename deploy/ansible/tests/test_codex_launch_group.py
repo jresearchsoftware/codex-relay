@@ -25,29 +25,12 @@ pytestmark = pytest.mark.skipif(sys.platform != 'linux', reason='native Linux gr
 def deployment(topology, group, *, repository_users=False):
     value = json.loads((ROOT / 'deploy/example.json').read_text())
     environment, consumer = value['environment'], value['consumer']
-    if topology in ['serial', 'legacy', 'primary']:
-        environment['codexWorkGroup'] = group
-    if topology == 'serial':
-        consumer['workGroup'] = group
+    environment['codexWorkGroup'] = group
     if repository_users:
         repository = consumer.pop('repository')
         consumer['repositories'] = [repository, 'example-org/second']
         consumer['repositoryRuntimeUsers'] = {'example-org/second': 'sample-extra-runtime'}
         environment['repository'] = repository
-    if topology in ['primary', 'secondary']:
-        environment['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
-        fields = ['workRoot', 'attemptRoot', 'dispatch', 'launcher',
-                  'diagnosticsConfig', 'diagnosticsStore', 'diagnosticsRoot']
-        consumer['executionSlots'] = [
-            {'id': 'primary', 'runnerName': environment['generalRunner']['name'],
-             'runnerUser': environment['generalRunner']['user'],
-             'runtimeUser': consumer['runtimeUser'], 'workGroup': environment['codexWorkGroup'],
-             'paths': {field: consumer['paths'][field] for field in fields}},
-            {'id': 'second', 'runnerName': 'sample-second', 'runnerUser': 'sample-second-runner',
-             'runtimeUser': 'sample-second-codex',
-             'workGroup': group if topology == 'secondary' else 'sample-second-work',
-             'paths': config.execution_slot_paths(environment['namespace'], 'second')},
-        ]
     config.validate(value, ROOT)
     return value
 
@@ -136,7 +119,7 @@ def launcher_fixture(tmp_path, topology, group, *, token_fifo=True, diagnostics_
     return invoke, token
 
 
-@pytest.mark.parametrize('topology', ['serial', 'primary', 'secondary'])
+@pytest.mark.parametrize('topology', ['primary', 'secondary'])
 @pytest.mark.parametrize('failure', ['mismatch', 'unavailable'])
 def test_rendered_launcher_rejects_launch_group_before_token_read(tmp_path, topology, failure):
     group = existing_other_group() if failure == 'mismatch' else absent_group()
@@ -150,7 +133,7 @@ def test_rendered_launcher_rejects_launch_group_before_token_read(tmp_path, topo
     assert stat.S_ISFIFO(token.lstat().st_mode)
 
 
-@pytest.mark.parametrize('topology', ['serial', 'primary', 'secondary'])
+@pytest.mark.parametrize('topology', ['primary', 'secondary'])
 def test_rendered_launcher_accepts_actual_primary_group_before_token_boundary(tmp_path, topology):
     import grp
     group = grp.getgrgid(os.getgid()).gr_name
@@ -164,7 +147,7 @@ def test_rendered_launcher_accepts_actual_primary_group_before_token_boundary(tm
     assert not token.exists()
 
 
-@pytest.mark.parametrize('topology', ['serial', 'primary', 'secondary'])
+@pytest.mark.parametrize('topology', ['primary', 'secondary'])
 def test_rendered_runtime_probe_precedes_group_diagnostics_and_token_reads(tmp_path, topology):
     invoke, token = launcher_fixture(tmp_path, topology, absent_group(), diagnostics_fifo=True)
     result = invoke(['--check-runtime'])
@@ -174,23 +157,9 @@ def test_rendered_runtime_probe_precedes_group_diagnostics_and_token_reads(tmp_p
     assert stat.S_ISFIFO(token.lstat().st_mode)
 
 
-def test_legacy_group_omission_keeps_launcher_and_sudoers_abi(tmp_path):
-    group = absent_group()
-    variables = compiled_variables('legacy', group)
-    assert 'relay_codex_launch_work_group' not in variables
-    assert 'relay_execution_slots' not in variables
-    invoke, _ = launcher_fixture(tmp_path, 'legacy', group, token_fifo=False)
-    result = invoke()
-    assert result.returncode == 64, result.stderr
-    assert 'CODEX_LAUNCHER_ACCESS_TOKEN_UNAVAILABLE' in result.stderr.splitlines()
-    assert 'WORK_GROUP_' not in result.stderr
-    sudoers = render(ROLE / 'templates/relay-codex.sudoers.j2', variables)
-    assert sudoers.splitlines()[-1] == (
-        f"{variables['relay_runner_user']} ALL=({variables['relay_codex_user']}) "
-        f"NOPASSWD: {variables['relay_codex_launcher_path']}")
 
 
-@pytest.mark.parametrize('topology', ['serial', 'primary', 'secondary'])
+@pytest.mark.parametrize('topology', ['primary', 'secondary'])
 @pytest.mark.parametrize('repository_users', [False, True])
 def test_rendered_sudoers_binds_only_configured_runtime_users_and_work_group(
         tmp_path, topology, repository_users):

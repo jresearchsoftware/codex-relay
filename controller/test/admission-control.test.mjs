@@ -238,8 +238,10 @@ test('unknown execution, missing legacy containment, and unresolved publication 
 
 test('contained pre-child terminal decisions release only after a matching terminal journal exists', async t => {
   const f = await fixtureWithGate(t); const gate = f.admissionControl;
-  f.issue.body += '\nAccepted starting main: malformed';
-  const outcome = await runAttempt({ ...f, execute: () => assert.fail('authority failure must not launch') });
+  const broker = { invoke: request => request.operation === 'preflight'
+    ? Promise.reject(Object.assign(new Error('STARTING_STATE_MISMATCH'), { code: 'STARTING_STATE_MISMATCH' }))
+    : f.broker.invoke(request) };
+  const outcome = await runAttempt({ ...f, broker, execute: () => assert.fail('preflight failure must not launch') });
   assert.equal(outcome.status, 'BLOCKED');
   await gate.complete({ runId: f.envelope.runId, attemptId: f.envelope.attemptId });
   assert.deepEqual((await f.store.get(f.envelope.runId)).controllerLifecycle,

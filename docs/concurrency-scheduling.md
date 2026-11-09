@@ -1,37 +1,14 @@
 # Relay control scheduling
 
-Relay defaults to **SERIAL** scheduling: canonical routing and publication-recovery
-workflows share the existing `<namespace>-control` concurrency group, with
-`queue: max` and `cancel-in-progress: false`. One control invocation runs at a
-time within one GitHub repository; newer independent work waits instead of replacing an earlier pending run
-within GitHub's queue limit. This is native Actions scheduling, not a Relay
-retry queue, execution reservation or Task admission.
-
-GitHub documents a limit of 100 pending jobs or runs per concurrency group;
-additional arrivals are canceled. Runs are ordered by when they start waiting
-on the group, which need not be their dispatch order. See the current
-[workflow concurrency syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency)
-and the [May 7, 2026 release notice](https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues/).
-
-## Alternatives and support
-
-| Design | Scheduling and cost | Support boundary |
-| --- | --- | --- |
-| A: global group with the native default queue | One running and one pending invocation; a new arrival replaces the pending invocation. Model concurrency stays at one, but independent waiting work can be lost. | Historical projection behavior; existing evidence retains its original meaning. |
-| B: global group with `queue: max` | One running invocation and up to 100 waiting invocations; no replacement merely because newer work arrives within that bound. Model concurrency stays at one. | Selected SERIAL source behavior; consumer projection and native TEST evidence establish adoption separately. |
-| C: bounded shared pool | One configured desired capacity bounds the physical General Runner pool across eligible repositories; per-run groups and trusted resource/publication critical sections allow independent attempts on the same Task. | Managed Apply, same-UID isolation, retained recovery and actual model overlap require source and installed qualification. |
-
-For an illustrative batch of three admitted executions taking the same time
-`T`, one qualified slot needs about `3T`, excluding controller overhead and
-external waits. B does not create speedup, extra model capacity or a lower
-token cost per execution. It preserves waiting work that A could replace.
-Queueing itself starts no model call. Relay does not infer account quota from
-native token counters, automatically choose another profile or retry a model
-failure; the admitted profile and existing failure boundary remain effective.
+Relay uses one managed General Runner pool with a configured physical capacity
+from 1 to 32 across its eligible repositories. Capacity 1 is the same managed
+model with one active runner. Current routing uses independent native run
+groups, trusted reservation and scoped publication/resource locks; it does not
+select a separate SERIAL execution or scheduling model.
 
 ## Shared managed pool
 
-The optional `consumer.generalRunnerPool.desiredCapacity` selects one fixed
+The required `consumer.generalRunnerPool.desiredCapacity` selects one fixed
 physical capacity (1–32), shared by all eligible repositories and Codex Unix
 identities. The pool is identified by `environment.generalRunner.name`,
 independently of repository namespaces. Each runner retains its unique
@@ -62,7 +39,7 @@ pool member can transport recovery; trusted Writer selects the original slot
 from the retained envelope before opening its evidence. The public managed
 recovery path needs no per-slot owner choice.
 
-Parallel routing uses `<namespace>-control-${{ github.run_id }}` with
+Routing uses `<namespace>-control-${{ github.run_id }}` with
 `queue: max` and cancellation disabled. The `github` context, including the
 native run ID, is supported in the workflow-level
 [concurrency expression](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
@@ -74,8 +51,9 @@ physical registrations bound simultaneous jobs across repositories, whereas
 GitHub concurrency groups remain repository-local. Waiting, cancellation,
 replay, protected admission/publication locks and lifecycle gates retain their
 existing authority. There is no dynamic per-job autoscaling or automatic
-model retry. Unconfigured consumers retain SERIAL v3; managed pool projections
-use the qualified parallel v4 contract.
+model retry. Current source projects the managed v4 contract. Historical v3
+workflow bytes and validators retain their original meaning for already-admitted
+attempts; they are not a fresh projection or installation option.
 
 Source checks, synthetic same-UID process tests and live model observations
 prove different things. Installed qualification must observe the actual shared
@@ -84,57 +62,27 @@ terminal Outcomes, capacity reconciliation and original-run recovery. Earlier
 distinct-UID TEST evidence does not establish these new properties. See the
 [deployment contract](../deploy/README.md#shared-managed-general-runner-pool).
 
-## Retained explicit-slot topology
+## Retained topology and queue evidence
 
-The optional `consumer.executionSlots` installation snapshot declares one
-`primary` slot retaining legacy locations and a finite set of additional slots.
-Each slot has its own runner identity, model identity, work group, checkout,
-journal, diagnostics and fixed launcher paths. Slot selection keeps the complete
-installation digest stable and is bound to the configured runner name, actual
-Unix UID and immutable protected attempt envelope. The root Writer selects
-retained evidence through that stored envelope, never through a caller path.
+Managed configuration derives a stable internal layout of 32 execution slots;
+desired physical capacity does not redefine it. Current deployment input rejects
+a separate caller-authored slot topology. Exact older slot/configuration and
+SERIAL digests remain readable under the admitted original source when retained
+history requires them. New installation, projection and native admission cannot
+select those historical execution models.
 
-The candidate parallel projection uses `relay-workflows-v4`; ordinary projections
-retain `relay-workflows-v3` and the SERIAL group. Parallel native-run groups retain
-`queue: max` and cancellation disabled. A finite qualified runner pool bounds
-active jobs. GitHub groups are repository-local: independent consumer
-installations sharing a host additionally need distinct namespaces, identities,
-paths and capacity allocations. A multi-repository Writer selects only an
-explicitly configured repository per operation process; native groups do not
-provide that authorization or physical isolation.
+Each automatic controller retains its lifetime kernel lock, exclusive initial
+journal and bounded diagnostics-retention lock. Different run IDs can progress
+independently. Writer's publication lock holds no model execution. Original
+same-run replay, starting-head and exact-attempt recovery requirements remain
+bound to the retained attempt.
 
-Source corrections add a kernel lock for each automatic controller's complete
-lifetime, exclusive initial journal creation and a short diagnostic-retention
-lock. Different run IDs and separately scoped repositories can hold independent
-locks. An overlapping same-run contender cannot overwrite the active controller's
-diagnostic or completion receipt. The automatic Writer wrapper has a bounded
-300-second lock wait and a 450-second outer helper timeout; it holds no model
-execution inside the publication lock.
-
-Native schema-v4 fresh Issue executions retain the immutable admitted commit
-when main advances through ordinary descendant commits. Admission, preflight,
-checkout and publication prove ancestry; moved task refs, unrelated main
-rewrites and stale remediation integration remain blockers. Historical v3 and
-legacy starting-state checks retain their original contract.
-
-Additional slots reuse registration/activation with the public
-`--execution-slot` selector. Inventory, upgrade and clean reinstall account for
-each slot and preserve original activity/registration. Numeric UID/group and
-cross-slot access checks validate installed topology. Recovery exposes and
-targets the original slot, and explicit recovery takes the same journal lock
-as its controller. These source paths require installed qualification; they
-do not establish actual same-repository or cross-repository model overlap or
-attributable terminal Outcomes. The accepted SERIAL projection remains the
-supported fallback, and cannot satisfy an objective requiring real parallel
-execution.
-
-The finite pool bounds active executions, not the total installation-wide
-waiting population. GitHub's limit of 100 pending runs applies to each
-concurrency group; independent run groups can also wait for a runner. GitHub
-owns runner waiting and queue
-overflow/cancellation records. There is no Relay-wide durable queue or automatic
-retry. Pending runs do not consume an admitted execution slot, and an overflow
-or cancellation before controller entry creates no invented admission/Outcome.
+The physical pool bounds active executions. GitHub owns native waiting,
+overflow and cancellation evidence; pending runs do not create Relay admissions.
+There is no separate Relay durable queue or automatic retry. GitHub's
+[workflow concurrency contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency)
+defines queue limits and ordering. Repository-local groups do not provide
+installation-wide authorization or physical capacity by themselves.
 
 ## Independent attempts and scoped holds
 
@@ -169,16 +117,15 @@ remote head, restore an older Step/title, bypass current authority or repeat an
 ambiguous push/POST. Full lifecycle Apply, quiesce/drain and protected pool
 ownership still require their global evidence.
 
-## Accepted SERIAL runtime bounds
+## Historical runtime audit and current bounds
 
-The source [deployment configuration](../deploy/config.py) has one general
-runner and a separate production runner role. The routing and recovery
-[templates](../deploy/workflows/) check the exact configured general runner name
-and Unix user. They cannot use the production runner as a second task slot.
-Task 103's TEST inventory observed that same one-general-runner layout with a
-separate production role. Inventory establishes available roles, not qualified
-parallel capacity; native TEST results and their limits belong in the existing
-PR and Writer Outcome.
+Historical SERIAL inventory, including Task 103's TEST evidence, described one
+General Runner and a separate Production Runner. That old layout is retained
+evidence, not the current deployment default or a supported fresh source model.
+Current [configuration](../deploy/config.py) and
+[templates](../deploy/workflows/) bind derived managed members; the separate
+Production Runner cannot supply extra automatic capacity. Installed results and
+their limits remain in their original PR/Writer Outcomes.
 
 Attempts already have distinct `workRoot/<attemptId>` checkouts, task-local
 HOME/CODEX_HOME/XDG/cache/tmp paths, diagnostic references, owned process groups
@@ -190,10 +137,10 @@ worker-modified Git metadata. See [attempt preparation](../controller/src/attemp
 [trusted collection](../controller/src/trusted-git.mjs).
 
 Those separate paths were insufficient proof of parallel isolation. The
-accepted SERIAL topology shares one runtime UID and work group. Its audit
+historical SERIAL topology shared one runtime UID and work group. Its audit
 identified journal reservation, diagnostic eviction and a five-second Writer
 lock wait against a two-minute Git operation as concrete race/capacity gaps.
-The source candidate addresses those stores and waits above, but these changes
+The current source addresses those stores and waits above, but those changes
 do not qualify an existing installation or grant runner registrations,
 credentials or external ACL changes.
 See [shared work permissions](../deploy/ansible/roles/relay_runner/tasks/general-runtime.yml),

@@ -2,10 +2,18 @@
 
 The complete common execution-cycle, correction, preservation and stop semantics
 are owned by the adopted pinned
-[Shared Governance 7.0.0 Task Handoff protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/task-handoff.md),
+[Shared Governance 7.0.1 Task Handoff protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/task-handoff.md),
 especially TH-006–TH-013 and TH-026. Read the complete protocol when executing,
 handing off or continuing governed work. This document binds it to Relay's
 admitted invocation and supported standalone/manual route.
+
+An ordinary Manual or Automatic Task should normally reach a complete candidate
+and Outcome in one substantive Step. That execution owns investigation,
+implementation, technical corrections and relevant tests; a failed check or an
+internal phase does not itself justify a terminal handoff. Resolving a blocker
+or finding returns execution to the complete effective Task goal, including
+remaining requirements. A real boundary or a later independently authorized
+execution still follows the Step rules in the shared protocol.
 
 One bounded repair owns reproduction, directly related corrections, regression
 checks, representative installed-to-target deployment and the original operation
@@ -47,7 +55,7 @@ history only when materially necessary, preserving relevant prior decisions,
 constraints, prohibitions and protected boundaries. Delegation never expands
 Task/CR scope, external authority, credential access, publication or production
 rights. Validation and independent acceptance follow the adopted
-[Independent Review methodology](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/independent-review.md)
+[Independent Review methodology](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/independent-review.md)
 and [native Reviewer binding](../reviewer/README.md#independent-review-and-finding-provenance).
 
 Relay implements TH-012/TH-013 preservation through ordinary task commits and
@@ -132,9 +140,35 @@ usable; age alone never authorizes recovery.
 Within the sandbox, Codex may choose suitable tools and shells, manage services,
 edit or remove filesystem state, delete and recreate resources, rebuild,
 install, reinstall, upgrade, reset failed TEST state and run qualification.
-The authority includes TEST repositories, configuration, workflows and TEST
-PR creation, review and merge using already available permissions. A prohibition
-on product-source merge does not prohibit TEST repository merges.
+Standing owner authority for the explicitly selected dedicated TEST repositories
+also covers these GitHub operations within the verified boundary:
+
+- Create, update and close TEST-only Issues under their current closure policy;
+  manage TEST branches and fixtures, and publish trusted Decisions and CRs.
+- Manage TEST workflows and runs; create and review TEST PRs, including negative
+  or positive independent native TEST reviews.
+- Squash-merge TEST-only PRs after genuine independent exact-head approval and
+  required checks, with the expected-head guard and native merge readback; clean
+  or reset disposable TEST resources.
+
+No separate per-action owner confirmation is required. Established standing TEST
+authority supplies publication agreement for an in-scope independent
+`REQUEST_CHANGES`; it does not supply the substantive finding or independent
+verdict. An owner-required negative-review preview for a product PR remains
+binding for that product review and does not add a permission prompt to already
+authorized TEST fixtures. A prohibition on product-source merge does not prohibit
+qualified TEST repository integration.
+
+Verify the actual target and authenticated actor's existing permissions. Preserve
+current claim ownership, genuine native admission for Relay executions,
+worker/Writer/Reviewer separation and independence, required signatures and
+trusted native records, exact head/checks,
+readiness and applicable holds, closure policy and truthful evidence claims.
+Reconcile an uncertain external effect through its original operation and native
+readback; standing authority permits no duplicate launch/publication or invented
+completion. A repository name containing `test` alone proves no TEST boundary.
+This clarification creates no runtime approval stage and expands no credential,
+App or runner-ACL authority.
 
 Established standing owner authority may also include dedicated TEST GitHub App
 installations, selected TEST repository grants and TEST-only permissions, TEST
@@ -180,8 +214,8 @@ operations.
 
 An exact Task-authorized development candidate may be installed or exercised
 inside the sandbox before independent product acceptance. TEST operations do
-not grant product-source merge, PROD deployment, release, Issue closure or
-independent acceptance. Normal source checks and independent exact-head review
+not grant product-source merge, PROD deployment, release, product Task closure or
+product acceptance. Normal source checks and independent exact-head review
 remain binding. Writer retains responsibility for actual product and ordinary
 Relay publication; original admission, replay suppression, trusted Git import
 and protected credential boundaries remain intact. Resetting disposable TEST
@@ -197,8 +231,8 @@ preservation or recovery requirements.
 ## Proportional controls and operator usability
 
 The complete common control and requirement-origin procedures are the adopted
-pinned [Shared Governance 7.0.0 Proportional Controls](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/proportional-controls.md)
-and [Requirement Authority](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/requirement-authority.md)
+pinned [Shared Governance 7.0.1 Proportional Controls](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/proportional-controls.md)
+and [Requirement Authority](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/requirement-authority.md)
 protocols. Read each complete topic when its trigger applies, through the
 [root adoption and routing](../AGENTS.md). Ordinary execution reads committed
 files offline; maintenance uses the pinned lock and materialized content.
@@ -213,7 +247,7 @@ recovery, deployment, merge or closure permission. Keep worker, Writer and
 independent Reviewer responsibilities separate and retain all existing
 credential, trust, runtime and production boundaries.
 
-The adopted [Contract and Decision Maintenance protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
+The adopted [Contract and Decision Maintenance protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md)
 owns material contract-change and durable-decision semantics. Relay's
 [Task/Decision binding](../AGENTS.md#material-useroperator-contract-change-gate)
 retains `OWNER_DECISION_REQUIRED` until canonical owner amendment; consumer
@@ -232,8 +266,8 @@ content; do not invent a substitute procedure or resolve policy at session time.
 
 ## Execution warning disposition
 
-The adopted [Independent Review protocol, IR-008](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/independent-review.md#IR-008)
-and [Task Handoff protocol, TH-018/TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/task-handoff.md#TH-018)
+The adopted [Independent Review protocol, IR-008](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/independent-review.md#IR-008)
+and [Task Handoff protocol, TH-018/TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/task-handoff.md#TH-018)
 own common warning disclosure, evidence gaps and continuation semantics. Relay
 requires that inspection before review, continuation, merge, closure or an owner
 decision. Its supported primary acquisition surfaces, after actual job, check

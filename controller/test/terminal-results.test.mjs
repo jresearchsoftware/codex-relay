@@ -189,10 +189,11 @@ for (const boundary of ['collection', 'clean-observation', 'publication', 'autho
   });
 }
 
-test('known success without changes is a normal incomplete result, never ready', async t => {
+test('known current success without source changes publishes its no-PR result once', async t => {
   const f = await fixture(t); const journal = f.journal;
   assert.equal(await report(() => runAttempt({ ...f, journal, execute: async () => result(f.envelope, 'success') })), 0);
-  assert.equal((await journal.get(99)).outcome.status, 'BLOCKED'); assert.equal(f.pushes(), 0);
+  assert.equal((await journal.get(99)).outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW'); assert.equal(f.pushes(), 0);
+  assert.equal((await journal.get(99)).outcome.prNumber, null);
 });
 
 test('a domain-looking code cannot hide unknown execution, containment or publication', () => {
@@ -240,14 +241,16 @@ for (const boundary of ['collection', 'publication', 'outcome', 'journal', 'draf
 }
 
 test('defaulted base remains immutable when live main advances after admission', async t => {
-  const f = await fixture(t, { issueBody: '# Task 42\nRequired branch: codex/test-42\nComplete the task-required repository changes.' });
+  const f = await fixture(t, { issueBody: 'Authority model: github-native-v1\nIssue closure policy: keep-open\nComplete the task-required repository changes.' });
   assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => {
     await writeFile(join(f.source, 'unrelated.md'), 'main advance\n');
     await f.command(f.source, ['add', '.']); await f.command(f.source, ['commit', '-m', 'main advance']); await f.command(f.source, ['push', f.remote, 'main']);
     await f.commit(); return result(f.envelope, 'success');
   } })), 0);
   assert.equal(f.pushes(), 1);
-  assert.match(f.comments[0].body, /Completion: COMPLETED_WITH_WARNINGS/);
+  assert.notEqual((await f.api.get('/git/ref/heads/main')).object.sha, f.envelope.targetBase);
+  assert.match(f.comments[0].body, new RegExp(`Observed integration base: ${f.envelope.targetBase}`));
+  assert.match(f.comments[0].body, /Completion: COMPLETED/);
 });
 
 test('resumed admission revalidates authority within the normal terminal boundary', async t => {
@@ -255,8 +258,8 @@ test('resumed admission revalidates authority within the normal terminal boundar
   await journal.put(99, { version: f.envelope.version, envelope: f.envelope, execution: null });
   f.issue.body = '# lost scope';
   const admitted = await f.broker.invoke(f.admissionRequest);
-  assert.equal(await report(() => runAttempt({ ...f, envelope: admitted.envelope, admissionResumed: true, journal, execute: () => assert.fail('scope') })), 0);
-  assert.equal(f.comments.length, 1);
+  assert.equal(await report(() => runAttempt({ ...f, envelope: admitted.envelope, admissionResumed: true, journal, execute: () => assert.fail('scope') })), 1);
+  assert.equal(f.comments.length, 0);
 });
 
 test('CLI reporting emits one warning for a domain block and returns a real nonzero exit for internal failure', async () => {

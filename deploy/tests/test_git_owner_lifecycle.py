@@ -29,7 +29,7 @@ TOKEN = 'synthetic_ephemeral_workflow_token'
 
 class GitOwnerLifecycleTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = REAL_TEMPORARY(prefix='relay-git-owner-', dir='/tmp')
+        self.temporary = REAL_TEMPORARY(prefix='relay-git-owner-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.install = self.root / 'fixture'
@@ -313,7 +313,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
 
 class SelectedTargetConfigTests(unittest.TestCase):
     def test_parser_executes_target_schema_in_isolated_process(self):
-        with REAL_TEMPORARY(prefix='relay-selected-parser-', dir='/tmp') as directory:
+        with REAL_TEMPORARY(prefix='relay-selected-parser-') as directory:
             source = Path(directory)
             (source / 'deploy').mkdir()
             (source / 'deploy/config.py').write_text('import json\ndef loads(raw, root):\n return {"selectedTarget":json.loads(raw),"consumer":{}}\ndef compile_inputs(c):\n return {"schema":"target-only"}\n')
@@ -346,7 +346,7 @@ class SelectedTargetConfigTests(unittest.TestCase):
         self.assertFalse(any(path.name in ('deployment-config.json', 'consumer.json') for path in reads))
 
     def test_readback_normalizes_with_target_consumer_schema_and_rejects_effective_drift(self):
-        with REAL_TEMPORARY(prefix='relay-git-readback-', dir='/tmp') as directory:
+        with REAL_TEMPORARY(prefix='relay-git-readback-') as directory:
             install = Path(directory) / 'fixture'
             release = install / 'releases' / HEAD
             source = release / 'reviewed-source'

@@ -7,7 +7,8 @@ import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'n
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from './attempt-store.mjs';
 import { timedTransitionPart } from './transition-timing.mjs';
-import { configuredRepositories, consumerDigest, parseConsumerJson, resolveExecutionConsumer, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
+import { VERSION } from './execution-contract.mjs';
+import { configuredRepositories, consumerDigest, parseConsumerJson, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -405,8 +406,31 @@ export async function invokeOriginalReader(context, { operation, envelope, task 
   // retained journal cannot occupy a distinct managed slot merely because it
   // is unavailable or has unresolved logical publication.
   if (operation === 'inventory' && slot !== null && slot !== 'primary') return { active: [], unknown: [] };
-  if (operation === 'inventory') await readProtectedStore(verified, verified.original.storeRoot);
-  return originalCall(verified, { operation, envelope, task, slot, resourceOnly }, settings.get(verified));
+  const records = operation === 'inventory' ? await readProtectedStore(verified, verified.original.storeRoot) : null;
+  const result = await originalCall(verified, { operation, envelope, task, slot, resourceOnly }, settings.get(verified));
+  if (records) {
+    const { preAdmissionRefusalHasNoPendingEffects, admissionRefusalHasConflictingActivity } = await import('./admission-control.mjs');
+    const journal = createAttemptStore(physical(verified.root, verified.originalConsumer.paths.attemptRoot),
+      { repository: verified.receipt.repository });
+    const idleRefusals = new Set(), unknown = new Set(result.unknown);
+    for (const record of records) {
+      const e = record.envelope;
+      if (!record.admissionBlock || task !== null && e.issueNumber !== task
+        || slot !== null && slot !== 'primary') continue;
+      if (resourceOnly) {
+        if (!record.controllerLifecycle && !await journal.get(e.runId, e.repository)) idleRefusals.add(e.runId);
+        else unknown.add(e.runId);
+        continue;
+      }
+      if (await preAdmissionRefusalHasNoPendingEffects(record, { journal })) idleRefusals.add(e.runId);
+      else if (await admissionRefusalHasConflictingActivity(record, { journal })) unknown.add(e.runId);
+    }
+    // Old classifiers can require a terminal Outcome even before the Writer
+    // reserved a publication. Remove only this proven no-effect refusal shape;
+    // original validation, active work and every uncertain effect stay intact.
+    return { ...result, unknown: [...unknown].filter(runId => !idleRefusals.has(runId)).sort((a, b) => a - b) };
+  }
+  return result;
 }
 
 async function verifyOriginalStoreOwnership(context) {
@@ -534,29 +558,25 @@ async function sealedJournalEnvelope(context, binding) {
 
 // The public composite retains history for lineage/deduplication but cannot
 // mutate it. Original Writer operations use their original store separately.
-export function createCompatibilityStore({ compatibility, currentStore, originalStore, manualAttemptDisposition = null }) {
+export function createCompatibilityStore({ compatibility, currentStore, originalStore }) {
   require(settings.has(compatibility), 'SERIAL_POOL_COMPATIBILITY_CONTEXT_INVALID');
   const sealed = compatibility.receipt.original.runs;
   const historical = (runId, repository) => repository === compatibility.receipt.repository
     && sealed.some(run => run.runId === runId);
   async function validateCurrent(record, runId, repository, { writing = false } = {}) {
     const e = record?.envelope;
-    require(e && e.runId === runId && e.repository === repository && typeof e.attemptId === 'string'
+    require(e && e.version === VERSION && e.runId === runId && e.repository === repository
+      && e.attemptId === `run-${runId}` && ['auto', 'manual'].includes(e.route)
+      && (positive(e.issueNumber) || e.issueNumber === null && e.target === 'pull_request' && positive(e.number)
+        && /^[A-Z][A-Z0-9_]{0,79}$/.test(record.admissionBlock?.code ?? '')
+        && JSON.stringify(record.admissionBlock) === JSON.stringify(e.admissionBlock))
       && sha(e.consumerDigest)
       && !historical(runId, repository), 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
     if (e.consumerDigest !== compatibility.currentConsumerDigest) {
       require(!writing, 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN');
-      // Completion proof is needed only when reading a retained pool row.
-      const { completedAdmissionRecord } = await import('./admission-control.mjs');
-      const selected = resolveExecutionConsumer(selectRepositoryConsumer(compatibility.currentConsumer, e.repository),
-        e.executionSlot);
-      const journal = createAttemptStore(physical(compatibility.root, selected.paths.attemptRoot),
-        { repository: e.repository });
-      const { historicalManualAttemptDisposition, manualAttemptHasConflictingActivity } = await import('./manual-attempt-disposition.mjs');
-      require(!await manualAttemptHasConflictingActivity(record, { journal })
-        && (await completedAdmissionRecord(record, journal)
-          || await historicalManualAttemptDisposition(record, { journal, resolve: manualAttemptDisposition })),
-      'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+      // Retained rows remain readable for identity, lineage and scoped effect
+      // checks. Reading is not permission to execute or mutate an old attempt;
+      // those operations above still require the current consumer digest.
     }
     return record;
   }

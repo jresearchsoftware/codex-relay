@@ -6,7 +6,7 @@ import { runAttempt } from '../src/attempt.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { OWNER, REPOSITORY, REVIEWER } from '../src/execution-contract.mjs';
 import { recoveryAuthorization, recoveryAuthorizationBody } from '../src/publication-recovery.mjs';
-import { createAdmissionSnapshot, extractAuthorityRecord, renderAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
+import { createAdmissionSnapshot, extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement independent source work.';
 const success = e => ({ version: e.version, attemptId: e.attemptId, child: 'started', containment: 'reaped',
@@ -134,32 +134,8 @@ test('a late automatic result on an independent branch reports its original PR w
   assert.deepEqual(await f.store.get(100), { envelope: next });
 });
 
-async function retainedRequestFixture(t) {
-  return fixture(t, { beforeAdmission: async ({ issue, api }) => {
-    const base = /Required starting base: `([^`]+)`/.exec(issue.body)[1];
-    issue.body = charter;
-    const request = { schema_version: '3.0', kind: 'task-request', repository: REPOSITORY, task: 42,
-      parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(charter), step: 1, route: 'auto',
-      purpose: 'Retained source work', scope: ['Implement the authorized change.'],
-      model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true, validation: ['diff-check', 'secret-scan'],
-      boundaries: ['No deployment, merge or closure.'], decisions: [], context: [], supersedes: null,
-      branch: `${CONSUMER.taskBranchPrefix}test-42`, base_sha: base, starting_head: base, existing_pr: null,
-      issue_closure_policy: 'keep-open' };
-    const actor = { login: REVIEWER, id: 701, type: 'Bot' };
-    const comment = { id: 901, body: renderAuthorityRecord(request), user: actor,
-      issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42` };
-    const get = api.get.bind(api); const list = api.list.bind(api);
-    api.userIdentity = async login => { assert.equal(login, REVIEWER); return structuredClone(actor); };
-    api.get = path => path === '/issues/comments/901' ? Promise.resolve(structuredClone(comment)) : get(path);
-    api.list = async path => path === '/issues/42/comments' ? [structuredClone(comment), ...await list(path)]
-      : /^\/pulls\/\d+\/reviews$/.test(path) ? [] : list(path);
-  } });
-}
-
-for (const protocol of ['legacy', '3.0']) {
-  test(`late retained ${protocol} BLOCKED Outcome cannot draft a newer native Step's Ready PR`, async t => {
-    const f = protocol === 'legacy' ? await fixture(t, { remediation: true }) : await retainedRequestFixture(t);
-    if (protocol === '3.0') await publishProgress(f);
+test('late current remediation BLOCKED Outcome cannot draft a newer native Step Ready PR', async t => {
+    const f = await fixture(t, { remediation: true });
     const seed = await nativeFixture(t);
     const next = successor(seed.envelope, { branch: f.envelope.branch, step: f.envelope.step + 1 });
     await f.store.put(100, { envelope: next });
@@ -176,7 +152,6 @@ for (const protocol of ['legacy', '3.0']) {
     assert.deepEqual(await f.store.get(100), { envelope: next });
     assert.equal(f.comments.length, 1);
   });
-}
 
 test('Writer stops a competing candidate before push', async t => {
   const f = await fixture(t);

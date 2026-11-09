@@ -181,15 +181,17 @@ class InstalledConsumerBindingTests(unittest.TestCase):
     def test_installed_dispatch_rejects_cross_consumer_and_stale_digest_before_execution(self):
         consumer_module = (self.source / 'consumer/consumer.mjs').as_uri()
         contract_module = (self.source / 'controller/src/execution-contract.mjs').as_uri()
+        fixture_module = (self.source / 'controller/test/fixture.mjs').as_uri()
         admission = f"""
           import {{ CONSUMER, CONSUMER_DIGEST }} from {json.dumps(consumer_module)};
           import {{ validateEnvelope }} from {json.dumps(contract_module)};
-          const e = {{version: 2, repository: CONSUMER.repository, consumerDigest: CONSUMER_DIGEST,
+          import {{ currentEnvelope }} from {json.dumps(fixture_module)};
+          const e = currentEnvelope({{version: 2, repository: CONSUMER.repository, consumerDigest: CONSUMER_DIGEST,
             profile: CONSUMER.defaultProfile, subagentsAllowed: true,
             runId: 7, step: 1, attemptId: 'run-7', target: 'issue',
             number: 1, issueNumber: 1, route: 'auto', startHead: 'a'.repeat(40), historicalBase: 'a'.repeat(40),
             targetBase: 'a'.repeat(40), authorityDigest: 'b'.repeat(64),
-            branch: CONSUMER.taskBranchPrefix + 'task-1', validation: ['routing-tests']}};
+            branch: CONSUMER.taskBranchPrefix + 'task-1', validation: ['routing-tests']}});
           process.stdout.write(JSON.stringify(validateEnvelope(e)));
         """
         for name, config in self.configs.items():

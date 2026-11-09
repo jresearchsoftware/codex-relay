@@ -16,20 +16,7 @@ import workflow_projection as projection
 
 
 def inputs():
-    value = config.load(ROOT / 'deploy/example.json', ROOT)
-    e, c = value['environment'], value['consumer']
-    e['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
-    path_names = ['workRoot', 'attemptRoot', 'dispatch', 'launcher',
-                  'diagnosticsConfig', 'diagnosticsStore', 'diagnosticsRoot']
-    c['executionSlots'] = [
-        {'id': 'primary', 'runnerName': e['generalRunner']['name'],
-         'runnerUser': e['generalRunner']['user'], 'runtimeUser': c['runtimeUser'],
-         'workGroup': e['codexWorkGroup'], 'paths': {key: c['paths'][key] for key in path_names}},
-        {'id': 'second', 'runnerName': 'sample-second', 'runnerUser': 'sample-second-runner',
-         'runtimeUser': 'sample-second-codex', 'workGroup': 'sample-second-work',
-         'paths': config.execution_slot_paths(e['namespace'], 'second')},
-    ]
-    return value
+    return config.load(ROOT / 'deploy/example.json', ROOT)
 
 
 def test_parallel_topology_compiles_fixed_identity_and_retains_one_consumer_digest():
@@ -39,12 +26,13 @@ def test_parallel_topology_compiles_fixed_identity_and_retains_one_consumer_dige
     assert compiled['relay_execution_slots'] == public['consumer']['executionSlots']
     assert compiled['relay_execution_slot'] == 'primary'
     assert compiled['relay_execution_slot_isolation'] is True
-    extra, = compiled['relay_additional_execution_slots']
-    assert extra['relay_runner_registration_scope'] == 'repository'
-    assert extra['relay_runner_service_name'] == 'codex-relay-slot-second-runner.service'
-    assert extra['relay_codex_user'] == 'sample-second-codex'
-    assert extra['relay_dispatch_state_root'] == '/var/lib/codex-relay/slots/second/dispatch'
-    assert extra['relay_runner_registration_helper_path'] == '/opt/codex-relay/slots/second/relay-runner-registration'
+    assert len(compiled['relay_additional_execution_slots']) == 31
+    extra = compiled['relay_additional_execution_slots'][0]
+    assert extra['relay_runner_registration_scope'] == 'organization'
+    assert extra['relay_runner_service_name'] == 'relay-general-pool-2.service'
+    assert extra['relay_codex_user'] == 'relay-codex'
+    assert extra['relay_dispatch_state_root'] == '/var/lib/codex-relay/slots/pool-2/dispatch'
+    assert extra['relay_runner_registration_helper_path'] == '/opt/codex-relay/slots/pool-2/relay-runner-registration'
     values = {**yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text()), **compiled}
     source = (ROOT / 'deploy/ansible/roles/relay_controller/templates/consumer.json.j2').read_text()
     installed = json.loads(Templar(loader=DataLoader(), variables=values).template(source, convert_data=False))
@@ -53,11 +41,8 @@ def test_parallel_topology_compiles_fixed_identity_and_retains_one_consumer_dige
     assert installed['runtimeUser'] == public['consumer']['runtimeUser']
 
 
-@pytest.mark.parametrize('topology', ['managed', 'explicit'])
-def test_slot_journal_creation_preserves_final_runner_ownership(topology):
-    from test_managed_pool import inputs as managed_inputs
-
-    public = managed_inputs() if topology == 'managed' else inputs()
+def test_slot_journal_creation_preserves_final_runner_ownership():
+    public = inputs()
     config.validate(public, ROOT)
     compiled = config.compile_inputs(public)
     defaults = yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text())
@@ -128,13 +113,10 @@ def test_parallel_configuration_rejects_ambiguous_authority_or_identity_before_b
         config.validate(public, ROOT)
 
 
-@pytest.mark.parametrize('topology', ['explicit', 'managed'])
-def test_v4_parallel_projection_keeps_max_queue_and_separates_native_attempt_groups(topology):
-    if topology == 'managed':
-        from test_managed_pool import inputs as managed_inputs
-        public = managed_inputs()
-    else:
-        public = inputs()
+@pytest.mark.parametrize('capacity', [1, 2])
+def test_current_pool_projection_keeps_max_queue_and_separates_native_attempt_groups(capacity):
+    public = inputs()
+    public['consumer']['generalRunnerPool']['desiredCapacity'] = capacity
     config.validate(public, ROOT)
     rendered = projection.render(public, 'a' * 40, ROOT)
     route = yaml.safe_load(rendered[public['consumer']['routingWorkflow']])
@@ -152,18 +134,6 @@ def test_v4_parallel_projection_keeps_max_queue_and_separates_native_attempt_gro
     assert 'RELAY_RUNNER_SLOT_IDENTITY_MISMATCH' in route_step['run']
 
 
-def test_legacy_projection_keeps_serial_v3_and_primary_identity_checks():
-    public = inputs()
-    public['consumer'].pop('executionSlots')
-    config.validate(public, ROOT)
-    rendered = projection.render(public, 'a' * 40, ROOT)
-    for path in [public['consumer']['routingWorkflow'], public['consumer']['recoveryWorkflow']]:
-        workflow = yaml.safe_load(rendered[path])
-        assert workflow['concurrency'] == {'group': 'codex-relay-control', 'cancel-in-progress': False, 'queue': 'max'}
-        job, = workflow['jobs'].values()
-        step, = job['steps']
-        assert step['env']['EXPECTED_WORKFLOW_CONTRACT'] == 'relay-workflows-v3'
-        assert 'RELAY_EXECUTION_SLOT' not in step['run']
 
 
 def test_parallel_projection_cannot_silently_accept_an_older_serial_runtime_contract(tmp_path):
@@ -174,7 +144,7 @@ def test_parallel_projection_cannot_silently_accept_an_older_serial_runtime_cont
         projection.render(inputs(), 'a' * 40, tmp_path)
 
 
-def test_unknown_slot_stops_before_source_or_remote_transport(tmp_path):
+def test_removed_slot_registration_selector_stops_before_source_or_remote_transport(tmp_path):
     public = inputs()
     pathname = tmp_path / 'relay.json'
     pathname.write_text(json.dumps(public))
@@ -183,39 +153,12 @@ def test_unknown_slot_stops_before_source_or_remote_transport(tmp_path):
                              '--authorize-general-runner-enable', '--execution-slot', 'foreign'],
                             capture_output=True, text=True, timeout=15)
     assert result.returncode != 0
-    assert 'INVALID_DEPLOYMENT_CONFIG:execution-slot' in result.stderr
+    assert 'invalid choice' in result.stderr or 'unrecognized arguments' in result.stderr
     assert 'source-identity' not in result.stderr
 
 
-def test_slot_selector_and_native_label_bind_repository_namespace_and_fixed_paths():
-    public = inputs()
-    primary = config.select_execution_slot(public)
-    extra = config.select_execution_slot(public, 'second')
-    assert primary['relay_runner_root'] == '/opt/codex-relay/general-runner'
-    assert extra['relay_runner_root'] == '/opt/codex-relay/slots/second/runner'
-    assert extra['relay_codex_access_token_file'] == '/etc/codex-relay/slots/second/codex-credentials/access-token'
-    assert primary['relay_runner_labels'][0] == extra['relay_runner_labels'][0]
-    assert primary['relay_runner_labels'][1] != extra['relay_runner_labels'][1]
-    original = config.execution_slot_label(public, public['consumer']['executionSlots'][1])
-    public['consumer']['repository'] = 'another/consumer'
-    assert config.execution_slot_label(public, public['consumer']['executionSlots'][1]) != original
 
 
-def test_recovery_projection_targets_only_the_selected_fixed_slot():
-    public = inputs()
-    rendered = projection.render(public, 'a' * 40, ROOT)
-    recovery = yaml.safe_load(rendered[public['consumer']['recoveryWorkflow']])
-    event = recovery.get('on', recovery.get(True))
-    selector = event['workflow_dispatch']['inputs']['execution_slot']
-    assert selector == {'description': 'Original execution slot from the retained attempt; primary for historical attempts',
-                        'required': False, 'type': 'choice', 'default': 'primary', 'options': ['primary', 'second']}
-    job = recovery['jobs']['recover']
-    assert "inputs.execution_slot || 'primary'" in job['runs-on']
-    for slot in public['consumer']['executionSlots']:
-        assert config.execution_slot_label(public, slot) in job['runs-on']
-    step, = job['steps']
-    assert step['env']['RECOVERY_SLOT'] == "${{ inputs.execution_slot || 'primary' }}"
-    assert 'RELAY_RECOVERY_SLOT_IDENTITY_MISMATCH' in step['run']
 
 
 def test_parallel_runtime_reconciliation_keeps_production_out_of_the_automatic_work_group():
@@ -233,12 +176,27 @@ def test_parallel_runtime_reconciliation_keeps_production_out_of_the_automatic_w
     assert not enabled(legacy)
     isolated = next(task for task in tasks if task['name'] == 'Reconcile only the primary runtime work membership for an isolated pool')
     assert enabled(isolated)
-    assert templar.template(isolated['ansible.builtin.user'])['append'] is False
+    # One managed runtime identity can be shared by qualified namespaces; keep
+    # its existing memberships while adding this installation's work group.
+    assert templar.template(isolated['ansible.builtin.user'])['append'] is True
     production = next(task for task in tasks if task['name'] == 'Remove only automatic work access from the separate production runner')
     assert enabled(production)
     groups = templar.template(production['ansible.builtin.user']['groups'])
     assert groups == ['existing-approved-group']
-    values.pop('relay_execution_slots')
-    templar = Templar(loader=DataLoader(), variables=values)
-    assert enabled(legacy)
-    assert not enabled(isolated)
+
+
+@pytest.mark.parametrize('surface', ['load', 'compile', 'projection'])
+def test_fresh_serial_and_independent_slot_models_are_not_current_entrypoints(surface):
+    public = inputs()
+    public['consumer'].pop('generalRunnerPool')
+    for explicit in [False, True]:
+        selected = json.loads(json.dumps(public))
+        if not explicit:
+            selected['consumer'].pop('executionSlots')
+        with pytest.raises(config.InvalidConfig, match='generalRunnerPool.required'):
+            if surface == 'load':
+                config.loads(json.dumps(selected), ROOT)
+            elif surface == 'compile':
+                config.compile_inputs(selected)
+            else:
+                projection.render(selected, 'a' * 40, ROOT)

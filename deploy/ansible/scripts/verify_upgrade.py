@@ -132,7 +132,7 @@ def authenticated_consumer_baseline(install, config_root, target_revision, conte
 
 def verify_desired(install_root, config_root, target_revision, expected_installed, *,
                    owner_uid=0, boundary=Path('/'), expected_config=None, resource_probe=None,
-                   consumer_baseline=None, consumer_resource_probe=None, qualified_serial_preflight=False):
+                   consumer_baseline=None, consumer_resource_probe=None):
     """Bind the planner's observed installation without comparing desired intent.
 
     A reviewed Git change may replace an old profile, target set or snapshot.
@@ -161,34 +161,19 @@ def verify_desired(install_root, config_root, target_revision, expected_installe
         raise ValueError('RELAY_INSTALL_BASELINE_BINDING_UNPROVEN')
     baseline = (authenticated_consumer_baseline(install, config_root, target_revision, consumer_baseline,
                 owner_uid=owner_uid, boundary=boundary) if consumer_baseline is not None else None)
-    if qualified_serial_preflight and (actual == 'none' or expected_config is None
-            or not isinstance(expected_config.get('consumer', {}).get('generalRunnerPool'), dict)):
-        raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
-    if qualified_serial_preflight:
-        serial_stage = Path(qualified_serial_preflight)
-        if (serial_stage.parent != install / 'releases'
-                or not re.fullmatch(r'[.]stage-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', serial_stage.name)):
-            raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
-        protected(serial_stage, directory=True, **protection)
-        identity_path = serial_stage / 'release/reviewed-source/.relay-source.json'
-        protected(identity_path, **protection)
-        if (stat.S_IMODE(serial_stage.stat().st_mode) != 0o700
-                or json.loads(identity_path.read_bytes()).get('revision') != target_revision):
-            raise ValueError('RELAY_INSTALL_SERIAL_PREFLIGHT_UNPROVEN')
     if actual != 'none' and expected_config is not None:
         namespace = expected_config['environment']['namespace']
         if (install != boundary / 'opt' / namespace
                 or Path(config_root) != boundary / 'etc' / namespace):
             raise ValueError('REINSTALL_RESOURCE_MIGRATION_UNSUPPORTED')
-        if not qualified_serial_preflight:
-            proof = (consumer_resource_probe or globals().get('prove_selected_resources') if baseline is not None
-                     else resource_probe or globals().get('prove_git_resources'))
-            if not callable(proof):
-                raise ValueError('RELAY_INSTALL_RESOURCE_PROOF_UNAVAILABLE')
-            if baseline is None:
-                proof(expected_config, root=boundary, owner_uid=owner_uid)
-            else:
-                proof(expected_config, baseline, root=boundary, owner_uid=owner_uid)
+        proof = (consumer_resource_probe or globals().get('prove_selected_resources') if baseline is not None
+                 else resource_probe or globals().get('prove_git_resources'))
+        if not callable(proof):
+            raise ValueError('RELAY_INSTALL_RESOURCE_PROOF_UNAVAILABLE')
+        if baseline is None:
+            proof(expected_config, root=boundary, owner_uid=owner_uid)
+        else:
+            proof(expected_config, baseline, root=boundary, owner_uid=owner_uid)
     config_root = Path(config_root)
     if config_root.exists() or config_root.is_symlink():
         protected(config_root, directory=True, **protection)
@@ -225,30 +210,7 @@ def verify(install_root, config_root, expected_config, *, owner_uid=0, boundary=
 
     if (intent(installed_config) != intent(expected_config)
             or json.loads(consumer_path.read_text()) != expected_config['consumer']):
-        # A separately reserved SERIAL transition may change only the selected
-        # pool topology. Ordinary upgrades retain their original exact gate.
-        receipt_path = config_root / 'serial-pool-compat-v1.json'
-        state_path = Path(installed_config['consumer']['paths']['claimRoot']) / 'serial-pool-transition-v1.json'
-        if not receipt_path.exists() or not state_path.exists():
-            raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
-        for path in [receipt_path, state_path]:
-            protected(path, **protection)
-        receipt_raw = receipt_path.read_bytes()
-        receipt = json.loads(receipt_raw)
-        state = json.loads(state_path.read_bytes())
-        prospective = json.dumps(expected_config, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
-        if (state.get('phase') not in ['stopped', 'target-ready', 'remove-intent', 'retired']
-                or state.get('targetRevision') != expected_config['source']['revision']
-                and expected_config['source']['revision'] != 'main'
-                or state.get('receiptSha256') != hashlib.sha256(receipt_raw).hexdigest()
-                or state.get('plan', {}).get('targetConfigSha256') != hashlib.sha256(prospective).hexdigest()
-                or receipt.get('original', {}).get('revision') != release.name
-                or receipt.get('original', {}).get('configSha256') != hashlib.sha256(snapshot).hexdigest()
-                or receipt.get('original', {}).get('consumerSha256') != hashlib.sha256(consumer_path.read_bytes()).hexdigest()
-                or receipt.get('operationId') != state.get('operationId')
-                or receipt.get('namespace') != installed_config['environment']['namespace']
-                or receipt.get('repository') != expected_config['environment'].get('repository', expected_config['consumer'].get('repository'))):
-            raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
+        raise ValueError('RELAY_UPGRADE_OWNER_INTENT_CHANGED')
     return release.name
 
 
@@ -261,7 +223,6 @@ if __name__ == '__main__':
                 parser.add_argument(name)
             for name in ('consumer-baseline', 'baseline-digest', 'claim-root', 'stage-root'):
                 parser.add_argument('--' + name)
-            parser.add_argument('--qualified-serial-preflight', default=False)
             arguments = vars(parser.parse_args(sys.argv[2:]))
             selected = [arguments.pop(key) for key in ('consumer_baseline', 'baseline_digest', 'claim_root', 'stage_root')]
             if any(value is not None for value in selected) and not all(value is not None for value in selected):

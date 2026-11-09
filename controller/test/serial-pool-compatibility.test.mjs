@@ -8,6 +8,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from '../src/attempt-store.mjs';
+import { createAdmissionControl } from '../src/admission-control.mjs';
+import { supplementOriginalInventory } from '../src/admission-cli.mjs';
 import { consumerDigest, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
 import { createCompatibilityStore, historicalOperationContext, invokeOriginalReader, loadSerialPoolCompatibility,
   protectedSourceTreeSha256, verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
@@ -54,7 +56,7 @@ test('plural compatibility composes actual process-selected publication store fo
     const compatibility=await loadSerialPoolCompatibility({...input.options,consumer:CONSUMER});
     const store=createCompatibilityStore({compatibility,currentStore:createPublicationStore(compatibility.current.storeRoot),
       originalStore:createAttemptStore(compatibility.original.storeRoot,{repository:compatibility.receipt.repository})});
-    await store.reserve(201,{envelope:{repository:CONSUMER.repository,consumerDigest:CONSUMER_DIGEST,runId:201,attemptId:'run-201'}});
+    await store.reserve(201,{envelope:{repository:CONSUMER.repository,consumerDigest:CONSUMER_DIGEST,version:2,route:'manual',issueNumber:42,runId:201,attemptId:'run-201'}});
     process.stdout.write(JSON.stringify({repository:(await store.get(201)).envelope.repository,count:(await store.all()).length}));`;
   for (const repository of repositories) {
     const output = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', driver,
@@ -198,7 +200,7 @@ test('declared aliases require the protected root owner even when target bytes m
     await assert.rejects(protectedSourceTreeSha256(sourceRoot, options), { code: 'SERIAL_POOL_COMPATIBILITY_SOURCE_LINK_INVALID' });
   });
 
-test('original complete/legacy/manual/partial blocked records retain their exact context and bytes', { skip: !linux }, async t => {
+test('original complete/legacy/manual/unexecuted refusal records retain their exact context and bytes', { skip: !linux }, async t => {
   const f = await fixture(t); const before = await readFile(f.gatePath); const ctx = await f.load();
   const inventory = await invokeOriginalReader(ctx, { operation: 'inventory' });
   assert.deepEqual(inventory.active, []); assert.deepEqual(inventory.unknown, []);
@@ -251,7 +253,7 @@ test('complete inventories reject extra, duplicate and altered historical/curren
   await f.currentStore.put(99, { envelope: { ...f.current.envelope, runId: 99, attemptId: 'run-99' } });
   await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_DUPLICATE_ATTEMPT' });
   await rm(join(ctx.current.storeRoot, '99.json'));
-  await f.currentStore.put(200, { envelope: { ...f.current.envelope, consumerDigest: 'f'.repeat(64) } });
+  await f.currentStore.put(200, { envelope: { ...f.current.envelope, consumerDigest: 'f'.repeat(64), attemptId: 'run-201' } });
   await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
   await f.currentStore.put(200, f.current);
   const changed = structuredClone(f.records[0]); changed.envelope.step = 9;
@@ -259,16 +261,12 @@ test('complete inventories reject extra, duplicate and altered historical/curren
   await assert.rejects(store.all(), { code: 'SERIAL_POOL_COMPATIBILITY_ENVELOPE_CHANGED' });
 });
 
-test('retired old-digest pool handoffs remain read-only and are revalidated without rewriting history', { skip: !linux }, async t => {
+test('old-digest pool handoffs retain structural read access without historical disposition', { skip: !linux }, async t => {
   const f = await fixture(t); const ctx = await f.load();
   const record = { envelope: { ...f.current.envelope, route: 'manual', consumerDigest: 'f'.repeat(64) }, outcome: null };
   await f.currentStore.put(200, record);
   const pathname = join(ctx.current.storeRoot, '200.json'); const before = await readFile(pathname);
-  let retired = true;
-  const manualAttemptDisposition = async value => retired ? { disposition: 'historical', reason: 'task-completed',
-    repository: value.envelope.repository, issueNumber: value.envelope.issueNumber,
-    runId: value.envelope.runId, attemptId: value.envelope.attemptId, consumerDigest: value.envelope.consumerDigest,
-    envelopeDigest: digest(value.envelope), recordDigest: digest(value), evidenceDigest: 'd'.repeat(64) } : null;
+  const manualAttemptDisposition = async () => assert.fail('structural history reads do not consult old Task disposition');
   const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore,
     currentStore: f.currentStore, manualAttemptDisposition });
   assert.deepEqual(await store.get(200), record);
@@ -279,10 +277,22 @@ test('retired old-digest pool handoffs remain read-only and are revalidated with
     await assert.rejects(action(), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
   }
   assert.deepEqual(await readFile(pathname), before);
-  retired = false;
-  await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
-  assert.equal((await store.scan()).find(row => row.runId === 200).error, 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED');
+  assert.deepEqual(await store.get(200), record);
+  assert.equal((await store.scan()).find(row => row.runId === 200).error, null);
   assert.deepEqual(await readFile(pathname), before);
+});
+
+test('a refused PR admission remains readable before its canonical Task could be resolved', { skip: !linux }, async t => {
+  const f = await fixture(t); const ctx = await f.load();
+  const admissionBlock = { code: 'CANONICAL_ISSUE_AMBIGUOUS' };
+  const record = { envelope: { ...f.current.envelope, consumerDigest: 'f'.repeat(64),
+    issueNumber: null, target: 'pull_request', number: 55, admissionBlock }, admissionBlock };
+  await f.currentStore.put(200, record);
+  const store = createCompatibilityStore({ compatibility: ctx, originalStore: f.originalStore, currentStore: f.currentStore });
+  assert.deepEqual(await store.get(200), record);
+  await assert.rejects(store.put(200, record), { code: 'SERIAL_POOL_COMPATIBILITY_HISTORICAL_WRITE_FORBIDDEN' });
+  record.envelope.admissionBlock = { code: 'DIFFERENT_REFUSAL' }; await f.currentStore.put(200, record);
+  await assert.rejects(store.get(200), { code: 'SERIAL_POOL_COMPATIBILITY_CURRENT_CHANGED' });
 });
 
 test('sealed ownership remains strict on primary while distinct managed resource ignores unrelated history', { skip: !linux }, async t => {
@@ -354,3 +364,85 @@ for (const unsafe of ['receipt-mode', 'receipt-symlink', 'consumer-hardlink', 's
     await assert.rejects(f.load());
   });
 }
+
+
+test('original SERIAL pending publication effects hold lifecycle while contained physical slots remain available', { skip: !linux }, async t => {
+  const f = await fixture(t); const ctx = await f.load();
+  const gate = createAdmissionControl({ root: dirname(ctx.current.gatePath), stateName: 'admission-pool-v1.json',
+    consumerDigest: ctx.currentConsumerDigest, store: { all: async () => [] }, journal: f.journal, protectedRoot: false,
+    supplementalInventory: async ({ task, slot, resourceOnly }) => {
+      const inventory = await invokeOriginalReader(ctx, { operation: 'inventory', task, slot, resourceOnly });
+      return resourceOnly ? inventory : supplementOriginalInventory(inventory, await f.originalStore.all(), { journal: f.journal, task });
+    } });
+  const operationId = f.receipt.operationId, target = 'c'.repeat(40);
+  await gate.quiesce({ operationId, target }); await gate.drained({ operationId });
+  for (const fields of [
+    { relationshipIntent: { number: 42 } }, { readinessIntent: { draft: false } },
+    { successOutcomeIntent: { head: target } }, { readyConsumption: { status: 'uncertain' } },
+    { outcome: {} }, { outcome: { status: 'BLOCKED', head: null, prNumber: null, outcomeId: 0 } }
+  ]) {
+    const record = { ...structuredClone(f.records[0]), ...fields }; await f.originalStore.put(99, record);
+    assert.deepEqual((await gate.status()).unknown, [99]);
+    assert.equal((await gate.preflightConsumerTransition({ desiredDigest: 'f'.repeat(64) })).eligible, false);
+    await assert.rejects(gate.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+    await assert.rejects(gate.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+    await gate.assertSlotComplete('primary'); await gate.assertSlotComplete('pool-2');
+  }
+  const live = structuredClone(f.records[0]);
+  live.controllerLifecycle = { version: 1, status: 'active' }; delete live.outcome;
+  live.readinessIntent = { draft: false }; await f.originalStore.put(99, live);
+  assert.deepEqual((await gate.status()).active, [99]); assert.deepEqual((await gate.status()).unknown, []);
+  assert.equal((await gate.drained({ operationId })).drained, false);
+  await f.originalStore.put(99, f.records[0]);
+  await gate.checkConsumerTransition({ operationId, target });
+  assert.equal((await gate.drained({ operationId })).drained, true);
+});
+
+
+test('a retained pre-admission refusal is idle only before any execution or publication effect', { skip: !linux }, async t => {
+  const f = await fixture(t); const ctx = await f.load();
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, []);
+  const refused = structuredClone(f.records[2]);
+  assert.equal(refused.outcome, null);
+  const before = await readFile(join(ctx.original.storeRoot, '101.json'));
+  for (const mutate of [
+    record => { record.outcome = {}; }, record => { record.handoffComplete = false; },
+    record => { record.prIntent = true; }, record => { record.controllerLifecycle = { version: 1, status: 'active' }; },
+    record => { record.commentIntent = { key: 'outcome' }; }, record => { record.readyConsumption = { status: 'uncertain' }; },
+    record => { record.commentBodies = { outcome: { number: 43, sha256: 'a'.repeat(64), rendererVersion: 'human-v1' } }; }
+  ]) {
+    const pending = structuredClone(refused); mutate(pending); await f.originalStore.put(101, pending);
+    assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, [101]);
+    assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory', resourceOnly: true, slot: 'primary' })).unknown,
+      pending.controllerLifecycle ? [101] : []);
+  }
+  await f.originalStore.put(101, refused);
+  await f.journal.put(101, { version: 2, envelope: refused.envelope, execution: { reserved: true, returned: false } });
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, [101]);
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory', resourceOnly: true, slot: 'primary' })).unknown, [101]);
+  await rm(join(f.at(f.currentConsumer.paths.attemptRoot), '101.json'));
+  assert.deepEqual((await invokeOriginalReader(ctx, { operation: 'inventory' })).unknown, []);
+  assert.deepEqual(await readFile(join(ctx.original.storeRoot, '101.json')), before);
+});
+
+test('current effect overlay clears an original manual PR refusal without rewriting frozen history', { skip: !linux }, async t => {
+  const f = await fixture(t); const admissionBlock = { code: 'CANONICAL_ISSUE_AMBIGUOUS' };
+  const refused = { envelope: { ...f.records[2].envelope, route: 'manual', target: 'pull_request',
+    number: 55, issueNumber: null, request: null, branch: null, startHead: null, authorityDigest: null,
+    admissionBlock }, admissionBlock };
+  const frozenInventory = { active: [], unknown: [101] };
+  const options = { journal: f.journal };
+  assert.deepEqual(await supplementOriginalInventory(frozenInventory, [refused], options), { active: [], unknown: [] });
+  for (const mutate of [
+    r => { r.commentIntent = { key: 'outcome' }; },
+    r => { r.readyConsumption = { status: 'uncertain' }; },
+    r => { r.manualSubmission = { sha256: 'a'.repeat(64) }; },
+    r => { r.envelope.admissionBlock = { code: 'CHANGED' }; }
+  ]) {
+    const pending = structuredClone(refused); mutate(pending);
+    assert.deepEqual((await supplementOriginalInventory(frozenInventory, [pending], options)).unknown, [101]);
+  }
+  await f.journal.put(101, { version: 2, envelope: refused.envelope, execution: { reserved: true } });
+  assert.deepEqual((await supplementOriginalInventory(frozenInventory, [refused], options)).unknown, [101]);
+  assert.deepEqual(frozenInventory, { active: [], unknown: [101] });
+});

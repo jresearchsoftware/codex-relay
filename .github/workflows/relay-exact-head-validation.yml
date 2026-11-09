@@ -61,7 +61,7 @@ jobs:
 
       - name: Qualify pinned governance and frozen product delivery
         run: |
-          python3 scripts/build-project-guidance.py --check
+          python3 scripts/build-relay-guidance.py --check
           python3 scripts/prepare-relay-self-adoption.py --check
           python3 scripts/test-relay-guidance.py
           python3 scripts/test-qualify-vibevm.py

@@ -212,9 +212,27 @@ for (const route of ['auto', 'manual']) test(`contained BLOCKED CR progress admi
   if (route === 'manual') {
     const handoff = f.comments.find(comment => comment.body.includes('MANUAL_CODEX_HANDOFF_READY'));
     assert.ok(handoff.body.includes(f.publishedHead));
+    assert.ok(handoff.body.includes(`Admitted branch: ${e.branch}; base SHA: ${e.historicalBase}; source PR: https://github.com/${REPOSITORY}/pull/43`));
+    assert.ok(handoff.body.includes(`Required starting head: ${e.startHead}`));
     assert.ok(handoff.body.includes(`Task 42 — Step ${e.step}`));
     assert.equal((await f.api.get('/pulls/43')).draft, true);
   }
+});
+
+for (const route of ['auto', 'manual']) test(`same-CR ${route} re-entry keeps later standalone numbering and exact prior Writer source`, async t => {
+  const f = await blockedContinuation(t);
+  const request = f.nextReady({ route });
+  f.issue.labels = [{ name: 'step-5' }];
+  const admitted = await f.broker.invoke(request);
+  assert.notEqual(admitted.status, 'BLOCKED', JSON.stringify(admitted.envelope));
+  assert.equal(admitted.envelope.step, 6);
+  assert.equal(admitted.envelope.request.lineage.step, f.prior.envelope.step);
+  assert.equal(admitted.envelope.startHead, f.publishedHead);
+  assert.deepEqual(f.review, f.originalReview);
+  assert.deepEqual(await f.store.get(99), f.prior);
+  assert.deepEqual(f.issue.labels, [{ name: 'step-6' }]);
+  assert.ok(f.pr.labels.some(label => label.name === 'step-6'));
+  assert.match(f.pr.title, /^Task 42 · Step 6 · /);
 });
 
 test('exact original BLOCKED replay preserves its Step, Outcome and already executed child', async t => {
@@ -345,7 +363,7 @@ for (const mode of ['missing', 'APPROVED', 'newer-CR']) test(`${mode} current re
     reviews = [copy(f.review), { ...copy(f.review), id: f.review.id + 1, body: renderAuthorityRecord(payload) }];
   }
   f.api.list = path => path === '/pulls/43/reviews' ? Promise.resolve(copy(reviews)) : list(path);
-  await assertRefused(f, f.nextReady(), ['AUTHORITY_CONTINUATION_INVALID']);
+  await assertRefused(f, f.nextReady(), [mode === 'newer-CR' ? 'AUTHORITY_CONTINUATION_INVALID' : 'CURRENT_CHANGE_REQUEST_MISSING']);
 });
 
 test('a public BLOCKED Outcome cannot supply a missing protected Writer publication head', async t => {

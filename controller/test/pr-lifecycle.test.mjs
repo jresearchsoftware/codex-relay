@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture } from './fixture.mjs';
+import { fixture, memoryStore } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { continueAfterChangeRequest } from '../src/pr-lifecycle.mjs';
 import { REVIEWER, WRITER } from '../src/execution-contract.mjs';
@@ -134,12 +134,12 @@ test('successful CR continuation drafts its exact target before remediation and 
   const drafted = await continueAfterChangeRequest(publication(f), f.broker);
   assert.equal(drafted.head, f.review.commit_id); assert.equal(drafted.draft, true);
   await continueAfterChangeRequest(publication(f), f.broker); assert.equal(mutations, 1);
-  // Re-admission of the already-Draft exact head is valid, without a new Step.
-  const { createPublicationBroker } = await import('../src/publication-broker.mjs');
-  const fresh = createPublicationBroker({ api: f.api, store: { get: async () => null, put: async () => {} }, publisher: f.publisher,
-    lifecycleStore: f.lifecycleStore, streamlinedAdmission: false });
-  assert.equal((await fresh.dispatch(f.admissionRequest)).envelope.startHead, drafted.head);
-  await f.broker.invoke(f.admissionRequest);
+  // The first genuine admission binds Step once; replay uses that same
+  // protected Writer store rather than manufacturing an independent admission.
+  const admitted = await f.broker.invoke(f.admissionRequest);
+  assert.equal(admitted.envelope.startHead, drafted.head);
+  assert.equal(admitted.envelope.step, f.envelope.step);
+  assert.equal((await f.broker.invoke(f.admissionRequest)).resumed, true);
   const completed = await runAttempt({ ...f, execute: async () => { await f.commit(); return success(f.envelope); } });
   assert.equal(completed.draft, false); assert.equal(mutations, 1);
 });

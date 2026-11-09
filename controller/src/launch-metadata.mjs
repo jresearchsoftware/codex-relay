@@ -1,7 +1,7 @@
 // Native launch commands and their display metadata; runId owns the attempt.
 import { fail, positive } from './execution-contract.mjs';
 import { RUN_NAME_MAX_CHARS } from './run-name.mjs';
-import { currentStep, labelNames, READY_LABELS, stepLike } from './step-metadata.mjs';
+import { READY_LABELS } from './step-metadata.mjs';
 
 function positiveDecimal(value, code) {
   if (!['string', 'number'].includes(typeof value) || !positive(Number(value)) || String(Number(value)) !== String(value)) fail(code);
@@ -9,13 +9,6 @@ function positiveDecimal(value, code) {
 }
 
 export const launchStep = value => positiveDecimal(value, 'LAUNCH_STEP_INVALID');
-
-export function remediationThreadTitle(title, issueNumber, step) {
-  // Reuse only the descriptive tail of old CR display metadata. Neither its
-  // Task nor Step supplies identity or a sequencing check for this launch.
-  const purpose = String(title).replace(/^Task\s+#?[0-9]+[A-Za-z]*\s*[-–—:·|]*\s*Step\s+[0-9]+\s*[-–—:·|]*\s*/i, '');
-  return `Task ${issueNumber} — Step ${launchStep(step)} — ${purpose}`;
-}
 
 export function dispatchRunName({ route, issueNumber, step, target, number }) {
   const phase = route === 'manual' ? 'Manual handoff' : target === 'pull_request' ? 'Auto remediation' : 'Auto implementation';
@@ -43,8 +36,7 @@ function labelRunPrefix({ route, target, number }) {
 }
 
 export function labelRunName(launch, subject) {
-  if (launch.target === 'issue' && /^Authority model: github-native-v1$/m.test(subject.body ?? '')) return labelRunPrefix(launch) + `codex-ready-${launch.route}`;
-  return labelRunPrefix(launch) + (launch.target === 'issue' ? labelNames(subject.labels).join(' · ') : subject.title);
+  return labelRunPrefix(launch) + (launch.target === 'issue' ? `codex-ready-${launch.route}` : subject.title);
 }
 
 export function labelRunCommandMatches(name, launch) {
@@ -55,30 +47,14 @@ export function labelRunCommandMatches(name, launch) {
   return commands.length === 1 && commands[0] === `codex-ready-${launch.route}`;
 }
 
-export function labelRunMatches(name, launch, subject) {
-  if (launch.target === 'pull_request') return name === labelRunName(launch, subject);
-  const prefix = labelRunPrefix(launch);
-  if (typeof name !== 'string' || !name.startsWith(prefix)) return false;
-  // Unrelated labels are display-only, including additions/removals/reordering.
-  // Only the reserved Step namespace and ready commands bind this projection.
-  const coordinates = names => names.filter(value => stepLike(value) || READY_LABELS.includes(value)).sort();
-  return JSON.stringify(coordinates(name.slice(prefix.length).split(' · ')))
-    === JSON.stringify(coordinates(labelNames(subject.labels)));
-}
-
 export function parseLabelLaunch(event, eventName) {
   if (event.action !== 'labeled' || !READY_LABELS.includes(event.label?.name)
     || !['issues', 'pull_request_target'].includes(eventName)) fail('READY_EVENT_REQUIRED');
   const target = eventName === 'issues' ? 'issue' : 'pull_request';
   const subject = target === 'issue' ? event.issue : event.pull_request;
   if (!positive(subject?.number) || (target === 'issue' && subject.pull_request)) fail('ROUTE_INVALID');
-  // Route without admitting. The Writer binds the native run/event/target
-  // before validating Step and Issue/CR authority, including safe rejection.
-  // An invalid event snapshot stays invalid even if labels are repaired before
-  // admission. Null cannot become a Step default from a later REST read.
-  let step = null;
-  try { step = currentStep(subject.labels); }
-  catch (error) { if (!['STEP_LABEL_MISSING', 'STEP_LABEL_MULTIPLE', 'STEP_LABEL_INVALID'].includes(error.code)) throw error; }
-  return { target, number: subject.number, step,
+  // Routing authenticates the command; Writer resolves the canonical Issue's
+  // numbering position under its existing serialization boundary.
+  return { target, number: subject.number, step: null,
     route: event.label.name === READY_LABELS[0] ? 'auto' : 'manual', transport: 'label' };
 }

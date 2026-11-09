@@ -15,7 +15,7 @@ spec = importlib.util.spec_from_file_location("relay_project", ROOT / "guidance/
 project = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(project)
 builder_spec = importlib.util.spec_from_file_location("project_guidance_builder",
-                                                    ROOT / "scripts/build-project-guidance.py")
+                                                    ROOT / "scripts/build-relay-guidance.py")
 builder = importlib.util.module_from_spec(builder_spec)
 builder_spec.loader.exec_module(builder)
 
@@ -282,7 +282,7 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(builder.build(root, check=True)["guidance"], "PASS")
 
     def test_generated_forms_preserve_product_bytes_and_distinct_protocol_sources(self):
-        completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-project-guidance.py"), "--check"],
+        completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-relay-guidance.py"), "--check"],
                                    capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         standalone = ROOT / "guidance/artifacts/standalone/codex-relay"

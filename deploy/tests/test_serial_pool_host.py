@@ -39,7 +39,9 @@ class API:
 
 @pytest.fixture
 def installation(tmp_path):
-    value = config.load(ROOT / 'deploy/example.json', ROOT)
+    value = json.loads((ROOT / 'deploy/example.json').read_text())
+    value['consumer'].pop('generalRunnerPool')
+    value['environment']['generalRunner'].pop('poolApp')
     value['environment']['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
     value['environment']['generalRunner'].update(name='legacy-general', user='legacy-runner', scope='repository')
     ns = value['environment']['namespace']
@@ -187,64 +189,13 @@ def test_unsafe_or_mismatched_original_registration_unit_and_loaded_state_stop_b
                                  [{'id': 72, 'name': 'legacy-general', 'busy': False}],
                                  [{'id': 71, 'name': 'legacy-general', 'busy': 'false'}],
                                  [{'id': 71, 'name': 'legacy-general', 'busy': False}] * 2])
-def test_native_collision_rename_duplicate_and_unknown_busy_never_authorize_removal(installation, rows):
+def test_native_collision_rename_duplicate_and_unknown_busy_fail_observation(installation, rows):
     value = installation
     saved = binding(value)
     value.api.rows = rows
     with pytest.raises(pool.PoolError):
-        value.github.remove_legacy(saved)
+        value.github.observe_legacy(saved)
     assert not any(method == 'DELETE' for method, path in value.api.calls)
-
-
-def test_absent_or_busy_native_registration_never_authorizes_stop(installation):
-    value = installation
-    saved = binding(value)
-    for rows in [[], [{'id': 71, 'name': 'legacy-general', 'busy': True}]]:
-        value.api.rows = rows
-        with pytest.raises(pool.PoolError, match='LEGACY_BUSY'):
-            value.host.stop_legacy(saved)
-    assert all(command[1] == 'show' for command in value.calls)
-
-
-def test_real_idle_stop_freezes_before_signal_and_preserves_original_files(installation, monkeypatch):
-    value = installation
-    activate(value)
-    saved = binding(value)
-    original_path = pool.Path
-    monkeypatch.setattr(pool, 'Path', lambda path: value.root / str(path).lstrip('/') if str(path).startswith(('/sys/', '/proc/')) else original_path(path))
-    value.calls.clear()
-    value.host.stop_legacy(saved)
-    commands = [command[1] for command in value.calls if command[1] != 'show']
-    assert commands == ['freeze', 'kill', 'disable', 'stop', 'thaw']
-    assert value.host.legacy_stopped(saved) is True
-    assert (value.root / value.runner_root.lstrip('/') / '.credentials').read_text() == 'synthetic private credentials'
-    assert (value.root / value.unit.lstrip('/')).is_file()
-
-
-def test_model_worker_prevents_any_stop_signal_even_when_native_runner_is_idle(installation, monkeypatch):
-    value = installation
-    saved = binding(value)
-    activate(value, 'Runner.Worker')
-    with pytest.raises(pool.PoolError, match='LEGACY_WORKER_PRESENT'):
-        value.host.stop_legacy(saved)
-    assert all(command[1] == 'show' for command in value.calls)
-
-
-@pytest.mark.parametrize('enabled', ['enabled', 'enabled-runtime'])
-def test_inactive_enabled_original_is_disabled_once_without_any_signal_or_local_file_change(installation, enabled):
-    value = installation
-    value.loaded['UnitFileState'] = enabled
-    saved = binding(value)
-    marker = value.root / value.runner_root.lstrip('/') / '.runner'
-    credentials = marker.with_name('.credentials')
-    before = marker.read_bytes(), credentials.read_bytes(), (value.root / value.unit.lstrip('/')).read_bytes()
-    assert value.host.legacy_stopped(saved) is False
-    value.host.stop_legacy(saved)
-    assert value.host.legacy_stopped(saved) is True
-    assert [command[1] for command in value.calls if command[1] != 'show'] == ['disable']
-    value.host.stop_legacy(saved)
-    assert [command[1] for command in value.calls if command[1] != 'show'] == ['disable']
-    assert (marker.read_bytes(), credentials.read_bytes(), (value.root / value.unit.lstrip('/')).read_bytes()) == before
 
 
 def test_restarted_legacy_listener_loses_stopped_proof_without_starting_any_pool(installation):
@@ -256,50 +207,17 @@ def test_restarted_legacy_listener_loses_stopped_proof_without_starting_any_pool
     assert all(command[1] == 'show' for command in value.calls)
 
 
-def test_failed_disable_acknowledgement_never_implies_stopped_or_sends_a_signal(installation):
-    value = installation
-    saved = binding(value)
-    value.loaded['UnitFileState'] = 'enabled'
-    command = value.native.command
-    def lose_disable(argv, **kwargs):
-        if argv[1] == 'disable':
-            value.calls.append(argv)
-            return b''  # No native state change despite a nominal success.
-        return command(argv, **kwargs)
-    value.native.command = lose_disable
-    with pytest.raises(pool.PoolError, match='STOP_UNCERTAIN'):
-        value.host.stop_legacy(saved)
-    assert value.host.legacy_stopped(saved) is False
-    assert [item[1] for item in value.calls if item[1] != 'show'] == ['disable']
-
-
-def test_marker_replacement_after_binding_prevents_any_stop_or_signal(installation):
+def test_marker_replacement_after_binding_invalidates_stopped_evidence(installation):
     value = installation
     saved = binding(value)
     value.marker['agentId'] = 72
     write_marker(value)
     with pytest.raises(pool.PoolError, match='LEGACY_BINDING_CHANGED'):
-        value.host.stop_legacy(saved)
+        value.host.legacy_stopped(saved)
     assert all(command[1] == 'show' for command in value.calls)
 
 
-def test_lost_delete_ack_is_reobserved_absent_without_another_remote_mutation_or_local_cleanup(installation):
-    value = installation
-    saved = binding(value)
-    value.api.lost_delete = True
-    with pytest.raises(pool.PoolError, match='API_UNPROVEN'):
-        value.github.remove_legacy(saved)
-    assert value.github.observe_legacy(saved) is None
-    assert len([method for method, path in value.api.calls if method == 'DELETE']) == 1
-    assert (value.root / value.runner_root.lstrip('/') / '.credentials').is_file()
-    assert (value.root / value.runner_root.lstrip('/') / '.runner').is_file()
-
-
-def test_target_readiness_requires_explicit_installed_proof_callback(installation):
-    value = installation
-    with pytest.raises(pool.PoolError, match='TARGET_READINESS_UNPROVEN'):
-        value.host.pool_ready(value.config)
-    value.host.readiness = lambda config: False
-    assert value.host.pool_ready(value.config) is False
-    value.host.readiness = lambda config: True
-    assert value.host.pool_ready(value.config) is True
+def test_retained_adapters_expose_no_runner_mutations(installation):
+    assert not hasattr(installation.github, 'remove_legacy')
+    assert not hasattr(installation.host, 'stop_legacy')
+    assert not hasattr(installation.host, 'pool_ready')

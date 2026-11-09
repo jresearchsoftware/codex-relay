@@ -183,6 +183,49 @@ class Probe:
             return result
         return self.inspect(label, path, protected=True, required=True, content=True)
 
+    def inspect_runner_listener(self, label, runner_root, runner_uid, source_root):
+        """Read only the native updater's same-instance bin.<semver> alias."""
+        logical = Path(runner_root)
+        alias = self.physical(logical / 'bin')
+        if not alias.is_symlink():
+            return self.inspect(label, str(logical / 'bin/Runner.Listener'))
+        before = alias.lstat()
+        target = os.readlink(alias)
+        require(runner_uid is not None and before.st_uid == runner_uid,
+                'HOST_RUNNER_NATIVE_LAYOUT_UNSAFE', label)
+        selected = Path(target)
+        if selected.is_absolute():
+            require(selected.parent == logical, 'HOST_RUNNER_NATIVE_LAYOUT_UNSAFE', label)
+            selected = Path(selected.name)
+        require(re.fullmatch(r'bin[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)', str(selected)),
+                'HOST_RUNNER_NATIVE_LAYOUT_UNSAFE', label)
+        canonical = logical / selected
+        # Reuse package qualification's real-directory/file boundary. Resolve the
+        # logical alias here because Probe also supports rooted Linux fixtures.
+        if not hasattr(self, '_runner_layout'):
+            helper = str(Path(source_root) / 'deploy/ansible/roles/relay_runner/files/relay-intent-package.py')
+            self.inspect('runner-layout-source', helper, protected=True, required=True, content=True)
+            namespace = {'__name__': 'relay_runner_layout', '__file__': str(self.physical(helper))}
+            exec(compile(self.physical(helper).read_bytes(), namespace['__file__'], 'exec'), namespace)
+            self._runner_layout = namespace
+        try:
+            qualified = (self._runner_layout['real'](self.physical(canonical), True, owner=False)
+                         and self._runner_layout['real'](self.physical(canonical / 'Runner.Listener'), False, owner=False))
+        except (OSError, ValueError):
+            qualified = False
+        require(qualified, 'HOST_RUNNER_NATIVE_LAYOUT_UNSAFE', label)
+        directory = self.inspect(label + '-native-bin', str(canonical), directory=True, required=True, uid=runner_uid)
+        listener = self.inspect(label, str(canonical / 'Runner.Listener'), required=True, uid=runner_uid)
+        require(not (directory.st_mode | listener.st_mode) & 0o022
+                and directory.st_mode & stat.S_IXUSR and listener.st_mode & stat.S_IXUSR,
+                'HOST_RUNNER_NATIVE_LAYOUT_UNSAFE', label)
+        fields = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_mtime_ns', 'st_ctime_ns')
+        after = alias.lstat()
+        require(all(getattr(before, name) == getattr(after, name) for name in fields)
+                and os.readlink(alias) == target, 'HOST_RUNNER_NATIVE_LAYOUT_CHANGED', label)
+        self.observed.append([label + '-native-bin-alias', *[getattr(before, name) for name in fields], target])
+        return listener
+
 
 def destination_specs(v):
     """Existing role namespaces and fixed entrypoints; no recursive journal scan."""
@@ -491,10 +534,16 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
     for runtime in runtimes:
         work_gid = group(runtime['workGroup']); account = user(runtime['user'])
         plans['workMembershipChanges'] += int(account is not None and (work_gid is None or work_gid not in account['groups']))
+    listeners = {runner['root'] + '/bin/Runner.Listener': runner for runner in runners}
     for label, path, directory, protected, symlink in destination_specs(v):
-        info = probe.inspect(label, path, directory=directory, protected=protected, symlink=symlink,
-                             retained_runtime=label == 'runtime-root',
-                             volatile_consumer=path == v['relay_config_root'] + '/consumer.json')
+        if path in listeners:
+            runner = listeners[path]
+            account = user(runner['user'])
+            info = probe.inspect_runner_listener(label, runner['root'], account['uid'] if account else None, source_root)
+        else:
+            info = probe.inspect(label, path, directory=directory, protected=protected, symlink=symlink,
+                                 retained_runtime=label == 'runtime-root',
+                                 volatile_consumer=path == v['relay_config_root'] + '/consumer.json')
         if label == 'runtime-root' and info is not None and info.st_mode & 0o022:
             require(info.st_gid == group(v['relay_reviewer_group']), 'HOST_DESTINATION_METADATA_UNSAFE', label)
     for runner in runners:

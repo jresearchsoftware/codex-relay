@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from test_consumer_workflows import HEAD, NODE, control_step, javascript, workflow
+from test_consumer_workflows import HEAD, NODE, control_step, javascript, workflow, self_config, general_pool_label
 
 
 class ProductionWorkflowTests(unittest.TestCase):
@@ -22,15 +22,16 @@ class ProductionWorkflowTests(unittest.TestCase):
             'options': ['apply', 'stop', 'resume']}}}})
         self.assertEqual(self.workflow['permissions'], {'contents': 'read'})
         self.assertEqual(self.workflow['concurrency'], {'group': 'codex-relay-production', 'cancel-in-progress': False})
-        self.assertEqual(self.job['runs-on'], ['self-hosted', 'Linux', 'X64', 'codex-relay'])
+        self.assertEqual(self.job['runs-on'], {'group': 'relay-general',
+            'labels': ['self-hosted', 'Linux', 'X64', general_pool_label(self_config())]})
         self.assertEqual(self.job['timeout-minutes'], 120)
         self.assertNotIn('uses', self.step)
         self.assertEqual(self.step['shell'], 'bash --noprofile --norc -euo pipefail {0}')
-        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v3',
+        self.assertEqual(self.step['env'], {'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v4',
             'RELAY_LIFECYCLE_ACTION': '${{ inputs.action }}', 'NODE_OPTIONS': '', 'NODE_PATH': ''})
         self.assertNotIn('${{', self.step['run'])
-        self.assertIn('test "$RUNNER_NAME" = codex-relay-general-runner', self.step['run'])
-        self.assertIn('test "$(/usr/bin/id -un)" = codex-relay-general-runner', self.step['run'])
+        self.assertIn('codex-relay-general-runner:codex-relay-general-runner) export RELAY_EXECUTION_SLOT=primary', self.step['run'])
+        self.assertIn('case "$RUNNER_NAME:$(/usr/bin/id -un)" in', self.step['run'])
         for forbidden in ['checkout', 'ansible', 'ssh ', 'inputs.', 'GITHUB_TOKEN', 'fetch(', 'api.github.com']:
             self.assertNotIn(forbidden, self.step['run'])
         if shutil.which('bash') and os.name != 'nt':

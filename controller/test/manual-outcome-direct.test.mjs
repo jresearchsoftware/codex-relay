@@ -9,7 +9,7 @@ const copy = value => structuredClone(value);
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nBounded manual qualification.';
 const head = 'a'.repeat(40);
 const parent = { kind: 'issue', number: 42 };
-function fixture({ prState, resultKind = 'qualification', status = 'implemented', version = '4.0', historical = false } = {}) {
+function fixture({ prState, resultKind = 'qualification', status = 'implemented', historical = false } = {}) {
   const source = { charter: { kind: 'issue-body', id: 42, parent: copy(parent), sha256: sha256Body(charter) },
     decisions: [], change_request: null, compatibility_request: null };
   const authority = { ...source, sha256: authoritySourceDigest(source) };
@@ -19,19 +19,16 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
     base_sha: head, starting_head: head, existing_pr: null, issue_closure_policy: 'keep-open',
     continuation: { hold: false, next: null }, route: 'manual' };
   const snapshot = createAdmissionSnapshot({ request: q, authority }, { step: 2, attempt: 'run-123', runId: '123' });
-  const requestReference = { kind: 'issue-comment', id: 101, parent, sha256: 'b'.repeat(64) };
-  const legacy = { ...q, schema_version: '3.0', kind: 'task-request', parent, step: 2,
-    decisions: [], context: [], supersedes: null, continuation: { hold: false, next: null, task_complete: false } };
+  const requestReference = source.charter;
   const envelope = { route: 'manual', issueNumber: 42, runId: 123, attemptId: 'run-123', step: 2,
-    branch: q.branch, request: version === '4.0' ? snapshot : legacy, requestReference };
-  const marker = version === '4.0' ? `Execution admission digest: ${admissionBinding(snapshot).sha256}`
-    : `Execution request digest: ${requestReference.sha256}`;
+    branch: q.branch, request: snapshot, requestReference };
+  const marker = `Execution admission digest: ${admissionBinding(snapshot).sha256}`;
   const pr = prState ? { number: 55, state: prState, merged: false, draft: true,
     body: `Related to #42\n${marker}`, base: { ref: BASE_BRANCH, sha: head, repo: { full_name: REPOSITORY } },
     head: { ref: q.branch, sha: head, repo: { full_name: REPOSITORY } } } : null;
-  const result = { schema_version: version, kind: 'outcome', repository: REPOSITORY, task: 42,
+  const result = { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: pr ? { kind: 'pull_request', number: 55 } : copy(parent), charter_sha256: sha256Body(charter),
-    ...(version === '4.0' ? { step: 2, authority, admission: admissionBinding(snapshot) } : { request: requestReference }),
+    step: 2, authority, admission: admissionBinding(snapshot),
     attempt: 'run-123', status, result: { kind: resultKind, revision: resultKind === 'git' ? head : 'qualification-123',
       identities: [{ kind: 'github-actions-run', id: '123' }] }, summary: 'Manual evidence reported; independent acceptance remains required.',
     warnings: [{ source: 'qualification:123', impact: 'Native root proof is unavailable.', resolution: 'Unresolved.',
@@ -100,9 +97,9 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
     stale: code => { revalidationError = code; } };
 }
 
-for (const version of ['3.0', '4.0']) for (const prState of [undefined, 'closed']) {
-  test(`direct manual ${version} ${prState ? 'closed disposable PR' : 'no-PR Issue'} publishes one Bot Outcome without an owner source comment`, async () => {
-    const f = fixture({ version, prState });
+for (const prState of [undefined, 'closed']) {
+  test(`direct manual v4 ${prState ? 'closed disposable PR' : 'no-PR Issue'} publishes one Bot Outcome without an owner source comment`, async () => {
+    const f = fixture({ prState });
     const published = await f.invoke();
     assert.equal(published.manual, true);
     assert.equal(published.prNumber, prState ? 55 : null);
@@ -127,17 +124,13 @@ test('manual exact Git head is independently bound to the admitted PR before Out
   assert.equal(f.posted(), 1);
 });
 
-test('v4 explicit PR ignores absent or stale optional digest; retained v3 still requires its selected marker', async () => {
+test('v4 explicit PR binds canonical identity despite absent or stale optional display digest', async () => {
   for (const marker of ['', '\nExecution admission digest: stale']) {
     const f = fixture({ prState: 'open', resultKind: 'git' });
     f.pr.body = `Related to #42${marker}`;
     await f.invoke(); assert.equal(f.posted(), 1);
     assert.equal(f.calls.some(([method, path]) => method === 'list' && path.startsWith('/pulls?')), false);
   }
-  const legacy = fixture({ version: '3.0', prState: 'open', resultKind: 'git' });
-  legacy.pr.body = 'Related to #42';
-  await assert.rejects(legacy.invoke(), { code: 'PR_AUTHORITY_CHANGED' });
-  assert.equal(legacy.posted(), 0);
 });
 
 test('blocked manual Git outcome drafts before publishing and never marks Ready', async () => {

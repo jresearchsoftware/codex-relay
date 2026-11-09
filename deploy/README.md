@@ -146,9 +146,10 @@ preserves original-attempt publication/recovery. Actual Apply and external
 runner-group access remain explicit owner operations within the authorized
 target boundary. Source support grants no production mutation permission.
 
-Unconfigured consumers keep the existing one-runner SERIAL behavior. Existing
-explicit execution-slot installations retain their compatibility path below;
-new scale-up does not require per-runner names, Unix users or copied tokens.
+Current deployment input requires a managed pool, including capacity 1.
+Original SERIAL and explicit-slot records retain only their historical reader
+bindings; new scale-up does not introduce another execution model or require
+per-runner names, Unix users or copied tokens.
 Installed pool, permissions, model overlap and lifecycle claims require actual
 qualification evidence.
 
@@ -209,26 +210,15 @@ bringing additional consumers into service uses the existing staged installation
 and owner-controlled runner-group administration. Apply does not install missing
 peers or adjust external settings to make qualification pass.
 
-For an existing registered, idle SERIAL installation, an external owner Apply
-or authorized upgrade performs the bounded
-[SERIAL-to-pool migration](../docs/serial-pool-migration.md). Keep its namespace,
-Unix identities, paths and other owner policy; select the managed pool fields
-and exact product revision. Read-only preflight qualifies ownership and the
-complete group workflow trust before the original gate is closed and drained.
-The transition disables the original idle listener before installing pool
-capacity, retains its exact original configuration and attempt readers, and
-retires its exact native registration only after target validation. Historical
-digests, admissions, snapshots and journals are not rewritten.
-
-Reapplying the same configuration and target observes the retained operation
-UUID and continues forward, including after a lost acknowledgement. Unknown,
-busy, conflicting or unproved state stops closed; do not rename a runner,
-delete a receipt or edit a gate to bypass it. The installed general runner
-cannot stop itself to perform this handover: use the existing external owner
-deployment command. This needs no additional migration command or manual
-record repair. Conflicting pool bindings remain blocked. Unconfigured SERIAL
-installations keep their existing behavior; source support and synthetic
-fixtures do not establish installed TEST or PROD qualification.
+Fresh SERIAL-to-pool migration is retired. Current managed-pool operations
+retain [read-only compatibility](../docs/serial-pool-migration.md) for already
+completed cutovers: exact original source/configuration, sealed attempt readers,
+a stopped/disabled old listener and absent original registration remain verified.
+The current command does not create migration state, stop a legacy runner or
+remove its registration. Unknown, unfinished or unbound SERIAL state stops;
+do not rename runners, delete receipts or edit historical gates to bypass it.
+Original exact-attempt publication/recovery stays under its retained source and
+authority. Source support is separate from installed TEST/PROD qualification.
 
 Namespace upgrade, stop and reinstall retain shared physical services and
 registrations. Pool contraction owns their retirement. Reinstall closes and
@@ -260,87 +250,46 @@ check mode does not execute the physical runner. Existing path, registration,
 service and available archive preflight checks remain binding. A successful plan
 does not prove package installation, registration, activation or Apply readiness.
 
-### Retained explicit execution slots
+### Managed execution slots and retained evidence
 
-The optional `consumer.executionSlots` array describes one finite installation
-topology, including a `primary` slot and additional independent automatic
-workers. Every slot supplies `id`, `runnerName`, `runnerUser`, `runtimeUser`,
-`workGroup` and `paths` with `workRoot`, `attemptRoot`, `dispatch`, `launcher`,
-`diagnosticsConfig`, `diagnosticsStore` and `diagnosticsRoot`. There is one
-installation-wide consumer digest, Writer identity, credential/claim namespace
-and repository. A slot is pinned at admission from the qualified native runner
-name and Unix identity; a worker cannot select another slot or supply paths.
+The deployment compiler derives 32 internal execution slots from the required
+managed-pool configuration. Physical desired capacity is independently 1–32;
+capacity 1 uses the same topology, source contract and reconciliation. Current
+input does not select a separate SERIAL or caller-authored explicit-slot model.
+The primary slot retains the top-level runtime paths, while other slot paths
+remain fixed under `/opt/<namespace>/slots/<id>`,
+`/etc/<namespace>/slots/<id>` and `/var/lib/<namespace>/slots/<id>`.
 
-The primary entry must retain the existing top-level runtime user/paths and
-match `environment.generalRunner` and `environment.codexWorkGroup`. Retained slots use
-distinct runner/runtime users and work groups. Additional paths are fixed under
-`/opt/<namespace>/slots/<id>`, `/etc/<namespace>/slots/<id>` and
-`/var/lib/<namespace>/slots/<id>`; they cannot point into another installation.
-The array is bounded to 32 entries. `environment.instance` is required, and
-every slot inherits the existing general runner registration scope/group and
-consumer labels. The production runner remains outside this pool.
+There is one installation-wide consumer digest, Writer identity, credential and
+claim namespace. Admission selects a slot from the qualified native runner and
+Unix identity; Task/worker input cannot choose identities or protected paths.
+Desired physical capacity does not rewrite the internal slots or old digests.
+Retained older explicit-slot/SERIAL attempts preserve their exact original
+configuration and source readers; those schemas grant no fresh installation,
+projection or execution option.
 
-Slot workers launch through `sudo -u <runtimeUser> -g <workGroup>`; the fixed
-sudoers permits only the configured runtime users and that slot's work group.
-The launcher verifies the actual primary group before reading credentials or
-starting Codex. Account primary groups, collector identity and private modes
-remain unchanged. This covers public trees created outside setgid checkout
-parents and then renamed into them. A serial configuration may select this
-behavior with `consumer.workGroup`, equal to `environment.codexWorkGroup`.
-Old serial configurations omitting it retain the old launch ABI; explicit
-private modes, imported foreign ownership or a tool's explicit group change
-still require bounded source/access reconciliation. Installed source and real
-cross-UID qualification remain necessary; TEST evidence does not install PROD.
+The source installer prepares private runtime, dispatch, diagnostic and launcher
+bindings under the existing sudo and Bubblewrap boundary. Managed-pool Apply owns
+physical General Runner registration and activation. Standalone general-runner
+register/enable phases and their `--execution-slot` selector are retired.
+The separate Production Runner keeps its existing owner registration controls.
 
-The source installer prepares private slot roots, runtime identities, fixed
-sudo/dispatch/diagnostic/launcher bindings and runner services. It preserves
-registration and activity; it does not mint registration permission or activate
-a new slot. Optional parallel workers additionally require qualified bubblewrap
-user/PID namespaces under each actual runtime UID. Shared-host qualification must
-prove distinct installed namespaces, Unix identities, work access, process
-visibility, credentials, services and finite resource capacity across consumers.
-Separate installations retain separate Writer locks and claim roots. Targets
-within one plural Writer configuration share its installation lock and claim
-root; repository-specific publication records preserve their own authority.
+Launcher reconciliation provisions plural-repository
+`workRoot/repositories/<owner>/<repository>` ancestors with the established
+runner owner, slot work group and mode `2770`. It does not walk or change
+existing attempt contents. Cleanup retains no-follow traversal, private-mode,
+pre-child inode and runtime-identity checks. Global lifecycle drain and exact
+recovery continue to inspect retained attempts through their original protected
+bindings.
 
-For plural Writer configurations, every launcher reconciliation provisions the
-fixed `workRoot/repositories/<owner>/<repository>` ancestors with the existing
-runner owner, slot work group and mode `2770`. This applies to installation and
-upgrade, including retained slots and managed-pool slots. It repairs ancestor
-metadata left by recursive runner creation under `UMask=0077`, without walking
-or changing existing attempt contents. The launcher and cleanup boundaries,
-private journals and credential permissions remain unchanged.
-The cleanup helper uses the same configured repository work roots and runtime
-identity binding as the launcher. It retains direct-attempt, pre-child inode,
-no-follow traversal and private-mode protections; repository-qualified attempts
-require no separate operator cleanup action.
-
-Use the existing `general-runner-register` and `general-runner-enable` phases
-with `--execution-slot <id>` for an additional configured slot; omission selects
-`primary`. The same registration token transport and explicit phase authority
-apply. Inventory lists every slot, upgrade preserves its original service
-activity, and clean reinstall retains its registration tree while retiring the
-managed runtime. Installed numeric identities, group access and namespace paths
-are checked before activation. Global admission drain still accounts for all
-retained attempts through their original protected slot bindings.
-
-Source support does not qualify a particular host or prove real automatic
-model overlap. Configurations omitting the array retain their existing
-deployment/lifecycle paths and SERIAL scheduling. Parallel installation and
-operational claims require the actual TEST or consumer evidence described below.
-
-Opt-in projections use `relay-workflows-v4`, retaining native `queue: max` and
-`cancel-in-progress: false` for distinct Issue/PR subject groups. Recovery has
-its original-run group and an allowlisted `execution_slot` choice matching the
-retained attempt; historical attempts default to `primary`. `inspect` and the
-Outcome expose the original slot. Ordinary publication recovery must use its
-original runner identity. The finite qualified runner pool bounds active work;
-Writer still serializes admission, Task conflicts, publication/recovery and
-lifecycle critical sections. A projection requires an installed v4 capability;
-it cannot silently select a SERIAL v3 runtime. V3 remains the unchanged default
-ABI for consumers without slots. Source tests and generated fixtures do not
-qualify native overlap or update any installed consumer projection. See the
-[scheduling audit](../docs/concurrency-scheduling.md).
+Current projection uses `relay-workflows-v4`, per-run routing groups,
+`queue: max` and cancellation disabled. Recovery retains its original-run group;
+any active managed member transports it and trusted Writer selects the original
+slot from the retained envelope. No new owner slot selector is required.
+Source tests and generated workflows do not prove installed capacity,
+same-UID containment, actual model overlap or consumer adoption. See the
+[scheduling contract](../docs/concurrency-scheduling.md) and installed TEST
+qualification below.
 
 The automatic root Writer wrapper now waits at most 300 seconds for its existing
 per-installation publication lock; its caller's 450-second invocation budget
@@ -995,9 +944,10 @@ target's projection. The retained installed-snapshot route continues to project
 its optional public owner workflow until its separately reviewed cutover.
 Use the validated installation configuration, including its managed-pool
 capacity and derived execution identities, rather than a singleton example:
-managed routing, recovery and owner lifecycle use `relay-workflows-v4` and the
-shared General Runner group/pool selector. A SERIAL example still renders v3
-and cannot verify a managed installation's projection.
+routing, recovery and owner lifecycle use `relay-workflows-v4` and the
+shared General Runner group/pool selector. Current deployment input and projection
+require the managed pool, including capacity 1; SERIAL and separate explicit-slot
+configurations are retained-history formats, not new installation options.
 
 Separately authorized orchestration may still prepare target PRs. For the
 owner-selected four-repository rollout, those separate target PRs belong
@@ -1043,6 +993,15 @@ through the consumer's normal authority. No credential or registration token
 belongs in either file. The owner configuration can remain outside Git when
 `--consumer-root` supplies the separate clean consumer checkout.
 
+Source binding compares the validated GitHub repository identity: normal
+`https://github.com/OWNER/REPO.git` and `git@github.com:OWNER/REPO.git`
+locators for the same repository are equivalent (the optional `.git` suffix
+and GitHub path case do not change that identity). Other hosts, repositories
+and unsupported or ambiguous locators remain blocked. The generated manifest
+keeps the exact locator from accepted configuration, so a representation change
+is visible in the consumer proposal. Verification still requires that exact
+deterministic target, and preparation/regeneration use the same identity rule.
+
 Every existing managed byte must match the previous manifest before an update;
 unmanaged collisions, direct edits, path changes, unsafe files and partial
 projection stop for reconciliation instead of being overwritten. Interrupted
@@ -1061,13 +1020,14 @@ public source identity, and requires that release's workflow contract to match
 before invoking code. The installed revision is still logged and bound to the
 production helper; it is not embedded in consumer workflow bytes.
 
-The routing/recovery templates select SERIAL control scheduling with
-`queue: max` in the existing shared group. This scheduling-byte change retains
-the `relay-workflows-v3` ABI; an older v3 projection remains compatible with its
-earlier queue behavior. Changed projection bytes still require normal consumer
-review/publication, and source checks do not authorize PROD adoption. See
-[control scheduling](../docs/concurrency-scheduling.md) for the one-runner
-capacity bound and separate native TEST/parallel qualification limits.
+Routing/recovery templates use managed per-run control groups with
+`queue: max` and cancellation disabled. Capacity 1 uses the same v4 contract
+and physical-pool reconciliation. Historical v3 manifests remain drift baselines
+that can migrate through the supported managed projection; retained old
+attempts keep their original readers. Changed bytes still require consumer
+review/publication and source checks do not authorize PROD adoption. See
+[control scheduling](../docs/concurrency-scheduling.md) for the physical bound
+and independent installed qualification.
 
 For a target with an already accepted installation-preparation projection,
 unchanged content, workflow contract and consumer inputs at a different product
@@ -1328,39 +1288,20 @@ rollout/qualification before the normal lifecycle surface can be used; this
 source implementation does not qualify a live installation.
 
 `activate --authorize-reviewer-activation` and
-`runner-enable --authorize-runner-enable` and
-`general-runner-enable --authorize-general-runner-enable` are explicit owner transitions after
+`runner-enable --authorize-runner-enable` are explicit owner transitions after
 the existing credential/registration gates. No key is provisioned or rotated by
 ordinary apply. Stale operation disposition remains evidence-bound through
 `stale-dispose`; an apply disposition requires the observed completed phase and
 exact state hash. Diagnose an interrupted operation before any retry. No blind
 reset, force retry, registration or unrelated proxy/network management occurs.
 
-The general runner defaults to repository registration. Consumers that need an
-organization runner group's external workflow restrictions can explicitly select
-organization registration with a dedicated group, for example:
-
-```json
-"generalRunner": {
-  "name": "sample-relay-general-runner",
-  "user": "sample-relay-general-runner",
-  "scope": "organization",
-  "group": "sample-relay-control"
-}
-```
-
-The group must differ from the production runner's group. Repository scope does
-not accept an organization group. Registration scope changes neither the general
-runner's Unix identity, isolated filesystem namespaces nor fixed sudo boundary.
-The owner must separately restrict the general group to its eligible consumer
-repositories and their exact trusted routing/recovery workflow refs, excluding
-candidate validation. Production requires its own independently admitted
-workflow/ref allowlist. Selecting a group does not create it or prove its ACL.
-Legacy Apply does not register, migrate or re-register either runner; managed
-General Runner Apply follows the pool contract above. An existing
-registration that disagrees with the selected scope remains blocked. Changing
-an admitted consumer's scope requires explicit owner acceptance and external
-qualification before registration or enablement.
+The managed General Runner requires organization registration and a dedicated
+group distinct from Production Runner. Its pool App supplies the short-lived
+registration/removal authorization under the existing target-local boundary.
+The owner separately configures eligible repositories and exact trusted workflow
+refs; selecting a group neither creates it nor proves its ACL. Physical
+registration, activation and capacity reconciliation follow the managed-pool
+Apply contract above. The Production Runner retains its separate owner controls.
 
 ### Runner software and native self-updates
 
@@ -1394,16 +1335,13 @@ Use the public registration phase after installing the exact accepted product:
 python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
   --consumer-root /path/to/consumer --phase runner-register \
   --authorize-runner-register --runner-registration-token "$fresh_token"
-python3 deploy/relay-deploy.py --config /path/to/owner/relay.json \
-  --consumer-root /path/to/consumer --phase general-runner-register \
-  --authorize-general-runner-register --general-runner-registration-token "$fresh_general_token"
 ```
 
-Both token options are optional. The installer first validates and reuses an
+The Production Runner token option is optional. The installer first validates and reuses an
 already registered intended runner without consuming a token. Otherwise it
 transports the one-run input through protected SSH stdin to the installed
 helper; the token is never written to config, inventory, deployment state or
-normal logs. Run these commands without shell tracing. A missing or recognized
+normal logs. Run this command without shell tracing. A missing or recognized
 expired/invalid required token reports `fresh registration token required`.
 Replace the token and rerun the same authorized phase. Valid registration is
 reused, so a token refresh does not duplicate runners. Existing partial or
@@ -1417,7 +1355,7 @@ again; a proven pre-mutation authentication rejection permits a fresh token.
 There is no automatic force/clear bypass for an unknown remote result.
 
 Registration does not enable a service. Follow it with the separately authorized
-`runner-enable` or `general-runner-enable` phase after validating external
+`runner-enable` phase after validating external
 scheduling restrictions. Reuse proves local intended registration metadata;
 GitHub availability and runner-group ACLs remain independent live evidence.
 

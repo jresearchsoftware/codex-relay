@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { admissionBinding, authoritySourceDigest, canonicalAuthorityJson, createAdmissionSnapshot,
   extractAuthorityRecord, nativeReference, resolveTaskAuthority, resolveOutcomeAuthority, sha256Body, validateAdmissionSnapshot,
-  validateAuthorityRecord, validateTaskApproval } from '../src/github-authority.mjs';
+  validateAuthorityRecord } from '../src/github-authority.mjs';
 import { resolveExecutionProfile } from '../src/execution-defaults.mjs';
 
 const repository = 'example-org/sample-project';
@@ -132,41 +132,72 @@ test('selected context preserves native body hashes and cannot smuggle conflicti
   reject(() => resolve([amendment, conflicting, evidence]), 'AUTHORITY_SOURCE_MISMATCH');
 });
 
-test('optional v3 Request remains an exact compatibility source without changing retained admission semantics', () => {
-  const old = { ...common('task-request'), schema_version: '3.0', step: 3, route: 'manual', purpose: 'Retained compatible purpose',
-    scope: ['Retained authorized scope'], model: 'old-model', effort: 'max', subagents: true, validation: ['diff-check'],
-    boundaries: ['No production'], decisions: [], context: [], supersedes: null, branch: 'codex/old-branch', base_sha: base,
-    starting_head: head, existing_pr: null, issue_closure_policy: 'keep-open' };
+test('old native Request is opaque selected evidence and cannot supply current execution fields', () => {
+  const old = { ...common('task-request'), schema_version: '3.0', step: 3, route: 'manual', purpose: 'Retained old direction',
+    model: 'old-model', effort: 'max', subagents: true, branch: 'codex/old-branch' };
   const source = native(old, 100);
-  const resolved = resolve([source, decision({ effort: 'ultra' }, 200)]);
-  assert.deepEqual(resolved.authority.compatibility_request, nativeReference(source));
-  assert.equal(resolved.request.branch, 'codex/old-branch');
-  assert.equal(resolved.request.model, 'old-model');
+  const amendment = decision({ effort: 'ultra' }, 200, { context: [nativeReference(source)] });
+  const resolved = resolve([source, amendment]);
+  assert.equal(extractAuthorityRecord(source.body), null);
+  assert.equal(resolved.authority.compatibility_request, null);
+  assert.equal(resolved.request.branch, binding.startingState.branch);
+  assert.equal(resolved.request.model, 'project-model');
   assert.equal(resolved.request.effort, 'ultra');
   assert.equal(resolved.request.route, 'auto');
-  assert.equal(Object.hasOwn(resolved.request, 'step'), false);
-  assert.equal(admits(resolved, { step: 4 }).step, 4);
-  const retained = resolveOutcomeAuthority(resolved.authority, [charterNative, source, decision({ effort: 'ultra' }, 200)],
-    { ...binding, compatibility: false });
-  assert.deepEqual(retained.authority.compatibility_request, nativeReference(source));
-  reject(() => resolveOutcomeAuthority(resolved.authority, [charterNative, { ...source, body: source.body + '<!-- edited -->' },
-    decision({ effort: 'ultra' }, 200)], binding), 'AUTHORITY_SOURCE_MISMATCH');
+  assert.equal(resolved.selectedContext[0].body, source.body);
+  reject(() => validateAuthorityRecord(old), 'AUTHORITY_RECORD_INVALID');
+  reject(() => resolve([amendment, { ...source, body: source.body + '<!-- edited -->' }]), 'AUTHORITY_SOURCE_MISMATCH');
 });
 
-test('migrated v4 no-PR Task Approval preserves absent compatibility despite old v3 Request history', () => {
+test('an admitted v4 result revalidates its exact selected historical Decision without enabling fresh old authority', () => {
+  const retained = native({ ...common('decision'), schema_version: '3.0', purpose: 'Original durable source scope',
+    amendments: { scope: ['Original authorized scope remains historical evidence.'] }, supersedes: null, context: [] }, 190);
+  const current = decision({ scope: ['Current explicit scope replaces the old scope value.'], effort: 'medium' }, 200);
+  const resolved = resolve([current]);
+  const sources = { ...resolved.authority, decisions: [nativeReference(retained), nativeReference(current)] };
+  const authority = { ...sources, sha256: authoritySourceDigest(sources) };
+  // This is an existing protected v4 binding, not permission to admit a new
+  // schema-v3 execution or mutate its historical native source.
+  const snapshot = createAdmissionSnapshot({ ...resolved, authority }, { step: 2, attempt: 'run-123', runId: 123 });
+  const nativeRecords = [charterNative, retained, current];
+  const report = resolveOutcomeAuthority(snapshot.authority, nativeRecords, binding);
+  assert.deepEqual(report.authority, authority);
+  assert.deepEqual(report.originalAuthority.authority, authority);
+  assert.deepEqual(report.request.scope, ['Current explicit scope replaces the old scope value.']);
+  assert.deepEqual(report.authorityDrift.changed_fields, []);
+  assert.equal(extractAuthorityRecord(retained.body), null, 'ordinary context reading does not decode old executable authority');
+  const freshShadowed = resolve([retained, current]);
+  assert.deepEqual(freshShadowed.authority, authority);
+  assert.deepEqual(freshShadowed.request.scope, report.request.scope);
+  const effectiveOld = native({ ...common('decision'), schema_version: '3.0', purpose: 'Still effective old semantics',
+    amendments: { boundaries: ['A protected obligation not replaced by current direction.'] }, supersedes: null, context: [] }, 191);
+  reject(() => resolve([retained, effectiveOld, current]), 'CURRENT_PROTOCOL_REQUIRED');
+  reject(() => resolveOutcomeAuthority(authority, [charterNative, { ...retained, body: retained.body + '<!-- edited -->' }, current], binding),
+    'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => resolveOutcomeAuthority(authority, [charterNative, { ...retained, author: owner }, current], binding),
+    'AUTHORITY_SOURCE_MISMATCH');
+  const successor = decision({ scope: ['Current explicit scope replaces the old scope value.'] }, 201,
+    { supersedes: nativeReference(retained) });
+  const fresh = resolve([retained, current, successor]);
+  assert.deepEqual(fresh.authority.decisions, [nativeReference(current), nativeReference(successor)]);
+  assert.deepEqual(fresh.request.scope, report.request.scope);
+  const amended = resolveOutcomeAuthority(authority, [...nativeRecords, successor], binding);
+  assert.deepEqual(amended.originalAuthority.authority, authority);
+  assert.deepEqual(amended.authority, fresh.authority);
+});
+
+test('current v4 Outcome ignores old Request history while preserving current authority identity', () => {
   const old = native({ ...common('task-request'), schema_version: '3.0', step: 3, route: 'auto', purpose: 'Old Request direction',
     scope: ['Old scope'], model: 'old-model', effort: 'max', subagents: true, validation: ['diff-check'],
     boundaries: ['Old boundary'], decisions: [], context: [], supersedes: null, branch: 'codex/old-branch', base_sha: base,
     starting_head: head, existing_pr: null, issue_closure_policy: 'keep-open' }, 100);
   const direction = decision({ purpose: 'Current explicit direction', scope: ['Current accepted scope'] }, 200);
-  const resolved = resolve([old, direction], { compatibility: false });
+  const resolved = resolve([old, direction]);
   const admission = admissionBinding(admits(resolved));
   const result = { kind: 'no-change', revision: head, identities: [] };
   const outcome = { ...common('outcome'), authority: resolved.authority, admission, step: 1, attempt: '123',
     status: 'implemented', result, warnings: [], limitations: [], summary: 'Current work completed.' };
   const published = native(outcome, 500, { author: writer });
-  const approval = { ...common('task-approval'), authority: resolved.authority, admission, outcome: nativeReference(published),
-    step: 1, result, warnings: [], limitations: [], summary: 'Current result independently accepted.', verdict: 'APPROVE' };
   const records = [charterNative, old, direction, published];
   const current = resolveOutcomeAuthority(outcome.authority, records, binding);
   assert.equal(current.authority.compatibility_request, null);
@@ -174,9 +205,8 @@ test('migrated v4 no-PR Task Approval preserves absent compatibility despite old
   assert.deepEqual(current.authorityDrift.changed_fields, []);
   assert.equal(current.request.model, 'project-model');
   assert.deepEqual(current.request.scope, ['Current accepted scope']);
-  assert.equal(validateTaskApproval(approval, records, binding).outcome.admission.sha256, admission.sha256);
-  reject(() => validateTaskApproval(approval, [charterNative, old, { ...direction, body: direction.body + '<!-- edited -->' }, published],
-    binding), 'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => resolveOutcomeAuthority(outcome.authority, [charterNative, old,
+    { ...direction, body: direction.body + '<!-- edited -->' }, published], binding), 'AUTHORITY_SOURCE_MISMATCH');
 });
 
 test('new execution snapshot binds exact authority, run, attempt, Step and lineage; replay preserves digest', () => {
@@ -185,6 +215,9 @@ test('new execution snapshot binds exact authority, run, attempt, Step and linea
   const identity = admissionBinding(first);
   assert.deepEqual(identity, admissionBinding(validateAdmissionSnapshot(structuredClone(first))));
   const successor = admits(resolved, { step: 2, attempt: '124', runId: '124', lineage: identity });
+  const afterStandalone = admits(resolved, { step: 6, attempt: '125', runId: '125', lineage: identity });
+  assert.equal(afterStandalone.step, 6);
+  assert.deepEqual(afterStandalone.lineage, identity);
   assert.notEqual(admissionBinding(successor).sha256, identity.sha256);
   reject(() => admits(resolved, { step: 1, attempt: '124', lineage: identity }), 'AUTHORITY_ADMISSION_MISMATCH');
   reject(() => admits(resolved, { step: 2, lineage: identity }), 'AUTHORITY_ADMISSION_MISMATCH');
@@ -222,7 +255,7 @@ test('same-CR successor snapshot retains the original reviewed head with a disti
   assert.equal(resolve([change], { pullRequest: 42 }).request.starting_head, head);
 });
 
-test('distinct same-CR starting heads keep the existing source, target and immediate-lineage validation gates', () => {
+test('distinct same-CR starting heads keep source, target and earlier-admission lineage validation gates', () => {
   const resolved = resolve([crNative()], { pullRequest: 42 });
   const first = admits(resolved);
   const starting_head = 'c'.repeat(40);
@@ -233,7 +266,8 @@ test('distinct same-CR starting heads keep the existing source, target and immed
   reject(() => admits(resolved, { ...admission, lineage: undefined }), 'AUTHORITY_CR_BINDING_INVALID');
   reject(() => admits(resolved, { ...admission, lineage: {} }), 'AUTHORITY_ADMISSION_INVALID');
   reject(() => admits(resolved, { ...admission, lineage: { ...lineage, sha256: 'forged' } }), 'AUTHORITY_ADMISSION_INVALID');
-  reject(() => admits(resolved, { ...admission, step: 3 }), 'AUTHORITY_ADMISSION_MISMATCH');
+  assert.equal(admits(resolved, { ...admission, step: 3 }).lineage.step, first.step);
+  reject(() => admits(resolved, { ...admission, step: first.step }), 'AUTHORITY_ADMISSION_MISMATCH');
   reject(() => admits(resolved, { ...admission, attempt: first.attempt }), 'AUTHORITY_ADMISSION_MISMATCH');
   reject(() => admits(resolved, { ...admission, existing_pr: 43 }), 'AUTHORITY_CR_BINDING_INVALID');
   reject(() => admits(resolved, { ...admission, starting_head: null }), 'AUTHORITY_STARTING_STATE_INVALID');
@@ -247,7 +281,7 @@ test('distinct same-CR starting heads keep the existing source, target and immed
   reject(() => validateAdmissionSnapshot(snapshot, { authority: first.authority, attempt: first.attempt }), 'AUTHORITY_ADMISSION_MISMATCH');
 });
 
-function approvalFixture() {
+function outcomeFixture() {
   const resolved = resolve();
   const admission = admissionBinding(admits(resolved));
   const warning = { source: 'run:123:warning', impact: 'A material limitation remains.', resolution: 'Unresolved',
@@ -256,55 +290,23 @@ function approvalFixture() {
   const outcome = { ...common('outcome'), authority: resolved.authority, admission, attempt: admission.attempt, step: admission.step,
     status: 'implemented', result, warnings: [warning], limitations: ['Source qualification only.'], summary: 'Authorized source work completed.' };
   const published = native(outcome, 500, { author: writer });
-  const approval = { ...common('task-approval'), authority: resolved.authority, admission, outcome: nativeReference(published),
-    step: admission.step, result, warnings: [warning], limitations: outcome.limitations, summary: 'Accept the exact immutable result.', verdict: 'APPROVE' };
-  return { resolved, admission, outcome, published, approval };
+  return { resolved, admission, outcome, published };
 }
 
-test('v4 no-PR Task Approval binds one trusted Writer Outcome/admission and retains warnings and limitations', () => {
-  const f = approvalFixture();
-  assert.equal(validateTaskApproval(f.approval, [charterNative, f.published], binding).outcome.attempt, '123');
-  reject(() => validateTaskApproval(f.approval, [charterNative, { ...f.published, author: owner }], binding), 'AUTHORITY_OUTCOME_UNTRUSTED');
-  reject(() => validateTaskApproval({ ...f.approval, warnings: [] }, [charterNative, f.published], binding), 'AUTHORITY_APPROVAL_RESULT_MISMATCH');
-  reject(() => validateTaskApproval({ ...f.approval, limitations: [] }, [charterNative, f.published], binding), 'AUTHORITY_APPROVAL_LIMITATIONS_MISSING');
-  reject(() => validateTaskApproval({ ...f.approval, admission: { ...f.admission, sha256: 'c'.repeat(64) } },
-    [charterNative, f.published], binding), 'AUTHORITY_APPROVAL_RESULT_MISMATCH');
-  reject(() => validateTaskApproval(f.approval, [charterNative, f.published], { ...binding, openImplementationPr: true }), 'AUTHORITY_APPROVAL_PR_REVIEW_REQUIRED');
-});
-
-test('new Decisions and a later admitted Outcome make an old acceptance stale', () => {
-  const f = approvalFixture();
-  reject(() => validateTaskApproval(f.approval, [charterNative, f.published, decision({ scope: ['Next authorized phase'] }, 200)], binding), 'AUTHORITY_APPROVAL_STALE_REQUEST');
-  const next = { ...f.outcome, attempt: '124', step: 2, admission: { ...f.admission, attempt: '124', step: 2 } };
-  reject(() => validateTaskApproval(f.approval, [charterNative, f.published, native(next, 501, { author: writer })], binding), 'AUTHORITY_APPROVAL_STALE_REQUEST');
-  const amended = decision({ scope: ['Amended current scope'] }, 200);
-  const current = resolve([amended]);
-  const accepted = { ...f.approval, authority: current.authority };
-  const later = { ...next, authority: current.authority };
-  reject(() => validateTaskApproval(accepted, [charterNative, amended, f.published, native(later, 501, { author: writer })], binding), 'AUTHORITY_APPROVAL_STALE_REQUEST');
-});
-
-test('current Task acceptance may bind original execution after trusted amended scope, while original sources remain immutable', () => {
-  const f = approvalFixture();
+test('current authority resolves original execution after amended scope while original sources remain immutable', () => {
+  const f = outcomeFixture();
   const changed = decision({ scope: ['Original and added requirement'], boundaries: ['Unused permission expansion'] }, 200);
   const records = [charterNative, f.published, changed];
   const current = resolveOutcomeAuthority(f.outcome.authority, records, binding);
   assert.deepEqual(current.authorityDrift.changed_fields, ['boundaries', 'scope']);
   assert.equal(current.authorityDrift.review_required, true);
   assert.deepEqual(current.originalAuthority.authority, f.outcome.authority);
-  const approval = { ...f.approval, authority: current.authority,
-    summary: 'Independent evidence confirms the original result also meets the amended current requirements.' };
-  const accepted = validateTaskApproval(approval, records, binding);
-  assert.deepEqual(accepted.current.authority, current.authority);
-  assert.deepEqual(accepted.outcome.authority, f.outcome.authority);
-  assert.deepEqual(accepted.authorityDrift, current.authorityDrift);
-  reject(() => validateTaskApproval(f.approval, records, binding), 'AUTHORITY_APPROVAL_STALE_REQUEST');
   const tampered = { ...changed, body: changed.body + '<!-- edited -->' };
-  reject(() => validateTaskApproval(approval, [charterNative, f.published, tampered], binding), 'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => resolveOutcomeAuthority(current.authority, [charterNative, f.published, tampered], binding), 'AUTHORITY_SOURCE_MISMATCH');
   reject(() => resolveOutcomeAuthority(current.authority, [charterNative, f.published, { ...changed, author: owner }], binding), 'AUTHORITY_SOURCE_MISMATCH');
 });
 
-test('a provenance-only trusted Decision change reports no fictional executor delta but invalidates an unbound acceptance', () => {
+test('a provenance-only trusted Decision change reports no fictional executor delta', () => {
   const first = decision({ scope: ['Same current requirement'] }, 200);
   const origin = resolve([first]);
   const equivalent = decision({ scope: ['Same current requirement'] }, 201, { supersedes: nativeReference(first) });
@@ -313,16 +315,11 @@ test('a provenance-only trusted Decision change reports no fictional executor de
   assert.deepEqual(current.authorityDrift.changed_fields, []);
   assert.equal(current.authorityDrift.review_required, false);
   reject(() => admits(current), 'AUTHORITY_ADMISSION_INVALID');
-  const outcome = { ...common('outcome'), authority: origin.authority, admission: admissionBinding(admits(origin)), attempt: '123', step: 1,
-    status: 'implemented', result: { kind: 'no-change', revision: head, identities: [] }, warnings: [], limitations: [], summary: 'Same work completed.' };
-  const published = native(outcome, 500, { author: writer });
-  const approval = { ...common('task-approval'), authority: current.authority, admission: outcome.admission, outcome: nativeReference(published),
-    step: 1, result: outcome.result, warnings: [], limitations: [], summary: 'Current equivalent authority independently accepted.', verdict: 'APPROVE' };
-  assert.equal(validateTaskApproval(approval, [charterNative, first, equivalent, published], binding).current.authority.sha256, current.authority.sha256);
+
 });
 
 test('authority drift schema binds current source identity, ordered fields and truthful review-needed signal', () => {
-  const f = approvalFixture();
+  const f = outcomeFixture();
   const drift = resolveOutcomeAuthority(f.outcome.authority, [charterNative, decision({ scope: ['Added requirement'] }, 200)], binding).authorityDrift;
   assert.deepEqual(validateAuthorityRecord({ ...f.outcome, authority_drift: drift }).authority_drift, drift);
   reject(() => validateAuthorityRecord({ ...f.outcome, authority_drift: { ...drift, review_required: false } }), 'AUTHORITY_SOURCE_MISMATCH');
@@ -358,7 +355,7 @@ test('new admissions capture exact nonstandard resolver inputs under the existin
   const historical = structuredClone(snapshot);
   delete historical.authority_resolution;
   assert.equal(Object.hasOwn(validateAdmissionSnapshot(historical), 'authority_resolution'), false);
-  const f = approvalFixture();
+  const f = outcomeFixture();
   assert.deepEqual(validateAuthorityRecord({ ...f.outcome, authority_resolution: resolution }).authority_resolution, resolution);
   const malformed = structuredClone(resolution);
   malformed.project_defaults.secret = 'not-an-allowed-resolver-field';

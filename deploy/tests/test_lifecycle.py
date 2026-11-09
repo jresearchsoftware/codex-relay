@@ -171,7 +171,7 @@ const gate = createAdmissionControl({ root, consumerDigest: 'c'.repeat(64),
 const value = command === 'drain' ? await gate.drained(options) : await gate[command](options);
 console.log(JSON.stringify(value));
 """
-        with tempfile.TemporaryDirectory(prefix='relay-durable-stop-', dir='/tmp') as directory:
+        with tempfile.TemporaryDirectory(prefix='relay-durable-stop-') as directory:
             config = Path(directory) / 'consumer.json'
             shutil.copyfile(ROOT / 'consumer/fixtures/example.json', config)
             config.chmod(0o600)

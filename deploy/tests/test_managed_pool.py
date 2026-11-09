@@ -185,10 +185,11 @@ def test_public_capacity_is_one_scalar_and_internal_recovery_routes_stay_stable(
     assert config.loads(json.dumps(first), ROOT) == first
 
 
-def test_legacy_omission_does_not_add_pool_or_change_registration_and_service():
+def test_current_example_is_the_same_managed_model_at_capacity_one():
     value = config.load(ROOT / 'deploy/example.json', ROOT)
-    assert 'generalRunnerPool' not in value['consumer'] and 'executionSlots' not in value['consumer']
-    assert 'relay_general_runner_pool' not in config.compile_inputs(value)
+    assert value['consumer']['generalRunnerPool'] == {'desiredCapacity': 1}
+    assert len(value['consumer']['executionSlots']) == 32
+    assert config.compile_inputs(value)['relay_general_runner_pool']['desiredCapacity'] == 1
 
 
 def test_create_repeat_and_expand_never_multiply_capacity_by_repository_or_runtime_user():

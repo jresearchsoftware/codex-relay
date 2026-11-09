@@ -17,7 +17,7 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, loads, compile_inputs, require, selector, select_execution_slot, deployment_repository, unique_object
+from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object
 from git_source_locator import expected_locator, resume_receipt
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,10 +27,9 @@ PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post
           'inventory': None, 'bootstrap': 'site.yml', 'reinstall': 'site.yml',
           'reinstall-recover': None,
           'workflow-project': None, 'workflow-verify': None,
-          'runner-register': None, 'general-runner-register': None,
+          'runner-register': None,
           'diagnose': 'relay-production-diagnostic.yml', 'activate': 'relay-reviewer-activation.yml',
           'runner-enable': 'relay-production-runner-enable.yml',
-          'general-runner-enable': 'relay-general-runner.yml',
           'stale-dispose': 'relay-production-operation-stale-disposition.yml',
           'tls-check': 'relay-tls-preparation.yml',
           'tls-prepare': 'relay-tls-preparation.yml',
@@ -210,6 +209,10 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
 
 
 def arguments():
+    # Reject the retired credential-bearing interface without argparse echoing
+    # a supplied ephemeral token as part of an unknown-argument diagnostic.
+    require(not any(value.split('=', 1)[0] == '--general-runner-registration-token'
+                    for value in sys.argv[1:]), 'retired-general-runner-interface')
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--connection', choices=['ssh', 'local'],
@@ -230,10 +233,7 @@ def arguments():
     p.add_argument('--reinstall-recovery-target', help='Exact target of the retained failed reinstall')
     p.add_argument('--projection-output', type=Path, help='optional directory for derived workflow review files')
     p.add_argument('--authorize-runner-register', action='store_true')
-    p.add_argument('--authorize-general-runner-register', action='store_true')
-    p.add_argument('--execution-slot', default='primary', help='configured automatic slot for general runner registration or enablement')
     p.add_argument('--runner-registration-token', help='ephemeral bootstrap input for this registration only')
-    p.add_argument('--general-runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
     p.add_argument('--local-reconcile', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--local-lifecycle', action='store_true', help=argparse.SUPPRESS)
@@ -258,7 +258,6 @@ def arguments():
                    help='Owner-authorized matching installed-config apply recovery after diagnosis')
     p.add_argument('--authorize-reviewer-activation', action='store_true')
     p.add_argument('--authorize-runner-enable', action='store_true')
-    p.add_argument('--authorize-general-runner-enable', action='store_true')
     p.add_argument('--authorize-stale-disposition', action='store_true')
     for phase in BOOTSTRAP_MUTATIONS:
         p.add_argument('--authorize-' + phase, action='store_true')
@@ -325,11 +324,7 @@ def run(args):
             and not (args.authorize_reinstall_recovery and args.local_reconcile), 'explicit-reinstall-recovery')
     require(args.projection_output is None or args.phase in ['bootstrap', 'reinstall'], 'projection-output-phase')
     require(args.authorize_runner_register == (args.phase == 'runner-register'), 'explicit-runner-registration')
-    require(args.authorize_general_runner_register == (args.phase == 'general-runner-register'),
-            'explicit-general-runner-registration')
     require(args.runner_registration_token is None or args.phase == 'runner-register', 'runner-token-phase')
-    require(args.general_runner_registration_token is None or args.phase == 'general-runner-register',
-            'general-runner-token-phase')
     require(not args.local_reconcile or args.consumer_root is None, 'local-consumer-root-forbidden')
     require(not args.local_lifecycle or (os.geteuid() == 0 and not args.local_reconcile
             and args.phase in ['apply', 'upgrade', 'post-check']
@@ -373,9 +368,6 @@ def run(args):
         from intent_install import contract
         deployment_contract = contract(json.loads(contract_path.read_text()))
     require(not intent_install or deployment_contract, 'intent-deployment-contract-required')
-    require(args.execution_slot == 'primary' or args.phase in ['general-runner-register', 'general-runner-enable'],
-            'execution-slot-phase')
-    selected_slot = select_execution_slot(config, args.execution_slot)
     if args.local_lifecycle:
         root_owned(ROOT)
         root_owned(config_path)
@@ -430,7 +422,6 @@ def run(args):
     require(not re.fullmatch('[0-9a-f]{40}', requested) or requested == revision, 'selected-commit-mismatch')
     require(args.authorize_reviewer_activation == (args.phase == 'activate'), 'explicit-activation')
     require(args.authorize_runner_enable == (args.phase == 'runner-enable'), 'explicit-runner-enablement')
-    require(args.authorize_general_runner_enable == (args.phase == 'general-runner-enable'), 'explicit-general-runner-enablement')
     require(args.authorize_stale_disposition == (args.phase == 'stale-dispose'), 'explicit-stale-disposition')
     for phase in BOOTSTRAP_MUTATIONS:
         require(getattr(args, 'authorize_' + phase.replace('-', '_')) == (args.phase == phase),
@@ -524,9 +515,10 @@ def run(args):
             observed = strategy_inventory(observed)
         require(not observed['blockers'], 'inventory-blocked;inspect-reported-prerequisites')
         if not intent_install:
-            from workflow_projection import prepare, render
-            proposal_key = hashlib.sha256(b''.join(path.encode() + b'\0' + content
-                for path, content in render(config, revision, ROOT).items())).hexdigest()[:16]
+            from workflow_projection import _manifest, prepare, render
+            target_manifest = _manifest(config, ROOT, render(config, revision, ROOT))
+            proposal_key = hashlib.sha256(json.dumps(
+                target_manifest, sort_keys=True).encode()).hexdigest()[:16]
             output = args.projection_output or (args.log_root / ('workflows-' + revision + '-' +
                       deployment_repository(config).replace('/', '-') + '-' + proposal_key))
             proposal = prepare(config, revision, ROOT, consumer_root, output)
@@ -625,13 +617,9 @@ def run(args):
     if args.phase == 'ingress':
         values.update(relay_docker_nginx_manage=True, relay_docker_nginx_service_enabled=True,
                       relay_docker_nginx_validation_mode='active')
-    if args.phase in ['general-runner-enable', 'general-runner-register']:
-        values.update(selected_slot)
-        values['relay_general_runner_authorized'] = args.phase == 'general-runner-enable'
-    if args.phase in ['runner-register', 'general-runner-register']:
+    if args.phase == 'runner-register':
         from runner_registration import register_runner
-        token = (args.runner_registration_token if args.phase == 'runner-register'
-                 else args.general_runner_registration_token)
+        token = args.runner_registration_token
         guard = ingress_guard(target, key, values, revision)
         try:
             def registration_poll():
@@ -660,7 +648,7 @@ def run(args):
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             require(os.fstat(lock).st_uid == os.getuid() and not os.fstat(lock).st_mode & 0o077, 'invocation-lock')
-            if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall', 'reinstall-recover', 'activate', 'runner-enable', 'general-runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
+            if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall', 'reinstall-recover', 'activate', 'runner-enable', 'stale-dispose', *BOOTSTRAP_MUTATIONS]:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # A normal source archive is only an internal transport detail.
             # No consumer lock, helper hash, distribution bundle or host cache.
@@ -737,8 +725,6 @@ def run(args):
                         host_locks.callback(release_pool_guard)
                 try:
                     lifecycle_operation = None
-                    serial_transition = False
-                    new_gate_installed = False
                     preparation = None
                     pool_preflight_proof = None
                     def clear_preparation_inventory():
@@ -747,7 +733,7 @@ def run(args):
                                      'relay_intent_stage_operation', 'relay_intent_stage_source_only',
                                      'relay_intent_stage_reinstall', 'relay_intent_preflight_consumer_path',
                                      'relay_intent_preflight_baseline_digest', 'relay_intent_preflight_claim_root',
-                                     'relay_intent_preflight_serial', 'relay_intent_preflight_installed_revision']:
+                                     'relay_intent_preflight_installed_revision']:
                             values.pop(name, None)
                             inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
                         (work / 'inventory.json').write_text(json.dumps(inventory))
@@ -787,7 +773,6 @@ def run(args):
                         from managed_pool_transport import preflight_pool
                         pool_preflight_proof = preflight_pool(target, key, config, guard,
                             local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
-                        serial_transition = getattr(pool_preflight_proof, 'serial_transition', False)
                     if intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
                         from install_preflight import PreparedInstall
                         stage_operation = admission_operation_id or str(uuid.uuid4())
@@ -828,7 +813,7 @@ def run(args):
                         if pool_reinstall_proof is not None and not pool_reinstall_proof['completed']:
                             preparation.consumer_retained(pool_reinstall_proof)
                         elif args.intent_expected_installed_revision != 'none':
-                            preparation.consumer(serial=serial_transition)
+                            preparation.consumer()
                         if preparation.initial is not None:
                             if args.phase == 'reinstall' and preparation.initial['consumerChange']:
                                 error = RuntimeError('INSTALL_PREFLIGHT_REINSTALL_CONSUMER_REBIND_UNSUPPORTED')
@@ -857,14 +842,13 @@ def run(args):
                         args._intent_failure_stage = 'preflight-host-policy'
                         backend_expected = values['relay_intent_expected_installed_revision']
                         values['relay_intent_expected_installed_revision'] = args.intent_expected_installed_revision
-                        values['relay_intent_preflight_serial'] = serial_transition
                         if preparation.initial is not None and preparation.initial['consumerRestoreRequired']:
                             values['relay_intent_preflight_consumer_path'] = preparation.initial['effectiveConsumerPath']
                             values['relay_intent_preflight_baseline_digest'] = preparation.initial['baselineDigest']
                             values['relay_intent_preflight_claim_root'] = preparation.initial['claimRoot']
                         preflight_play('relay-intent-preflight.yml')
                         for name in ['relay_intent_preflight_consumer_path', 'relay_intent_preflight_baseline_digest',
-                                     'relay_intent_preflight_claim_root', 'relay_intent_preflight_serial']:
+                                     'relay_intent_preflight_claim_root']:
                             values.pop(name, None)
                             inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
                         values['relay_intent_expected_installed_revision'] = backend_expected
@@ -876,8 +860,7 @@ def run(args):
                         # or live APT-list changes occur in this acquisition proof.
                         args._intent_failure_stage = 'prerequisite-acquisition'
                         preflight_play('relay-intent-apt-preflight.yml')
-                        if (preparation.initial is not None and not args.authorize_lifecycle_recovery
-                                and not (serial_transition and getattr(pool_preflight_proof, 'operation_id', None))):
+                        if preparation.initial is not None and not args.authorize_lifecycle_recovery:
                             preparation.capture()
                         values['relay_intent_stage_source_only'] = False
                         args._intent_failure_stage = 'candidate-stage'
@@ -937,94 +920,9 @@ def run(args):
                             values['relay_consumer_revision'] = consumer_revision
                             inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                             (work / 'inventory.json').write_text(json.dumps(inventory))
-                    if serial_transition:
-                        if preparation is not None:
-                            # SERIAL owns its separate old context and rechecks
-                            # its remote idle runner before stopping that runner.
-                            preparation.final(serial=True)
-                            require(hashlib.sha256(config_path.read_bytes()).hexdigest() == args.git_intent['config_sha256']
-                                    and source_identity(ROOT) == identity, 'frozen-git-inputs-changed-before-cutover')
-                            preparation.cutover_started = True
-                        from lifecycle import progress
-                        require(not args.local_lifecycle and not args.local_reconcile,
-                                'MANAGED_POOL_SERIAL_TRANSITION_EXTERNAL_OWNER_APPLY_REQUIRED')
-                        require(args.phase in ['apply', 'upgrade'],
-                                'MANAGED_POOL_SERIAL_TRANSITION_OWNER_APPLY_REQUIRED')
-                        from managed_pool_transport import transition_pool
-                        retained_operation = getattr(pool_preflight_proof, 'operation_id', None)
-                        require(not (retained_operation and args.lifecycle_recovery_operation)
-                                or retained_operation == args.lifecycle_recovery_operation,
-                                'MANAGED_POOL_SERIAL_TRANSITION_OPERATION_CONFLICT')
-                        lifecycle_operation = retained_operation or admission_operation_id or str(uuid.uuid4())
-                        values['relay_admission_operation_id'] = lifecycle_operation
-                        if intent_install:
-                            args._intent_mutation_started = True
-                        transition = transition_pool(target, key, config, revision, lifecycle_operation,
-                            guard, extra_guard=pool_guard, action='begin')
-                        require(transition['phase'] in ['stopped', 'installed', 'retired'], 'MANAGED_POOL_SERIAL_TRANSITION_STOP_UNPROVEN')
-                        if transition['phase'] in ['installed', 'retired']:
-                            # The backend completed or retirement already did.
-                            # Reconcile, verify read-only, then finish the SAME
-                            # new gate operation without reapplying the backend.
-                            if transition['phase'] == 'installed':
-                                from managed_pool_transport import reconcile_pool
-                                proof = reconcile_pool(target, key, config, revision, guard, extra_guard=pool_guard)
-                                log.write(proof + '\n')
-                                log.flush()
-                                print(proof, flush=True)
-                            values.update(relay_serial_pool_transition=False,
-                                relay_production_operation_phase='post-check',
-                                relay_upgrade_requested=False,
-                                relay_upgrade_lifecycle_managed=False)
-                            if preparation is not None:
-                                clear_preparation_inventory()
-                            inventory['all']['children']['relay']['hosts'][target['host']].update(values)
-                            (work / 'inventory.json').write_text(json.dumps(inventory))
-                            returncode = run_backend([*argv, '--check'], BACKEND, env, log, guard, pool_guard)
-                            log.flush()
-                            checked = Path(log_name).read_text()
-                            require(returncode == 0 and 'failed=0' in checked
-                                    and not re.search(r'changed=[1-9][0-9]*', checked)
-                                    and f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in checked,
-                                    'MANAGED_POOL_SERIAL_TRANSITION_FINAL_CHECK_UNPROVEN')
-                            new_gate_installed = True
-                            if transition['phase'] == 'installed':
-                                transition = transition_pool(target, key, config, revision, lifecycle_operation,
-                                    guard, extra_guard=pool_guard, action='finish')
-                                require(transition['phase'] == 'retired',
-                                        'MANAGED_POOL_SERIAL_TRANSITION_RETIREMENT_UNPROVEN')
-                            gate = remote_admission(target, key, values['relay_namespace'], 'status')
-                            if gate['phase'] != 'open':
-                                require(gate['operationId'] == lifecycle_operation and gate['target'] == revision
-                                        and gate['active'] == [] and gate['unknown'] == [],
-                                        'MANAGED_POOL_SERIAL_TRANSITION_FINAL_GATE_UNPROVEN')
-                                if gate['phase'] == 'recovery-required':
-                                    remote_admission(target, key, values['relay_namespace'], 'phase',
-                                        '--operation', lifecycle_operation, '--phase', 'applying')
-                                if gate['phase'] != 'verified':
-                                    remote_admission(target, key, values['relay_namespace'], 'phase',
-                                        '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
-                                remote_admission(target, key, values['relay_namespace'], 'resume',
-                                    '--operation', lifecycle_operation)
-                            require(remote_admission(target, key, values['relay_namespace'], 'status')['phase'] == 'open',
-                                    'MANAGED_POOL_SERIAL_TRANSITION_RESUME_UNPROVEN')
-                            previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', checked)
-                            require(previous is not None, 'previous-revision-proof')
-                            print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
-                            print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};verification=same-operation;log={log_name}')
-                            return
-                        values.update(relay_serial_pool_transition=True,
-                            # Keep the reserved target's object order for the
-                            # preflight hash; the installed snapshot stays canonical.
-                            relay_serial_pool_target_config=json.dumps(config, ensure_ascii=False,
-                                separators=(',', ':'), allow_nan=False),
-                            relay_upgrade_lifecycle_managed=True,
-                            relay_admission_operation_id=lifecycle_operation)
-                        inventory['all']['children']['relay']['hosts'][target['host']].update(values)
-                        (work / 'inventory.json').write_text(json.dumps(inventory))
                     completed_pool_reinstall = False
                     retirement_report = None
-                    if lifecycle_required and not args.local_lifecycle and not serial_transition:
+                    if lifecycle_required and not args.local_lifecycle:
                         from lifecycle import progress
                         lifecycle_operation = admission_operation_id
                         if intent_install:
@@ -1085,7 +983,7 @@ def run(args):
                         if pool_reinstall_proof is not None:
                             observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
-                    if preparation is not None and not serial_transition:
+                    if preparation is not None:
                         args._intent_failure_stage = 'final-revalidation'
                         fresh_preparation = preparation.initial is None
                         if preparation.retained_proof is not None:
@@ -1161,9 +1059,6 @@ def run(args):
                         # Subsequent native postchecks use the ordinary fixed
                         # installed helper after the publication mutex releases.
                         clear_preparation_inventory()
-                    if serial_transition and returncode == 0:
-                        log.flush()
-                        new_gate_installed = f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in Path(log_name).read_text()
                     if (returncode == 0 and 'generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
                             and not completed_pool_reinstall and not getattr(args, '_intent_defer_pool_reconcile', False)):
@@ -1174,7 +1069,7 @@ def run(args):
                         log.write(proof + '\n')
                         log.flush()
                         print(proof, flush=True)
-                    if (lifecycle_required or install_flow or serial_transition) and not completed_pool_reinstall:
+                    if (lifecycle_required or install_flow) and not completed_pool_reinstall:
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
@@ -1183,7 +1078,7 @@ def run(args):
                                 args.phase + '-final-runtime-proof')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
                                 args.phase + '-installed-identity-proof')
-                        if lifecycle_required or serial_transition:
+                        if lifecycle_required:
                             require(f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in apply_evidence,
                                     'upgrade-same-operation-activation-proof')
                         # Bootstrap/reinstall keep their independent qualification
@@ -1220,11 +1115,6 @@ def run(args):
                             from intent_install import readback
                             final_inventory = remote_inventory(target, key, config, git_desired=True)
                             readback(final_inventory, revision, args.git_intent)
-                        if serial_transition:
-                            transition = transition_pool(target, key, config, revision, lifecycle_operation,
-                                guard, extra_guard=pool_guard, action='finish')
-                            require(transition['phase'] == 'retired',
-                                    'MANAGED_POOL_SERIAL_TRANSITION_RETIREMENT_UNPROVEN')
                         progress('ACTIVATE/VERIFY', revision)
                         remote_admission(target, key, values['relay_namespace'], 'phase',
                                          '--operation', lifecycle_operation, '--phase', 'verified', '--revision', revision)
@@ -1240,9 +1130,6 @@ def run(args):
                                           guard=guard, operation_id=lifecycle_operation)
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
-                        if serial_transition:
-                            require(remote_admission(target, key, values['relay_namespace'], 'status')['phase'] == 'open',
-                                    'MANAGED_POOL_SERIAL_TRANSITION_RESUME_UNPROVEN')
                         progress('OPEN', revision)
                 except Exception:
                     restored_old = False
@@ -1261,7 +1148,7 @@ def run(args):
                                   flush=True)
                     if preparation is not None:
                         preparation.release_writer()
-                    if lifecycle_operation and not restored_old and (not serial_transition or new_gate_installed):
+                    if lifecycle_operation and not restored_old:
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')
@@ -1288,8 +1175,6 @@ def run(args):
                             role + '-credential-proof')
             if args.phase == 'post-check':
                 require(not re.search(r'changed=[1-9][0-9]*', evidence), 'post-check-drift')
-            if args.phase == 'general-runner-enable':
-                require(f'GENERAL_RUNNER_VALIDATED={revision};phase=general-runner-enable;' in evidence, 'general-runner-proof')
             if args.phase == 'check':
                 if ('PRODUCTION_RECOVERY_CLASSIFICATION=' in evidence
                         or 'PRODUCTION_RECONCILIATION_STATE=RECOVERY_REQUIRED' in evidence):
