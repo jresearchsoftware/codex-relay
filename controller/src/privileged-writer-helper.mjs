@@ -1,6 +1,7 @@
 import { assertRootConsumer } from '../../consumer/consumer-config.mjs';
 import { CONSUMER, unixUserId } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
+import { lstat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createPublicationBroker } from './publication-broker.mjs';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
@@ -46,7 +47,7 @@ export async function assertWriterSlot(request, { callerUid = process.env.RELAY_
   // Inspection and root-owned retained collection can read the stored slot.
   // Ordinary runner-owned publication recovery still uses its original private
   // journal/collector identity, even with a fresh owner authorization.
-  const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication'].includes(request.operation);
+  const recovery = ['publication-state', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'finalize-predispatch'].includes(request.operation);
   const originalSlot = record.envelope.executionSlot ?? 'primary';
   const poolRecovery = CONSUMER.generalRunnerPool && (['recover-publication', 'complete-handoff'].includes(request.operation)
     || (request.operation === 'finish' && request.recoveryAuthorizationId !== undefined)
@@ -112,7 +113,11 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
     // Fixed root helper, exact admitted attempt, original contained journal.
     // No caller path, permission repair or worker Git metadata is accepted.
     collectRetained: e => collectProgress(checkoutPath(e), e, { token: value, root: deployment.claimRoot }),
-    admission, allowManualOutcome });
+    checkoutAbsent: async e => {
+      try { await lstat(checkoutPath(e)); return false; }
+      catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+    },
+    admission, allowManualOutcome, diagnosticSecrets: [value, runToken].filter(Boolean) });
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

@@ -10,7 +10,7 @@ on:
         description: Inspect the retained attempt or recover with a fresh owner comment
         required: true
         type: choice
-        options: [inspect, recover, inspect-prepublication, recover-prepublication]
+        options: [inspect, recover, inspect-prepublication, recover-prepublication, inspect-predispatch, finalize-predispatch]
       run_id:
         description: Original routing run ID
         required: true
@@ -92,15 +92,17 @@ jobs:
           const authorizationId = process.env.RECOVERY_AUTHORIZATION_ID;
           const candidateHead = process.env.RECOVERY_HEAD ?? '';
           const prepublication = operation === 'inspect-prepublication' || operation === 'recover-prepublication';
-          const recovering = operation === 'recover' || operation === 'recover-prepublication';
+          const predispatch = operation === 'inspect-predispatch' || operation === 'finalize-predispatch';
+          const recovering = operation === 'recover' || operation === 'recover-prepublication' || operation === 'finalize-predispatch';
           if (!positive(runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(attemptId ?? '') ||
-              !['inspect', 'recover', 'inspect-prepublication', 'recover-prepublication'].includes(operation) ||
+              !['inspect', 'recover', 'inspect-prepublication', 'recover-prepublication', 'inspect-predispatch', 'finalize-predispatch'].includes(operation) ||
               (recovering ? !positive(authorizationId) : authorizationId !== '') ||
               (prepublication ? !/^[a-f0-9]{40}$/.test(candidateHead) : candidateHead !== '')) {
             throw new Error('RECOVERY_REQUEST_INVALID');
           }
           const request = { runId: Number(runId), attemptId,
-            ...(prepublication ? { operation, head: candidateHead, ...(recovering ? { authorizationId: Number(authorizationId) } : {}) }
+            ...(predispatch ? { operation, ...(recovering ? { authorizationId: Number(authorizationId) } : {}) }
+              : prepublication ? { operation, head: candidateHead, ...(recovering ? { authorizationId: Number(authorizationId) } : {}) }
               : operation === 'inspect' ? { operation } : { authorizationId: Number(authorizationId) }) };
           const child = spawn('/usr/bin/node', [`${release}/bin/relay-publication-recovery.mjs`],
             { stdio: ['pipe', 'inherit', 'inherit'] });

@@ -20,7 +20,7 @@ export function recoveryAuthorization(envelope, intent, afterAuthorizationId = n
 export const recoveryAuthorizationBody = binding =>
   `Authorize one Writer publication recovery:\n\n\`\`\`json\n${JSON.stringify(binding, null, 2)}\n\`\`\``;
 
-async function authorize(api, e, authorizationId, binding, last) {
+export async function authorizeRecovery(api, e, authorizationId, binding, last) {
   if (!positive(authorizationId)) fail('RECOVERY_OWNER_AUTHORIZATION_REQUIRED');
   const run = await api.getRun(e.runId);
   const transportMatches = e.attemptId === `run-${e.runId}` && (e.transport === 'label'
@@ -79,7 +79,7 @@ export async function authorizeRecoveryCollection({ api, record: r, authorizatio
     const binding = recoveryAuthorization(e, intent, previous?.authorizationId ?? null);
     if (Object.keys(intent).length !== Object.keys(binding).length
       || Object.entries(binding).some(([key, value]) => intent[key] !== value)) fail('RECOVERY_CANDIDATE_CHANGED');
-    await authorize(api, e, authorizationId, binding, previous);
+    await authorizeRecovery(api, e, authorizationId, binding, previous);
     await revalidateAuthority(api, e);
     return binding.head;
   }
@@ -89,7 +89,7 @@ export async function authorizeRecoveryCollection({ api, record: r, authorizatio
     || intent.previous !== (r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null))) fail('RECOVERY_INTENT_REQUIRED');
   const last = recoveries.at(-1);
   const binding = recoveryAuthorization(e, intent, last?.authorizationId ?? null);
-  await authorize(api, e, authorizationId, binding, last);
+  await authorizeRecovery(api, e, authorizationId, binding, last);
   await revalidateAuthority(api, e);
   return intent.head;
 }
@@ -109,7 +109,7 @@ export async function recoverPublication({ api, store, publisher, record: r, req
     || intent.previous !== (r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null))) fail('RECOVERY_INTENT_REQUIRED');
   const last = recoveries.at(-1);
   const binding = recoveryAuthorization(e, intent, last?.authorizationId ?? null);
-  await authorize(api, e, request.authorizationId, binding, last);
+  await authorizeRecovery(api, e, request.authorizationId, binding, last);
   await revalidateAuthority(api, e);
   return publisher.inspect(e, request.bundle, async g => {
     if (g.head !== intent.head) fail('RECOVERY_CANDIDATE_CHANGED');
@@ -128,7 +128,7 @@ export async function recoverPublication({ api, store, publisher, record: r, req
       assertPr(pr, e.target === 'pull_request' ? e.number : pr.number);
       if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
     }
-    const authorizedAt = await authorize(api, e, request.authorizationId, binding, last);
+    const authorizedAt = await authorizeRecovery(api, e, request.authorizationId, binding, last);
     if (await g.observe() !== intent.previous) fail('REMOTE_HEAD_CHANGED');
     if (g.integrationBase) await revalidateIntegrationBase(api, e);
     const recovery = { authorizationId: request.authorizationId, binding, authorizedAt, reservedAt: now(), result: null };

@@ -715,7 +715,122 @@ remain bound to the candidate commit, rather than a synthetic merge commit.
 Public consumers retain `pull_request_target` label routing under the
 [owner Actions event-policy procedure](../deploy/README.md#actions-event-policy-for-public-repositories).
 
+## Pre-dispatch admission finalization
+
+A failed first label-routing run can stop after its immutable Step reservation
+but before `admit` returns. The bounded `predispatch-state` /
+`finalize-predispatch` Writer operations reconcile only that case. They are
+explicit operator recovery, never ordinary admission replay. They do not execute
+Codex, publish a Task Outcome, consume a ready command, project labels, push Git,
+change a PR, or fabricate a terminal runner journal.
+
+The proof is the protected write ordering: before a successful automatic label
+`admit` returns, Writer durably stores `readyConsumption` and `readyConsumed`.
+An exact partial record with neither field, no completed projection, no other
+execution/publication effects and its original active lifecycle could not have
+returned normally to the controller. This is stronger than merely finding no
+process. Finalization also requires the completed original native routing run
+(first attempt only, failure), unchanged native event, authority and exact
+branch/PR head, no original journal or checkout, and exclusive acquisition of
+the original controller lock under the Writer mutex. A rerun, ambiguous state,
+changed configuration, pending mutation or any contradictory evidence fails
+closed. Current source does not reinterpret retained schema-v3 executions.
+
+Inspection returns the exact public-safe binding and `authorizationBody`.
+The owner posts those exact bytes as a fresh unedited native comment on the
+original target after the original run completed. Finalize takes that comment
+ID and revalidates its owner, target, time, run identity, authority and evidence.
+One atomic update appends `predispatchRecovery` with the complete original record
+digest and native authorization ID. Every historical field remains unchanged,
+including its active lifecycle. The separate administrative receipt retires the
+reservation; it is not a successful execution or worker containment assertion.
+Lost responses are reconciled by inspecting or repeating that same authorized
+operation; the stored receipt is returned without another mutation. A different
+authorization or modified original record is rejected.
+
+Inventory recognizes only a verified receipt with no contradictory journal.
+Old `admit` and publication operations then reject that attempt. The original
+ready-event identity remains reserved, so it cannot launch again. A fresh owner
+command allocates the next Step, including when the display label still matches
+the original `stepProjectionFrom`; no manual label repair is needed. This narrow
+exception cannot conceal an unrelated stale numbering position.
+
+### Deployment-operator entrypoint before an upgrade
+
+An unresolved reservation may itself prevent lifecycle drain. Do not bypass that
+drain or install candidate service code to resolve the circular dependency.
+After independent exact-source acceptance, the existing authorized deployment
+operator may stage a verified root-owned copy of that accepted source and run
+`controller/src/predispatch-recovery-entrypoint.mjs` with the unchanged protected
+consumer configuration. This source-controlled root-only entrypoint selects only
+a configured repository, bounds stdin to 4096 bytes, acquires the installation's
+existing `publication-v2.lock`, and invokes the same protected Writer broker.
+It uses the configured Writer credentials on the host; no runner-UID override,
+new sudo grant, service replacement or permission repair is required. Operator
+source acceptance/host authority still apply. The CLI accepts only repository,
+operation, runId, attemptId and (for finalization) authorizationId; it accepts no
+caller path, slot, head, executable or credential.
+
+```sh
+# Run through the existing authorized root deployment channel. These two
+# variables name the verified accepted source and existing protected config.
+/usr/bin/env -i PATH=/usr/bin:/bin HOME=/root LANG=C LC_ALL=C \
+  RELAY_CONSUMER_CONFIG="$protected_consumer" \
+  /usr/bin/node "$accepted_source/controller/src/predispatch-recovery-entrypoint.mjs" <<'JSON'
+{"repository":"example-org/example-repository","operation":"predispatch-state","runId":99,"attemptId":"run-99"}
+JSON
+```
+
+After posting the exact returned authorizationBody, use the identical command
+with `operation: "finalize-predispatch"` and the native `authorizationId` added.
+Read back `predispatch-state` and normal admission status before continuing the
+ordinary lifecycle operation. Stop on any failed or contradictory readback.
+No preexisting terminal Outcome is manufactured for the old operation.
+
+After a compatible accepted/qualified installation, the existing recovery
+entrypoint also accepts `inspect-predispatch` and `finalize-predispatch` JSON.
+The generated recovery workflow exposes those choices with original run/attempt,
+optional original slot, and authorization_id only for finalization; candidate_head
+must be empty. Consumer adoption of that generated workflow remains separate.
+The portable Task/Decision/Outcome authoring flow is unchanged; this expert
+component recovery contract owns the additional transport rather than a second
+Skill authoring procedure.
+
 ## Writer publication recovery
+
+### Partial admission before worker dispatch
+
+An admission reservation is durable before Step projection and ready-command
+consumption. An exception during projection can therefore leave a reserved Step,
+old display labels and an unconsumed owner event. These are separate facts.
+Writer retains a bounded, redacted exception in the protected attempt record;
+the helper wire reports only the projection suboperation, safe error code/type
+and HTTP status when available. A failed diagnostic write is reported as
+unverified retention. Neither a projection failure nor its diagnostic completes
+the controller lifecycle or proves containment of an older attempt.
+
+The read-only `publication-state` response includes `admissionState`: reserved
+Step, projection receipt/previous labels, original ready-event ID, consumption
+status, controller lifecycle and safe failure diagnostic. Private exception text
+and stack are not returned. Historical records without these receipts remain
+unknown; the projection does not manufacture negative execution evidence.
+
+For an existing automatic label admission that has not begun ready consumption,
+replay checks the original protected runner journal and its envelope binding
+before changing Step/PR metadata or consuming the event. A missing or invalid
+journal stops with `JOURNAL_MISSING_EXECUTION_UNKNOWN`; a mismatched envelope
+stops with `JOURNAL_BINDING_CHANGED`. This moves the existing execution replay
+check ahead of native mutations. An uncertain prior ready DELETE retains its
+existing publication-only reconciliation and is never repeated.
+
+Inspect the exact original attempt and slot before recovery. Publication recovery
+requires an existing publication intent; prepublication recovery requires its
+contained returned-worker evidence. Neither can release an active pre-dispatch
+reservation with no terminal journal. A `terminal-outcome` can report a truthful
+BLOCKED result but does not supply the missing completion evidence. Do not turn
+an absent journal/process/checkout into a completed-containment receipt. Preserve
+the original Step/event and obtain original-operation reconciliation through the
+authorized deployment operator before a potentially duplicating owner launch.
 
 Ordinary `publish-progress` replay still observes an existing publication intent
 and refuses another push when the remote is not the candidate. Recovery is a
