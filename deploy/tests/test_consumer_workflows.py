@@ -147,14 +147,28 @@ class ConsumerWorkflowTests(unittest.TestCase):
             'workflows': ['Public CI'], 'types': ['completed'], 'branches': ['main']})
         self.assertEqual(set(publication['on']), {'workflow_run', 'workflow_dispatch'})
         self.assertEqual(set(publication['on']['workflow_dispatch']['inputs']), {'source_sha'})
+        self.assertIs(publication['on']['workflow_dispatch']['inputs']['source_sha']['required'], False)
         self.assertEqual(publication['permissions'], {'contents': 'read', 'actions': 'read'})
-        self.assertIs(publication['concurrency']['cancel-in-progress'], False)
-        job, = publication['jobs'].values()
+        self.assertNotIn('concurrency', publication)
+        resolver = publication['jobs']['resolve-source']
+        self.assertEqual(resolver['runs-on'], 'ubuntu-24.04')
+        self.assertEqual(resolver['outputs'], {'source_sha': '${{ steps.source.outputs.source_sha }}'})
+        step, = resolver['steps']
+        self.assertEqual(step['id'], 'source')
+        self.assertEqual(step['env'], {'MANUAL_SOURCE_SHA': '${{ inputs.source_sha }}'})
+        self.assertNotIn('${{', step['run'])
+        self.assertNotIn('secrets.', json.dumps(resolver))
+        job = publication['jobs']['publish']
+        self.assertEqual(job['needs'], 'resolve-source')
+        self.assertEqual(job['if'], "needs.resolve-source.outputs.source_sha != ''")
+        self.assertEqual(job['concurrency'], {
+            'group': 'relay-guidance-publication-${{ needs.resolve-source.outputs.source_sha }}',
+            'cancel-in-progress': False})
         self.assertEqual(job['uses'],
                          'jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@main')
         self.assertEqual(job['with'], {
             'mode': 'publish',
-            'source_sha': '${{ github.event.workflow_run.head_sha || inputs.source_sha }}',
+            'source_sha': '${{ needs.resolve-source.outputs.source_sha }}',
             'binding': 'vibe-publisher.json', 'package': 'org.jresearch.ai/codex-relay'})
         self.assertEqual(job['secrets'], {
             'DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN': '${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}'})
@@ -181,7 +195,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
 
     @unittest.skipUnless(NODE, 'Node is required to exercise the publication event filter')
     def test_guidance_publisher_accepts_only_bound_main_push_or_main_retry(self):
-        job = workflow('publish-guidance.yml')['jobs']['publish']
+        job = workflow('publish-guidance.yml')['jobs']['resolve-source']
         script = r"""
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -193,25 +207,104 @@ const original = { repository: 'jresearchsoftware/codex-relay', ref: 'refs/heads
   event_name: 'workflow_run', event: { workflow_run: { conclusion: 'success', event: 'push',
   head_branch: 'main', head_sha: source, head_repository: { full_name: 'jresearchsoftware/codex-relay' } } } };
 const cases = [
-  [g => {}, true, source],
+  [g => {}, true],
   [g => { g.repository = 'foreign/repo'; }, false],
   [g => { g.event.workflow_run.conclusion = 'failure'; }, false],
   [g => { g.event.workflow_run.event = 'pull_request'; }, false],
   [g => { g.event.workflow_run.head_branch = 'topic'; }, false],
   [g => { g.event.workflow_run.head_repository.full_name = 'foreign/repo'; }, false],
   [g => { g.event_name = 'push'; }, false],
-  [g => { g.event_name = 'workflow_dispatch'; g.event.workflow_run = {}; }, true, retry],
+  [g => { g.event_name = 'workflow_dispatch'; g.event.workflow_run = {}; }, true],
   [g => { g.event_name = 'workflow_dispatch'; g.ref = 'refs/heads/topic'; }, false],
 ];
-for (const [change, expected, sha] of cases) {
+for (const [change, expected] of cases) {
   const github = structuredClone(original); change(github);
   assert.equal(evaluate(job.if, github, {source_sha: retry}), expected);
-  if (expected) assert.equal(evaluate(job.with.source_sha, github, {source_sha: retry}), sha);
 }
 """
         checked = subprocess.run([NODE, '--input-type=module', '-e', script], cwd=ROOT,
                                  input=json.dumps(job), text=True, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)
+
+    @unittest.skipUnless(shutil.which('bash'), 'Bash is required to execute source resolution')
+    def test_guidance_source_resolution_uses_exact_event_identity(self):
+        # Exercise the actual workflow code without checkout, credentials or API
+        # transport. Accepted-main membership and exact successful source CI are
+        # separate Shared Publisher checks in scripts/test-relay-publisher.py.
+        resolver = workflow('publish-guidance.yml')['jobs']['resolve-source']
+        step, = resolver['steps']
+        dispatch_sha, explicit_sha, automatic_sha = ('a' * 40, 'b' * 40, 'c' * 40)
+        run = {'conclusion': 'success', 'event': 'push', 'head_branch': 'main',
+               'head_sha': automatic_sha,
+               'head_repository': {'full_name': 'jresearchsoftware/codex-relay'}}
+
+        def resolve(event_name='workflow_dispatch', supplied='', event=None, changes=None):
+            with tempfile.TemporaryDirectory(prefix='relay-source-resolution-') as directory:
+                root = Path(directory)
+                event_path, output, summary = (root / name for name in ('event.json', 'output', 'summary'))
+                event_path.write_text(json.dumps({'workflow_run': run} if event is None else event))
+                environment = {key: os.environ[key] for key in ('PATH', 'SYSTEMROOT', 'LANG', 'LC_ALL')
+                               if key in os.environ}
+                environment.update(GITHUB_REPOSITORY='jresearchsoftware/codex-relay',
+                                   GITHUB_REF='refs/heads/main', GITHUB_EVENT_NAME=event_name,
+                                   GITHUB_SHA=dispatch_sha, GITHUB_EVENT_PATH=str(event_path),
+                                   GITHUB_OUTPUT=str(output), GITHUB_STEP_SUMMARY=str(summary))
+                if supplied is not None:
+                    environment['MANUAL_SOURCE_SHA'] = supplied
+                for key, value in (changes or {}).items():
+                    if value is None:
+                        environment.pop(key, None)
+                    else:
+                        environment[key] = value
+                checked = subprocess.run(['bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c', step['run']],
+                                         cwd=root, env=environment, text=True, capture_output=True)
+                return (checked, output.read_text() if output.exists() else '',
+                        summary.read_text() if summary.exists() else '')
+
+        for supplied, event, expected in (
+            (None, {}, dispatch_sha), ('', {}, dispatch_sha),
+            (None, {'workflow_run': run, 'inputs': {'source_sha': explicit_sha}}, dispatch_sha),
+            ('', {'workflow_run': run, 'inputs': {'source_sha': explicit_sha}}, dispatch_sha),
+            (explicit_sha, {'workflow_run': run}, explicit_sha),
+        ):
+            with self.subTest(supplied=supplied, event=event):
+                checked, output, summary = resolve(supplied=supplied, event=event)
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+                self.assertEqual(output, f'source_sha={expected}\n')
+                self.assertIn(expected, summary)
+                self.assertIn('Shared Publisher must qualify', summary)
+        checked, output, summary = resolve(event_name='workflow_run', supplied=explicit_sha)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertEqual(output, f'source_sha={automatic_sha}\n')
+        self.assertIn('workflow_run.head_sha', summary)
+
+        rejected = [
+            {'supplied': value} for value in
+            ('main', 'abc123', 'B' * 40, 'g' * 40, ' ' + explicit_sha, explicit_sha + '\n')
+        ]
+        rejected += [
+            {'changes': {'GITHUB_SHA': value}} for value in ('', 'main', None)
+        ]
+        rejected += [
+            {'changes': {'GITHUB_REF': ref}} for ref in ('refs/heads/topic', 'refs/tags/main')
+        ]
+        rejected += [{'changes': {'GITHUB_REPOSITORY': 'foreign/repo'}}, {'event_name': 'push'}]
+        for field, value in (
+            ('head_sha', ''), ('head_sha', 'main'), ('head_sha', 'D' * 40),
+            ('head_branch', 'topic'), ('conclusion', 'failure'), ('conclusion', 'cancelled'),
+            ('event', 'pull_request'), ('head_repository', {'full_name': 'foreign/repo'}),
+        ):
+            rejected.append({'event_name': 'workflow_run', 'event': {'workflow_run': {**run, field: value}}})
+        rejected += [
+            {'event_name': 'workflow_run', 'event': {}},
+            {'event_name': 'workflow_run',
+             'event': {'workflow_run': {key: value for key, value in run.items() if key != 'head_sha'}}},
+        ]
+        for case in rejected:
+            with self.subTest(rejected=case):
+                checked, output, _ = resolve(**case)
+                self.assertNotEqual(checked.returncode, 0, checked.stdout)
+                self.assertEqual(output, '', 'Rejected events must not produce a publishable source')
 
     @unittest.skipUnless(NODE, 'Node is required to compare native launch metadata')
     def test_native_names_and_owner_event_conditions(self):

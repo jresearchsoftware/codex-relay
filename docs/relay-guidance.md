@@ -207,7 +207,7 @@ reference, source repository ID, Public CI workflow and sole destination
 The thin `Publish accepted Relay guidance` caller invokes
 `jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@main`
 after successful Public CI for the exact main push. The
-[accepted Shared Publisher contract](https://github.com/jresearchsoftware/shared-governance/blob/414077e956aa47b18ddc436f68c3245b508baf46/docs/shared-publisher.md)
+[accepted Shared Publisher contract](https://github.com/jresearchsoftware/shared-governance/blob/7c83caaf9157d4cecac145477177203871205128/docs/shared-publisher.md)
 distinguishes the independently selected producer source from the executing
 publisher. Pass only the triggering accepted source SHA, binding and coordinate;
 there is no caller publisher-selection input. Each execution uses
@@ -216,6 +216,28 @@ publisher implementation, checks out the producer independently at `source_sha`,
 and reports both immutable identities. Moving publisher main does not change
 the producer source being released. Unprivileged Public CI checks exact candidate
 source with an independently identified accepted publisher checkout.
+
+For an owner-authorized manual run, open **Actions → Publish accepted Relay
+guidance → Run workflow**, select **main**, and leave `source_sha` blank to use
+that dispatch event's exact `github.sha`. The caller captures this immutable
+commit; it does not resolve a later moving main. For historical/same-source
+recovery, enter the full lowercase 40-character accepted source SHA instead.
+Branch names, tags, abbreviated SHAs, whitespace and malformed input are rejected;
+an invalid explicit value never falls back to the dispatch commit. Dispatches
+from branches or tags other than main cannot publish.
+
+The read-only source-resolution job reports the resolved SHA and its origin in
+the log and run summary. Its single output supplies both the reusable workflow
+input and the publication concurrency key. Automatic runs retain the triggering
+`workflow_run.head_sha`, with successful push/main/same-repository gates.
+Resolution does not prove acceptance: Shared Publisher must still verify
+accepted-main ancestry, the exact successful completed Public CI push run and
+eligible frozen-package identity before any destination write. Failed or missing
+matching CI blocks publication; it does not select another commit. Read the
+shared publisher's per-package result and publisher/producer identities in the
+summary before deciding whether to retry. Pending recovery retains the original
+frozen package's `source_sha` and receipt; `trigger_sha` identifies the resolved
+dispatch commit whose exact push CI qualified that recovery.
 
 `scripts/test-relay-publisher.py` exercises that selected implementation with
 exact Relay source and disposable transitions. Its `--publisher-sha` asserts
@@ -243,9 +265,12 @@ tags stay immutable.
 
 A reviewed, owner-authorized merge uses the existing successful-main source
 transition path. `initial_publication` is not selected for ordinary new releases.
-An unchanged/non-package commit is a strict `NO_PACKAGE_CHANGE`, including
-binding-only edits that retain the export inventory and package mapping; it
-cannot opportunistically publish old source.
+An unchanged/non-package transition without an eligible publisher-bound frozen
+package remains `NO_PACKAGE_CHANGE`. The accepted Shared Publisher can recover
+an eligible pending publication, including from a later accepted commit retaining
+its exact frozen identity. Manual dispatch supports both the default dispatch
+commit and an explicit historical source. This does not relax source ancestry,
+exact push-CI, rights, inventory, destination or immutable-tag checks.
 A consumer-only Shared update creates no Relay release or new publisher gate.
 
 The current tree-v1 contract qualifies required direct/transitive dependency
@@ -296,9 +321,19 @@ the original reusable-workflow commit. Rerunning all jobs or a new same-source
 dispatch may resolve newer accepted publisher main. Each execution records its
 resolved implementation and repeats source/CI/export qualification; reports
 staged by a different implementation cannot be finalized. The caller's retry
-input selects the same accepted producer SHA, never current main. An existing
+input pins the accepted producer SHA for recovery; leaving it blank deliberately
+selects the new dispatch event's exact main commit. An existing
 tag is a safe no-op, not proof a different source was published; compare its
 files/receipt before claiming recovery. Never rewrite a version tag. Missing
 destination access/rights remains an owner setup boundary; never create tokens,
 broaden permissions or select another repository. Consumer installation,
 update, rollback, drift and removal retain the Skill's existing paths.
+
+Relay 5.0.0 recovery remains tracked by
+[Shared Governance Task #94](https://github.com/jresearchsoftware/shared-governance/issues/94).
+Accepting this caller correction or obtaining a green workflow does not prove
+publication. A separately authorized producer dispatch/continuation must confirm
+the public `v5.0.0` tag and exact source/payload receipt and file readback at
+the [distribution repository](https://github.com/jrs-vibevm/org.jresearch.ai.codex-relay),
+then link the evidence to that Task. Keep the producer Task open pending accepted
+integration and the owner-controlled publication/recovery disposition.

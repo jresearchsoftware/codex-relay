@@ -147,7 +147,9 @@ mechanics remain [Relay delivery](relay-guidance.md) responsibilities.
 The accepted Shared Publisher and successful-main flow retain their existing
 authority. The external caller follows publisher `@main`, while each execution
 binds its own exact implementation through `job.workflow_repository` and
-`job.workflow_sha` and keeps the producer at the exact triggering accepted SHA.
+`job.workflow_sha` and keeps the producer at the resolved exact accepted SHA:
+the triggering push-CI head, manual dispatch event commit when input is blank,
+or explicitly supplied recovery SHA.
 The publisher reports both immutable identities; callers do not select a
 separate publisher revision. Current tree-v1 closure qualification can use
 source-time lock/slots beneath the package root without exporting them.
