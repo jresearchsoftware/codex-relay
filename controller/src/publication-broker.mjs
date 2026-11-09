@@ -21,11 +21,12 @@ import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
+import { predispatchState, finalizePredispatch, completedPredispatchRecovery } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [] }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
   const titleFor = e => secretFree(projectedRequestTitle(e.request));
@@ -475,6 +476,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (existing && existing.envelope.consumerDigest !== CONSUMER_DIGEST) fail('CONSUMER_CONFIG_CHANGED');
         if (existing) {
           const e = existing.envelope;
+          if (existing.predispatchRecovery) fail('PREDISPATCH_ATTEMPT_FINALIZED');
           if (e.target !== request.target || e.number !== request.number || e.route !== request.route
             || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
             || e.transport !== request.transport
@@ -570,9 +572,24 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
         : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication'].includes(request.operation) ? { revalidate: false }
+        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
           : { reporting: ['finish', 'finish-no-change'].includes(request.operation),
             verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
+      if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
+      if (['predispatch-state', 'finalize-predispatch'].includes(request.operation)) {
+        if (Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
+        if (!journal?.withLock) fail('PREDISPATCH_CONTROLLER_LOCK_REQUIRED');
+        return journal.withLock(e.runId, async () => {
+          if (request.operation === 'predispatch-state') {
+            if (r.predispatchRecovery) {
+              if (!completedPredispatchRecovery(r)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+              return receipt({ recovery: r.predispatchRecovery });
+            }
+            return receipt(await predispatchState({ api, journal, record: r, checkoutAbsent }));
+          }
+          return receipt({ recovery: await finalizePredispatch({ api, store, journal, record: r, request, checkoutAbsent }) });
+        });
+      }
       if (r.prepublicationRecovery && !['prepublication-state', 'recover-prepublication'].includes(request.operation)) fail('PREPUBLICATION_RECOVERY_RESERVED');
       if (['prepublication-state', 'recover-prepublication'].includes(request.operation)
         && Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'head', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
@@ -651,7 +668,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'publication-state') {
         return receipt({ envelope: e, publicationIntent: r.publicationIntent, publishedHead: r.publishedHead,
-          admissionState: { step: e.step, stepProjected: r.stepProjected ?? null,
+          admissionState: { predispatchRecovery: r.predispatchRecovery ?? null, step: e.step, stepProjected: r.stepProjected ?? null,
             stepProjectionFrom: r.stepProjectionFrom ?? null, readyEventId: e.readyEventId ?? null,
             readyConsumption: r.readyConsumption?.status ?? null, readyConsumed: r.readyConsumed ?? null,
             controllerLifecycle: r.controllerLifecycle ? {

@@ -6,6 +6,7 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { completedPredispatchRecovery } from './predispatch-recovery.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -119,6 +120,7 @@ export function manualAdmissionComplete(record) {
 export async function completedAdmissionRecord(record, journal) {
   const e = record?.envelope;
   if (!e || e.version !== VERSION || !configDigest(e.consumerDigest) || !positive(e.runId)) return false;
+  if (record.predispatchRecovery) return completedPredispatchRecovery(record) && !await journal.get(e.runId, e.repository);
   if (e.route === 'manual') return manualAdmissionComplete(record);
   if (e.route !== 'auto' || !publishedTerminal(record, Boolean(record.prepublicationRecovery))
     || record.controllerLifecycle?.status === 'active') return false;
@@ -324,6 +326,10 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         continue;
       }
       if (e.route !== 'auto') continue;
+      if (record.predispatchRecovery) {
+        if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
+        continue;
+      }
       if (resourceOnly) {
         let released;
         try {
@@ -523,6 +529,10 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const record = await store.get(runId); const e = validRecord(record);
       if (e.consumerDigest !== consumerDigest) fail('CONSUMER_CONFIG_CHANGED');
       if (e.attemptId !== attemptId || e.route !== 'auto' || record.admissionBlock) fail('ATTEMPT_NOT_ADMITTED');
+      if (record.predispatchRecovery) {
+        if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) fail('ADMISSION_COMPLETION_UNKNOWN');
+        return { complete: true };
+      }
       const lifecycle = record.controllerLifecycle;
       if (lifecycle && (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status))) fail('ADMISSION_ATTEMPT_INVALID');
       if (lifecycle?.status === 'complete') return { complete: true };

@@ -501,6 +501,15 @@ for (const value of [condition, recovery.jobs.recover.if]) {
                 if operation == 'recover-prepublication':
                     expected['authorizationId'] = 123
                 self.assertEqual(json.loads(retained.stdout.splitlines()[-1])['fixtureRequest'], expected)
+            for operation in ['inspect-predispatch', 'finalize-predispatch']:
+                inputs = {'RECOVERY_OPERATION': operation}
+                expected = {'operation': operation, 'runId': 99, 'attemptId': 'run-99'}
+                if operation == 'finalize-predispatch':
+                    inputs['RECOVERY_AUTHORIZATION_ID'] = '123'
+                    expected['authorizationId'] = 123
+                retained = execute(self.recovery, inputs)
+                self.assertEqual(retained.returncode, 0, retained.stderr)
+                self.assertEqual(json.loads(retained.stdout.splitlines()[-1])['fixtureRequest'], expected)
             for invalid in ({'RECOVERY_RUN_ID': '1; touch bad'}, {'RECOVERY_RUN_ID': '0'},
                             {'RECOVERY_RUN_ID': '99999999999999999999'}, {'RECOVERY_ATTEMPT_ID': '../run-99'},
                             {'RECOVERY_OPERATION': 'launch'}, {'RECOVERY_OPERATION': 'recover'},

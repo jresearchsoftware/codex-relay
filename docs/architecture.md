@@ -370,6 +370,15 @@ for owner disposition. An already-authorized acceptance-dependent closure does
 not require another Decision, and an accepted Step is not itself Task completion.
 Neither Reviewer nor worker merges or closes Issues.
 
+[Pre-dispatch finalization](../controller/README.md#pre-dispatch-admission-finalization)
+can retire a strictly proven first-run partial label admission through a fresh
+native owner authorization and a separate protected administrative receipt.
+It preserves the original record, event and Step without fabricating worker
+execution, containment or a terminal Task Outcome. The root deployment-operator
+entrypoint can run independently accepted source against unchanged protected
+configuration before an otherwise blocked lifecycle drain; it does not replace
+services or bypass deployment acceptance.
+
 [Publication recovery](../controller/README.md#writer-publication-recovery)
 is a separate owner-authorized operation bound to the original attempt,
 authority digest, previous/candidate heads and a fresh native authorization

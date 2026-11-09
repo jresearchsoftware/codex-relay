@@ -12,6 +12,8 @@ import { historicalProgram } from './serial-pool-program.mjs';
 export function parseRecoveryRequest(request) {
   if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
   const keys = Object.keys(request).sort().join(',');
+  if (request.operation === 'inspect-predispatch' && keys === 'attemptId,operation,runId') return request;
+  if (request.operation === 'finalize-predispatch' && keys === 'attemptId,authorizationId,operation,runId' && positive(request.authorizationId)) return request;
   if (request.operation === 'inspect' && keys === 'attemptId,operation,runId') return request;
   if (keys === 'attemptId,authorizationId,runId' && positive(request.authorizationId)) return request;
   if (request.operation === 'inspect-prepublication' && keys === 'attemptId,head,operation,runId'
@@ -122,6 +124,8 @@ export async function main() {
   const local = createLocalWriterAdapter();
   const executionSlot = runnerExecutionSlot();
   const broker = { invoke: value => local.invoke({ ...value, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: process.env.GITHUB_TOKEN }) };
+  if (request.operation === 'inspect-predispatch') return broker.invoke({ ...request, operation: 'predispatch-state' });
+  if (request.operation === 'finalize-predispatch') return broker.invoke(request);
   if (request.operation === 'inspect-prepublication') {
     return broker.invoke({ ...request, operation: 'prepublication-state' });
   }
