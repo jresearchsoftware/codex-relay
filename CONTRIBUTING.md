@@ -107,6 +107,11 @@ The repository's separate [self-dogfood control workflows](docs/self-dogfood-wor
 use an accepted installed Relay revision. Their presence does not qualify public
 runner activation or permit candidate code on persistent privileged runners.
 
+Historical SERIAL/pool recovery tests use committed exact-source
+[fixtures](controller/test/fixtures/historical-runtime/README.md), verified against
+their original Git commit/tree/blob identities before execution. Main-only and
+shallow checkouts need no historical PR objects or test-time downloads.
+
 For one focused suite, retain the test consumer preload:
 
 ```sh
