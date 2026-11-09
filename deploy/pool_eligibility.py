@@ -148,13 +148,14 @@ def _peer_refs(config, namespace, contract):
     elif isinstance(local_apply, dict) and local_apply.get('source') == 'git':
         deployment = local_apply.get('repository')
         require(set(local_apply) == {'source', 'repository', 'configPath'}
-                and _repository(deployment) and deployment not in repositories
+                and _repository(deployment) and LIFECYCLE_WORKFLOW not in workflows
                 and deployment.split('/')[0] == contract['organization'] and branch == 'main'
                 and isinstance(local_apply.get('configPath'), str)
                 and re.fullmatch(r'[A-Za-z0-9_./-]+\.json', local_apply['configPath'])
                 and all(part not in ['', '.', '..'] for part in local_apply['configPath'].split('/')),
                 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
-        result[deployment] = [deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main']
+        result.setdefault(deployment, []).append(
+            deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main')
     return result
 
 
@@ -233,11 +234,13 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
     deployment = contract.get('deploymentRepository')
     expected = set(targets) | ({deployment} if isinstance(deployment, str) else set())
     require(isinstance(targets, list) and targets and set(result) == expected
-            and (deployment is None or _repository(deployment) and deployment not in targets)
+            and (deployment is None or _repository(deployment))
             and contract['repository'] in result, 'ELIGIBILITY_CONTRACT_INVALID')
     for repository, refs in result.items():
         require(_repository(repository) and repository.split('/')[0] == contract['organization']
-                and isinstance(refs, list) and len(refs) in ([1] if repository == deployment else [2, 3])
+                and isinstance(refs, list)
+                and len(refs) in ([3] if repository == deployment and repository in targets else
+                                 [1] if repository == deployment else [2, 3])
                 and all(isinstance(value, str) for value in refs) and len(set(refs)) == len(refs),
                 'ELIGIBILITY_CONTRACT_INVALID')
         branches = []
@@ -250,10 +253,11 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             branches.append(branch)
         require(len(set(branches)) == 1, 'ELIGIBILITY_CONTRACT_INVALID')
         if repository == deployment:
-            require(refs == [repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main'],
+            require(refs[-1] == repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main',
                     'ELIGIBILITY_CONTRACT_INVALID')
         if len(refs) == 3:
-            require(repository == contract['repository']
+            require(repository in [contract['repository'], deployment]
+                    and all('/' + LIFECYCLE_WORKFLOW + '@' not in ref for ref in refs[:2])
                     and refs[2] == repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branches[0],
                     'ELIGIBILITY_CONTRACT_INVALID')
     result = {repository: refs[:] for repository, refs in result.items()}
@@ -279,9 +283,16 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
             if peer is None:
                 continue
             for repository, workflows in peer.items():
-                require(repository not in result or set(result[repository][:2]) == set(workflows[:2]),
+                # One protected installation may expose only this repository's
+                # fixed lifecycle while another also configures ordinary Tasks.
+                # Combine that evidence without unioning conflicting automatic pairs.
+                previous = result.get(repository, [])
+                lifecycle = repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main'
+                automatic = [ref for ref in workflows if ref != lifecycle]
+                previous_automatic = [ref for ref in previous if ref != lifecycle]
+                require(not previous_automatic or not automatic
+                        or set(previous_automatic) == set(automatic),
                         'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
-                if repository in result and len(result[repository]) == 3:
-                    workflows = result[repository]
-                result[repository] = workflows
+                result[repository] = (previous_automatic or automatic) + (
+                    [lifecycle] if lifecycle in previous or lifecycle in workflows else [])
     return result

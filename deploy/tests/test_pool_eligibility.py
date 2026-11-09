@@ -400,6 +400,87 @@ def test_peer_git_deployment_adds_no_public_lifecycle_or_candidate_eligibility(t
                for rows in actual.values() for ref in rows)
 
 
+def git_deployment(config, repository):
+    config['consumer']['baseBranch'] = 'main'
+    config['environment']['localApply'] = {
+        'source': 'git', 'repository': repository, 'configPath': 'prod/relay.json'}
+
+
+def test_protected_peer_deployment_consumer_keeps_pair_and_only_fixed_lifecycle(tmp_path, contract):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer']['repository']
+    git_deployment(fixture.config, repository)
+    save(fixture)
+    assert observe(tmp_path, contract)[repository] == refs(fixture.config) + [lifecycle_ref(repository)]
+
+
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow'])
+def test_peer_deployment_lifecycle_cannot_alias_an_ordinary_workflow(tmp_path, contract, workflow):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer']['repository']
+    git_deployment(fixture.config, repository)
+    fixture.config['consumer'][workflow] = eligibility.LIFECYCLE_WORKFLOW
+    save(fixture)
+    with pytest.raises(PoolError, match='ELIGIBILITY_WORKFLOWS_UNPROVEN'):
+        observe(tmp_path, contract)
+
+
+@pytest.mark.parametrize('lifecycle_first', [False, True])
+@pytest.mark.parametrize('also_consumer', [False, True])
+def test_duplicate_peer_deployment_evidence_preserves_consumer_pair_in_either_order(
+        tmp_path, contract, lifecycle_first, also_consumer):
+    consumer = peer(tmp_path, contract, 'z-peer' if lifecycle_first else 'a-peer')
+    repository = consumer.config['consumer']['repository']
+    consumer.config['consumer']['baseBranch'] = 'main'
+    save(consumer)
+    lifecycle = peer(tmp_path, contract, 'a-peer' if lifecycle_first else 'z-peer',
+                     repository=repository if also_consumer else 'example-org/other')
+    git_deployment(lifecycle.config, repository)
+    save(lifecycle)
+    assert observe(tmp_path, contract)[repository] == refs(consumer.config) + [lifecycle_ref(repository)]
+
+
+@pytest.mark.parametrize('prospective_consumer', [False, True])
+def test_prospective_and_peer_deployment_evidence_combine_without_losing_fixed_ref(
+        tmp_path, contract, prospective_consumer):
+    deployment = 'example-org/deployment'
+    fixture = peer(tmp_path, contract, repository=deployment if not prospective_consumer else 'example-org/peer')
+    fixture.config['consumer'].update(baseBranch='main', routingWorkflow='.github/workflows/routing.yml',
+                                      recoveryWorkflow='.github/workflows/recovery.yml')
+    git_deployment(fixture.config, deployment)
+    save(fixture)
+    contract['deploymentRepository'] = deployment
+    contract['repositories'] = [contract['repository']] + ([deployment] if prospective_consumer else [])
+    automatic = [ref.replace(contract['repository'], deployment) for ref in contract['workflowRefs']]
+    contract['workflowRefsByRepository'] = {
+        contract['repository']: contract['workflowRefs'],
+        deployment: (automatic if prospective_consumer else []) + [lifecycle_ref(deployment)]}
+    assert observe(tmp_path, contract)[deployment] == automatic + [lifecycle_ref(deployment)]
+
+
+@pytest.mark.parametrize('bad', ['missing-pair', 'path', 'branch', 'extra', 'non-deployment'])
+def test_deployment_consumer_contract_rejects_unproven_privileged_refs(tmp_path, contract, bad):
+    deployment = 'example-org/deployment'
+    contract['deploymentRepository'] = deployment
+    contract['repositories'] = [contract['repository'], deployment]
+    automatic = [ref.replace(contract['repository'], deployment) for ref in contract['workflowRefs']]
+    rows = automatic + [lifecycle_ref(deployment)]
+    contract['workflowRefsByRepository'] = {contract['repository']: contract['workflowRefs'], deployment: rows}
+    assert observe(tmp_path, contract)[deployment] == rows
+    if bad == 'missing-pair':
+        rows.pop(0)
+    elif bad == 'path':
+        rows[-1] = rows[-1].replace('manual-main-production-deploy', 'arbitrary-apply')
+    elif bad == 'branch':
+        rows[-1] = lifecycle_ref(deployment, 'candidate')
+    elif bad == 'extra':
+        rows.append(deployment + '/.github/workflows/validation.yml@refs/heads/main')
+    else:
+        contract['deploymentRepository'] = contract['repository']
+    with pytest.raises(PoolError, match='ELIGIBILITY_CONTRACT_INVALID'):
+        observe(tmp_path, contract)
+
+
 @pytest.mark.parametrize('name', ['snapshot', 'manifest', 'identity'])
 def test_peer_evidence_is_rechecked_after_reading_all_snapshot_bytes(tmp_path, contract, monkeypatch, name):
     fixture = peer(tmp_path, contract)
@@ -518,6 +599,29 @@ def test_native_lifecycle_is_optional_and_does_not_require_automatic_adoption(tm
                                            contract['workflowRefs'][:2] if active == 'automatic-only' else
                                            contract['workflowRefs'][:])
     assert fixture.github.qualify(contract, fixture.eligible) == 7
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
+@pytest.mark.parametrize('active', ['inactive', 'lifecycle-only', 'automatic-only', 'both', 'partial'])
+def test_native_deployment_consumer_keeps_automatic_pair_atomic_and_lifecycle_optional(
+        tmp_path, contract, active):
+    deployment = 'example-org/deployment'
+    contract['deploymentRepository'] = deployment
+    contract['repositories'] = [contract['repository'], deployment]
+    automatic = [ref.replace(contract['repository'], deployment) for ref in contract['workflowRefs']]
+    contract['workflowRefsByRepository'] = {
+        contract['repository']: contract['workflowRefs'], deployment: automatic + [lifecycle_ref(deployment)]}
+    fixture = native_group(tmp_path, contract)
+    fixture.selected[:] = contract['repositories']
+    fixture.group['selected_workflows'] = contract['workflowRefs'] + {
+        'inactive': [], 'lifecycle-only': [lifecycle_ref(deployment)],
+        'automatic-only': automatic, 'both': automatic + [lifecycle_ref(deployment)],
+        'partial': automatic[:1] + [lifecycle_ref(deployment)]}[active]
+    if active == 'partial':
+        with pytest.raises(PoolError, match='GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN'):
+            fixture.github.qualify(contract, fixture.eligible)
+    else:
+        assert fixture.github.qualify(contract, fixture.eligible) == 7
     assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
 
 

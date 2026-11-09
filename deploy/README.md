@@ -203,6 +203,19 @@ other configured targets do not inherit it. The path is product-owned, not an
 arbitrary additional workflow allowlist. Recognition does not publish the
 workflow, change ACLs, authorize Apply or qualify installed execution.
 
+For `environment.localApply.source: git`, the exact configured private deployment
+repository owns that same fixed lifecycle path at `refs/heads/main`. It may also
+be explicitly listed in `consumer.repositories` for ordinary Tasks. In that case
+its eligible refs are its configured routing/recovery pair plus the sole fixed
+lifecycle ref; other consumers retain only their pair. The lifecycle path must
+remain distinct from routing, recovery and validation paths. A deployment
+repository absent from the consumer allowlist remains lifecycle-only.
+The automatic pair may be selected together, independently of lifecycle
+selection; selecting lifecycle alone does not require ordinary Task adoption.
+Protected peer snapshots can prove these compatible roles for one repository,
+but conflicting automatic workflow pairs remain blocked. These are eligibility
+checks, without runner-group, credential or privileged execution changes.
+
 A selected peer without a qualifying protected installed snapshot fails closed.
 Bootstrap supplies prospective authority only for its own consumer. Keep the
 group selection aligned with that consumer and already installed eligible peers;
@@ -933,7 +946,10 @@ artifacts; product changes edit the templates. Self-dogfood uses this same rule.
 Ordinary installation emits a complete routing/recovery integration tree and
 `.github/relay-workflows.json`. Git mode also emits a separate deployment tree
 for the private lifecycle repository; the public consumer projection contains
-no new privileged lifecycle workflow. The result names both receiving
+no new privileged lifecycle workflow. When the private deployment repository
+is also an explicit consumer, its ordinary target projection still contains
+only routing/recovery and their manifest; preserve its separately reviewed
+fixed owner lifecycle workflow. The result names both receiving
 directories. Publish their contents through each repository's normal change
 process after installation; publication does not require repeating a successful
 host installation. Resolve each projection from the selected

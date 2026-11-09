@@ -51,9 +51,13 @@ def pool_contract(config):
                                      + '@refs/heads/' + consumer['baseBranch'])
     deployment = environment['localApply'].get('repository') if environment['localApply'].get('source') == 'git' else None
     if deployment is not None:
-        require(deployment not in repositories and deployment.split('/')[0] == repository.split('/')[0],
+        require(deployment.split('/')[0] == repository.split('/')[0],
                 'DEPLOYMENT_REPOSITORY_UNPROVEN')
-        workflows[deployment] = [deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main']
+        require(LIFECYCLE_WORKFLOW not in [consumer[key] for key in
+                ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow']],
+                'ELIGIBILITY_WORKFLOWS_UNPROVEN')
+        workflows.setdefault(deployment, []).append(
+            deployment + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main')
     return {'version': 1, 'name': name, 'runnerUser': general['user'],
             'organization': repository.split('/')[0], 'group': general['group'],
             'appId': general['poolApp']['appId'], 'installationId': general['poolApp']['installationId'],
