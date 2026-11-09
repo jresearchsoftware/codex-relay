@@ -7,6 +7,9 @@ spec_format = "mixed"
 [requires.packages]
 "org.jresearch.ai/development-governance" = { version = "=7.0.1", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9", auth = "none" }
 
+"org.jresearch.ai/landscape-model-guidance" = { version = "=1.0.3", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-model-guidance.git", rev = "48432f00802f5aad106f3e1a9264e17c1edc354c", auth = "none" }
+"org.jresearch.ai/landscape-subagents" = { version = "=1.0.2", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-subagents.git", rev = "042e92884278d748502157945301dbc3f3c8318c", auth = "none" }
+
 [requires.packages."flow:org.jresearch.ai/codex-relay"]
 version = "=5.0.0"
 link = "dynamic"

@@ -14,3 +14,11 @@ Optional Small Improvements remains unselected. Repository policy and native
 consumer routing are distinct from the standalone Skill's frozen Shared snapshot;
 that snapshot is not a missing-slot fallback. The ownership mapping also binds
 the temporary legacy closure runtime pending Task #194.
+
+Root AGENTS explicitly adopts the installed landscape-subagents 1.0.2 flow for
+permitted useful delegation in Relay development. Follow its conditional boot
+before substantial work with Subagents On and Task/runtime permission; installation
+alone grants no delegation. The landscape-model-guidance 1.0.3 boot routes only
+model/effort recommendation and evidence work. Recommendations do not change
+Relay defaults, allowlists or admitted parent/child profiles. Local bindings and
+version/rollback semantics are in docs/codex/SUBAGENTS.md and docs/vibevm.md.

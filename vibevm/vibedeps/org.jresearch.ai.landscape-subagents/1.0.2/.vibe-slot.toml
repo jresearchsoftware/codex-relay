@@ -1,0 +1,51 @@
+schema = 1
+source_hash = "sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56"
+spec_format = "mixed"
+
+[[file]]
+path = ".gitattributes"
+sha256 = "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9"
+
+[[file]]
+path = "DISTRIBUTION.json"
+sha256 = "8df45f25a3a134ae95c628ff5766b19b4ab4f549a689cce655e5ab1c9f994b31"
+
+[[file]]
+path = "LICENSE"
+sha256 = "ed2b2ca569b1fa8d368f3fb44800d97ead12f2286a164672c9dc20dfa87db552"
+
+[[file]]
+path = "QUALIFICATION.md"
+sha256 = "762bba910b28332edb11ba0409857d255f02be52f0a218181f43fd2cdba4cf47"
+
+[[file]]
+path = "README.md"
+sha256 = "78d5d4136c275c75499f183e5be32d80ec211508cab326012abf44bab5244991"
+
+[[file]]
+path = "tests/check_package.py"
+sha256 = "518ebb2cf8a319140f951accc75e74374e8cca9ff3400978eb59e9029b2764e3"
+
+[[file]]
+path = "tests/qualify_local.py"
+sha256 = "efb750556ab52ec43c22c45216f3ba620093060253e5045b036be2851a2858ce"
+
+[[file]]
+path = "vibe.toml"
+sha256 = "d77f610d81d7158c6160e8606a1c9b38932341a50d128cb8cbb63c444d670241"
+
+[[file]]
+path = "vibevm/vibespecs/boot/landscape-subagents.md"
+sha256 = "aeb27ba1512c6b8cb5dff03174d94a8b807f710a0d6a6cbe5c5ca98df74130b5"
+
+[[file]]
+path = "vibevm/vibespecs/guides/adoption.md"
+sha256 = "6cb3f2a596110b7e08e49bf7b0112a495de175e9ddc6c4c69f159dabf4b348a5"
+
+[[file]]
+path = "vibevm/vibespecs/guides/runtime-evidence.md"
+sha256 = "7d9cae9bdb05caed9ba20d91f73d08527181b43983c2d086a50cfd296a440a2c"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/subagents.md"
+sha256 = "e9c47493ffea82d3d95eca95ffc3e403c9e07ff8c099322015436e28f62510cf"
