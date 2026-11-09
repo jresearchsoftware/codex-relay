@@ -999,6 +999,10 @@ observed stderr byte count and truncation, and diagnostic-store availability.
 Missing values stay explicitly unavailable. Launcher, dispatcher and Git exits
 or signals never substitute for inner Codex observations. Diagnostic previews
 and stream contents remain protected; this projection creates no new store.
+Normal primary bundles separately retain bounded, redacted top-level native
+JSONL error observations as described in the [runtime contract](../runtime/README.md#durable-diagnostics-and-sandbox-finalization).
+They are not exposed by the public projection or qualification snapshot and
+do not reinterpret the observed child exit or establish a causal attribution.
 Automatic Outcomes also preserve bounded native token counters from the original
 execution through replay/recovery. Their
 [native session-total semantics and limitations](../docs/codex/cli-integration.md#safe-automatic-evidence)

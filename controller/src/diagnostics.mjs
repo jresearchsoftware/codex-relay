@@ -270,7 +270,28 @@ export async function readDiagnosticsConfig({ readFileImpl = readFile } = {}) {
 
 function safePath(value) { return typeof value === "string" && value.length <= 1024 ? value : "[UNAVAILABLE]"; }
 
-export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
+// Native failure details are JSONL stdout, independently of incidental stderr.
+// Retain only observed top-level error messages, never agent/tool output. This
+// is protected diagnostic evidence, not a replacement for the child exit code.
+function codexErrorDiagnostics(stdout, stdoutTruncated, secrets) {
+  const events = [];
+  let omittedEvents = 0;
+  const lines = String(stdout ?? "").split(/\r?\n/);
+  // A capture limit can cut a syntactically valid prefix from a larger record.
+  if (stdoutTruncated) lines.pop();
+  for (const line of lines) {
+    let value;
+    try { value = JSON.parse(line); } catch { continue; }
+    const message = value?.type === 'error' ? value.message
+      : value?.type === 'turn.failed' ? value.error?.message : undefined;
+    if (typeof message !== 'string') continue;
+    events.push({ type: value.type, message: boundedDiagnosticText(message, 4096, secrets) });
+    if (events.length > 4) { events.shift(); omittedEvents += 1; }
+  }
+  return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true, omittedEvents, events };
+}
+
+export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stdoutTruncated = false, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
   const limit = mode === "debug" ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES;
   const output = {
     schemaVersion: "1.0",
@@ -291,6 +312,7 @@ export function createExecutionDiagnostic({ executionId = randomUUID(), mode, st
     classification: classification ?? null,
     launcherDiagnostic: launcherDiagnostic ?? null,
     stderr: boundedDiagnosticText(stderr, limit, secrets),
+    codexErrors: codexErrorDiagnostics(stdout, stdoutTruncated, secrets),
   };
   if (runtimeFailure && typeof runtimeFailure === "object") {
     const safe = safeFailureDiagnosticReference(runtimeFailure) ?? {};

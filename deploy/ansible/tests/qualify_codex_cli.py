@@ -69,6 +69,7 @@ def qualify_execution(binary, root, version):
     consumer.write_bytes((REPO / "consumer/fixtures/example.json").read_bytes())
     consumer.chmod(0o600)
     requests = []
+    mcp_requests = []
     response_events = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -76,6 +77,18 @@ def qualify_execution(binary, root, version):
             pass
 
         def do_POST(self):
+            if self.path == "/mcp":
+                assert self.headers.get("Authorization") is None
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                mcp_requests.append(self.path)
+                body = json.dumps({"error": {"type": "rejected_by_access_enforcement",
+                    "code": "no_matching_rule", "message": "Synthetic optional MCP refusal"}}).encode()
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             # A bound local provider requires neither OpenAI auth nor a login.
             assert self.path == "/v1/responses", self.path
             assert self.headers.get("Authorization") is None
@@ -96,9 +109,10 @@ def qualify_execution(binary, root, version):
     try:
         # Off remains a task instruction, as in the governed launcher; it is not
         # a native feature toggle. No subagent is spawned in this qualification.
-        for index, (permission, effort, mode) in enumerate([
-            ("On", "xhigh", "success"), ("Off", "ultra", "missing-usage"),
-            ("On", "xhigh", "invalid-result"), ("Off", "xhigh", "failure")
+        for index, (permission, effort, mode, optional_mcp) in enumerate([
+            ("On", "xhigh", "success", False), ("Off", "ultra", "missing-usage", False),
+            ("On", "xhigh", "invalid-result", False), ("Off", "xhigh", "failure", False),
+            ("Off", "xhigh", "success", True), ("Off", "xhigh", "failure", True)
         ]):
             work = root / f"work-{index}"
             work.mkdir()
@@ -111,6 +125,7 @@ def qualify_execution(binary, root, version):
             input_path = sandbox / "task-input.md"
             input_path.write_text(prompt)
             requests.clear()
+            mcp_requests.clear()
             response_events.clear()
             if mode == "failure":
                 response_events.append({"type": "response.failed", "response": {
@@ -139,6 +154,9 @@ def qualify_execution(binary, root, version):
                     f'model_providers.qualification={{name="qualification",base_url="http://127.0.0.1:{server.server_port}/v1",'
                     'wire_api="responses",requires_openai_auth=false,supports_websockets=false}',
                     "-c", "features.enable_request_compression=false", "-"]
+            if optional_mcp:
+                argv[-1:-1] = ["-c", "mcp_servers.qualification_optional={"
+                    f'url="http://127.0.0.1:{server.server_port}/mcp",required=false' + "}"]
             child = subprocess.run(argv, cwd=work, env=env, input=input_path.read_text(),
                                    capture_output=True, text=True, timeout=45)
             assert len(requests) == 1, len(requests)
@@ -191,6 +209,35 @@ catch { process.exitCode = 2; }
                 else:
                     assert parsed.returncode == 0, parsed.stderr
                     assert json.loads(parsed.stdout) == {**RESULT, "threadId": identifier, "sessionId": identifier}
+
+            if optional_mcp:
+                # A failed optional MCP transport can coexist with either a
+                # successful turn or a distinct provider failure. Its stderr
+                # log alone therefore cannot establish the CLI exit's cause.
+                assert mcp_requests == ["/mcp"], mcp_requests
+                assert "HTTP 401" in child.stderr and "no_matching_rule" in child.stderr
+                projected = subprocess.run([node, "--input-type=module", "-e", """
+import { readFileSync } from 'node:fs';
+const { createExecutionDiagnostic } = await import(process.argv[1]);
+console.log(JSON.stringify(createExecutionDiagnostic({mode: 'normal', stdout: readFileSync(0, 'utf8')})));
+""", (REPO / "controller/src/diagnostics.mjs").as_uri()], input=child.stdout,
+                    capture_output=True, text=True, check=True, timeout=30,
+                    env={**env, "RELAY_CONSUMER_CONFIG": str(consumer)})
+                diagnostic = json.loads(projected.stdout)
+                assert "stdout" not in diagnostic
+                errors = diagnostic["codexErrors"]
+                assert errors["source"] == "codex-jsonl" and errors["stdoutTruncated"] is False
+                assert errors["omittedEvents"] == 0
+                if mode == "failure":
+                    assert [event["type"] for event in errors["events"]] == ["error", "turn.failed"]
+                    native_messages = [event["message"] if event["type"] == "error" else event["error"]["message"]
+                        for event in events if event["type"] in ("error", "turn.failed")]
+                    assert [event["message"]["text"] for event in errors["events"]] == native_messages
+                    assert all("MCP" not in message for message in native_messages)
+                else:
+                    assert errors["events"] == []
+            else:
+                assert mcp_requests == []
 
             rollouts = list((sandbox / "home/sessions").rglob("*.jsonl"))
             assert len(rollouts) == 1
@@ -271,7 +318,7 @@ def qualify():
         qualify_execution(binary, root, version)
         assert (home / "config.toml").read_text() == "invalid = [\n"
         assert not (home / "sessions").exists()
-        print(f"CODEX_CLI_QUALIFICATION_PASS=version={version}; official-installer; release-symlink; deploy-umask=0077; package-roots=0700; real-jsonl; schema-request-and-semantic-parser; thread-id; native-usage-and-zero-default; model-effort-request; stdin; isolated-home; sandbox-policy; subagents=prompt-permission; nonzero-exit; model-call=none")
+        print(f"CODEX_CLI_QUALIFICATION_PASS=version={version}; official-installer; release-symlink; deploy-umask=0077; package-roots=0700; real-jsonl; schema-request-and-semantic-parser; thread-id; native-usage-and-zero-default; model-effort-request; stdin; isolated-home; sandbox-policy; subagents=prompt-permission; nonzero-exit; optional-mcp-401-success-and-provider-failure; protected-native-errors; model-call=none")
 
 
 if __name__ == "__main__":
