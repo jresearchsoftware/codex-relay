@@ -204,6 +204,9 @@ def test_deployment_only_repository_preserves_other_consumers_ordinary_workflow_
     expected[deployment] = [deployment + '/' + managed_pool.LIFECYCLE_WORKFLOW + '@refs/heads/main']
     assert pool_eligibility.eligible_workflows(contract, root=tmp_path,
                                              owner_uid=tmp_path.stat().st_uid) == expected
+    for repository in value['consumer']['repositories']:
+        assert set(workflow_projection.render(value, 'a' * 40, ROOT, repository)) == {
+            value['consumer'][key] for key in ['routingWorkflow', 'recoveryWorkflow']}
 
 
 @pytest.mark.parametrize('topology', ['default', 'managed'])

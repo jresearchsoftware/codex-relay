@@ -664,6 +664,29 @@ def test_native_deployment_consumer_keeps_automatic_pair_atomic_and_lifecycle_op
     assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
 
 
+@pytest.mark.parametrize('workflow_index', [0, 1])
+@pytest.mark.parametrize('partial', [False, True])
+def test_native_ordinary_lifecycle_filename_requires_its_complete_automatic_pair(
+        tmp_path, contract, workflow_index, partial):
+    repository = contract['repository']
+    deployment = 'example-org/private-deployment'
+    contract['workflowRefs'][workflow_index] = lifecycle_ref(repository)
+    contract['repositories'] = [repository]
+    contract['deploymentRepository'] = deployment
+    contract['workflowRefsByRepository'] = {
+        repository: contract['workflowRefs'], deployment: [lifecycle_ref(deployment)]}
+    fixture = native_group(tmp_path, contract)
+    fixture.selected[:] = [repository, deployment]
+    fixture.group['selected_workflows'] = ([lifecycle_ref(repository)] if partial else
+                                          contract['workflowRefs'][:])
+    if partial:
+        with pytest.raises(PoolError, match='GROUP_TRUSTED_WORKFLOW_REFS_UNPROVEN'):
+            fixture.github.qualify(contract, fixture.eligible)
+    else:
+        assert fixture.github.qualify(contract, fixture.eligible) == 7
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
 @pytest.mark.parametrize('bad', ['candidate', 'tag', 'repository', 'path', 'unselected'])
 def test_native_lifecycle_denies_every_ref_outside_the_trusted_selected_anchor(tmp_path, contract, bad):
     repository = contract['repository']
