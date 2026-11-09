@@ -5,9 +5,7 @@ run-name: >-
   ${{ github.event_name == 'workflow_dispatch' &&
       format('{0} · Task {1}{2}{3}', inputs.route == 'manual' && 'Manual handoff' || inputs.pull_request != '' && 'Auto remediation' || 'Auto implementation', inputs.task, inputs.step != '' && format(' · Step {0}', inputs.step) || '', inputs.pull_request != '' && format(' · PR #{0}', inputs.pull_request) || '') ||
       github.event_name == 'issues' &&
-      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto implementation', github.event.issue.number,
-      (contains(format('{0}{1}{0}', fromJSON('"\n"'), github.event.issue.body), format('{0}Authority model: github-native-v1{0}', fromJSON('"\n"'))) ||
-      contains(format('{0}{1}{0}', fromJSON('"\n"'), github.event.issue.body), format('{0}Authority model: github-native-v1{1}{0}', fromJSON('"\n"'), fromJSON('"\r"')))) && github.event.label.name || join(github.event.issue.labels.*.name, ' · ')) ||
+      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto implementation', github.event.issue.number, github.event.label.name) ||
       format('{0} · PR #{1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto remediation', github.event.pull_request.number, github.event.pull_request.title) }}
 
 on:
@@ -117,9 +115,12 @@ jobs:
           const identity = JSON.parse(await readFile(`${release}/reviewed-source/.relay-source.json`, 'utf8'));
           const head = identity.revision;
           const compatibility = JSON.parse(await readFile(`${release}/reviewed-source/deploy/workflows/contract.json`, 'utf8'));
-          if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/codex-relay/releases/${head}` ||
-              compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract || !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+          if (!/^[0-9a-f]{40}$/.test(head ?? '') || release !== `/opt/codex-relay/releases/${head}`) {
             throw new Error('INSTALLED_RELAY_IDENTITY_MISMATCH');
+          }
+          if (compatibility[expectedContract === 'relay-workflows-v4' ? 'parallelWorkflowContract' : 'workflowContract'] !== expectedContract ||
+              !/^relay-workflows-v[1-9][0-9]*$/.test(expectedContract ?? '')) {
+            throw new Error('RELAY_REPOSITORY_INTEGRATION_OUTDATED: publish the generated repository integration directory');
           }
           console.log(JSON.stringify({ installedRelayHead: head, workflowHead: process.env.GITHUB_SHA }));
           const { main, reportRoutingResult } = await import(`${release}/bin/relay-routing.mjs`);
