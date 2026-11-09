@@ -130,6 +130,7 @@ export async function main() {
     const state = await broker.invoke({ operation: 'publication-state', runId: request.runId, attemptId: request.attemptId });
     return { repository: state.repository, runId: request.runId, attemptId: request.attemptId,
       ...(CONSUMER.executionSlots ? { executionSlot: state.envelope.executionSlot ?? 'primary' } : {}),
+      ...(state.admissionState ? { admissionState: state.admissionState } : {}),
       publicationIntent: state.publicationIntent, publishedHead: state.publishedHead, authorizationBody: state.authorizationBody };
   }
   if (Object.keys(request).sort().join(',') !== 'attemptId,authorizationId,runId') fail('RECOVERY_REQUEST_INVALID');

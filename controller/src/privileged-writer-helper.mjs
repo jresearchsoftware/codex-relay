@@ -112,7 +112,7 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
     // Fixed root helper, exact admitted attempt, original contained journal.
     // No caller path, permission repair or worker Git metadata is accepted.
     collectRetained: e => collectProgress(checkoutPath(e), e, { token: value, root: deployment.claimRoot }),
-    admission, allowManualOutcome });
+    admission, allowManualOutcome, diagnosticSecrets: [value, runToken].filter(Boolean) });
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

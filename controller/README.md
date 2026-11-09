@@ -717,6 +717,40 @@ Public consumers retain `pull_request_target` label routing under the
 
 ## Writer publication recovery
 
+### Partial admission before worker dispatch
+
+An admission reservation is durable before Step projection and ready-command
+consumption. An exception during projection can therefore leave a reserved Step,
+old display labels and an unconsumed owner event. These are separate facts.
+Writer retains a bounded, redacted exception in the protected attempt record;
+the helper wire reports only the projection suboperation, safe error code/type
+and HTTP status when available. A failed diagnostic write is reported as
+unverified retention. Neither a projection failure nor its diagnostic completes
+the controller lifecycle or proves containment of an older attempt.
+
+The read-only `publication-state` response includes `admissionState`: reserved
+Step, projection receipt/previous labels, original ready-event ID, consumption
+status, controller lifecycle and safe failure diagnostic. Private exception text
+and stack are not returned. Historical records without these receipts remain
+unknown; the projection does not manufacture negative execution evidence.
+
+For an existing automatic label admission that has not begun ready consumption,
+replay checks the original protected runner journal and its envelope binding
+before changing Step/PR metadata or consuming the event. A missing or invalid
+journal stops with `JOURNAL_MISSING_EXECUTION_UNKNOWN`; a mismatched envelope
+stops with `JOURNAL_BINDING_CHANGED`. This moves the existing execution replay
+check ahead of native mutations. An uncertain prior ready DELETE retains its
+existing publication-only reconciliation and is never repeated.
+
+Inspect the exact original attempt and slot before recovery. Publication recovery
+requires an existing publication intent; prepublication recovery requires its
+contained returned-worker evidence. Neither can release an active pre-dispatch
+reservation with no terminal journal. A `terminal-outcome` can report a truthful
+BLOCKED result but does not supply the missing completion evidence. Do not turn
+an absent journal/process/checkout into a completed-containment receipt. Preserve
+the original Step/event and obtain original-operation reconciliation through the
+authorized deployment operator before a potentially duplicating owner launch.
+
 Ordinary `publish-progress` replay still observes an existing publication intent
 and refuses another push when the remote is not the candidate. Recovery is a
 separate owner operation. It never prepares a checkout or launches Codex.

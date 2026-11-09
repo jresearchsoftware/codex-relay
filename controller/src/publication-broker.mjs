@@ -20,11 +20,12 @@ import { foldManualHandoff, safePublicationText, PUBLICATION_RENDERER_VERSION } 
 import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
+import { admissionFailure } from './admission-diagnostic.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [] }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
   const titleFor = e => secretFree(projectedRequestTitle(e.request));
@@ -52,31 +53,50 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   const isCurrentProjection = async e => (await projectionFor(e)).step === e.step;
   const guardPublication = async e => assertPublicationIsolation(await publicationRecords(e), e);
   async function projectAdmittedStep(r) {
+    let operation = 'step-inventory';
+    try { return await projectStep(r, value => { operation = value; }); }
+    catch (cause) {
+      const failure = admissionFailure(cause, operation, r.envelope.attemptId, diagnosticSecrets);
+      r.admissionFailure = failure;
+      try { await store.put(r.envelope.runId, r); }
+      catch {
+        // Keep the original failure even when diagnostic retention also fails.
+        failure.diagnostic.preview += ' The protected diagnostic write also failed; retention is unverified.';
+      }
+      throw Object.assign(new Error(failure.diagnostic.code), { code: failure.diagnostic.code,
+        details: { failureDiagnostic: failure.diagnostic } });
+    }
+  }
+  async function projectStep(r, at) {
     const e = r.envelope;
     const latest = latestAdmissionRecord(await publicationRecords(e), e.issueNumber);
     if (latest?.envelope.attemptId !== e.attemptId) {
       r.stepProjectionSupersededBy = latest?.envelope.attemptId ?? null;
       await store.put(e.runId, r); return;
     }
-    await revalidateAuthority(api, e);
+    at('step-authority'); await revalidateAuthority(api, e);
+    at('step-issue-read');
     const subject = await api.get(`/issues/${e.issueNumber}`);
     if (r.stepProjectionFrom
       && canonicalAuthorityJson(stepLabels(subject)) !== canonicalAuthorityJson(r.stepProjectionFrom)
       && canonicalAuthorityJson(stepLabels(subject)) !== canonicalAuthorityJson([`step-${e.step}`]))
       fail('STEP_LABEL_POSITION_CHANGED');
-    await api.ensureStepLabel(e.step);
+    at('step-label-ensure'); await api.ensureStepLabel(e.step);
     // Individual label operations preserve a ready command (or unrelated
     // owner label) added after this read. A labels-array PATCH can erase it.
+    at('step-label-remove');
     for (const label of labelNames(subject.labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
       await api.delete(`/issues/${e.issueNumber}/labels/${encodeURIComponent(label)}`);
+    at('step-label-add');
     if (!labelNames(subject.labels).includes(`step-${e.step}`))
       await api.post(`/issues/${e.issueNumber}/labels`, { labels: [`step-${e.step}`] });
-    assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
+    at('step-issue-readback'); assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
     if (e.target === 'pull_request' || e.continuation?.pullRequest) {
       const number = e.target === 'pull_request' ? e.number : e.continuation.pullRequest;
-      await mirrorStep(r, await api.get(`/pulls/${number}`), { advance: true });
+      at('step-pr-read'); const pr = await api.get(`/pulls/${number}`);
+      at('step-pr-projection'); await mirrorStep(r, pr, { advance: true });
     }
-    r.stepProjected = true; delete r.stepProjectionFrom; await store.put(e.runId, r);
+    at('step-receipt'); r.stepProjected = true; delete r.stepProjectionFrom; await store.put(e.runId, r);
   }
   async function readyConsumptionFailure(r, code, { cause, transitions = [] } = {}) {
     const e = r.envelope;
@@ -461,6 +481,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
           if (e.transport === 'label' && !existing.readyConsumed) {
             if (existing.readyConsumption) await consumeReadyCommand(existing);
+            if (e.route === 'auto' && !existing.admissionBlock) {
+              // runAttempt already refuses an absent/mismatched replay journal.
+              // Enforce that same invariant BEFORE changing any native metadata
+              // or deleting the original owner command during admit replay.
+              const saved = await journal?.get(e.runId);
+              if (!saved || saved.version !== VERSION || !Object.hasOwn(saved, 'execution'))
+                fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
+              if (digest(saved.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
+            }
             await revalidateReadyEvent(api, e);
             if (!existing.admissionBlock) await projectAdmittedStep(existing);
             await consumeReadyCommand(existing);
@@ -622,6 +651,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'publication-state') {
         return receipt({ envelope: e, publicationIntent: r.publicationIntent, publishedHead: r.publishedHead,
+          admissionState: { step: e.step, stepProjected: r.stepProjected ?? null,
+            stepProjectionFrom: r.stepProjectionFrom ?? null, readyEventId: e.readyEventId ?? null,
+            readyConsumption: r.readyConsumption?.status ?? null, readyConsumed: r.readyConsumed ?? null,
+            controllerLifecycle: r.controllerLifecycle ? {
+              version: r.controllerLifecycle.version, status: r.controllerLifecycle.status,
+              ...(r.controllerLifecycle.child ? { child: r.controllerLifecycle.child } : {}),
+              ...(r.controllerLifecycle.containment ? { containment: r.controllerLifecycle.containment } : {}) } : null,
+            failureDiagnostic: failureDiagnosticFromDetails({ failureDiagnostic: r.admissionFailure?.diagnostic }) ?? null },
           recovery: r.publicationRecoveries?.find(value => value.authorizationId === request.authorizationId) ?? null,
           authorizationBody: r.publicationIntent ? recoveryAuthorizationBody(recoveryAuthorization(e, r.publicationIntent,
             r.publicationRecoveries?.at(-1)?.authorizationId ?? null)) : null });
