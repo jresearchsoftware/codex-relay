@@ -12,6 +12,124 @@ import { runGovernedCodexTask } from "../../../runtime/src/codex-runtime.mjs";
 import { buildChildDiagnostic } from "../roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs";
 import { CONSUMER } from "../../../consumer/consumer.mjs";
 
+test('normal diagnostics retain late native errors without retaining agent or tool output', () => {
+  const codex = 'synthetic-native-error-codex-credential';
+  const github = 'synthetic-native-error-github-credential';
+  const known = 'synthetic-native-error-known-credential';
+  const stderr = 'Early optional MCP transport authentication warning';
+  const stdout = [
+    { type: 'thread.started', thread_id: 'fixture-thread' },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'PRIVATE_AGENT_BODY'.repeat(100000) } },
+    { type: 'item.completed', item: { type: 'command_execution', aggregated_output: 'PRIVATE_TOOL_BODY'.repeat(100000) } },
+    { type: 'error', message: `Late synthetic provider refusal ${codex} ${github} ${known} Authorization: Bearer synthetic-bearer-credential`, extra: 'PRIVATE_EXTRA_BODY' },
+    { type: 'turn.failed', error: { message: 'Final synthetic provider refusal', additional_details: 'PRIVATE_EXTRA_BODY' } }
+  ].map(value => JSON.stringify(value)).join('\n') + '\n';
+  const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout, stderr, exitCode: 1,
+    classification: 'CODEX_NONZERO_EXIT', secrets: { codexAccessToken: codex, githubToken: github, knownSecrets: [known] } });
+  assert.equal(diagnostic.stdout, undefined);
+  assert.equal(diagnostic.classification, 'CODEX_NONZERO_EXIT');
+  assert.equal(diagnostic.stderr.text, stderr);
+  assert.equal(diagnostic.codexErrors.source, 'codex-jsonl');
+  assert.equal(diagnostic.codexErrors.stdoutTruncated, false);
+  assert.equal(diagnostic.codexErrors.omittedEvents, 0);
+  assert.deepEqual(diagnostic.codexErrors.events.map(event => event.type), ['error', 'turn.failed']);
+  assert.match(diagnostic.codexErrors.events[0].message.text, /Late synthetic provider refusal/);
+  for (const marker of ['REDACTED_CODEX_ACCESS_TOKEN', 'REDACTED_GITHUB_TOKEN', 'REDACTED_SECRET', 'REDACTED_BEARER']) {
+    assert.ok(diagnostic.codexErrors.events[0].message.text.includes(marker));
+  }
+  assert.equal(diagnostic.codexErrors.events[1].message.text, 'Final synthetic provider refusal');
+  const saved = JSON.stringify(diagnostic);
+  for (const privateText of [codex, github, known, 'synthetic-bearer-credential', 'PRIVATE_AGENT_BODY', 'PRIVATE_TOOL_BODY', 'PRIVATE_EXTRA_BODY']) {
+    assert.equal(saved.includes(privateText), false);
+  }
+});
+
+test('native error diagnostics retain the last four messages within UTF-8 byte bounds', () => {
+  const events = Array.from({ length: 7 }, (_, index) => ({ type: 'error', message: `failure-${index}: ` + '\u0416'.repeat(3000) }));
+  const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout: events.map(value => JSON.stringify(value)).join('\n') });
+  assert.equal(diagnostic.codexErrors.omittedEvents, 3);
+  assert.equal(diagnostic.codexErrors.events.length, 4);
+  for (const [index, event] of diagnostic.codexErrors.events.entries()) {
+    assert.ok(event.message.text.startsWith(`failure-${index + 3}: `));
+    assert.equal(event.message.bytes, Buffer.byteLength(events[index + 3].message));
+    assert.equal(event.message.truncated, true);
+    assert.ok(Buffer.byteLength(event.message.text) <= 4096);
+    assert.doesNotMatch(event.message.text, /\uFFFD/);
+  }
+});
+
+test('native error diagnostics reject malformed records and nested error lookalikes', () => {
+  const ignored = [null, [], { type: 'error', message: { text: 'PRIVATE_OBJECT' } },
+    { type: 'turn.failed', error: { message: ['PRIVATE_ARRAY'] } },
+    { type: 'item.completed', item: { type: 'error', message: 'PRIVATE_ITEM_WARNING' } },
+    { type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify({ type: 'error', message: 'PRIVATE_AGENT_LOOKALIKE' }) } },
+    { wrapper: { type: 'turn.failed', error: { message: 'PRIVATE_NESTED' } } }];
+  const stdout = ignored.map(value => JSON.stringify(value)).join('\n') + '\n{broken\n'
+    + JSON.stringify({ type: 'turn.failed', error: { message: 'Observed final failure' } });
+  const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout });
+  assert.deepEqual(diagnostic.codexErrors.events, [{ type: 'turn.failed', message: { text: 'Observed final failure', bytes: 22, truncated: false } }]);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /PRIVATE_/);
+});
+
+test('truncated stdout does not treat its unterminated final record as observed error evidence', () => {
+  const complete = JSON.stringify({ type: 'error', message: 'Observed complete record' });
+  // A byte prefix can itself be valid JSON, while still belonging to an
+  // incomplete final captured record. Truncation provenance must win.
+  const prefix = JSON.stringify({ type: 'turn.failed', error: { message: 'UNTRUSTED_FINAL_PREFIX' } });
+  for (const tail of [prefix, '{"type":"error","message":"partial']) {
+    const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout: complete + '\n' + tail, stdoutTruncated: true });
+    assert.equal(diagnostic.codexErrors.stdoutTruncated, true);
+    assert.deepEqual(diagnostic.codexErrors.events.map(event => event.message.text), ['Observed complete record']);
+  }
+  const endedAtBoundary = createExecutionDiagnostic({ mode: 'normal', stdout: complete + '\n', stdoutTruncated: true });
+  assert.equal(endedAtBoundary.codexErrors.events.length, 1);
+});
+
+test('failed runtime persists late JSONL errors separately from early stderr without inferring causality', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-terminal-jsonl-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const early = 'Early optional MCP transport authentication warning';
+  const emitted = buildChildDiagnostic({ code: 'CHILD_STDERR', childStarted: true, exitCode: 1,
+    containment: 'reaped', stderr: early });
+  const evidence = {};
+  const diagnosticRoot = join(root, 'diagnostics');
+  await assert.rejects(runGovernedCodexTask({
+    operation: 'issue-implementation', attemptId: 'late-jsonl-failure', inputText: 'bounded fixture input', cwd: root,
+    buildArgs: () => [], env: { PATH: '/usr/bin:/bin' }, evidence,
+    fallbackStore: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: join(root, 'fallback') }),
+    spawnImpl() {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.pid = 4242;
+      setImmediate(() => {
+        child.emit('spawn');
+        child.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'command_execution', aggregated_output: 'PRIVATE_COMMAND_OUTPUT'.repeat(60000) } }) + '\n');
+        child.stdout.end(JSON.stringify({ type: 'turn.failed', error: { message: 'Distinct late synthetic provider failure' } }) + '\n');
+        child.stderr.end(JSON.stringify(emitted) + '\n');
+        child.emit('close', 1, null);
+      });
+      return child;
+    },
+    diagnosticStore: diagnostic => writeDiagnosticBundle(diagnostic, { root: diagnosticRoot })
+  }), error => {
+    assert.equal(error.code, 'CODEX_NONZERO_EXIT');
+    assert.equal(error.details.childExitCode, 1);
+    assert.equal(error.details.diagnosticCode, 'CHILD_STDERR');
+    return true;
+  });
+  const saved = await readFile(join(diagnosticRoot, 'late-jsonl-failure.json'), 'utf8');
+  const parsed = JSON.parse(saved);
+  assert.equal(evidence.diagnosticStore.status, 'stored');
+  assert.equal(parsed.classification, 'CODEX_NONZERO_EXIT');
+  assert.equal(parsed.process.exitCode, 1);
+  assert.equal(parsed.launcherDiagnostic.childExitCode, 1);
+  assert.equal(parsed.launcherDiagnostic.primaryCause, null);
+  assert.equal(parsed.launcherDiagnostic.preview, early);
+  assert.equal(parsed.stdout, undefined);
+  assert.equal(parsed.codexErrors.stdoutTruncated, false);
+  assert.deepEqual(parsed.codexErrors.events.map(event => event.message.text), ['Distinct late synthetic provider failure']);
+  assert.doesNotMatch(saved, /PRIVATE_COMMAND_OUTPUT/);
+});
+
 test("persisted launcher diagnostics retain validated inner child evidence independently of the outer process exit", async t => {
   const cases = [
     { name: "missing-linker", childExitCode: 1, signal: null, launcherExitCode: 64, launcherSignal: null },

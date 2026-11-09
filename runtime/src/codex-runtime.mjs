@@ -614,7 +614,7 @@ export async function runGovernedCodexTask({
           argv: finalProcessSpec?.args ?? [], env: childEnv ? diagnosticEnvironmentSnapshot(childEnv) : {}, checkout: checkoutRoot,
           filesystem, input: { path: inputPath, bytes: Buffer.byteLength(taskInput), exists: filesystem.input?.exists === true },
           schema: { path: schemaPath, bytes: Buffer.byteLength(schemaText), exists: filesystem.schema?.exists === true },
-          stdout, stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
+          stdout, stdoutTruncated, stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
           classification: pendingError?.code ?? launcherDiagnostic?.code ?? 'CODEX_EXIT_OK',
           runtimeFailure: cause ? { operation: state.operation, code: cause.code, syscall: cause.syscall, path: cause.path, dest: cause.dest } : undefined,
           secrets

@@ -81,6 +81,15 @@ path. Bounded, redacted OS fields and path context can be stored in the primary
 protected diagnostic bundle; Writer receives only safe codes, lifecycle states
 and references.
 
+Normal primary diagnostics also retain the last four observed top-level Codex
+JSONL `error` and `turn.failed` messages, each redacted and bounded to 4096 UTF-8
+bytes, with message clipping, omitted-event count and stdout-capture truncation
+explicit. Agent/tool output and other event fields are excluded. These private
+observations survive sandbox cleanup without enabling general stdout capture;
+they do not establish that an incidental stderr message caused the child exit,
+or that every observed `error` was fatal. Public Outcomes and diagnostic
+snapshots omit this text. A truncated capture cannot establish the final event.
+
 The capsule lives under the configured runner-owned `attemptRoot`, outside the
 mutable checkout and Codex sandbox. File and directory fsync establish a durable
 frontier before runtime mutation or cleanup. Primary capture/store failure leaves

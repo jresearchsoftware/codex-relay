@@ -168,6 +168,12 @@ exit. Missing inner observations remain `UNAVAILABLE`/unknown. Categories such
 as process I/O, launch/permission, input/output and unclassified stderr help
 direct inspection; they do not prove a specific provider or task failure cause.
 Raw streams, prompt text, diagnostic previews and protected paths remain private.
+Normal protected bundles retain only bounded top-level JSONL error observations
+under the [runtime diagnostic contract](../../runtime/README.md#durable-diagnostics-and-sandbox-finalization),
+separately from stderr. The credential-free CLI qualifier exercises an optional
+loopback MCP authorization refusal with both a successful turn and a distinct
+provider failure. A transport stderr error alone cannot establish the terminal
+cause; these observations never change exit handling or public evidence scope.
 There is no additional diagnostic store or recovery action.
 
 Automatic success and failure Outcomes also carry the five safe integer counters
