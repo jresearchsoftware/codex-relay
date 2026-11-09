@@ -1,0 +1,20 @@
+{
+  "disclosure": "opaque",
+  "package": "org.jresearch.ai/landscape-subagents",
+  "payload_sha256": "01fd1e83a3e8b0458a872393a1fe70218e20b0ff4650a43721ec1bf74132ffb2",
+  "schema": 1,
+  "sha256": {
+    ".gitattributes": "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9",
+    "LICENSE": "ed2b2ca569b1fa8d368f3fb44800d97ead12f2286a164672c9dc20dfa87db552",
+    "QUALIFICATION.md": "762bba910b28332edb11ba0409857d255f02be52f0a218181f43fd2cdba4cf47",
+    "README.md": "78d5d4136c275c75499f183e5be32d80ec211508cab326012abf44bab5244991",
+    "tests/check_package.py": "518ebb2cf8a319140f951accc75e74374e8cca9ff3400978eb59e9029b2764e3",
+    "tests/qualify_local.py": "efb750556ab52ec43c22c45216f3ba620093060253e5045b036be2851a2858ce",
+    "vibe.toml": "d77f610d81d7158c6160e8606a1c9b38932341a50d128cb8cbb63c444d670241",
+    "vibevm/vibespecs/boot/landscape-subagents.md": "aeb27ba1512c6b8cb5dff03174d94a8b807f710a0d6a6cbe5c5ca98df74130b5",
+    "vibevm/vibespecs/guides/adoption.md": "6cb3f2a596110b7e08e49bf7b0112a495de175e9ddc6c4c69f159dabf4b348a5",
+    "vibevm/vibespecs/guides/runtime-evidence.md": "7d9cae9bdb05caed9ba20d91f73d08527181b43983c2d086a50cfd296a440a2c",
+    "vibevm/vibespecs/protocols/subagents.md": "e9c47493ffea82d3d95eca95ffc3e403c9e07ff8c099322015436e28f62510cf"
+  },
+  "version": "1.0.2"
+}

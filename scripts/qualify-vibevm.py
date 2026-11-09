@@ -56,6 +56,41 @@ TREE_HASH = "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b963458
 CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
 BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
+LOCAL_SUBAGENTS = Path("docs/codex/SUBAGENTS.md")
+# Root-consumer selections only: neither flow is added to the frozen Relay
+# package, Skill projection or standalone delivery. Opaque public receipts do
+# not assert a private producer source revision.
+LANDSCAPE = (
+    {"name": "landscape-model-guidance", "version": "1.0.3",
+     "revision": "48432f00802f5aad106f3e1a9264e17c1edc354c",
+     "payload_hash": "cd55c682497ee9724063c04d776e8ed9243129aa29de5c12b5d607980c8918ca",
+     "receipt_hash": "2112fccf42acbf4b4ca6a228369e5779f961f27887f02941106e23e8ffff6d31",
+     "tree_hash": "sha256:a64d829c0e50ac228d9bc39608db7e081e87c13d69e9cfeafc46720ec022f7f6",
+     "description": "Passive, frozen general model and effort recommendations from accepted Landscape evidence.",
+     "policy": "vibevm/vibespecs/protocols/model-selection.md",
+     "payload": {"LICENSE", "README.md", "vibe.toml",
+                 "vibevm/vibespecs/boot/landscape-model-guidance.md",
+                 "vibevm/vibespecs/protocols/model-selection.md",
+                 "vibevm/vibespecs/reference/evidence.md"}},
+    {"name": "landscape-subagents", "version": "1.0.2",
+     "revision": "042e92884278d748502157945301dbc3f3c8318c",
+     "payload_hash": "01fd1e83a3e8b0458a872393a1fe70218e20b0ff4650a43721ec1bf74132ffb2",
+     "receipt_hash": "8df45f25a3a134ae95c628ff5766b19b4ab4f549a689cce655e5ab1c9f994b31",
+     "tree_hash": "sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56",
+     "description": "Passive, explicitly adopted subagent workflow and child-profile guidance.",
+     "policy": "vibevm/vibespecs/protocols/subagents.md",
+     "payload": {".gitattributes", "LICENSE", "QUALIFICATION.md", "README.md", "vibe.toml",
+                 "tests/check_package.py", "tests/qualify_local.py",
+                 "vibevm/vibespecs/boot/landscape-subagents.md",
+                 "vibevm/vibespecs/protocols/subagents.md",
+                 "vibevm/vibespecs/guides/adoption.md",
+                 "vibevm/vibespecs/guides/runtime-evidence.md"}},
+)
+for _selection in LANDSCAPE:
+    _selection["coordinate"] = "org.jresearch.ai/" + _selection["name"]
+    _selection["repository"] = "https://github.com/jrs-vibevm/org.jresearch.ai." + _selection["name"] + ".git"
+    _selection["slot"] = Path("vibevm/vibedeps/org.jresearch.ai." + _selection["name"]) / _selection["version"]
+    _selection["boot"] = "vibevm/vibespecs/boot/" + _selection["name"] + ".md"
 
 
 def require(condition, message):
@@ -155,6 +190,89 @@ def tree_hash(files):
     for name in sorted(files, key=lambda name: Path(name).parts):
         digest.update(name.encode() + b"\0" + files[name] + b"\0")
     return "sha256:" + digest.hexdigest()
+
+
+def check_landscape_package(directory, selection):
+    """Verify each selected public flow as immutable passive package bytes."""
+    label = selection["name"]
+    files = files_in(directory)
+    payload = selection["payload"]
+    require(set(files) == payload | {RECEIPT, MARKER}, label + " has unexpected or missing passive files")
+    hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(payload)}
+    payload_hash = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    require(payload_hash == selection["payload_hash"], label + " differs from the selected whole-package identity")
+    receipt = json.loads(files[RECEIPT])
+    require(type(receipt.get("schema")) is int and receipt == {
+        "schema": 1, "disclosure": "opaque", "package": selection["coordinate"],
+        "version": selection["version"], "payload_sha256": selection["payload_hash"], "sha256": hashes},
+        label + " receipt differs from the public distribution identity")
+    require(hashlib.sha256(files[RECEIPT]).hexdigest() == selection["receipt_hash"], label + " receipt bytes differ")
+    materialized = {name: data for name, data in files.items() if name != MARKER}
+    require(tree_hash(materialized) == selection["tree_hash"], label + " tree differs from the locked identity")
+    marker = tomllib.loads(files[MARKER].decode())
+    require(type(marker.get("schema")) is int and marker == {
+        "schema": 1, "source_hash": selection["tree_hash"], "spec_format": "mixed",
+        "file": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+                 for name, data in sorted(materialized.items())]}, label + " slot metadata differs")
+    require(tomllib.loads(files["vibe.toml"].decode()) == {
+        "package": {"group": "org.jresearch.ai", "name": label, "version": selection["version"],
+                    "kind": "flow", "format": "simple", "epoch": 1, "publish": False, "frozen": True,
+                    "description": selection["description"], "license": "MIT"},
+        "boot_snippet": {"source": selection["boot"], "category": "flow", "link": "dynamic"}},
+        label + " manifest changed or gained capabilities/dependencies")
+    # The exact whole-package identity also protects conditional boot wording;
+    # static native INDEX entries do not make the complete policies unconditional.
+    for name, data in materialized.items():
+        if not name.endswith(".md"):
+            continue
+        for target in re.findall(r"\[[^\]\n]*\]\(([^)\s]+)\)", data.decode()):
+            url = urlsplit(target.strip("<>"))
+            if url.scheme or url.netloc:
+                continue
+            resolved = (posixpath.normpath(posixpath.join(posixpath.dirname(name), unquote(url.path)))
+                        if url.path else name)
+            require(resolved in materialized, "Missing or escaping " + label + " reference: " + name)
+    return files
+
+
+def check_landscape_adoption(root):
+    """Bounded routing/authority regressions; this does not assess policy semantics."""
+    _, human = managed(read_file(root, "AGENTS.md"))
+    human = human.decode()
+    defaults = re.search(r"the default model is\s+`([^`]+)`, the default reasoning effort is\s+`([^`]+)`"
+                         r" and the default Subagents\s+permission is\s+`([^`]+)`", human)
+    require(defaults is not None and defaults.groups() == ("gpt-6.1-sol", "xhigh", "On"),
+            "Landscape integration must preserve Relay development defaults")
+
+    def section(heading):
+        match = re.search(r"^## " + re.escape(heading) + r"\n(.*?)(?=^## |\Z)", human, re.M | re.S)
+        require(match is not None, "Missing human-owned Landscape section: " + heading)
+        return " ".join(match[1].split())
+
+    subagents, model = LANDSCAPE[1], LANDSCAPE[0]
+    subagent_section = section("Shared subagent workflow")
+    model_section = section("Model recommendation references")
+    for selection, content in ((subagents, subagent_section), (model, model_section)):
+        require("(" + (selection["slot"] / selection["policy"]).as_posix() + ")" in content,
+                selection["name"] + " human-owned route must select the installed complete policy")
+    require(all(phrase in subagent_section for phrase in (
+        "Relay explicitly adopts the installed passive `org.jresearch.ai/landscape-subagents` **1.0.2** flow",
+        "Task and runtime permit delegation", "Keep the adopted version and admitted profiles stable",
+        "Local Task/CR authority, execution boundaries and Writer/Reviewer separation")),
+        "Subagent adoption lost its explicit selection or local authority boundary")
+    require(all(phrase in model_section for phrase in (
+        "supplies advice for owner selection, not automatic adoption of recommendations",
+        "Unrelated work skips that detail", "policy/default change requires distinct explicit owner authority",
+        "Installation or reading never reselects an admitted parent or child")),
+        "Model recommendation route lost its optional or admitted-profile boundary")
+    binding = read_file(root, LOCAL_SUBAGENTS).decode()
+    relative_policy = "../../" + (subagents["slot"] / subagents["policy"]).as_posix()
+    require("(" + relative_policy + ")" in binding
+            and "not another maintained copy" in " ".join(binding.split())
+            and not any("## " + heading in binding for heading in (
+                "When to delegate", "Select a profile for each assignment",
+                "Give each helper a complete, bounded assignment", "Coordinate and verify")),
+            "Local subagent binding must route to the sole installed reusable policy")
 
 
 HISTORICAL_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0")
@@ -316,21 +434,29 @@ def check_first_party(root):
 
 def check_project(root):
     manifest = tomllib.loads(read_file(root, "vibe.toml").decode())
+    requirements = {COORDINATE: {"version": "=" + VERSION,
+                    "git": DISTRIBUTION_REPOSITORY, "rev": DISTRIBUTION_REVISION, "auth": "none"},
+                    "flow:" + SELF_COORDINATE: {"version": "=" + SELF_VERSION, "link": "dynamic"}}
+    requirements.update({selection["coordinate"]: {
+        "version": "=" + selection["version"], "git": selection["repository"],
+        "rev": selection["revision"], "auth": "none"} for selection in LANDSCAPE})
     require(manifest == {"project": {"name": "codex-relay", "version": "0.0.0", "spec_format": "mixed"},
-                         "requires": {"packages": {COORDINATE: {"version": "=" + VERSION,
-                                     "git": DISTRIBUTION_REPOSITORY, "rev": DISTRIBUTION_REVISION,
-                                     "auth": "none"}, "flow:" + SELF_COORDINATE: {
-                                     "version": "=" + SELF_VERSION, "link": "dynamic"}}},
+                         "requires": {"packages": requirements},
                          "registry": [{"name": "producer", "url": "vibevm/vibepacks", "auth": "none"}]},
-            "Consumer must retain exact Shared Git and native first-party requirements")
+            "Consumer must retain exact Shared/Landscape Git and native first-party requirements")
     files = check_package(root / SLOT)
+    landscape_files = {selection["coordinate"]: check_landscape_package(root / selection["slot"], selection)
+                       for selection in LANDSCAPE}
+    check_landscape_adoption(root)
     first_party, source_hash = check_first_party(root)
     check_standalone_snapshot(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
     packages = lock.get("package", [])
-    require(len(packages) == 2, "Expected exactly Shared and first-party native packages")
-    require(len({(entry.get("group"), entry.get("name")) for entry in packages}) == 2,
-            "Duplicate native package identity")
+    require(len(packages) == 4, "Expected exactly Shared, Relay and both Landscape native packages")
+    require({(entry.get("group"), entry.get("name")) for entry in packages} == {
+        ("org.jresearch.ai", name) for name in ("development-governance", "codex-relay",
+                                               *(selection["name"] for selection in LANDSCAPE))},
+        "Duplicate or unexpected native package identity")
     shared = next((entry for entry in packages if entry.get("name") == "development-governance"), None)
     first = next((entry for entry in packages if entry.get("name") == "codex-relay"), None)
     require(set(lock) == {"meta", "package"} and set(lock["meta"]) == {
@@ -341,12 +467,20 @@ def check_project(root):
         and type(lock["meta"]["schema_version"]) is int and lock["meta"]["schema_version"] == 7
         and isinstance(lock["meta"]["generated_at"], str)
         and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["meta"]["generated_at"])
-        and lock["meta"]["root_dependencies"] == ["flow:" + SELF_COORDINATE + "@=" + SELF_VERSION, COORDINATE]
+        and lock["meta"]["root_dependencies"] == ["flow:" + SELF_COORDINATE + "@=" + SELF_VERSION, COORDINATE,
+                                                   *(selection["coordinate"] for selection in LANDSCAPE)]
         and shared == {"kind": "flow", "name": "development-governance", "group": "org.jresearch.ai",
                                  "version": VERSION, "source_url": DISTRIBUTION_REPOSITORY,
                                  "source_ref": DISTRIBUTION_REVISION, "content_hash": TREE_HASH,
                                  "files_written": [], "admitted_by": "root-edge", "source_kind": "git"},
         "Schema-7 lock differs from the admitted graph/source/content identity")
+    for selection in LANDSCAPE:
+        entry = next(entry for entry in packages if entry["name"] == selection["name"])
+        require(entry == {"kind": "flow", "name": selection["name"], "group": "org.jresearch.ai",
+                          "version": selection["version"], "source_url": selection["repository"],
+                          "source_ref": selection["revision"], "content_hash": selection["tree_hash"],
+                          "files_written": [], "admitted_by": "root-edge", "source_kind": "git"},
+                selection["name"] + " lock differs from the selected passive root identity")
     require(first is not None, "Missing first-party native lock entry")
     # Native absolute location metadata can come from another supported checkout.
     # Exact export/registry/slot equality above supplies portable content identity.
@@ -363,7 +497,9 @@ def check_project(root):
             "First-party lock differs from native content/dependency identity")
     index = tomllib.loads(read_file(root, BOOT / "INDEX.md").decode())
     paths = [(BOOT / SOURCES[0]).as_posix(), (SLOT / PACKAGE_BOOT).as_posix(),
-             (SELF_SLOT / SELF_BOOT).as_posix(), (BOOT / SOURCES[1]).as_posix()]
+             (SELF_SLOT / SELF_BOOT).as_posix(),
+             *((selection["slot"] / selection["boot"]).as_posix() for selection in LANDSCAPE),
+             (BOOT / SOURCES[1]).as_posix()]
     # Native v1.0.11 emits static here despite boot_snippet.link = "dynamic".
     require(type(index.get("schema")) is int
             and index == {"schema": 1, "entry": [{"path": name, "kind": "static"} for name in paths]},
@@ -382,7 +518,9 @@ def check_project(root):
     require(set(files_in(root / "vibevm/vibedeps")) == {
         (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files} | {
         (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}} | {
-        (HISTORICAL_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in historical_files},
+        (HISTORICAL_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in historical_files} | {
+        (selection["slot"].relative_to("vibevm/vibedeps") / name).as_posix()
+        for selection in LANDSCAPE for name in landscape_files[selection["coordinate"]]},
             "Unexpected materialized dependency graph")
     for relative in ("vibevm/vibespecs/WAL.md", "vibevm/vibespecs/WAL.xml",
                      ".agents/skills/proportional-controls", ".agents/skills/.proportional-controls.vibe-skill-receipt.toml"):
@@ -392,7 +530,11 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "standalone_snapshot": "5.0.0"}
+            "project_skill": "PASS", "standalone_snapshot": "5.0.0",
+            "landscape": {selection["coordinate"]: {
+                "version": selection["version"], "distribution_revision": selection["revision"],
+                "tree_hash": selection["tree_hash"], "payload_files": len(selection["payload"]),
+                "provenance": "opaque public distribution"} for selection in LANDSCAPE}}
 
 
 def compare_inputs(root, source, distribution):
@@ -410,7 +552,7 @@ def compare_inputs(root, source, distribution):
 def copy_project(source, destination):
     """Copy only ordinary ready files, without credentials or lifecycle state."""
     files = {name: read_file(source, name) for name in (
-        "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT)}
+        "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT, LOCAL_SUBAGENTS)}
     for relative in ("guidance/artifacts", "vibevm/vibedeps", "vibevm/vibepacks",
                      "vibevm/vibespecs/boot", PROJECTION):
         files.update({str(Path(relative) / name): data
@@ -466,8 +608,11 @@ def probe(vibe, pin, project_root=ROOT):
         project = root / "project"
         copy_project(project_root, project)
         facts = check_project(project)
-        route_paths = ["vibe.toml", "vibe.lock", *AGENTS, *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
+        route_paths = ["vibe.toml", "vibe.lock", *AGENTS, LOCAL_SUBAGENTS.as_posix(),
+                       *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
         route_paths += [(SLOT / name).as_posix() for name in PAYLOAD | {RECEIPT, MARKER}]
+        route_paths += [(selection["slot"] / name).as_posix()
+                        for selection in LANDSCAPE for name in selection["payload"] | {RECEIPT, MARKER}]
         route_paths += [(SELF_SLOT / name).as_posix() for name in files_in(project / SELF_SLOT)]
         route_paths += [(PROJECTION / name).as_posix() for name in files_in(project / PROJECTION)]
         route_paths += [SKILL_RECEIPT.as_posix()]

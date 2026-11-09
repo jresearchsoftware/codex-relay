@@ -72,8 +72,14 @@ python3 scripts/prepare-relay-self-adoption.py --check
 python3 scripts/qualify-vibevm.py
 ```
 
-For a project-only Shared update, use the existing frozen builder/registry
-`--check` modes; no Relay artifact generation or version change is needed.
+For a project-only Shared update or root Landscape flow integration, use the
+existing frozen builder/registry `--check` modes; no Relay artifact generation
+or version change is needed. The [Landscape integration](vibevm.md#landscape-flows-and-local-adoption)
+is root development guidance outside the standalone Skill and release-evidence
+closure. Its installed boot/AGENTS routes remain candidate data until accepted;
+continue under the independently frozen admitted guidance. Native root install
+produces its lock, complete slots/receipts and INDEX together without requiring
+another Skill projection or startup command.
 The single `build-relay-guidance.py` builder reads the pinned Shared 5.0.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
 disposable input adapter or unselected root slot. This changes the new 5.0.0
@@ -111,8 +117,8 @@ The qualification probe does this in disposable copies before offline checks,
 verifying that only the local URL and generation timestamp change. It also moves
 a generated checkout with its origin absent, observes the missing-source warning,
 and verifies native repair. Ordinary offline file-reading startup needs no such
-command. Shared lock identity retains its public URL, immutable revision and
-tree hash. Do not hand-edit generated URLs or ignore freshness warnings.
+command. Shared and Landscape lock identities retain their public URLs, immutable revisions
+and tree hashes. Do not hand-edit generated URLs or ignore freshness warnings.
 
 ## Qualification, failure and rollback
 
