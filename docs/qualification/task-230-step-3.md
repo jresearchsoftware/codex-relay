@@ -139,8 +139,10 @@ or PR state was mutated in Step 3. No new DocReview worker was launched. Root
 wrapper deployment, real credentials/API permissions, installed multi-UID locking
 and original-attempt finalization remain protected qualification/operation work;
 local tests do not establish them. Task 230 remains open and safe live readmission
-is not claimed before that operation. The source PR remains Draft while the
-overall admitted result is blocked on this protected frontier.
+is not claimed before that operation. The source implementation and concrete
+operator handoff can be handed off Ready for independent exact-head review once
+validation and canonical Writer publication are verified; that state does not
+accept the source, authorize protected recovery or complete the incident Task.
 
 Requested parent profile: gpt-6.1-sol/medium; actual model/effort UNAVAILABLE.
 No subagents were used. The rename call succeeded but persisted native title
