@@ -440,6 +440,45 @@ def test_duplicate_peer_deployment_evidence_preserves_consumer_pair_in_either_or
     assert observe(tmp_path, contract)[repository] == refs(consumer.config) + [lifecycle_ref(repository)]
 
 
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow'])
+def test_deployment_only_peer_preserves_other_consumers_ordinary_workflow_names(tmp_path, contract, workflow):
+    fixture = peer(tmp_path, contract)
+    repository = fixture.config['consumer']['repository']
+    git_deployment(fixture.config, 'example-org/private-deployment')
+    fixture.config['consumer'][workflow] = eligibility.LIFECYCLE_WORKFLOW
+    save(fixture)
+    assert observe(tmp_path, contract)[repository] == refs(fixture.config)
+
+
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow'])
+def test_duplicate_ordinary_pairs_do_not_infer_lifecycle_from_its_filename(tmp_path, contract, workflow):
+    first = peer(tmp_path, contract, 'a-peer')
+    second = peer(tmp_path, contract, 'z-peer')
+    for fixture in [first, second]:
+        fixture.config['consumer']['baseBranch'] = 'main'
+        fixture.config['consumer'][workflow] = eligibility.LIFECYCLE_WORKFLOW
+        save(fixture)
+    repository = first.config['consumer']['repository']
+    assert observe(tmp_path, contract)[repository] == refs(first.config)
+
+
+@pytest.mark.parametrize('lifecycle_first', [False, True])
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow'])
+def test_combined_lifecycle_and_ordinary_path_roles_cannot_collide(
+        tmp_path, contract, lifecycle_first, workflow):
+    ordinary = peer(tmp_path, contract, 'z-peer' if lifecycle_first else 'a-peer')
+    repository = ordinary.config['consumer']['repository']
+    ordinary.config['consumer']['baseBranch'] = 'main'
+    ordinary.config['consumer'][workflow] = eligibility.LIFECYCLE_WORKFLOW
+    save(ordinary)
+    lifecycle = peer(tmp_path, contract, 'a-peer' if lifecycle_first else 'z-peer',
+                     repository='example-org/other')
+    git_deployment(lifecycle.config, repository)
+    save(lifecycle)
+    with pytest.raises(PoolError, match='ELIGIBILITY_REPOSITORY_AMBIGUOUS'):
+        observe(tmp_path, contract)
+
+
 @pytest.mark.parametrize('prospective_consumer', [False, True])
 def test_prospective_and_peer_deployment_evidence_combine_without_losing_fixed_ref(
         tmp_path, contract, prospective_consumer):

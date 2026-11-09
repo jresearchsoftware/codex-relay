@@ -189,6 +189,23 @@ def test_git_deployment_still_requires_the_pool_organization():
         config.compile_inputs(value)
 
 
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow'])
+def test_deployment_only_repository_preserves_other_consumers_ordinary_workflow_names(tmp_path, workflow):
+    value = shared()
+    deployment = 'example-org/private-deployment'
+    value['environment']['localApply'] = {
+        'source': 'git', 'repository': deployment, 'configPath': 'prod/relay.json'}
+    value['consumer'][workflow] = managed_pool.LIFECYCLE_WORKFLOW
+    config.validate(value, ROOT)
+    contract = config.compile_inputs(value)['relay_general_runner_pool']
+    expected = {repository: [repository + '/' + value['consumer'][key] + '@refs/heads/main'
+                             for key in ['routingWorkflow', 'recoveryWorkflow']]
+                for repository in value['consumer']['repositories']}
+    expected[deployment] = [deployment + '/' + managed_pool.LIFECYCLE_WORKFLOW + '@refs/heads/main']
+    assert pool_eligibility.eligible_workflows(contract, root=tmp_path,
+                                             owner_uid=tmp_path.stat().st_uid) == expected
+
+
 @pytest.mark.parametrize('topology', ['default', 'managed'])
 def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_identity(topology):
     value = shared()

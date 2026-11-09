@@ -53,7 +53,7 @@ def pool_contract(config):
     if deployment is not None:
         require(deployment.split('/')[0] == repository.split('/')[0],
                 'DEPLOYMENT_REPOSITORY_UNPROVEN')
-        require(LIFECYCLE_WORKFLOW not in [consumer[key] for key in
+        require(deployment not in repositories or LIFECYCLE_WORKFLOW not in [consumer[key] for key in
                 ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow']],
                 'ELIGIBILITY_WORKFLOWS_UNPROVEN')
         workflows.setdefault(deployment, []).append(

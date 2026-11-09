@@ -148,7 +148,8 @@ def _peer_refs(config, namespace, contract):
     elif isinstance(local_apply, dict) and local_apply.get('source') == 'git':
         deployment = local_apply.get('repository')
         require(set(local_apply) == {'source', 'repository', 'configPath'}
-                and _repository(deployment) and LIFECYCLE_WORKFLOW not in workflows
+                and _repository(deployment)
+                and (deployment not in repositories or LIFECYCLE_WORKFLOW not in workflows)
                 and deployment.split('/')[0] == contract['organization'] and branch == 'main'
                 and isinstance(local_apply.get('configPath'), str)
                 and re.fullmatch(r'[A-Za-z0-9_./-]+\.json', local_apply['configPath'])
@@ -288,11 +289,14 @@ def eligible_workflows(contract, *, root=Path('/'), owner_uid=0):
                 # Combine that evidence without unioning conflicting automatic pairs.
                 previous = result.get(repository, [])
                 lifecycle = repository + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/main'
-                automatic = [ref for ref in workflows if ref != lifecycle]
-                previous_automatic = [ref for ref in previous if ref != lifecycle]
+                automatic = workflows[:2] if len(workflows) > 1 else []
+                previous_automatic = previous[:2] if len(previous) > 1 else []
+                has_lifecycle = len(previous) in [1, 3] or len(workflows) in [1, 3]
+                combined_automatic = previous_automatic or automatic
                 require(not previous_automatic or not automatic
                         or set(previous_automatic) == set(automatic),
                         'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
-                result[repository] = (previous_automatic or automatic) + (
-                    [lifecycle] if lifecycle in previous or lifecycle in workflows else [])
+                require(not has_lifecycle or lifecycle not in combined_automatic,
+                        'ELIGIBILITY_REPOSITORY_AMBIGUOUS')
+                result[repository] = combined_automatic + ([lifecycle] if has_lifecycle else [])
     return result

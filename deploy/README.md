@@ -207,8 +207,10 @@ For `environment.localApply.source: git`, the exact configured private deploymen
 repository owns that same fixed lifecycle path at `refs/heads/main`. It may also
 be explicitly listed in `consumer.repositories` for ordinary Tasks. In that case
 its eligible refs are its configured routing/recovery pair plus the sole fixed
-lifecycle ref; other consumers retain only their pair. The lifecycle path must
-remain distinct from routing, recovery and validation paths. A deployment
+lifecycle ref; other consumers retain only their pair. In that dual-role
+repository, the lifecycle path must remain distinct from routing, recovery and
+validation paths. An ordinary consumer in another repository may retain the
+same filename for its own workflow; the filename alone grants no lifecycle role. A deployment
 repository absent from the consumer allowlist remains lifecycle-only.
 The automatic pair may be selected together, independently of lifecycle
 selection; selecting lifecycle alone does not require ordinary Task adoption.
