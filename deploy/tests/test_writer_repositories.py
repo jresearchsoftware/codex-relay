@@ -144,6 +144,71 @@ def test_checkout_configuration_keeps_pair_only_contract_and_has_no_third_workfl
         config.validate(value, ROOT)
 
 
+@pytest.mark.parametrize('deployment_is_anchor', [False, True])
+def test_git_deployment_can_also_be_an_explicit_consumer_without_inheriting_privilege(
+        tmp_path, deployment_is_anchor):
+    value = shared()
+    deployment = value['consumer']['repositories'][0 if deployment_is_anchor else 1]
+    value['environment']['localApply'] = {
+        'source': 'git', 'repository': deployment, 'configPath': 'prod/relay.json'}
+    value = config.loads(json.dumps(value), ROOT)
+    contract = config.compile_inputs(value)['relay_general_runner_pool']
+    expected = {repository: [repository + '/' + value['consumer'][key] + '@refs/heads/main'
+                             for key in ['routingWorkflow', 'recoveryWorkflow']]
+                for repository in value['consumer']['repositories']}
+    expected[deployment].append(deployment + '/' + managed_pool.LIFECYCLE_WORKFLOW + '@refs/heads/main')
+    assert contract['repositories'] == value['consumer']['repositories']
+    assert contract['deploymentRepository'] == deployment
+    assert contract['workflowRefsByRepository'] == expected
+    assert pool_eligibility.eligible_workflows(contract, root=tmp_path,
+                                             owner_uid=tmp_path.stat().st_uid) == expected
+    for repository in value['consumer']['repositories']:
+        rendered = workflow_projection.render(value, 'a' * 40, ROOT, repository)
+        assert set(rendered) == {value['consumer'][key] for key in ['routingWorkflow', 'recoveryWorkflow']}
+    assert set(workflow_projection.render_deployment(value, 'a' * 40, ROOT)) == {
+        managed_pool.LIFECYCLE_WORKFLOW}
+
+
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow'])
+def test_git_deployment_lifecycle_cannot_alias_an_ordinary_workflow(workflow):
+    value = shared()
+    value['environment']['localApply'] = {
+        'source': 'git', 'repository': value['consumer']['repositories'][1], 'configPath': 'prod/relay.json'}
+    value['consumer'][workflow] = managed_pool.LIFECYCLE_WORKFLOW
+    config.validate(value, ROOT)
+    with pytest.raises(managed_pool.PoolError, match='ELIGIBILITY_WORKFLOWS_UNPROVEN'):
+        config.compile_inputs(value)
+
+
+def test_git_deployment_still_requires_the_pool_organization():
+    value = shared()
+    value['environment']['localApply'] = {
+        'source': 'git', 'repository': 'foreign-org/deployment', 'configPath': 'prod/relay.json'}
+    config.validate(value, ROOT)
+    with pytest.raises(managed_pool.PoolError, match='DEPLOYMENT_REPOSITORY_UNPROVEN'):
+        config.compile_inputs(value)
+
+
+@pytest.mark.parametrize('workflow', ['routingWorkflow', 'recoveryWorkflow', 'validationWorkflow'])
+def test_deployment_only_repository_preserves_other_consumers_ordinary_workflow_names(tmp_path, workflow):
+    value = shared()
+    deployment = 'example-org/private-deployment'
+    value['environment']['localApply'] = {
+        'source': 'git', 'repository': deployment, 'configPath': 'prod/relay.json'}
+    value['consumer'][workflow] = managed_pool.LIFECYCLE_WORKFLOW
+    config.validate(value, ROOT)
+    contract = config.compile_inputs(value)['relay_general_runner_pool']
+    expected = {repository: [repository + '/' + value['consumer'][key] + '@refs/heads/main'
+                             for key in ['routingWorkflow', 'recoveryWorkflow']]
+                for repository in value['consumer']['repositories']}
+    expected[deployment] = [deployment + '/' + managed_pool.LIFECYCLE_WORKFLOW + '@refs/heads/main']
+    assert pool_eligibility.eligible_workflows(contract, root=tmp_path,
+                                             owner_uid=tmp_path.stat().st_uid) == expected
+    for repository in value['consumer']['repositories']:
+        assert set(workflow_projection.render(value, 'a' * 40, ROOT, repository)) == {
+            value['consumer'][key] for key in ['routingWorkflow', 'recoveryWorkflow']}
+
+
 @pytest.mark.parametrize('topology', ['default', 'managed'])
 def test_rendered_launcher_keeps_repository_runtime_overrides_on_the_default_identity(topology):
     value = shared()
