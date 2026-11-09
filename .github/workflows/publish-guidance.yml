@@ -7,17 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact accepted producer SHA to retry with the selected accepted publisher
-        required: true
+        description: Optional full accepted source SHA for recovery; blank uses this main dispatch commit
+        required: false
         type: string
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: relay-guidance-publication-${{ github.event.workflow_run.head_sha || inputs.source_sha }}
-  cancel-in-progress: false
 jobs:
-  publish:
+  resolve-source:
     if: >-
       github.repository == 'jresearchsoftware/codex-relay' &&
       ((github.event_name == 'workflow_run' &&
@@ -26,12 +23,69 @@ jobs:
         github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository) ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - name: Resolve exact accepted producer source
+        id: source
+        env:
+          MANUAL_SOURCE_SHA: ${{ inputs.source_sha }}
+        # No checkout, source execution or publication credential is needed to
+        # resolve the event identity. Acceptance is checked by Shared Publisher.
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          def reject(reason):
+              message = 'Source resolution rejected: ' + reason
+              print('::error::' + message)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write(message + '\n')
+              raise SystemExit(1)
+
+          if os.environ['GITHUB_REPOSITORY'] != 'jresearchsoftware/codex-relay':
+              reject('producer repository mismatch')
+          event_name = os.environ['GITHUB_EVENT_NAME']
+          if event_name == 'workflow_dispatch':
+              if os.environ['GITHUB_REF'] != 'refs/heads/main':
+                  reject('manual publication requires selected main')
+              supplied = os.environ.get('MANUAL_SOURCE_SHA', '')
+              source = supplied or os.environ.get('GITHUB_SHA', '')
+              origin = 'explicit manual recovery' if supplied else 'dispatch github.sha'
+          elif event_name == 'workflow_run':
+              run = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text()).get('workflow_run', {})
+              if (run.get('conclusion') != 'success' or run.get('event') != 'push'
+                      or run.get('head_branch') != 'main'
+                      or run.get('head_repository', {}).get('full_name') != os.environ['GITHUB_REPOSITORY']):
+                  reject('automatic publication requires successful same-repository main push CI')
+              source = run.get('head_sha', '')
+              origin = 'triggering workflow_run.head_sha'
+          else:
+              reject('unsupported publication event')
+          if not re.fullmatch(r'[0-9a-f]{40}', source):
+              reject('source must be a full lowercase 40-character commit SHA')
+          message = f'Resolved producer source `{source}` from {origin}.'
+          print(message)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(message + '\n\nShared Publisher must qualify accepted-main ancestry, exact successful push CI and frozen package identity before publication.\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('source_sha=' + source + '\n')
+          PY
+  publish:
+    needs: resolve-source
+    if: needs.resolve-source.outputs.source_sha != ''
+    concurrency:
+      group: relay-guidance-publication-${{ needs.resolve-source.outputs.source_sha }}
+      cancel-in-progress: false
     # Select accepted upstream fixes for future runs. The reusable workflow checks
     # out its own job.workflow_sha independently of this exact producer source.
     uses: jresearchsoftware/shared-governance/.github/workflows/vibe-publisher.yml@main
     with:
       mode: publish
-      source_sha: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+      source_sha: ${{ needs.resolve-source.outputs.source_sha }}
       binding: vibe-publisher.json
       package: org.jresearch.ai/codex-relay
     secrets:

@@ -1,0 +1,17 @@
+[package]
+group = "org.jresearch.ai"
+name = "landscape-subagents"
+version = "1.0.2"
+kind = "flow"
+format = "simple"
+epoch = 1
+publish = false
+frozen = true
+description = "Passive, explicitly adopted subagent workflow and child-profile guidance."
+
+license = "MIT"
+
+[boot_snippet]
+source = "vibevm/vibespecs/boot/landscape-subagents.md"
+category = "flow"
+link = "dynamic"

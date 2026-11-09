@@ -1,10 +1,12 @@
 [meta]
 generated_by = "vibe 1.0.7"
-generated_at = "2026-11-08T22:00:59Z"
+generated_at = "2026-11-09T08:41:55Z"
 schema_version = 7
 root_dependencies = [
     "flow:org.jresearch.ai/codex-relay@=5.0.0",
     "org.jresearch.ai/development-governance",
+    "org.jresearch.ai/landscape-model-guidance",
+    "org.jresearch.ai/landscape-subagents",
 ]
 
 [[package]]
@@ -12,12 +14,12 @@ kind = "flow"
 name = "codex-relay"
 group = "org.jresearch.ai"
 version = "5.0.0"
-source_url = "file:///home/hortonolite/task199-run-42511307175/vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0"
+source_url = "file:///var/lib/codex-relay/slots/pool-5/work/repositories/jresearchsoftware/codex-relay/run-42587490775/vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0"
 content_hash = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
 files_written = []
 dependencies = ["org.jresearch.ai/development-governance@=7.0.1"]
 admitted_by = "root-edge"
-source_kind = "registry"
+source_kind = "local"
 
 [[package]]
 kind = "flow"
@@ -27,6 +29,30 @@ version = "7.0.1"
 source_url = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
 source_ref = "f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9"
 content_hash = "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f"
+files_written = []
+admitted_by = "root-edge"
+source_kind = "git"
+
+[[package]]
+kind = "flow"
+name = "landscape-model-guidance"
+group = "org.jresearch.ai"
+version = "1.0.3"
+source_url = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-model-guidance.git"
+source_ref = "48432f00802f5aad106f3e1a9264e17c1edc354c"
+content_hash = "sha256:a64d829c0e50ac228d9bc39608db7e081e87c13d69e9cfeafc46720ec022f7f6"
+files_written = []
+admitted_by = "root-edge"
+source_kind = "git"
+
+[[package]]
+kind = "flow"
+name = "landscape-subagents"
+group = "org.jresearch.ai"
+version = "1.0.2"
+source_url = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-subagents.git"
+source_ref = "042e92884278d748502157945301dbc3f3c8318c"
+content_hash = "sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56"
 files_written = []
 admitted_by = "root-edge"
 source_kind = "git"

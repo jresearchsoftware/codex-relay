@@ -4,20 +4,18 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { consumerDigest, EXECUTION_PATH_NAMES, selectRepositoryConsumer, validateConsumer } from '../../consumer/consumer-config.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { loadSerialPoolCompatibility, protectedSourceTreeSha256 } from '../src/serial-pool-compatibility.mjs';
+import { extractHistoricalRuntime } from './historical-runtime.mjs';
 
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => hash(JSON.stringify(value));
-const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const operationId = '12345678-1234-1234-1234-123456789abc';
 // These fixtures exercise immutable pre-cutover rows through their actual old
-// runtime. Pin its qualified starting revision so a current-source commit cannot
-// silently replace the original legacy/v3 decoder. Explicit old revisions remain
-// available to source-specific replay tests.
+// runtime. Retain Git-proven source bytes so squash merges and main-only clones
+// cannot lose the original legacy/v3 decoder. No test-time Git/network is needed.
 const retainedOriginalRevision = '3f4d4348cfb05866b2108eadcc35b7a17153ff14';
 export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, repositories, repository, originalRevision = retainedOriginalRevision } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-serial-compat-'));
@@ -26,7 +24,7 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   const currentUser = (await execute('/usr/bin/id', ['-un'])).stdout.trim();
   const user = currentUser === 'root' ? 'nobody' : currentUser;
   const runnerUid = Number((await execute('/usr/bin/id', ['-u', user])).stdout.trim());
-  const revision = (await execute('/usr/bin/git', ['rev-parse', originalRevision], { cwd: repositoryRoot })).stdout.trim();
+  const revision = originalRevision;
   const at = pathname => join(root, pathname.slice(1));
   const write = async (pathname, value, mode = 0o600) => {
     await mkdir(dirname(pathname), { recursive: true, mode: 0o755 });
@@ -36,12 +34,9 @@ export async function serialPoolFixture(t, { retained = true, sourceLinks = {}, 
   const release = `/opt/${namespace}/${retained ? 'serial-compat-v1' : 'releases'}/${revision}`;
   const sourcePath = release + '/reviewed-source'; const sourceRoot = at(sourcePath);
   await mkdir(sourceRoot, { recursive: true, mode: 0o755 });
-  // Export actual retained source, including its complete envelope validator.
-  // The fixture never opens model Git metadata or substitutes a mock validator.
-  const archive = await execute('/usr/bin/git', ['archive', '--format=tar', revision, 'consumer', 'controller/src',
-    'runtime/src', 'contracts/src', 'reviewer/src/executable-cr-v2.json'], { cwd: repositoryRoot, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
-  const extraction = execute('/usr/bin/tar', ['-xf', '-', '-C', sourceRoot]);
-  extraction.child.stdin.end(archive.stdout); await extraction;
+  // Materialize authentic retained source, including its complete envelope
+  // validator, after checking its original Git commit/tree/blob identities.
+  await extractHistoricalRuntime(sourceRoot, revision);
   await write(join(sourceRoot, '.relay-source.json'), { revision }, 0o644);
   const originalSourceRoot = `/opt/${namespace}/releases/${revision}/reviewed-source`;
   for (const component of new Set(Object.values(sourceLinks))) {

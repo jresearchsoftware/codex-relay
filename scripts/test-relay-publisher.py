@@ -83,6 +83,7 @@ class RelayPublisherTests(unittest.TestCase):
         self.calls = []
         self.run_change = lambda run: run
         self.trigger_change = lambda run: run
+        self.missing_ci = False
         self.event = self.directory / "event.json"
         self.event.write_text(json.dumps({"workflow_run": {"id": 721}}))
         os.environ["GITHUB_EVENT_PATH"] = str(self.event)
@@ -123,9 +124,9 @@ class RelayPublisherTests(unittest.TestCase):
         self.assertEqual(
             path, f"actions/runs?head_sha={self.selected_sha}&event=push&per_page=100&page=1"
         )
-        return {"workflow_runs": [run]}
+        return {"workflow_runs": [] if self.missing_ci else [run]}
 
-    def cli(self, revision, operation="plan", expect=0, ci=False):
+    def cli(self, revision, operation="plan", expect=0, ci=False, recovery=False):
         self.selected_sha = revision
         self.calls = []
         report_path = self.directory / "report.json"
@@ -148,10 +149,14 @@ class RelayPublisherTests(unittest.TestCase):
         with ExitStack() as stack:
             stack.enter_context(patch.object(sys, "argv", arguments))
             stack.enter_context(redirect_stdout(io.StringIO()))
-            for name in ("remote_refs", "DestinationAPI", "native_environment"):
+            for name in ("DestinationAPI", "native_environment"):
                 stack.enter_context(patch.object(P, name, side_effect=AssertionError(
                     "destination/native access is forbidden in planning and no-op staging"
                 )))
+            stack.enter_context(patch.object(
+                P, "remote_refs", return_value=[] if recovery else None,
+                side_effect=None if recovery else AssertionError("no remote read for this transition"),
+            ))
             stack.enter_context(patch.object(P.urllib.request, "urlopen", side_effect=AssertionError("no network")))
             stack.enter_context(patch.object(P.urllib.request, "build_opener", side_effect=AssertionError("no network")))
             stack.enter_context(patch.object(
@@ -165,7 +170,11 @@ class RelayPublisherTests(unittest.TestCase):
         })
         self.assertEqual(report["source_sha"], revision)
         self.assertEqual(len(report["packages"]), 1)
-        self.assertEqual(report["packages"][0]["source_sha"], revision)
+        row = report["packages"][0]
+        if recovery and row.get("operation") == "pending-publication":
+            self.assertEqual(row["trigger_sha"], revision)
+        else:
+            self.assertEqual(row["source_sha"], revision)
         self.assertEqual(report["packages"][0]["destination"], self.package["destination"])
         self.assertFalse(staging.exists())
         return report["packages"][0]
@@ -202,17 +211,15 @@ class RelayPublisherTests(unittest.TestCase):
         inputs = PUBLISHER_WORKFLOW.split("    inputs:\n", 1)[1].split("    secrets:\n", 1)[0]
         self.assertNotRegex(inputs, r"(?m)^      (publisher_sha|policy_sha):")
 
-    def test_non_package_transition_never_queries_or_stages(self):
+    def test_non_package_transition_without_eligible_recovery_never_queries_or_stages(self):
         (self.source / "outside-package.txt").write_text("Synthetic repository-only change.\n")
         revision = self.commit()
         for operation in ("plan", "check", "stage"):
             with self.subTest(operation=operation):
                 self.assertEqual(self.cli(revision, operation)["status"], "NO_PACKAGE_CHANGE")
                 self.assertEqual(self.calls, [])
-        # A later factual commit must not opportunistically publish an earlier
-        # package bump whose release may still be pending.
-        self.changed_version()
-        self.commit()
+        # The baseline package predates its publisher binding in this fixture;
+        # later repository edits cannot turn onboarding into release authority.
         (self.source / "outside-package.txt").write_text("Later repository-only change.\n")
         self.assertEqual(self.cli(self.commit(), "stage")["status"], "NO_PACKAGE_CHANGE")
         self.assertEqual(self.calls, [])
@@ -221,6 +228,55 @@ class RelayPublisherTests(unittest.TestCase):
         (self.source / "vibe-publisher.json").write_text(json.dumps(binding))
         self.assertEqual(self.cli(self.commit(), "stage")["status"], "NO_PACKAGE_CHANGE")
         self.assertEqual(self.calls, [])
+
+    def test_manual_exact_source_requires_successful_matching_push_ci(self):
+        os.environ["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.changed_version()
+        selected = self.commit()
+        # A later main commit must not replace an explicitly supplied retry SHA.
+        (self.source / "outside-package.txt").write_text("Later accepted source.\n")
+        self.commit()
+        row = self.cli(selected, ci=True)
+        self.assertEqual(row["status"], "READY")
+        self.assertEqual(row["acceptance"][0]["source_sha"], selected)
+        self.assertNotIn("actions/runs/721", self.calls)
+        self.missing_ci = True
+        self.assertEqual(self.cli(selected, ci=True, expect=1)["reason_code"], "MATCHING_SOURCE_CI_MISSING")
+        self.missing_ci = False
+        for field, wrong in (("conclusion", "failure"), ("event", "pull_request"),
+                             ("head_sha", "0" * 40), ("head_branch", "topic")):
+            with self.subTest(field=field):
+                self.run_change = lambda run, field=field, wrong=wrong: {**run, field: wrong}
+                self.assertEqual(self.cli(selected, ci=True, expect=1)["reason_code"], "MATCHING_SOURCE_CI_MISSING")
+        self.run_change = lambda run: run
+        # A syntactically exact commit outside accepted main is still forbidden.
+        git(self.source, "update-ref", "refs/heads/main", self.baseline)
+        with self.assertRaises(P.AuthorizationError) as failure:
+            self.cli(selected, ci=True)
+        self.assertEqual(failure.exception.code, "SOURCE_NOT_ON_MAIN")
+        self.assertEqual(self.calls, [])
+
+    def test_manual_later_source_recovers_only_exact_eligible_frozen_package(self):
+        os.environ["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        version = self.changed_version()
+        frozen_sha = self.commit()
+        frozen = P.snapshot(self.source, frozen_sha, self.package)[1]
+        (self.source / "outside-package.txt").write_text("Dispatch source after frozen integration.\n")
+        dispatch_sha = self.commit()
+        row = self.cli(dispatch_sha, ci=True, recovery=True)
+        self.assertEqual(row["status"], "READY")
+        self.assertEqual(row["operation"], "pending-publication")
+        self.assertEqual(row["source_sha"], frozen_sha)
+        self.assertEqual(row["trigger_sha"], dispatch_sha)
+        self.assertEqual(row["version"], version)
+        self.assertEqual(row["payload_sha256"], frozen["payload_sha256"])
+        self.assertEqual(row["acceptance"][0]["source_sha"], dispatch_sha)
+        self.missing_ci = True
+        self.assertEqual(self.cli(dispatch_sha, ci=True, recovery=True, expect=1)["reason_code"],
+                         "MATCHING_SOURCE_CI_MISSING")
+        self.missing_ci = False
+        (self.root / "README.md").write_text("Frozen identity drift is forbidden.\n")
+        self.assertEqual(self.cli(self.commit(), expect=1)["reason_code"], "PACKAGE_VERSION_REUSE")
 
     def test_same_version_payload_mutation_is_blocked_without_ci(self):
         readme = self.root / "README.md"

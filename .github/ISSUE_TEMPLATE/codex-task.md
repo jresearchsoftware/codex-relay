@@ -96,6 +96,11 @@ Issue creation and title/Step projections do not dispatch work. -->
 
 ## Recommended model budget
 
+<!-- For Relay repository development, AGENTS.md#model-recommendation-references
+routes the locked passive Landscape recommendation/evidence reference. Reading
+it does not adopt defaults, change an allowlist or reselect an admitted profile.
+Keep the existing project defaults unless explicit owner authority changes them. -->
+
 - Recommended Codex model: <!-- exact owner-resolved identifier -->
 - Recommended Codex effort: <!-- exact owner-resolved effort -->
 - Reason: <!-- why this profile fits the goal -->

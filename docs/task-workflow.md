@@ -25,6 +25,17 @@ Implementers use the [authority](../contracts/README.md#github-native-task-autho
 contracts. The [Issue template](../.github/ISSUE_TEMPLATE/codex-task.md) remains
 the repository authoring baseline.
 
+## Relay development model recommendations
+
+For this repository's Task budget recommendations and their evidence, follow
+[root model guidance](../AGENTS.md#model-recommendation-references) to the locked
+passive Landscape flow. This is a project development reference, not part of
+the standalone Relay Skill. Owner selection, explicit Task/CR profiles and
+consumer settings retain authority; the existing project defaults remain
+`gpt-6.1-sol / xhigh / Subagents On`. Reading recommendations cannot change an
+admitted profile. The [subagent binding](codex/SUBAGENTS.md) routes the separately
+adopted delegation policy and retains Relay-specific boundaries.
+
 ## Decisions, closure and subsequent work
 
 See the manual's [decisions and closure](../packages/codex-relay/skill/references/workflow.md#decisions-closure-and-subsequent-work).
