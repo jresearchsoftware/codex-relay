@@ -272,17 +272,37 @@ rules. These defaults do not authorize nested Relay execution or retry loops.
 
 ## Shared subagent workflow
 
-Upstream: `jresearchsoftware/codex-model-landscape`, `SUBAGENTS.md` from
-`main`. When Subagents is On and useful delegation is allowed, read the
-[adopted shared guidance](docs/codex/SUBAGENTS.md) just in time before the first
-substantial delegation. There is no minimum helper count. Keep the parent's
-admitted profile unchanged; local Task/CR authority, execution boundaries and
-Writer/Reviewer separation override reusable delegation guidance. Delegation
-never expands scope or external authority.
-
+Relay explicitly adopts the installed passive `org.jresearch.ai/landscape-subagents`
+**1.0.2** flow for its own development guidance. When Subagents is On and the
+Task and runtime permit delegation, read its complete
+[policy](vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2/vibevm/vibespecs/protocols/subagents.md)
+before substantial work. This continues the accepted useful proactive delegation
+policy at every supported parent effort, without a helper quota or an Ultra
+requirement. Zero helpers remains valid when useful independent work is absent.
+The [local binding](docs/codex/SUBAGENTS.md) retains Relay authority and the
+migration accounting; the installed flow is the sole reusable policy owner.
+Keep the adopted version and admitted profiles stable throughout the Task.
+Local Task/CR authority, execution boundaries and Writer/Reviewer separation
+override reusable recommendations. Delegation grants no nested Relay execution,
+publication, credentials, deployment or independent acceptance authority.
 An inner correction does not itself need a new Issue, Step or execution.
 A manual task may publish through its explicitly authorized owner channel;
 an automatic worker delegates publication to Writer.
+
+## Model recommendation references
+
+For Task model/effort recommendation or evidence assessment, consult the installed
+[selection guidance](vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/protocols/model-selection.md)
+and, when assessing its factual basis, the
+[dated evidence](vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/reference/evidence.md).
+This passive **1.0.3** reference supplies advice for owner selection, not automatic
+adoption of recommendations. Unrelated work skips that detail. Relay's existing
+`gpt-6.1-sol / xhigh / Subagents On` development defaults, explicit Task/CR
+profiles, consumer configuration and allowlists remain authoritative. Any actual
+policy/default change requires distinct explicit owner authority. Installation
+or reading never reselects an admitted parent or child, configures a client or
+enables a dynamic runtime router. See [VibeVM maintenance](docs/vibevm.md) for
+reviewed version selection, candidate separation and rollback.
 
 ## Material User/Operator Contract Change Gate
 

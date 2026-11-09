@@ -1,4 +1,4 @@
-# Pinned governance and first-party Skill consumption
+# Pinned development guidance and first-party Skill consumption
 
 Relay selects Shared Governance **7.0.1** for its project-wide adoption under
 Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
@@ -24,6 +24,8 @@ vibevm/vibespecs/boot/INDEX.md      native generated index
                   +--> 00-core.md       Relay authority boundary
                   +--> Shared boot      complete relevant protocols, on demand
                   +--> Relay boot       product Skill, on relevant work
+                  +--> Landscape model  recommendation/evidence, on selection work
+                  +--> Landscape agents adopted policy, on permitted substantial work
                   +--> 90-user.md       local adoption and component routing
 ```
 
@@ -51,6 +53,97 @@ to the reviewed consumer lock and its selected Shared slot; standalone carries
 its own immutable attributed snapshot. Complete Skill trees need not match.
 File-route checks prove reachability and content,
 not actual model traversal or compliance.
+
+## Landscape flows and local adoption
+
+Root [AGENTS](../AGENTS.md#shared-subagent-workflow) explicitly adopts the passive
+`org.jresearch.ai/landscape-subagents@1.0.2` flow for Relay's own development.
+Its [complete installed policy](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2/vibevm/vibespecs/protocols/subagents.md)
+replaces the reusable text formerly maintained in `docs/codex/SUBAGENTS.md`.
+That [local binding](codex/SUBAGENTS.md) now records the semantic migration and
+only Relay-specific authority. Useful proactive delegation remains recommended
+at every supported parent effort, with no helper quota or Ultra requirement.
+The installed October 9 policy clarifies parallel independent work and follow-up
+reassessment while retaining the complete child matrix and zero-helper cases.
+No competing mutable policy copy remains.
+
+Native INDEX includes both short package boot pointers as `static`; conditional
+Markdown reading supplies the relevant detail, not an executable loader:
+
+| Work | Detail to read |
+| --- | --- |
+| Unrelated session or Subagents Off/prohibited | Short boot pointers only; skip delegation policy and detailed model evidence |
+| Substantial Relay work, Subagents On, Task/runtime permit delegation | Complete adopted subagent policy before substantial work; setup/runtime notes only when assessing adoption/client support |
+| Task model/effort recommendation or evidence assessment | [Selection guidance](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/protocols/model-selection.md), then [dated evidence](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/reference/evidence.md) when the factual basis matters |
+
+The [task authoring route](task-workflow.md#relay-development-model-recommendations)
+and root model reference make `landscape-model-guidance@1.0.3` available as
+recommendation/evidence reading. This does not adopt new recommendations or change
+`gpt-6.1-sol / xhigh / Subagents On`, explicit Task/CR profiles, allowlists,
+consumer configuration or runtime selection. Actual policy/default changes need
+distinct explicit owner authority. Neither package is a ChatGPT Skill, client
+configuration, autonomous model router or service. Installation/presence alone
+never activates delegation or reselects an admitted parent or child. Relay keeps
+immutable admission, GitHub authority and owner/worker/Writer/Reviewer separation.
+
+Both root constraints are exact content-review selections (`=1.0.3`, `=1.0.2`),
+with anonymous public Git sources pinned to the commits below. This is a reviewed
+snapshot/reproducibility choice under PV-014, not evidence that earlier versions
+are functionally incompatible or a promise about future releases. Both are frozen,
+MIT-licensed flows with empty dependency closures. Their `publish = false`
+producer manifests disable automatic enumeration; they do not invalidate the
+explicit published annotated tags. Native VibeVM installed the full payloads,
+including public `DISTRIBUTION.json` receipts and `.vibe-slot.toml` metadata.
+
+| Published identity | Exact value |
+| --- | --- |
+| Model distribution repository | `jrs-vibevm/org.jresearch.ai.landscape-model-guidance` |
+| Model `v1.0.3` annotated tag object | `8409e60d819a1553dc4dff89ba55799c8e0e451b` |
+| Model peeled distribution commit / root `rev` | `48432f00802f5aad106f3e1a9264e17c1edc354c` |
+| Model complete native tree hash | `sha256:a64d829c0e50ac228d9bc39608db7e081e87c13d69e9cfeafc46720ec022f7f6` |
+| Subagents distribution repository | `jrs-vibevm/org.jresearch.ai.landscape-subagents` |
+| Subagents `v1.0.2` annotated tag object | `c52414e83d25878c2f2cb90693c9328729286cd3` |
+| Subagents peeled distribution commit / root `rev` | `042e92884278d748502157945301dbc3f3c8318c` |
+| Subagents complete native tree hash | `sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56` |
+
+The producer is `jresearchsoftware/codex-model-landscape`. The published
+[model contract](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/README.md)
+and [subagent contract](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2/README.md)
+are frozen distribution contracts. Their receipts intentionally declare
+`disclosure = "opaque"`: payload hashes are public, exact private accepted-source
+identities and source-equivalence machinery remain producer-only. Distribution
+inspection must not be described as an independent comparison with that private
+source. No private provenance or upstream publication authority is inferred.
+The model evidence is dated November 2, 2026, and subagent/runtime guidance October
+9; neither claims a newly measured client or account. Source/routing checks do
+not prove actual model-visible traversal, child profiles, access or usefulness.
+
+### Deliverable, updates and rollback
+
+Under PV-015/018 this is a root development-consumer integration. Landscape is
+outside the frozen standalone Relay Skill 5.0.0 and its release-evidence closure.
+No Relay package requirement, shipped Skill, registry/export/projection bytes or
+product behavior changes; no Relay product version/release or protected Apply is
+needed or claimed. Changing those frozen shipped bytes would instead require a
+new appropriately classified Relay version and the owner's separate product
+scope/release authority. This Task neither publishes Landscape nor deploys Relay.
+
+During candidate development, freeze independently accepted source guidance via
+the admitted Task binding before reading candidate AGENTS/INDEX/package routes.
+Their presence cannot self-accept or alter the admitted worker/profile (SA-002/003).
+After independent acceptance/integration, a clean checkout reads the committed
+selected files offline; no ordinary-startup install is required.
+
+For an intentional update, review the new published contract, semantic changes,
+license, source identity and retained local bindings, then use the pinned native
+maintenance command below. Review manifest, lock, complete slots/receipts, INDEX
+and authored adoption routes together. Do not edit frozen slots or resolve moving
+`main` at runtime. Reuse the existing structural/native/candidate qualification;
+no extra ledger, recurring client probe or release gate is introduced. Restore
+all those accepted files and local adoption bindings together through Git for
+rollback. Restoring a package alone or running `vibe clean` does not roll back
+policy; preserve overlays and unrelated work. Missing selected files require
+repair from accepted Git, never fallback to the removed copy or a different slot.
 
 ## Selected immutable identities
 
@@ -227,9 +320,9 @@ historical evidence, not proof for this new candidate.
 
 ## Drift, missing files and rollback
 
-The verifier compares the exact graph, lock/tree identities, complete Shared
-slot/receipt, standalone snapshot, first-party export/registry/slot/Skill
-equality and generated route.
+The verifier compares the exact four-package graph, lock/tree identities, complete
+Shared and Landscape slots/receipts, standalone snapshot, first-party
+export/registry/slot/Skill equality, local adoption boundaries and generated route.
 Missing or corrupt files, counterfeit identities, graph changes and malformed
 managed markers require diagnosis. Restore ordinary missing outputs from the
 accepted Git revision; do not force generation over human text or introduce a

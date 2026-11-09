@@ -1,0 +1,17 @@
+[package]
+group = "org.jresearch.ai"
+name = "landscape-model-guidance"
+version = "1.0.3"
+kind = "flow"
+format = "simple"
+epoch = 1
+publish = false
+frozen = true
+description = "Passive, frozen general model and effort recommendations from accepted Landscape evidence."
+
+license = "MIT"
+
+[boot_snippet]
+source = "vibevm/vibespecs/boot/landscape-model-guidance.md"
+category = "flow"
+link = "dynamic"
