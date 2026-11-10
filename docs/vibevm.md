@@ -2,8 +2,8 @@
 
 Relay selects Shared Governance **7.0.1** for its project-wide adoption under
 Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
-Relay **5.0.0** retains Shared 5.0.0 for its standalone snapshot and
-publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
+Candidate Relay **5.1.0** retains Shared 5.0.0 for its standalone
+snapshot and publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
 frozen Relay 4.1.1 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
 all ten applicable complete shared topics, including the separately selected
@@ -122,13 +122,13 @@ not prove actual model-visible traversal, child profiles, access or usefulness.
 
 ### Deliverable, updates and rollback
 
-Under PV-015/018 this is a root development-consumer integration. Landscape is
-outside the frozen standalone Relay Skill 5.0.0 and its release-evidence closure.
-No Relay package requirement, shipped Skill, registry/export/projection bytes or
-product behavior changes; no Relay product version/release or protected Apply is
-needed or claimed. Changing those frozen shipped bytes would instead require a
-new appropriately classified Relay version and the owner's separate product
-scope/release authority. This Task neither publishes Landscape nor deploys Relay.
+Under PV-015/018 this is a root development-consumer integration. The
+Landscape update and project-only Small Improvements adoption remain outside the
+frozen standalone Relay Skill 5.0.0 and its release-evidence closure; they do not
+change the product package requirement or payload. The separate manual handoff
+follow-up changes the product Skill and is prepared as Relay 5.1.0 in this Task.
+This source candidate does not publish Landscape or Relay, install a service or
+authorize an Apply.
 
 During candidate development, freeze independently accepted source guidance via
 the admitted Task binding before reading candidate AGENTS/INDEX/package routes.
@@ -150,7 +150,7 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=7.0.1` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=5.0.0`,
+source and exact commit. The native local registry supplies Relay `=5.1.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -173,9 +173,11 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 5.0.0 retires unused owner continuation engines and historical Task
-classification, and unifies routed Step numbering/manual PR projection. Its
-MAJOR classification is independent of the Shared 7.0.1 patch.
+Guidance 5.0.0 retired unused owner continuation engines and historical Task
+classification, and unified routed Step numbering/manual PR projection. Its
+MAJOR classification is independent of the Shared 7.0.1 patch. Guidance 5.1.0
+adds the compatible manual-handoff completion rule described in
+[relay-guidance.md](relay-guidance.md#version-and-provenance).
 Guidance 4.1.1 was a PATCH clarification of existing automatic Writer Draft
 preparation before remediation, with no new owner operation or runtime route.
 Accepted 4.1.0 added compatible ordinary Git-pair installer guidance and retained
@@ -270,7 +272,7 @@ export and projection commands.
 The standalone exporter retains Shared 5.0.0 while the project lock selects 7.0.1.
 The single `build-relay-guidance.py` builder reads the immutable release closure
 directly. The obsolete disposable-root adapter has been removed; the new Relay
-5.0.0 candidate records the changed builder provenance. No unselected root 5.0.0
+5.1.0 candidate records the changed builder provenance. No unselected root 5.0.0
 slot is needed; frozen accepted registry payloads remain unchanged.
 The verifier separately checks both complete immutable dependencies
 and active consumer routing. Neither build input nor nested release evidence is

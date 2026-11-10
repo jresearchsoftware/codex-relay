@@ -411,7 +411,7 @@ contract creates no authority registry or parallel Task ledger.
 ### Closure policy authoring
 
 Portable charter, chronological amendment and completion semantics belong to
-pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/vibevm/vibespecs/protocols/task-handoff.md).
+pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/task-handoff.md).
 The following authoring procedure describes Relay's
 [bounded legacy closure binding](../docs/relay-guidance-ownership.md#temporary-legacy-closure-binding),
 not activation of the new Shared closure runtime. Relay binds one explicit

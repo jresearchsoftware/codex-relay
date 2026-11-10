@@ -35,7 +35,7 @@ test('same-UID overlapping runtimes isolate state and cancellation/finalization 
     const diagnosticRoot = join(root, 'diagnostics');
     const script = join(root, 'synthetic-launcher.mjs');
     await writeFile(script, `
-      import { readFileSync, writeFileSync, writeSync } from 'node:fs';
+      import { readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
       import { join } from 'node:path';
       const id = readFileSync(process.env.CODEX_ALLOWED_INPUT_ROOT + '/task-input.md', 'utf8').split('\\n')[0];
       const names = ['HOME','CODEX_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','XDG_STATE_HOME','TMPDIR'];
@@ -57,8 +57,11 @@ test('same-UID overlapping runtimes isolate state and cancellation/finalization 
       }
       process.stdin.on('end', () => stop(true));
       process.on('SIGTERM', () => stop(true));
-      writeFileSync(join(process.env.TMPDIR, 'ready'), JSON.stringify({id,pid:process.pid,uid:process.getuid(),roots,
+      const readyPath = join(process.env.TMPDIR, 'ready');
+      const readyTempPath = join(process.env.TMPDIR, '.ready-' + process.pid + '.tmp');
+      writeFileSync(readyTempPath, JSON.stringify({id,pid:process.pid,uid:process.getuid(),roots,
         githubToken:process.env.GITHUB_TOKEN??null,sshAgent:process.env.SSH_AUTH_SOCK??null}));
+      renameSync(readyTempPath, readyPath);
     `);
     const diagnosticStore = value => writeDiagnosticBundle(value, { root: diagnosticRoot });
     const make = async runId => {

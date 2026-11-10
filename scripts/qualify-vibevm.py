@@ -21,8 +21,10 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "7.0.1"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "5.0.0"
+SELF_VERSION = "5.1.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
+PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
+PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
 SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
@@ -404,9 +406,12 @@ def check_first_party_registry(root, expected):
     remediation_files = files_in(root / remediation)
     require(tree_hash(remediation_files) == "sha256:d9e85f939816b7f048e77f0e5608720498272118a7fecc35cc973fb3c9934730",
             "Frozen accepted 4.1.1 registry changed")
+    previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
+    require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
+            "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 

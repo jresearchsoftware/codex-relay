@@ -1,0 +1,9 @@
+{
+  "version": "1.0.7",
+  "source_repository": "https://github.com/vibevm/vibevm",
+  "source_revision": "b6659978453f50e6d1d4d99626d70b980a2c5847",
+  "linux_x86_64_musl_binary": {
+    "url": "https://github.com/vibevm/vibevm/releases/download/v1.0.7/vibe-bootstrap-x86_64-unknown-linux-musl",
+    "sha256": "20d111df02eb28040ef4cb766bfcb0bde8ff4427b031f88f33eacb3711c3e240"
+  }
+}

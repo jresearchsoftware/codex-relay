@@ -144,15 +144,6 @@ pointers and full copyable prompt. A new manual execution after BLOCKED uses a
 fresh manual thread where the route requires it. Thread navigation is not Step
 authority. Consumer client instructions govern rename tools/readback; report
 their actual result without inventing a new Step or blocking on naming alone.
-After an owner-launched `codex-ready-manual` command, keep monitoring its original
-routing run and canonical target until trusted Writer publishes
-`MANUAL_CODEX_HANDOFF_READY` with the full copyable prompt and admitted identity
-and snapshot, or a verified terminal error establishes why that original routing
-attempt stopped. A successful label operation or scheduled/pending routing does
-not establish a terminal result or a ready manual handoff. If the original event
-or handoff publication is ambiguous, reconcile it by reading back the original
-ready event, routing run and trusted Writer publication on the canonical target;
-do not issue a duplicate ready command to resolve that ambiguity.
 The handoff retains `MANUAL_CODEX_HANDOFF_READY`; only its prompt fence may be
 folded by default, after actual GitHub expand/copy usability is qualified.
 Otherwise leave it open. Actions run names can show bounded Task/PR/route

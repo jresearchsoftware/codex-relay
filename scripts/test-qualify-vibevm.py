@@ -87,7 +87,7 @@ class CommittedFlowTests(unittest.TestCase):
                               (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
                               (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
                               (b'@=7.0.1', b'@=6.0.0'),
-                              (b'version = "5.0.0"', b'version = "5.0.1"'),
+                              (b'version = "5.1.0"', b'version = "5.0.0"'),
                               (lock["meta"]["generated_by"].encode(), b'other'),
                               (b'file://', b'file:///foreign/')):
             with self.subTest(field=before):
@@ -109,21 +109,22 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "5.0.0")
+        self.assertEqual(facts["first_party_version"], "5.1.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")
         self.assertEqual({name: value["version"] for name, value in facts["landscape"].items()}, {
             "org.jresearch.ai/landscape-model-guidance": "1.0.3",
             "org.jresearch.ai/landscape-subagents": "1.0.2"})
 
     def test_historical_slot_is_immutable_and_never_a_missing_selected_fallback(self):
-        shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT,
-                        self.root / QUALIFICATION.HISTORICAL_SLOT)
-        QUALIFICATION.check_project(self.root)
-        history = self.root / QUALIFICATION.HISTORICAL_SLOT / "README.md"
-        original = history.read_bytes()
-        history.write_bytes(original + b"Changed historical evidence\n")
-        self.rejects()
-        history.write_bytes(original)
+        historical = QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT
+        if historical.exists():
+            shutil.copytree(historical, self.root / QUALIFICATION.HISTORICAL_SLOT)
+            QUALIFICATION.check_project(self.root)
+            history = self.root / QUALIFICATION.HISTORICAL_SLOT / "README.md"
+            original = history.read_bytes()
+            history.write_bytes(original + b"Changed historical evidence\n")
+            self.rejects()
+            history.write_bytes(original)
         shutil.rmtree(self.root / QUALIFICATION.SLOT)
         self.rejects()
 
@@ -247,7 +248,7 @@ class CommittedFlowTests(unittest.TestCase):
                                    (selection["revision"], "0" * 40),
                                    ('name = "' + selection["name"] + '"', 'name = "development-governance"'),
                                    ('name = "' + selection["name"] + '"',
-                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=5.0.0"]')])):
+                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=5.1.0"]')])):
                 path = self.root / name
                 original = path.read_text()
                 for before, after in changes:
@@ -534,6 +535,19 @@ class CommittedFlowTests(unittest.TestCase):
         path.write_bytes(original)
         QUALIFICATION.check_project(self.root)
         shutil.rmtree(historical)
+        self.rejects()
+
+    def test_frozen_5_0_0_registry_is_immutable_and_retained(self):
+        frozen = self.root / QUALIFICATION.PREVIOUS_SELF_SOURCE
+        self.assertEqual(QUALIFICATION.tree_hash(QUALIFICATION.files_in(frozen)),
+                         QUALIFICATION.PREVIOUS_SELF_HASH)
+        path = frozen / "skill/references/workflow.md"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\nchanged frozen package\n")
+        self.rejects()
+        path.write_bytes(original)
+        QUALIFICATION.check_project(self.root)
+        shutil.rmtree(frozen)
         self.rejects()
 
     def test_standalone_snapshot_cannot_drift_or_become_an_active_native_route(self):

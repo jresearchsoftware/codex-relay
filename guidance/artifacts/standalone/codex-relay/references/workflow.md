@@ -133,6 +133,10 @@ same-attempt replay/recovery retains its Step. The label supplies numbering,
 never execution or admission authority. Writer projects the position only after
 durable admission and verifies the native result.
 
+Task Handoff's complete "Step as an authorized execution cycle" section owns
+these numbering and replay invariants; this manual binds the native admission
+and projection behavior.
+
 Profile resolution is applicable CR overrides, trusted Decisions, consumer
 defaults, then supported system defaults. Resolve once at admission; no silent
 model/effort substitution. Requested values are not measured backend telemetry;
