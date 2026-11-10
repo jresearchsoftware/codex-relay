@@ -509,6 +509,25 @@ owner inspection. Drain neither relaunches Codex nor discards retained work or
 diagnostics. Registered runners remain online; graceful stop disables new
 automatic admission without stopping those runners.
 
+For new native automatic label admissions, Writer stores a pre-dispatch marker
+with the reservation before projecting the Step. It retains the marker through
+the ready-label DELETE intent and removes it atomically with the durable
+`readyConsumed` receipt, before returning a launchable envelope. Inventory reads
+the marker under the shared Writer lock and checks both the original journal and
+checkout. A valid marker with neither contradictory record nor checkout proves
+that this attempt did not receive worker launch authority. Missing or conflicting
+evidence remains unknown. The original Step and ready-event identity remain
+reserved; replay of the marked attempt cannot resume deletion or launch a worker.
+After the consumed receipt the normal active/unknown execution rules apply.
+
+The physical slot and native effects remain separate. A marker can release the
+slot even if a ready DELETE or blocked Outcome publication has an uncertain
+result. Such an uncertain external effect remains unknown to drain and blocks
+a fresh Step until reconciled; it is not permission to repeat the DELETE or
+publish another Outcome. A projection failure before a DELETE intent has no such
+pending ready-label mutation and does not indefinitely occupy the lifecycle gate
+when the protected no-worker evidence is complete.
+
 The gate binds one lifecycle operation UUID, the exact selected target and the
 consumer digest. Its phases are `open`, `quiesced`, `drained`, `applying`,
 `verified` and `recovery-required`. A successful graceful stop retains
@@ -816,8 +835,10 @@ old display labels and an unconsumed owner event. These are separate facts.
 Writer retains a bounded, redacted exception in the protected attempt record;
 the helper wire reports only the projection suboperation, safe error code/type
 and HTTP status when available. A failed diagnostic write is reported as
-unverified retention. Neither a projection failure nor its diagnostic completes
-the controller lifecycle or proves containment of an older attempt.
+unverified retention. New native automatic label attempts have the durable
+pre-dispatch marker described above; diagnostic retention is not its proof.
+Neither the marker nor a projection diagnostic proves containment of an older
+attempt that predates the marker.
 
 The read-only `publication-state` response includes `admissionState`: reserved
 Step, projection receipt/previous labels, original ready-event ID, consumption
@@ -825,8 +846,8 @@ status, controller lifecycle and safe failure diagnostic. Private exception text
 and stack are not returned. Historical records without these receipts remain
 unknown; the projection does not manufacture negative execution evidence.
 
-For an existing automatic label admission that has not begun ready consumption,
-replay checks the original protected runner journal and its envelope binding
+For an older automatic label admission without the marker that has not begun
+ready consumption, replay checks the original protected runner journal and its envelope binding
 before changing Step/PR metadata or consuming the event. A missing or invalid
 journal stops with `JOURNAL_MISSING_EXECUTION_UNKNOWN`; a mismatched envelope
 stops with `JOURNAL_BINDING_CHANGED`. This moves the existing execution replay
