@@ -4,7 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 const revisions = new Set(['3f4d4348cfb05866b2108eadcc35b7a17153ff14',
-  'f6431d612d464c511fdda97e7dea64ace7f03ac7']);
+  'f6431d612d464c511fdda97e7dea64ace7f03ac7', '0aff32a6873262185f60364463f4e97ef330de89']);
 const paths = ['consumer', 'controller/src', 'runtime/src', 'contracts/src', 'reviewer/src/executable-cr-v2.json'];
 const selected = path => paths.some(p => path === p || path.startsWith(p + '/') || p.startsWith(path + '/'));
 const objectId = (kind, bytes) => createHash('sha1').update(`${kind} ${bytes.length}\0`).update(bytes).digest('hex');
