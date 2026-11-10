@@ -227,6 +227,71 @@ def test_isolated_python_refusal_does_not_write_bytecode_into_sealed_source():
             assert sealed_tree() == sealed
 
 
+def test_leased_node_transport_imports_real_helper_without_reentering_main(protected_bridge):
+    """Real lease/Python exec/Node/isMain, with inert token and API adapters."""
+    f = protected_bridge
+    if not Path('/usr/bin/node').exists():
+        pytest.skip('fixed real Node executable required')
+    helper = f.source / 'controller/src/privileged-writer-helper.mjs'
+    original_helper = (ROOT / 'controller/src/privileged-writer-helper.mjs').read_bytes()
+    put(helper, original_helper, 0o644)
+    events = f.root / 'node-dispatch-events.jsonl'
+    state = f.source / 'controller/src/fixture-state.mjs'
+    consumer = {'repository': 'example/repository', 'paths': {
+        'claimRoot': str(f.lock.parent), 'credentialEnv': str(f.root / 'never-read.env'),
+        'credentialKeyFile': str(f.root / 'never-read.pem')}}
+    configuration = put(f.root / 'leased-consumer.json', consumer)
+    modules = {
+        'consumer/consumer-config.mjs': '''import {log} from '../controller/src/fixture-state.mjs';
+export function assertRootConsumer(){log('unexpected-main');throw Object.assign(Error(),{code:'UNEXPECTED_HELPER_MAIN'});}''',
+        'consumer/consumer.mjs': 'export const CONSUMER=' + json.dumps(consumer) + ';export const unixUserId=()=>1000;',
+        'controller/src/publication-broker.mjs': '''import {log} from './fixture-state.mjs';
+export function createPublicationBroker(options){log('broker');return {dispatch:async request=>{
+  log('dispatch');if(request.operation!=='predispatch-state'||request.runId!==99||request.attemptId!=='run-99'
+    ||Object.hasOwn(request,'workflowReadToken'))throw Error('WRONG_TYPED_REQUEST');
+  const observed=await options.api.get('/fixture/read-only');
+  return {status:'SYNTHETIC_READ_ONLY',runId:request.runId,observed};}};}''',
+        'controller/src/attempt-store.mjs': 'export const createAttemptStore=()=>({});export const createPublicationStore=()=>({});',
+        'controller/src/github-api.mjs': '''import {log} from './fixture-state.mjs';
+export function createGithubApi({token,runToken}){log('api');
+ if(token!=='synthetic-writer-token'||runToken!=='synthetic-actions-read-token')throw Error('WRONG_FIXTURE_TOKEN');
+ return {get:async path=>{log('api-read');if(path!=='/fixture/read-only')throw Error('UNEXPECTED_API');return 'verified';}};}''',
+        'controller/src/trusted-git.mjs': 'export const createGitPublisher=()=>({});export const collectProgress=()=>{throw Error("NO_GIT");};',
+        'controller/src/attempt-runtime.mjs': 'export const checkoutPath=()=>"/never-accessed";',
+        'controller/src/writer-auth.mjs': '''import {log} from './fixture-state.mjs';
+export async function token(){log('token');return 'synthetic-writer-token';}''',
+        'controller/src/execution-contract.mjs': '''export const REPOSITORY='example/repository',VERSION=2;
+export const fail=code=>{throw Object.assign(Error(code),{code});};''',
+        'controller/src/diagnostics.mjs': 'export const failureDiagnosticFromDetails=()=>undefined;',
+        'controller/src/admission-cli.mjs': 'export const installedAdmissionControl=()=>({});',
+        'controller/src/predispatch-target-compatibility.mjs': 'export const assertCompatibleInstalledWriter=()=>{throw Error("NO_FINALIZATION");};',
+        'controller/src/slot-journal.mjs': 'export const createSlotJournal=()=>({});',
+        'controller/src/serial-pool-program.mjs': 'export const historicalProgram=()=>{throw Error("UNEXPECTED_MAIN_ROUTING");};',
+        'controller/src/serial-pool-compatibility.mjs': '''export const loadSerialPoolCompatibility=async()=>null;
+export const createCompatibilityStore=()=>({});export const createSerialPrLifecycleStore=()=>({});''',
+    }
+    put(state, ("import {appendFileSync} from 'node:fs';export const log=value=>appendFileSync("
+        + json.dumps(str(events)) + ",JSON.stringify(value)+'\\n');").encode(), 0o644)
+    for name, body in modules.items():
+        put(f.source / name, body.encode(), 0o644)
+    request = {'operation': 'predispatch-state', 'runId': 99, 'attemptId': 'run-99',
+               'workflowReadToken': 'synthetic-actions-read-token'}
+    for _attempt in range(2):
+        events.unlink(missing_ok=True)
+        result = subprocess.run([sys.executable, '-I', str(ROOT / 'deploy/writer_lock_lease.py'),
+            '--exec-predispatch', str(f.lease), str(f.source), str(configuration), consumer['repository']],
+            input=json.dumps(request), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15,
+            env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ''
+        assert len(result.stdout.splitlines()) == 1
+        assert json.loads(result.stdout) == {'status': 'SYNTHETIC_READ_ONLY', 'runId': 99, 'observed': 'verified'}
+        assert [json.loads(line) for line in events.read_text().splitlines()] == [
+            'token', 'api', 'broker', 'dispatch', 'api-read']
+        assert helper.read_bytes() == original_helper
+        assert f.holder.poll() is None
+
+
 def test_bridge_uses_real_root_lock_lease_and_preserves_exact_authorized_record(protected_bridge):
     f = protected_bridge
     with f.lock.open('rb') as contender:

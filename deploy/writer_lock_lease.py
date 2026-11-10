@@ -229,12 +229,12 @@ def exec_predispatch(lease_path, source, consumer_path, repository):
       const chunks=[];let size=0;for await(const chunk of process.stdin){size+=chunk.length;if(size>4096)throw Error('RECOVERY_REQUEST_INVALID');chunks.push(chunk);}
       try{const {workflowReadToken,...request}=JSON.parse(Buffer.concat(chunks));
         if(!['predispatch-state','predispatch-authorization','finalize-predispatch'].includes(request.operation))throw Object.assign(Error(),{code:'RECOVERY_REQUEST_INVALID'});
-        const {protectedWriterBroker}=await import(pathToFileURL(process.argv[1]));
+        const {protectedWriterBroker}=await import(pathToFileURL(process.argv[1]+'/controller/src/privileged-writer-helper.mjs'));
         console.log(JSON.stringify(await(await protectedWriterBroker({runToken:workflowReadToken})).dispatch(request)));
       }catch(error){console.error(JSON.stringify({code:/^[A-Z][A-Z0-9_]{0,79}$/.test(error.code??'')?error.code:'PREDISPATCH_RECOVERY_FAILED'}));process.exitCode=1;}"""
     environment = {'PATH': '/usr/bin:/bin', 'HOME': '/root', 'LANG': 'C', 'LC_ALL': 'C',
                    'RELAY_CONSUMER_CONFIG': str(consumer_path), 'RELAY_REPOSITORY': repository}
-    os.execve('/usr/bin/node', ['/usr/bin/node', '--input-type=module', '-e', program, str(helper)], environment)
+    os.execve('/usr/bin/node', ['/usr/bin/node', '--input-type=module', '-e', program, str(source)], environment)
 
 
 def main(arguments=None):
