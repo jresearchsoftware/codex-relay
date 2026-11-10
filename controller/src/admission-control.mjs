@@ -120,7 +120,8 @@ export function manualAdmissionComplete(record) {
 export async function completedAdmissionRecord(record, journal) {
   const e = record?.envelope;
   if (!e || e.version !== VERSION || !configDigest(e.consumerDigest) || !positive(e.runId)) return false;
-  if (record.predispatchPending) return pendingPredispatchRecord(record) && Boolean(journal) && !await journal.get(e.runId, e.repository);
+  // Generic callers do not provide a protected checkout reader or lock proof.
+  if (record.predispatchPending) return false;
   if (record.predispatchRecovery) return completedPredispatchRecovery(record) && !await journal.get(e.runId, e.repository);
   if (e.route === 'manual') return manualAdmissionComplete(record);
   if (e.route !== 'auto' || !publishedTerminal(record, Boolean(record.prepublicationRecovery))
@@ -183,7 +184,7 @@ function validServices(value) {
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
-  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null }) {
+  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null, checkoutAbsent = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
     || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
@@ -330,7 +331,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // Production inventory and Writer admission share the publication lock.
       // A pending marker cannot race the live Writer while this snapshot is read.
       if (record.predispatchPending) {
-        if (!pendingPredispatchRecord(record) || !journal || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
+        if (!pendingPredispatchRecord(record) || !journal || await journal.get(e.runId, e.repository)
+          || !checkoutAbsent || !await checkoutAbsent(e)) unknown.push(e.runId);
         continue;
       }
       if (record.predispatchRecovery) {

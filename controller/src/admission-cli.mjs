@@ -1,6 +1,8 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { assertRootConsumer, parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { realpathSync } from 'node:fs';
+import { lstat } from 'node:fs/promises';
+import { checkoutPath } from './attempt-runtime.mjs';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -14,6 +16,10 @@ import { fail } from './execution-contract.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 
 const exec = promisify(execFile);
+const checkoutAbsent = async envelope => {
+  try { await lstat(checkoutPath(envelope)); return false; }
+  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+};
 const commands = {
   initialize: [], status: ['operation?'], quiesce: ['operation', 'target'],
   drain: ['operation', 'timeout'], 'drain-check': ['operation'],
@@ -85,7 +91,7 @@ export function installedAdmissionControl() {
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore) });
+        store: originalStore, journal: createSlotJournal(originalStore), checkoutAbsent });
       return admission[name](...args);
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
@@ -98,7 +104,7 @@ export function installedAdmissionControl() {
       : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
     const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal,
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, checkoutAbsent,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },

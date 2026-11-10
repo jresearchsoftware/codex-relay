@@ -21,7 +21,7 @@ import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
-import { predispatchState, finalizePredispatch, completedPredispatchRecovery } from './predispatch-recovery.mjs';
+import { predispatchState, finalizePredispatch, completedPredispatchRecovery, pendingPredispatchRecord } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -483,6 +483,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
             || e.transport !== request.transport
             || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
+          // A pending boundary may already have released its resource under the
+          // Writer lock. Never resume its command deletion or issue launch
+          // authority, even if a later journal appears or DELETE was in flight.
+          if (existing.predispatchPending) fail(existing.readyConsumption?.status === 'uncertain'
+            ? 'READY_CONSUMPTION_UNCERTAIN' : 'PREDISPATCH_ATTEMPT_FINALIZED');
           if (e.transport === 'label' && !existing.readyConsumed) {
             if (existing.readyConsumption) await consumeReadyCommand(existing);
             if (e.route === 'auto' && !existing.admissionBlock) {
@@ -524,6 +529,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const nativeAdmission = charter !== null && authorityMode(charter.body) === 'github-native-v1';
         const priorRecords = nativeAdmission ? (await publicationRecords({ repository: REPOSITORY, issueNumber: task }))
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
+        for (const previous of priorRecords.filter(record => record.envelope?.issueNumber === task && record.predispatchPending)) {
+          const original = previous.envelope;
+          if (!pendingPredispatchRecord(previous) || !journal || await journal.get(original.runId, original.repository)
+            || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+        }
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.
         const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, charter.labels) : {};

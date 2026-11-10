@@ -21,20 +21,32 @@ test('durable pre-dispatch marker releases only proven non-execution and retains
   const gateRoot = await mkdtemp(join(tmpdir(), 'projection-gate-'));
   t.after(() => rm(gateRoot, { recursive: true, force: true }));
   const gate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
-    store: f.store, journal: f.journal, protectedRoot: false });
+    store: f.store, journal: f.journal, protectedRoot: false, checkoutAbsent: async () => true });
   await gate.initialize();
   assert.ok(pendingPredispatchRecord(record));
   assert.deepEqual((await gate.status()).active, []);
   assert.deepEqual((await gate.status()).unknown, []);
   await gate.assertSlotComplete('primary');
   assert.equal(nextAdmissionStep([record], record.envelope.issueNumber, [{ name: 'step-1' }]).step, 3);
+  const replay = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal });
+  await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   const deleting = structuredClone(record);
   deleting.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
   assert.ok(pendingPredispatchRecord(deleting));
+  await f.store.put(record.envelope.runId, deleting);
+  await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  assert.deepEqual(await f.store.get(record.envelope.runId), deleting);
   deleting.readyConsumed = true;
   assert.equal(pendingPredispatchRecord(deleting), false);
   await f.journal.put(record.envelope.runId, { unexpected: true });
   assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+  const next = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  await assert.rejects(next.dispatch({ ...f.admissionRequest, runId: record.envelope.runId + 1 }),
+    { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
+  const checkoutGate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
+    store: f.store, journal: memoryStore(), protectedRoot: false, checkoutAbsent: async () => false });
+  assert.deepEqual((await checkoutGate.status()).unknown, [record.envelope.runId]);
 });
 
 for (const boundary of ['projection-receipt', 'ready-delete-intent']) {
@@ -165,7 +177,7 @@ test('accepted Step label mutation with a lost response preserves partial native
   const labels = structuredClone(f.issue.labels);
   f.resetMutations();
   const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal });
-  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'JOURNAL_MISSING_EXECUTION_UNKNOWN' });
+  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   assert.equal(labelAdds, 1);
   assert.equal(readyDeletes, 0);
   assert.equal(f.mutationCount(), 0);
@@ -258,6 +270,7 @@ for (const [name, journalRecord, code] of [
     const original = await f.store.get(f.admissionRequest.runId);
     // Model the original installed incident, which predates the new diagnostic.
     delete original.admissionFailure;
+    delete original.predispatchPending;
     await f.store.put(original.envelope.runId, original);
     const labels = structuredClone(f.issue.labels);
     f.resetMutations();
