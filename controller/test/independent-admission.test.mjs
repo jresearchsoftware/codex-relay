@@ -124,6 +124,7 @@ test('prelaunch ready race releases only its unused automatic resource and repor
   const outcomeBytes = f.comments[0].body;
   await f.control.assertSlotComplete('primary');
   assert.deepEqual((await f.control.status()).unknown, []);
+  await f.control.assertTaskComplete(42);
   await assert.rejects(f.broker.dispatch(request), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
   assert.equal(f.comments[0].body, outcomeBytes);

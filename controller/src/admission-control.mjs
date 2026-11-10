@@ -340,7 +340,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
           || predispatchNoWorkerRecord(record) && !record.outcome && !record.commentIntent
             && !record.commentBodies && !record.lifecycleIntent;
         const effectsResolved = readyOnly || predispatchReadyReplacementReported(record);
-        if (!safe || !resourceOnly && !effectsResolved) unknown.push(e.runId);
+        const taskHeld = task !== null && Boolean(record.readyConsumption) && !predispatchReadyReplacementReported(record);
+        if (!safe || !resourceOnly && (!effectsResolved || taskHeld)) unknown.push(e.runId);
         continue;
       }
       if (record.predispatchRecovery) {
