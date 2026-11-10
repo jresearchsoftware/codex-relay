@@ -259,6 +259,24 @@ test('ready reconciliation refuses missing removal, replacement and pending comm
   }
 });
 
+test('reconciles a recorded uncertain DELETE without repeating it', async t => {
+  const f = await partial(t);
+  const record = await f.store.get(99);
+  record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+  record.readyConsumption = { status: 'uncertain', eventId: record.envelope.readyEventId,
+    label: record.envelope.readyLabel, code: 'READY_CONSUMPTION_UNCERTAIN', laterEvents: [], diagnostic: 'uncertain' };
+  record.controllerLifecycle = { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' };
+  await f.store.put(99, record);
+  f.issue.labels = [{ name: 'step-1' }];
+  f.events.push({ id: record.envelope.readyEventId + 1, event: 'unlabeled',
+    label: { name: record.envelope.readyLabel }, created_at: '2026-09-04T12:01:01Z' });
+  const request = await f.authorize();
+  f.api.delete = () => assert.fail('must not repeat DELETE');
+  const result = await f.broker.dispatch(request);
+  assert.equal(result.recovery.version, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+});
+
 test('ready recovery rechecks event evidence after owner authorization', async t => {
   const f = await partial(t);
   const record = await f.store.get(99);
