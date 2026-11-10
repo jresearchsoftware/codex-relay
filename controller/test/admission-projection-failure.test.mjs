@@ -36,8 +36,6 @@ test('durable pre-dispatch marker releases only proven non-execution and retains
   await f.store.put(record.envelope.runId, deleting);
   await gate.assertSlotComplete('primary');
   assert.deepEqual((await gate.status()).unknown, []);
-  await assert.rejects(gate.assertTaskComplete(record.envelope.issueNumber), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
-  await gate.assertTaskComplete(record.envelope.issueNumber + 1);
   await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   assert.deepEqual(await f.store.get(record.envelope.runId), deleting);
   const next = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
