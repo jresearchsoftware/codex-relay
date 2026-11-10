@@ -97,6 +97,19 @@ def invocation(tmp_path, monkeypatch):
         def host(self, **_options): injected('host')
         def capture(self): self.captured = True; injected('capture')
         def verify_stage(self): injected('seal')
+        def drain_staged(self):
+            injected('drain')
+            gate['phase'] = 'drained'
+            return {'drained': True}
+        def execute(self, argv, **_options):
+            if 'drain-check' in argv:
+                injected('drain-check')
+                assert self.holder is not None and gate['phase'] == 'drained'
+                return {'drained': state['failure'] != 'drain-changed'}
+            assert 'phase' in argv and argv[-1] == 'applying'
+            events.append('phase:applying')
+            gate['phase'] = 'applying'
+            return copy.deepcopy(gate)
         def lock_writer(self):
             injected('writer-lock')
             self.holder = guard
@@ -188,7 +201,7 @@ def test_known_prerequisite_failure_keeps_old_entrypoint_open(invocation, failur
     assert records == [{'runId': 7, 'terminal': True}]
 
 
-@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain'])
+@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain', 'drain-check', 'drain-changed'])
 def test_late_change_aborts_before_active_install_and_preserves_records(invocation, failure):
     args, events, gate, state, records = invocation
     state['failure'] = failure
@@ -221,10 +234,36 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert gate == {'phase': 'open', 'operation': None}
     assert events.index('build-stage') < events.index('quiesce')
     assert events.index('apt-preflight') < events.index('capture') < events.index('quiesce')
-    assert events.index('drain') < events.index('writer-lock') < events.index('final')
+    assert events.index('drain') < events.index('writer-lock') < events.index('drain-check') < events.index('final')
     assert events.index('final') < events.index('prepare-target') < events.index('backend')
     assert events.index('backend') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
     assert 'abort' not in events
+
+
+def test_staged_drain_uses_sealed_candidate_and_original_consumer():
+    preparation = install_preflight.PreparedInstall(None, None, {
+        'relay_install_root': '/opt/relay', 'relay_release_root': '/opt/relay/releases',
+        'relay_namespace': 'relay', 'relay_consumer_config_path': '/etc/relay/consumer.json',
+        'relay_github_repository': 'example/consumer',
+    }, {'revision': TARGET}, '12345678-1234-4234-8234-123456789abc')
+    preparation.captured, preparation.initial = True, {'baselineDigest': CONSUMER}
+    calls = []
+    preparation.verify_stage = lambda: calls.append('verify')
+    def execute(argv, **options):
+        calls.append((argv, options))
+        return {'drained': True}
+    preparation.execute = execute
+    assert preparation.drain_staged()['drained'] is True
+    assert calls[0] == 'verify'
+    argv, options = calls[1]
+    assert 'RELAY_CONSUMER_CONFIG=/etc/relay/consumer.json' in argv
+    assert 'RELAY_REPOSITORY=example/consumer' in argv
+    assert preparation.source + '/controller/src/admission-cli.mjs' in argv
+    assert argv[-5:] == ['drain', '--operation', preparation.operation, '--timeout', '1800']
+    assert options['timeout'] == 1860
+    preparation.execute = lambda *_args, **_kwargs: {'drained': False}
+    with pytest.raises(RuntimeError, match='STAGED_DRAIN_UNPROVEN'):
+        preparation.drain_staged()
 
 
 @pytest.mark.parametrize('failure', [None, 'compatibility', 'final', 'backend-return', 'receipt-finalize'])

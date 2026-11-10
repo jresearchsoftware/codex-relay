@@ -608,6 +608,25 @@ try {
             self.source + '/deploy/writer_lock_lease.py', '--hold', self.initial['lockPath'], self.lease_path,
             self.operation, self.identity['revision'], self.initial['baselineDigest']], 'WRITER_LOCK_READY')
 
+    def drain_staged(self):
+        """Drain with the sealed candidate reader, taking the Writer lock per poll.
+
+        The installed reader may predate a valid administrative receipt.  The
+        candidate was independently selected and sealed before quiescing; its
+        normal drain CLI uses the same consumer, gate and Writer lock as the
+        installed helper.  It does not hold the lock while controllers finish.
+        """
+        require(self.captured and self.initial is not None and self.holder is None,
+                'STAGED_DRAIN_SEQUENCE_INVALID')
+        self.verify_stage()
+        result = self.execute(['/usr/bin/env', '-i', 'PATH=/usr/bin:/bin', 'LANG=C', 'LC_ALL=C',
+            'RELAY_CONSUMER_CONFIG=' + self.values['relay_consumer_config_path'],
+            'RELAY_REPOSITORY=' + self.values['relay_github_repository'],
+            '/usr/bin/node', self.source + '/controller/src/admission-cli.mjs',
+            'drain', '--operation', self.operation, '--timeout', '1800'], timeout=1860)
+        require(result.get('drained') is True, 'STAGED_DRAIN_UNPROVEN')
+        return result
+
     def release_writer(self):
         if self.holder is not None:
             holder, self.holder = self.holder, None

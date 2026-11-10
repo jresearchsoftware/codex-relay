@@ -947,9 +947,22 @@ def run(args):
                                     and not state['unknown'], 'lifecycle-recovery-drain-unproven')
                             recovery_admission('recovery-target', '--operation', lifecycle_operation, '--target', revision)
                         else:
-                            remote_admission(target, key, values['relay_namespace'], 'drain',
-                                             '--operation', lifecycle_operation, '--timeout', '1800')
-                        if bounded_binding is not None:
+                            if preparation is not None:
+                                preparation.drain_staged()
+                                # Recheck under the same lock and retain it until
+                                # cutover; the old reader may not understand a
+                                # valid candidate administrative receipt.
+                                preparation.lock_writer()
+                                locked_drain = preparation.execute([*preparation.admission_prefix(), 'drain-check',
+                                    '--operation', lifecycle_operation])
+                                require(locked_drain.get('drained') is True, 'staged-drain-changed-before-cutover')
+                            else:
+                                remote_admission(target, key, values['relay_namespace'], 'drain',
+                                                 '--operation', lifecycle_operation, '--timeout', '1800')
+                        if bounded_binding is not None or (preparation is not None and preparation.holder is not None):
+                            if bounded_binding is None:
+                                def recovery_admission(*arguments):
+                                    return preparation.execute([*preparation.admission_prefix(), *arguments])
                             recovery_admission('phase', '--operation', lifecycle_operation, '--phase', 'applying')
                         else:
                             remote_admission(target, key, values['relay_namespace'], 'phase',

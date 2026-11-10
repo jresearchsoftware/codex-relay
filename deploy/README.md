@@ -243,6 +243,17 @@ lifecycle UUID stays in the existing reinstall journal. After successful
 post-check, the same operation verifies, completes the journal and resumes
 admission. A failure leaves admission closed and preserves that evidence.
 
+For a Git-sourced ordinary upgrade, the independently selected and sealed
+candidate reads the existing admission gate during drain. Each polling snapshot
+uses the same Writer mutex as the installed helper; the candidate releases it
+between polls. The installer then reacquires that mutex, repeats the drained
+check, and retains it through cutover. This allows an accepted candidate to
+recognize a valid administrative pre-dispatch receipt that the older installed
+reader cannot interpret. It does not resolve an active or unknown attempt: use
+the [pre-dispatch finalization procedure](../controller/README.md#pre-dispatch-admission-finalization)
+first, with its original evidence and authorization. A failed or changed drain
+remains a stop, and the operation preserves the existing gate and attempt history.
+
 For an interrupted managed-pool reinstall, rerun the same exact configuration
 and target with the existing `--phase reinstall --authorize-reinstall` options
 plus `--authorize-lifecycle-recovery --lifecycle-recovery-operation <original-UUID>`.
