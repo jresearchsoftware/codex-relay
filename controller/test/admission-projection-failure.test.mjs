@@ -74,6 +74,28 @@ for (const boundary of ['projection-receipt', 'ready-delete-intent']) {
   });
 }
 
+test('a fresh owner event advances after a marked projection failure; the old event stays spent', async t => {
+  const f = await failedProjection(t, new Error('projection failed'));
+  const original = await f.store.get(f.admissionRequest.runId);
+  const priorRun = structuredClone(f.run);
+  const nextRun = { ...priorRun, id: original.envelope.runId + 1, status: 'in_progress', conclusion: null };
+  f.api.getRun = async id => structuredClone(id === priorRun.id ? priorRun : nextRun);
+  f.api.ensureStepLabel = async () => {};
+  const nextRequest = { ...f.admissionRequest, runId: nextRun.id };
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  await assert.rejects(broker.dispatch(nextRequest), { code: 'READY_EVENT_ALREADY_CONSUMED' });
+  assert.equal(await f.store.get(nextRun.id), null);
+  const event = f.events.at(-1);
+  f.events.push({ ...event, id: event.id + 1, event: 'unlabeled' },
+    { ...event, id: event.id + 2, created_at: '2026-09-04T12:03:00Z' });
+  nextRun.created_at = '2026-09-04T12:03:01Z';
+  const next = await broker.dispatch(nextRequest);
+  assert.equal(next.envelope.step, original.envelope.step + 1);
+  assert.equal(next.envelope.readyEventId, event.id + 2);
+  assert.deepEqual(await f.store.get(original.envelope.runId), original);
+});
+
 for (const outcomeFailure of ['before-intent', 'post-uncertain']) {
   test(`failed ready DELETE and Outcome ${outcomeFailure} release the slot but retain external uncertainty`, async t => {
     const journal = memoryStore(); let f;
