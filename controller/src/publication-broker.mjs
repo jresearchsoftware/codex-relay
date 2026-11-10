@@ -532,6 +532,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
         for (const previous of priorRecords.filter(record => record.envelope?.issueNumber === task && record.predispatchPending)) {
           const original = previous.envelope;
+          if (previous.predispatchRecovery) {
+            if (!completedPredispatchRecovery(previous) || !journal || await journal.get(original.runId, original.repository)
+              || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+            continue;
+          }
           if (!(pendingPredispatchRecord(previous) || predispatchReadyReplacementReported(previous))
             || !journal || await journal.get(original.runId, original.repository)
             || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');

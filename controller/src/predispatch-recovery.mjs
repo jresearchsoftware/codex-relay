@@ -1,8 +1,9 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { digest, positive, validateEnvelope, fail } from './execution-contract.mjs';
+import { digest, positive, validateEnvelope, fail, OWNER } from './execution-contract.mjs';
 import { canonicalAuthorityJson, validateAdmissionSnapshot } from '../../contracts/src/github-authority.mjs';
 import { authorizeRecovery, recoveryAuthorizationBody } from './publication-recovery.mjs';
-import { revalidateAuthority, revalidateReadyEvent, assertPr, linkedIssue } from './live-authority.mjs';
+import { revalidateAuthority, revalidateReadyEvent, readyTransitions, assertPr, linkedIssue } from './live-authority.mjs';
+import { labelNames, READY_LABELS } from './step-metadata.mjs';
 
 // No ready-consumption intent means admit could not return to the controller.
 // This is a durable ordering proof, not an inference from an absent process.
@@ -89,15 +90,34 @@ export function predispatchBinding(r) {
 // This administrative receipt is neither a worker journal nor a Task Outcome.
 export function completedPredispatchRecovery(record) {
   const { predispatchRecovery: recovery, ...original } = record ?? {};
-  return partialPredispatchRecord(original) && recovery?.version === 1
+  const base = recovery?.version === 2 ? readyReconciliationCandidate(original) : partialPredispatchRecord(original);
+  const expected = recovery?.version === 2 ? { ...predispatchBinding(original), readyRemovalEventId: recovery.binding?.readyRemovalEventId } : predispatchBinding(original);
+  return base && (recovery?.version === 1 || recovery?.version === 2 && positive(recovery.binding?.readyRemovalEventId)
+      && recovery.binding.readyRemovalEventId > original.envelope.readyEventId)
     && recovery.status === 'finalized' && positive(recovery.authorizationId)
     && Number.isFinite(Date.parse(recovery.authorizedAt)) && Number.isFinite(Date.parse(recovery.completedAt))
     && Date.parse(recovery.completedAt) >= Date.parse(recovery.authorizedAt)
-    && canonicalAuthorityJson(recovery.binding) === canonicalAuthorityJson(predispatchBinding(original));
+    && canonicalAuthorityJson(recovery.binding) === canonicalAuthorityJson(expected);
+}
+
+// Only a record with no attempted publication can be retired here. An uncertain
+// comment POST needs its own native publication recovery and remains blocking.
+export function readyReconciliationCandidate(r) {
+  const ready = r?.readyConsumption;
+  const uncertain = ready?.status === 'uncertain'
+    && Object.keys(ready).sort().join(',') === 'code,diagnostic,eventId,label,laterEvents,status'
+    && ['READY_CONSUMPTION_UNCERTAIN', 'READY_EVENT_REPLACED'].includes(ready.code)
+    && Array.isArray(ready.laterEvents) && ready.laterEvents.every(positive)
+    && typeof ready.diagnostic === 'string' && Buffer.byteLength(ready.diagnostic, 'utf8') <= 8192;
+  return Boolean(r?.predispatchPending && predispatchNoWorkerRecord(r)
+    && (ready?.status === 'deleting' || uncertain)
+    && !r.outcome && !r.commentIntent && !r.commentBodies && !r.lifecycleIntent
+    && !r.publicationIntent && !r.publishedHead && !r.finalHead);
 }
 
 export async function predispatchState({ api, journal, record: r, checkoutAbsent }) {
-  if (!partialPredispatchRecord(r)) fail('PREDISPATCH_STATE_NOT_PROVEN');
+  const reconcileReady = readyReconciliationCandidate(r);
+  if (!partialPredispatchRecord(r) && !reconcileReady) fail('PREDISPATCH_STATE_NOT_PROVEN');
   const e = validateEnvelope(r.envelope);
   const run = await api.getRun(e.runId);
   // A re-run could have entered an older runtime's replay path. Never infer its
@@ -107,7 +127,22 @@ export async function predispatchState({ api, journal, record: r, checkoutAbsent
   if (!journal || await journal.get(e.runId, e.repository) || !checkoutAbsent || !await checkoutAbsent(e))
     fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
   await revalidateAuthority(api, e);
-  await revalidateReadyEvent(api, e);
+  let readyRemovalEventId;
+  if (reconcileReady) {
+    // Require an observed removal after the original command, with no later
+    // ready event and no live ready label. Never repeat the uncertain DELETE.
+    const subject = await api.get(`/issues/${e.number}`);
+    const events = await readyTransitions(api, e.number);
+    const original = events.find(event => event.id === e.readyEventId);
+    const later = events.filter(event => event.id > e.readyEventId);
+    if (subject.number !== e.number || labelNames(subject.labels).some(name => READY_LABELS.includes(name))
+      || original?.event !== 'labeled' || original.label?.name !== e.readyLabel
+      || original.actor?.login !== OWNER || original.actor?.type !== 'User'
+      || original.created_at !== e.readyEventAt || later.length !== 1
+      || later[0].event !== 'unlabeled' || later[0].label?.name !== e.readyLabel)
+      fail('READY_RECONCILIATION_UNPROVEN');
+    readyRemovalEventId = later[0].id;
+  } else await revalidateReadyEvent(api, e);
   if ((await api.get(`/git/ref/heads/${e.branch}`)).object?.sha !== e.startHead)
     fail('REMOTE_HEAD_CHANGED');
   if (e.continuation?.pullRequest) {
@@ -116,7 +151,7 @@ export async function predispatchState({ api, journal, record: r, checkoutAbsent
     if (pr.head.sha !== e.startHead || pr.head.ref !== e.branch || pr.base.ref !== CONSUMER.baseBranch
       || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
   }
-  const binding = predispatchBinding(r);
+  const binding = { ...predispatchBinding(r), ...(reconcileReady ? { readyRemovalEventId } : {}) };
   return { binding, authorizationBody: recoveryAuthorizationBody(binding) };
 }
 
@@ -134,9 +169,10 @@ export async function finalizePredispatch({ api, store, journal, record: r, requ
   const { binding } = await predispatchState({ api, journal, record: r, checkoutAbsent });
   const authorizedAt = await authorizeRecovery(api, r.envelope, request.authorizationId, binding);
   // Refresh the exact evidence after owner authorization reads, before commit.
-  await predispatchState({ api, journal, record: r, checkoutAbsent });
+  const refreshed = await predispatchState({ api, journal, record: r, checkoutAbsent });
+  if (canonicalAuthorityJson(refreshed.binding) !== canonicalAuthorityJson(binding)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
   if (digest(await store.get(r.envelope.runId)) !== binding.recordDigest) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
-  r.predispatchRecovery = { version: 1, status: 'finalized', authorizationId: request.authorizationId,
+  r.predispatchRecovery = { version: readyReconciliationCandidate(r) ? 2 : 1, status: 'finalized', authorizationId: request.authorizationId,
     binding, authorizedAt, completedAt: now() };
   await store.put(r.envelope.runId, r);
   return r.predispatchRecovery;

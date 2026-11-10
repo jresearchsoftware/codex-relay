@@ -330,6 +330,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (e.route !== 'auto') continue;
       // Production inventory and Writer admission share the publication lock.
       // A pending marker cannot race the live Writer while this snapshot is read.
+      if (record.predispatchPending && record.predispatchRecovery) {
+        if (!completedPredispatchRecovery(record) || !journal || await journal.get(e.runId, e.repository)
+          || !checkoutAbsent || !await checkoutAbsent(e)) unknown.push(e.runId);
+        continue;
+      }
       if (record.predispatchPending) {
         const safe = predispatchNoWorkerRecord(record) && journal && !await journal.get(e.runId, e.repository)
           && checkoutAbsent && await checkoutAbsent(e);

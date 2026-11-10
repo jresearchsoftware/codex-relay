@@ -758,6 +758,15 @@ the original controller lock under the Writer mutex. A rerun, ambiguous state,
 changed configuration, pending mutation or any contradictory evidence fails
 closed. Current source does not reinterpret retained schema-v3 executions.
 
+For a newer pending record with an interrupted ready-label DELETE, the same
+operator route can also reconcile the original attempt when the native timeline
+proves the original command was removed, no later ready transition or ready
+label exists, and no Outcome or publication intent was recorded. Inspection
+binds the observed removal event and the complete record digest; finalization
+rechecks that evidence and never repeats the DELETE. Missing or contradictory
+evidence and an uncertain comment publication remain blocked. This receipt does
+not make an older runtime that ignores it safe to activate or replay.
+
 Inspection returns the exact public-safe binding and `authorizationBody`.
 The owner posts those exact bytes as a fresh unedited native comment on the
 original target after the original run completed. Finalize takes that comment

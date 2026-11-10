@@ -195,3 +195,82 @@ test('wrong attempt and a foreign original run actor never authorize retirement'
   await assert.rejects(f.broker.dispatch(request), { code: 'RECOVERY_ORIGINAL_RUN_NOT_COMPLETED' });
   assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
 });
+
+test('retire an uncertain ready DELETE only after exact removal evidence and no publication effects', async t => {
+  const f = await partial(t);
+  const record = await f.store.get(99);
+  record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+  record.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
+  await f.store.put(99, record);
+  f.issue.labels = [{ name: 'step-1' }];
+  f.events.push({ id: record.envelope.readyEventId + 1, event: 'unlabeled', label: { name: record.envelope.readyLabel },
+    actor: { login: 'example-owner', type: 'User' }, created_at: '2026-09-04T12:01:01Z' });
+  const request = await f.authorize();
+  const native = Object.fromEntries(['post', 'patch', 'delete'].map(method => [method, f.api[method]]));
+  for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+  const result = await f.broker.dispatch(request);
+  assert.equal(result.recovery.version, 2);
+  assert.equal(result.recovery.binding.readyRemovalEventId, record.envelope.readyEventId + 1);
+  const saved = await f.store.get(99);
+  assert.ok(completedPredispatchRecovery(saved));
+  assert.equal(saved.readyConsumed, undefined);
+  const root = await mkdtemp(join(tmpdir(), 'ready-reconcile-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root, consumerDigest: saved.envelope.consumerDigest, store: f.store,
+    journal: f.journal, checkoutAbsent: async () => true, protectedRoot: false });
+  await gate.initialize();
+  assert.deepEqual((await gate.status()).unknown, []);
+  await assert.rejects(f.broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  assert.deepEqual((await f.broker.dispatch(request)).recovery, result.recovery);
+  await assert.rejects(f.broker.dispatch({ ...request, authorizationId: 10001 }), { code: 'PREDISPATCH_RECOVERY_BINDING_CHANGED' });
+  const originalRun = structuredClone(f.run);
+  const nextRun = { ...originalRun, id: 100, status: 'in_progress', conclusion: null,
+    created_at: '2026-09-04T12:03:01Z' };
+  f.api.getRun = async id => structuredClone(id === 99 ? originalRun : nextRun);
+  f.api.ensureStepLabel = async () => {};
+  f.issue.labels.push({ name: record.envelope.readyLabel });
+  f.events.push({ id: record.envelope.readyEventId + 2, event: 'labeled',
+    label: { name: record.envelope.readyLabel }, actor: { login: 'example-owner', type: 'User' },
+    created_at: '2026-09-04T12:03:00Z' });
+  Object.assign(f.api, native);
+  const nextBroker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  const admitted = await nextBroker.dispatch({ ...f.admissionRequest, runId: 100 });
+  assert.equal(admitted.envelope.step, 3);
+  assert.equal(admitted.envelope.readyEventId, record.envelope.readyEventId + 2);
+  assert.deepEqual((await f.store.get(99)).predispatchRecovery, result.recovery);
+});
+
+test('ready reconciliation refuses missing removal, replacement and pending comment publication', async t => {
+  for (const scenario of ['missing', 'replacement', 'comment']) {
+    const f = await partial(t);
+    const record = await f.store.get(99);
+    record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+    record.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
+    if (scenario === 'comment') record.commentIntent = { uncertain: true };
+    await f.store.put(99, record);
+    f.issue.labels = [{ name: 'step-1' }];
+    if (scenario !== 'missing') f.events.push({ id: record.envelope.readyEventId + 1, event: 'unlabeled',
+      label: { name: record.envelope.readyLabel }, created_at: '2026-09-04T12:01:01Z' });
+    if (scenario === 'replacement') f.events.push({ id: record.envelope.readyEventId + 2, event: 'labeled',
+      label: { name: record.envelope.readyLabel }, created_at: '2026-09-04T12:01:02Z' });
+    await assert.rejects(f.broker.dispatch(f.inspect));
+    assert.deepEqual(await f.store.get(99), record);
+  }
+});
+
+test('ready recovery rechecks event evidence after owner authorization', async t => {
+  const f = await partial(t);
+  const record = await f.store.get(99);
+  record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+  record.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
+  await f.store.put(99, record);
+  f.issue.labels = [{ name: 'step-1' }];
+  f.events.push({ id: record.envelope.readyEventId + 1, event: 'unlabeled', label: { name: record.envelope.readyLabel },
+    created_at: '2026-09-04T12:01:01Z' });
+  const request = await f.authorize();
+  f.events.push({ id: record.envelope.readyEventId + 2, event: 'labeled', label: { name: record.envelope.readyLabel },
+    created_at: '2026-09-04T12:01:02Z' });
+  await assert.rejects(f.broker.dispatch(request), { code: 'READY_RECONCILIATION_UNPROVEN' });
+  assert.deepEqual(await f.store.get(99), record);
+});

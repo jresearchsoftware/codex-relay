@@ -32,7 +32,7 @@ export function nextAdmissionStep(records, task, labels = []) {
     throw error;
   }
   const retiredPartial = previous && (completedPredispatchRecovery(previous)
-    && previous.stepProjectionFrom.includes(`step-${position}`)
+    && (previous.stepProjectionFrom ?? previous.predispatchPending?.projectionFrom ?? []).includes(`step-${position}`)
     || pendingPredispatchRecord(previous) && previous.predispatchPending.projectionFrom.includes(`step-${position}`));
   if (position && position < (previous?.envelope.step ?? 0) && !retiredPartial)
     throw Object.assign(new Error(`STEP_LABEL_BEHIND_ADMISSION: Task #${task} label step-${position} is behind successful Writer Step ${previous.envelope.step}. Reconcile the Issue's authorized numbering position without rewriting admission history; no Step was allocated.`),
