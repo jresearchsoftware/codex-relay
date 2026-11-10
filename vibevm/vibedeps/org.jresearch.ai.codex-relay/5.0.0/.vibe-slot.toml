@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
+source_hash = "sha256:7f1fb3204e38bf3483cd7d687099bdd2058e4adc4e8098c636064978e164f26d"
 spec_format = "mixed"
 
 [[file]]
@@ -20,7 +20,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "45d94b9a2fcffc3ea6de792770ea26a30025302aad25b856731c7ca346c93eea"
+sha256 = "ca3ae403ac39a1344e19ba99f238feaeb36cc6c723a07b51e2123a6d70498ebf"
 
 [[file]]
 path = "skill/SKILL.md"
@@ -64,7 +64,7 @@ sha256 = "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f"
 
 [[file]]
 path = "skill/references/workflow.md"
-sha256 = "1f12b1293b024b406a6389375a02c07ece9b70b4c749401643fcabcd3aeda406"
+sha256 = "4d59199a7ca593677cda8c668d712c78b355153dfe071d9aefd4cbd04f554c92"
 
 [[file]]
 path = "vibe.lock"
