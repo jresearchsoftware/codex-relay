@@ -765,24 +765,34 @@ operator may stage a verified root-owned copy of that accepted source and run
 consumer configuration. This source-controlled root-only entrypoint selects only
 a configured repository, bounds stdin to 4096 bytes, acquires the installation's
 existing `publication-v2.lock`, and invokes the same protected Writer broker.
-It uses the configured Writer credentials on the host; no runner-UID override,
-new sudo grant, service replacement or permission repair is required. Operator
-source acceptance/host authority still apply. The CLI accepts only repository,
-operation, runId, attemptId and (for finalization) authorizationId; it accepts no
-caller path, slot, head, executable or credential.
+It uses the configured Writer credential on the host and an existing
+Actions-read credential supplied only through its bounded stdin request. No
+runner-UID override, new sudo grant, service replacement or permission repair is
+required. Operator source acceptance and host authority still apply. Besides the
+repository, operation, runId, attemptId and (for finalization) authorizationId,
+the request contains `workflowReadToken`; it accepts no caller path, slot, head
+or executable. The credential is not put in the broker request or stored in the
+record. Use an existing credential with Actions-read access to that repository.
 
 ```sh
-# Run through the existing authorized root deployment channel. These two
-# variables name the verified accepted source and existing protected config.
-/usr/bin/env -i PATH=/usr/bin:/bin HOME=/root LANG=C LC_ALL=C \
-  RELAY_CONSUMER_CONFIG="$protected_consumer" \
-  /usr/bin/node "$accepted_source/controller/src/predispatch-recovery-entrypoint.mjs" <<'JSON'
-{"repository":"example-org/example-repository","operation":"predispatch-state","runId":99,"attemptId":"run-99"}
-JSON
+# On a workstation with the existing authenticated gh session and a configured
+# root SSH host with a verified known_hosts key, use the accepted source copy:
+python3 scripts/predispatch-ssh.py --host root@relay-host \
+  --source /root/verified-accepted-source --consumer /etc/codex-relay/consumer.json \
+  --repository example-org/example-repository --run-id 99 --operation predispatch-state
 ```
 
+The example paths and host must be replaced with the verified deployment's
+actual values. The helper reads `gh auth token` into memory and sends it in the
+SSH stdin payload; it does not print it, place it in arguments or environment,
+or write a token file. It requires strict host-key checking and uses the
+operator's existing SSH configuration. Do not enable shell tracing or capture
+the input stream; do not paste a credential into a shell command or history.
+The host must trust the operator and protect the root process and SSH transport.
+An unavailable or insufficient Actions-read credential fails the operation.
+
 After posting the exact returned authorizationBody, use the identical command
-with `operation: "finalize-predispatch"` and the native `authorizationId` added.
+with `--operation finalize-predispatch --authorization-id <native-comment-id>`.
 Read back `predispatch-state` and normal admission status before continuing the
 ordinary lifecycle operation. Stop on any failed or contradictory readback.
 No preexisting terminal Outcome is manufactured for the old operation.
