@@ -1,0 +1,10 @@
+---
+# The sole remaining reservation has exact pre-dispatch evidence and no worker.
+# Its original bytes remain intact until compatible Writer selection is durable.
+- name: Retain original service activity before the compatible Writer bridge
+  hosts: relay
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Preserve the first same-operation activation intent
+      ansible.builtin.include_tasks: tasks/upgrade-lifecycle-snapshot.yml

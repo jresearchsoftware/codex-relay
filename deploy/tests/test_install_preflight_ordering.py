@@ -240,6 +240,26 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert 'abort' not in events
 
 
+def test_capable_installed_gate_receives_sealed_target_source_before_quiesce(invocation, monkeypatch):
+    args, _events, gate, state, _records = invocation
+    observe, admission = inventory.remote_inventory, backend.remote_admission
+    def compatible_inventory(*arguments, **options):
+        report = observe(*arguments, **options)
+        report['installed']['deploymentContract'] = {'capabilities': ['predispatch-retention-v1']}
+        return report
+    observed = []
+    def checked_admission(target, key, namespace, command, *options):
+        if command == 'quiesce':
+            assert options[-2:] == ('--target-source', state['preparation'].source)
+            observed.append(command)
+        return admission(target, key, namespace, command, *options)
+    monkeypatch.setattr(inventory, 'remote_inventory', compatible_inventory)
+    monkeypatch.setattr(backend, 'remote_admission', checked_admission)
+    backend.run(args)
+    assert observed == ['quiesce']
+    assert gate['phase'] == 'open'
+
+
 def test_staged_drain_uses_sealed_candidate_and_original_consumer():
     preparation = install_preflight.PreparedInstall(None, None, {
         'relay_install_root': '/opt/relay', 'relay_release_root': '/opt/relay/releases',

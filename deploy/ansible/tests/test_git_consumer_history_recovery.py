@@ -130,6 +130,96 @@ console.log(JSON.stringify({records:rows.length,journals:(await journal.all()).l
 """
 
 
+HISTORICAL_V3_HISTORY = HISTORY
+# These are current v4 receipts. The original v3 producer/reader is exercised
+# separately through its verified frozen source below, never a fresh v3 parser.
+HISTORY = r"""
+import {join} from 'node:path';
+import {CONSUMER,CONSUMER_DIGEST} from './consumer/consumer.mjs';
+import {createPublicationStore,createAttemptStore} from './controller/src/attempt-store.mjs';
+import {VERSION} from './controller/src/execution-contract.mjs';
+import {completedAdmissionRecord} from './controller/src/admission-control.mjs';
+import {canonicalAuthorityJson,renderAuthorityRecord,sha256Body,validateAuthorityRecord,
+  createAdmissionSnapshot,validateAdmissionSnapshot,authoritySourceDigest,admissionBinding}
+  from './contracts/src/github-authority.mjs';
+const store=createPublicationStore(join(CONSUMER.paths.claimRoot,'publication-v2'));
+const journal=createAttemptStore(CONSUMER.paths.attemptRoot);
+const operation=process.argv[1],head='b'.repeat(40),repository=CONSUMER.repository;
+const charter='Authority model: github-native-v1\nIssue closure policy: keep-open';
+function envelope(runId,route='manual') {
+  const task=runId+1000,parent={kind:'issue',number:task};
+  const selected={charter:{kind:'issue-body',id:task,parent,sha256:sha256Body(charter)},
+    decisions:[],change_request:null,compatibility_request:null};
+  const authority={...selected,sha256:authoritySourceDigest(selected)};
+  const request=createAdmissionSnapshot({authority,request:{repository,task,charter_sha256:sha256Body(charter),route,
+    purpose:'Synthetic isolated history qualification',scope:['Preserve original attempt evidence.'],
+    model:'gpt-6.1-sol',effort:'xhigh',subagents:false,validation:['diff-check'],boundaries:['No external mutation.'],
+    branch:`codex/task-${task}`,base_sha:head,starting_head:head,existing_pr:null,
+    issue_closure_policy:'keep-open',continuation:{hold:false,next:null}}},
+    {step:1,attempt:`run-${runId}`,runId:String(runId)});
+  validateAdmissionSnapshot(request,{repository,task});
+  return {version:VERSION,repository,consumerDigest:CONSUMER_DIGEST,runId,attemptId:`run-${runId}`,
+    route,target:'issue',number:task,issueNumber:task,step:1,branch:request.branch,startHead:request.starting_head,
+    authorityDigest:authority.sha256,request};
+}
+const terminal=id=>({status:'BLOCKED',head:null,prNumber:null,outcomeId:id+3000,
+  bodySha256:sha256Body(`Synthetic native terminal body ${id}`)});
+function manualResult(e,parent) {
+  const result={schema_version:'4.0',kind:'outcome',repository,task:e.issueNumber,parent,
+    charter_sha256:e.request.charter_sha256,step:e.step,authority:e.request.authority,admission:admissionBinding(e.request),
+    attempt:e.attemptId,status:'implemented',result:{kind:parent.kind==='pull_request'?'git':'qualification',
+      revision:head,identities:[{kind:'github-actions-run',id:String(e.runId)}]},warnings:[],
+    limitations:['Synthetic receipt; no external operation performed.'],summary:'Preserved current manual result.'};
+  validateAuthorityRecord(result,{repository,task:e.issueNumber});return result;
+}
+if(operation==='seed') {
+  for(let id=1;id<=140;id++) {
+    const e=envelope(id,'auto'),outcome=terminal(id);
+    await store.put(id,{envelope:e,outcome,controllerLifecycle:{version:1,status:'complete',child:'not_started',containment:'not_required'}});
+    await journal.put(id,{version:VERSION,envelope:e,outcome,execution:null});
+  }
+  for(let id=201;id<=208;id++) {
+    const e=envelope(id),block={code:'AUTHORITY_ROUTE_MISMATCH'};delete e.request;
+    Object.assign(e,{admissionBlock:block,authorityDigest:null,branch:null,startHead:null});
+    const outcome=terminal(id),record={envelope:e,admissionBlock:block,outcome};
+    if(id===208){record.commentBodies={outcome:{number:e.issueNumber,sha256:outcome.bodySha256,rendererVersion:'human-v1'}};delete outcome.bodySha256;}
+    await store.put(id,record);
+  }
+  for(const id of [301,302,303]) {
+    const e=envelope(id),parent={kind:id===302?'pull_request':'issue',number:id===302?902:e.issueNumber};
+    const result=manualResult(e,parent),body=renderAuthorityRecord(result)+`\n\n<!-- relay:run-${id}:outcome -->`;
+    const record={envelope:e,publicationIntent:null,commentIntent:null,
+      manualSubmission:{sha256:sha256Body(canonicalAuthorityJson(result)),parent,publishedResult:result},
+      commentBodies:{outcome:{number:parent.number,sha256:sha256Body(body),rendererVersion:'human-v1'}},
+      outcome:{status:'IMPLEMENTED_PENDING_FRESH_REVIEW',head,prNumber:id===302?902:null,outcomeId:id+3000,
+        bodySha256:sha256Body(body),manual:true}};
+    if(id===302)record.prNumber=902;
+    await store.put(id,record);
+  }
+}
+if(operation==='add-pending')for(let id=401;id<=410;id++) {
+  const e=envelope(id),record={envelope:e,outcome:null,handoffComplete:false};
+  if(id<=405)record.commentBodies={handoff:{number:e.issueNumber,sha256:sha256Body(`Synthetic handoff ${id}`),rendererVersion:'human-v1'}};
+  await store.put(id,record);
+}
+const rows=await store.all(),unknown=[];
+for(const row of rows)if(!await completedAdmissionRecord(row,journal))unknown.push(row.envelope.runId);
+console.log(JSON.stringify({records:rows.length,journals:(await journal.all()).length,unknown:unknown.sort((a,b)=>a-b),consumerDigest:CONSUMER_DIGEST}));
+"""
+
+INVENTORY = r"""
+import {join} from 'node:path';
+import {CONSUMER,CONSUMER_DIGEST} from './consumer/consumer.mjs';
+import {createPublicationStore,createAttemptStore} from './controller/src/attempt-store.mjs';
+import {completedAdmissionRecord} from './controller/src/admission-control.mjs';
+const store=createPublicationStore(join(CONSUMER.paths.claimRoot,'publication-v2'));
+const journal=createAttemptStore(CONSUMER.paths.attemptRoot),rows=await store.all(),unknown=[];
+for(const row of rows)if(!await completedAdmissionRecord(row,journal))unknown.push(row.envelope.runId);
+console.log(JSON.stringify({records:rows.length,journals:(await journal.all()).length,
+  unknown:unknown.sort((a,b)=>a-b),consumerDigest:CONSUMER_DIGEST}));
+"""
+
+
 @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0 and Path(NODE).exists(),
                      'real root Linux filesystem and Node required')
 class GitConsumerHistoryRecoveryTests(unittest.TestCase):
@@ -148,6 +238,10 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
             path.mkdir(mode=0o700)
         self.consumer = self.config / 'consumer.json'
         old = json.loads((ROOT / 'deploy/example.json').read_text())['consumer']
+        # This fixture exercises retained singleton/SERIAL history. The public
+        # deployment example now carries compiler input for a managed pool;
+        # raw compiler input is not a rendered standalone consumer snapshot.
+        old.pop('generalRunnerPool', None)
         for name in old['paths']:
             old['paths'][name] = str(self.root / 'configured' / name)
         old['paths'].update(claimRoot=str(self.claims), attemptRoot=str(self.journals))
@@ -197,14 +291,21 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def seed(self, mode='completed'):
-        report = self.node(HISTORY, 'seed', mode)
-        self.assertEqual(report['records'], 161 if mode == 'full' else 151)
+        report = self.node(HISTORY, 'seed', 'completed')
+        self.assertEqual(report['records'], 151)
         self.assertEqual(report['journals'], 140)
         self.assertEqual(report['consumerDigest'], self.initial['consumerDigest'])
-        self.assertEqual(report['unknown'], list(range(401, 411)) if mode == 'full' else [])
+        self.assertEqual(report['unknown'], [])
         self.admission('quiesce', '--operation', OP, '--target', REVISION)
         self.assertTrue(self.admission('drain-check', '--operation', OP)['drained'])
         self.admission('phase', '--operation', OP, '--phase', 'applying')
+        if mode == 'full':
+            # Manual handoff remains available while automatic work is closed.
+            # A late unresolved effect must be observed again at publication.
+            report = self.node(HISTORY, 'add-pending')
+            self.assertEqual(report['records'], 161)
+            self.assertEqual(report['journals'], 140)
+            self.assertEqual(report['unknown'], list(range(401, 411)))
 
     def history_snapshot(self):
         values = {}
@@ -229,8 +330,37 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
         return publication.publish(self.source, self.config, self.desired, self.claims,
             self.repository, OP, REVISION, execute=execute or self.execute)
 
+    def frozen_v3_source(self):
+        frozen_revision = '3f4d4348cfb05866b2108eadcc35b7a17153ff14'
+        frozen = self.root / 'frozen-v3'
+        program = ('import{extractHistoricalRuntime}from'
+            + json.dumps((ROOT / 'controller/test/historical-runtime.mjs').as_uri())
+            + ';await extractHistoricalRuntime(process.argv[1],'
+            + json.dumps(frozen_revision) + ');')
+        extracted = subprocess.run([NODE, '--input-type=module', '-e', program, str(frozen)],
+                                  capture_output=True, text=True, timeout=60)
+        self.assertEqual(extracted.returncode, 0, extracted.stderr)
+        self.protect_source(frozen, frozen_revision)
+        return frozen
+
+    def test_frozen_v3_reader_preserves_original_receipts_without_current_reinterpretation(self):
+        frozen = self.frozen_v3_source()
+        report = self.node(HISTORICAL_V3_HISTORY, 'seed', 'completed', source=frozen)
+        self.assertEqual((report['records'], report['journals'], report['unknown']), (151, 140, []))
+        before = self.history_snapshot()
+        self.assertEqual(self.node(INVENTORY, 'inventory', source=frozen)['unknown'], [])
+        # Current v4 source deliberately leaves original v3 manual semantics
+        # to that frozen reader; it does not fabricate migrated result proofs.
+        self.assertEqual(self.node(INVENTORY, 'inventory')['unknown'], [301, 302, 303])
+        self.assertEqual(self.history_snapshot(), before)
+
     def test_accepted_baseline_rejects_the_eleven_completed_manual_receipts(self):
         self.seed()
+        # Retain this historical eleven-receipt regression against the actual
+        # original v3 producer. Fresh current qualification above uses v4.
+        frozen = self.frozen_v3_source()
+        report = self.node(HISTORICAL_V3_HISTORY, 'seed', 'completed', source=frozen)
+        self.assertEqual((report['records'], report['journals'], report['unknown']), (151, 140, []))
         baseline = self.root / 'accepted-baseline'
         baseline.mkdir()
         frozen_source = os.environ.get('RELAY_HISTORY_BASELINE_SOURCE')
@@ -260,7 +390,7 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
                 archive.extractall(baseline)
         self.protect_source(baseline, BASELINE)
         before, gate = self.history_snapshot(), self.gate.read_bytes()
-        report = self.node(HISTORY, 'inventory', source=baseline)
+        report = self.node(INVENTORY, 'inventory', source=baseline)
         self.assertEqual(report['unknown'], [*range(201, 209), 301, 302, 303])
         with self.assertRaises(publication.ConsumerPublicationError) as caught:
             publication._execute([NODE, str(baseline / 'controller/src/admission-cli.mjs'),
@@ -302,9 +432,11 @@ class GitConsumerHistoryRecoveryTests(unittest.TestCase):
             self.publish()
         self.assertEqual(str(caught.exception), 'CONSUMER_PUBLICATION_CONTROLLER_FAILED')
         diagnostic = dict(caught.exception.controller_diagnostic)
-        self.assertGreaterEqual(diagnostic.pop('timing')['nativeCalls'], 1)
+        # Current effect inventory is local and does not consult the retired
+        # historical Task-disposition adapter or depend on GitHub availability.
+        self.assertEqual(diagnostic.pop('timing')['nativeCalls'], 0)
         self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
-            'failure': 'nonzero_exit', 'exit_code': 1, 'code': 'HISTORICAL_TASK_AUTHORITY_UNAVAILABLE'})
+            'failure': 'nonzero_exit', 'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED'})
         self.assertEqual(self.consumer.read_bytes(), self.old)
         self.assertFalse(self.backup.exists())
         self.assertEqual(self.gate.read_bytes(), gate)

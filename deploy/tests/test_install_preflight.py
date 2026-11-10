@@ -170,7 +170,8 @@ class OldInstallationTests(unittest.TestCase):
         history.mkdir(mode=0o700)
         record = history / '71.json'
         record.write_text(json.dumps({'envelope': {'version': 2, 'repository': self.consumer['repository'],
-            'consumerDigest': self.digest, 'runId': 71, 'attemptId': 'run-71', 'route': 'manual'}, 'outcome': None}))
+            'consumerDigest': self.digest, 'runId': 71, 'attemptId': 'run-71', 'route': 'manual',
+            'issueNumber': 71, 'target': 'issue', 'number': 71}, 'outcome': None}))
         record.chmod(0o600)
         before, inode = record.read_bytes(), record.stat().st_ino
         initial = copy.deepcopy(self.prepared.initial)

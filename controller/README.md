@@ -761,11 +761,15 @@ closed. Current source does not reinterpret retained schema-v3 executions.
 For a newer pending record with an interrupted ready-label DELETE, the same
 operator route can also reconcile the original attempt when the native timeline
 proves the original command was removed, no later ready transition or ready
-label exists, and no Outcome or publication intent was recorded. Inspection
-binds the observed removal event and the complete record digest; finalization
-rechecks that evidence and never repeats the DELETE. Missing or contradictory
-evidence and an uncertain comment publication remain blocked. This receipt does
-not make an older runtime that ignores it safe to activate or replay.
+label exists. Inspection binds the observed removal event and the complete
+record digest; finalization rechecks that evidence and never repeats the DELETE.
+If a BLOCKED Outcome comment was attempted, reconciliation additionally requires
+the exact retained comment body or seal and a unique native read-back from the
+configured Writer bot, including its immutable identity. The binding records the
+comment identity and body digest; it never repeats the POST or changes the
+original record. Missing, ambiguous or contradictory evidence remains blocked.
+This receipt does not make an older runtime that ignores it safe to activate or
+replay.
 
 Inspection returns the exact public-safe binding and `authorizationBody`.
 The owner posts those exact bytes as a fresh unedited native comment on the
@@ -788,8 +792,9 @@ exception cannot conceal an unrelated stale numbering position.
 
 ### Deployment-operator entrypoint before an upgrade
 
-An unresolved reservation may itself prevent lifecycle drain. Do not bypass that
-drain or install candidate service code to resolve the circular dependency.
+An unresolved reservation may itself prevent lifecycle drain. A retained old
+Writer can replay that attempt even with admission quiesced. Do not finalize
+the reservation while `current` still selects that incompatible Writer.
 After independent exact-source acceptance, the existing authorized deployment
 operator may stage a verified root-owned copy of that accepted source and run
 `controller/src/predispatch-recovery-entrypoint.mjs` with the unchanged protected
@@ -798,8 +803,8 @@ a configured repository, bounds stdin to 4096 bytes, acquires the installation's
 existing `publication-v2.lock`, and invokes the same protected Writer broker.
 It uses the configured Writer credential on the host and an existing
 Actions-read credential supplied only through its bounded stdin request. No
-runner-UID override, new sudo grant, service replacement or permission repair is
-required. Operator source acceptance and host authority still apply. Besides the
+runner-UID override, new sudo grant or permission repair is required for this
+inspection. Operator source acceptance and host authority still apply. Besides the
 repository, operation, runId, attemptId and (for finalization) authorizationId,
 the request contains `workflowReadToken`; it accepts no caller path, slot, head
 or executable. The credential is not put in the broker request or stored in the
@@ -822,11 +827,16 @@ the input stream; do not paste a credential into a shell command or history.
 The host must trust the operator and protect the root process and SSH transport.
 An unavailable or insufficient Actions-read credential fails the operation.
 
-After posting the exact returned authorizationBody, use the identical command
-with `--operation finalize-predispatch --authorization-id <native-comment-id>`.
-Read back `predispatch-state` and normal admission status before continuing the
-ordinary lifecycle operation. Stop on any failed or contradictory readback.
-No preexisting terminal Outcome is manufactured for the old operation.
+After posting the exact returned authorizationBody, use the crash-safe public
+install bridge described in [deployment](../deploy/README.md#lifecycle-upgrade-and-rollback)
+when the installed Writer is incompatible. The bridge validates that native
+authorization, preserves the first service snapshot and installs a verified
+compatible Writer before finalizing the exact original reservation. It retains
+the same operation and closed gate on a failure. Once a compatible Writer is
+already installed, the same entrypoint may finalize with the matching native
+authorization ID; Writer verifies the installed fence before its atomic receipt.
+Read back the original state and admission inventory. No terminal Outcome or
+worker execution is fabricated.
 
 After a compatible accepted/qualified installation, the existing recovery
 entrypoint also accepts `inspect-predispatch` and `finalize-predispatch` JSON.

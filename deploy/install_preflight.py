@@ -326,6 +326,8 @@ def remote(request, *, root=Path('/'), owner_uid=0):
         return {'oldStateSha256': hashlib.sha256(encoded(snapshot['critical'])).hexdigest()}
     snapshot = json.loads(read(str(stage / evidence.name), **options))
     require(snapshot['operationId'] == operation and snapshot['target'] == target, 'EVIDENCE_BINDING_CHANGED')
+    if action == 'abort' and snapshot.get('predispatchBridge'):
+        require(False, 'PREDISPATCH_BRIDGE_REQUIRES_FORWARD_RECOVERY')
     require(type(snapshot['consumerRestoreRequired']) is bool, 'EVIDENCE_BINDING_CHANGED')
     require(critical_state(values, consumer_restore_required=snapshot['consumerRestoreRequired'], **options)
             == snapshot['critical'], 'OLD_INSTALLATION_CHANGED')
@@ -396,7 +398,7 @@ class PreparedInstall:
         if result.returncode:
             # Only a bounded code crosses the private transport, never its raw
             # input, command output, config, credential or filesystem details.
-            codes = re.findall(r'\b(?:INSTALL_PREFLIGHT|BOUNDED_RECOVERY|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK)_[A-Z_]{1,100}\b', result.stderr)
+            codes = re.findall(r'\b(?:INSTALL_PREFLIGHT|PREDISPATCH_BRIDGE|PREDISPATCH|BOUNDED_RECOVERY|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK)_[A-Z_]{1,100}\b', result.stderr)
             error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_PREREQUISITE_UNPROVEN')
             error.next_action = ('Correct the named prerequisite using the existing installed version or its owner-supported '
                                  'credential/package procedure; retain the old entrypoint and retry the same frozen Git pair.')
@@ -640,10 +642,87 @@ try {
                 self.consumer_retained(self.retained_proof, final=True)
             else:
                 self.consumer(final=True)
-        self.host(final=True)
+        self.host(final=not bool(getattr(self, 'predispatch_bridge_proof', None)))
         self.verify_stage()
-        if self.captured:
+        if self.captured and not getattr(self, 'predispatch_bridge_proof', None):
             self.action('verify')
+
+    def predispatch_recovery(self, request):
+        require(self.holder is not None and self.holder.poll() is None, 'WRITER_LOCK_MISSING')
+        return self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/writer_lock_lease.py',
+            '--exec-predispatch', self.lease_path, self.source, self.values['relay_consumer_config_path'],
+            request.get('repository', self.values['relay_github_repository'])], payload=request)
+
+    def bridge_predispatch(self, request, snapshot, *, continuation=False):
+        """Keep the exact install UUID, original bytes and first service intent.
+
+        The materialized compatible current is a durable replay fence BEFORE
+        finalization. A lost process/lease therefore cannot reopen old code.
+        """
+        require(not self.reinstall and self.initial is not None and not self.initial['consumerChange']
+                and not self.initial['consumerRestoreRequired']
+                and request.get('operation') == 'finalize-predispatch'
+                and type(request.get('authorizationId')) is int and request['authorizationId'] > 0
+                and type(request.get('runId')) is int and request['runId'] > 0
+                and request.get('attemptId') == 'run-' + str(request['runId']), 'PREDISPATCH_BRIDGE_BINDING_INVALID')
+        if self.holder is None:
+            self.lock_writer()
+        inspect = {**request, 'operation': 'predispatch-authorization'}
+        original = self.predispatch_recovery(inspect)
+        binding = original.get('binding') or original.get('recovery', {}).get('binding')
+        require(binding and binding['runId'] == request['runId'], 'PREDISPATCH_BRIDGE_ORIGINAL_UNPROVEN')
+        self.consumer()
+        if not continuation:
+            self.host(final=True)
+            self.verify_stage()
+            self.action('verify')
+        else:
+            self.verify_stage()
+        state = self.execute([*self.admission_prefix(), 'status', '--operation', self.operation])
+        require(state['target'] == self.identity['revision'] and state['active'] in [[], [request['runId']]]
+                and not state['unknown'], 'PREDISPATCH_BRIDGE_OTHER_EXECUTION_UNRESOLVED')
+        previous = self.values['relay_intent_expected_installed_revision']
+        if continuation:
+            from predispatch_bridge import read_binding
+            # This branch is used only by a local root caller. Remote
+            # continuation authenticates the same protected snapshot remotely.
+            previous = read_binding(self.stage, self.operation, self.identity['revision'])['previousRevision']
+        data = {'values': self.values, 'identity': self.identity, 'operationId': self.operation,
+            'stage': self.stage, 'lease': self.lease_path, 'consumerDigest': self.initial['baselineDigest'],
+            'previousRevision': previous, 'runId': request['runId'], 'recoveryRequest': request}
+        if not continuation:
+            # Persist the exact authorized bridge binding before the first
+            # lifecycle phase/snapshot mutation. Even a pre-snapshot crash then
+            # has a bounded same-UUID continuation without guessing an orphan.
+            self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/predispatch_bridge.py'],
+                         payload={**data, 'prepareOnly': True})
+        self.cutover_started = True
+        try:
+            if state['phase'] != 'applying':
+                if state['phase'] != 'recovery-required':
+                    self.execute([*self.admission_prefix(), 'phase', '--operation', self.operation,
+                                  '--phase', 'recovery-required'])
+                self.execute([*self.admission_prefix(), 'phase', '--operation', self.operation, '--phase', 'applying'])
+            if not continuation:
+                snapshot()
+            elif state.get('previousActive') is None:
+                services = self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/predispatch_bridge.py', '--snapshot'],
+                                        payload={'values': self.values})
+                self.execute([*self.admission_prefix(), 'snapshot', '--operation', self.operation], payload=services)
+            self.predispatch_bridge_proof = self.execute(['/usr/bin/python3', '-I',
+                self.source + '/deploy/predispatch_bridge.py'], payload=data)
+            result = self.predispatch_recovery(request)
+            require(result.get('recovery', {}).get('status') == 'finalized', 'PREDISPATCH_BRIDGE_FINALIZATION_UNPROVEN')
+            state = self.execute([*self.admission_prefix(), 'status', '--operation', self.operation])
+            require(not state['active'] and not state['unknown'], 'PREDISPATCH_BRIDGE_DRAIN_UNPROVEN')
+            return self.predispatch_bridge_proof
+        except Exception:
+            try:
+                self.execute([*self.admission_prefix(), 'phase', '--operation', self.operation,
+                              '--phase', 'recovery-required'])
+            except Exception:
+                pass
+            raise
 
     def abort(self):
         require(self.captured and not self.cutover_started, 'ABORT_AFTER_CUTOVER_FORBIDDEN')

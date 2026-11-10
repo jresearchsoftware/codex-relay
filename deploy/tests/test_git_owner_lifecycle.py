@@ -200,6 +200,28 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.primitive, [])
         self.assertEqual(self.gate.calls, [])
 
+    def test_target_proof_argument_preserves_old_gate_abi_and_selects_only_the_new_installed_gate(self):
+        release = self.install / 'releases' / OLD
+        for capabilities, expected in [(['git-desired-v1'], ()),
+                (['git-desired-v1', owner.PREDISPATCH_RETENTION_CAPABILITY],
+                 ('--target-source', str(self.source)))]:
+            with patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=0, st_mode=stat.S_IFLNK | 0o777)), \
+                 patch.object(owner.os, 'readlink', return_value=str(release)), \
+                 patch.object(owner, 'read_protected', return_value=(json.dumps({'capabilities': capabilities}).encode(), None)):
+                self.assertEqual(owner.target_source_arguments(self.install, self.source), expected)
+        self.assertEqual(owner.target_source_arguments(self.install, None), ())
+        self.assertEqual(owner.target_source_arguments(self.install, self.source), ())
+
+    def test_resume_carries_exact_protected_target_to_capable_installed_gate(self):
+        self.receipt['product_sha'] = OLD
+        self.previous_manifest['gitConfigReceipt'] = copy.deepcopy(self.receipt)
+        self.gate = Gate(phase='drained', target=OLD)
+        with patch.object(owner, 'target_source_arguments', return_value=('--target-source', str(self.source))):
+            self.invoke('resume')
+        mutations = [call for call in self.gate.calls if call[0] in ['phase', 'resume']]
+        self.assertTrue(mutations)
+        self.assertTrue(all(call[-2:] == ('--target-source', str(self.source)) for call in mutations))
+
     def test_missing_or_invalid_contract_has_a_precise_fixed_diagnostic_before_parse(self):
         contract = self.source / 'deploy/installation-contract.json'
         contract.unlink()

@@ -7,10 +7,10 @@ import { spawn } from 'node:child_process';
 // root-owned source tree with the unchanged protected configuration. No service
 // cutover or runner-UID impersonation is needed to finalize one old reservation.
 export async function main({ uid = process.getuid?.(), argv = process.argv, input = process.stdin,
-  execute = spawn, readRequest = readRepositoryRequest } = {}) {
+  execute = spawn, readRequest = readRepositoryRequest, writerLockLease = process.env.RELAY_WRITER_LOCK_LEASE } = {}) {
   if (uid !== 0 || argv.length !== 2) throw Object.assign(new Error('ROOT_OPERATOR_REQUIRED'), { code: 'ROOT_OPERATOR_REQUIRED' });
   const request = await readRequest({ input, limit: 4096, protectedConfig: true });
-  const operations = ['predispatch-state', 'finalize-predispatch'];
+  const operations = ['predispatch-state', 'predispatch-authorization', 'finalize-predispatch'];
   const allowed = ['operation', 'repository', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken'];
   if (!operations.includes(request.operation) || Object.keys(request).some(key => !allowed.includes(key))
     || typeof request.workflowReadToken !== 'string' || !/^[\x21-\x7e]{1,2048}$/.test(request.workflowReadToken))
@@ -23,8 +23,12 @@ export async function main({ uid = process.getuid?.(), argv = process.argv, inpu
     try { const { workflowReadToken, ...request }=JSON.parse(Buffer.concat(chunks));
       console.log(JSON.stringify(await (await protectedWriterBroker({ runToken: workflowReadToken })).dispatch(request)));
     } catch(error) { console.error(JSON.stringify({code:/^[A-Z][A-Z0-9_]{0,79}$/.test(error.code??'')?error.code:'PREDISPATCH_RECOVERY_FAILED'}));process.exitCode=1; }`;
-  const child = execute('/usr/bin/flock', ['-w', '60', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
-    process.execPath, '--input-type=module', '-e', program],
+  const source = fileURLToPath(new URL('../../', import.meta.url));
+  const command = writerLockLease ? '/usr/bin/python3' : '/usr/bin/flock';
+  const arguments_ = writerLockLease ? ['-I', `${source}deploy/writer_lock_lease.py`, '--exec-predispatch',
+    writerLockLease, source, process.env.RELAY_CONSUMER_CONFIG, CONSUMER.repository]
+    : ['-w', '60', `${CONSUMER.paths.claimRoot}/publication-v2.lock`, process.execPath, '--input-type=module', '-e', program];
+  const child = execute(command, arguments_,
   { env: { PATH: '/usr/bin:/bin', HOME: '/root', LANG: 'C', LC_ALL: 'C',
     RELAY_CONSUMER_CONFIG: process.env.RELAY_CONSUMER_CONFIG, RELAY_REPOSITORY: CONSUMER.repository },
     stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true });

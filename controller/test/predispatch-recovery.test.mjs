@@ -7,9 +7,12 @@ import { fixture, memoryStore } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { nextAdmissionStep } from '../src/admission-step.mjs';
-import { digest, REPOSITORY } from '../src/execution-contract.mjs';
+import { digest, REPOSITORY, WRITER } from '../src/execution-contract.mjs';
 import { completedPredispatchRecovery } from '../src/predispatch-recovery.mjs';
 import { parseRecoveryRequest } from '../src/recover-attempt-publication.mjs';
+import { sha256Body } from '../../contracts/src/github-authority.mjs';
+import { PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
+import { boundOutcomeBody, terminalOutcomeBody } from '../src/outcome.mjs';
 
 async function partial(t) {
   let f;
@@ -45,7 +48,10 @@ async function partial(t) {
   };
   f.checkoutExists = false;
   f.broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal,
-    checkoutAbsent: async () => !f.checkoutExists });
+    checkoutAbsent: async () => !f.checkoutExists,
+    // This fixture has no installed Writer; its isolated broker explicitly
+    // stands in for the production installed-source and wrapper proof.
+    assertPredispatchFence: async e => { assert.equal(e.runId, 99); } });
   f.inspect = { operation: 'predispatch-state', runId: 99, attemptId: 'run-99' };
   f.authorize = async () => {
     const state = await f.broker.dispatch(f.inspect);
@@ -57,6 +63,68 @@ async function partial(t) {
   };
   return f;
 }
+
+test('finalization requires an explicit compatible Writer fence before any protected mutation', async t => {
+  const f = await partial(t), request = await f.authorize();
+  const before = await f.store.get(99);
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    checkoutAbsent: async () => true });
+  // Inspection is read-only and remains available for diagnosing an old Writer.
+  assert.ok((await broker.dispatch(f.inspect)).authorizationBody);
+  for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+  const put = f.store.put;
+  f.store.put = () => assert.fail('must not write a receipt without the installed Writer fence');
+  try {
+    await assert.rejects(broker.dispatch(request), { code: 'PREDISPATCH_COMPATIBLE_WRITER_REQUIRED' });
+    assert.deepEqual(await f.store.get(99), before);
+  } finally { f.store.put = put; }
+});
+
+test('the compatible Writer fence runs under the original controller lock and a refusal preserves the record', async t => {
+  const f = await partial(t), request = await f.authorize();
+  let held = false, checked = 0;
+  const withLock = f.journal.withLock;
+  f.journal.withLock = async (id, action) => withLock(id, async () => {
+    held = true;
+    try { return await action(); } finally { held = false; }
+  });
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    checkoutAbsent: async () => true, assertPredispatchFence: async e => {
+      assert.equal(held, true); assert.deepEqual(e, f.original.envelope); checked++;
+      throw Object.assign(new Error('old installed Writer'), { code: 'PREDISPATCH_COMPATIBLE_WRITER_REQUIRED' });
+    } });
+  await broker.dispatch(f.inspect);
+  assert.equal(checked, 0);
+  await assert.rejects(broker.dispatch(request), { code: 'PREDISPATCH_COMPATIBLE_WRITER_REQUIRED' });
+  assert.equal(checked, 1);
+  assert.equal(held, false);
+  assert.deepEqual(await f.store.get(99), f.original);
+});
+
+test('read-only predispatch authorization verifies exact owner binding without an installed fence or writes', async t => {
+  const f = await partial(t), request = await f.authorize();
+  const before = await f.store.get(99);
+  const expected = await f.broker.dispatch(f.inspect);
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    checkoutAbsent: async () => true });
+  for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+  f.store.put = () => assert.fail('read-only authorization must not persist');
+  const verified = await broker.dispatch({ ...request, operation: 'predispatch-authorization' });
+  assert.deepEqual(verified.binding, expected.binding);
+  assert.equal(verified.authorizationBody, expected.authorizationBody);
+  assert.deepEqual(verified.authorization, { id: 10000, authorizedAt: '2026-09-04T12:02:00Z' });
+  for (const mutation of [comment => { comment.user.login = 'foreign'; },
+    comment => { comment.body += '\nchanged authorization'; },
+    comment => { comment.updated_at = '2026-09-04T12:03:00Z'; }]) {
+    const original = structuredClone(f.comments.at(-1));
+    mutation(f.comments.at(-1));
+    await assert.rejects(broker.dispatch({ ...request, operation: 'predispatch-authorization' }),
+      { code: 'RECOVERY_OWNER_AUTHORIZATION_INVALID' });
+    f.comments[f.comments.length - 1] = original;
+    assert.deepEqual(await f.store.get(99), before);
+  }
+  assert.deepEqual(await f.store.get(99), before);
+});
 
 test('operator finalizes only the original pre-dispatch reservation; no native mutations or fabricated execution', async t => {
   const f = await partial(t);
@@ -73,6 +141,10 @@ test('operator finalizes only the original pre-dispatch reservation; no native m
   assert.equal(record.outcome, null);
   assert.equal(record.controllerLifecycle.status, 'active');
   assert.deepEqual((await f.broker.dispatch(request)).recovery, predispatchRecovery);
+  const readOnlyReplay = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    checkoutAbsent: async () => true });
+  assert.deepEqual((await readOnlyReplay.dispatch(request)).recovery, predispatchRecovery);
+  assert.deepEqual(await f.store.get(99), record);
   await assert.rejects(f.broker.dispatch({ ...request, authorizationId: 10001 }), { code: 'PREDISPATCH_RECOVERY_BINDING_CHANGED' });
   await assert.rejects(f.broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   await assert.rejects(f.broker.dispatch({ ...f.inspect, operation: 'terminal-outcome' }), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
@@ -291,4 +363,144 @@ test('ready recovery rechecks event evidence after owner authorization', async t
     created_at: '2026-09-04T12:01:02Z' });
   await assert.rejects(f.broker.dispatch(request), { code: 'READY_RECONCILIATION_UNPROVEN' });
   assert.deepEqual(await f.store.get(99), record);
+});
+
+async function uncertainOutcome(t, phase = 'intent') {
+  const f = await partial(t);
+  const record = await f.store.get(99), e = record.envelope;
+  record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+  record.readyConsumption = { status: 'uncertain', eventId: e.readyEventId,
+    label: e.readyLabel, code: 'READY_CONSUMPTION_UNCERTAIN', laterEvents: [], diagnostic: 'uncertain' };
+  record.controllerLifecycle = { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' };
+  const number = e.continuation.pullRequest;
+  const body = boundOutcomeBody(e, terminalOutcomeBody(e, { terminalCode: 'READY_CONSUMPTION_UNCERTAIN' }),
+    { pr: { number }, status: 'blocked' }) + `\n\n<!-- relay:${e.attemptId}:outcome -->`;
+  if (phase === 'intent') record.commentIntent = { key: 'outcome', number, body, rendererVersion: PUBLICATION_RENDERER_VERSION };
+  else record.commentBodies = { outcome: { number, sha256: sha256Body(body), rendererVersion: PUBLICATION_RENDERER_VERSION } };
+  if (phase === 'outcome' || phase === 'outcome-only') record.outcome = { status: 'BLOCKED', head: null,
+    prNumber: number, outcomeId: 9000, bodySha256: sha256Body(body) };
+  if (phase === 'outcome-only') delete record.commentBodies;
+  await f.store.put(99, record);
+  f.issue.labels = [{ name: 'step-1' }];
+  f.events.push({ id: e.readyEventId + 1, event: 'unlabeled', label: { name: e.readyLabel },
+    created_at: '2026-09-04T12:01:01Z' });
+  f.outcomeComment = { id: 9000, user: { login: WRITER, id: 702, type: 'Bot' }, body,
+    issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/${number}` };
+  f.comments.push(f.outcomeComment);
+  const list = f.api.list.bind(f.api);
+  const userIdentity = f.api.userIdentity.bind(f.api);
+  f.api.userIdentity = async login => login === WRITER ? { login: WRITER, id: 702, type: 'Bot' } : userIdentity(login);
+  f.api.list = async path => path === `/issues/${number}/comments`
+    ? structuredClone(f.comments.filter(comment => comment.user.login === WRITER)) : list(path);
+  f.original = record;
+  return f;
+}
+
+for (const phase of ['intent', 'seal', 'outcome', 'outcome-only']) {
+  test(`read-only predispatch reconciliation verifies an existing Outcome from retained ${phase}`, async t => {
+    const f = await uncertainOutcome(t, phase);
+    const request = await f.authorize();
+    const native = Object.fromEntries(['post', 'patch', 'delete'].map(method => [method, f.api[method]]));
+    for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+    const result = await f.broker.dispatch(request);
+    assert.equal(result.recovery.version, 3);
+    assert.equal(result.recovery.binding.outcomeCommentId, 9000);
+    assert.equal(result.recovery.binding.outcomeCommentNumber, 43);
+    assert.equal(result.recovery.binding.outcomeWriterId, 702);
+    assert.equal(result.recovery.binding.outcomeBodySha256, sha256Body(f.outcomeComment.body));
+    const saved = await f.store.get(99), { predispatchRecovery, ...original } = saved;
+    assert.deepEqual(original, f.original);
+    assert.ok(completedPredispatchRecovery(saved));
+    assert.equal(await f.journal.get(99), null);
+    assert.deepEqual((await f.broker.dispatch(request)).recovery, predispatchRecovery);
+    await assert.rejects(f.broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+    for (const field of ['outcomeCommentId', 'outcomeCommentNumber', 'outcomeBodySha256', 'outcomeWriterId']) {
+      const changed = structuredClone(saved);
+      changed.predispatchRecovery.binding[field] = field === 'outcomeBodySha256' ? '0'.repeat(64) : 0;
+      assert.equal(completedPredispatchRecovery(changed), false);
+    }
+    const root = await mkdtemp(join(tmpdir(), 'outcome-reconcile-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const gate = createAdmissionControl({ root, consumerDigest: saved.envelope.consumerDigest, store: f.store,
+      journal: f.journal, checkoutAbsent: async () => true, protectedRoot: false });
+    await gate.initialize();
+    assert.deepEqual((await gate.status()).unknown, []);
+    await gate.assertTaskComplete(42);
+    if (phase === 'intent') {
+      const originalRun = structuredClone(f.run);
+      const nextRun = { ...originalRun, id: 100, status: 'in_progress', conclusion: null,
+        created_at: '2026-09-04T12:03:01Z' };
+      f.api.getRun = async id => structuredClone(id === 99 ? originalRun : nextRun);
+      f.api.ensureStepLabel = async () => {};
+      f.issue.labels.push({ name: saved.envelope.readyLabel });
+      f.events.push({ id: saved.envelope.readyEventId + 2, event: 'labeled',
+        label: { name: saved.envelope.readyLabel }, actor: { login: 'example-owner', type: 'User' },
+        created_at: '2026-09-04T12:03:00Z' });
+      Object.assign(f.api, native);
+      const post = f.api.post.bind(f.api);
+      f.api.post = async (path, body) => {
+        assert.equal(path.endsWith('/comments'), false, 'must not repost the original Outcome');
+        return post(path, body);
+      };
+      const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+        admission: f.admissionControl, checkoutAbsent: async () => true });
+      const admitted = await broker.dispatch({ ...f.admissionRequest, runId: 100 });
+      assert.equal(admitted.envelope.step, 3);
+      assert.equal(admitted.envelope.readyEventId, saved.envelope.readyEventId + 2);
+      assert.deepEqual(await f.store.get(99), saved);
+    }
+  });
+}
+
+for (const [name, mutate] of [
+  ['no native comment', f => { f.comments.length = 0; }],
+  ['duplicate native comment', f => { f.comments.push({ ...f.outcomeComment, id: 9001 }); }],
+  ['changed body', f => { f.outcomeComment.body = f.outcomeComment.body.replace('Status: BLOCKED', 'Status: IMPLEMENTED'); }],
+  ['foreign author', f => { f.outcomeComment.user.login = 'foreign'; }],
+  ['non-Bot author', f => { f.outcomeComment.user.type = 'User'; }],
+  ['mismatched immutable bot ID', f => { f.outcomeComment.user.id = 703; }],
+  ['foreign comment target', f => { f.outcomeComment.issue_url = `https://api.github.com/repos/${REPOSITORY}/issues/44`; }],
+  ['missing ready removal', f => { f.events.pop(); }],
+  ['replacement command', f => { f.events.push({ ...f.events[0], id: f.original.envelope.readyEventId + 2 }); }],
+  ['contradictory journal', f => f.journal.put(99, { execution: null })],
+  ['existing checkout', f => { f.checkoutExists = true; }],
+  ['original rerun', f => { f.run.run_attempt = 2; }],
+  ['remote head changed', f => { f.liveHead = 'a'.repeat(40); }],
+  ['foreign intent target', f => { f.original.commentIntent.number = 44; }],
+  ['wrong intent key', f => { f.original.commentIntent.key = 'manual'; }],
+  ['missing frozen comment body', f => { delete f.original.commentIntent.body; }],
+  ['contradictory seal', f => { f.original.commentBodies = { outcome: { number: 43,
+    sha256: 'a'.repeat(64), rendererVersion: PUBLICATION_RENDERER_VERSION } }; }],
+  ['unfinished PR transition', f => { f.original.lifecycleIntent = { pending: true }; }],
+]) {
+  test(`uncertain predispatch Outcome rejects ${name} without native mutation`, async t => {
+    const f = await uncertainOutcome(t);
+    await mutate(f);
+    await f.store.put(99, f.original);
+    for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+    await assert.rejects(f.broker.dispatch(f.inspect));
+    assert.deepEqual(await f.store.get(99), f.original);
+  });
+}
+
+test('Outcome evidence is re-read after authorization and before the atomic recovery receipt', async t => {
+  const f = await uncertainOutcome(t);
+  const request = await f.authorize(), get = f.api.get;
+  f.api.get = async path => {
+    const result = await get(path);
+    if (path === '/issues/comments/10000') f.outcomeComment.body += '\nchanged after authorization';
+    return result;
+  };
+  await assert.rejects(f.broker.dispatch(request), { code: 'PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN' });
+  assert.deepEqual(await f.store.get(99), f.original);
+});
+
+test('native comment list and individual read must agree exactly', async t => {
+  const f = await uncertainOutcome(t), get = f.api.get;
+  f.api.get = async path => {
+    const result = await get(path);
+    return path === '/issues/comments/9000' ? { ...result, body: result.body + '\nchanged' } : result;
+  };
+  await assert.rejects(f.broker.dispatch(f.inspect), { code: 'PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN' });
+  assert.deepEqual(await f.store.get(99), f.original);
 });

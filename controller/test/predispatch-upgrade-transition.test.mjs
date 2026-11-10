@@ -33,7 +33,10 @@ test('installed 0aff reader blocks finalized receipt while staged candidate drai
   const original=await f.store.get(99), get=f.api.get; const comments=[];
   f.api.get=async path=>path===`/git/ref/heads/${original.envelope.branch}` ? {object:{sha:original.envelope.startHead}}
     : path.startsWith('/issues/comments/') ? comments.find(c=>c.id===Number(path.split('/').at(-1))) : get(path);
-  const broker=createPublicationBroker({api:f.api,store:f.store,publisher:{},journal,checkoutAbsent:async()=>true});
+  // The historical-runtime fixture models the compatibility boundary below;
+  // it deliberately has no live installed Writer or deployment wrapper.
+  const broker=createPublicationBroker({api:f.api,store:f.store,publisher:{},journal,checkoutAbsent:async()=>true,
+    assertPredispatchFence:async()=>{}});
   const inspect={operation:'predispatch-state',runId:99,attemptId:'run-99'};
   const state=await broker.dispatch(inspect), created_at='2026-09-04T12:02:00Z';
   comments.push({id:10000,user:{login:'example-owner',type:'User'},issue_url:`https://api.github.com/repos/${REPOSITORY}/issues/42`,created_at,updated_at:created_at,body:state.authorizationBody});

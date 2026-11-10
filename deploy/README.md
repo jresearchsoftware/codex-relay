@@ -1127,6 +1127,41 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+For an exact pre-dispatch reservation that prevents an upgrade, first obtain
+independent acceptance of the candidate and use the [read-only inspection](../controller/README.md#deployment-operator-entrypoint-before-an-upgrade)
+to publish the exact native authorization. The authorized operator can then
+run the public install with its bounded same-operation bridge:
+
+```sh
+python3 scripts/predispatch-install.py --host root@relay-host \
+  --source /root/verified-accepted-checkout --config /root/verified-config-checkout/deployment-config.json \
+  --consumer-root /root/verified-consumer-checkout --revision <accepted-sha> \
+  --repository example-org/example-repository --run-id 99 --authorization-id <comment-id>
+```
+
+Replace the examples with the verified installation and original attempt. The
+source must be a clean, protected checkout at the exact accepted revision; the
+configuration path belongs to the qualified owner Git checkout. The
+transport obtains the existing Actions-read credential from `gh`, sends the
+bounded request over strict-host-key SSH stdin, and supplies the public installer
+with a root-private temporary request. It does not put the credential in command
+arguments or logs. A handled interruption removes the request; after a host crash
+or uncatchable termination, inspect and securely remove any root-private residue
+under `/run` without disclosing its contents.
+
+The bridge revalidates the original authorization and absence of other active or
+unknown work under the existing locks. It retains the first service snapshot,
+materializes the sealed release and durably switches `current` to its compatible
+Writer before finalizing the original record. It then continues the same public
+installation. If interrupted, inspect the retained operation and original
+attempt before using the same command with `--continue`; it binds the same UUID,
+attempt and authorization and resumes forward with admission closed. Never
+restore an incompatible Writer over retained pre-dispatch history. A compatible
+installed gate checks target source identity before lifecycle changes when such
+history exists; ordinary targets without that history retain their prior path.
+An expert route without a verified staged target may fail closed and should use
+the public install bridge.
+
 For a retained Git Apply whose original target is already installed, the
 [bounded controller recovery](../docs/git-managed-installation.md#bounded-recovery-with-a-separately-accepted-controller)
 interface independently binds a corrected accepted controller, the immutable

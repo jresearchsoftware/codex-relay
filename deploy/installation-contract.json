@@ -4,6 +4,7 @@
   "capabilities": [
     "lifecycle-v1",
     "git-desired-v1",
-    "integration-artifact-v1"
+    "integration-artifact-v1",
+    "predispatch-retention-v1"
   ]
 }

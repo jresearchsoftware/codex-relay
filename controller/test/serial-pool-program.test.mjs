@@ -145,6 +145,83 @@ test('old inference, ordinary automatic completion and wrong caller UID never in
     invoke: async () => ({ status: 'IMPLEMENTED_PENDING_FRESH_REVIEW' }) })).handled, true);
 });
 
+for (const marker of ['predispatchPending', 'predispatchRecovery']) {
+  for (const value of [{ version: 1 }, null]) {
+    test(`own historical ${marker}=${value === null ? 'null' : 'record'} blocks mutations while preserving read-only inspection`,
+      { skip: !linux }, async t => {
+      const f = await serialPoolFixture(t), context = await f.load();
+      const record = structuredClone(f.records[0]);
+      record.publishedHead = 'd'.repeat(40);
+      record.publicationRecoveries = [{ authorizationId: 19,
+        result: { status: 'PUBLISHED', publishedHead: record.publishedHead } }];
+      record[marker] = value;
+      await f.originalStore.put(99, record);
+      const path = join(context.original.storeRoot, '99.json'), before = await readFile(path);
+      const mutations = ['recover-publication', 'recover-prepublication', 'complete-handoff', 'finish', 'complete-execution'];
+      for (const operation of mutations) {
+        const request = { operation, runId: 99, attemptId: 'run-99', recoveryAuthorizationId: 19 };
+        await assert.rejects(historicalProgram({ ...route(f), kind: 'writer', request,
+          invoke: async () => assert.fail('A retained marker must never reach a mutating archived program') }),
+        { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+        assert.deepEqual(await readFile(path), before);
+      }
+      for (const operation of ['publication-state', 'prepublication-state']) {
+        const request = { operation, runId: 99, attemptId: 'run-99', executionSlot: 'pool-2' };
+        let reads = 0;
+        const result = await historicalProgram({ ...route(f), kind: 'writer', request,
+          invoke: async (_context, kind, input) => {
+            reads++; assert.equal(kind, 'writer');
+            assert.deepEqual(input, { operation, runId: 99, attemptId: 'run-99' });
+            return { operation, originalEnvelope: record.envelope };
+          } });
+        assert.equal(reads, 1);
+        assert.deepEqual(result, { handled: true, value: { operation, originalEnvelope: record.envelope } });
+        assert.deepEqual(await readFile(path), before);
+      }
+      // Only the fixture removes the marker. Identical unmarked historical
+      // operations retain their established route and exact envelope bytes.
+      delete record[marker]; await f.originalStore.put(99, record);
+      const unmarked = await readFile(path);
+      for (const operation of mutations) {
+        let calls = 0;
+        const result = await historicalProgram({ ...route(f), kind: 'writer',
+          request: { operation, runId: 99, attemptId: 'run-99', recoveryAuthorizationId: 19 },
+          invoke: async (_context, kind, input) => {
+            calls++; assert.equal(kind, 'writer'); assert.equal(input.operation, operation);
+            return { operation, retained: true };
+          } });
+        assert.equal(calls, 1);
+        assert.deepEqual(result, { handled: true, value: { operation, retained: true } });
+        assert.deepEqual(await readFile(path), unmarked);
+      }
+    });
+  }
+}
+
+test('a retained manual marker blocks native manual publication before invoking the archived helper', { skip: !linux }, async t => {
+  const f = await serialPoolFixture(t), context = await f.load();
+  const submission = { repository: f.receipt.repository, task: 42, run_id: 100,
+    result: { attempt: 'run-100', parent: { kind: 'issue', number: 42 } } };
+  const path = join(context.original.storeRoot, '100.json');
+  for (const marker of ['predispatchPending', 'predispatchRecovery']) {
+    const record = { ...f.records[1], [marker]: { version: 1 } };
+    await f.originalStore.put(100, record);
+    const before = await readFile(path);
+    await assert.rejects(historicalProgram({ ...route(f, { env: {} }), kind: 'manual-outcome', request: submission,
+      invoke: async () => assert.fail('Retained manual marker cannot invoke old publication') }),
+    { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+    assert.deepEqual(await readFile(path), before);
+  }
+  await f.originalStore.put(100, f.records[1]);
+  const before = await readFile(path);
+  assert.deepEqual(await historicalProgram({ ...route(f, { env: {} }), kind: 'manual-outcome', request: submission,
+    invoke: async (_context, kind, input) => {
+      assert.equal(kind, 'manual-outcome'); assert.deepEqual(input, submission);
+      return { status: 'DUPLICATE_SUPPRESSED' };
+    } }), { handled: true, value: { status: 'DUPLICATE_SUPPRESSED' } });
+  assert.deepEqual(await readFile(path), before);
+});
+
 test('manual socket route preserves original duplicate result without granting ordinary Writer the capability', { skip: !linux }, async t => {
   const f = await serialPoolFixture(t); const submission = { repository: f.receipt.repository, task: 42, run_id: 100,
     result: { attempt: 'run-100', parent: { kind: 'issue', number: 42 } } };

@@ -7,7 +7,7 @@ import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary, boundOutcomeBody } from './outcome.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
-import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection } from './publication-recovery.mjs';
+import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection, authorizeRecovery } from './publication-recovery.mjs';
 import { assertStep, currentStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
@@ -27,7 +27,8 @@ import { predispatchState, finalizePredispatch, completedPredispatchRecovery, pe
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent,
+  assertPredispatchFence = async () => fail('PREDISPATCH_COMPATIBLE_WRITER_REQUIRED') }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
   const titleFor = e => secretFree(projectedRequestTitle(e.request));
@@ -594,14 +595,25 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
         : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
+        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
           : { reporting: ['finish', 'finish-no-change'].includes(request.operation),
             verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
-      if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
-      if (['predispatch-state', 'finalize-predispatch'].includes(request.operation)) {
+      if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
+      if (['predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) {
         if (Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
         if (!journal?.withLock) fail('PREDISPATCH_CONTROLLER_LOCK_REQUIRED');
         return journal.withLock(e.runId, async () => {
+          if (request.operation === 'predispatch-authorization') {
+            if (r.predispatchRecovery) {
+              if (!completedPredispatchRecovery(r) || r.predispatchRecovery.authorizationId !== request.authorizationId)
+                fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+              return receipt({ binding: r.predispatchRecovery.binding,
+                authorization: { id: request.authorizationId, authorizedAt: r.predispatchRecovery.authorizedAt } });
+            }
+            const state = await predispatchState({ api, journal, record: r, checkoutAbsent });
+            const authorizedAt = await authorizeRecovery(api, e, request.authorizationId, state.binding);
+            return receipt({ ...state, authorization: { id: request.authorizationId, authorizedAt } });
+          }
           if (request.operation === 'predispatch-state') {
             if (r.predispatchRecovery) {
               if (!completedPredispatchRecovery(r)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
@@ -609,6 +621,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             }
             return receipt(await predispatchState({ api, journal, record: r, checkoutAbsent }));
           }
+          if (!r.predispatchRecovery) await assertPredispatchFence(e);
           return receipt({ recovery: await finalizePredispatch({ api, store, journal, record: r, request, checkoutAbsent }) });
         });
       }

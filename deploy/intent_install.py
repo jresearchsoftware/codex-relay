@@ -26,7 +26,8 @@ from config import loads, unique_object
 REVISION = re.compile(r'[0-9a-f]{40}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
 REPOSITORY = re.compile(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
-CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1'}
+CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1', 'predispatch-retention-v1'}
+INSTALL_CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1'}
 # Task 25's accepted and live-qualified admission/lifecycle rollout. One lineage
 # boundary classifies all pre-metadata revisions; this is not a transition table.
 LEGACY_LIFECYCLE_BOUNDARY = 'e1f00e828242c794c013ce8f555578d03564a441'
@@ -177,7 +178,7 @@ def strategy_inventory(report):
 def plan(report, target, target_contract, *, root, repository, legacy=legacy_strategy, receipt=None):
     require(REVISION.fullmatch(target or ''), 'TARGET_INVALID')
     target_contract = contract(target_contract)
-    require(target_contract['epoch'] == 1 and CAPABILITIES <= set(target_contract['capabilities']),
+    require(target_contract['epoch'] == 1 and INSTALL_CAPABILITIES <= set(target_contract['capabilities']),
             'TARGET_CONTRACT_UNSUPPORTED')
     require(isinstance(report, dict) and isinstance(report.get('blockers'), list), 'INVENTORY_UNPROVEN')
     report = strategy_inventory(report)
@@ -621,6 +622,23 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 recovery = recovery_probe(target, key, config, identity['revision'], expected, guard, pool_guard)
             require(planning_report is report or recovery is not None or bounded_proof is not None,
                     'RECOVERY_REQUIRES_DIAGNOSIS')
+            if recovery is not None and recovery.get('predispatchBridge') is not None:
+                request_path = getattr(args, 'predispatch_recovery_request', None)
+                require(request_path is not None and os.geteuid() == 0, 'PREDISPATCH_BRIDGE_EXACT_REQUEST_REQUIRED')
+                from installed_config import read_protected
+                from install_recovery import resume_predispatch_bridge
+                raw, _ = read_protected(request_path, {0o600}, group=0)
+                require(len(raw) <= 4096, 'PREDISPATCH_BRIDGE_REQUEST_SIZE')
+                request = json.loads(raw)
+                resume_predispatch_bridge(recovery, request, target, key, config, guard, pool_guard, source_root=root)
+                expected = identity['revision']
+                report = remote_inventory(target, key, config, git_desired=True)
+                require(report.get('installed', {}).get('revision') == expected, 'PREDISPATCH_BRIDGE_CURRENT_CHANGED')
+                selected = {**selected, 'installed': expected}
+                recovery = recovery_probe(target, key, config, identity['revision'], expected, guard, pool_guard)
+                require(recovery is not None and 'predispatchBridge' not in recovery,
+                        'PREDISPATCH_BRIDGE_CONTINUATION_UNPROVEN')
+                args.predispatch_recovery_request = None
             if recovery is not None:
                 require(selected['phase'] in ['apply', 'upgrade', 'post-check'], 'RECOVERY_REQUIRES_DIAGNOSIS')
                 selected = {**selected, 'strategy': 'recovery', 'phase': 'upgrade'}

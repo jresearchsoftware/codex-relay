@@ -12,6 +12,7 @@ import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
+import { assertCompatibleInstalledWriter } from './predispatch-target-compatibility.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { historicalProgram } from './serial-pool-program.mjs';
@@ -117,7 +118,8 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
       try { await lstat(checkoutPath(e)); return false; }
       catch (error) { if (error.code === 'ENOENT') return true; throw error; }
     },
-    admission, allowManualOutcome, diagnosticSecrets: [value, runToken].filter(Boolean) });
+    admission, allowManualOutcome, diagnosticSecrets: [value, runToken].filter(Boolean),
+    assertPredispatchFence: () => assertCompatibleInstalledWriter({ consumer: CONSUMER }) });
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';

@@ -88,6 +88,11 @@ export async function historicalProgram({ kind, request, consumer, consumerPath,
     if (!compatibility.receipt.original.runs.some(run => run.runId === runId)) return { handled: false };
     const record = await store.get(runId);
     historicalOperationContext(compatibility, record, operation);
+    // Retained old programs may not understand a later pre-dispatch retirement
+    // receipt. Preserve their read-only inspection, but never delegate a
+    // mutation whose old implementation could ignore that durable boundary.
+    if ((Object.hasOwn(record, 'predispatchPending') || Object.hasOwn(record, 'predispatchRecovery'))
+      && !['publication-state', 'prepublication-state'].includes(operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
     if (kind === 'manual-outcome' || operation === 'manual-outcome') {
       if (record.envelope.route !== 'manual') fail('MANUAL_OUTCOME_NOT_ADMITTED');
     } else if (kind === 'writer') {

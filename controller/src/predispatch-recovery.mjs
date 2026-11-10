@@ -1,6 +1,7 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { digest, positive, validateEnvelope, fail, OWNER } from './execution-contract.mjs';
-import { canonicalAuthorityJson, validateAdmissionSnapshot } from '../../contracts/src/github-authority.mjs';
+import { digest, positive, validateEnvelope, fail, OWNER, WRITER } from './execution-contract.mjs';
+import { canonicalAuthorityJson, validateAdmissionSnapshot, sha256Body } from '../../contracts/src/github-authority.mjs';
+import { PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
 import { authorizeRecovery, recoveryAuthorizationBody } from './publication-recovery.mjs';
 import { revalidateAuthority, revalidateReadyEvent, readyTransitions, assertPr, linkedIssue } from './live-authority.mjs';
 import { labelNames, READY_LABELS } from './step-metadata.mjs';
@@ -90,18 +91,26 @@ export function predispatchBinding(r) {
 // This administrative receipt is neither a worker journal nor a Task Outcome.
 export function completedPredispatchRecovery(record) {
   const { predispatchRecovery: recovery, ...original } = record ?? {};
-  const base = recovery?.version === 2 ? readyReconciliationCandidate(original) : partialPredispatchRecord(original);
-  const expected = recovery?.version === 2 ? { ...predispatchBinding(original), readyRemovalEventId: recovery.binding?.readyRemovalEventId } : predispatchBinding(original);
-  return base && (recovery?.version === 1 || recovery?.version === 2 && positive(recovery.binding?.readyRemovalEventId)
+  const comment = recovery?.version === 3 ? outcomeReconciliationCandidate(original) : null;
+  const base = recovery?.version === 3 ? Boolean(comment)
+    : recovery?.version === 2 ? readyReconciliationCandidate(original) : partialPredispatchRecord(original);
+  const expected = { ...predispatchBinding(original),
+    ...([2, 3].includes(recovery?.version) ? { readyRemovalEventId: recovery.binding?.readyRemovalEventId } : {}),
+    ...(comment ? { outcomeCommentId: recovery.binding?.outcomeCommentId,
+      outcomeCommentNumber: comment.number, outcomeBodySha256: comment.sha256,
+      outcomeWriterId: recovery.binding?.outcomeWriterId } : {}) };
+  return base && (recovery?.version === 1 || [2, 3].includes(recovery?.version) && positive(recovery.binding?.readyRemovalEventId)
       && recovery.binding.readyRemovalEventId > original.envelope.readyEventId)
+    && (recovery.version !== 3 || positive(recovery.binding?.outcomeCommentId) && positive(recovery.binding?.outcomeWriterId)
+      && (!original.outcome || original.outcome.outcomeId === recovery.binding.outcomeCommentId))
     && recovery.status === 'finalized' && positive(recovery.authorizationId)
     && Number.isFinite(Date.parse(recovery.authorizedAt)) && Number.isFinite(Date.parse(recovery.completedAt))
     && Date.parse(recovery.completedAt) >= Date.parse(recovery.authorizedAt)
     && canonicalAuthorityJson(recovery.binding) === canonicalAuthorityJson(expected);
 }
 
-// Only a record with no attempted publication can be retired here. An uncertain
-// comment POST needs its own native publication recovery and remains blocking.
+// An uncertain comment POST is handled separately, using its exact retained
+// body or seal and native read-back. Missing publication evidence stays blocking.
 export function readyReconciliationCandidate(r) {
   const ready = r?.readyConsumption;
   const uncertain = ready?.status === 'uncertain'
@@ -115,8 +124,52 @@ export function readyReconciliationCandidate(r) {
     && !r.publicationIntent && !r.publishedHead && !r.finalHead);
 }
 
+function outcomeReconciliationCandidate(r) {
+  const { commentIntent: intent, commentBodies: bodies, outcome, ...pending } = r ?? {};
+  if (r?.readyConsumption?.status !== 'uncertain' || !readyReconciliationCandidate(pending)
+    || !intent && !bodies?.outcome && !outcome) return null;
+  const e = r.envelope, seal = bodies?.outcome;
+  const number = intent?.number ?? seal?.number ?? outcome?.prNumber ?? e.issueNumber;
+  if (![e.issueNumber, e.continuation?.pullRequest].includes(number)
+    || intent && (Object.keys(intent).sort().join(',') !== 'body,key,number,rendererVersion'
+      || intent.key !== 'outcome' || intent.number !== number || intent.rendererVersion !== PUBLICATION_RENDERER_VERSION
+      || typeof intent.body !== 'string' || Buffer.byteLength(intent.body, 'utf8') > 100000
+      || !intent.body.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
+      || !intent.body.endsWith(`<!-- relay:${e.attemptId}:outcome -->`))
+    || bodies && (Object.keys(bodies).join(',') !== 'outcome' || !seal
+      || Object.keys(seal).sort().join(',') !== 'number,rendererVersion,sha256'
+      || seal.number !== number || seal.rendererVersion !== PUBLICATION_RENDERER_VERSION)
+    || outcome && (Object.keys(outcome).sort().join(',') !== 'bodySha256,head,outcomeId,prNumber,status'
+      || outcome.status !== 'BLOCKED' || outcome.head !== null || !positive(outcome.outcomeId)
+      || outcome.prNumber !== (number === e.issueNumber ? null : number))) return null;
+  const sha256 = intent ? sha256Body(intent.body) : seal?.sha256 ?? outcome?.bodySha256;
+  if (!/^[a-f0-9]{64}$/.test(sha256 ?? '') || seal && seal.sha256 !== sha256
+    || outcome && outcome.bodySha256 !== sha256) return null;
+  return { number, sha256, body: intent?.body };
+}
+
+async function reconcileOutcomeComment(api, r, evidence) {
+  const marker = `<!-- relay:${r.envelope.attemptId}:outcome -->`;
+  const matches = (await api.list(`/issues/${evidence.number}/comments`))
+    .filter(comment => comment.user?.login === WRITER && comment.body?.includes(marker));
+  if (matches.length !== 1 || !positive(matches[0].id)) fail('PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN');
+  const comment = await api.get(`/issues/comments/${matches[0].id}`);
+  const writer = await api.userIdentity(WRITER);
+  if (writer?.login !== WRITER || writer.type !== 'Bot' || !positive(writer.id)
+    || comment?.id !== matches[0].id || comment.user?.login !== WRITER || comment.user?.type !== 'Bot'
+    || comment.user.id !== writer.id || matches[0].user?.id !== writer.id
+    || comment.issue_url !== `https://api.github.com/repos/${r.envelope.repository}/issues/${evidence.number}`
+    || typeof comment.body !== 'string' || !comment.body.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
+    || !comment.body.endsWith(marker) || comment.body !== matches[0].body
+    || sha256Body(comment.body) !== evidence.sha256 || evidence.body && comment.body !== evidence.body
+    || r.outcome && comment.id !== r.outcome.outcomeId) fail('PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN');
+  return { outcomeCommentId: comment.id, outcomeCommentNumber: evidence.number,
+    outcomeBodySha256: evidence.sha256, outcomeWriterId: writer.id };
+}
+
 export async function predispatchState({ api, journal, record: r, checkoutAbsent }) {
-  const reconcileReady = readyReconciliationCandidate(r);
+  const reconcileOutcome = outcomeReconciliationCandidate(r);
+  const reconcileReady = readyReconciliationCandidate(r) || Boolean(reconcileOutcome);
   if (!partialPredispatchRecord(r) && !reconcileReady) fail('PREDISPATCH_STATE_NOT_PROVEN');
   const e = validateEnvelope(r.envelope);
   const run = await api.getRun(e.runId);
@@ -151,7 +204,8 @@ export async function predispatchState({ api, journal, record: r, checkoutAbsent
     if (pr.head.sha !== e.startHead || pr.head.ref !== e.branch || pr.base.ref !== CONSUMER.baseBranch
       || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
   }
-  const binding = { ...predispatchBinding(r), ...(reconcileReady ? { readyRemovalEventId } : {}) };
+  const commentBinding = reconcileOutcome ? await reconcileOutcomeComment(api, r, reconcileOutcome) : {};
+  const binding = { ...predispatchBinding(r), ...(reconcileReady ? { readyRemovalEventId } : {}), ...commentBinding };
   return { binding, authorizationBody: recoveryAuthorizationBody(binding) };
 }
 
@@ -172,7 +226,7 @@ export async function finalizePredispatch({ api, store, journal, record: r, requ
   const refreshed = await predispatchState({ api, journal, record: r, checkoutAbsent });
   if (canonicalAuthorityJson(refreshed.binding) !== canonicalAuthorityJson(binding)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
   if (digest(await store.get(r.envelope.runId)) !== binding.recordDigest) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
-  r.predispatchRecovery = { version: readyReconciliationCandidate(r) ? 2 : 1, status: 'finalized', authorizationId: request.authorizationId,
+  r.predispatchRecovery = { version: outcomeReconciliationCandidate(r) ? 3 : readyReconciliationCandidate(r) ? 2 : 1, status: 'finalized', authorizationId: request.authorizationId,
     binding, authorizedAt, completedAt: now() };
   await store.put(r.envelope.runId, r);
   return r.predispatchRecovery;
