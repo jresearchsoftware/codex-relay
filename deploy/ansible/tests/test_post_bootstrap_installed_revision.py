@@ -43,8 +43,10 @@ def primitive_fixture(root, already_installed):
     from ansible.template import Templar
     sys.path.insert(0, str(ROOT / 'deploy'))
     import ansible_transport
+    import config as deployment_config
     import install_preflight
     import intent_install
+    import managed_pool_transport
     import inventory as inventory_module
     spec = importlib.util.spec_from_file_location('post_bootstrap_primitive', ROOT / 'deploy/relay-deploy.py')
     cli = importlib.util.module_from_spec(spec)
@@ -58,6 +60,7 @@ def primitive_fixture(root, already_installed):
     for name in ['opt', 'etc']:
         subprocess.run(['mount', '--bind', str(root / name), '/' + name], check=True)
     config = json.loads((ROOT / 'deploy/example.json').read_text())
+    deployment_config.derive_managed_pool_slots(config)
     config['target'].update(host='192.0.2.63', connection='local')
     config_path = root / 'desired.json'
     raw = json.dumps(config).encode()
@@ -83,6 +86,8 @@ def primitive_fixture(root, already_installed):
         """Staging transport is qualified separately; this fixture owns identity."""
         def __init__(self, _target, _key, _values, _identity, operation, **_options):
             preparation_calls.append('construct')
+            self.operation = operation
+            self.reinstall = _options.get('reinstall', False)
             self.stage = str(root / ('.stage-' + operation))
             self.source = self.stage + '/release/reviewed-source'
             self.lease_path = self.stage + '/writer-lock.json'
@@ -179,6 +184,8 @@ def primitive_fixture(root, already_installed):
          patch.object(cli.tempfile, 'gettempdir', return_value=str(root)), \
          patch.object(ansible_transport, 'qualify_target'), \
          patch.object(install_preflight, 'PreparedInstall', Preparation), \
+         patch.object(managed_pool_transport, 'preflight_pool', return_value='MANAGED_POOL_PREFLIGHT=PASS'), \
+         patch.object(managed_pool_transport, 'reconcile_pool', return_value='MANAGED_POOL_RESULT={"capacity":1}'), \
          patch.object(inventory_module, 'remote_inventory', side_effect=observed), \
          patch.object(intent_install, 'prepare_target', return_value=False):
         if already_installed:

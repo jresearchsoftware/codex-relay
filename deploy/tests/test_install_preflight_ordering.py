@@ -82,13 +82,24 @@ def invocation(tmp_path, monkeypatch):
     class Preparation:
         def __init__(self, _target, _key, _values, _identity, operation, **_options):
             self.operation = operation
+            self.reinstall = _options.get('reinstall', False)
             self.stage = '/opt/fixture/releases/.stage-' + operation
             self.source = self.stage + '/release/reviewed-source'
             self.lease_path = self.stage + '/writer-lock.json'
             self.initial, self.holder, self.captured, self.cutover_started = None, None, False, False
             self.retained_proof = None
             state['preparation'] = self
-        def create(self): injected('create')
+        def create(self):
+            injected('create')
+            root = state.get('inventory_root')
+            if root is not None and not self.reinstall:
+                releases = root / 'opt/codex-relay/releases'
+                releases.mkdir(parents=True, exist_ok=True)
+                releases.chmod(0o755)
+                releases.parent.chmod(0o755)
+                stage = releases / ('.stage-' + self.operation)
+                stage.mkdir(mode=0o700)
+                stage.chmod(0o700)
         def desired(self): injected('desired')
         def consumer(self, **_options):
             injected('history')
@@ -238,6 +249,37 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert events.index('final') < events.index('prepare-target') < events.index('backend')
     assert events.index('backend') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
     assert 'abort' not in events
+
+
+def test_fresh_bootstrap_allows_only_its_prepared_stage_until_cutover(invocation, monkeypatch, tmp_path):
+    args, _events, _gate, state, _records = invocation
+    args.phase = 'bootstrap'
+    args.authorize_upgrade = False
+    args.authorize_bootstrap = True
+    args.intent_expected_installed_revision = 'none'
+    state['installed'] = None
+    inventory_root = tmp_path / 'inventory-root'
+    inventory_root.mkdir(mode=0o700)
+    inventory_root.chmod(0o700)
+    state['inventory_root'] = inventory_root
+    config = json.loads((ROOT / 'deploy/example.json').read_text())
+    user_ids = {name: (os.getuid(), os.getgid()) for name in [
+        config['environment']['runner']['user'], config['environment']['generalRunner']['user'],
+        config['consumer']['runtimeUser'], config['environment']['reviewerUser']]}
+    calls = []
+
+    def observe(_target, _key, selected_config, **options):
+        calls.append(options.copy())
+        return inventory.inspect(selected_config, root=inventory_root, owner_uid=os.getuid(),
+            user_ids=user_ids, git_desired=options.get('git_desired', False),
+            allowed_stage_operation=options.get('allowed_stage_operation'))
+
+    monkeypatch.setattr(inventory, 'remote_inventory', observe)
+    backend.run(args)
+
+    operation = state['preparation'].operation
+    assert [call.get('allowed_stage_operation') for call in calls] == [None, None, operation, operation]
+    assert all(call.get('git_desired') is True for call in calls)
 
 
 def test_capable_installed_gate_receives_sealed_target_source_before_quiesce(invocation, monkeypatch):

@@ -135,6 +135,55 @@ def test_fresh_target_reports_missing_inputs_without_creating_anything(target):
     assert snapshot(target.root) == before
 
 
+def test_only_exact_verified_active_stage_is_accepted_before_first_current(target):
+    operation = '12345678-1234-1234-1234-123456789abc'
+    releases = path(target, '/opt/codex-relay/releases')
+    releases.mkdir(parents=True)
+    stage = releases / ('.stage-' + operation)
+    stage.mkdir(mode=0o700)
+    stage.chmod(0o700)
+
+    assert observe(target)['installed']['status'] == 'invalid'
+    report = inventory.inspect(target.config, root=target.root, owner_uid=os.getuid(), user_ids=target.ids,
+                               allowed_stage_operation=operation)
+    assert report['installed'] == {'status': 'missing'}
+    assert report['status'] == 'observed'
+
+
+@pytest.mark.parametrize('damage', ['missing-stage', 'wrong-operation', 'sibling-stage', 'unsafe-mode',
+                                    'unexpected-root-entry'])
+def test_active_stage_inventory_exception_is_exact_and_fail_closed(target, damage):
+    operation = '12345678-1234-1234-1234-123456789abc'
+    releases = path(target, '/opt/codex-relay/releases')
+    allowed = operation
+    if damage != 'missing-stage':
+        releases.mkdir(parents=True)
+        stage = releases / ('.stage-' + operation)
+        stage.mkdir(mode=0o700)
+        stage.chmod(0o700)
+    if damage == 'wrong-operation':
+        allowed = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    elif damage == 'sibling-stage':
+        sibling = releases / '.stage-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        sibling.mkdir(mode=0o700)
+        sibling.chmod(0o700)
+    elif damage == 'unsafe-mode':
+        stage.chmod(0o755)
+    elif damage == 'unexpected-root-entry':
+        path(target, '/opt/codex-relay/foreign').mkdir()
+
+    report = inventory.inspect(target.config, root=target.root, owner_uid=os.getuid(), user_ids=target.ids,
+                               allowed_stage_operation=allowed)
+    assert report['installed']['status'] == 'invalid'
+    assert 'installed-identity-invalid' in report['blockers']
+
+
+def test_invalid_prepared_stage_operation_is_rejected(target):
+    with pytest.raises(ValueError, match='inventory-stage-operation'):
+        inventory.inspect(target.config, root=target.root, owner_uid=os.getuid(), user_ids=target.ids,
+                          allowed_stage_operation='../stage')
+
+
 def test_installed_equivalence_and_registered_runners_reuse_without_secret_reads(target, monkeypatch):
     installed(target)
     runner(target)
@@ -397,6 +446,21 @@ def test_remote_probe_is_read_only_standalone_source_without_installed_dependenc
     assert 'def inspect(' in argv[-1]
     assert json.loads(options['input']) == target.config
     assert options['timeout'] == 45
+
+
+def test_remote_probe_transmits_only_explicit_prepared_stage_operation(target, monkeypatch):
+    operation = '12345678-1234-1234-1234-123456789abc'
+    report = observe(target)
+    calls = []
+
+    def run(target, key, argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr='')
+
+    monkeypatch.setattr(ansible_transport, 'run_target', run)
+    assert inventory.remote_inventory(target.config['target'], '/owner/key', target.config,
+        git_desired=True, allowed_stage_operation=operation) == report
+    assert calls[0][-3:] == ['--git-desired', '--allow-prepared-stage-operation', operation]
 
 
 def test_admin_handoff_binds_exact_consumer_workflow_refs_and_settings(target):

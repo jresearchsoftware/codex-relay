@@ -138,7 +138,24 @@ class Probe:
             return False
 
 
-def _installation(probe, install):
+def _exact_prepared_stage(probe, install, operation):
+    if not isinstance(operation, str) or not re.fullmatch(
+            r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', operation):
+        return False
+    name = '.stage-' + operation
+    try:
+        with probe.parent(install + '/releases/' + name) as (parent, leaf):
+            info = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != probe.owner_uid
+                    or stat.S_IMODE(info.st_mode) != 0o700):
+                return False
+            with os.scandir(parent) as entries:
+                return {entry.name for entry in entries} == {name}
+    except (OSError, ValueError):
+        return False
+
+
+def _installation(probe, install, allowed_stage_operation=None):
     try:
         with probe.parent(install + '/current') as (parent, name):
             info = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -177,10 +194,17 @@ def _installation(probe, install):
                 return {'status': 'invalid'}, None, None
             with probe.parent(install + '/current') as (parent, _):
                 with os.scandir(parent) as entries:
-                    if any(entry.name not in ['runner', 'general-runner'] for entry in entries):
+                    names = {entry.name for entry in entries}
+                    if allowed_stage_operation is not None:
+                        if (names - {'runner', 'general-runner', 'releases'}
+                                or 'releases' not in names
+                                or not _exact_prepared_stage(probe, install, allowed_stage_operation)):
+                            return {'status': 'invalid'}, None, None
+                    elif names - {'runner', 'general-runner'}:
                         return {'status': 'invalid'}, None, None
         except FileNotFoundError:
-            pass
+            if allowed_stage_operation is not None:
+                return {'status': 'invalid'}, None, None
         except (OSError, ValueError):
             return {'status': 'invalid'}, None, None
         return {'status': 'missing'}, None, None
@@ -430,7 +454,8 @@ def _protected_state(probe, config):
     return result
 
 
-def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None, git_desired=False):
+def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None, git_desired=False,
+            allowed_stage_operation=None):
     """Inventory is observation only, never decommission/installation authority.
 
     ``root``, ``boundary`` and identities are fixture seams, not public CLI
@@ -440,7 +465,10 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
     namespace = config['environment']['namespace']
     if not re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace):
         raise ValueError('inventory-namespace')
-    installed, release, manifest = _installation(probe, '/opt/' + namespace)
+    if (allowed_stage_operation is not None and (not isinstance(allowed_stage_operation, str)
+            or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', allowed_stage_operation))):
+        raise ValueError('inventory-stage-operation')
+    installed, release, manifest = _installation(probe, '/opt/' + namespace, allowed_stage_operation)
     configuration = _configuration(probe, config, release, manifest)
     managed = 'generalRunnerPool' in config['consumer']
     runners = {'production': _runner(probe, config, False),
@@ -552,13 +580,18 @@ def _validate_report(report, config=None):
     return report
 
 
-def remote_inventory(target, key, config, *, git_desired=False):
+def remote_inventory(target, key, config, *, git_desired=False, allowed_stage_operation=None):
     """The entrypoint validates config and the configured target identity before this call."""
     source = Path(__file__).read_text()
     from ansible_transport import run_target
     argv = ['/usr/bin/python3', '-I', '-c', source]
     if git_desired:
         argv.append('--git-desired')
+    if allowed_stage_operation is not None:
+        if (not isinstance(allowed_stage_operation, str) or not re.fullmatch(
+                r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', allowed_stage_operation)):
+            raise ValueError('inventory-stage-operation')
+        argv.extend(['--allow-prepared-stage-operation', allowed_stage_operation])
     try:
         result = run_target(target, key, argv, input=json.dumps(config), timeout=45)
         if result.returncode or len(result.stdout) > LIMIT:
@@ -570,7 +603,19 @@ def remote_inventory(target, key, config, *, git_desired=False):
 
 if __name__ == '__main__':
     try:
-        report = inspect(_json(sys.stdin.buffer.read(LIMIT + 1)), git_desired=sys.argv[1:] == ['--git-desired'])
+        args = sys.argv[1:]
+        git_desired = False
+        allowed_stage_operation = None
+        while args:
+            option, *args = args
+            if option == '--git-desired' and not git_desired:
+                git_desired = True
+            elif option == '--allow-prepared-stage-operation' and allowed_stage_operation is None and args:
+                allowed_stage_operation, *args = args
+            else:
+                raise ValueError('inventory-options')
+        report = inspect(_json(sys.stdin.buffer.read(LIMIT + 1)), git_desired=git_desired,
+                         allowed_stage_operation=allowed_stage_operation)
         print(json.dumps(report, sort_keys=True, separators=(',', ':')))
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         print('RELAY_INVENTORY_UNAVAILABLE;inspect-configured-target', file=sys.stderr)

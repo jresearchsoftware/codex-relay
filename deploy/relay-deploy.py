@@ -897,7 +897,11 @@ def run(args):
                         # An invalid effective consumer was provisional strategy
                         # input only. The target proof must restore/authenticate it
                         # before the ordinary resource/preflight/backend checks.
-                        strict_inventory = remote_inventory(target, key, config, git_desired=True)
+                        allowed_stage_operation = None
+                        if preparation is not None and not preparation.reinstall:
+                            allowed_stage_operation = preparation.operation
+                        strict_inventory = remote_inventory(target, key, config, git_desired=True,
+                            allowed_stage_operation=allowed_stage_operation)
                         strict_installed = strict_inventory['installed']
                         strict_revision = (strict_installed.get('revision')
                             if strict_installed.get('status') == 'present' else 'none'
@@ -1018,7 +1022,11 @@ def run(args):
                     if install_flow:
                         # Re-observe under the host mutex; a read-only report is
                         # never itself a destructive or installation capability.
-                        observed = remote_inventory(target, key, config, **({'git_desired': True} if intent_install else {}))
+                        if intent_install:
+                            observed = remote_inventory(target, key, config, git_desired=True,
+                                allowed_stage_operation=allowed_stage_operation)
+                        else:
+                            observed = remote_inventory(target, key, config)
                         if pool_reinstall_proof is not None:
                             observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
