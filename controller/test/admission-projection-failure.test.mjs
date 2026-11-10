@@ -34,6 +34,8 @@ test('durable pre-dispatch marker releases only proven non-execution and retains
   deleting.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
   assert.ok(pendingPredispatchRecord(deleting));
   await f.store.put(record.envelope.runId, deleting);
+  await gate.assertSlotComplete('primary');
+  assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
   await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   assert.deepEqual(await f.store.get(record.envelope.runId), deleting);
   deleting.readyConsumed = true;
@@ -69,6 +71,45 @@ for (const boundary of ['projection-receipt', 'ready-delete-intent']) {
     assert.equal(pendingPredispatchRecord(record), true);
     assert.equal(record.readyConsumed, undefined);
     assert.equal(await f.journal.get(record.envelope.runId), null);
+  });
+}
+
+for (const outcomeFailure of ['before-intent', 'post-uncertain']) {
+  test(`failed ready DELETE and Outcome ${outcomeFailure} release the slot but retain external uncertainty`, async t => {
+    const journal = memoryStore(); let f;
+    await assert.rejects(fixture(t, { issueBody: charter, labelLaunch: true, streamlinedAdmission: true,
+      createJournal: () => journal,
+      createAdmission: async () => ({ assertOpen: async () => {}, assertSlotComplete: async () => {},
+        reserve: async () => ({ version: 1, status: 'active' }) }),
+      beforeAdmission(value) {
+        f = value; f.issue.labels = [{ name: 'step-1' }, { name: 'codex-ready-auto' }];
+        const remove = f.api.delete, list = f.api.list, post = f.api.post; let deleteFailed = false;
+        f.api.delete = async path => {
+          if (path.endsWith('/labels/codex-ready-auto')) { await remove(path); deleteFailed = true; throw Object.assign(new Error('DELETE response lost'), { code: 'EIO' }); }
+          return remove(path);
+        };
+        f.api.list = async path => {
+          if (deleteFailed && outcomeFailure === 'before-intent' && path.endsWith('/comments')) throw new Error('comments unavailable');
+          return list(path);
+        };
+        f.api.post = async (path, body) => {
+          if (outcomeFailure === 'post-uncertain' && path.endsWith('/comments')) { await post(path, body); throw new Error('POST response lost'); }
+          return post(path, body);
+        };
+      } }));
+    const record = await f.store.get(f.admissionRequest.runId);
+    assert.equal(record.readyConsumption.status, 'uncertain');
+    assert.equal(record.controllerLifecycle.child, 'not_started');
+    assert.equal(Boolean(record.commentIntent), outcomeFailure === 'post-uncertain');
+    const root = await mkdtemp(join(tmpdir(), 'uncertain-gate-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const gate = createAdmissionControl({ root, consumerDigest: record.envelope.consumerDigest, store: f.store,
+      journal, protectedRoot: false, checkoutAbsent: async () => true });
+    await gate.initialize();
+    await gate.assertSlotComplete('primary');
+    assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+    const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal, checkoutAbsent: async () => true });
+    await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   });
 }
 

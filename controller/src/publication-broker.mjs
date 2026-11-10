@@ -533,6 +533,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           const original = previous.envelope;
           if (!pendingPredispatchRecord(previous) || !journal || await journal.get(original.runId, original.repository)
             || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+          if (previous.readyConsumption) fail('READY_CONSUMPTION_UNCERTAIN');
         }
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.

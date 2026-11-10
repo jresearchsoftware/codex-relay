@@ -47,6 +47,24 @@ export function pendingPredispatchRecord(record) {
   return partialPredispatchRecord(original);
 }
 
+// A failed DELETE or Outcome may leave native side effects uncertain, but the
+// marker still proves that this Writer never handed out worker authority.
+// This narrower predicate releases only the physical slot; it says nothing
+// about whether the external command/comment needs reconciliation.
+export function predispatchNoWorkerRecord(record) {
+  if (pendingPredispatchRecord(record)) return true;
+  const { readyConsumption, controllerLifecycle, outcome, commentIntent, commentBodies,
+    lifecycleIntent, ...pending } = record ?? {};
+  if (readyConsumption?.status !== 'uncertain'
+    || readyConsumption.eventId !== pending.envelope?.readyEventId
+    || readyConsumption.label !== pending.envelope?.readyLabel
+    || canonicalAuthorityJson(controllerLifecycle) !== canonicalAuthorityJson({
+      version: 1, status: 'complete', child: 'not_started', containment: 'not_required' })) return false;
+  pending.controllerLifecycle = { version: 1, status: 'active' };
+  pending.outcome = null;
+  return pendingPredispatchRecord(pending);
+}
+
 export function predispatchBinding(r) {
   const e = r.envelope;
   return { operation: 'finalize-predispatch', repository: e.repository, runId: e.runId,

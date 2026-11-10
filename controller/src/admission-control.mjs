@@ -6,7 +6,7 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
-import { completedPredispatchRecovery, pendingPredispatchRecord } from './predispatch-recovery.mjs';
+import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord } from './predispatch-recovery.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -331,8 +331,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // Production inventory and Writer admission share the publication lock.
       // A pending marker cannot race the live Writer while this snapshot is read.
       if (record.predispatchPending) {
-        if (!pendingPredispatchRecord(record) || !journal || await journal.get(e.runId, e.repository)
-          || !checkoutAbsent || !await checkoutAbsent(e)) unknown.push(e.runId);
+        const safe = predispatchNoWorkerRecord(record) && journal && !await journal.get(e.runId, e.repository)
+          && checkoutAbsent && await checkoutAbsent(e);
+        // A possibly applied DELETE or Outcome publication remains an
+        // external-effect boundary even after the physical slot is released.
+        if (!safe || !resourceOnly && (!pendingPredispatchRecord(record) || record.readyConsumption)) unknown.push(e.runId);
         continue;
       }
       if (record.predispatchRecovery) {
