@@ -35,21 +35,16 @@ test('durable pre-dispatch marker releases only proven non-execution and retains
   assert.ok(pendingPredispatchRecord(deleting));
   await f.store.put(record.envelope.runId, deleting);
   await gate.assertSlotComplete('primary');
-  assert.deepEqual((await gate.status()).unknown, []);
+  assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
   await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   assert.deepEqual(await f.store.get(record.envelope.runId), deleting);
-  const next = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
-    admission: f.admissionControl, checkoutAbsent: async () => true });
-  const nextRequest = { ...f.admissionRequest, runId: record.envelope.runId + 1 };
-  await assert.rejects(next.dispatch(nextRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
-  const operationId = '12345678-1234-1234-1234-123456789abc';
-  await gate.quiesce({ operationId, target: 'a'.repeat(40) });
-  assert.equal((await gate.drained({ operationId })).drained, true);
   deleting.readyConsumed = true;
   assert.equal(pendingPredispatchRecord(deleting), false);
   await f.journal.put(record.envelope.runId, { unexpected: true });
   assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
-  await assert.rejects(next.dispatch(nextRequest),
+  const next = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  await assert.rejects(next.dispatch({ ...f.admissionRequest, runId: record.envelope.runId + 1 }),
     { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
   const checkoutGate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
     store: f.store, journal: memoryStore(), protectedRoot: false, checkoutAbsent: async () => false });
@@ -134,7 +129,7 @@ for (const outcomeFailure of ['before-intent', 'post-uncertain']) {
       journal, protectedRoot: false, checkoutAbsent: async () => true });
     await gate.initialize();
     await gate.assertSlotComplete('primary');
-    assert.deepEqual((await gate.status()).unknown, outcomeFailure === 'post-uncertain' ? [record.envelope.runId] : []);
+    assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
     const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal, checkoutAbsent: async () => true });
     await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   });

@@ -6,8 +6,7 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
-import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord,
-  predispatchReadyReplacementReported } from './predispatch-recovery.mjs';
+import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord } from './predispatch-recovery.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -334,13 +333,9 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (record.predispatchPending) {
         const safe = predispatchNoWorkerRecord(record) && journal && !await journal.get(e.runId, e.repository)
           && checkoutAbsent && await checkoutAbsent(e);
-        // A possibly applied ready DELETE holds this Task's future admission,
-        // not the global lifecycle. Publication intents still hold drain.
-        const readyOnly = pendingPredispatchRecord(record)
-          || predispatchNoWorkerRecord(record) && !record.outcome && !record.commentIntent
-            && !record.commentBodies && !record.lifecycleIntent;
-        const effectsResolved = readyOnly || predispatchReadyReplacementReported(record);
-        if (!safe || !resourceOnly && !effectsResolved) unknown.push(e.runId);
+        // A possibly applied DELETE or Outcome publication remains an
+        // external-effect boundary even after the physical slot is released.
+        if (!safe || !resourceOnly && (!pendingPredispatchRecord(record) || record.readyConsumption)) unknown.push(e.runId);
         continue;
       }
       if (record.predispatchRecovery) {

@@ -522,10 +522,9 @@ After the consumed receipt the normal active/unknown execution rules apply.
 
 The physical slot and native effects remain separate. A marker can release the
 slot even if a ready DELETE or blocked Outcome publication has an uncertain
-result. An uncertain ready DELETE without a pending publication intent does not
-block global drain, but it holds new admissions for that Task: it is not
-permission to repeat the DELETE or issue a fresh Step. An unresolved Outcome
-publication still blocks drain. When Writer observed an owner-event replacement and
+result. Such an uncertain external effect remains unknown to drain and normally
+blocks a fresh Step until reconciled; it is not permission to repeat the DELETE or
+publish another Outcome. When Writer observed an owner-event replacement and
 durably sealed its BLOCKED Outcome, a distinct freshly revalidated owner event
 may proceed; an unsealed Outcome or unknown DELETE result does not qualify.
 A projection failure before a DELETE intent has no such
