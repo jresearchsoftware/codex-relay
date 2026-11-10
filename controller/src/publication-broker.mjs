@@ -21,7 +21,8 @@ import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
-import { predispatchState, finalizePredispatch, completedPredispatchRecovery, pendingPredispatchRecord } from './predispatch-recovery.mjs';
+import { predispatchState, finalizePredispatch, completedPredispatchRecovery, pendingPredispatchRecord,
+  predispatchReadyReplacementReported } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -531,9 +532,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
         for (const previous of priorRecords.filter(record => record.envelope?.issueNumber === task && record.predispatchPending)) {
           const original = previous.envelope;
-          if (!pendingPredispatchRecord(previous) || !journal || await journal.get(original.runId, original.repository)
+          if (!(pendingPredispatchRecord(previous) || predispatchReadyReplacementReported(previous))
+            || !journal || await journal.get(original.runId, original.repository)
             || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
-          if (previous.readyConsumption) fail('READY_CONSUMPTION_UNCERTAIN');
+          if (previous.readyConsumption && !predispatchReadyReplacementReported(previous)) fail('READY_CONSUMPTION_UNCERTAIN');
         }
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.

@@ -16,7 +16,8 @@ export async function harness(t, { tasks = [42, 44] } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-independent-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = memoryStore(); const journal = memoryStore();
-  const control = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false });
+  const checkoutAbsent = async () => true;
+  const control = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false, checkoutAbsent });
   await control.initialize();
   const issues = new Map(tasks.map(number => [number, { id: number + 1000, number, title: `Task ${number} — Source work`,
     state: 'open', user: { login: CONSUMER.owner }, body: charter, labels: [] }]));
@@ -61,7 +62,7 @@ export async function harness(t, { tasks = [42, 44] } = {}) {
       }
     }
   };
-  const broker = createPublicationBroker({ api, store, journal, admission: control, publisher: {} });
+  const broker = createPublicationBroker({ api, store, journal, admission: control, publisher: {}, checkoutAbsent });
   function ready(runId, number, route) {
     command++;
     const issue = issues.get(number); const launch = { target: 'issue', number, route };

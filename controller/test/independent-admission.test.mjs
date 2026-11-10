@@ -126,7 +126,14 @@ test('prelaunch ready race releases only its unused automatic resource and repor
   await assert.rejects(f.broker.dispatch(request), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
   assert.equal(f.comments[0].body, outcomeBytes);
-  const next = await f.broker.dispatch(f.ready(100, 42, 'auto'));
+  const nextRequest = f.ready(100, 42, 'auto');
+  const damaged = structuredClone(original);
+  damaged.commentBodies.outcome.sha256 = 'f'.repeat(64);
+  await f.store.put(99, damaged);
+  await assert.rejects(f.broker.dispatch(nextRequest), { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
+  assert.equal(await f.store.get(100), null);
+  await f.store.put(99, original);
+  const next = await f.broker.dispatch(nextRequest);
   assert.equal(next.envelope.step, 2);
   assert.deepEqual((await f.store.get(99)).outcome, original.outcome);
   assert.deepEqual((await f.store.get(99)).envelope, original.envelope);

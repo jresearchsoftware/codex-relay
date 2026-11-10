@@ -65,6 +65,17 @@ export function predispatchNoWorkerRecord(record) {
   return pendingPredispatchRecord(pending);
 }
 
+// A verified replacement and sealed terminal Outcome preserve the prior
+// ready race. A distinct, freshly revalidated event may then be admitted.
+export function predispatchReadyReplacementReported(record) {
+  const outcome = record?.outcome, seal = record?.commentBodies?.outcome;
+  return predispatchNoWorkerRecord(record) && record.readyConsumption?.code === 'READY_EVENT_REPLACED'
+    && Array.isArray(record.readyConsumption.laterEvents) && record.readyConsumption.laterEvents.some(positive)
+    && outcome?.status === 'BLOCKED' && outcome.head === null && positive(outcome.outcomeId)
+    && /^[a-f0-9]{64}$/.test(outcome.bodySha256 ?? '') && seal?.sha256 === outcome.bodySha256
+    && !record.commentIntent && !record.lifecycleIntent && !record.publicationIntent;
+}
+
 export function predispatchBinding(r) {
   const e = r.envelope;
   return { operation: 'finalize-predispatch', repository: e.repository, runId: e.runId,
