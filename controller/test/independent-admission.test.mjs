@@ -123,6 +123,7 @@ test('prelaunch ready race releases only its unused automatic resource and repor
   assert.match(f.comments[0].body, /Automatic worker launch authority was not returned/);
   const outcomeBytes = f.comments[0].body;
   await f.control.assertSlotComplete('primary');
+  assert.deepEqual((await f.control.status()).unknown, []);
   await assert.rejects(f.broker.dispatch(request), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
   assert.equal(f.comments[0].body, outcomeBytes);
@@ -130,6 +131,7 @@ test('prelaunch ready race releases only its unused automatic resource and repor
   const damaged = structuredClone(original);
   damaged.commentBodies.outcome.sha256 = 'f'.repeat(64);
   await f.store.put(99, damaged);
+  assert.deepEqual((await f.control.status()).unknown, [99]);
   await assert.rejects(f.broker.dispatch(nextRequest), { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
   assert.equal(await f.store.get(100), null);
   await f.store.put(99, original);
@@ -137,6 +139,27 @@ test('prelaunch ready race releases only its unused automatic resource and repor
   assert.equal(next.envelope.step, 2);
   assert.deepEqual((await f.store.get(99)).outcome, original.outcome);
   assert.deepEqual((await f.store.get(99)).envelope, original.envelope);
+});
+
+test('a sealed ready replacement permits lifecycle drain, while a damaged receipt does not', async t => {
+  const f = await harness(t);
+  const request = f.ready(99, 42, 'auto');
+  const remove = f.api.delete;
+  let replace = true;
+  f.api.delete = async path => {
+    if (replace && path.endsWith('/labels/codex-ready-auto')) { replace = false; f.replaceReady(42, 'auto'); }
+    return remove(path);
+  };
+  await assert.rejects(f.broker.dispatch(request), { code: 'READY_EVENT_REPLACED' });
+  const original = await f.store.get(99);
+  const operationId = '12345678-1234-1234-1234-123456789abc';
+  await f.control.quiesce({ operationId, target: 'a'.repeat(40) });
+  const damaged = structuredClone(original);
+  damaged.commentBodies.outcome.sha256 = 'f'.repeat(64);
+  await f.store.put(99, damaged);
+  await assert.rejects(f.control.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  await f.store.put(99, original);
+  assert.equal((await f.control.drained({ operationId })).drained, true);
 });
 
 test('two automatic same-UID attempts overlap on distinct slots for the same Task and independent Tasks', async t => {
