@@ -12,7 +12,7 @@ export function admissionFailure(error, operation, executionId, knownSecrets = [
   const status = Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599 ? error.status : undefined;
   const diagnostic = { code, stage: 'authority', boundary: 'writer-publication', operation, executionId,
     preview: `Writer admission failed at ${operation} (${name}${status ? `; HTTP ${status}` : ''}). `
-      + 'This admission call did not return launch authority. The reservation is retained; original execution evidence remains authoritative.' };
+      + 'This admission call did not return launch authority. Protected admission and execution evidence remain authoritative.' };
   return { diagnostic, exception: { name, ...(status ? { status } : {}),
     ...boundedDiagnosticText(error?.stack ?? error?.message ?? name, 8192, { knownSecrets }) } };
 }

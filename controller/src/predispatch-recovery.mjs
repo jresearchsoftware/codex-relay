@@ -26,6 +26,27 @@ export function partialPredispatchRecord(r) {
     && (r.prNumber === undefined || r.prNumber === e.continuation?.pullRequest);
 }
 
+// A new Writer records this boundary before projection or command deletion.
+// While it remains present, admit cannot have returned a launchable envelope.
+// Callers must hold the Writer lock and check for a contradictory journal.
+export function pendingPredispatchRecord(record) {
+  const { predispatchPending: pending, stepProjected, stepProjectionSupersededBy,
+    readyConsumption, ...original } = record ?? {};
+  if (pending?.version !== 1 || Object.keys(pending).sort().join(',') !== 'projectionFrom,version'
+    || !Array.isArray(pending.projectionFrom)
+    || stepProjected !== undefined && stepProjected !== true
+    || stepProjectionSupersededBy !== undefined && stepProjectionSupersededBy !== null
+      && !/^run-[1-9][0-9]*$/.test(stepProjectionSupersededBy)
+    || readyConsumption !== undefined && (readyConsumption?.status !== 'deleting'
+      || readyConsumption.eventId !== original.envelope?.readyEventId
+      || readyConsumption.label !== original.envelope?.readyLabel
+      || Object.keys(readyConsumption).sort().join(',') !== 'eventId,label,status')) return false;
+  if (original.stepProjectionFrom !== undefined
+    && canonicalAuthorityJson(original.stepProjectionFrom) !== canonicalAuthorityJson(pending.projectionFrom)) return false;
+  original.stepProjectionFrom = pending.projectionFrom;
+  return partialPredispatchRecord(original);
+}
+
 export function predispatchBinding(r) {
   const e = r.envelope;
   return { operation: 'finalize-predispatch', repository: e.repository, runId: e.runId,

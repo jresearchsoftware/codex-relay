@@ -4,10 +4,61 @@ import { fixture, memoryStore } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { serializeWriterFailure } from '../src/privileged-writer-helper.mjs';
 import { admissionFailure } from '../src/admission-diagnostic.mjs';
+import { createAdmissionControl } from '../src/admission-control.mjs';
+import { pendingPredispatchRecord } from '../src/predispatch-recovery.mjs';
+import { nextAdmissionStep } from '../src/admission-step.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nExercise bounded admission diagnostics and same-attempt replay.';
 const privatePath = '/srv/relay/private/admission-source.mjs';
 const syntheticToken = `ghp_${'S'.repeat(36)}`;
+
+test('durable pre-dispatch marker releases only proven non-execution and retains numbering', async t => {
+  const f = await failedProjection(t, new Error('projection failed'));
+  const record = await f.store.get(f.admissionRequest.runId);
+  const gateRoot = await mkdtemp(join(tmpdir(), 'projection-gate-'));
+  t.after(() => rm(gateRoot, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
+    store: f.store, journal: f.journal, protectedRoot: false });
+  await gate.initialize();
+  assert.ok(pendingPredispatchRecord(record));
+  assert.deepEqual((await gate.status()).active, []);
+  assert.deepEqual((await gate.status()).unknown, []);
+  await gate.assertSlotComplete('primary');
+  assert.equal(nextAdmissionStep([record], record.envelope.issueNumber, [{ name: 'step-1' }]).step, 3);
+  const deleting = structuredClone(record);
+  deleting.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
+  assert.ok(pendingPredispatchRecord(deleting));
+  deleting.readyConsumed = true;
+  assert.equal(pendingPredispatchRecord(deleting), false);
+  await f.journal.put(record.envelope.runId, { unexpected: true });
+  assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+});
+
+for (const boundary of ['projection-receipt', 'ready-delete-intent']) {
+  test(`interrupted Writer retains its pre-dispatch proof at ${boundary}`, async t => {
+    let stopped = false;
+    const f = await failedProjection(t, new Error('unused'), ({ api, store }) => {
+      api.ensureStepLabel = async () => {};
+      const put = store.put;
+      store.put = async (id, record) => {
+        await put(id, record);
+        if (!stopped && (boundary === 'projection-receipt' ? record.stepProjected === true
+          : record.readyConsumption?.status === 'deleting')) {
+          stopped = true;
+          throw Object.assign(new Error('simulated interruption after atomic write'), { code: 'EIO' });
+        }
+      };
+    });
+    assert.equal(stopped, true);
+    const record = await f.store.get(f.admissionRequest.runId);
+    assert.equal(pendingPredispatchRecord(record), true);
+    assert.equal(record.readyConsumed, undefined);
+    assert.equal(await f.journal.get(record.envelope.runId), null);
+  });
+}
 
 async function failedProjection(t, cause, configure = () => {}) {
   let state;

@@ -1,5 +1,5 @@
 import { positive, fail, digest, REPOSITORY } from './execution-contract.mjs';
-import { completedPredispatchRecovery } from './predispatch-recovery.mjs';
+import { completedPredispatchRecovery, pendingPredispatchRecord } from './predispatch-recovery.mjs';
 import { currentStep, labelNames, stepLike } from './step-metadata.mjs';
 
 // Called under the existing publication lock. Allocation is independent of
@@ -31,8 +31,9 @@ export function nextAdmissionStep(records, task, labels = []) {
     error.message = `${error.code}: Task #${task} needs no Step label or exactly one valid step-N label. Reconcile the canonical Issue before applying a fresh owner command; no Step was allocated.`;
     throw error;
   }
-  const retiredPartial = previous && completedPredispatchRecovery(previous)
-    && previous.stepProjectionFrom.includes(`step-${position}`);
+  const retiredPartial = previous && (completedPredispatchRecovery(previous)
+    && previous.stepProjectionFrom.includes(`step-${position}`)
+    || pendingPredispatchRecord(previous) && previous.predispatchPending.projectionFrom.includes(`step-${position}`));
   if (position && position < (previous?.envelope.step ?? 0) && !retiredPartial)
     throw Object.assign(new Error(`STEP_LABEL_BEHIND_ADMISSION: Task #${task} label step-${position} is behind successful Writer Step ${previous.envelope.step}. Reconcile the Issue's authorized numbering position without rewriting admission history; no Step was allocated.`),
       { code: 'STEP_LABEL_BEHIND_ADMISSION' });

@@ -153,7 +153,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       || labelNames(subject.labels).includes(e.readyLabel))
       return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { transitions });
     r.readyConsumption = { ...r.readyConsumption, status: 'consumed', removalEventId: later[0].id };
-    r.readyConsumed = true; await store.put(e.runId, r);
+    // The pending marker and the consumed receipt change atomically. Until
+    // this write succeeds, no launchable envelope can have been returned.
+    r.readyConsumed = true; delete r.predispatchPending; await store.put(e.runId, r);
   }
   async function prepareRemediation(e) {
     if (e.target !== 'pull_request') return;
@@ -554,6 +556,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         const r = { envelope, ...(nativeAdmission ? { nativeAdmission: true } : {}), ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
           ...(!admitted.blocked && nativeAdmission ? { stepProjectionFrom: stepLabels(charter) } : {}),
+          ...(!admitted.blocked && nativeAdmission && envelope.route === 'auto' && envelope.transport === 'label'
+            ? { predispatchPending: { version: 1, projectionFrom: stepLabels(charter) } } : {}),
           ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
           ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };

@@ -29,6 +29,10 @@ async function partial(t) {
     } }), { code: 'ADMISSION_STEP_PROJECTION_FAILED' });
   f.run.status = 'completed'; f.run.conclusion = 'failure'; f.run.run_attempt = 1;
   f.run.updated_at = '2026-09-04T12:01:00Z';
+  // Model the retained old Writer record, before the pending marker existed.
+  const retained = await f.store.get(99);
+  delete retained.predispatchPending;
+  await f.store.put(99, retained);
   f.original = await f.store.get(99);
   f.journal = journal;
   f.comments = [];

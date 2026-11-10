@@ -6,7 +6,7 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
-import { completedPredispatchRecovery } from './predispatch-recovery.mjs';
+import { completedPredispatchRecovery, pendingPredispatchRecord } from './predispatch-recovery.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -120,6 +120,7 @@ export function manualAdmissionComplete(record) {
 export async function completedAdmissionRecord(record, journal) {
   const e = record?.envelope;
   if (!e || e.version !== VERSION || !configDigest(e.consumerDigest) || !positive(e.runId)) return false;
+  if (record.predispatchPending) return pendingPredispatchRecord(record) && Boolean(journal) && !await journal.get(e.runId, e.repository);
   if (record.predispatchRecovery) return completedPredispatchRecovery(record) && !await journal.get(e.runId, e.repository);
   if (e.route === 'manual') return manualAdmissionComplete(record);
   if (e.route !== 'auto' || !publishedTerminal(record, Boolean(record.prepublicationRecovery))
@@ -326,6 +327,12 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         continue;
       }
       if (e.route !== 'auto') continue;
+      // Production inventory and Writer admission share the publication lock.
+      // A pending marker cannot race the live Writer while this snapshot is read.
+      if (record.predispatchPending) {
+        if (!pendingPredispatchRecord(record) || !journal || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
+        continue;
+      }
       if (record.predispatchRecovery) {
         if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
         continue;
