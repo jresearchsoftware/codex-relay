@@ -511,20 +511,25 @@ automatic admission without stopping those runners.
 
 For new native automatic label admissions, Writer stores a pre-dispatch marker
 with the reservation before projecting the Step. It retains the marker through
-the ready-label DELETE intent and removes it atomically with the durable
-`readyConsumed` receipt, before returning a launchable envelope. Inventory reads
-the marker under the shared Writer lock and checks both the original journal and
-checkout. A valid marker with neither contradictory record nor checkout proves
-that this attempt did not receive worker launch authority. Missing or conflicting
-evidence remains unknown. The original Step and ready-event identity remain
-reserved; replay of the marked attempt cannot resume deletion or launch a worker.
-After the consumed receipt the normal active/unknown execution rules apply.
+the ready-label DELETE intent and stores the durable `readyConsumed` receipt
+without removing the marker before returning a launchable envelope. Before that
+receipt, the exact original marker with no journal or checkout proves that the
+controller did not receive worker launch authority. After consumption, the
+marker alone does not prove whether the returned envelope reached a worker;
+inventory keeps the attempt active/unknown until trusted controller completion
+provides the matching terminal journal and containment proof. Only then does the
+physical slot become available and the completion operation retire the marker.
+Missing or conflicting evidence remains unknown. The original Step and
+ready-event identity remain reserved; replay of the marked attempt cannot resume
+deletion or launch a worker.
 
-The physical slot and native effects remain separate. A marker can release the
-slot even if a ready DELETE or blocked Outcome publication has an uncertain
-result. Such an uncertain external effect remains unknown to drain and normally
-blocks a fresh Step until reconciled; it is not permission to repeat the DELETE or
-publish another Outcome. When Writer observed an owner-event replacement and
+The physical slot and native effects remain separate. A pre-consumption marker
+can release the slot only with the exact no-worker proof above; a consumed marker
+needs terminal containment evidence or the explicit original-run finalizer. A
+ready DELETE or blocked Outcome publication with an uncertain result remains
+unknown to drain and normally blocks a fresh Step until reconciled; it is not
+permission to repeat the DELETE or publish another Outcome. When Writer observed
+an owner-event replacement and
 durably sealed its BLOCKED Outcome, a distinct freshly revalidated owner event
 may proceed; an unsealed Outcome or unknown DELETE result does not qualify.
 A projection failure before a DELETE intent has no such
@@ -740,18 +745,28 @@ Public consumers retain `pull_request_target` label routing under the
 ## Pre-dispatch admission finalization
 
 A failed first label-routing run can stop after its immutable Step reservation
-but before `admit` returns. The bounded `predispatch-state` /
-`finalize-predispatch` Writer operations reconcile only that case. They are
-explicit operator recovery, never ordinary admission replay. They do not execute
-Codex, publish a Task Outcome, consume a ready command, project labels, push Git,
-change a PR, or fabricate a terminal runner journal.
+before `admit` returns, or after ready consumption but before the controller
+reserves its runner journal. The bounded `predispatch-state` /
+`finalize-predispatch` Writer operations reconcile only the exact supported
+original records below. They are explicit operator recovery, never ordinary
+admission replay. They do not execute Codex, publish a Task Outcome, consume a
+ready command, project labels, push Git, change a PR, or fabricate a terminal
+runner journal.
 
 The proof is the protected write ordering: before a successful automatic label
 `admit` returns, Writer durably stores `readyConsumption` and `readyConsumed`.
 An exact partial record with neither field, no completed projection, no other
 execution/publication effects and its original active lifecycle could not have
 returned normally to the controller. This is stronger than merely finding no
-process. Finalization also requires the completed original native routing run
+process. Current automatic label admissions retain `predispatchPending` after
+the durable `readyConsumed` receipt. Once consumption is complete, that marker
+alone does not prove that no controller received its envelope: the resource
+remains held until trusted controller completion verifies the matching terminal
+runner journal and clears the marker. A successful DELETE or an absent journal
+does not release this consumed reservation or authorize ordinary admission
+replay.
+
+Finalization requires the completed original native routing run
 (first attempt only, failure), unchanged native event, authority and exact
 branch/PR head, no original journal or checkout, and exclusive acquisition of
 the original controller lock under the Writer mutex. A rerun, ambiguous state,
@@ -763,13 +778,24 @@ operator route can also reconcile the original attempt when the native timeline
 proves the original command was removed, no later ready transition or ready
 label exists. Inspection binds the observed removal event and the complete
 record digest; finalization rechecks that evidence and never repeats the DELETE.
+The same route accepts an exact record retaining both `readyConsumed: true` and
+`predispatchPending`, with no original runner journal. In addition to the
+original-run, lock, absent journal/checkout and unchanged live authority/ref
+checks above, its native
+removal event must exactly match the retained `readyConsumption.removalEventId`.
+No later ready transition or ready label may exist. This explicit retirement
+preserves the consumed receipt and original Step/event; it does not infer
+containment from missing execution evidence. A stale controller cannot obtain
+worker dispatch through preflight after the recovery receipt is committed.
 If a BLOCKED Outcome comment was attempted, reconciliation additionally requires
 the exact retained comment body or seal and a unique native read-back from the
 configured Writer bot, including its immutable identity. The binding records the
 comment identity and body digest; it never repeats the POST or changes the
 original record. Missing, ambiguous or contradictory evidence remains blocked.
 This receipt does not make an older runtime that ignores it safe to activate or
-replay.
+replay. Retained older partial and uncertain-DELETE records keep their existing
+proof and recovery rules; a historical consumed record without the retained
+pending marker does not acquire this new finalization path.
 
 Inspection returns the exact public-safe binding and `authorizationBody`.
 The owner posts those exact bytes as a fresh unedited native comment on the

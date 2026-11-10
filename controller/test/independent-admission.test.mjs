@@ -61,8 +61,10 @@ for (const routes of [['manual', 'manual'], ['auto', 'manual'], ['manual', 'auto
     assert.equal(original.outcome, null);
     assert.equal(f.runs.get(99).status, 'in_progress');
     assert.deepEqual((await f.store.get(99)).envelope, original.envelope);
-    for (const [request, result] of [[firstRequest, first], [secondRequest, second]])
-      assert.deepEqual((await f.broker.dispatch(request)).envelope, result.envelope);
+    for (const [request, result] of [[firstRequest, first], [secondRequest, second]]) {
+      if (request.route === 'auto') await assert.rejects(f.broker.dispatch(request), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+      else assert.deepEqual((await f.broker.dispatch(request)).envelope, result.envelope);
+    }
     assert.deepEqual(f.issues.get(42).labels, [{ name: 'step-2' }]);
     assert.equal(f.deletes(), 2);
     for (const runId of [99, 100]) {
@@ -82,7 +84,8 @@ test('independent Tasks keep their admission, projection and manual resources se
   assert.notEqual(first.envelope.branch, second.envelope.branch);
   assert.equal((await f.store.get(99)).outcome, null);
   assert.equal((await f.store.get(100)).controllerLifecycle, undefined);
-  await f.broker.dispatch(firstRequest); await f.broker.dispatch(secondRequest);
+  await assert.rejects(f.broker.dispatch(firstRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  await f.broker.dispatch(secondRequest);
   for (const issue of f.issues.values()) assert.deepEqual(issue.labels, [{ name: 'step-1' }]);
 });
 
@@ -162,8 +165,8 @@ test('two automatic same-UID attempts overlap on distinct slots for the same Tas
         assert.equal((await f.store.get(100)).controllerLifecycle.status,'active');
         assert.equal((await f.store.get(99)).outcome,null);assert.equal((await f.store.get(100)).outcome,null);
         assert.deepEqual((await f.control.status()).active,[99,100]);
-        assert.deepEqual((await f.broker.dispatch(a)).envelope,first.envelope);
-        assert.deepEqual((await f.broker.dispatch(b)).envelope,second.envelope);
+        await assert.rejects(f.broker.dispatch(a),e=>e.code==='PREDISPATCH_ATTEMPT_FINALIZED');
+        await assert.rejects(f.broker.dispatch(b),e=>e.code==='PREDISPATCH_ATTEMPT_FINALIZED');
         assert.deepEqual(f.issues.get(secondTask).labels,[{name:'step-'+(secondTask===42?2:1)}]);
         const blocked={...f.ready(101,44,'auto'),executionSlot:'primary'};
         await assert.rejects(f.broker.dispatch(blocked),e=>e.code==='EXECUTION_SLOT_UNAVAILABLE'&&e.details.active.includes(99));

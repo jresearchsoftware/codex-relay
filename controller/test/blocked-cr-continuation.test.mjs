@@ -187,7 +187,8 @@ for (const route of ['auto', 'manual']) test(`contained BLOCKED CR progress admi
   assert.deepEqual(await f.lifecycleStore.get(f.review.id), f.originalLifecycle);
   assert.ok(await f.admissionLifecycleStore.get(e.runId));
   assert.equal((await f.api.list('/pulls/43/reviews')).length, 1);
-  assert.equal((await f.broker.invoke(request)).resumed, true);
+  if (route === 'auto') await assert.rejects(f.broker.invoke(request), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  else assert.equal((await f.broker.invoke(request)).resumed, true);
   const cwd = join(dirname(f.cwd), e.attemptId);
   let calls = 0;
   const options = { ...f, envelope: e,

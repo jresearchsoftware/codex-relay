@@ -8,7 +8,7 @@ import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { nextAdmissionStep } from '../src/admission-step.mjs';
 import { digest, REPOSITORY, WRITER } from '../src/execution-contract.mjs';
-import { completedPredispatchRecovery } from '../src/predispatch-recovery.mjs';
+import { completedPredispatchRecovery, consumedPredispatchRecord, predispatchNoWorkerRecord } from '../src/predispatch-recovery.mjs';
 import { parseRecoveryRequest } from '../src/recover-attempt-publication.mjs';
 import { sha256Body } from '../../contracts/src/github-authority.mjs';
 import { PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
@@ -311,6 +311,51 @@ test('retire an uncertain ready DELETE only after exact removal evidence and no 
   assert.equal(admitted.envelope.step, 3);
   assert.equal(admitted.envelope.readyEventId, record.envelope.readyEventId + 2);
   assert.deepEqual((await f.store.get(99)).predispatchRecovery, result.recovery);
+});
+
+test('consumed pending admission holds its resource until the original failed run is explicitly retired', async t => {
+  const f = await partial(t);
+  const record = await f.store.get(99);
+  record.predispatchPending = { version: 1, projectionFrom: record.stepProjectionFrom };
+  delete record.stepProjectionFrom;
+  delete record.admissionFailure;
+  record.stepProjected = true;
+  record.readyConsumption = { status: 'consumed', eventId: record.envelope.readyEventId,
+    label: record.envelope.readyLabel, removalEventId: record.envelope.readyEventId + 1 };
+  record.readyConsumed = true;
+  record.authorityDrift = { current_authority: {}, changed_fields: [], review_required: false };
+  assert.equal(consumedPredispatchRecord(record), true);
+  record.authorityDrift.changed_fields = ['not-a-current-authority-field'];
+  assert.equal(consumedPredispatchRecord(record), false);
+  record.authorityDrift = { current_authority: {}, changed_fields: [], review_required: false };
+  await f.store.put(99, record);
+  f.issue.labels = [{ name: 'step-2' }];
+  f.events.push({ id: record.readyConsumption.removalEventId, event: 'unlabeled',
+    label: { name: record.envelope.readyLabel }, actor: { login: 'example-owner', type: 'User' },
+    created_at: '2026-09-04T12:01:01Z' });
+  assert.equal(predispatchNoWorkerRecord(record), false);
+
+  const root = await mkdtemp(join(tmpdir(), 'consumed-predispatch-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root, consumerDigest: record.envelope.consumerDigest,
+    store: f.store, journal: f.journal, checkoutAbsent: async () => true, protectedRoot: false });
+  await gate.initialize();
+  const pending = await gate.status();
+  assert.deepEqual(pending.active, [99]);
+  assert.deepEqual(pending.unknown, []);
+  await assert.rejects(gate.assertSlotComplete('primary'), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
+
+  const request = await f.authorize();
+  const native = Object.fromEntries(['post', 'patch', 'delete'].map(method => [method, f.api[method]]));
+  for (const method of ['post', 'patch', 'delete']) f.api[method] = () => assert.fail(`native ${method}`);
+  const state = await f.broker.dispatch(f.inspect);
+  assert.equal(state.binding.readyRemovalEventId, record.readyConsumption.removalEventId);
+  const result = await f.broker.dispatch(request);
+  assert.equal(result.recovery.version, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  assert.deepEqual((await gate.status()).unknown, []);
+  await assert.rejects(f.broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  Object.assign(f.api, native);
 });
 
 test('ready reconciliation refuses missing removal, replacement and pending comment publication', async t => {

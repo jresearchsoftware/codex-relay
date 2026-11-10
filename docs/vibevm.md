@@ -6,7 +6,9 @@ Relay **5.0.0** retains Shared 5.0.0 for its standalone snapshot and
 publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
 frozen Relay 4.1.1 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
-all nine applicable complete shared topics. The
+all ten applicable complete shared topics, including the separately selected
+[Small Improvements binding](relay-guidance-ownership.md#small-improvements-binding)
+under Task #230. The
 [ownership mapping](relay-guidance-ownership.md)
 identifies their Relay bindings; package installation alone does not adopt
 topics for another consumer. Candidate guidance remains proposal data until
@@ -202,8 +204,11 @@ bound does not guarantee arbitrary future compatibility.
 The [7.0.0-to-7.0.1 assessment](relay-skill-compatibility.md#project-update-from-700-to-701)
 records the actual TH-010/013/026 clarification and unchanged authority boundaries.
 The complete [5.0.0-through-7.0.0 semantic assessment](relay-skill-compatibility.md#project-migration-from-500-through-700)
-distinguishes current project policy, conditional settings duties, unselected
-Small Improvements and the [bounded legacy runtime closure binding](relay-guidance-ownership.md#temporary-legacy-closure-binding).
+distinguishes that migration's project policy, conditional settings duties,
+then-unselected Small Improvements and the [bounded legacy runtime closure binding](relay-guidance-ownership.md#temporary-legacy-closure-binding).
+The later [project-only Small Improvements adoption](relay-skill-compatibility.md#project-only-small-improvements-adoption)
+uses the existing selected slot and ordinary exact-head acceptance/integration;
+it changes no frozen Skill payload, dependency floor or other consumer policy.
 The earlier 4.0.0-to-5.0.0 assessment remains historical product evidence.
 The root update does not change the standalone snapshot, release-evidence lock,
 Skill requirement, package bytes or installed runtime identity.

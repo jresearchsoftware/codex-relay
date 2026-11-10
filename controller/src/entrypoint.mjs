@@ -34,6 +34,10 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   const executionSlot = resolveSlot({ runnerName: env.RUNNER_NAME });
   if (CONSUMER.executionSlots && executionSlot !== EXECUTION_SLOT) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   const local = createWriter();
+  // Construct inert adapters before admission so setup failures cannot strand
+  // a consumed owner command without a controller or journal.
+  const dispatcher = createDispatcher({ signal });
+  const journal = createJournal();
   const broker = { invoke: request => local.invoke({ ...request, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: env.GITHUB_TOKEN }) };
   let admitted;
   try {
@@ -45,28 +49,27 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     if (['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)) return { status: 'BLOCKED', code: error.code };
     throw error;
   }
-  emitAdmissionWarnings(admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings);
-  if (admitted.status === 'BLOCKED') return admitted;
-  const dispatcher = createDispatcher({ signal });
+  const warning = admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings;
+  if (admitted.status === 'BLOCKED') { emitAdmissionWarnings(warning); return admitted; }
   let failure;
+  let result;
   try {
-    return await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
-      journal: createJournal(), persistFailure,
+    result = await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
+      journal, persistFailure,
       prepare, execute: e => dispatcher.dispatch(e), collect: collect ?? (e => broker.invoke({
         operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId })) });
   } catch (error) {
     failure = error;
     // The contender never owned this attempt. Its error cannot mutate the
     // active controller's diagnostics or release its Writer reservation.
-    if (error.code === 'ATTEMPT_CONTROLLER_BUSY') throw error;
     // Includes a failed journal write before/inside the normal catch path.
     // Never rerun the operation just because its normal evidence store failed.
-    if (!error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
+    if (error.code !== 'ATTEMPT_CONTROLLER_BUSY'
+      && !error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
       const durable = await persistFailure({ executionId: admitted.envelope.attemptId,
         error, stage: 'finalization', lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? 'admission' });
       error.details = { ...error.details, ...durable };
     }
-    throw error;
   } finally {
     if (admitted.envelope.route === 'auto' && failure?.code !== 'ATTEMPT_CONTROLLER_BUSY') {
       // This is the last trusted controller operation, after containment,
@@ -74,11 +77,18 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
       // Root reads that receipt itself; caller JSON cannot assert completion.
       try { await broker.invoke({ operation: 'complete-execution', runId: admitted.envelope.runId, attemptId: admitted.envelope.attemptId }); }
       catch (error) {
-        if (!failure) throw error;
-        failure.details = { ...failure.details, admissionCompletion: { status: 'unknown', code: error.code ?? 'ADMISSION_COMPLETION_UNKNOWN' } };
+        if (!failure) failure = error;
+        else failure.details = { ...failure.details, admissionCompletion: { status: 'unknown', code: error.code ?? 'ADMISSION_COMPLETION_UNKNOWN' } };
       }
     }
   }
+  try { emitAdmissionWarnings(warning); }
+  catch (error) {
+    if (!failure) throw error;
+    failure.details = { ...failure.details, admissionWarnings: { status: 'unavailable', code: error.code ?? 'ADMISSION_WARNING_OUTPUT_FAILED' } };
+  }
+  if (failure) throw failure;
+  return result;
 }
 export async function reportRoutingResult(run, { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value) } = {}) {
   try {

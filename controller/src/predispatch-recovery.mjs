@@ -6,10 +6,26 @@ import { authorizeRecovery, recoveryAuthorizationBody } from './publication-reco
 import { revalidateAuthority, revalidateReadyEvent, readyTransitions, assertPr, linkedIssue } from './live-authority.mjs';
 import { labelNames, READY_LABELS } from './step-metadata.mjs';
 
+const AUTHORITY_DRIFT_FIELDS = new Set(['purpose', 'scope', 'boundaries', 'validation', 'model', 'effort', 'subagents',
+  'branch', 'base_sha', 'starting_head', 'existing_pr', 'issue_closure_policy', 'continuation']);
+
+function validAuthorityDrift(drift) {
+  if (drift === undefined) return true;
+  if (!drift || typeof drift !== 'object' || Array.isArray(drift)
+    || Object.keys(drift).sort().join(',') !== 'changed_fields,current_authority,review_required'
+    || !drift.current_authority || typeof drift.current_authority !== 'object' || Array.isArray(drift.current_authority)
+    || !Array.isArray(drift.changed_fields)
+    || drift.changed_fields.some((field, index) => !AUTHORITY_DRIFT_FIELDS.has(field)
+      || index > 0 && drift.changed_fields[index - 1] >= field)
+    || drift.review_required !== (drift.changed_fields.length > 0)) return false;
+  return true;
+}
+
 // No ready-consumption intent means admit could not return to the controller.
 // This is a durable ordering proof, not an inference from an absent process.
 export function partialPredispatchRecord(r) {
-  const e = r?.envelope;
+  const { authorityDrift, ...record } = r ?? {};
+  const e = record.envelope;
   try { validateAdmissionSnapshot(e?.request, { repository: e?.repository, task: e?.issueNumber }); } catch { return false; }
   if (e.version !== 2 || !positive(e.runId) || !positive(e.step) || !positive(e.issueNumber)
     || !/^[a-f0-9]{64}$/.test(e.consumerDigest ?? '') || e.request.run_id !== String(e.runId)
@@ -18,14 +34,16 @@ export function partialPredispatchRecord(r) {
     || e.request.authority.sha256 !== e.authorityDigest) return false;
   const allowed = new Set(['envelope', 'nativeAdmission', 'stepProjectionFrom', 'controllerLifecycle',
     'prNumber', 'publicationIntent', 'publishedHead', 'finalHead', 'outcome', 'admissionFailure']);
-  return e.request?.kind === 'admission' && e.route === 'auto' && e.transport === 'label'
-    && e.attemptId === `run-${e.runId}` && positive(e.readyEventId) && r.nativeAdmission === true
-    && canonicalAuthorityJson(r.controllerLifecycle) === canonicalAuthorityJson({ version: 1, status: 'active' })
-    && Array.isArray(r.stepProjectionFrom) && r.stepProjectionFrom.length <= 1
-    && r.stepProjectionFrom.every(label => /^step-[1-9][0-9]*$/.test(label))
-    && Object.keys(r).every(key => allowed.has(key))
-    && !r.publicationIntent && !r.publishedHead && !r.finalHead && !r.outcome
-    && (r.prNumber === undefined || r.prNumber === e.continuation?.pullRequest);
+  return validAuthorityDrift(authorityDrift)
+    && e.request?.kind === 'admission' && e.route === 'auto' && e.transport === 'label'
+    && e.attemptId === `run-${e.runId}` && positive(e.readyEventId) && record.nativeAdmission === true
+    && (record.controllerLifecycle === undefined
+      || canonicalAuthorityJson(record.controllerLifecycle) === canonicalAuthorityJson({ version: 1, status: 'active' }))
+    && Array.isArray(record.stepProjectionFrom) && record.stepProjectionFrom.length <= 1
+    && record.stepProjectionFrom.every(label => /^step-[1-9][0-9]*$/.test(label))
+    && Object.keys(record).every(key => allowed.has(key))
+    && !record.publicationIntent && !record.publishedHead && !record.finalHead && !record.outcome
+    && (record.prNumber === undefined || record.prNumber === e.continuation?.pullRequest);
 }
 
 // A new Writer records this boundary before projection or command deletion.
@@ -45,6 +63,40 @@ export function pendingPredispatchRecord(record) {
       || Object.keys(readyConsumption).sort().join(',') !== 'eventId,label,status')) return false;
   if (original.stepProjectionFrom !== undefined
     && canonicalAuthorityJson(original.stepProjectionFrom) !== canonicalAuthorityJson(pending.projectionFrom)) return false;
+  original.stepProjectionFrom = pending.projectionFrom;
+  return partialPredispatchRecord(original);
+}
+
+// A successful ready-label removal may race a lost admit response. Validate
+// the durable Writer marker independently from later execution/publication
+// receipts so a terminal controller can retire the same reservation.
+export function consumedPredispatchMarker(record) {
+  const { predispatchPending: pending, stepProjected, stepProjectionFrom,
+    stepProjectionSupersededBy, readyConsumption, readyConsumed } = record ?? {};
+  if (pending?.version !== 1 || Object.keys(pending).sort().join(',') !== 'projectionFrom,version'
+    || !Array.isArray(pending.projectionFrom) || pending.projectionFrom.length > 1
+    || pending.projectionFrom.some(label => !/^step-[1-9][0-9]*$/.test(label)) || stepProjected !== true
+    || stepProjectionFrom !== undefined || stepProjectionSupersededBy !== undefined && stepProjectionSupersededBy !== null
+    || readyConsumed !== true || readyConsumption?.status !== 'consumed'
+    || readyConsumption.eventId !== record?.envelope?.readyEventId
+    || readyConsumption.label !== record?.envelope?.readyLabel
+    || !positive(readyConsumption.removalEventId) || readyConsumption.removalEventId <= record?.envelope?.readyEventId
+    || Object.keys(readyConsumption).sort().join(',') !== 'eventId,label,removalEventId,status') return false;
+  return true;
+}
+
+// Before worker dispatch the full record must still be the original admission
+// projection. This excludes any checkout, publication, or terminal receipt.
+export function consumedPredispatchRecord(record) {
+  if (!consumedPredispatchMarker(record)) return false;
+  const original = { ...(record ?? {}) };
+  const pending = original.predispatchPending;
+  delete original.predispatchPending;
+  delete original.stepProjected;
+  delete original.stepProjectionFrom;
+  delete original.stepProjectionSupersededBy;
+  delete original.readyConsumption;
+  delete original.readyConsumed;
   original.stepProjectionFrom = pending.projectionFrom;
   return partialPredispatchRecord(original);
 }
@@ -113,13 +165,14 @@ export function completedPredispatchRecovery(record) {
 // body or seal and native read-back. Missing publication evidence stays blocking.
 export function readyReconciliationCandidate(r) {
   const ready = r?.readyConsumption;
+  const consumed = consumedPredispatchRecord(r);
   const uncertain = ready?.status === 'uncertain'
     && Object.keys(ready).sort().join(',') === 'code,diagnostic,eventId,label,laterEvents,status'
     && ['READY_CONSUMPTION_UNCERTAIN', 'READY_EVENT_REPLACED'].includes(ready.code)
     && Array.isArray(ready.laterEvents) && ready.laterEvents.every(positive)
     && typeof ready.diagnostic === 'string' && Buffer.byteLength(ready.diagnostic, 'utf8') <= 8192;
-  return Boolean(r?.predispatchPending && predispatchNoWorkerRecord(r)
-    && (ready?.status === 'deleting' || uncertain)
+  return Boolean(r?.predispatchPending
+    && (consumed || predispatchNoWorkerRecord(r) && (ready?.status === 'deleting' || uncertain))
     && !r.outcome && !r.commentIntent && !r.commentBodies && !r.lifecycleIntent
     && !r.publicationIntent && !r.publishedHead && !r.finalHead);
 }
@@ -194,6 +247,8 @@ export async function predispatchState({ api, journal, record: r, checkoutAbsent
       || original.created_at !== e.readyEventAt || later.length !== 1
       || later[0].event !== 'unlabeled' || later[0].label?.name !== e.readyLabel)
       fail('READY_RECONCILIATION_UNPROVEN');
+    if (consumedPredispatchRecord(r) && later[0].id !== r.readyConsumption.removalEventId)
+      fail('READY_RECONCILIATION_CHANGED');
     readyRemovalEventId = later[0].id;
   } else await revalidateReadyEvent(api, e);
   if ((await api.get(`/git/ref/heads/${e.branch}`)).object?.sha !== e.startHead)

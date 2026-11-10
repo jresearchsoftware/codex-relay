@@ -87,19 +87,19 @@ test('stale, removed, conflicting, unauthorized and rerun ready events fail with
   assert.equal(f.comments.length, 0); assert.equal(f.pushes(), 0);
 });
 
-test('a new run cannot reuse a consumed native event; a distinct current event admits its own next Step', async t => {
+test('a consumed native event holds new admission until the original controller journal is terminal', async t => {
   const f = await fixture(t, { labelLaunch: true });
   const previous = structuredClone(await f.store.get(99));
   f.issue.labels = labels('step-1', 'codex-ready-auto');
   const request = { ...f.admissionRequest, runId: 100 };
   const run = { ...f.run, id: 100, display_title: labelRunName(f.envelope, f.issue) };
   f.api.getRun = async id => structuredClone(id === 100 ? run : { ...f.run, status: 'completed', updated_at: '2026-09-04T12:01:00Z' });
-  await assert.rejects(f.broker.invoke(request), { code: 'READY_EVENT_STALE' });
+  await assert.rejects(f.broker.invoke(request), { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
   f.events.splice(0, f.events.length, { ...f.events[0], id: 73, created_at: '2026-09-04T12:02:00Z' });
   run.created_at = '2026-09-04T12:02:01Z';
-  const next = await f.broker.invoke(request);
-  assert.equal(next.envelope.step, 2); assert.equal(next.envelope.readyEventId, 73);
-  assert.equal(next.envelope.attemptId, 'run-100'); assert.deepEqual(await f.store.get(99), previous);
+  await assert.rejects(f.broker.invoke(request), { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
+  assert.equal(await f.store.get(100), null);
+  assert.deepEqual(await f.store.get(99), previous);
 });
 
 test('partial ready-label consumption is an uncertain native effect and never executes on replay', async t => {

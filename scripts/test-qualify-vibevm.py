@@ -30,6 +30,8 @@ class CommittedFlowTests(unittest.TestCase):
         binding = self.root / QUALIFICATION.LOCAL_SUBAGENTS
         binding.parent.mkdir(parents=True)
         shutil.copyfile(QUALIFICATION.ROOT / QUALIFICATION.LOCAL_SUBAGENTS, binding)
+        shutil.copyfile(QUALIFICATION.ROOT / QUALIFICATION.LOCAL_GOVERNANCE,
+                        self.root / QUALIFICATION.LOCAL_GOVERNANCE)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SELF_SLOT, self.root / QUALIFICATION.SELF_SLOT)
         shutil.copytree(QUALIFICATION.ROOT / "vibevm/vibepacks", self.root / "vibevm/vibepacks")
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts", self.root / "guidance/artifacts")
@@ -313,6 +315,44 @@ class CommittedFlowTests(unittest.TestCase):
         binding = self.root / QUALIFICATION.LOCAL_SUBAGENTS
         binding.write_text(binding.read_text() + "\n## When to delegate\nCompeting copied policy.\n")
         self.rejects()
+
+    def test_small_improvements_routes_cannot_use_unselected_or_bundled_protocols(self):
+        policy = (QUALIFICATION.SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
+        for name, before, after in (
+                ("AGENTS.md", policy, policy.replace("/7.0.1/", "/7.0.0/")),
+                ("AGENTS.md", "Relay explicitly adopts all ten", "Relay merely installs all ten"),
+                (QUALIFICATION.LOCAL_GOVERNANCE, "../" + policy,
+                 "../guidance/artifacts/standalone/codex-relay/references/shared/small-improvements.md"),
+                (QUALIFICATION.BOOT / "90-user.md", "Small Improvements is adopted",
+                 "Small Improvements remains unselected")):
+            path = self.root / name
+            original = path.read_text()
+            with self.subTest(route=str(name), before=before):
+                self.assertIn(before, original)
+                path.write_text(original.replace(before, after, 1))
+                self.rejects()
+            path.write_text(original)
+
+    def test_small_improvements_preserve_analysis_scope_review_and_pending_item_boundaries(self):
+        name = QUALIFICATION.LOCAL_GOVERNANCE
+        for before, after in (
+                ("label:small-improvement", "in:title Small improvement"),
+                ("Analysis-only Task | Skip the SI scan", "Analysis-only Task | Require the SI scan"),
+                ("trusted Decisions and admission remain the source of scope",
+                 "label and scheduling become the source of scope"),
+                ("one independent review assess the combined exact head",
+                 "successful tests accept the combined result"),
+                ("Keep source Issues open and labelled while work remains pending",
+                 "Close source Issues and remove their label upon scheduling"),
+                ("queue-empty gate or new mandatory CI gate", "a mandatory queue-empty CI gate")):
+            path = self.root / name
+            original = path.read_text()
+            pattern = r"\s+".join(re.escape(word) for word in before.split())
+            with self.subTest(boundary=before):
+                self.assertRegex(original, pattern)
+                path.write_text(re.sub(pattern, lambda _: after, original, count=1))
+                self.rejects()
+            path.write_text(original)
 
     def test_manifest_and_lock_graph_source_and_hash_are_bound(self):
         for name, replacements in (

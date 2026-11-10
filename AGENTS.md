@@ -10,7 +10,7 @@ optional developer hooks to propose a change.
 
 ## Shared governance and Relay routing
 
-Relay explicitly adopts all nine complete applicable Shared Governance **7.0.1**
+Relay explicitly adopts all ten complete applicable Shared Governance **7.0.1**
 protocols, accepted source `1110f10b996c2f81fa842e6339ab6d7c13111cd7`,
 distribution `f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9`.
 Read each complete topic when triggered; conditional loading excludes no clauses:
@@ -24,6 +24,7 @@ Read each complete topic when triggered; conditional loading excludes no clauses
 - [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
 - [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
 - [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/github-repository-governance.md): workflow/protection decisions, one-time adoption inspection and event-driven rechecks.
+- [Small improvements](vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/small-improvements.md): deferred candidate capture and discovery when preparing suitable source-changing Tasks, their first source-changing Step or relevant CRs; analysis-only work skips the scan.
 
 These are the single portable rule owners. The
 [Relay bindings](docs/relay-guidance-ownership.md) retain native authority,
@@ -35,8 +36,9 @@ contracts when those surfaces are active. The canonical authored user manual is
 [Native self-adoption](docs/self-adoption.md) supplies committed ready files;
 freeze accepted source guidance independently of candidate routes.
 The [bounded legacy closure binding](docs/relay-guidance-ownership.md#temporary-legacy-closure-binding)
-separates this project adoption from installed product behavior. Optional Small
-Improvements is available but not adopted.
+separates this project adoption from installed product behavior. The
+[Small Improvements binding](docs/relay-guidance-ownership.md#small-improvements-binding)
+retains Relay's native scope, tracker and closure authority.
 
 For an already-admitted legacy operation, the live Issue body retains its original
 canonical Task role under that operation's frozen source contract. Keep current
