@@ -190,6 +190,43 @@ def assert_original(f):
     assert f.wrapper.read_bytes() == f.wrapper_bytes
 
 
+def test_isolated_python_refusal_does_not_write_bytecode_into_sealed_source():
+    if sys.platform != 'linux' or os.geteuid() != 0:
+        pytest.skip('root Linux sealed source and isolated Python required')
+    with tempfile.TemporaryDirectory(prefix='relay-bridge-isolated-import-', dir='/run') as temporary:
+        source = Path(temporary) / 'reviewed-source'
+        deploy = source / 'deploy'
+        deploy.mkdir(parents=True)
+        for name in ['predispatch_bridge.py', 'install_preflight.py', 'writer_lock_lease.py']:
+            shutil.copyfile(ROOT / 'deploy' / name, deploy / name)
+            (deploy / name).chmod(0o644)
+        put(source / '.relay-source.json', {'revision': TARGET})
+
+        def sealed_tree():
+            result = {}
+            for path in [source, *sorted(source.rglob('*'))]:
+                info = path.lstat()
+                result[str(path.relative_to(source))] = (info.st_mode, info.st_size,
+                    info.st_ino, info.st_mtime_ns, info.st_ctime_ns,
+                    sha(path.read_bytes()) if path.is_file() else None)
+            return result
+
+        sealed = sealed_tree()
+        # -I ignores PYTHONDONTWRITEBYTECODE. The real entrypoint must suppress
+        # local import caches itself, even when it refuses before activation.
+        for _attempt in range(2):
+            result = subprocess.run(['/usr/bin/python3', '-I', str(deploy / 'predispatch_bridge.py')],
+                input='{}\n', text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PYTHONDONTWRITEBYTECODE': '1'})
+            assert result.returncode == 1
+            assert result.stdout == ''
+            assert result.stderr == ('PREDISPATCH_BRIDGE_UNPROVEN;'
+                'preserve-current-and-use-same-operation-forward-recovery\n')
+            assert not list(source.rglob('__pycache__'))
+            assert not list(source.rglob('*.pyc'))
+            assert sealed_tree() == sealed
+
+
 def test_bridge_uses_real_root_lock_lease_and_preserves_exact_authorized_record(protected_bridge):
     f = protected_bridge
     with f.lock.open('rb') as contender:

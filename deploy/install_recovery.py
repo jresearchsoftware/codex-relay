@@ -282,7 +282,7 @@ def resume_predispatch_bridge(proof, request, target, key, config, guard, pool_g
             and request.get('runId') == binding['runId'] and request.get('attemptId') == binding['attemptId']
             and request.get('authorizationId') == binding['authorizationId'], 'PREDISPATCH_BRIDGE_REQUEST_CHANGED')
     stage_source = (Path(source_root) / 'deploy/ansible/roles/relay_artifacts/files/relay-intent-stage.py').read_text()
-    program = ('import json,sys,uuid\nfrom pathlib import Path\n'
+    program = ('import json,sys,uuid\nsys.dont_write_bytecode=True\nfrom pathlib import Path\n'
         'v=json.load(sys.stdin);p=v["proof"];b=p["predispatchBridge"];ns={"__name__":"verified_stage"}\n'
         'exec(' + repr(stage_source) + ',ns)\n'
         'install=Path("/opt")/v["config"]["environment"]["namespace"];stage=install/"releases"/(".stage-"+p["operationId"])\n'

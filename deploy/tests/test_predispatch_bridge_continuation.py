@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -252,3 +254,61 @@ def test_lost_host_guard_stops_before_continuation_transport(continuation, monke
     with pytest.raises(ValueError, match='HOST_LOCK_LOST'):
         recovery.resume_predispatch_bridge(proof, request(), {}, Path('/unused'), f['config'],
             SimpleNamespace(poll=lambda: 1), source_root=ROOT)
+
+
+def test_actual_isolated_continuation_imports_do_not_change_sealed_staged_source(continuation, monkeypatch):
+    """Run the generated -I program; only its remote/artifact/service seams fake."""
+    import ansible_transport
+    f = continuation
+    proof = probe(f)
+    with tempfile.TemporaryDirectory(prefix='relay-continuation-import-', dir='/opt') as temporary:
+        install = Path(temporary)
+        config = copy.deepcopy(f['config'])
+        config['environment']['namespace'] = install.name
+        stage = install / 'releases' / ('.stage-' + OPERATION)
+        deploy = stage / 'release/reviewed-source/deploy'
+        deploy.mkdir(parents=True)
+        shutil.copyfile(f['stage'] / 'receipt.json', stage / 'receipt.json')
+        (stage / 'receipt.json').chmod(0o600)
+        # Small inert modules exercise the actual staged imports without
+        # touching a real installation, service, credentials or admission gate.
+        (deploy / 'config.py').write_text('def compile_inputs(config):\n    return {}\n')
+        (deploy / 'install_preflight.py').write_text('''class PreparedInstall:
+    def __init__(self, *arguments, **options): pass
+    def desired(self): pass
+    def consumer(self): pass
+    def bridge_predispatch(self, request, callback, *, continuation):
+        assert continuation is True
+    def admission_prefix(self): return []
+    def execute(self, arguments): pass
+    def release_writer(self): pass
+''')
+        for path in deploy.iterdir():
+            path.chmod(0o644)
+        verifier_root = f['root'] / 'inert-verifier'
+        verifier = verifier_root / 'deploy/ansible/roles/relay_artifacts/files/relay-intent-stage.py'
+        verifier.parent.mkdir(parents=True)
+        verifier.write_text('''from pathlib import Path
+import hashlib
+def run(*arguments): pass
+def hash_bytes(raw): return hashlib.sha256(raw).hexdigest()
+def read_regular(path): return Path(path).read_bytes()
+''')
+        sealed = tree_state(install)
+        calls = []
+        def run_target(_target, _key, argv, **options):
+            assert argv[:3] == ['/usr/bin/python3', '-I', '-c']
+            calls.append(argv)
+            return subprocess.run(argv, input=options['input'], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PYTHONDONTWRITEBYTECODE': '1'})
+        monkeypatch.setattr(ansible_transport, 'run_target', run_target)
+        guard = SimpleNamespace(poll=lambda: None)
+        for _attempt in range(2):
+            result = recovery.resume_predispatch_bridge(proof, request(), {}, Path('/unused'), config,
+                guard, source_root=verifier_root)
+            assert result == {'operationId': OPERATION, 'target': TARGET, 'installedRevision': TARGET}
+            assert not list(install.rglob('__pycache__'))
+            assert not list(install.rglob('*.pyc'))
+            assert tree_state(install) == sealed
+        assert len(calls) == 2
