@@ -11,16 +11,17 @@ export async function main({ uid = process.getuid?.(), argv = process.argv, inpu
   if (uid !== 0 || argv.length !== 2) throw Object.assign(new Error('ROOT_OPERATOR_REQUIRED'), { code: 'ROOT_OPERATOR_REQUIRED' });
   const request = await readRequest({ input, limit: 4096, protectedConfig: true });
   const operations = ['predispatch-state', 'finalize-predispatch'];
-  const allowed = ['operation', 'repository', 'runId', 'attemptId', 'authorizationId'];
-  if (!operations.includes(request.operation) || Object.keys(request).some(key => !allowed.includes(key)))
+  const allowed = ['operation', 'repository', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken'];
+  if (!operations.includes(request.operation) || Object.keys(request).some(key => !allowed.includes(key))
+    || typeof request.workflowReadToken !== 'string' || !/^[\x21-\x7e]{1,2048}$/.test(request.workflowReadToken))
     throw Object.assign(new Error('RECOVERY_REQUEST_INVALID'), { code: 'RECOVERY_REQUEST_INVALID' });
   const { CONSUMER } = await import('../../consumer/consumer.mjs');
   // Match the installed wrapper's exact existing Writer mutex. Lock ownership
   // lasts through the child response and its atomic record write.
   const program = `import { protectedWriterBroker } from ${JSON.stringify(new URL('./privileged-writer-helper.mjs', import.meta.url).href)};
     const chunks=[];for await(const chunk of process.stdin) chunks.push(chunk);
-    try { const request=JSON.parse(Buffer.concat(chunks));
-      console.log(JSON.stringify(await (await protectedWriterBroker()).dispatch(request)));
+    try { const { workflowReadToken, ...request }=JSON.parse(Buffer.concat(chunks));
+      console.log(JSON.stringify(await (await protectedWriterBroker({ runToken: workflowReadToken })).dispatch(request)));
     } catch(error) { console.error(JSON.stringify({code:/^[A-Z][A-Z0-9_]{0,79}$/.test(error.code??'')?error.code:'PREDISPATCH_RECOVERY_FAILED'}));process.exitCode=1; }`;
   const child = execute('/usr/bin/flock', ['-w', '60', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
     process.execPath, '--input-type=module', '-e', program],

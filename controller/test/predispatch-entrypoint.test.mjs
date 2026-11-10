@@ -11,7 +11,7 @@ import { EventEmitter } from 'node:events';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 
 test('operator transport holds the existing Writer flock and passes only a bounded selected request', async () => {
-  const request = { repository: CONSUMER.repository, operation: 'predispatch-state', runId: 99, attemptId: 'run-99' };
+  const request = { repository: CONSUMER.repository, operation: 'predispatch-state', runId: 99, attemptId: 'run-99', workflowReadToken: 'synthetic-actions-read-token' };
   let called = false;
   const code = await main({ uid: 0, argv: ['node', 'entrypoint'],
     readRequest: async options => {
@@ -25,6 +25,10 @@ test('operator transport holds the existing Writer flock and passes only a bound
       assert.equal(options.env.RELAY_REPOSITORY, CONSUMER.repository);
       assert.equal(options.env.RELAY_CALLER_UID, undefined);
       assert.equal(options.env.GITHUB_TOKEN, undefined);
+      assert.equal(JSON.stringify(args).includes(request.workflowReadToken), false);
+      assert.equal(JSON.stringify(options.env).includes(request.workflowReadToken), false);
+      assert.match(args[6], /protectedWriterBroker\(\{ runToken: workflowReadToken \}\)/);
+      assert.match(args[6], /workflowReadToken, \.\.\.request/);
       const child = new EventEmitter(); child.stdin = new EventEmitter();
       child.stdin.end = value => { assert.deepEqual(JSON.parse(value), request); queueMicrotask(() => child.emit('exit', 0)); };
       return child;
@@ -32,6 +36,10 @@ test('operator transport holds the existing Writer flock and passes only a bound
   assert.equal(code, 0); assert.ok(called);
   await assert.rejects(main({ uid: 0, argv: ['node', 'entrypoint'], readRequest: async () => ({ ...request, path: '/foreign' }) }),
     { code: 'RECOVERY_REQUEST_INVALID' });
+  for (const workflowReadToken of [undefined, '', 'space separated', 'a\nsecret', 'x'.repeat(2049)]) {
+    await assert.rejects(main({ uid: 0, argv: ['node', 'entrypoint'], readRequest: async () => ({ ...request, workflowReadToken }) }),
+      { code: 'RECOVERY_REQUEST_INVALID' });
+  }
 });
 
 import { mkdtemp, rm } from 'node:fs/promises';
