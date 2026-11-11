@@ -48,6 +48,12 @@ else:
         for name, content in payloads.items():
             raw = content.encode(); entry = tarfile.TarInfo(name)
             entry.mode, entry.size = 0o755, len(raw); tar.addfile(entry, io.BytesIO(raw))
+    mock_root = Path('/qualification/github-mock')
+    mock_root.mkdir(exist_ok=True, mode=0o700)
+    mock_archive = mock_root / f"actions-runner-{defaults['relay_runner_package_platform']}-{version}.tar.gz"
+    assert not mock_archive.exists(), 'Do not replace a running transport fixture'
+    shutil.copyfile(archive, mock_archive)
+    mock_archive.chmod(0o600)
     for name in ['fake-installed-codex.mjs', 'rust-development-probe.mjs']:
         shutil.copyfile(source / 'deploy/ansible/tests' / name, Path('/run') / name)
     variables = {'relay_manage_base_packages': False,
