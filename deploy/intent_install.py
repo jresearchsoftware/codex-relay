@@ -650,9 +650,11 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 # bounded credential staging. The second pass enforces full
                 # token/slot readiness without changing frozen desired bytes.
                 credentials = [item for item in completion if item[0].endswith('-credentials')]
+                tls_preparation = [item for item in completion if item[0] == 'tls-prepare']
+                after_apply = [item for item in completion
+                               if not item[0].endswith('-credentials') and item[0] != 'tls-prepare']
                 schedule = ([('bootstrap', 'primary')] if selected['strategy'] == 'fresh' else [])
-                schedule += credentials + [('apply', 'primary')]
-                schedule += [item for item in completion if not item[0].endswith('-credentials')]
+                schedule += credentials + tls_preparation + [('apply', 'primary')] + after_apply
                 if automatic_requested(config) and 'generalRunnerPool' in config['consumer']:
                     schedule.append(('managed-pool', 'primary'))
                 schedule.append(('post-check', 'primary'))

@@ -515,8 +515,9 @@ def test_fresh_install_composes_all_configured_phases_and_isolates_optional_toke
     state, calls, _, primitive = native_composition(invocation, monkeypatch, before)
     install.run(args, primitive, ROOT, {'revision': TARGET})
     assert [call.phase for call in calls] == ['bootstrap', 'reviewer-credentials', 'writer-credentials',
-        'codex-credentials', 'apply', 'tls-prepare', 'tls-dry-run', 'tls-issue', 'tls-check',
+        'codex-credentials', 'tls-prepare', 'apply', 'tls-dry-run', 'tls-issue', 'tls-check',
         'ingress', 'activate', 'runner-register', 'runner-enable', 'post-check']
+    assert [call.phase for call in calls].index('tls-prepare') < [call.phase for call in calls].index('apply')
     for call in calls:
         enabled = {name for name, value in vars(call).items() if name.startswith('authorize_') and value}
         expected = {'activate': 'authorize_reviewer_activation'}.get(call.phase,
