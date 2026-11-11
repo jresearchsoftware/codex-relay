@@ -156,7 +156,13 @@ attempt stopped. A successful label operation or scheduled/pending routing does
 not establish a terminal result or a ready manual handoff. If the original event
 or handoff publication is ambiguous, reconcile it by reading back the original
 ready event, routing run and trusted Writer publication on the canonical target;
-do not issue a duplicate ready command to resolve that ambiguity.
+do not issue a duplicate ready command to resolve that ambiguity. Return the
+complete, unmodified Writer prompt, or the concrete terminal diagnostic. If
+the client cannot keep waiting, report only the observed label, event, run
+and Writer state together with that client boundary; do not report success
+without Writer publication evidence. An inferred Step or pending run is not
+a terminal handoff. Reconcile any ambiguity through the original ready
+event and run.
 The handoff retains `MANUAL_CODEX_HANDOFF_READY`; only its prompt fence may be
 folded by default, after actual GitHub expand/copy usability is qualified.
 Otherwise leave it open. Actions run names can show bounded Task/PR/route

@@ -469,6 +469,19 @@ def check_first_party(root):
     return expected, source_hash
 
 
+def check_manual_handoff_contract(root):
+    """Bind manual-client completion to original Writer evidence."""
+    workflow = " ".join(read_file(root, "packages/codex-relay/skill/references/workflow.md").decode().split()).lower()
+    required = ("return the complete, unmodified writer prompt",
+                "the concrete terminal diagnostic",
+                "report only the observed label, event, run and writer state",
+                "do not report success without writer publication evidence",
+                "an inferred step or pending run is not a terminal handoff",
+                "through the original ready event and run")
+    require(all(phrase in workflow for phrase in required),
+            "Manual handoff wait must return the original Writer prompt or terminal diagnostic and preserve unresolved client-boundary status")
+
+
 def check_project(root):
     manifest = tomllib.loads(read_file(root, "vibe.toml").decode())
     requirements = {COORDINATE: {"version": "=" + VERSION,
@@ -486,6 +499,7 @@ def check_project(root):
                        for selection in LANDSCAPE}
     check_landscape_adoption(root)
     check_small_improvements_adoption(root)
+    check_manual_handoff_contract(root)
     first_party, source_hash = check_first_party(root)
     check_standalone_snapshot(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
@@ -591,7 +605,7 @@ def copy_project(source, destination):
     """Copy only ordinary ready files, without credentials or lifecycle state."""
     files = {name: read_file(source, name) for name in (
         "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT,
-        LOCAL_SUBAGENTS, LOCAL_GOVERNANCE)}
+        LOCAL_SUBAGENTS, LOCAL_GOVERNANCE, "packages/codex-relay/skill/references/workflow.md")}
     for relative in ("guidance/artifacts", "vibevm/vibedeps", "vibevm/vibepacks",
                      "vibevm/vibespecs/boot", PROJECTION):
         files.update({str(Path(relative) / name): data

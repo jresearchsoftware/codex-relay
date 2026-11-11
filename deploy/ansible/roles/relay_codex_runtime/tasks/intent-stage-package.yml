@@ -2,7 +2,7 @@
 - name: Require the same official Codex package for isolated intent staging
   ansible.builtin.assert:
     that:
-      - relay_codex_cli_version == '0.167.0'
+      - relay_codex_cli_version == '0.167.1'
       - relay_codex_installer_url == 'https://chatgpt.com/codex/install.sh'
       - not ansible_check_mode | bool
     fail_msg: INTENT_CODEX_PACKAGE_CONTRACT_INVALID

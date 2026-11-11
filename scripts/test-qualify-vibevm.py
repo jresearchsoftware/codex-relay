@@ -36,6 +36,9 @@ class CommittedFlowTests(unittest.TestCase):
         shutil.copytree(QUALIFICATION.ROOT / "vibevm/vibepacks", self.root / "vibevm/vibepacks")
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts", self.root / "guidance/artifacts")
         shutil.copyfile(QUALIFICATION.ROOT / "guidance/source.json", self.root / "guidance/source.json")
+        manual = Path("packages/codex-relay/skill/references/workflow.md")
+        (self.root / manual).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(QUALIFICATION.ROOT / manual, self.root / manual)
         # Construct a synthetic projection/receipt for structural counterexamples.
         # Actual native generation has separate pinned-tool qualification.
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts/vpm/skill",
@@ -316,6 +319,24 @@ class CommittedFlowTests(unittest.TestCase):
         binding = self.root / QUALIFICATION.LOCAL_SUBAGENTS
         binding.write_text(binding.read_text() + "\n## When to delegate\nCompeting copied policy.\n")
         self.rejects()
+
+    def test_manual_handoff_wait_requires_original_writer_prompt_and_failure_boundary(self):
+        path = self.root / "packages/codex-relay/skill/references/workflow.md"
+        original = path.read_text()
+        for before, after in (("complete, unmodified Writer prompt", "shortened prompt"),
+                              ("concrete terminal diagnostic", "success message"),
+                              ("observed label, event, run and Writer state", "inferred Step"),
+                              ("do not report success without Writer publication evidence",
+                               "report success without Writer publication evidence"),
+                              ("An inferred Step or pending run is not a terminal handoff",
+                               "An inferred Step or pending run is a terminal handoff"),
+                              ("through the original ready event and run", "through a new ready command")):
+            pattern = r"\s+".join(re.escape(word) for word in before.split())
+            with self.subTest(boundary=before):
+                self.assertRegex(original, pattern)
+                path.write_text(re.sub(pattern, lambda _: after, original, count=1))
+                self.rejects()
+            path.write_text(original)
 
     def test_small_improvements_routes_cannot_use_unselected_or_bundled_protocols(self):
         policy = (QUALIFICATION.SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()

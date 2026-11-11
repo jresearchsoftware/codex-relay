@@ -1567,7 +1567,7 @@ A reachable General or foreign unit refuses before restart, including indirect
 paths. The integration tests direct foreign `PartOf` and foreign-to-General
 chains with unchanged process identities, then the permitted adoption path.
 
-The governed standalone CLI is pinned to **0.167.0**. The credential-free
+The governed standalone CLI is pinned to **0.167.1**. The credential-free
 launcher default for new automatic invocations is native
 `--sandbox danger-full-access`, with the existing noninteractive approval policy
 `never`. No consumer permission fields or per-Task grant hierarchy are required.

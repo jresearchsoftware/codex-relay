@@ -1,6 +1,6 @@
 # Governed Codex CLI integration
 
-Relay qualifies an exact **0.167.0** installation, selected by the product
+Relay qualifies an exact **0.167.1** installation, selected by the product
 deployment contract. Installation still uses `--release` and verifies the exact
 version. Runtime and installation never follow a floating latest or self-update.
 Routine source maintenance follows the separate development policy below.
@@ -63,7 +63,7 @@ every technical upgrade. Maintain these distinct facts in their existing owners:
 
 | Fact | Current evidence and owner |
 | --- | --- |
-| Selected/qualified CLI dependency | Exact **0.167.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
+| Selected/qualified CLI dependency | Exact **0.167.1**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
 | Capabilities reviewed through version X | **Unknown / not yet established.** The accepted integration evidence below establishes bounded compatibility and selected capability decisions, not a complete historical review interval. No evidenced reviewed-through version or review date is established here. |
 | Installed-host version | A separate observed fact from the specific host's installation/version evidence; neither source selection nor capability review proves it. |
 
@@ -109,6 +109,12 @@ This is routine compatibility maintenance, not a periodic capability audit;
 the reviewed-through baseline remains unknown. Historical 0.160.0 evidence
 below retains its original version binding. Source acceptance proves no installed
 host update or Apply; those remain separately owner-controlled.
+
+## Task 230 routine maintenance
+
+On 2026-11-11, the selected stable CLI moved from **0.167.0** to **0.167.1**. The official [0.167.1 release](https://github.com/openai/codex/releases/tag/rust-v0.167.1) is dated 2026-11-10. The version-bound [0.167.0 to 0.167.1 comparison](https://github.com/openai/codex/compare/rust-v0.167.0...rust-v0.167.1) changes incremental Responses tools: its legacy mode is disabled by default and then restricted to Amazon Bedrock. Relay uses neither Bedrock nor that legacy option.
+
+The exact official installer and credential-free loopback probe passed six deterministic cases covering success, missing usage, invalid semantic output, provider failure and optional MCP authorization refusal with successful and failed turns. It checked Relay's production argv, stdin, native event/result handling, requested model/effort, exit behavior, approval/sandbox policy and task-local state. No model call or credential was used. The historical 0.167.0 evidence below remains bound to its original candidate. This is routine compatibility maintenance, not a capability review; the reviewed-through baseline remains unknown.
 
 ## Established baseline
 

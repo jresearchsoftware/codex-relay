@@ -112,12 +112,12 @@ def seed_codex(root, source):
         home.chmod(0o700)
         packages.mkdir(exist_ok=True, mode=0o700)
         subprocess.run(['/bin/sh', str(source / 'deploy/ansible/tests/fake-codex-installer.sh'),
-                        '--release', '0.167.0'], check=True,
+                        '--release', '0.167.1'], check=True,
                        env={'PATH': '/usr/bin:/bin', 'HOME': str(home), 'CODEX_HOME': str(home),
                             'CODEX_INSTALL_DIR': str(packages)})
         guard = source / 'deploy/ansible/roles/relay_codex_runtime/files/relay-codex-package-guard.py'
         subprocess.run(['/usr/bin/python3', str(guard), str(home), str(packages / 'codex'),
-                        '0.167.0', 'normalize'], check=True)
+                        '0.167.1', 'normalize'], check=True)
         binary.parent.mkdir(exist_ok=True)
         binary.symlink_to((packages / 'codex').resolve(strict=True))
 
