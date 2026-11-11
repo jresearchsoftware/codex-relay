@@ -128,6 +128,21 @@ class ReviewerCredentialStagingTests(unittest.TestCase):
         self.assertEqual(self.run_stage()['status'], self.ROLE.upper() + '_CREDENTIAL_STAGE_PLANNED')
         self.assert_absent()
 
+    def test_private_umask_operation_lock_is_accepted_without_changing_it(self):
+        self.lock.chmod(0o600)
+        before = self.lock.stat()
+        self.assertTrue(self.run_stage()['changed'])
+        after = self.lock.stat()
+        self.assertEqual((after.st_ino, stat.S_IMODE(after.st_mode), after.st_mtime_ns),
+                         (before.st_ino, 0o600, before.st_mtime_ns))
+        self.assertTrue(self.destination.exists())
+
+    def test_writable_group_operation_lock_is_rejected(self):
+        self.lock.chmod(0o660)
+        with self.assertRaisesRegex(ValueError, 'operation-lock'):
+            self.run_stage()
+        self.assert_absent()
+
     def test_group_readable_source_is_supported_only_for_reviewer(self):
         self.source.chmod(0o640)
         os.chown(self.source, 0, grp.getgrnam('nogroup').gr_gid)

@@ -117,8 +117,9 @@ def mutation_guard(lock_file, operation_record, manifest, exact_head):
     reinstall_path = Path(operation_record).with_name(current.parent.name + '-clean-reinstall.json')
     with ProtectedPath(lock_file) as lock, ProtectedPath(operation_record) as operation:
         lock_info = lock.metadata()
+        # The public CLI's private umask creates this root-owned lock as 0600.
         require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == lock_info.st_gid == 0
-                and lock_info.st_nlink == 1 and stat.S_IMODE(lock_info.st_mode) == 0o644,
+                and lock_info.st_nlink == 1 and stat.S_IMODE(lock_info.st_mode) in {0o600, 0o644},
                 'operation-lock')
         fd = os.open(lock.path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                      dir_fd=lock.fd)
