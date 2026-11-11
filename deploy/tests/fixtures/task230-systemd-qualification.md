@@ -102,9 +102,10 @@ production guard to make an incomplete fixture pass.
 the isolated container's mock transport once. Run the same command without
 `--prepare` as a background fixture process. It serves synthetic GitHub responses
 through real HTTPS on `127.0.0.1:443`; the container has no external interface.
-The backend fixture supplies a small synthetic Runner archive at the exact pinned
-release URL and uses its hash only as an extra variable inside this disposable
-container; the production URL assertion and public entrypoints remain active.
+The backend fixture supplies its small synthetic Runner archive and Codex installer
+at their exact pinned URLs inside the mock; the Runner hash is an extra variable
+only in this disposable container. Production URL assertions and public
+entrypoints remain active.
 Only this disposable container receives the DNS aliases and TEST trust anchor.
 The `/usr/bin/node` launcher invokes the actual Node 22 binary with
 `--use-system-ca`; actual production JavaScript, JWT signing, secret scrubbing,

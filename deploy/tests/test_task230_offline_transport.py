@@ -39,3 +39,27 @@ def test_exact_pinned_runner_release_uses_local_fixture_bytes(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+def test_exact_pinned_codex_installer_uses_local_fixture_bytes(tmp_path):
+    payload = b'#!/bin/sh\nexit 0\n'
+    (tmp_path / 'codex-install.sh').write_bytes(payload)
+    TRANSPORT.ROOT = tmp_path
+    server = TRANSPORT.ThreadingHTTPServer(('127.0.0.1', 0), TRANSPORT.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = 'http://127.0.0.1:{}/codex/install.sh'.format(server.server_port)
+        with urllib.request.urlopen(url, timeout=3) as response:
+            assert response.read() == payload
+        assert (tmp_path / 'requests.log').read_text() == 'GET /codex/install.sh\n'
+        try:
+            urllib.request.urlopen(url.replace('/codex/install.sh', '/codex/other.sh'), timeout=3)
+        except urllib.error.HTTPError as error:
+            assert error.code == 404
+        else:
+            raise AssertionError('The transport served an unconfigured Codex installer route')
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

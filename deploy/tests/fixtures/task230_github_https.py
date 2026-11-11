@@ -41,16 +41,16 @@ def prepare():
     assert not cert.exists(), 'Do not replace a running transport fixture'
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
         '-keyout', str(key), '-out', str(cert), '-days', '2', '-subj', '/CN=Task230OfflineTransport',
-        '-addext', 'subjectAltName=DNS:api.github.com,DNS:github.com,DNS:developers.openai.com',
+        '-addext', 'subjectAltName=DNS:api.github.com,DNS:github.com,DNS:chatgpt.com,DNS:developers.openai.com',
         '-addext', 'keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign'],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     key.chmod(0o600)
     shutil.copyfile(cert, '/usr/local/share/ca-certificates/task230-offline-transport.crt')
     subprocess.run(['/usr/sbin/update-ca-certificates'], check=True, stdout=subprocess.DEVNULL)
     hosts = Path('/etc/hosts')
-    assert not re.search(r'\b(?:api[.]github[.]com|github[.]com|developers[.]openai[.]com)\b', hosts.read_text())
+    assert not re.search(r'\b(?:api[.]github[.]com|github[.]com|chatgpt[.]com|developers[.]openai[.]com)\b', hosts.read_text())
     with hosts.open('a') as stream:
-        stream.write('\n127.0.0.1 api.github.com github.com developers.openai.com\n')
+        stream.write('\n127.0.0.1 api.github.com github.com chatgpt.com developers.openai.com\n')
     node = Path('/usr/bin/node')
     assert node.is_symlink() and node.resolve() == Path('/usr/local/bin/node')
     node.unlink()
@@ -110,6 +110,10 @@ class Handler(BaseHTTPRequestHandler):
             archive = ROOT / path.rsplit('/', 1)[-1]
             if archive.is_file():
                 return self.respond(archive.read_bytes(), content_type='application/gzip')
+        if self.command == 'GET' and path == '/codex/install.sh':
+            installer = ROOT / 'codex-install.sh'
+            if installer.is_file():
+                return self.respond(installer.read_bytes(), content_type='text/x-shellscript')
         if self.command == 'GET' and path.startswith('/plugins/mtls/'):
             ca = ROOT / path.rsplit('/', 1)[-1]
             if ca.is_file():

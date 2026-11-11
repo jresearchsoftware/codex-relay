@@ -54,6 +54,10 @@ else:
     assert not mock_archive.exists(), 'Do not replace a running transport fixture'
     shutil.copyfile(archive, mock_archive)
     mock_archive.chmod(0o600)
+    mock_installer = mock_root / 'codex-install.sh'
+    assert not mock_installer.exists(), 'Do not replace a running transport fixture'
+    shutil.copyfile(source / 'deploy/ansible/tests/fake-codex-installer.sh', mock_installer)
+    mock_installer.chmod(0o600)
     for name in ['fake-installed-codex.mjs', 'rust-development-probe.mjs']:
         shutil.copyfile(source / 'deploy/ansible/tests' / name, Path('/run') / name)
     variables = {'relay_manage_base_packages': False,
