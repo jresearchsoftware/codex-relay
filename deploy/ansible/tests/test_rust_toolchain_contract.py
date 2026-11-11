@@ -78,10 +78,16 @@ class RustToolchainContractTests(unittest.TestCase):
     def test_reviewer_reuse_does_not_skip_toolchain_reconciliation(self):
         artifacts = yaml.safe_load((ROOT / 'roles/relay_artifacts/tasks/main.yml').read_text())
         shared = next(item for item in artifacts if item.get('ansible.builtin.include_tasks') == 'rust-toolchain.yml')
-        self.assertEqual(shared['when'], 'not (relay_artifact_consume_staged | default(false) | bool) and not (relay_artifact_stage_only | default(false) | bool)')
-        # Ordinary callers still reconcile shared development tools even when
-        # Reviewer bytes are reused; private stage/consume never mutate them.
+        self.assertEqual(shared['when'], 'not (relay_artifact_stage_only | default(false) | bool)')
+        consume = next(index for index, item in enumerate(artifacts)
+                       if item.get('ansible.builtin.include_tasks') == 'intent-consume.yml')
+        reconcile = next(index for index, item in enumerate(artifacts)
+                         if item.get('ansible.builtin.include_tasks') == 'rust-toolchain.yml')
+        self.assertLess(consume, reconcile)
+        # Staged consumption must finish before the ordinary Rust contract is
+        # reconciled; only the private stage-only path keeps its isolated tools.
         self.assertNotIn('relay_reviewer_reuse_verified', shared['when'])
+        self.assertNotIn('relay_artifact_consume_staged', shared['when'])
         for item in TASKS:
             self.assertNotIn('relay_reviewer_reuse_verified', str(item))
         build = next(item for item in artifacts if item['name'] == 'Build the locked reviewed Rust Reviewer release artifact')

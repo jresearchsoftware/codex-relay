@@ -79,6 +79,30 @@ class IntentArtifactStageTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip()
 
+    def make_mock_toolchain(self, prefix, version='1.90.0'):
+        prefix.mkdir(parents=True, exist_ok=True, mode=0o700)
+        prefix.chmod(0o700)
+        binary_dir = prefix / 'bin'
+        binary_dir.mkdir(mode=0o700, exist_ok=True)
+        binary_dir.chmod(0o700)
+        library_dir = prefix / 'lib'
+        library_dir.mkdir(mode=0o700, exist_ok=True)
+        library_dir.chmod(0o700)
+        for name in ('cargo', 'rustc', 'rustfmt'):
+            tool = binary_dir / name
+            tool.write_text(
+                '#!/bin/sh\n'
+                'if [ "$#" -eq 1 ] && [ "$1" = --version ]; then\n'
+                f'  printf "%s\\n" "{name} {version} (fixture)"\n'
+                '  exit 0\n'
+                'fi\n'
+                'printf "%s\\n" "unexpected fixture tool invocation" >&2\n'
+                'exit 97\n')
+            tool.chmod(0o700)
+        payload = library_dir / 'fixture.rlib'
+        payload.write_bytes(b'private toolchain fixture payload\n')
+        payload.chmod(0o600)
+
     def prepare(self, private_toolchain=False):
         acquisition = stage.run('extract', self.root, self.expected, self.archive)
         release = self.root / 'release'
@@ -94,11 +118,10 @@ class IntentArtifactStageTests(unittest.TestCase):
                      'version': '1.90.0', 'archiveSha256': 'b' * 64}
         if not private_toolchain:
             Path(toolchain['livePrefix']).mkdir(parents=True)
+            self.make_mock_toolchain(Path(toolchain['livePrefix']))
         if private_toolchain:
             prefix = self.root / 'rust-toolchain'
-            (prefix / 'bin').mkdir(parents=True)
-            shutil.copyfile('/usr/bin/true', prefix / 'bin/cargo')
-            (prefix / 'bin/cargo').chmod(0o755)
+            self.make_mock_toolchain(prefix)
             toolchain['stagedPrefix'] = str(prefix)
         metadata = {**self.expected, 'sourceAcquisition': acquisition,
             'reviewer': {'binarySha256': stage.hash_bytes(binary.read_bytes()), 'cargoVersion': 'cargo 1.90.0 fixture',
@@ -128,6 +151,128 @@ class IntentArtifactStageTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE((source / 'executable.sh').stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE((source / 'reviewer/src').stat().st_mode), 0o755)
         self.assert_old_available()
+
+    def _filesystem_snapshot(self, roots):
+        snapshot = {}
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in [root, *sorted(root.rglob('*'))]:
+                info = path.lstat()
+                digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() and not path.is_symlink() else None
+                snapshot[str(path)] = (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode), info.st_ino,
+                                       info.st_mtime_ns, digest)
+        return snapshot
+
+    def _content_identity(self, root):
+        identity = {}
+        for path in [root, *sorted(root.rglob('*'))]:
+            info = path.lstat()
+            digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() and not path.is_symlink() else None
+            identity[str(path.relative_to(root.parent))] = (info.st_ino, info.st_mtime_ns, digest)
+        return identity
+
+    def _assert_consumed_toolchain_contract(self, prefix, state_root, group_name):
+        import grp
+
+        group_id = grp.getgrnam(group_name).gr_gid
+        for path, expected_mode in [
+            (state_root / 'toolchains', 0o751),
+            (state_root / 'toolchains/unpack', 0o750),
+            (state_root / 'cargo-home', 0o750),
+        ]:
+            info = path.lstat()
+            self.assertEqual((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)), (0, group_id, expected_mode), path)
+        for path in [prefix, *sorted(prefix.rglob('*'))]:
+            info = path.lstat()
+            self.assertEqual(info.st_uid, 0, path)
+            self.assertEqual(info.st_gid, group_id, path)
+            if path.is_dir():
+                expected_mode = 0o755
+            elif path.name in ('cargo', 'rustc', 'rustfmt'):
+                expected_mode = 0o755
+            else:
+                expected_mode = 0o644
+            self.assertEqual(stat.S_IMODE(info.st_mode), expected_mode, path)
+
+    def _run_complete_artifact_role_consume(self, private_toolchain=False):
+        if not shutil.which('ansible-playbook'):
+            self.skipTest('Ansible required for complete artifact role consumption')
+        self.prepare(private_toolchain=private_toolchain)
+        isolated_role = self.root / 'roles/relay_artifacts'
+        shutil.copytree(ROLE, isolated_role)
+        (isolated_role / 'handlers/main.yml').write_text(yaml.safe_dump([{
+            'name': 'Try-restart Reviewer after release transition',
+            'ansible.builtin.debug': {'msg': 'isolated artifact fixture notification'}}]))
+        variables = yaml.safe_load((ANSIBLE / 'group_vars/all.yml').read_text())
+        import grp
+
+        group_name = 'nogroup'
+        try:
+            group_id = grp.getgrnam(group_name).gr_gid
+        except KeyError:
+            self.skipTest('Debian nogroup fixture group is unavailable')
+        self.assertNotEqual(group_id, 0)
+        state_root = self.parent / 'state'
+        prefix = self.parent / 'toolchains/rust'
+        variables.update(relay_intent_stage_root=str(self.root), relay_intent_stage_operation=OP,
+            relay_intent_staged_release=str(self.root / 'release'), relay_release_root=str(self.parent),
+            relay_install_root=str(self.parent), relay_source_identity=self.identity,
+            relay_group=group_name, relay_reviewer_group='root', relay_runner_group='root',
+            relay_state_root=str(state_root), relay_rust_toolchain_root=str(prefix),
+            relay_rust_toolchain_unpack_root=str(state_root / 'toolchains/unpack'),
+            relay_rust_toolchain_cargo_home=str(state_root / 'cargo-home'),
+            relay_rust_toolchain_url='file:///must-not-download-after-consumption',
+            relay_requested_revision=self.revision, relay_consumer_revision='d' * 40,
+            ansible_architecture='x86_64')
+        self.assertNotIn('relay_reviewer_reuse_verified', variables)
+        stage_prefix = self.root / 'rust-toolchain'
+        staged_before = self._filesystem_snapshot([stage_prefix]) if private_toolchain else None
+        existing_before = self._content_identity(prefix) if not private_toolchain else None
+        play = self.root / 'complete-consume.yml'
+        play.write_text(yaml.safe_dump([{'hosts': 'all', 'gather_facts': False, 'vars': variables,
+            'tasks': [{'name': 'Consume through the entire actual artifact role', 'ansible.builtin.include_role': {
+                'name': str(isolated_role)}}]}]))
+        env = {**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1'}
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
+            env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        destination = self.parent / self.revision
+        manifest = json.loads((destination / 'artifact-manifest.json').read_text())
+        self.assertEqual(manifest['commit'], self.revision)
+        self.assertEqual((self.parent / 'current').resolve(), destination)
+        self.assertEqual((destination / 'bin/reviewer-mcp-http').read_bytes(), Path('/usr/bin/true').read_bytes())
+        self.assertEqual((self.old / 'available').read_text(), 'unchanged old installation')
+        self._assert_consumed_toolchain_contract(prefix, state_root, group_name)
+        if private_toolchain:
+            self.assertEqual(self._filesystem_snapshot([stage_prefix]), staged_before)
+            for source in stage_prefix.rglob('*'):
+                if source.is_file():
+                    self.assertEqual((prefix / source.relative_to(stage_prefix)).read_bytes(), source.read_bytes())
+        else:
+            self.assertEqual(self._content_identity(prefix), existing_before)
+
+        # A clean ordinary post-check proves the cutover left the same contract
+        # expected by the independent installed-runtime validation.
+        post_check = {**yaml.safe_load((ANSIBLE / 'group_vars/all.yml').read_text()),
+            'ansible_architecture': 'x86_64', 'relay_state_root': str(state_root),
+            'relay_rust_toolchain_root': str(prefix), 'relay_group': group_name,
+            'relay_rust_toolchain_unpack_root': str(state_root / 'toolchains/unpack'),
+            'relay_rust_toolchain_cargo_home': str(state_root / 'cargo-home'),
+            'relay_rust_toolchain_url': 'file:///must-not-download-after-consumption',
+            'ansible_remote_tmp': str(self.parent / 'remote-tmp')}
+        check_play = self.root / 'rust-post-check.yml'
+        check_play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': post_check,
+            'tasks': [{'ansible.builtin.include_role': {'name': str(ROLE),
+                'tasks_from': 'rust-toolchain.yml'}}]}]))
+        before_check = self._filesystem_snapshot([state_root, prefix])
+        check = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', '--check', str(check_play)],
+            env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn('install=False', check.stdout)
+        self.assertRegex(check.stdout, r'changed=0[^\n]*failed=0')
+        self.assertEqual(self._filesystem_snapshot([state_root, prefix]), before_check)
+        return play, variables, destination
 
     def test_wrong_full_tree_and_revision_stop_before_source_publication(self):
         for field in ('tree', 'revision'):
@@ -292,7 +437,8 @@ class IntentArtifactStageTests(unittest.TestCase):
             stage.run('check-destination', self.root, self.expected, self.parent / self.revision)
         target.rmdir()
         stage.run('consume-toolchain', self.root, expected)
-        self.assertEqual((target / 'bin/cargo').read_bytes(), Path('/usr/bin/true').read_bytes())
+        staged_cargo = Path(receipt['toolchain']['stagedPrefix']) / 'bin/cargo'
+        self.assertEqual((target / 'bin/cargo').read_bytes(), staged_cargo.read_bytes())
         before = (target / 'bin/cargo').stat().st_ino
         with self.assertRaisesRegex(ValueError, 'INTENT_STAGE_TOOLCHAIN_DESTINATION_CHANGED'):
             stage.run('consume-toolchain', self.root, expected)
@@ -370,9 +516,17 @@ class IntentArtifactStageTests(unittest.TestCase):
         for component in ('consumer', 'controller', 'runtime', 'contracts', 'reviewer'):
             shutil.copytree(ANSIBLE.parents[1] / component, source / component,
                 ignore=shutil.ignore_patterns('target', 'node_modules', '__pycache__'))
-        consumer = json.loads((ANSIBLE.parents[1] / 'deploy/example.json').read_text())['consumer']
+        product = ANSIBLE.parents[1]
+        config_spec = importlib.util.spec_from_file_location('stage_import_probe_config', product / 'deploy/config.py')
+        config_module = importlib.util.module_from_spec(config_spec)
+        config_spec.loader.exec_module(config_module)
+        deployment = config_module.load(product / 'deploy/example.json', product)
+        consumer = deployment['consumer']
         for name in consumer['paths']:
             consumer['paths'][name] = str(self.root / 'unused' / name)
+        consumer.pop('executionSlots', None)
+        config_module.derive_managed_pool_slots(deployment)
+        consumer = deployment['consumer']
         config = self.root / 'consumer.json'
         config.write_text(json.dumps(consumer))
         config.chmod(0o600)
@@ -416,38 +570,7 @@ class IntentArtifactStageTests(unittest.TestCase):
         self.assert_old_available()
 
     def test_actual_complete_artifact_role_consumes_without_facts_from_skipped_build_tasks(self):
-        if not shutil.which('ansible-playbook'):
-            self.skipTest('Ansible required for complete artifact role consumption')
-        self.prepare()
-        isolated_role = self.root / 'roles/relay_artifacts'
-        shutil.copytree(ROLE, isolated_role)
-        # The role's real tasks and templates run unchanged. Only the final
-        # service handler is a fixture no-op; no host unit is in this sandbox.
-        (isolated_role / 'handlers/main.yml').write_text(yaml.safe_dump([{
-            'name': 'Try-restart Reviewer after release transition',
-            'ansible.builtin.debug': {'msg': 'isolated artifact fixture notification'}}]))
-        variables = yaml.safe_load((ANSIBLE / 'group_vars/all.yml').read_text())
-        variables.update(relay_intent_stage_root=str(self.root), relay_intent_stage_operation=OP,
-            relay_intent_staged_release=str(self.root / 'release'), relay_release_root=str(self.parent),
-            relay_install_root=str(self.parent), relay_source_identity=self.identity,
-            relay_group='root', relay_reviewer_group='root', relay_runner_group='root',
-            relay_rust_toolchain_root=str(self.parent / 'toolchains/rust'),
-            relay_requested_revision=self.revision, relay_consumer_revision='d' * 40)
-        self.assertNotIn('relay_reviewer_reuse_verified', variables)
-        play = self.root / 'complete-consume.yml'
-        play.write_text(yaml.safe_dump([{'hosts': 'all', 'gather_facts': False, 'vars': variables,
-            'tasks': [{'name': 'Consume through the entire actual artifact role', 'ansible.builtin.include_role': {
-                'name': str(isolated_role)}}]}]))
-        result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)],
-            env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1'},
-            capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        destination = self.parent / self.revision
-        manifest = json.loads((destination / 'artifact-manifest.json').read_text())
-        self.assertEqual(manifest['commit'], self.revision)
-        self.assertEqual((self.parent / 'current').resolve(), destination)
-        self.assertEqual((destination / 'bin/reviewer-mcp-http').read_bytes(), Path('/usr/bin/true').read_bytes())
-        self.assertEqual((self.old / 'available').read_text(), 'unchanged old installation')
+        self._run_complete_artifact_role_consume()
 
     def test_reinstall_sibling_stage_survives_runtime_archival_and_actual_ansible_consume(self):
         if not shutil.which('ansible-playbook'):
@@ -616,6 +739,9 @@ class IntentArtifactStageTests(unittest.TestCase):
         dependency.chmod(0o644)
         self.assertEqual(stat.S_IMODE(self.root.stat().st_mode), 0o700)
         self.assert_old_available()
+
+    def test_actual_complete_artifact_role_reconciles_privately_staged_toolchain(self):
+        self._run_complete_artifact_role_consume(private_toolchain=True)
 
 
 class IntentArtifactCompositionTests(unittest.TestCase):
