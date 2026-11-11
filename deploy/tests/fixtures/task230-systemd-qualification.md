@@ -60,9 +60,11 @@ result:
 - The external Runner distribution is a small archive with a version probe,
   registration-marker writer and a service process. It does not connect to
   GitHub Actions or accept work.
-- The external Codex distribution is the existing synthetic package fixture. It
-  is preseeded and normalized through the actual package guard, so the unchanged
-  official installer URL pin remains intact and no download is attempted.
+- The Codex installer route serves the existing checked-in synthetic installer
+  at the exact official URL. The real Ansible download, isolated install and
+  package guard still run; the installer writes only the bounded synthetic
+  package. A later operation seeds an existing TEST package before public
+  preflight when needed, so it cannot change installation identity mid-operation.
 - The configuration, repositories and SSH host key are synthetic TEST inputs.
   A final repeat uses a clean exact candidate source, a fresh namespace and
   distinct namespace-derived Unix identities and pool name.

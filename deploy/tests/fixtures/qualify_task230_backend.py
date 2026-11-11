@@ -69,11 +69,8 @@ else:
     inputs.write_text(json.dumps(variables))
     directory = root / 'bin'; directory.mkdir(exist_ok=True)
     wrapper = directory / 'ansible-playbook'
-    wrapper.write_text('#!/usr/bin/python3\nimport os,sys,runpy\nfrom pathlib import Path\nsys.dont_write_bytecode=True\n'
+    wrapper.write_text('#!/usr/bin/python3\nimport os,sys\nsys.dont_write_bytecode=True\n'
         + 'extra=' + repr(str(inputs)) + '\n'
-        + 'if any(Path(arg).name in {"site.yml","relay-intent-stage.yml"} for arg in sys.argv[1:]):\n'
-        + ' runpy.run_path(' + repr(str(Path(__file__).resolve())) + ')["seed_codex"](Path('
-        + repr(str(root)) + '),Path(' + repr(str(source)) + '))\n'
         + 'os.environ["CARGO_NET_OFFLINE"]="true"\n'
         + 'os.execv("/usr/bin/ansible-playbook", ["/usr/bin/ansible-playbook", *sys.argv[1:], "--extra-vars", "@"+extra])\n')
     wrapper.chmod(0o755)
@@ -209,6 +206,14 @@ def main():
     else:
         os.environ['PATH'] = str(root / 'bin') + ':/usr/bin:/bin'
     config_namespace = json.loads((root / 'consumer/relay.json').read_text())['environment']['namespace']
+    if not args.prepare and not args.reconcile_pool_only and '--phase' in public_arguments:
+        phase_index = public_arguments.index('--phase')
+        phase = public_arguments[phase_index + 1] if phase_index + 1 < len(public_arguments) else None
+        if phase in {'install', 'apply', 'upgrade', 'bootstrap', 'reinstall', 'activate'} and (
+                Path('/opt') / config_namespace / 'current').exists():
+            # Seed only before a distinct public operation, so preflight sees
+            # the TEST package before it snapshots the retained installation.
+            seed_codex(root, source)
     certificate = root / 'external-prerequisites/server.pem'
     if certificate.exists():
         trust = Path('/usr/local/share/ca-certificates') / (config_namespace + '-test-server.crt')
