@@ -792,6 +792,26 @@ the exact retained comment body or seal and a unique native read-back from the
 configured Writer bot, including its immutable identity. The binding records the
 comment identity and body digest; it never repeats the POST or changes the
 original record. Missing, ambiguous or contradictory evidence remains blocked.
+
+When the failed first routing run instead retained READY_EVENT_REPLACED, the
+next successfully admitted owner ready event for the same canonical Task can
+retire that no-worker reservation automatically. Writer proves the original
+owner event and every recorded later transition ID, confirms the
+original ready label is no longer live (or is the exact new command being
+admitted on the same target), and reads back one unedited BLOCKED Outcome from
+the configured Writer bot. The new command must be a later owner event after
+that Outcome, resolve to a higher Step, and have an exact current native event
+and durable admission record. The original run must be its first completed
+failure with no journal or checkout. Writer stores a version-4 administrative
+receipt bound to both immutable records and the Outcome identity under the
+existing Writer lock. It performs no extra label deletion, comment publication,
+or Step projection during retirement; it appends only the receipt and leaves the
+original event, Outcome and Step unchanged. Missing,
+ambiguous or contradictory evidence keeps the old attempt unresolved. If a
+final recheck fails after the new admission record is stored, that attempt stays
+pending without worker authority and the old reservation continues to block
+drain until a later valid admission completes reconciliation.
+
 This receipt does not make an older runtime that ignores it safe to activate or
 replay. Retained older partial and uncertain-DELETE records keep their existing
 proof and recovery rules; a historical consumed record without the retained

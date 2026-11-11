@@ -16,7 +16,8 @@ export async function harness(t, { tasks = [42, 44] } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-independent-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = memoryStore(); const journal = memoryStore();
-  const checkoutAbsent = async () => true;
+  let checkoutExists = false;
+  const checkoutAbsent = async () => !checkoutExists;
   const control = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false, checkoutAbsent });
   await control.initialize();
   const issues = new Map(tasks.map(number => [number, { id: number + 1000, number, title: `Task ${number} — Source work`,
@@ -89,5 +90,6 @@ export async function harness(t, { tasks = [42, 44] } = {}) {
     events.get(number).push({ id: ++eventId, event: 'labeled', label: { name: `codex-ready-${route}` },
       actor: { login: CONSUMER.owner, type: 'User' }, created_at: at });
   }
-  return { broker, api, control, store, journal, issues, runs, events, comments, ready, replaceReady, deletes: () => deletes };
+  return { broker, api, control, store, journal, issues, runs, events, comments, ready, replaceReady,
+    setCheckoutExists: value => { checkoutExists = Boolean(value); }, deletes: () => deletes };
 }

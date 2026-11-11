@@ -21,8 +21,9 @@ import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
-import { predispatchState, finalizePredispatch, completedPredispatchRecovery, pendingPredispatchRecord,
-  consumedPredispatchRecord, consumedPredispatchMarker, predispatchReadyReplacementReported } from './predispatch-recovery.mjs';
+import { predispatchState, finalizePredispatch, predispatchReplacementState, finalizePredispatchReplacement,
+  completedPredispatchRecovery, pendingPredispatchRecord, consumedPredispatchRecord, consumedPredispatchMarker,
+  predispatchReadyReplacementReported } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -539,6 +540,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const nativeAdmission = charter !== null && authorityMode(charter.body) === 'github-native-v1';
         const priorRecords = nativeAdmission ? (await publicationRecords({ repository: REPOSITORY, issueNumber: task }))
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
+        const replacementPredecessors = [];
         for (const previous of priorRecords.filter(record => record.envelope?.issueNumber === task && record.predispatchPending)) {
           const original = previous.envelope;
           if (previous.predispatchRecovery) {
@@ -553,10 +555,12 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             }
             continue;
           }
-          if (!(pendingPredispatchRecord(previous) || predispatchReadyReplacementReported(previous))
+          const replacementReported = predispatchReadyReplacementReported(previous);
+          if (!(pendingPredispatchRecord(previous) || replacementReported)
             || !journal || await journal.get(original.runId, original.repository)
             || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
-          if (previous.readyConsumption && !predispatchReadyReplacementReported(previous)) fail('READY_CONSUMPTION_UNCERTAIN');
+          if (previous.readyConsumption && !replacementReported) fail('READY_CONSUMPTION_UNCERTAIN');
+          if (replacementReported) replacementPredecessors.push(previous);
         }
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.
@@ -576,10 +580,6 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
 
           }
         }
-        // Keep lifecycle failure before execution reservation and ready-command
-        // consumption. The same CR/head can reconcile its pending Draft intent
-        // without creating an unknown execution or publishing another review.
-        if (!admitted.blocked) await prepareRemediation(envelope);
         if (envelope.transport === 'label') await revalidateReadyEvent(api, envelope);
         if (!admitted.blocked && nativeAdmission) {
           const current = await api.get(`/issues/${task}`);
@@ -588,6 +588,18 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             || canonicalAuthorityJson(stepLabels(current)) !== canonicalAuthorityJson(stepLabels(charter)))
             fail('STEP_LABEL_POSITION_CHANGED');
         }
+        const replacementStates = [];
+        if (!admitted.blocked) {
+          for (const previous of replacementPredecessors) {
+            const state = await predispatchReplacementState({ api, journal, record: previous,
+              replacement: envelope, checkoutAbsent });
+            replacementStates.push({ record: previous, binding: state.binding });
+          }
+        }
+        // Keep lifecycle failure before execution reservation and ready-command
+        // consumption. The same CR/head can reconcile its pending Draft intent
+        // without creating an unknown execution or publishing another review.
+        if (!admitted.blocked) await prepareRemediation(envelope);
         const r = { envelope, ...(nativeAdmission ? { nativeAdmission: true } : {}), ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
           ...(!admitted.blocked && nativeAdmission ? { stepProjectionFrom: stepLabels(charter) } : {}),
           ...(!admitted.blocked && nativeAdmission && envelope.route === 'auto' && envelope.transport === 'label'
@@ -596,6 +608,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };
         await store.put(request.runId, r);
+        for (const state of replacementStates) {
+          await finalizePredispatchReplacement({ api, store, journal, record: state.record,
+            replacementRecord: r, checkoutAbsent, expectedBinding: state.binding });
+        }
         if (!admitted.blocked && nativeAdmission) {
           await projectAdmittedStep(r);
         }

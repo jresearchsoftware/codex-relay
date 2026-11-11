@@ -122,12 +122,7 @@ export function predispatchNoWorkerRecord(record) {
 // A verified replacement and sealed terminal Outcome preserve the prior
 // ready race. A distinct, freshly revalidated event may then be admitted.
 export function predispatchReadyReplacementReported(record) {
-  const outcome = record?.outcome, seal = record?.commentBodies?.outcome;
-  return predispatchNoWorkerRecord(record) && record.readyConsumption?.code === 'READY_EVENT_REPLACED'
-    && Array.isArray(record.readyConsumption.laterEvents) && record.readyConsumption.laterEvents.some(positive)
-    && outcome?.status === 'BLOCKED' && outcome.head === null && positive(outcome.outcomeId)
-    && /^[a-f0-9]{64}$/.test(outcome.bodySha256 ?? '') && seal?.sha256 === outcome.bodySha256
-    && !record.commentIntent && !record.lifecycleIntent && !record.publicationIntent;
+  return Boolean(replacementOutcomeCandidate(record));
 }
 
 export function predispatchBinding(r) {
@@ -143,22 +138,61 @@ export function predispatchBinding(r) {
 // This administrative receipt is neither a worker journal nor a Task Outcome.
 export function completedPredispatchRecovery(record) {
   const { predispatchRecovery: recovery, ...original } = record ?? {};
-  const comment = recovery?.version === 3 ? outcomeReconciliationCandidate(original) : null;
-  const base = recovery?.version === 3 ? Boolean(comment)
+  const comment = [3, 4].includes(recovery?.version) ? outcomeReconciliationCandidate(original) : null;
+  const replacement = recovery?.version === 4 ? replacementOutcomeCandidate(original) : null;
+  const base = recovery?.version === 4 ? Boolean(replacement)
+    : recovery?.version === 3 ? Boolean(comment)
     : recovery?.version === 2 ? readyReconciliationCandidate(original) : partialPredispatchRecord(original);
   const expected = { ...predispatchBinding(original),
     ...([2, 3].includes(recovery?.version) ? { readyRemovalEventId: recovery.binding?.readyRemovalEventId } : {}),
     ...(comment ? { outcomeCommentId: recovery.binding?.outcomeCommentId,
       outcomeCommentNumber: comment.number, outcomeBodySha256: comment.sha256,
-      outcomeWriterId: recovery.binding?.outcomeWriterId } : {}) };
-  return base && (recovery?.version === 1 || [2, 3].includes(recovery?.version) && positive(recovery.binding?.readyRemovalEventId)
+      outcomeWriterId: recovery.binding?.outcomeWriterId,
+      ...(recovery.version === 4 ? {
+        outcomeCommentCreatedAt: recovery.binding?.outcomeCommentCreatedAt,
+        replacementRunId: recovery.binding?.replacementRunId,
+        replacementAttemptId: recovery.binding?.replacementAttemptId,
+        replacementIssueNumber: recovery.binding?.replacementIssueNumber,
+        replacementTarget: recovery.binding?.replacementTarget,
+        replacementNumber: recovery.binding?.replacementNumber,
+        replacementStep: recovery.binding?.replacementStep,
+        replacementReadyEventId: recovery.binding?.replacementReadyEventId,
+        replacementReadyLabel: recovery.binding?.replacementReadyLabel,
+        replacementReadyEventAt: recovery.binding?.replacementReadyEventAt,
+        replacementAuthorityDigest: recovery.binding?.replacementAuthorityDigest,
+        replacementEnvelopeDigest: recovery.binding?.replacementEnvelopeDigest
+      } : {}) } : {}) };
+  const removalReceipt = recovery?.version === 1
+    || ([2, 3].includes(recovery?.version) && positive(recovery.binding?.readyRemovalEventId)
       && recovery.binding.readyRemovalEventId > original.envelope.readyEventId)
-    && (recovery.version !== 3 || positive(recovery.binding?.outcomeCommentId) && positive(recovery.binding?.outcomeWriterId)
-      && (!original.outcome || original.outcome.outcomeId === recovery.binding.outcomeCommentId))
-    && recovery.status === 'finalized' && positive(recovery.authorizationId)
+    || recovery?.version === 4;
+  const outcomeReceipt = ![3, 4].includes(recovery?.version)
+    || positive(recovery.binding?.outcomeCommentId) && positive(recovery.binding?.outcomeWriterId)
+      && (!original.outcome || original.outcome.outcomeId === recovery.binding.outcomeCommentId);
+  const replacementReceipt = recovery?.version !== 4 || recovery.authorizationKind === 'owner-ready-event'
+    && recovery.authorizationId === recovery.binding?.replacementReadyEventId
+    && Date.parse(recovery.authorizedAt) === Date.parse(recovery.binding?.replacementReadyEventAt)
+    && Number.isFinite(Date.parse(recovery.binding?.outcomeCommentCreatedAt))
+    && Date.parse(recovery.binding?.replacementReadyEventAt) > Date.parse(original.envelope.readyEventAt)
+    && Date.parse(recovery.binding?.replacementReadyEventAt) > Date.parse(recovery.binding?.outcomeCommentCreatedAt)
+    && positive(recovery.binding?.replacementRunId) && recovery.binding.replacementRunId !== original.envelope.runId
+    && recovery.binding.replacementAttemptId === 'run-' + recovery.binding.replacementRunId
+    && recovery.binding.replacementIssueNumber === original.envelope.issueNumber
+    && ['issue', 'pull_request'].includes(recovery.binding.replacementTarget)
+    && positive(recovery.binding?.replacementNumber)
+    && positive(recovery.binding?.replacementStep) && recovery.binding.replacementStep > original.envelope.step
+    && positive(recovery.binding?.replacementReadyEventId)
+    && ((recovery.binding.replacementTarget !== original.envelope.target
+      || recovery.binding.replacementNumber !== original.envelope.number)
+      || recovery.binding.replacementReadyEventId > original.envelope.readyEventId)
+    && READY_LABELS.includes(recovery.binding?.replacementReadyLabel)
+    && /^[a-f0-9]{64}$/.test(recovery.binding?.replacementAuthorityDigest ?? '')
+    && /^[a-f0-9]{64}$/.test(recovery.binding?.replacementEnvelopeDigest ?? '');
+  const terminalReceipt = recovery?.status === 'finalized' && positive(recovery.authorizationId)
     && Number.isFinite(Date.parse(recovery.authorizedAt)) && Number.isFinite(Date.parse(recovery.completedAt))
-    && Date.parse(recovery.completedAt) >= Date.parse(recovery.authorizedAt)
-    && canonicalAuthorityJson(recovery.binding) === canonicalAuthorityJson(expected);
+    && Date.parse(recovery.completedAt) >= Date.parse(recovery.authorizedAt);
+  return Boolean(base && removalReceipt && outcomeReceipt && replacementReceipt && terminalReceipt
+    && canonicalAuthorityJson(recovery.binding) === canonicalAuthorityJson(expected));
 }
 
 // An uncertain comment POST is handled separately, using its exact retained
@@ -201,7 +235,16 @@ function outcomeReconciliationCandidate(r) {
   return { number, sha256, body: intent?.body };
 }
 
-async function reconcileOutcomeComment(api, r, evidence) {
+function replacementOutcomeCandidate(record) {
+  const ready = record?.readyConsumption;
+  if (!predispatchNoWorkerRecord(record) || ready?.status !== 'uncertain'
+    || ready.code !== 'READY_EVENT_REPLACED' || !Array.isArray(ready.laterEvents)
+    || new Set(ready.laterEvents).size !== ready.laterEvents.length
+    || ready.laterEvents.some(id => !positive(id) || id <= record.envelope.readyEventId)) return null;
+  return outcomeReconciliationCandidate(record);
+}
+
+async function reconcileOutcomeComment(api, r, evidence, { includeTimes = false, requireUnedited = false } = {}) {
   const marker = `<!-- relay:${r.envelope.attemptId}:outcome -->`;
   const matches = (await api.list(`/issues/${evidence.number}/comments`))
     .filter(comment => comment.user?.login === WRITER && comment.body?.includes(marker));
@@ -215,9 +258,124 @@ async function reconcileOutcomeComment(api, r, evidence) {
     || typeof comment.body !== 'string' || !comment.body.startsWith('## Codex Outcome\n\nStatus: BLOCKED\n')
     || !comment.body.endsWith(marker) || comment.body !== matches[0].body
     || sha256Body(comment.body) !== evidence.sha256 || evidence.body && comment.body !== evidence.body
+    || requireUnedited && (!Number.isFinite(Date.parse(comment.created_at))
+      || comment.updated_at !== comment.created_at)
     || r.outcome && comment.id !== r.outcome.outcomeId) fail('PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN');
   return { outcomeCommentId: comment.id, outcomeCommentNumber: evidence.number,
-    outcomeBodySha256: evidence.sha256, outcomeWriterId: writer.id };
+    outcomeBodySha256: evidence.sha256, outcomeWriterId: writer.id,
+    ...(includeTimes ? { outcomeCommentCreatedAt: comment.created_at } : {}) };
+}
+
+// A fresh admitted owner event can retire only a sealed no-worker replacement
+// predecessor. It does not change the event or any native Task metadata.
+export async function predispatchReplacementState({ api, journal, record: r, replacement, checkoutAbsent }) {
+  if (!predispatchReadyReplacementReported(r)) fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  const e = validateEnvelope(r.envelope), next = validateEnvelope(replacement);
+  if (next.issueNumber !== e.issueNumber || next.runId === e.runId
+    || next.attemptId !== 'run-' + next.runId || next.transport !== 'label'
+    || next.request?.kind !== 'admission' || next.step <= e.step) {
+    fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  }
+  const run = await api.getRun(e.runId);
+  const originalEventName = e.target === 'issue' ? 'issues' : 'pull_request_target';
+  if (run.id !== e.runId || run.repository?.full_name !== e.repository
+    || run.actor?.login !== OWNER || run.triggering_actor && run.triggering_actor.login !== OWNER
+    || run.path !== CONSUMER.routingWorkflow || run.status !== 'completed'
+    || run.conclusion !== 'failure' || run.run_attempt !== 1 || run.event !== originalEventName
+    || run.display_title !== e.runName
+    || !(run.head_branch === CONSUMER.baseBranch || e.target === 'pull_request' && run.head_branch === e.branch)
+    || !Number.isFinite(Date.parse(run.updated_at))) fail('PREDISPATCH_ORIGINAL_RUN_AMBIGUOUS');
+  if (!journal || await journal.get(e.runId, e.repository) || !checkoutAbsent
+    || !await checkoutAbsent(e)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+
+  const originalTransitions = await readyTransitions(api, e.number);
+  const originalEvent = originalTransitions.find(event => event.id === e.readyEventId);
+  const laterOriginalEvents = originalTransitions.filter(event => event.id > e.readyEventId);
+  if (originalEvent?.event !== 'labeled' || originalEvent.label?.name !== e.readyLabel
+    || originalEvent.actor?.login !== OWNER || originalEvent.actor?.type !== 'User'
+    || originalEvent.created_at !== e.readyEventAt || laterOriginalEvents.length === 0
+    || r.readyConsumption.laterEvents.some(id => !laterOriginalEvents.some(event => event.id === id))) {
+    fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  }
+  const originalSubject = await api.get('/issues/' + e.number);
+  const originalReadyLabels = labelNames(originalSubject.labels).filter(name => READY_LABELS.includes(name));
+  if (originalSubject.number !== e.number
+    || e.target === next.target && e.number === next.number
+      && (originalReadyLabels.length !== 1 || originalReadyLabels[0] !== next.readyLabel)
+    || (e.target !== next.target || e.number !== next.number) && originalReadyLabels.length !== 0) {
+    fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  }
+
+  const outcomeEvidence = outcomeReconciliationCandidate(r);
+  const outcomeBinding = await reconcileOutcomeComment(api, r, outcomeEvidence,
+    { includeTimes: true, requireUnedited: true });
+  if (Date.parse(outcomeBinding.outcomeCommentCreatedAt) < Date.parse(run.updated_at)) {
+    fail('PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN');
+  }
+  const replacementRun = await api.getRun(next.runId);
+  const replacementEventName = next.target === 'issue' ? 'issues' : 'pull_request_target';
+  if (replacementRun.id !== next.runId || replacementRun.repository?.full_name !== next.repository
+    || replacementRun.actor?.login !== OWNER || replacementRun.triggering_actor
+      && replacementRun.triggering_actor.login !== OWNER
+    || replacementRun.path !== CONSUMER.routingWorkflow || replacementRun.status !== 'in_progress'
+    || replacementRun.run_attempt !== 1 || replacementRun.event !== replacementEventName
+    || replacementRun.display_title !== next.runName
+    || !(replacementRun.head_branch === CONSUMER.baseBranch
+      || next.target === 'pull_request' && replacementRun.head_branch === next.branch)
+    || Date.parse(next.readyEventAt) <= Date.parse(outcomeBinding.outcomeCommentCreatedAt)) {
+    fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  }
+  const nextTransitions = await readyTransitions(api, next.number);
+  const nextEvent = nextTransitions.find(event => event.id === next.readyEventId);
+  if (nextEvent?.event !== 'labeled' || nextEvent.label?.name !== next.readyLabel
+    || nextEvent.actor?.login !== OWNER || nextEvent.actor?.type !== 'User'
+    || nextEvent.created_at !== next.readyEventAt) fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  await revalidateReadyEvent(api, next);
+  if (await journal.get(e.runId, e.repository) || !await checkoutAbsent(e)) {
+    fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+  }
+  return { binding: { ...predispatchBinding(r),
+    replacementRunId: next.runId, replacementAttemptId: next.attemptId,
+    replacementIssueNumber: next.issueNumber, replacementTarget: next.target,
+    replacementNumber: next.number, replacementStep: next.step,
+    replacementReadyEventId: next.readyEventId, replacementReadyLabel: next.readyLabel,
+    replacementReadyEventAt: next.readyEventAt, replacementAuthorityDigest: next.authorityDigest,
+    replacementEnvelopeDigest: digest(next), ...outcomeBinding } };
+}
+
+// The Writer mutex is already held. Re-read every external proof after the
+// replacement admission record is durable, then append one local receipt.
+export async function finalizePredispatchReplacement({ api, store, journal, record: r, replacementRecord,
+  checkoutAbsent, expectedBinding, now = () => new Date().toISOString() }) {
+  const next = validateEnvelope(replacementRecord?.envelope);
+  const { binding } = await predispatchReplacementState({ api, journal, record: r,
+    replacement: next, checkoutAbsent });
+  if (canonicalAuthorityJson(binding) !== canonicalAuthorityJson(expectedBinding)) {
+    fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+  }
+  const saved = await store.get(r.envelope.runId, r.envelope.repository);
+  if (!saved) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+  if (saved.predispatchRecovery) {
+    if (!completedPredispatchRecovery(saved)
+      || saved.predispatchRecovery.authorizationId !== next.readyEventId
+      || saved.predispatchRecovery.binding.replacementEnvelopeDigest !== digest(next)) {
+      fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+    }
+    return saved.predispatchRecovery;
+  }
+  if (digest(saved) !== binding.recordDigest) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+  const admitted = await store.get(next.runId, next.repository);
+  if (!admitted || admitted.nativeAdmission !== true || admitted.admissionBlock
+    || digest(admitted.envelope) !== digest(next)) fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
+  if (await journal.get(r.envelope.runId, r.envelope.repository) || !await checkoutAbsent(r.envelope)) {
+    fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+  }
+  saved.predispatchRecovery = { version: 4, status: 'finalized',
+    authorizationKind: 'owner-ready-event', authorizationId: next.readyEventId,
+    binding, authorizedAt: next.readyEventAt, completedAt: now() };
+  if (!completedPredispatchRecovery(saved)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+  await store.put(r.envelope.runId, saved);
+  return saved.predispatchRecovery;
 }
 
 export async function predispatchState({ api, journal, record: r, checkoutAbsent }) {

@@ -24,21 +24,37 @@ import install_preflight
 
 ROOT = Path(__file__).resolve().parents[2]
 HISTORICAL = '0aff32a6873262185f60364463f4e97ef330de89'
-NODE = '/usr/bin/node'
+NODE = os.environ.get('RELAY_TEST_NODE', '/usr/bin/node')
 SEED = r"""
 import {currentEnvelope} from './controller/test/fixture.mjs';
 import {createPublicationStore} from './controller/src/attempt-store.mjs';
 import {predispatchBinding,completedPredispatchRecovery} from './controller/src/predispatch-recovery.mjs';
 import {extractHistoricalRuntime} from './controller/test/historical-runtime.mjs';
 import {CONSUMER} from './consumer/consumer.mjs';
+import {sha256Body} from './contracts/src/github-authority.mjs';
+import {PUBLICATION_RENDERER_VERSION} from './contracts/src/publication-rendering.mjs';
 const e=currentEnvelope({runId:99,step:2,transport:'label',readyEventId:71,
  readyLabel:'codex-ready-auto',readyEventAt:'2026-09-04T12:00:00Z'});
 const r={envelope:e,nativeAdmission:true,stepProjectionFrom:['step-1'],
- controllerLifecycle:{version:1,status:'active'},publicationIntent:null,
- publishedHead:null,finalHead:null,outcome:null};
-r.predispatchRecovery={version:1,status:'finalized',authorizationId:10000,
- binding:predispatchBinding(r),authorizedAt:'2026-09-04T12:02:00Z',
- completedAt:'2026-09-04T12:03:00Z'};
+ predispatchPending:{version:1,projectionFrom:['step-1']},
+ controllerLifecycle:{version:1,status:'complete',child:'not_started',containment:'not_required'},
+ publicationIntent:null,publishedHead:null,finalHead:null};
+const body='## Codex Outcome\\n\\nStatus: BLOCKED\\n\\nSynthetic sealed replacement result.\\n\\n<!-- relay:run-99:outcome -->';
+const bodySha256=sha256Body(body);
+r.readyConsumption={status:'uncertain',eventId:e.readyEventId,label:e.readyLabel,
+ code:'READY_EVENT_REPLACED',laterEvents:[72],diagnostic:'Owner replaced the original ready event.'};
+r.outcome={status:'BLOCKED',head:null,prNumber:null,outcomeId:9000,bodySha256};
+r.commentBodies={outcome:{number:e.issueNumber,sha256:bodySha256,rendererVersion:PUBLICATION_RENDERER_VERSION}};
+const replacementAt='2026-09-04T12:03:00Z';
+r.predispatchRecovery={version:4,status:'finalized',authorizationKind:'owner-ready-event',
+ authorizationId:72,binding:{...predispatchBinding(r),outcomeCommentId:9000,
+ outcomeCommentNumber:e.issueNumber,outcomeBodySha256:bodySha256,outcomeWriterId:202,
+ outcomeCommentCreatedAt:'2026-09-04T12:02:00Z',replacementRunId:100,
+ replacementAttemptId:'run-100',replacementIssueNumber:e.issueNumber,replacementTarget:'issue',
+ replacementNumber:e.issueNumber,replacementStep:3,replacementReadyEventId:72,
+ replacementReadyLabel:'codex-ready-manual',replacementReadyEventAt:replacementAt,
+ replacementAuthorityDigest:'d'.repeat(64),replacementEnvelopeDigest:'e'.repeat(64)},
+ authorizedAt:replacementAt,completedAt:'2026-09-04T12:04:00Z'};
 if(!completedPredispatchRecovery(r))throw Error('Invalid synthetic recovery fixture');
 await createPublicationStore(CONSUMER.paths.claimRoot+'/publication-v2').put(99,r);
 await extractHistoricalRuntime(process.argv[1],process.argv[2]);
@@ -182,10 +198,10 @@ def real_gate(invocation, monkeypatch):
             prepared.release_writer()
 
 
-def test_public_upgrade_drains_with_real_candidate_reader_and_retains_original_record(real_gate):
+def test_public_upgrade_drains_version4_replacement_receipt_with_current_candidate_reader(real_gate):
     args, events, gate, state, admission, record, before, *_ = real_gate
     old = admission('status', old=True)
-    assert old['active'] == [99] and old['unknown'] == []
+    assert old['active'] == [] and old['unknown'] == [99]
     assert admission('status')['active'] == []
     backend.run(args)
     after = admission('status')
