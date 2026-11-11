@@ -13,7 +13,7 @@ import { memoryStore } from './fixture.mjs';
 
 const execute = promisify(execFile);
 const operationId = '12345678-1234-4234-8234-123456789abc';
-async function source(t, capable = true, staged = false) {
+async function source(t, capable = true, staged = false, trackedSmoke = false) {
   const root = await mkdtemp(join(tmpdir(), 'predispatch-target-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, 'source');
@@ -24,6 +24,7 @@ async function source(t, capable = true, staged = false) {
   const template = 'deploy/ansible/roles/relay_controller/templates/relay-writer-controller.j2';
   await mkdir(join(path, 'deploy/ansible/roles/relay_controller/templates'), { recursive: true });
   await writeFile(join(path, template), await readFile(new URL('../../' + template, import.meta.url)));
+  if (trackedSmoke) await writeFile(join(path, 'consumer-general-runner-smoke.mjs'), 'export const consumerSmoke = true;\n');
   const git = async (...args) => (await execute('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-C', path, ...args])).stdout.trim();
   await git('init', '--quiet', '--template='); await git('add', '.');
   await git('-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture');
@@ -41,6 +42,28 @@ test('old target is still permitted without retained markers', async t => {
   await assertPredispatchTargetCompatible({ records: [], target: f.target, sourceRoot: '/missing' });
   for (const key of ['predispatchPending', 'predispatchRecovery'])
     await assert.rejects(f.check([{ [key]: {} }]), { code: 'PREDISPATCH_TARGET_INCOMPATIBLE' });
+});
+test('consumer smoke projection is permitted without relaxing product tree integrity', async t => {
+  for (const staged of [false, true]) {
+    const f = await source(t, true, staged), records = [{ predispatchPending: {} }];
+    const smoke = join(f.path, 'consumer-general-runner-smoke.mjs');
+    await writeFile(smoke, 'export const consumerSmoke = true;\n');
+    await f.check(records);
+    await writeFile(join(f.path, 'unexpected-extra.mjs'), 'export const unexpected = true;\n');
+    await assert.rejects(f.check(records), { code: 'PREDISPATCH_TARGET_INCOMPATIBLE' });
+    await rm(join(f.path, 'unexpected-extra.mjs'));
+    await chmod(smoke, 0o666);
+    await assert.rejects(f.check(records), { code: 'PREDISPATCH_TARGET_INCOMPATIBLE' });
+    await chmod(smoke, 0o644);
+    await f.check(records);
+  }
+});
+test('a product-tracked consumer smoke path remains part of the exact source tree', async t => {
+  const f = await source(t, true, true, true), records = [{ predispatchPending: {} }];
+  await f.check(records);
+  const smoke = join(f.path, 'consumer-general-runner-smoke.mjs');
+  await writeFile(smoke, 'export const consumerSmoke = false;\n');
+  await assert.rejects(f.check(records), { code: 'PREDISPATCH_TARGET_INCOMPATIBLE' });
 });
 for (const staged of [false, true]) test(`capability is bound to exact ${staged ? 'staged tree' : 'protected Git acquisition'}`, async t => {
   const f = await source(t, true, staged), records = [{ predispatchPending: {} }];

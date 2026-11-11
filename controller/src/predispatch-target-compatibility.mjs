@@ -50,21 +50,31 @@ async function protectedGit(root, options) {
   }
   await visit(join(root, '.git'));
 }
-async function sourceGitTree(sourceRoot, options) {
+const consumerSmokeName = 'consumer-general-runner-smoke.mjs';
+async function sourceGitTrees(sourceRoot, options) {
   let files = 0, total = 0;
-  const object = (kind, bytes) => createHash('sha1').update(`${kind} ${bytes.length}\0`).update(bytes).digest();
+  const object = (kind, bytes) => createHash('sha1').update(kind + ' ' + bytes.length + '\0').update(bytes).digest();
+  const hashRows = rows => rows.length ? object('tree', Buffer.concat(rows.sort((a, b) => Buffer.compare(a.key, b.key))
+    .flatMap(row => [Buffer.from(row.mode + ' ' + row.name + '\0'), row.hash]))) : null;
   async function tree(directory) {
-    const rows = [];
+    const rows = [], withoutConsumerSmoke = [];
     for (const name of await readdir(directory)) {
       if (directory === sourceRoot && name === '.relay-source.json') continue;
       const pathname = join(directory, name), before = await lstat(pathname);
-      // Installed compatibility aliases are additions to a regular-file-only
-      // Git archive. Omitting an expected regular file still changes the tree.
+      const consumerSmoke = directory === sourceRoot && name === consumerSmokeName;
+      // The consumer renders this one root-owned ABI smoke into reviewed-source.
+      // Validate it as protected, but allow its projection beside the exact product tree.
+      if (consumerSmoke) await protectedPath(pathname, options);
+      // Installed compatibility aliases are additions to a regular-file-only Git archive.
       if (before.isSymbolicLink()) continue;
       if (before.isDirectory()) {
         await protectedPath(pathname, options, true);
         const child = await tree(pathname);
-        if (child) rows.push({ key: Buffer.from(name + '/'), mode: '40000', name, hash: child });
+        if (child.full) {
+          const row = { key: Buffer.from(name + '/'), mode: '40000', name, hash: child.full };
+          rows.push(row);
+          withoutConsumerSmoke.push({ ...row, hash: child.withoutConsumerSmoke });
+        }
       } else {
         await protectedPath(pathname, options);
         if (++files > 10000 || before.size > 32 * 1024 * 1024 || (total += before.size) > 256 * 1024 * 1024) reject();
@@ -75,13 +85,16 @@ async function sourceGitTree(sourceRoot, options) {
           if (bytes.length !== before.size || stamp(before) !== stamp(await file.stat())
             || stamp(before) !== stamp(await lstat(pathname))) reject();
         } finally { await file.close(); }
-        rows.push({ key: Buffer.from(name), mode: before.mode & 0o111 ? '100755' : '100644', name, hash: object('blob', bytes) });
+        const row = { key: Buffer.from(name), mode: before.mode & 0o111 ? '100755' : '100644',
+          name, hash: object('blob', bytes) };
+        rows.push(row);
+        if (!consumerSmoke) withoutConsumerSmoke.push(row);
       }
     }
-    return rows.length ? object('tree', Buffer.concat(rows.sort((a, b) => Buffer.compare(a.key, b.key))
-      .flatMap(row => [Buffer.from(`${row.mode} ${row.name}\0`), row.hash]))) : null;
+    return { full: hashRows(rows), withoutConsumerSmoke: hashRows(withoutConsumerSmoke) };
   }
-  return (await tree(sourceRoot))?.toString('hex');
+  const trees = await tree(sourceRoot);
+  return { full: trees.full?.toString('hex'), withoutConsumerSmoke: trees.withoutConsumerSmoke?.toString('hex') };
 }
 async function targetMetadata(sourceRoot, target, options) {
   await protectedPath(sourceRoot, options, true);
@@ -91,16 +104,29 @@ async function targetMetadata(sourceRoot, target, options) {
   try { identity = parseConsumerJson((await protectedRead(join(sourceRoot, '.relay-source.json'), options)).toString('utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (identity) {
-    if (identity.revision !== target || !exactSha(identity.tree)
-      || await sourceGitTree(sourceRoot, options) !== identity.tree) reject();
+    if (identity.revision !== target || !exactSha(identity.tree)) reject();
+    const trees = await sourceGitTrees(sourceRoot, options);
+    if (trees.full !== identity.tree && trees.withoutConsumerSmoke !== identity.tree) reject();
   } else {
     await protectedGit(sourceRoot, options);
     const git = async (...args) => (await execute('/usr/bin/git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null',
       '-c', 'core.fsmonitor=false', '-C', sourceRoot, ...args], { timeout: 30000, maxBuffer: 1024 * 1024,
       env: { PATH: '/usr/bin:/bin', HOME: sourceRoot, XDG_CONFIG_HOME: sourceRoot + '/.xdg-unused',
         GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' } })).stdout;
+    const smokePath = join(sourceRoot, consumerSmokeName);
+    let smokePresent = false;
+    try {
+      const smoke = await lstat(smokePath);
+      if (!smoke.isFile() || smoke.nlink !== 1 || smoke.size > 32 * 1024 * 1024) reject();
+      await protectedPath(smokePath, options);
+      smokePresent = true;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const smokeTracked = (await git('ls-tree', '-r', '--name-only', target, '--',
+      ':(top,literal)' + consumerSmokeName)).trim();
+    const statusArgs = ['status', '--porcelain', '--untracked-files=all'];
+    if (smokePresent && !smokeTracked) statusArgs.push('--', '.', ':(top,exclude,literal)' + consumerSmokeName);
     if ((await git('rev-parse', '--verify', 'HEAD^{commit}')).trim() !== target
-      || (await git('status', '--porcelain', '--untracked-files=all')).trim()
+      || (await git(...statusArgs)).trim()
       || await git('show', target + ':deploy/installation-contract.json') !== bytes.toString('utf8')) reject();
   }
   const metadata = parseConsumerJson(bytes.toString('utf8'));
