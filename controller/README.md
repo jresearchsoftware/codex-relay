@@ -528,10 +528,29 @@ can release the slot only with the exact no-worker proof above; a consumed marke
 needs terminal containment evidence or the explicit original-run finalizer. A
 ready DELETE or blocked Outcome publication with an uncertain result remains
 unknown to drain and normally blocks a fresh Step until reconciled; it is not
-permission to repeat the DELETE or publish another Outcome. When Writer observed
-an owner-event replacement and
-durably sealed its BLOCKED Outcome, a distinct freshly revalidated owner event
-may proceed; an unsealed Outcome or unknown DELETE result does not qualify.
+permission to repeat the DELETE or publish another Outcome. Writer may retire a
+`READY_EVENT_REPLACED` predecessor only after the exact no-worker record, original
+first-attempt failure, unchanged events, sealed unedited BLOCKED Outcome and a
+distinct durable owner admission all revalidate. The Outcome is published inside
+the original routing run, so its comment timestamp can precede that run's final
+`updated_at`; this ordering is expected and is not a retirement failure. The
+successor owner event must still be strictly later than the Outcome.
+
+Admission of otherwise valid new work is independent of that predecessor
+receipt. When only the predecessor's retirement evidence is missing or
+contradictory, the new owner admission may proceed after its own authority,
+resource and no-conflicting-effects checks; the old record stays unknown and
+continues to block drain until a later valid admission retires it. If interruption
+occurs after the new admission is durable but before its receipt is written, the
+same exact first-attempt run can retry while its ready command remains
+unconsumed. This recovery reuses the stored Step and event, writes no second
+admission, and never repeats a prior DELETE. Automatic replay revalidates the
+open admission gate and original slot before changing the ready command, then
+allows only the first journal reservation for that exact unconsumed run. Once
+the command is consumed, the marked attempt cannot replay admission or launch
+again.
+
+A missing, edited or ambiguous Outcome still cannot retire the predecessor.
 A projection failure before a DELETE intent has no such
 pending ready-label mutation and does not indefinitely occupy the lifecycle gate
 when the protected no-worker evidence is complete.

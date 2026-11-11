@@ -1162,6 +1162,18 @@ history exists; ordinary targets without that history retain their prior path.
 An expert route without a verified staged target may fail closed and should use
 the public install bridge.
 
+A durable `prepareOnly` binding by itself does not mean `current` has switched.
+If the public operation fails before that switch, its normal abort path may
+restore the exact old open gate only while the old `current` target, installation,
+consumer, Writer lease, and original no-worker reservation all still match
+their captured evidence. When a lifecycle service snapshot has been retained,
+current managed service activity must also match it. The original record must
+retain its exact digest with no recovery receipt, journal, checkout or changed
+effects. Abort preserves the bridge snapshot and original history. If any proof
+is missing, admission stays closed for same-operation recovery. Once `current`
+points to the staged Writer, rollback to the old Writer is refused and recovery
+continues forward under the same operation.
+
 For a retained Git Apply whose original target is already installed, the
 [bounded controller recovery](../docs/git-managed-installation.md#bounded-recovery-with-a-separately-accepted-controller)
 interface independently binds a corrected accepted controller, the immutable

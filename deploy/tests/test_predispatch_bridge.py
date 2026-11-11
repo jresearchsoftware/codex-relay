@@ -310,6 +310,18 @@ def test_bridge_uses_real_root_lock_lease_and_preserves_exact_authorized_record(
     assert_original(f)
 
 
+def test_prepare_only_seals_bridge_without_switching_the_current_writer(protected_bridge):
+    f = protected_bridge
+    f.data['prepareOnly'] = True
+    before = f.current.resolve()
+    result = f.activate()
+    assert result == {'operationId': OPERATION, 'target': TARGET, 'previousRevision': PREVIOUS,
+                      'phase': 'applying', 'writer': 'unchanged', 'binding': 'durable'}
+    assert f.current.resolve() == before == f.old
+    assert bridge.read_binding(f.stage, OPERATION, TARGET)['predispatchBinding'] == f.binding
+    assert_original(f)
+
+
 @pytest.mark.parametrize('boundary', ['before-switch', 'after-switch'])
 def test_interrupted_bridge_continues_same_uuid_without_restoring_old_writer(protected_bridge, boundary):
     f = protected_bridge

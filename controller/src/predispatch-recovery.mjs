@@ -309,15 +309,13 @@ export async function predispatchReplacementState({ api, journal, record: r, rep
   const outcomeEvidence = outcomeReconciliationCandidate(r);
   const outcomeBinding = await reconcileOutcomeComment(api, r, outcomeEvidence,
     { includeTimes: true, requireUnedited: true });
-  if (Date.parse(outcomeBinding.outcomeCommentCreatedAt) < Date.parse(run.updated_at)) {
-    fail('PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN');
-  }
   const replacementRun = await api.getRun(next.runId);
   const replacementEventName = next.target === 'issue' ? 'issues' : 'pull_request_target';
   if (replacementRun.id !== next.runId || replacementRun.repository?.full_name !== next.repository
     || replacementRun.actor?.login !== OWNER || replacementRun.triggering_actor
       && replacementRun.triggering_actor.login !== OWNER
-    || replacementRun.path !== CONSUMER.routingWorkflow || replacementRun.status !== 'in_progress'
+    || replacementRun.path !== CONSUMER.routingWorkflow
+    || !['in_progress', 'completed'].includes(replacementRun.status)
     || replacementRun.run_attempt !== 1 || replacementRun.event !== replacementEventName
     || replacementRun.display_title !== next.runName
     || !(replacementRun.head_branch === CONSUMER.baseBranch

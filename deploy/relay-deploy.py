@@ -1180,8 +1180,10 @@ def run(args):
                         progress('OPEN', revision)
                 except Exception:
                     restored_old = False
-                    if (preparation is not None and preparation.captured and not preparation.cutover_started
-                            and lifecycle_operation and not args.authorize_lifecycle_recovery):
+                    if (preparation is not None and preparation.captured
+                            and (not preparation.cutover_started or preparation.predispatch_bridge_attempted)
+                            and lifecycle_operation
+                            and (not args.authorize_lifecycle_recovery or preparation.predispatch_bridge_attempted)):
                         try:
                             aborted = preparation.abort()
                             require(aborted['status'] == 'old-open-restored', 'INSTALL_PREFLIGHT_ABORT_UNPROVEN')

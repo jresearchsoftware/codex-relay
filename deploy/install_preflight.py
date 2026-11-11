@@ -201,7 +201,149 @@ def critical_state(values, *, root=Path('/'), owner_uid=0, consumer_restore_requ
     return result
 
 
-def remote(request, *, root=Path('/'), owner_uid=0):
+def observe_predispatch_service_intent(values, *, service_probe=None):
+    """Read the bounded systemd activity shape retained by the admission snapshot."""
+    namespace = values['relay_namespace']
+    units = [('reviewer', values['relay_reviewer_service_name']),
+             ('production', values['relay_production_runner_service_name']),
+             ('general', values['relay_general_runner_service_name']),
+             ('manualOutcome', namespace + '-relay-manual-outcome.socket')]
+    slots = values.get('relay_additional_execution_slots', [])
+    require(isinstance(slots, list), 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+    for slot in slots:
+        require(isinstance(slot, dict) and isinstance(slot.get('relay_execution_slot'), str)
+                and re.fullmatch('[a-z][a-z0-9-]{0,31}', slot['relay_execution_slot'])
+                and isinstance(slot.get('relay_runner_service_name'), str),
+                'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+        units.append(('slot-' + slot['relay_execution_slot'], slot['relay_runner_service_name']))
+    result = {}
+    for name, unit in units:
+        require(isinstance(unit, str) and re.fullmatch('[A-Za-z0-9@_.-]+', unit),
+                'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+        try:
+            process = (service_probe(unit) if service_probe else subprocess.run(
+                ['/bin/systemctl', 'show', unit,
+                 '--property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload'],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30))
+            require(type(process.returncode) is int and isinstance(process.stdout, str),
+                    'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+            properties = dict(line.split('=', 1) for line in process.stdout.splitlines() if '=' in line)
+            active, load, enabled = (properties.get('ActiveState'), properties.get('LoadState'),
+                                     properties.get('UnitFileState', 'disabled'))
+            require(active in ['active', 'inactive', 'failed'] and load in ['loaded', 'not-found']
+                    and (load == 'not-found' or enabled in ['enabled', 'enabled-runtime', 'disabled']),
+                    'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+            if active == 'active':
+                require(process.returncode == 0
+                        and properties.get('SubState') == ('listening' if name == 'manualOutcome' else 'running')
+                        and (name == 'manualOutcome' or enabled in ['enabled', 'enabled-runtime']
+                             and re.fullmatch('[1-9][0-9]*', properties.get('MainPID', ''))
+                             and re.fullmatch('[1-9][0-9]*', properties.get('ExecMainStartTimestampMonotonic', ''))),
+                        'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+            if name == 'manualOutcome' and load == 'not-found':
+                require(active == 'inactive' and properties.get('SubState') == 'dead'
+                        and enabled in ['not-found', 'disabled'], 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+            result[name] = {'active': active == 'active',
+                            'enabled': enabled if enabled in ['enabled', 'enabled-runtime', 'disabled'] else 'disabled',
+                            'load': load}
+        except (OSError, subprocess.SubprocessError, KeyError, TypeError, ValueError):
+            require(False, 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+    if result.get('manualOutcome') == {'active': False, 'enabled': 'disabled', 'load': 'not-found'}:
+        del result['manualOutcome']
+    return result
+
+
+def verify_predispatch_bridge_abort(snapshot, request, values, *, operation, target, root=Path('/'), owner_uid=0,
+                                    gate=None, service_probe=None):
+    """Reopen the old gate only before switch and after retained service intent is revalidated."""
+    bridge = snapshot.get('predispatchBridge')
+    keys = {'version', 'operationId', 'target', 'previousRevision', 'runId', 'attemptId', 'authorizationId',
+            'predispatchBinding', 'sourceIdentity', 'stageReceiptSha256', 'consumerSha256', 'writerWrapperSha256'}
+    require(isinstance(bridge, dict) and bridge.keys() == keys and bridge['version'] == 1
+            and bridge['operationId'] == operation and bridge['target'] == target
+            and re.fullmatch('[a-f0-9]{40}', bridge.get('previousRevision', ''))
+            and type(bridge.get('runId')) is int and bridge['runId'] > 0
+            and bridge.get('attemptId') == 'run-' + str(bridge['runId'])
+            and type(bridge.get('authorizationId')) is int and bridge['authorizationId'] > 0
+            and bridge.get('sourceIdentity', {}).get('revision') == target
+            and all(re.fullmatch('[a-f0-9]{64}', bridge.get(key, '') or '') for key in
+                    ['stageReceiptSha256', 'consumerSha256', 'writerWrapperSha256']), 'PREDISPATCH_BRIDGE_ABORT_UNPROVEN')
+    original = bridge['predispatchBinding']
+    original_keys = {'operation', 'repository', 'runId', 'attemptId', 'issueNumber', 'step', 'executionSlot',
+                     'readyEventId', 'branch', 'head', 'authorityDigest', 'recordDigest'}
+    optional_binding_keys = {'readyRemovalEventId', 'outcomeCommentId', 'outcomeCommentNumber',
+                             'outcomeBodySha256', 'outcomeWriterId', 'outcomeCommentCreatedAt'}
+    require(isinstance(original, dict) and original_keys <= original.keys()
+            and original.keys() <= original_keys | optional_binding_keys
+            and request.get('predispatchBinding') == original
+            and original.get('operation') == 'finalize-predispatch'
+            and original.get('runId') == bridge['runId'] and original.get('attemptId') == bridge['attemptId']
+            and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', original.get('repository', ''))
+            and all(type(original.get(key)) is int and original[key] > 0 for key in ['issueNumber', 'step', 'readyEventId'])
+            and isinstance(original.get('executionSlot'), str)
+            and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', original['executionSlot'])
+            and re.fullmatch('[a-f0-9]{40}', original.get('head', ''))
+            and re.fullmatch('[a-f0-9]{64}', original.get('authorityDigest', ''))
+            and re.fullmatch('[a-f0-9]{64}', original.get('recordDigest', '')), 'PREDISPATCH_BRIDGE_ABORT_UNPROVEN')
+    install = Path(values['relay_install_root'])
+    current = root / install.relative_to('/') / 'current'
+    require(current.is_symlink() and Path(os.readlink(current)).name == bridge['previousRevision'],
+            'PREDISPATCH_BRIDGE_ABORT_AFTER_SWITCH')
+    require(isinstance(gate, dict) and (gate.get('previousActive') is None
+            or isinstance(gate.get('previousActive'), dict)), 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+    previous_active = gate['previousActive']
+    if previous_active is not None:
+        require(isinstance(previous_active, dict)
+                and observe_predispatch_service_intent(values, service_probe=service_probe) == previous_active,
+                'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+    stage = Path(request['stage'])
+    receipt_raw = read(str(stage / 'receipt.json'), root=root, owner_uid=owner_uid)
+    require(hashlib.sha256(receipt_raw).hexdigest() == bridge['stageReceiptSha256'], 'PREDISPATCH_BRIDGE_ABORT_UNPROVEN')
+    repository = original['repository']
+    run_id = bridge['runId']
+    claim = Path(values['relay_writer_claim_root'])
+    store = claim / 'publication-v2'
+    paths = [store / (str(run_id) + '.json'), store / 'repositories' / repository / (str(run_id) + '.json')]
+    options = {'root': root, 'owner_uid': owner_uid}
+    records = []
+    for path in paths:
+        _, info = protected(str(path), optional=True, **options)
+        if info is not None:
+            records.append(read(str(path), **options))
+    require(len(records) == 1, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
+    raw = records[0]
+    try:
+        record = json.loads(raw)
+    except (ValueError, TypeError):
+        require(False, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
+    envelope = record.get('envelope') if isinstance(record, dict) else None
+    require(isinstance(envelope, dict) and 'predispatchRecovery' not in record
+            and envelope.get('repository') == repository and envelope.get('runId') == run_id
+            and envelope.get('attemptId') == bridge['attemptId'] and envelope.get('issueNumber') == original['issueNumber']
+            and envelope.get('step') == original['step'] and envelope.get('executionSlot', 'primary') == original.get('executionSlot', 'primary')
+            and envelope.get('readyEventId') == original['readyEventId'] and envelope.get('branch') == original['branch']
+            and envelope.get('startHead') == original['head'] and envelope.get('authorityDigest') == original['authorityDigest']
+            and envelope.get('consumerDigest') == json.loads(base64.b64decode(snapshot['gate'], validate=True)).get('consumerDigest')
+            and record.get('readyConsumption', {}).get('status') == 'uncertain'
+            and record.get('readyConsumption', {}).get('code') == 'READY_EVENT_REPLACED'
+            and record.get('controllerLifecycle') == {'version': 1, 'status': 'complete',
+                'child': 'not_started', 'containment': 'not_required'}
+            and record.get('outcome', {}).get('status') == 'BLOCKED'
+            and not record.get('publicationIntent') and not record.get('publishedHead') and not record.get('finalHead')
+            and not record.get('execution'), 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
+    program = ('import{createHash}from"node:crypto";let raw="";for await(const chunk of process.stdin)raw+=chunk;'
+               'const value=JSON.parse(raw);process.stdout.write(createHash("sha256").update(JSON.stringify(value)).digest("hex"));')
+    try:
+        checked = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program], input=raw,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+            env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+        require(checked.returncode == 0 and checked.stdout.decode() == original['recordDigest'],
+                'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
+    except (OSError, UnicodeError, subprocess.SubprocessError):
+        require(False, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
+
+
+def remote(request, *, root=Path('/'), owner_uid=0, service_probe=None):
     values, action = request['values'], request['action']
     operation, target = request['operation'], request['target']
     require(str(uuid.UUID(operation)) == operation and re.fullmatch('[0-9a-f]{40}', target), 'BINDING_INVALID')
@@ -326,8 +468,6 @@ def remote(request, *, root=Path('/'), owner_uid=0):
         return {'oldStateSha256': hashlib.sha256(encoded(snapshot['critical'])).hexdigest()}
     snapshot = json.loads(read(str(stage / evidence.name), **options))
     require(snapshot['operationId'] == operation and snapshot['target'] == target, 'EVIDENCE_BINDING_CHANGED')
-    if action == 'abort' and snapshot.get('predispatchBridge'):
-        require(False, 'PREDISPATCH_BRIDGE_REQUIRES_FORWARD_RECOVERY')
     require(type(snapshot['consumerRestoreRequired']) is bool, 'EVIDENCE_BINDING_CHANGED')
     require(critical_state(values, consumer_restore_required=snapshot['consumerRestoreRequired'], **options)
             == snapshot['critical'], 'OLD_INSTALLATION_CHANGED')
@@ -363,9 +503,16 @@ def remote(request, *, root=Path('/'), owner_uid=0):
     except (OSError, ValueError, subprocess.SubprocessError):
         require(False, 'ABORT_CONSUMER_UNPROVEN')
     gate = json.loads(read(snapshot['gatePath'], **options))
-    require(gate['phase'] in ['quiesced', 'drained', 'applying'] and gate['operationId'] == operation
+    require(gate['phase'] in ['quiesced', 'drained', 'applying', 'recovery-required'] and gate['operationId'] == operation
             and gate['target'] == target and gate['consumerDigest'] == old['consumerDigest']
-            and gate['previousActive'] is None and gate['verifiedRevision'] is None, 'ABORT_GATE_UNPROVEN')
+            and gate['verifiedRevision'] is None, 'ABORT_GATE_UNPROVEN')
+    if snapshot.get('predispatchBridge'):
+        require(gate['previousActive'] is None or isinstance(gate['previousActive'], dict),
+                'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+        verify_predispatch_bridge_abort(snapshot, request, values, operation=operation, target=target,
+                                        root=root, owner_uid=owner_uid, gate=gate, service_probe=service_probe)
+    else:
+        require(gate['previousActive'] is None, 'ABORT_GATE_UNPROVEN')
     write_private(root / Path(snapshot['gatePath']).relative_to('/'), old_raw, replace=True)
     require(read(snapshot['gatePath'], **options) == old_raw, 'ABORT_READBACK_FAILED')
     return {'status': 'old-open-restored', 'operationId': operation}
@@ -387,6 +534,10 @@ class PreparedInstall:
         self.host_observation = None
         self.captured = False
         self.cutover_started = False
+        self.predispatch_bridge_attempted = False
+        self.predispatch_bridge_request = None
+        self.predispatch_bridge_binding = None
+        self.predispatch_bridge_proof = None
         self.stage_observation = None
         self.retained_proof = None
 
@@ -671,6 +822,8 @@ try {
         original = self.predispatch_recovery(inspect)
         binding = original.get('binding') or original.get('recovery', {}).get('binding')
         require(binding and binding['runId'] == request['runId'], 'PREDISPATCH_BRIDGE_ORIGINAL_UNPROVEN')
+        self.predispatch_bridge_request = dict(request)
+        self.predispatch_bridge_binding = binding
         self.consumer()
         if not continuation:
             self.host(final=True)
@@ -690,6 +843,7 @@ try {
         data = {'values': self.values, 'identity': self.identity, 'operationId': self.operation,
             'stage': self.stage, 'lease': self.lease_path, 'consumerDigest': self.initial['baselineDigest'],
             'previousRevision': previous, 'runId': request['runId'], 'recoveryRequest': request}
+        self.predispatch_bridge_attempted = True
         if not continuation:
             # Persist the exact authorized bridge binding before the first
             # lifecycle phase/snapshot mutation. Even a pre-snapshot crash then
@@ -725,10 +879,17 @@ try {
             raise
 
     def abort(self):
-        require(self.captured and not self.cutover_started, 'ABORT_AFTER_CUTOVER_FORBIDDEN')
+        bridge_abort = self.predispatch_bridge_attempted and self.predispatch_bridge_proof is None
+        require(self.captured and (not self.cutover_started or bridge_abort), 'ABORT_AFTER_CUTOVER_FORBIDDEN')
         if self.holder is None:
             self.lock_writer()
         require(self.holder.poll() is None, 'WRITER_LOCK_MISSING')
+        if bridge_abort:
+            require(self.predispatch_bridge_request and self.predispatch_bridge_binding,
+                    'PREDISPATCH_BRIDGE_ABORT_UNPROVEN')
+            observed = self.predispatch_recovery({**self.predispatch_bridge_request, 'operation': 'predispatch-state'})
+            observed_binding = observed.get('binding') or observed.get('recovery', {}).get('binding')
+            require(observed_binding == self.predispatch_bridge_binding, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
         # Authenticate the actual old consumer even if a new manual record is
         # the reason for abort. Eligibility is irrelevant to reopening OLD.
         desired = self.desired_digest
@@ -742,7 +903,12 @@ try {
         finally:
             self.desired_digest = desired
         self.host(final=True)
-        return self.action('abort', source=self.source, lease=self.lease_path)
+        result = self.action('abort', source=self.source, lease=self.lease_path,
+                             **({'predispatchBinding': self.predispatch_bridge_binding} if bridge_abort else {}))
+        if bridge_abort:
+            self.cutover_started = False
+            self.predispatch_bridge_attempted = False
+        return result
 
     def admission_prefix(self):
         return ['/usr/bin/python3', '-I', self.source + '/deploy/writer_lock_lease.py',

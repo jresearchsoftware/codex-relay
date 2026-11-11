@@ -54,7 +54,8 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   let failure;
   let result;
   try {
-    result = await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true, broker,
+    result = await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true,
+      admissionUnstarted: admitted.admissionUnstarted === true, broker,
       journal, persistFailure,
       prepare, execute: e => dispatcher.dispatch(e), collect: collect ?? (e => broker.invoke({
         operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId })) });

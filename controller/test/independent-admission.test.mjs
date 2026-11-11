@@ -127,12 +127,12 @@ async function replacedReadyOutcome(t) {
   assert.match(f.comments[0].body, /Automatic worker launch authority was not returned/);
   f.runs.get(99).status = 'completed';
   f.runs.get(99).conclusion = 'failure';
-  f.runs.get(99).updated_at = '2026-09-04T12:00:05Z';
+  f.runs.get(99).updated_at = '2026-09-04T12:00:05.500Z';
   Object.assign(f.comments[0], {
     user: { login: WRITER, id: 701, type: 'Bot' },
     issue_url: 'https://api.github.com/repos/' + REPOSITORY + '/issues/42',
-    created_at: '2026-09-04T12:00:05Z',
-    updated_at: '2026-09-04T12:00:05Z'
+    created_at: '2026-09-04T12:00:05.000Z',
+    updated_at: '2026-09-04T12:00:05.000Z'
   });
   const get = f.api.get.bind(f.api);
   f.api.get = async path => path.startsWith('/issues/comments/')
@@ -202,14 +202,113 @@ test('a later automatic Step retires the prior replacement while retaining its o
   assert.deepEqual(drained.unknown, []);
 });
 
+test('replacement retirement resumes after an interrupted durable admission without a new owner event or extra launch', async t => {
+  const f = await replacedReadyOutcome(t);
+  const nextRequest = f.ready(100, 42, 'manual');
+  const put = f.store.put.bind(f.store);
+  let interrupt = true;
+  f.store.put = async (id, record) => {
+    await put(id, record);
+    if (interrupt && id === 100) {
+      interrupt = false;
+      throw new Error('synthetic interruption after durable admission');
+    }
+  };
+  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
+  assert.ok(await f.store.get(100));
+  assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
+  assert.equal(f.deletes(), 1);
+
+  // The admitted successor run may itself fail before the retry. Its exact
+  // first-attempt owner event and durable admission remain the recovery key.
+  f.runs.get(100).status = 'completed';
+  f.runs.get(100).conclusion = 'failure';
+  f.runs.get(100).updated_at = '2026-09-04T12:00:08Z';
+  const resumed = await f.broker.dispatch(nextRequest);
+  assert.equal(resumed.envelope.step, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  assert.equal(f.deletes(), 2);
+  assert.equal(f.comments.length, 1);
+});
+
+async function interruptedAutomaticSuccessor(t) {
+  const f = await replacedReadyOutcome(t);
+  const nextRequest = f.ready(100, 42, 'auto');
+  const put = f.store.put.bind(f.store);
+  let interrupt = true;
+  f.store.put = async (id, record) => {
+    await put(id, record);
+    if (interrupt && id === 100) {
+      interrupt = false;
+      throw new Error('synthetic interruption after durable automatic admission');
+    }
+  };
+  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
+  assert.ok(await f.store.get(100));
+  assert.equal(f.deletes(), 1);
+  f.runs.get(100).status = 'completed';
+  f.runs.get(100).conclusion = 'failure';
+  f.runs.get(100).updated_at = '2026-09-04T12:00:08Z';
+  return { f, nextRequest };
+}
+
+test('same-run automatic replay rechecks admission and starts only its first journal reservation', async t => {
+  const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+  const resumed = await f.broker.dispatch(nextRequest);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.admissionUnstarted, true);
+  assert.equal(resumed.envelope.step, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  assert.equal(f.deletes(), 2);
+  assert.equal(f.comments.length, 1);
+});
+
+test('same-run automatic replay leaves its owner command untouched when admission or the slot is unavailable', async t => {
+  {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    await f.control.quiesce({ operationId: '12345678-1234-1234-1234-123456789abc', target: 'b'.repeat(40) });
+    await assert.rejects(f.broker.dispatch(nextRequest), { code: 'ADMISSION_QUIESCED' });
+    assert.equal(f.deletes(), 1);
+    assert.ok(f.issues.get(42).labels.some(label => label.name === 'codex-ready-auto'));
+  }
+  {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    const occupying = structuredClone(await f.store.get(100));
+    occupying.envelope = { ...occupying.envelope, runId: 101, attemptId: 'run-101', issueNumber: 44, number: 44 };
+    occupying.controllerLifecycle = { version: 1, status: 'active' };
+    delete occupying.predispatchPending;
+    await f.store.put(101, occupying);
+    await assert.rejects(f.broker.dispatch(nextRequest), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
+    assert.equal(f.deletes(), 1);
+    assert.ok(f.issues.get(42).labels.some(label => label.name === 'codex-ready-auto'));
+  }
+});
+
 for (const [name, mutate] of [
-  ['missing original event', async f => {
+  ['missing original transition', async f => {
     f.events.set(42, f.events.get(42).filter(event => event.id !== f.original.envelope.readyEventId));
   }],
   ['missing recorded replacement transition', async f => {
     const missing = f.original.readyConsumption.laterEvents[0];
     f.events.set(42, f.events.get(42).filter(event => event.id !== missing));
   }],
+  ['missing Writer Outcome', async f => { f.comments.length = 0; }],
+  ['duplicate Writer Outcome', async f => { f.comments.push({ ...copy(f.comments[0]), id: 9001 }); }],
+  ['edited Writer Outcome', async f => { f.comments[0].body += '\nchanged'; }]
+]) {
+  test('independent owner admission continues when only predecessor retirement proof is unavailable: ' + name, async t => {
+    const f = await replacedReadyOutcome(t);
+    await mutate(f);
+    const next = await f.broker.dispatch(f.ready(100, 42, 'manual'));
+    assert.equal(next.envelope.step, 2);
+    assert.ok(await f.store.get(100));
+    assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
+    assert.deepEqual((await f.control.status()).unknown, [99]);
+    assert.equal(f.deletes(), 2);
+  });
+}
+
+for (const [name, mutate] of [
   ['duplicate recorded transition id', async f => {
     const record = copy(await f.store.get(99));
     record.readyConsumption.laterEvents.push(record.readyConsumption.laterEvents[0]);
@@ -219,9 +318,6 @@ for (const [name, mutate] of [
     const original = f.events.get(42).find(event => event.id === f.original.envelope.readyEventId);
     f.events.get(42).push({ ...copy(original), actor: { login: 'foreign', type: 'User' } });
   }],
-  ['missing Writer Outcome', async f => { f.comments.length = 0; }],
-  ['duplicate Writer Outcome', async f => { f.comments.push({ ...copy(f.comments[0]), id: 9001 }); }],
-  ['edited Writer Outcome', async f => { f.comments[0].body += '\\nchanged'; }],
   ['original run rerun', async f => { f.runs.get(99).run_attempt = 2; }],
   ['contradictory worker journal', async f => { await f.journal.put(99, { execution: null }); }],
   ['existing checkout', async f => { f.setCheckoutExists(true); }]

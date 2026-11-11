@@ -87,6 +87,7 @@ def invocation(tmp_path, monkeypatch):
             self.source = self.stage + '/release/reviewed-source'
             self.lease_path = self.stage + '/writer-lock.json'
             self.initial, self.holder, self.captured, self.cutover_started = None, None, False, False
+            self.predispatch_bridge_attempted = False
             self.retained_proof = None
             state['preparation'] = self
         def create(self):
