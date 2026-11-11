@@ -10,14 +10,14 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance `5.1.0` is a `MINOR` candidate from independently accepted
-`5.0.0`. It adds a completion requirement to the existing `codex-ready-manual`
-route: the owner waits for trusted Writer to publish the complete admitted manual
-handoff or for a verified terminal routing error, and reconciles the original
-event if publication is ambiguous. This keeps the existing command, actors,
-permissions and routes; it does not treat successful label application as a
-successful handoff. The change does not claim external publication, installation
-or deployment.
+Guidance `6.0.0` is a `MAJOR` candidate from independently accepted
+`5.0.0`; the earlier `5.1.0` candidate was never accepted and is replaced in this
+PR. It adds mandatory owner work to the existing `codex-ready-manual` route: wait
+for trusted Writer to publish the complete admitted handoff or a verified terminal
+routing error, and reconcile the original event if publication is ambiguous.
+This keeps the existing command, actors, permissions and routes while treating
+the new owner wait as a material contract change under PV-002. It does not claim
+external publication, installation or deployment.
 
 Guidance **5.0.0** is a **MAJOR** from independently accepted **4.1.1**
 at source `512b2b5ea2867b92958580f17f6aee24c23b1fba`. It removes the unused
@@ -30,7 +30,7 @@ supported workflow/API changes, so a compatible MINOR label is insufficient.
 Both delivery forms retain their standalone Shared 5.0.0 snapshot, native
 dependency floor and immutable contract pins. The project deliberately selects
 Shared 7.0.1 independently. The prior 4.2.0 branch candidate was never accepted;
-5.0.0 replaced it and is now the frozen accepted baseline for 5.1.0. Frozen 4.1.1, 5.0.0 and earlier registry bytes remain unchanged.
+5.0.0 replaced it and remains the frozen accepted baseline for 6.0.0. Frozen 4.1.1, 5.0.0 and earlier registry bytes remain unchanged.
 Generation does not publish, install or activate the candidate, reconcile live
 client settings, merge the product PR or authorize PROD Apply.
 
@@ -99,7 +99,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 5.1.0 is a candidate. Native source
+release. Before independent acceptance, 6.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

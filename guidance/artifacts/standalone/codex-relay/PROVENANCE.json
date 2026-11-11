@@ -5,7 +5,7 @@
   "delivery_form": "standalone",
   "files": {
     "LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "SKILL.md": "6361d716a7bdd2688fa06eef9c4f6d9c1d4b6f94cd8af2559e31336e3fe9493a",
+    "SKILL.md": "7ed4a568dbe295c3976ca481a56f4b996656ec0093e140caa20842244c9b93a7",
     "references/compatibility.md": "0fdbf5c36b1cb3b61cb77cc62c7f06d3c3af401a6c7b3e8b856fffa271b8f4bc",
     "references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "references/examples.md": "8c5c27458a804a233cb1a2d5c5c83db1013d81e9154f6648ed93460f0fa48158",
@@ -42,7 +42,7 @@
   "generator": "scripts/build-relay-guidance.py",
   "name": "codex-relay",
   "protocol_source": "immutable-bundled-snapshot",
-  "publication": "Frozen 5.1.0 source candidate; MINOR compatible addition requiring the owner manual route to await trusted handoff publication or verified terminal failure and reconcile the original event on ambiguity; no external publication, deployment or adoption claim",
+  "publication": "MAJOR 6.0.0 candidate from accepted 5.0.0; adds mandatory owner orchestration to await the complete trusted manual handoff or a verified terminal routing error and reconcile the original event if publication is ambiguous; no external publication, deployment or adoption claim",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -57,9 +57,9 @@
     "contracts/src/github-authority-v4.json": "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5",
     "deploy/workflows/contract.json": "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c",
     "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
-    "guidance/source.json": "49a7c711c58ef01e9d3735feef6b73a4e2a6b799b9f32fc7a2355cae54cf5e02",
+    "guidance/source.json": "afc232a379b601310663c606771e565ad9d36bd5b03d022455d30a86c91acc23",
     "packages/codex-relay/skill/LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "packages/codex-relay/skill/SKILL.md": "6361d716a7bdd2688fa06eef9c4f6d9c1d4b6f94cd8af2559e31336e3fe9493a",
+    "packages/codex-relay/skill/SKILL.md": "7ed4a568dbe295c3976ca481a56f4b996656ec0093e140caa20842244c9b93a7",
     "packages/codex-relay/skill/references/compatibility.md": "0fdbf5c36b1cb3b61cb77cc62c7f06d3c3af401a6c7b3e8b856fffa271b8f4bc",
     "packages/codex-relay/skill/references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "packages/codex-relay/skill/references/examples.md": "8c5c27458a804a233cb1a2d5c5c83db1013d81e9154f6648ed93460f0fa48158",
@@ -69,6 +69,6 @@
     "scripts/build-relay-guidance.py": "35419e7656d1568bfbfe9b6f0252b3b2c6487d588440ce246528b4f4a0e7d5bc",
     "toolchain/vibevm.json": "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
   },
-  "version": "5.1.0",
+  "version": "6.0.0",
   "workflow_contract": "relay-workflows-v4"
 }
