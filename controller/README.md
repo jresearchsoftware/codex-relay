@@ -541,10 +541,16 @@ receipt. When only the predecessor's retirement evidence is missing or
 contradictory, the new owner admission may proceed after its own authority,
 resource and no-conflicting-effects checks; the old record stays unknown and
 continues to block drain until a later valid admission retires it. If interruption
-occurs after the new admission is durable but before its receipt is written, the
-same exact first-attempt run can retry while its ready command remains
-unconsumed. This recovery reuses the stored Step and event, writes no second
-admission, and never repeats a prior DELETE. Automatic replay revalidates the
+occurs after the new admission is durable but before ready-command consumption, the
+same exact run can recover on an Actions rerun (`run_id` unchanged,
+`run_attempt` incremented) while its ready command remains unconsumed. Writer
+revalidates the live run's workflow, repository, owner and triggering actor,
+target and command identity, and requires the original durable admission with
+no consumption intent, journal, checkout or publication effects. The original
+replaced predecessor must still be its failed first attempt. This recovery
+reuses the stored Step and event, writes no second admission, and never repeats
+a prior DELETE. An already finalized predecessor receipt is reused only for its
+exact successor envelope digest. Automatic replay revalidates the
 open admission gate and original slot before changing the ready command, then
 allows only the first journal reservation for that exact unconsumed run. Once
 the command is consumed, the marked attempt cannot replay admission or launch

@@ -268,7 +268,7 @@ async function reconcileOutcomeComment(api, r, evidence, { includeTimes = false,
 
 // A fresh admitted owner event can retire only a sealed no-worker replacement
 // predecessor. It does not change the event or any native Task metadata.
-export async function predispatchReplacementState({ api, journal, record: r, replacement, checkoutAbsent }) {
+export async function predispatchReplacementState({ api, journal, record: r, replacement, replacementRecord, checkoutAbsent }) {
   if (!predispatchReadyReplacementReported(r)) fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
   const e = validateEnvelope(r.envelope), next = validateEnvelope(replacement);
   if (next.issueNumber !== e.issueNumber || next.runId === e.runId
@@ -309,18 +309,11 @@ export async function predispatchReplacementState({ api, journal, record: r, rep
   const outcomeEvidence = outcomeReconciliationCandidate(r);
   const outcomeBinding = await reconcileOutcomeComment(api, r, outcomeEvidence,
     { includeTimes: true, requireUnedited: true });
-  const replacementRun = await api.getRun(next.runId);
-  const replacementEventName = next.target === 'issue' ? 'issues' : 'pull_request_target';
-  if (replacementRun.id !== next.runId || replacementRun.repository?.full_name !== next.repository
-    || replacementRun.actor?.login !== OWNER || replacementRun.triggering_actor
-      && replacementRun.triggering_actor.login !== OWNER
-    || replacementRun.path !== CONSUMER.routingWorkflow
-    || !['in_progress', 'completed'].includes(replacementRun.status)
-    || replacementRun.run_attempt !== 1 || replacementRun.event !== replacementEventName
-    || replacementRun.display_title !== next.runName
-    || !(replacementRun.head_branch === CONSUMER.baseBranch
-      || next.target === 'pull_request' && replacementRun.head_branch === next.branch)
-    || Date.parse(next.readyEventAt) <= Date.parse(outcomeBinding.outcomeCommentCreatedAt)) {
+  if (replacementRecord) {
+    if (digest(replacementRecord.envelope) !== digest(next)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+    await revalidateUnreturnedAdmission({ api, journal, record: replacementRecord, checkoutAbsent });
+  } else await replacementRoutingRun(api, next);
+  if (Date.parse(next.readyEventAt) <= Date.parse(outcomeBinding.outcomeCommentCreatedAt)) {
     fail('PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN');
   }
   const nextTransitions = await readyTransitions(api, next.number);
@@ -341,13 +334,42 @@ export async function predispatchReplacementState({ api, journal, record: r, rep
     replacementEnvelopeDigest: digest(next), ...outcomeBinding } };
 }
 
+async function replacementRoutingRun(api, e, { rerun = false } = {}) {
+  const run = await api.getRun(e.runId);
+  if (run.id !== e.runId || run.repository?.full_name !== e.repository
+    || run.actor?.login !== OWNER || run.triggering_actor && run.triggering_actor.login !== OWNER
+    || run.path !== CONSUMER.routingWorkflow || !['in_progress', 'completed'].includes(run.status)
+    || !(rerun ? positive(run.run_attempt) : run.run_attempt === 1)
+    || run.event !== (e.target === 'issue' ? 'issues' : 'pull_request_target')
+    || run.display_title !== e.runName
+    || !(run.head_branch === CONSUMER.baseBranch || e.target === 'pull_request' && run.head_branch === e.branch)) {
+    fail('PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS');
+  }
+}
+
+// Actions reruns keep run_id and increment run_attempt. Only the durable
+// unconsumed admission can authorize that continuation, never a fresh admission
+// or an original predecessor whose DELETE/Outcome already had external effects.
+export async function revalidateUnreturnedAdmission({ api, journal, record: r, checkoutAbsent }) {
+  const e = validateEnvelope(r?.envelope);
+  if (r.nativeAdmission !== true || e.transport !== 'label' || r.readyConsumed !== undefined
+    || r.readyConsumption !== undefined || r.admissionBlock || r.outcome || r.predispatchRecovery
+    || r.publicationIntent || r.publishedHead || r.finalHead
+    || e.route === 'auto' && (!pendingPredispatchRecord(r)
+      || canonicalAuthorityJson(r.controllerLifecycle) !== canonicalAuthorityJson({ version: 1, status: 'active' }))
+    || !journal || await journal.get(e.runId, e.repository)
+    || !checkoutAbsent || !await checkoutAbsent(e)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+  await replacementRoutingRun(api, e, { rerun: true });
+  await revalidateReadyEvent(api, e);
+}
+
 // The Writer mutex is already held. Re-read every external proof after the
 // replacement admission record is durable, then append one local receipt.
 export async function finalizePredispatchReplacement({ api, store, journal, record: r, replacementRecord,
   checkoutAbsent, expectedBinding, now = () => new Date().toISOString() }) {
   const next = validateEnvelope(replacementRecord?.envelope);
   const { binding } = await predispatchReplacementState({ api, journal, record: r,
-    replacement: next, checkoutAbsent });
+    replacement: next, replacementRecord, checkoutAbsent });
   if (canonicalAuthorityJson(binding) !== canonicalAuthorityJson(expectedBinding)) {
     fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
   }

@@ -12,13 +12,13 @@ import { memoryStore } from './fixture.mjs';
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nImplement independent source/research work.';
 const copy = value => structuredClone(value);
 
-export async function harness(t, { tasks = [42, 44] } = {}) {
+export async function harness(t, { tasks = [42, 44], store = memoryStore(), journal = memoryStore(),
+  admission = null, executionSlot = undefined } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-independent-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const store = memoryStore(); const journal = memoryStore();
   let checkoutExists = false;
   const checkoutAbsent = async () => !checkoutExists;
-  const control = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false, checkoutAbsent });
+  const control = admission ?? createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false, checkoutAbsent });
   await control.initialize();
   const issues = new Map(tasks.map(number => [number, { id: number + 1000, number, title: `Task ${number} — Source work`,
     state: 'open', user: { login: CONSUMER.owner }, body: charter, labels: [] }]));
@@ -77,7 +77,8 @@ export async function harness(t, { tasks = [42, 44] } = {}) {
       status: 'in_progress', event: 'issues', head_branch: CONSUMER.baseBranch,
       display_title: labelRunName(launch, issue), path: CONSUMER.routingWorkflow, run_attempt: 1,
       created_at: new Date(at + 1000).toISOString() });
-    return { operation: 'admit', runId, ...launch, transport: 'label', step: null };
+    return { operation: 'admit', runId, ...launch, transport: 'label', step: null,
+      ...(executionSlot ? { executionSlot } : {}) };
   }
   function replaceReady(number, route) {
     const at = new Date(Date.UTC(2026, 8, 4, 12, 0, command * 3 + 1)).toISOString();

@@ -1,3 +1,4 @@
+import { replacedReadyOutcome, interruptedAutomaticSuccessor, exerciseAutomaticRerun } from './independent-admission-scenario.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness } from './independent-admission-fixture.mjs';
@@ -106,42 +107,6 @@ test('duplicate delivery of the reserved native command cannot allocate a siblin
   assert.equal(f.deletes(), 1);
 });
 
-async function replacedReadyOutcome(t) {
-  const f = await harness(t);
-  const request = f.ready(99, 42, 'auto');
-  const remove = f.api.delete;
-  let replace = true;
-  f.api.delete = async path => {
-    if (replace && path.endsWith('/labels/codex-ready-auto')) {
-      replace = false; f.replaceReady(42, 'auto');
-    }
-    return remove(path);
-  };
-  await assert.rejects(f.broker.dispatch(request), { code: 'READY_EVENT_REPLACED' });
-  const original = await f.store.get(99);
-  assert.deepEqual(original.controllerLifecycle, { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' });
-  assert.equal(original.outcome.status, 'BLOCKED');
-  assert.equal(original.readyConsumed, undefined);
-  assert.equal(original.readyConsumption.code, 'READY_EVENT_REPLACED');
-  assert.equal(f.comments.length, 1);
-  assert.match(f.comments[0].body, /Automatic worker launch authority was not returned/);
-  f.runs.get(99).status = 'completed';
-  f.runs.get(99).conclusion = 'failure';
-  f.runs.get(99).updated_at = '2026-09-04T12:00:05.500Z';
-  Object.assign(f.comments[0], {
-    user: { login: WRITER, id: 701, type: 'Bot' },
-    issue_url: 'https://api.github.com/repos/' + REPOSITORY + '/issues/42',
-    created_at: '2026-09-04T12:00:05.000Z',
-    updated_at: '2026-09-04T12:00:05.000Z'
-  });
-  const get = f.api.get.bind(f.api);
-  f.api.get = async path => path.startsWith('/issues/comments/')
-    ? copy(f.comments.find(comment => comment.id === Number(path.split('/').at(-1)))) : get(path);
-  f.originalRequest = request;
-  f.original = copy(original);
-  f.outcomeBytes = f.comments[0].body;
-  return f;
-}
 
 test('prelaunch replacement Outcome is sealed and a later admitted Step retires it for drain and Apply', async t => {
   const f = await replacedReadyOutcome(t);
@@ -219,10 +184,11 @@ test('replacement retirement resumes after an interrupted durable admission with
   assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
   assert.equal(f.deletes(), 1);
 
-  // The admitted successor run may itself fail before the retry. Its exact
-  // first-attempt owner event and durable admission remain the recovery key.
-  f.runs.get(100).status = 'completed';
-  f.runs.get(100).conclusion = 'failure';
+  // Actions reruns preserve run_id but increment run_attempt. The owner event
+  // and durable admission, rather than a second owner command, bind recovery.
+  f.runs.get(100).run_attempt = 2;
+  f.runs.get(100).status = 'in_progress';
+  f.runs.get(100).conclusion = null;
   f.runs.get(100).updated_at = '2026-09-04T12:00:08Z';
   const resumed = await f.broker.dispatch(nextRequest);
   assert.equal(resumed.envelope.step, 2);
@@ -231,26 +197,6 @@ test('replacement retirement resumes after an interrupted durable admission with
   assert.equal(f.comments.length, 1);
 });
 
-async function interruptedAutomaticSuccessor(t) {
-  const f = await replacedReadyOutcome(t);
-  const nextRequest = f.ready(100, 42, 'auto');
-  const put = f.store.put.bind(f.store);
-  let interrupt = true;
-  f.store.put = async (id, record) => {
-    await put(id, record);
-    if (interrupt && id === 100) {
-      interrupt = false;
-      throw new Error('synthetic interruption after durable automatic admission');
-    }
-  };
-  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
-  assert.ok(await f.store.get(100));
-  assert.equal(f.deletes(), 1);
-  f.runs.get(100).status = 'completed';
-  f.runs.get(100).conclusion = 'failure';
-  f.runs.get(100).updated_at = '2026-09-04T12:00:08Z';
-  return { f, nextRequest };
-}
 
 test('same-run automatic replay rechecks admission and starts only its first journal reservation', async t => {
   const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
@@ -262,6 +208,64 @@ test('same-run automatic replay rechecks admission and starts only its first jou
   assert.equal(f.deletes(), 2);
   assert.equal(f.comments.length, 1);
 });
+
+test('Actions attempt 2 recovers through the routing entrypoint, completes once, and drains both records', async t => {
+  await exerciseAutomaticRerun(t);
+});
+
+test('Actions attempt 3 recovers a durable predecessor receipt before successor consumption without another worker', async t => {
+  await exerciseAutomaticRerun(t, { interruptAfterReceipt: true });
+});
+
+test('a fresh Actions rerun without a durable native admission cannot launch', async t => {
+  const f = await harness(t);
+  const request = f.ready(100, 42, 'auto');
+  f.runs.get(100).run_attempt = 2;
+  await assert.rejects(f.broker.dispatch(request), { code: 'OWNER_RUN_NOT_ADMITTED' });
+  assert.equal(await f.store.get(100), null);
+  assert.equal(f.deletes(), 0);
+});
+
+test('a corrupt retired predecessor receipt cannot authorize successor replay', async t => {
+  const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+  const put = f.store.put.bind(f.store);
+  let interrupt = true;
+  f.store.put = async (id, record) => {
+    await put(id, record);
+    if (interrupt && id === 99 && completedPredispatchRecovery(record)) {
+      interrupt = false;
+      throw new Error('synthetic interruption after durable receipt');
+    }
+  };
+  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
+  const retired = await f.store.get(99);
+  retired.predispatchRecovery.binding.replacementEnvelopeDigest = '0'.repeat(64);
+  await put(99, retired);
+  f.runs.get(100).run_attempt = 3;
+  await assert.rejects(f.broker.dispatch(nextRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  assert.equal(await f.journal.get(100), null);
+  assert.equal(f.deletes(), 1);
+});
+
+for (const [name, mutate, code] of [
+  ['invalid attempt', f => { f.runs.get(100).run_attempt = 0; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['foreign rerun actor', f => { f.runs.get(100).triggering_actor = { login: 'foreign' }; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['wrong run', f => { f.runs.get(100).id = 101; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['wrong workflow', f => { f.runs.get(100).path = '.github/workflows/foreign.yml'; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['journal', async f => { await f.journal.put(100, { execution: null }); }, 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['checkout', f => f.setCheckoutExists(true), 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['publication effect', async f => { const r = await f.store.get(100); r.publicationIntent = { head: 'b'.repeat(40) }; await f.store.put(100, r); }, 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['changed owner event', f => { f.events.get(42).at(-1).actor.login = 'foreign'; }, 'READY_EVENT_STALE']
+]) {
+  test('Actions rerun refuses unsafe successor continuation before any native mutation: ' + name, async t => {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    await mutate(f);
+    const old = copy(await f.store.get(99)), next = copy(await f.store.get(100));
+    await assert.rejects(f.broker.dispatch(nextRequest), { code });
+    assert.deepEqual(await f.store.get(99), old); assert.deepEqual(await f.store.get(100), next);
+    assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
+  });
+}
 
 test('same-run automatic replay leaves its owner command untouched when admission or the slot is unavailable', async t => {
   {

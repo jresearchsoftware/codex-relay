@@ -260,7 +260,7 @@ console.log(JSON.stringify(createExecutionDiagnostic({mode: 'normal', stdout: re
 def qualify():
     variables = yaml.safe_load((REPO / "deploy/ansible/group_vars/all.yml").read_text())
     version = variables["relay_codex_cli_version"]
-    assert version == "0.167.1"
+    assert version == "0.167.2"
     # Use native Linux /tmp, not a caller TMPDIR that may inherit a checkout's
     # setgid bit/default ACL and invalidate the production umask probe.
     with tempfile.TemporaryDirectory(prefix="codex-cli-qualification-", dir="/tmp") as temporary:

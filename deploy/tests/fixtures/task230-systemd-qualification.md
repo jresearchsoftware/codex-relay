@@ -128,6 +128,39 @@ results and the exact source SHA independently. These fixtures do not establish
 PROD recovery, independent acceptance, GitHub App permission qualification, or
 real Codex/Actions execution.
 
+## Coupled Actions rerun and installed Apply fixture
+
+After a successful isolated baseline installation, run the exact candidate's
+shared admission/routing scenario against its real installed publication and
+execution stores and protected admission gate:
+
+```sh
+RELAY_CONSUMER_CONFIG="/etc/$namespace/consumer.json" RELAY_EXECUTION_SLOT=primary \
+  node deploy/tests/fixtures/qualify_task230_rerun.mjs \
+  --isolated-disposable-container --expected-revision "$candidate_sha"
+```
+
+The script requires the offline root container, the exact clean Git candidate,
+and unused synthetic run IDs 99 and 100. It never replaces existing history.
+Its child holds the actual Writer publication mutex throughout the scenario.
+GitHub observations and the contained worker result are synthetic; the production
+broker, routing entrypoint, `runAttempt`, disk stores and installed gate run
+unchanged. The scenario models durable successor admission on Actions attempt 1,
+interruption before launch, rerun attempt 2, one completed worker and terminal
+replay. It checks the finalized predecessor, completed successor and empty
+installed active/unknown inventory. This is not evidence of an actual GitHub rerun.
+
+Then run the same public Apply used for the baseline, with the same candidate
+revision and fixture configuration. Its real quiesce/drain and installer must
+succeed. Finally repeat the command above with `--verify-preserved` to verify
+the exact bytes of both publication records and the successor execution journal.
+`/qualification/task230-rerun-evidence.json` records the candidate revision,
+hashes, one-worker count, inventory and synthetic boundaries. Preserve the public
+Apply logs separately. Successful seeding or inventory alone is not an Apply
+result. A Podman transport may supply the fixture's `/.dockerenv` sentinel only
+after independently establishing root, real systemd, a private cgroup namespace,
+and a private network namespace containing only `lo`; report that substitution.
+
 ## Preserved exploratory evidence
 
 The intermediate synthetic source commit

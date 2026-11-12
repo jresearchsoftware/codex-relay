@@ -23,7 +23,7 @@ import { latestProjection, assertPublicationIsolation } from './publication-isol
 import { admissionFailure } from './admission-diagnostic.mjs';
 import { predispatchState, finalizePredispatch, predispatchReplacementState, finalizePredispatchReplacement,
   completedPredispatchRecovery, pendingPredispatchRecord, consumedPredispatchRecord, consumedPredispatchMarker,
-  predispatchReadyReplacementReported } from './predispatch-recovery.mjs';
+  predispatchReadyReplacementReported, revalidateUnreturnedAdmission } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
@@ -498,7 +498,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             ? (await publicationRecords({ repository: e.repository, issueNumber: e.issueNumber }))
               .filter(record => record.envelope?.issueNumber === e.issueNumber
                 && record.envelope?.runId !== e.runId && record.predispatchPending
-                && predispatchReadyReplacementReported(record))
+                && (predispatchReadyReplacementReported(record)
+                  || record.predispatchRecovery?.version === 4 && completedPredispatchRecovery(record)
+                    && record.predispatchRecovery.binding.replacementEnvelopeDigest === digest(e)))
             : [];
           const recoverUnreturnedAdmission = mayRecoverUnreturnedAdmission
             && replacementPredecessorReplayCandidates.length > 0;
@@ -515,12 +517,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             if (!recoverUnreturnedAdmission) fail('PREDISPATCH_ATTEMPT_FINALIZED');
           }
           if (recoverUnreturnedAdmission) {
-            if (!journal || await journal.get(e.runId, e.repository)
-              || !checkoutAbsent || !await checkoutAbsent(e)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+            await revalidateUnreturnedAdmission({ api, journal, record: existing, checkoutAbsent });
             if (e.route === 'auto') {
-              if (!pendingPredispatchRecord(existing) || existing.nativeAdmission !== true
-                || existing.controllerLifecycle?.version !== 1 || existing.controllerLifecycle.status !== 'active'
-                || !admission?.assertOpen || !admission?.assertSlotComplete)
+              if (!admission?.assertOpen || !admission?.assertSlotComplete)
                 fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
               await admission.assertOpen();
               await admission.assertSlotComplete(e.executionSlot ?? 'primary');
@@ -537,7 +536,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
                 || !await checkoutAbsent(previous.envelope)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
               try {
                 const state = await predispatchReplacementState({ api, journal, record: previous,
-                  replacement: e, checkoutAbsent });
+                  replacement: e, replacementRecord: existing, checkoutAbsent });
                 await finalizePredispatchReplacement({ api, store, journal, record: previous,
                   replacementRecord: existing, checkoutAbsent, expectedBinding: state.binding });
               } catch (error) {

@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync
 import { execFileSync } from 'node:child_process';
 import { qualifyRustDevelopment } from './rust-development-probe.mjs';
 if (process.argv[2] === '--version') {
-  process.stdout.write('codex-cli 0.167.1\n');
+  process.stdout.write('codex-cli 0.167.2\n');
   process.exit(0);
 }
 const chunks = [];
