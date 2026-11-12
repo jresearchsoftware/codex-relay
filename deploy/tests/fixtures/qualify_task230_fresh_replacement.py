@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 def digest(path):
@@ -87,8 +88,7 @@ def main():
     stamp_args = ['systemctl', 'show', foreign, '-p', 'MainPID', '-p', 'ExecMainStartTimestampMonotonic']
     foreign_before = command(stamp_args, cwd=source).stdout
     assert 'MainPID=0\n' not in foreign_before
-    evidence = root / 'replacement-evidence'
-    evidence.mkdir(mode=0o700)
+    evidence = Path(tempfile.mkdtemp(prefix='replacement-evidence-', dir=root))
     report = {'status': 'RUNNING', 'originalProduct': old, 'replacementProduct': revision,
         'originalManifestSha256': hashlib.sha256(original_manifest).hexdigest(),
         'externalRegistration': 'synthetic-offline', 'phases': {},
@@ -114,8 +114,11 @@ def main():
     try:
         phase('workflow-project', '--authorize-workflow-projection')
         command(['git', 'add', '--', '.'], cwd=root / 'consumer')
-        command(['git', '-c', 'user.name=isolated-test', '-c', 'user.email=test@example.invalid',
-                 'commit', '-qm', 'Review exact TEST replacement workflow projection'], cwd=root / 'consumer')
+        changed = command(['git', 'diff', '--cached', '--quiet'], cwd=root / 'consumer', check=False)
+        assert changed.returncode in [0, 1]
+        if changed.returncode == 1:
+            command(['git', '-c', 'user.name=isolated-test', '-c', 'user.email=test@example.invalid',
+                     'commit', '-qm', 'Review exact TEST replacement workflow projection'], cwd=root / 'consumer')
         phase('workflow-verify')
         phase('reinstall', '--authorize-reinstall')
         archive = install.parent / ('.' + namespace + '-retired-' + old + '-' + revision)
