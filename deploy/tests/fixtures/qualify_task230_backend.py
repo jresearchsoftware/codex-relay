@@ -6,7 +6,6 @@ Runner/Codex distributions are synthetic. The installer, artifact build, local
 pool reconciliation, filesystem checks and services execute production code.
 """
 import argparse
-import fcntl
 import grp
 import hashlib
 import io
@@ -28,15 +27,16 @@ def prepare(root, source):
     version = defaults['relay_runner_package_version']
     archive = root / 'synthetic-runner.tar.gz'
     config = '''#!/usr/bin/python3
-import json,os,sys
+import hashlib,json,os,sys
 from pathlib import Path
 args=sys.argv[1:]
 if args and args[0]=='remove':
  for name in ['.runner','.credentials']:Path(name).unlink(missing_ok=True)
 else:
  def arg(name):return args[args.index(name)+1]
- name=arg('--name');identity=100+int(name.rsplit('-',1)[-1]) if name.rsplit('-',1)[-1].isdigit() else 101
- value={'agentName':name,'agentId':identity,'gitHubUrl':arg('--url'),'poolName':arg('--runnergroup'),'workFolder':arg('--work')}
+ name=arg('--name');identity=int(hashlib.sha256(name.encode()).hexdigest()[:12],16)+1
+ value={'agentName':name,'agentId':identity,'gitHubUrl':arg('--url'),'poolName':arg('--runnergroup'),'workFolder':arg('--work'),'disableUpdate':False}
+ Path('.task230-labels.json').write_text(json.dumps(arg('--labels').split(',')))
  for path,data in [('.runner',json.dumps(value)),('.credentials','synthetic-offline-registration')]:
   Path(path).write_text(data);Path(path).chmod(0o600)
 '''
@@ -76,6 +76,10 @@ else:
     wrapper.chmod(0o755)
     os.environ['PATH'] = str(directory) + ':/usr/bin:/bin'
     config = json.loads((root / 'consumer/relay.json').read_text())
+    # The HTTPS fixture observes only this explicitly selected TEST namespace.
+    # Real owner transport, preflight, source verification and reconciliation run.
+    (mock_root / 'pool-config.json').write_text(json.dumps(config))
+    (mock_root / 'pool-config.json').chmod(0o600)
     namespace = config['environment']['namespace']
     unit = config['environment']['ingress']['service']
     if unit == namespace + '-test-ingress.service':
@@ -226,53 +230,13 @@ def main():
         seed_reviewer_credential(root)
     marker = seed_predispatch(root, source) if args.seed_predispatch_marker else None
     sys.path.insert(0, str(source / 'deploy'))
-    import managed_pool as pool
     import managed_pool_transport as transport
-
-    class SyntheticGitHub:
-        def __init__(self, contract): self.contract, self.updated = contract, {}
-        def qualify(self, contract):
-            assert contract == self.contract
-            return 7
-        def runners(self):
-            result = []
-            for member in self.contract['members']:
-                path = Path(member['root']) / '.runner'
-                if path.exists():
-                    value = json.loads(path.read_text())
-                    labels = self.updated.get(value['agentId'], [])
-                    result.append({'id': value['agentId'], 'name': value['agentName'],
-                        'busy': False, 'status': 'online', 'labels': [{'name': name, 'type': 'custom'} for name in labels]})
-            return result
-        def in_group(self, group, runner): return group == 7
-        def ephemeral(self, purpose): return 'synthetic-offline-' + purpose
-        def labels(self, runner, labels): self.updated[runner] = labels
-
-    def preflight(*_args, **_kwargs):
-        return 'MANAGED_POOL_PREFLIGHT=PASS'
-
-    def reconcile(_target, _key, config, revision, *_args, **_kwargs):
-        contract = pool.pool_contract(config)
-        # Defer synthetic external registration until the real separately
-        # authorized activation has made Reviewer ready. Keep product guards.
-        host = pool.Host(contract)
-        host.command([contract['readiness']])
-        state = pool.State(Path('/var/lib/codex-relay-pools') / contract['name'])
-        lock = os.open(state.root / 'pool.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            report = pool.reconcile(contract, state, SyntheticGitHub(contract), host)
-        finally:
-            os.close(lock)
-        return 'MANAGED_POOL_RESULT=' + json.dumps(report)
-
-    transport.preflight_pool, transport.reconcile_pool = preflight, reconcile
     if args.reconcile_pool_only:
         assert not public_arguments and marker is None
         sys.path.insert(0, str(source / 'deploy'))
         from config import load
         config = load(root / 'consumer/relay.json', source)
-        print(reconcile(None, None, config, report['sourceFixtureRevision']), flush=True)
+        print(transport.reconcile_pool(None, None, config, report['sourceFixtureRevision'], local=True), flush=True)
         return
     sys.argv = [str(source / 'deploy/relay-deploy.py'), *public_arguments]
     try:

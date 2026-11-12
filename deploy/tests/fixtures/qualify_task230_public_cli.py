@@ -45,7 +45,12 @@ def main():
     parser.add_argument('--reviewer-only', action='store_true', help='disable automatic publication in this synthetic consumer')
     parser.add_argument('--test-external-prerequisites', action='store_true',
                         help='generate TEST RSA/TLS inputs for the actual public install route')
+    parser.add_argument('--capacity', type=int, choices=range(1, 33), default=1,
+                        help='number of General Runners in this isolated TEST pool')
+    parser.add_argument('--test-pool-prerequisites', action='store_true',
+                        help='supply a TEST pool App key; external API responses remain synthetic')
     args = parser.parse_args()
+    assert not args.test_pool_prerequisites or args.test_external_prerequisites
     assert re.fullmatch(r'(?:task230|t230)-[a-z0-9-]{1,14}', args.namespace)
     assert os.geteuid() == 0 and Path('/.dockerenv').exists()
     assert set(path.name for path in Path('/sys/class/net').iterdir()) == {'lo'}, 'TEST must be offline'
@@ -83,6 +88,7 @@ def main():
     config['environment']['runner'].update(user=namespace + '-prod', name=namespace + '-production')
     config['environment']['generalRunner'].update(user=namespace + '-general', name=namespace + '-pool')
     config['consumer']['runtimeUser'] = namespace + '-codex'
+    config['consumer']['generalRunnerPool']['desiredCapacity'] = args.capacity
     config['environment']['instance']['reviewerPort'] = 10000 + int(hashlib.sha256(namespace.encode()).hexdigest()[:8], 16) % 30000
     config['environment']['reviewerBind']['mode'] = 'loopback'
     if args.reviewer_only:
@@ -98,6 +104,8 @@ def main():
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         key.chmod(0o600)
         config['environment']['reviewerCredential'] = {'sourceKeyFile': str(key)}
+        if args.test_pool_prerequisites:
+            config['environment']['generalRunner']['poolApp']['privateKeyFile'] = str(key)
         config['environment']['tls'] = {'source': {'certificateFile': str(cert), 'privateKeyFile': str(key)}}
         ingress_root = root / 'external-ingress'
         ingress_root.mkdir()
@@ -128,14 +136,15 @@ def main():
         result = execute([*command, '--phase', phase], cwd=source)
         results[phase] = {'exit': result.returncode}
         (root / (phase + '.stdout')).write_text(result.stdout)
-    result = execute([*command, '--phase', 'apply'], cwd=source, success=False)
-    (root / 'apply.stdout').write_text(result.stdout)
-    (root / 'apply.stderr').write_text(result.stderr)
-    assert result.returncode != 0, 'An offline fixture cannot authorize real GitHub App operations'
-    assert 'MANAGED_POOL_OWNER_APP_KEY_UNAVAILABLE_ON_OWNER_EXECUTION_HOST' in result.stderr, result.stderr
-    assert not (Path('/opt') / namespace / 'current').exists(), 'Failed prerequisite must not activate a source'
-    results['apply'] = {'exit': result.returncode, 'qualified': False,
-                        'limitation': 'No external GitHub installation credential/permission is supplied'}
+    if not args.test_pool_prerequisites:
+        result = execute([*command, '--phase', 'apply'], cwd=source, success=False)
+        (root / 'apply.stdout').write_text(result.stdout)
+        (root / 'apply.stderr').write_text(result.stderr)
+        assert result.returncode != 0, 'An offline fixture cannot authorize real GitHub App operations'
+        assert 'MANAGED_POOL_OWNER_APP_KEY_UNAVAILABLE_ON_OWNER_EXECUTION_HOST' in result.stderr, result.stderr
+        assert not (Path('/opt') / namespace / 'current').exists(), 'Failed prerequisite must not activate a source'
+        results['apply'] = {'exit': result.returncode, 'qualified': False,
+                            'limitation': 'No external GitHub installation credential/permission is supplied'}
     report = {'sourceFixtureRevision': revision, 'sourceRoot': str(source), 'syntheticSourceCommit': args.source_root is None,
               'namespace': namespace, 'artifactRoot': str(root), 'network': 'none', 'publicCli': results,
               'backendSubstituted': False, 'installationQualified': False}

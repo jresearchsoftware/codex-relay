@@ -17,10 +17,12 @@ import re
 import shutil
 import ssl
 import subprocess
+import threading
 from urllib.parse import urlsplit
 
 
 ROOT = Path('/qualification/github-mock')
+POOL_LOCK = threading.Lock()
 APPS = {
     101: ('example-writer', 201, {'metadata': 'read', 'contents': 'write', 'issues': 'write',
                                'pull_requests': 'write', 'workflows': 'write'}),
@@ -63,6 +65,76 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def pool_request(self, path, body):
+        """Simulate external observations, retaining actual installer transport.
+
+        Only the explicitly configured disposable namespace is observable. Local
+        config.sh registration and real services remain independent processes;
+        observing their markers here is not proof of GitHub registration.
+        """
+        fixture = ROOT / 'pool-config.json'
+        if not fixture.exists():
+            return False
+        config = json.loads(fixture.read_text())
+        environment, consumer = config['environment'], config['consumer']
+        namespace, general = environment['namespace'], environment['generalRunner']
+        assert re.fullmatch(r'(?:task230|t230)-[a-z0-9-]{1,14}', namespace)
+        organization = consumer.get('repository', environment.get('repository')).split('/')[0]
+        base = '/orgs/' + organization + '/actions/'
+        if not path.startswith(base):
+            return False
+        groups = [{'id': 7, 'name': general['group']},
+                  {'id': 8, 'name': environment['runner']['group']}]
+        labels_file = ROOT / 'runner-labels.json'
+        with POOL_LOCK:
+            labels = json.loads(labels_file.read_text()) if labels_file.exists() else {}
+            markers = list((Path('/opt/codex-relay-pools') / general['name'] / 'runners').glob('*/.runner'))
+            markers.append(Path('/opt') / namespace / 'runner/.runner')
+            runners = []
+            for marker in markers:
+                if marker.exists():
+                    value = json.loads(marker.read_text())
+                    initial = marker.with_name('.task230-labels.json')
+                    names = labels.get(str(value['agentId']), json.loads(initial.read_text()) if initial.exists() else [])
+                    runners.append({'id': value['agentId'], 'name': value['agentName'],
+                        'busy': False, 'status': 'online', 'group': value['poolName'],
+                        'labels': [{'name': name, 'type': 'custom'} for name in names]})
+            if self.command == 'PUT' and re.fullmatch(re.escape(base) + r'runners/[0-9]+/labels', path):
+                identity = path.split('/')[-2]
+                labels[identity] = body['labels']
+                labels_file.write_text(json.dumps(labels))
+                self.respond({'labels': [{'name': name, 'type': 'custom'} for name in body['labels']]})
+                return True
+        if self.command == 'POST' and path in [base + 'runners/registration-token', base + 'runners/remove-token']:
+            self.respond({'token': 'synthetic-offline-runner-token'})
+            return True
+        if self.command != 'GET':
+            return False
+        if path == base + 'runners':
+            self.respond({'total_count': len(runners), 'runners': runners})
+            return True
+        if path == base + 'runner-groups':
+            self.respond({'total_count': len(groups), 'runner_groups': groups})
+            return True
+        match = re.fullmatch(re.escape(base) + r'runner-groups/(7|8)(?:/(repositories|runners))?', path)
+        if not match:
+            return False
+        group = groups[int(match[1]) - 7]
+        if match[2] == 'runners':
+            members = [runner for runner in runners if runner['group'] == group['name']]
+            self.respond({'total_count': len(members), 'runners': members})
+        elif match[2] == 'repositories':
+            repositories = consumer.get('repositories', [consumer.get('repository')])
+            self.respond({'total_count': len(repositories),
+                          'repositories': [{'full_name': name} for name in repositories]})
+        else:
+            repositories = consumer.get('repositories', [consumer.get('repository')])
+            workflows = [repository + '/' + consumer[key] + '@refs/heads/' + consumer['baseBranch']
+                         for repository in repositories for key in ['routingWorkflow', 'recoveryWorkflow']]
+            self.respond({**group, 'visibility': 'selected', 'restricted_to_workflows': True,
+                          'selected_workflows': workflows})
+        return True
+
     def handle_request(self):
         path = urlsplit(self.path).path
         with (ROOT / 'requests.log').open('a') as stream:
@@ -104,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
         key = self.command + ' ' + path
         if key in routes:
             return self.respond(routes[key])
+        if self.pool_request(path, body):
+            return
         if self.command == 'GET' and re.fullmatch(
                 r'/actions/runner/releases/download/v[0-9]+[.][0-9]+[.][0-9]+/actions-runner-linux-x64-[0-9]+[.][0-9]+[.][0-9]+[.]tar[.]gz',
                 path):
@@ -128,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    do_GET = do_POST = do_PATCH = do_DELETE = handle_request
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = handle_request
 
 
 def main():
