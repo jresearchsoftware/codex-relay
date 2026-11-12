@@ -338,6 +338,35 @@ for (const [name, mutate] of [
   });
 }
 
+test('managed-pool Actions reruns complete through the fixed helper admission intercept', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-pool-rerun-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pathname = join(root, 'consumer.json');
+  await writeFile(pathname, JSON.stringify(copyConsumerPool()), { mode: 0o600 });
+  const source = `
+    import assert from 'node:assert/strict';
+    import {exerciseAutomaticRerun} from './controller/test/independent-admission-scenario.mjs';
+    import {completedAdmissionRecord} from './controller/src/admission-control.mjs';
+    for (const interruptAfterReceipt of [false,true]) {
+      const cleanups=[];
+      try {
+        const {f,workers}=await exerciseAutomaticRerun({after:cleanup=>cleanups.push(cleanup)},
+          {executionSlot:'primary',interruptAfterReceipt});
+        const completed=await f.store.get(100);
+        assert.equal(workers,1);
+        assert.equal(completed.envelope.executionSlot,'primary');
+        assert.equal(completed.controllerLifecycle.status,'complete');
+        assert.equal(completed.predispatchPending,undefined);
+        assert.ok(await completedAdmissionRecord(completed,f.journal));
+      } finally {for(const cleanup of cleanups.reverse()) await cleanup();}
+    }
+  `;
+  await promisify(execFile)(process.execPath, ['--input-type=module', '-e', source], {
+    cwd: fileURLToPath(new URL('../../', import.meta.url)),
+    env: { ...process.env, RELAY_CONSUMER_CONFIG: pathname, RELAY_EXECUTION_SLOT: 'primary' }
+  });
+});
+
 test('two automatic same-UID attempts overlap on distinct slots for the same Task and independent Tasks', async t => {
   const root = await mkdtemp(join(tmpdir(), 'relay-two-auto-admission-'));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -145,7 +145,11 @@ and unused synthetic run IDs 99 and 100. It never replaces existing history.
 Its child holds the actual Writer publication mutex throughout the scenario.
 GitHub observations and the contained worker result are synthetic; the production
 broker, routing entrypoint, `runAttempt`, disk stores and installed gate run
-unchanged. The scenario models durable successor admission on Actions attempt 1,
+unchanged. Its in-process Writer transport models the fixed privileged helper's
+credential-free `complete-execution` interception through the admission
+capability; this interception does not go through broker request parsing in the
+production helper. It does not prove the helper's external caller/UID boundary.
+The scenario models durable successor admission on Actions attempt 1,
 interruption before launch, rerun attempt 2, one completed worker and terminal
 replay. It checks the finalized predecessor, completed successor and empty
 installed active/unknown inventory. This is not evidence of an actual GitHub rerun.

@@ -80,7 +80,11 @@ export async function exerciseAutomaticRerun(t, options = {}) {
     readEvent: async () => JSON.stringify({ repository: { full_name: REPOSITORY }, sender: { login: OWNER },
       action: 'labeled', label: { name: 'codex-ready-auto' }, issue: { number: 42 } }),
     resolveSlot: () => options.executionSlot,
-    createWriter: () => ({ invoke: ({ workflowReadToken, ...request }) => f.broker.dispatch(request) }),
+    // The fixed privileged helper handles completion directly through its
+    // admission capability after checking the caller's immutable slot.
+    createWriter: () => ({ invoke: async ({ workflowReadToken, ...request }) => request.operation === 'complete-execution'
+      ? { version: VERSION, repository: REPOSITORY, ...await f.control.complete(request) }
+      : f.broker.dispatch(request) }),
     createJournal: () => f.journal,
     createDispatcher: () => ({ dispatch: async e => {
       workers++;
