@@ -1,6 +1,8 @@
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { assertRootConsumer, parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { realpathSync } from 'node:fs';
+import { lstat } from 'node:fs/promises';
+import { checkoutPath } from './attempt-runtime.mjs';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -12,13 +14,18 @@ import { createSlotJournal } from './slot-journal.mjs';
 import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 import { fail } from './execution-contract.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
+import { assertPredispatchTargetCompatible } from './predispatch-target-compatibility.mjs';
 
 const exec = promisify(execFile);
+const checkoutAbsent = async envelope => {
+  try { await lstat(checkoutPath(envelope)); return false; }
+  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+};
 const commands = {
-  initialize: [], status: ['operation?'], quiesce: ['operation', 'target'],
+  initialize: [], status: ['operation?'], quiesce: ['operation', 'target', 'target-source?'],
   drain: ['operation', 'timeout'], 'drain-check': ['operation'],
-  phase: ['operation', 'phase', 'revision?'], resume: ['operation'], snapshot: ['operation'],
-  'recovery-target': ['operation', 'target'],
+  phase: ['operation', 'phase', 'revision?', 'target-source?'], resume: ['operation', 'target-source?'], snapshot: ['operation'],
+  'recovery-target': ['operation', 'target', 'target-source?'],
   'consumer-transition-preflight': ['desired-digest'],
   'consumer-transition-check': ['operation', 'revision'],
   'consumer-transition': ['operation', 'previous-digest', 'revision']
@@ -29,7 +36,7 @@ export function parseAdmissionArguments(args) {
   const options = {};
   for (let i = 0; i < values.length; i += 2) {
     const key = values[i].replace(/^--/, '');
-    const storedKey = key === 'operation' ? 'operationId' : key === 'previous-digest' ? 'previousDigest'
+    const storedKey = key === 'target-source' ? 'targetSource' : key === 'operation' ? 'operationId' : key === 'previous-digest' ? 'previousDigest'
       : key === 'desired-digest' ? 'desiredDigest' : key;
     if (values[i] !== `--${key}` || !allowed.some(name => name.replace(/\?$/, '') === key) || Object.hasOwn(options, storedKey)) fail('ADMISSION_ARGUMENTS_INVALID');
     options[storedKey] = values[i + 1];
@@ -70,6 +77,15 @@ export async function supplementOriginalInventory(inventory, records, { journal,
   return { ...inventory, unknown: [...unknown].sort((a, b) => a - b) };
 }
 
+export async function invokeTargetCheckedAdmission(admission, name, args, records, proofOptions = {}) {
+  if (['quiesce', 'recoveryTarget', 'resume'].includes(name)
+    || name === 'phase' && ['applying', 'verified'].includes(args[0]?.phase)) {
+    const target = args[0]?.target ?? (await admission.read()).target;
+    await assertPredispatchTargetCompatible({ records: await records(), target,
+      sourceRoot: args[0]?.targetSource ?? null, ...proofOptions });
+  }
+  return admission[name](...args);
+}
 export function installedAdmissionControl() {
   // Keep the synchronous factory interface used by the protected Writer. Each
   // async action revalidates the protected migration context and whole stores;
@@ -78,6 +94,7 @@ export function installedAdmissionControl() {
     'reserve', 'quiesce', 'status', 'drained', 'phase', 'snapshot', 'recoveryTarget', 'resume', 'complete',
     'preflightConsumerTransition', 'checkConsumerTransition', 'transitionConsumer'];
   return Object.fromEntries(methods.map(name => [name, async (...args) => {
+    const invoke = (admission, records) => invokeTargetCheckedAdmission(admission, name, args, records);
     const { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore, invokeOriginalReader } =
       await import('./serial-pool-compatibility.mjs');
     const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER,
@@ -85,8 +102,8 @@ export function installedAdmissionControl() {
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore) });
-      return admission[name](...args);
+        store: originalStore, journal: createSlotJournal(originalStore), checkoutAbsent });
+      return invoke(admission, () => originalStore.all());
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
     const currentStore = createPublicationStore(compatibility.current.storeRoot);
@@ -98,7 +115,7 @@ export function installedAdmissionControl() {
       : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
     const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal,
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, checkoutAbsent,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
@@ -112,7 +129,7 @@ export function installedAdmissionControl() {
           && compatibility.receipt.original.runs.some(run => run.runId === record.envelope.runId));
         return supplementOriginalInventory(inventory, originalRecords, { journal: originalJournal, task });
       } });
-    return admission[name](...args);
+    return invoke(admission, compositeRecords);
   }]));
 }
 export async function readAdmissionSnapshot(input = process.stdin) {

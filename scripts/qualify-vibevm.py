@@ -21,8 +21,10 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "7.0.1"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "5.0.0"
+SELF_VERSION = "6.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
+PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
+PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
 HISTORICAL_SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / "v1.0.0"
 HISTORICAL_SELF_HASH = "sha256:7a9f89990b3f4d6ce03990e514f18e010b8d844e98d95fa6ffec0bedc546b454"
 SELF_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.codex-relay") / SELF_VERSION
@@ -57,6 +59,7 @@ CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
 BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
 LOCAL_SUBAGENTS = Path("docs/codex/SUBAGENTS.md")
+LOCAL_GOVERNANCE = Path("docs/relay-guidance-ownership.md")
 # Root-consumer selections only: neither flow is added to the frozen Relay
 # package, Skill projection or standalone delivery. Opaque public receipts do
 # not assert a private producer source revision.
@@ -235,6 +238,37 @@ def check_landscape_package(directory, selection):
     return files
 
 
+def check_small_improvements_adoption(root):
+    """Offline route/binding checks, not live discovery or model-compliance proof."""
+    _, human = managed(read_file(root, "AGENTS.md"))
+    human = " ".join(human.decode().split())
+    policy = (SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
+    require("Relay explicitly adopts all ten complete applicable Shared Governance **7.0.1** protocols" in human
+            and "[Small improvements](" + policy + ")" in human,
+            "Human-owned adoption must select the complete installed Small Improvements protocol")
+    boot = " ".join(read_file(root, BOOT / "90-user.md").decode().split())
+    require("Small Improvements is adopted" in boot
+            and "analysis-only work skips the scan" in boot
+            and LOCAL_GOVERNANCE.as_posix() in boot,
+            "Small Improvements boot must preserve conditional discovery and its local binding")
+    binding = read_file(root, LOCAL_GOVERNANCE).decode()
+    match = re.search(r"^## Small Improvements binding\n(.*?)(?=^## |\Z)", binding, re.M | re.S)
+    require(match is not None, "Missing Small Improvements local binding")
+    binding = " ".join(match[1].split())
+    require("(../" + policy + ")" in binding
+            and "repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement" in binding,
+            "Small Improvements binding must retain the selected protocol and exact-label repository lookup")
+    require(all(phrase in binding for phrase in (
+        "normal independent exact-head acceptance and integration of this adoption",
+        "receiving Task's trusted Decisions and admission remain the source of scope authority",
+        "one independent review assess the combined exact head",
+        "Keep source Issues open and labelled while work remains pending",
+        "Analysis-only Task | Skip the SI scan",
+        "no cross-repository or periodic queue scan",
+        "queue-empty gate or new mandatory CI gate")),
+        "Small Improvements binding lost an activation, scope, review, discovery or closure boundary")
+
+
 def check_landscape_adoption(root):
     """Bounded routing/authority regressions; this does not assess policy semantics."""
     _, human = managed(read_file(root, "AGENTS.md"))
@@ -372,9 +406,12 @@ def check_first_party_registry(root, expected):
     remediation_files = files_in(root / remediation)
     require(tree_hash(remediation_files) == "sha256:d9e85f939816b7f048e77f0e5608720498272118a7fecc35cc973fb3c9934730",
             "Frozen accepted 4.1.1 registry changed")
+    previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
+    require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
+            "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
@@ -432,6 +469,19 @@ def check_first_party(root):
     return expected, source_hash
 
 
+def check_manual_handoff_contract(root):
+    """Bind manual-client completion to original Writer evidence."""
+    workflow = " ".join(read_file(root, "packages/codex-relay/skill/references/workflow.md").decode().split()).lower()
+    required = ("return the complete, unmodified writer prompt",
+                "the concrete terminal diagnostic",
+                "report only the observed label, event, run and writer state",
+                "do not report success without writer publication evidence",
+                "an inferred step or pending run is not a terminal handoff",
+                "through the original ready event and run")
+    require(all(phrase in workflow for phrase in required),
+            "Manual handoff wait must return the original Writer prompt or terminal diagnostic and preserve unresolved client-boundary status")
+
+
 def check_project(root):
     manifest = tomllib.loads(read_file(root, "vibe.toml").decode())
     requirements = {COORDINATE: {"version": "=" + VERSION,
@@ -448,6 +498,8 @@ def check_project(root):
     landscape_files = {selection["coordinate"]: check_landscape_package(root / selection["slot"], selection)
                        for selection in LANDSCAPE}
     check_landscape_adoption(root)
+    check_small_improvements_adoption(root)
+    check_manual_handoff_contract(root)
     first_party, source_hash = check_first_party(root)
     check_standalone_snapshot(root)
     lock = tomllib.loads(read_file(root, "vibe.lock").decode())
@@ -552,7 +604,8 @@ def compare_inputs(root, source, distribution):
 def copy_project(source, destination):
     """Copy only ordinary ready files, without credentials or lifecycle state."""
     files = {name: read_file(source, name) for name in (
-        "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT, LOCAL_SUBAGENTS)}
+        "vibe.toml", "vibe.lock", "guidance/source.json", *AGENTS, SKILL_RECEIPT,
+        LOCAL_SUBAGENTS, LOCAL_GOVERNANCE, "packages/codex-relay/skill/references/workflow.md")}
     for relative in ("guidance/artifacts", "vibevm/vibedeps", "vibevm/vibepacks",
                      "vibevm/vibespecs/boot", PROJECTION):
         files.update({str(Path(relative) / name): data
@@ -609,6 +662,7 @@ def probe(vibe, pin, project_root=ROOT):
         copy_project(project_root, project)
         facts = check_project(project)
         route_paths = ["vibe.toml", "vibe.lock", *AGENTS, LOCAL_SUBAGENTS.as_posix(),
+                       LOCAL_GOVERNANCE.as_posix(),
                        *(str(BOOT / name) for name in ("INDEX.md", *SOURCES))]
         route_paths += [(SLOT / name).as_posix() for name in PAYLOAD | {RECEIPT, MARKER}]
         route_paths += [(selection["slot"] / name).as_posix()

@@ -7,7 +7,7 @@ import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, workerOutcomeClaims, usageOutcomeSummary, boundOutcomeBody } from './outcome.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
-import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection } from './publication-recovery.mjs';
+import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection, authorizeRecovery } from './publication-recovery.mjs';
 import { assertStep, currentStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { prReadiness, readinessOutcomeLines } from './pr-readiness.mjs';
@@ -21,16 +21,22 @@ import { executionConsumer } from '../../consumer/consumer.mjs';
 import { compactManualPrompt } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
-import { predispatchState, finalizePredispatch, completedPredispatchRecovery } from './predispatch-recovery.mjs';
+import { predispatchState, finalizePredispatch, predispatchReplacementState, finalizePredispatchReplacement,
+  completedPredispatchRecovery, pendingPredispatchRecord, consumedPredispatchRecord, consumedPredispatchMarker,
+  predispatchReadyReplacementReported, revalidateUnreturnedAdmission } from './predispatch-recovery.mjs';
 
 // Caller serializes this broker across processes. Store contains immutable
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
-export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent }) {
+export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent,
+  assertPredispatchFence = async () => fail('PREDISPATCH_COMPATIBLE_WRITER_REQUIRED') }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
   const titleFor = e => secretFree(projectedRequestTitle(e.request));
   const stepLabels = subject => labelNames(subject.labels).filter(stepLike).sort();
+  const replacementRetirementCanDefer = error =>
+    ['PREDISPATCH_OUTCOME_RECONCILIATION_UNPROVEN', 'PREDISPATCH_REPLACEMENT_RECONCILIATION_UNPROVEN']
+      .includes(error?.code);
   async function publicationRecords(e) {
     if (!store.scan) return store.all();
     const rows = (await store.scan()).filter(row => row.repository === e.repository);
@@ -153,6 +159,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       || labelNames(subject.labels).includes(e.readyLabel))
       return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { transitions });
     r.readyConsumption = { ...r.readyConsumption, status: 'consumed', removalEventId: later[0].id };
+    // Keep the reservation through controller startup. A consumed command may
+    // have returned an envelope even when the caller never receives the reply;
+    // only terminal controller evidence or the locked original-run finalizer
+    // can retire this marker.
     r.readyConsumed = true; await store.put(e.runId, r);
   }
   async function prepareRemediation(e) {
@@ -476,14 +486,67 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (existing && existing.envelope.consumerDigest !== CONSUMER_DIGEST) fail('CONSUMER_CONFIG_CHANGED');
         if (existing) {
           const e = existing.envelope;
+          const mayRecoverUnreturnedAdmission = existing.nativeAdmission === true && e.transport === 'label'
+            && existing.readyConsumed !== true && existing.readyConsumption === undefined
+            && !existing.admissionBlock && !existing.outcome;
           if (existing.predispatchRecovery) fail('PREDISPATCH_ATTEMPT_FINALIZED');
           if (e.target !== request.target || e.number !== request.number || e.route !== request.route
             || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
             || e.transport !== request.transport
             || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
+          const replacementPredecessorReplayCandidates = mayRecoverUnreturnedAdmission
+            ? (await publicationRecords({ repository: e.repository, issueNumber: e.issueNumber }))
+              .filter(record => record.envelope?.issueNumber === e.issueNumber
+                && record.envelope?.runId !== e.runId && record.predispatchPending
+                && (predispatchReadyReplacementReported(record)
+                  || record.predispatchRecovery?.version === 4 && completedPredispatchRecovery(record)
+                    && record.predispatchRecovery.binding.replacementEnvelopeDigest === digest(e)))
+            : [];
+          const recoverUnreturnedAdmission = mayRecoverUnreturnedAdmission
+            && replacementPredecessorReplayCandidates.length > 0;
+          let admissionUnstarted = false;
+          // A pending boundary may already have released its resource under the
+          // Writer lock. Never resume its command deletion or issue launch
+          // authority, even if a later journal appears or DELETE was in flight.
+          if (existing.predispatchPending) {
+            if (existing.readyConsumption?.status === 'deleting') {
+              if (!pendingPredispatchRecord(existing)) fail('READY_CONSUMPTION_UNCERTAIN');
+              fail('PREDISPATCH_ATTEMPT_FINALIZED');
+            }
+            if (existing.readyConsumption && !consumedPredispatchMarker(existing)) fail('READY_CONSUMPTION_UNCERTAIN');
+            if (!recoverUnreturnedAdmission) fail('PREDISPATCH_ATTEMPT_FINALIZED');
+          }
+          if (recoverUnreturnedAdmission) {
+            await revalidateUnreturnedAdmission({ api, journal, record: existing, checkoutAbsent });
+            if (e.route === 'auto') {
+              if (!admission?.assertOpen || !admission?.assertSlotComplete)
+                fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+              await admission.assertOpen();
+              await admission.assertSlotComplete(e.executionSlot ?? 'primary');
+              admissionUnstarted = true;
+            }
+            await revalidateReadyEvent(api, e);
+            for (const previous of replacementPredecessorReplayCandidates) {
+              if (previous.predispatchRecovery) {
+                if (!completedPredispatchRecovery(previous) || await journal.get(previous.envelope.runId, previous.envelope.repository)
+                  || !await checkoutAbsent(previous.envelope)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+                continue;
+              }
+              if (await journal.get(previous.envelope.runId, previous.envelope.repository)
+                || !await checkoutAbsent(previous.envelope)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+              try {
+                const state = await predispatchReplacementState({ api, journal, record: previous,
+                  replacement: e, replacementRecord: existing, checkoutAbsent });
+                await finalizePredispatchReplacement({ api, store, journal, record: previous,
+                  replacementRecord: existing, checkoutAbsent, expectedBinding: state.binding });
+              } catch (error) {
+                if (!replacementRetirementCanDefer(error)) throw error;
+              }
+            }
+          }
           if (e.transport === 'label' && !existing.readyConsumed) {
             if (existing.readyConsumption) await consumeReadyCommand(existing);
-            if (e.route === 'auto' && !existing.admissionBlock) {
+            if (e.route === 'auto' && !existing.admissionBlock && !recoverUnreturnedAdmission) {
               // runAttempt already refuses an absent/mismatched replay journal.
               // Enforce that same invariant BEFORE changing any native metadata
               // or deleting the original owner command during admit replay.
@@ -502,7 +565,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           }
           // The attempt's preflight revalidates live authority inside its
           // terminal boundary; admission replay must not bypass that path.
-          return receipt({ envelope: e, resumed: true });
+          return receipt({ envelope: e, resumed: true,
+            ...(admissionUnstarted ? { admissionUnstarted: true } : {}) });
         }
         // Installed helpers hold the same root lock as lifecycle quiesce.
         // Reserve full controller ownership in this existing attempt before
@@ -522,6 +586,28 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const nativeAdmission = charter !== null && authorityMode(charter.body) === 'github-native-v1';
         const priorRecords = nativeAdmission ? (await publicationRecords({ repository: REPOSITORY, issueNumber: task }))
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
+        const replacementPredecessors = [];
+        for (const previous of priorRecords.filter(record => record.envelope?.issueNumber === task && record.predispatchPending)) {
+          const original = previous.envelope;
+          if (previous.predispatchRecovery) {
+            if (!completedPredispatchRecovery(previous) || !journal || await journal.get(original.runId, original.repository)
+              || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+            continue;
+          }
+          if (consumedPredispatchMarker(previous)) {
+            if (request.route === 'auto' && (original.executionSlot ?? 'primary') === (request.executionSlot ?? 'primary')) {
+              if (!admission?.assertSlotComplete) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+              await admission.assertSlotComplete(original.executionSlot ?? 'primary');
+            }
+            continue;
+          }
+          const replacementReported = predispatchReadyReplacementReported(previous);
+          if (!(pendingPredispatchRecord(previous) || replacementReported)
+            || !journal || await journal.get(original.runId, original.repository)
+            || !checkoutAbsent || !await checkoutAbsent(original)) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
+          if (previous.readyConsumption && !replacementReported) fail('READY_CONSUMPTION_UNCERTAIN');
+          if (replacementReported) replacementPredecessors.push(previous);
+        }
         // Physical slot/process and attempt-checkout guards prove execution
         // isolation. An older Task Outcome is not a resource reservation.
         const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, charter.labels) : {};
@@ -540,10 +626,6 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
 
           }
         }
-        // Keep lifecycle failure before execution reservation and ready-command
-        // consumption. The same CR/head can reconcile its pending Draft intent
-        // without creating an unknown execution or publishing another review.
-        if (!admitted.blocked) await prepareRemediation(envelope);
         if (envelope.transport === 'label') await revalidateReadyEvent(api, envelope);
         if (!admitted.blocked && nativeAdmission) {
           const current = await api.get(`/issues/${task}`);
@@ -552,12 +634,38 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             || canonicalAuthorityJson(stepLabels(current)) !== canonicalAuthorityJson(stepLabels(charter)))
             fail('STEP_LABEL_POSITION_CHANGED');
         }
+        const replacementStates = [];
+        if (!admitted.blocked) {
+          for (const previous of replacementPredecessors) {
+            try {
+              const state = await predispatchReplacementState({ api, journal, record: previous,
+                replacement: envelope, checkoutAbsent });
+              replacementStates.push({ record: previous, binding: state.binding });
+            } catch (error) {
+              if (!replacementRetirementCanDefer(error)) throw error;
+            }
+          }
+        }
+        // Keep lifecycle failure before execution reservation and ready-command
+        // consumption. The same CR/head can reconcile its pending Draft intent
+        // without creating an unknown execution or publishing another review.
+        if (!admitted.blocked) await prepareRemediation(envelope);
         const r = { envelope, ...(nativeAdmission ? { nativeAdmission: true } : {}), ...(admitted.blocked ? { admissionBlock: admitted.block } : {}),
           ...(!admitted.blocked && nativeAdmission ? { stepProjectionFrom: stepLabels(charter) } : {}),
+          ...(!admitted.blocked && nativeAdmission && envelope.route === 'auto' && envelope.transport === 'label'
+            ? { predispatchPending: { version: 1, projectionFrom: stepLabels(charter) } } : {}),
           ...(!admitted.blocked && envelope.route === 'auto' && admission ? { controllerLifecycle: await admission.reserve() } : {}),
           ...(envelope.continuation?.pullRequest ? { prNumber: envelope.continuation.pullRequest } : {}),
           publicationIntent: null, publishedHead: null, finalHead: null, outcome: null };
         await store.put(request.runId, r);
+        for (const state of replacementStates) {
+          try {
+            await finalizePredispatchReplacement({ api, store, journal, record: state.record,
+              replacementRecord: r, checkoutAbsent, expectedBinding: state.binding });
+          } catch (error) {
+            if (!replacementRetirementCanDefer(error)) throw error;
+          }
+        }
         if (!admitted.blocked && nativeAdmission) {
           await projectAdmittedStep(r);
         }
@@ -572,14 +680,25 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
         : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
+        : ['publication-state', 'recover-publication', 'complete-handoff', 'complete-execution', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
           : { reporting: ['finish', 'finish-no-change'].includes(request.operation),
             verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
-      if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
-      if (['predispatch-state', 'finalize-predispatch'].includes(request.operation)) {
+      if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
+      if (['predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) {
         if (Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
         if (!journal?.withLock) fail('PREDISPATCH_CONTROLLER_LOCK_REQUIRED');
         return journal.withLock(e.runId, async () => {
+          if (request.operation === 'predispatch-authorization') {
+            if (r.predispatchRecovery) {
+              if (!completedPredispatchRecovery(r) || r.predispatchRecovery.authorizationId !== request.authorizationId)
+                fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
+              return receipt({ binding: r.predispatchRecovery.binding,
+                authorization: { id: request.authorizationId, authorizedAt: r.predispatchRecovery.authorizedAt } });
+            }
+            const state = await predispatchState({ api, journal, record: r, checkoutAbsent });
+            const authorizedAt = await authorizeRecovery(api, e, request.authorizationId, state.binding);
+            return receipt({ ...state, authorization: { id: request.authorizationId, authorizedAt } });
+          }
           if (request.operation === 'predispatch-state') {
             if (r.predispatchRecovery) {
               if (!completedPredispatchRecovery(r)) fail('PREDISPATCH_RECOVERY_BINDING_CHANGED');
@@ -587,6 +706,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             }
             return receipt(await predispatchState({ api, journal, record: r, checkoutAbsent }));
           }
+          if (!r.predispatchRecovery) await assertPredispatchFence(e);
           return receipt({ recovery: await finalizePredispatch({ api, store, journal, record: r, request, checkoutAbsent }) });
         });
       }
@@ -684,6 +804,31 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         await guardPublication(e);
         return receipt(await recoverPublication({ api, store, publisher, record: r, request }));
       }
+      if (request.operation === 'complete-execution') {
+        if (Object.keys(request).sort().join(',') !== 'attemptId,operation,runId'
+          || e.route !== 'auto') fail('RECOVERY_REQUEST_INVALID');
+        const saved = await journal?.get(e.runId);
+        if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)
+          || !saved.outcome || !r.outcome
+          || !['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW'].includes(saved.outcome.status)
+          || !['status', 'head', 'prNumber', 'outcomeId'].every(key => saved.outcome[key] === r.outcome[key])
+          || saved.diagnostic?.orchestration === 'FAILED' || r.publicationIntent || r.commentIntent
+          || saved.execution !== null && (saved.execution?.reserved !== true || saved.execution.returned !== true
+            || !['started', 'not_started'].includes(saved.execution.child)
+            || !(saved.execution.containment === 'reaped'
+              || (saved.execution.child === 'not_started' && saved.execution.containment === 'not_required'))))
+          fail('ADMISSION_COMPLETION_UNKNOWN');
+        await admission?.complete({ runId: e.runId, attemptId: e.attemptId });
+        if (!admission && r.predispatchPending) {
+          if (!consumedPredispatchMarker(r)) fail('ADMISSION_COMPLETION_UNKNOWN');
+          delete r.predispatchPending;
+          await store.put(e.runId, r);
+        }
+        const completed = await store.get(e.runId);
+        if (!Object.hasOwn(completed, 'predispatchPending')) delete r.predispatchPending;
+        Object.assign(r, completed);
+        return receipt({ complete: true });
+      }
       if (request.operation === 'complete-handoff') {
         if (r.handoffComplete) return receipt(r.outcome);
         const saved = await journal?.get(e.runId);
@@ -699,8 +844,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // Full controller completion is recorded from the protected journal,
         // before any Ready mutation. No caller claims can replace this proof.
         await admission?.complete({ runId: e.runId, attemptId: e.attemptId });
+        if (!admission && r.predispatchPending) {
+          if (!consumedPredispatchMarker(r)) fail('EXECUTION_HANDOFF_NOT_PROVEN');
+          delete r.predispatchPending;
+          await store.put(e.runId, r);
+        }
         // admission.complete may have updated the same protected record.
         const completed = await store.get(e.runId);
+        if (!Object.hasOwn(completed, 'predispatchPending')) delete r.predispatchPending;
         Object.assign(r, completed);
         if (!r.outcome.prNumber || !await isCurrentProjection(e)) {
           r.handoffComplete = true; await store.put(e.runId, r); return receipt(r.outcome);
@@ -722,6 +873,13 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         return receipt(r.outcome);
       }
       if (request.operation === 'preflight') {
+        if (r.predispatchPending) {
+          const saved = await journal?.get(e.runId, e.repository);
+          if (!consumedPredispatchRecord(r) || !saved || saved.version !== VERSION
+            || digest(saved.envelope) !== digest(e) || !Object.hasOwn(saved, 'execution')
+            || saved.execution !== null && (saved.execution?.reserved !== true || saved.execution.returned !== true))
+            fail('PREDISPATCH_CONTROLLER_JOURNAL_REQUIRED');
+        }
         const a = await revalidateAuthority(api, e);
         if (a.pr && a.pr.head.sha !== (r.publishedHead ?? e.startHead)) fail('REMOTE_HEAD_CHANGED');
         if (e.continuation) {

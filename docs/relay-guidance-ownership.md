@@ -5,7 +5,7 @@ canonical source of its portable development governance. The immutable
 producer is
 `1110f10b996c2f81fa842e6339ab6d7c13111cd7`; the distribution is
 `f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9`. Root [AGENTS](../AGENTS.md)
-explicitly adopts all nine complete applicable protocols. Their conditional boot
+explicitly adopts all ten complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
 bindings below. Native delivery reads complete shared protocols from the
@@ -91,8 +91,6 @@ generated Project Instructions integration; bundled tools and optional product
 bootstrap do not establish one. No live Settings mutation or synchronization
 claim follows from this migration. Future applicable work follows the complete
 selected TH-029, including unchanged-text and unresolved-gap handling.
-Optional Small Improvements is not adopted; its new files/boot route create no
-queue scan, label management or automatic scope inclusion.
 
 Shared Contract/Decision Maintenance owns material-contract authorization,
 durable accepted decisions and same-change human guidance. Relay binds this to
@@ -100,6 +98,59 @@ trusted native Decisions/legacy authority, `OWNER_DECISION_REQUIRED`, current
 manual/component contracts and old-attempt compatibility. Shared Context Loading
 owns startup/JIT/completeness/refresh; AGENTS retains concrete architecture,
 component, environment and runtime entrypoints.
+
+## Small Improvements binding
+
+Task #230's [owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/230#issuecomment-6772537689)
+selects the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/small-improvements.md)
+for Relay development. Its operational use starts after normal independent
+exact-head acceptance and integration of this adoption. The selected protocol
+owns capture, discovery, eligibility, proposed inclusion and disposition;
+CD, TH and RA retain their existing semantic ownership. This local binding adds
+no product Skill requirement or adoption duty for another repository.
+
+The planner uses the existing authorized GitHub tracker path to inspect open
+Issues in this repository with the exact `small-improvement` label, for example:
+
+```text
+repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement
+```
+
+Inspect the complete result set, following pagination when needed, and read
+relevant candidates before notifying the owner with their IDs and proposed
+bounded inclusion. An Issue title is not a discovery key. Check whether the label
+exists; create or apply it only through an authorized repository label path.
+Unavailable label capability or permissions must be reported; an unlabelled item
+is not queued through SI. Capture deferred corrections in ordinary Issues with
+the protocol's evidence and provenance, reusing existing Issues where suitable.
+
+The receiving Task's trusted Decisions and admission remain the source of scope
+authority. Record accepted Issue IDs and corrections there before implementation;
+a source Issue, label, search result or PR-specific CR grants no Task-wide scope.
+Check same-repository relevance, dependencies, conflicts and ownership under
+SI-004. Material choices and protected credential/PROD work retain their ordinary
+authorized paths and TEST/PROD boundaries. Link accepted candidates to the Task
+and PR without automatic closing keywords; preserve provenance and any remainder.
+Normal checks and one independent review assess the combined exact head.
+
+Keep source Issues open and labelled while work remains pending, including after
+scheduling. Accepted integration must be evidenced before authorized closure,
+with the receiving PR and integrated revision; the existing closure contract and
+Writer/Reviewer identities remain intact. Cancellation, partial delivery and
+deferral retain discoverability and an explicit remainder/reason. Duplicate or
+superseded disposition follows SI-008 with evidence, without claiming a fix.
+
+| Planning or disposition example | Application |
+| --- | --- |
+| Suitable source-changing Task, first source-changing Step after analysis, or relevant CR | Inspect the exact-label open Issues once at preparation; propose only eligible related corrections to the owner. An empty result or no suitable candidate permits the receiving work to proceed. |
+| Analysis-only Task | Skip the SI scan; do not introduce tracker access as an analytical-work prerequisite. |
+| Inner correction or later Step with unchanged scope and no new relevant information | Do not rescan solely as ceremony; refresh when the receiving scope or relevant information materially changes. |
+| Receiver cancelled, drops a candidate or delivers only part | Record the disposition and exact remaining work; keep the source Issue open and discoverable. Scheduling or tests alone do not establish accepted integration. |
+
+There is no cross-repository or periodic queue scan, automatic Task injection,
+bot, second backlog, queue-empty gate or new mandatory CI gate. The walkthrough
+and existing offline routing checks qualify guidance consistency, not actual
+model compliance, label availability or live tracker operations.
 
 ## Temporary legacy closure binding
 

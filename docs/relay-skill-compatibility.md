@@ -41,6 +41,17 @@ its original slot solely as immutable inactive history requested by Task #199.
 The root lock, generated boot and native product routing select only 7.0.1;
 missing selected state must fail, never fall back to retained history.
 
+## Project-only Small Improvements adoption
+
+Task #230 separately selects complete SI-001–SI-008 from the already pinned
+Shared 7.0.1 slot through human-owned root AGENTS and its
+[local binding](relay-guidance-ownership.md#small-improvements-binding).
+This adoption takes effect after its normal independent exact-head acceptance
+and integration. It reconciles the earlier unselected-topic disposition below
+without changing that migration's history, the native Skill's `>=2.5.0` floor,
+standalone Shared 5.0.0 snapshot, frozen package bytes or another consumer's
+adoption. No product release, new runtime mechanism or CI gate follows.
+
 ## Project migration from 5.0.0 through 7.0.0
 
 Task #213 changes repository governance and its pinned VibeVM to 1.0.11. It

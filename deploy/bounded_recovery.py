@@ -252,7 +252,9 @@ def installed(release, revision, root, owner_uid):
     metadata = manifest.get('deploymentContract')
     require(isinstance(metadata, dict) and metadata.get('schemaVersion') == 1
             and metadata.get('epoch') == 1 and isinstance(metadata.get('capabilities'), list)
-            and set(metadata['capabilities']) == {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1'},
+            and {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1'} <= set(metadata['capabilities'])
+            and set(metadata['capabilities']) <= {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1',
+                                                 'predispatch-retention-v1'},
             'COMPATIBILITY_UNPROVEN')
     receipt = manifest.get('gitConfigReceipt')
     require(isinstance(receipt, dict) and receipt.get('product_sha') == revision

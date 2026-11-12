@@ -53,7 +53,7 @@ class CodexRuntimeContractTests(unittest.TestCase):
 
     def test_runtime_is_pinned_and_governed_by_ansible(self):
         for marker in (
-            "relay_codex_cli_version: '0.167.0'",
+            "relay_codex_cli_version: '0.167.2'",
             "relay_codex_installer_url: https://chatgpt.com/codex/install.sh",
             "relay_codex_binary_path:",
             "relay_codex_launcher_path:",

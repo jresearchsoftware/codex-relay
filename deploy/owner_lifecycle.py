@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import ssl
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,25 @@ import git_intent
 import repository_source
 
 ROOT = Path(__file__).resolve().parents[1]
+PREDISPATCH_RETENTION_CAPABILITY = 'predispatch-retention-v1'
+
+
+def target_source_arguments(install, source):
+    """New installed gates accept a proof path; retained gates keep their ABI."""
+    if source is None:
+        return ()
+    try:
+        current = Path(install) / 'current'
+        info = current.lstat()
+        require(stat.S_ISLNK(info.st_mode) and info.st_uid == 0, 'installed-current-binding')
+        release = Path(os.readlink(current))
+        require(release.parent == Path(install) / 'releases' and re.fullmatch('[a-f0-9]{40}', release.name),
+                'installed-current-binding')
+        raw, _ = read_protected(release / 'reviewed-source/deploy/installation-contract.json', {0o644, 0o640, 0o600})
+    except FileNotFoundError:
+        return ()
+    metadata = json.loads(raw)
+    return ('--target-source', str(source)) if PREDISPATCH_RETENTION_CAPABILITY in metadata.get('capabilities', []) else ()
 
 
 PROJECTION_PREFLIGHT_SCRIPT = '''import json, sys
@@ -370,6 +390,8 @@ def run_git(request, token, *, installed_source=None):
         gate_path = str(install / 'relay-admission')
 
         def gate(*arguments):
+            if arguments[0] in ['quiesce', 'recovery-target', 'phase', 'resume']:
+                arguments += target_source_arguments(install, source)
             result = subprocess.run([gate_path, *arguments], env=clean_environment(),
                 text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
             return json.loads(result.stdout)
@@ -443,8 +465,11 @@ def run(request):
     source_repository = config['source']['repository'].removeprefix('https://github.com/').removeprefix(
         'git@github.com:').removesuffix('.git')
     gate_path = values['relay_install_root'] + '/relay-admission'
+    source = None
 
     def gate(*arguments):
+        if arguments[0] in ['quiesce', 'recovery-target', 'phase', 'resume']:
+            arguments += target_source_arguments(values['relay_install_root'], source)
         result = subprocess.run([gate_path, *arguments], env=clean_environment(),
                                 text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
         return json.loads(result.stdout)

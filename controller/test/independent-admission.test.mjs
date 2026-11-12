@@ -1,3 +1,4 @@
+import { replacedReadyOutcome, interruptedAutomaticSuccessor, exerciseAutomaticRerun } from './independent-admission-scenario.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness } from './independent-admission-fixture.mjs';
@@ -9,9 +10,10 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { EXECUTION_PATH_NAMES } from '../../consumer/consumer-config.mjs';
-import { REPOSITORY, REVIEWER } from '../src/execution-contract.mjs';
+import { REPOSITORY, REVIEWER, WRITER } from '../src/execution-contract.mjs';
 import { canonicalAuthorityJson, sha256Body } from '../../contracts/src/github-authority.mjs';
 import { revalidateAuthority } from '../src/live-authority.mjs';
+import { completedPredispatchRecovery } from '../src/predispatch-recovery.mjs';
 
 const copy = value => structuredClone(value);
 
@@ -61,8 +63,10 @@ for (const routes of [['manual', 'manual'], ['auto', 'manual'], ['manual', 'auto
     assert.equal(original.outcome, null);
     assert.equal(f.runs.get(99).status, 'in_progress');
     assert.deepEqual((await f.store.get(99)).envelope, original.envelope);
-    for (const [request, result] of [[firstRequest, first], [secondRequest, second]])
-      assert.deepEqual((await f.broker.dispatch(request)).envelope, result.envelope);
+    for (const [request, result] of [[firstRequest, first], [secondRequest, second]]) {
+      if (request.route === 'auto') await assert.rejects(f.broker.dispatch(request), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+      else assert.deepEqual((await f.broker.dispatch(request)).envelope, result.envelope);
+    }
     assert.deepEqual(f.issues.get(42).labels, [{ name: 'step-2' }]);
     assert.equal(f.deletes(), 2);
     for (const runId of [99, 100]) {
@@ -82,7 +86,8 @@ test('independent Tasks keep their admission, projection and manual resources se
   assert.notEqual(first.envelope.branch, second.envelope.branch);
   assert.equal((await f.store.get(99)).outcome, null);
   assert.equal((await f.store.get(100)).controllerLifecycle, undefined);
-  await f.broker.dispatch(firstRequest); await f.broker.dispatch(secondRequest);
+  await assert.rejects(f.broker.dispatch(firstRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  await f.broker.dispatch(secondRequest);
   for (const issue of f.issues.values()) assert.deepEqual(issue.labels, [{ name: 'step-1' }]);
 });
 
@@ -102,34 +107,264 @@ test('duplicate delivery of the reserved native command cannot allocate a siblin
   assert.equal(f.deletes(), 1);
 });
 
-test('prelaunch ready race releases only its unused automatic resource and reports the original attempt once', async t => {
-  const f = await harness(t);
-  const request = f.ready(99, 42, 'auto');
-  const remove = f.api.delete;
-  let replace = true;
-  f.api.delete = async path => {
-    if (replace && path.endsWith('/labels/codex-ready-auto')) {
-      replace = false; f.replaceReady(42, 'auto');
-    }
-    return remove(path);
-  };
-  await assert.rejects(f.broker.dispatch(request), { code: 'READY_EVENT_REPLACED' });
-  const original = await f.store.get(99);
-  assert.deepEqual(original.controllerLifecycle, { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' });
-  assert.equal(original.outcome.status, 'BLOCKED');
-  assert.equal(original.readyConsumed, undefined);
-  assert.equal(original.readyConsumption.code, 'READY_EVENT_REPLACED');
-  assert.equal(f.comments.length, 1);
-  assert.match(f.comments[0].body, /Automatic worker launch authority was not returned/);
-  const outcomeBytes = f.comments[0].body;
+
+test('prelaunch replacement Outcome is sealed and a later admitted Step retires it for drain and Apply', async t => {
+  const f = await replacedReadyOutcome(t);
   await f.control.assertSlotComplete('primary');
-  await assert.rejects(f.broker.dispatch(request), { code: 'READY_CONSUMPTION_UNCERTAIN' });
+  await assert.rejects(f.broker.dispatch(f.originalRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
-  assert.equal(f.comments[0].body, outcomeBytes);
+  assert.equal(f.comments[0].body, f.outcomeBytes);
+  const nextRequest = f.ready(100, 42, 'manual');
+  const damaged = copy(f.original);
+  damaged.commentBodies.outcome.sha256 = 'f'.repeat(64);
+  await f.store.put(99, damaged);
+  await assert.rejects(f.broker.dispatch(nextRequest), { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
+  assert.equal(await f.store.get(100), null);
+  await f.store.put(99, f.original);
+  const next = await f.broker.dispatch(nextRequest);
+  assert.equal(next.envelope.step, 2);
+  const saved = await f.store.get(99), { predispatchRecovery, ...retired } = saved;
+  assert.deepEqual(retired, f.original);
+  assert.equal(predispatchRecovery.version, 4);
+  assert.equal(predispatchRecovery.authorizationKind, 'owner-ready-event');
+  assert.equal(predispatchRecovery.binding.replacementAttemptId, 'run-100');
+  assert.ok(completedPredispatchRecovery(saved));
+  for (const [field, value] of [['replacementReadyEventId', 71],
+    ['outcomeCommentId', 0], ['replacementEnvelopeDigest', 'malformed']]) {
+    const corrupt = copy(saved);
+    corrupt.predispatchRecovery.binding[field] = value;
+    assert.equal(completedPredispatchRecovery(corrupt), false);
+    await f.store.put(99, corrupt);
+    assert.deepEqual((await f.control.status()).unknown, [99]);
+    await f.store.put(99, saved);
+  }
+  assert.equal(f.deletes(), 2); assert.equal(f.comments.length, 1);
+  assert.equal(f.comments[0].body, f.outcomeBytes);
+  await f.control.assertTaskComplete(42);
+  const operationId = '12345678-1234-1234-1234-123456789abc';
+  const target = 'b'.repeat(40);
+  await f.control.quiesce({ operationId, target });
+  const drained = await f.control.drained({ operationId });
+  assert.equal(drained.drained, true);
+  assert.deepEqual(drained.unknown, []);
+  await f.control.checkConsumerTransition({ operationId, target });
+});
+
+test('a later automatic Step retires the prior replacement while retaining its own active lifecycle', async t => {
+  const f = await replacedReadyOutcome(t);
   const next = await f.broker.dispatch(f.ready(100, 42, 'auto'));
   assert.equal(next.envelope.step, 2);
-  assert.deepEqual((await f.store.get(99)).outcome, original.outcome);
-  assert.deepEqual((await f.store.get(99)).envelope, original.envelope);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  const status = await f.control.status();
+  assert.deepEqual(status.active, [100]);
+  assert.deepEqual(status.unknown, []);
+  const operationId = '12345678-1234-1234-1234-123456789abc';
+  const target = 'c'.repeat(40);
+  await f.control.quiesce({ operationId, target });
+  const drained = await f.control.drained({ operationId });
+  assert.equal(drained.drained, false);
+  assert.deepEqual(drained.active, [100]);
+  assert.deepEqual(drained.unknown, []);
+});
+
+test('replacement retirement resumes after an interrupted durable admission without a new owner event or extra launch', async t => {
+  const f = await replacedReadyOutcome(t);
+  const nextRequest = f.ready(100, 42, 'manual');
+  const put = f.store.put.bind(f.store);
+  let interrupt = true;
+  f.store.put = async (id, record) => {
+    await put(id, record);
+    if (interrupt && id === 100) {
+      interrupt = false;
+      throw new Error('synthetic interruption after durable admission');
+    }
+  };
+  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
+  assert.ok(await f.store.get(100));
+  assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
+  assert.equal(f.deletes(), 1);
+
+  // Actions reruns preserve run_id but increment run_attempt. The owner event
+  // and durable admission, rather than a second owner command, bind recovery.
+  f.runs.get(100).run_attempt = 2;
+  f.runs.get(100).status = 'in_progress';
+  f.runs.get(100).conclusion = null;
+  f.runs.get(100).updated_at = '2026-09-04T12:00:08Z';
+  const resumed = await f.broker.dispatch(nextRequest);
+  assert.equal(resumed.envelope.step, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  assert.equal(f.deletes(), 2);
+  assert.equal(f.comments.length, 1);
+});
+
+
+test('same-run automatic replay rechecks admission and starts only its first journal reservation', async t => {
+  const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+  const resumed = await f.broker.dispatch(nextRequest);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.admissionUnstarted, true);
+  assert.equal(resumed.envelope.step, 2);
+  assert.ok(completedPredispatchRecovery(await f.store.get(99)));
+  assert.equal(f.deletes(), 2);
+  assert.equal(f.comments.length, 1);
+});
+
+test('Actions attempt 2 recovers through the routing entrypoint, completes once, and drains both records', async t => {
+  await exerciseAutomaticRerun(t);
+});
+
+test('Actions attempt 3 recovers a durable predecessor receipt before successor consumption without another worker', async t => {
+  await exerciseAutomaticRerun(t, { interruptAfterReceipt: true });
+});
+
+test('a fresh Actions rerun without a durable native admission cannot launch', async t => {
+  const f = await harness(t);
+  const request = f.ready(100, 42, 'auto');
+  f.runs.get(100).run_attempt = 2;
+  await assert.rejects(f.broker.dispatch(request), { code: 'OWNER_RUN_NOT_ADMITTED' });
+  assert.equal(await f.store.get(100), null);
+  assert.equal(f.deletes(), 0);
+});
+
+test('a corrupt retired predecessor receipt cannot authorize successor replay', async t => {
+  const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+  const put = f.store.put.bind(f.store);
+  let interrupt = true;
+  f.store.put = async (id, record) => {
+    await put(id, record);
+    if (interrupt && id === 99 && completedPredispatchRecovery(record)) {
+      interrupt = false;
+      throw new Error('synthetic interruption after durable receipt');
+    }
+  };
+  await assert.rejects(f.broker.dispatch(nextRequest), /synthetic interruption/);
+  const retired = await f.store.get(99);
+  retired.predispatchRecovery.binding.replacementEnvelopeDigest = '0'.repeat(64);
+  await put(99, retired);
+  f.runs.get(100).run_attempt = 3;
+  await assert.rejects(f.broker.dispatch(nextRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  assert.equal(await f.journal.get(100), null);
+  assert.equal(f.deletes(), 1);
+});
+
+for (const [name, mutate, code] of [
+  ['invalid attempt', f => { f.runs.get(100).run_attempt = 0; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['foreign rerun actor', f => { f.runs.get(100).triggering_actor = { login: 'foreign' }; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['wrong run', f => { f.runs.get(100).id = 101; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['wrong workflow', f => { f.runs.get(100).path = '.github/workflows/foreign.yml'; }, 'PREDISPATCH_REPLACEMENT_RUN_AMBIGUOUS'],
+  ['journal', async f => { await f.journal.put(100, { execution: null }); }, 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['checkout', f => f.setCheckoutExists(true), 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['publication effect', async f => { const r = await f.store.get(100); r.publicationIntent = { head: 'b'.repeat(40) }; await f.store.put(100, r); }, 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT'],
+  ['changed owner event', f => { f.events.get(42).at(-1).actor.login = 'foreign'; }, 'READY_EVENT_STALE']
+]) {
+  test('Actions rerun refuses unsafe successor continuation before any native mutation: ' + name, async t => {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    await mutate(f);
+    const old = copy(await f.store.get(99)), next = copy(await f.store.get(100));
+    await assert.rejects(f.broker.dispatch(nextRequest), { code });
+    assert.deepEqual(await f.store.get(99), old); assert.deepEqual(await f.store.get(100), next);
+    assert.equal(f.deletes(), 1); assert.equal(f.comments.length, 1);
+  });
+}
+
+test('same-run automatic replay leaves its owner command untouched when admission or the slot is unavailable', async t => {
+  {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    await f.control.quiesce({ operationId: '12345678-1234-1234-1234-123456789abc', target: 'b'.repeat(40) });
+    await assert.rejects(f.broker.dispatch(nextRequest), { code: 'ADMISSION_QUIESCED' });
+    assert.equal(f.deletes(), 1);
+    assert.ok(f.issues.get(42).labels.some(label => label.name === 'codex-ready-auto'));
+  }
+  {
+    const { f, nextRequest } = await interruptedAutomaticSuccessor(t);
+    const occupying = structuredClone(await f.store.get(100));
+    occupying.envelope = { ...occupying.envelope, runId: 101, attemptId: 'run-101', issueNumber: 44, number: 44 };
+    occupying.controllerLifecycle = { version: 1, status: 'active' };
+    delete occupying.predispatchPending;
+    await f.store.put(101, occupying);
+    await assert.rejects(f.broker.dispatch(nextRequest), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
+    assert.equal(f.deletes(), 1);
+    assert.ok(f.issues.get(42).labels.some(label => label.name === 'codex-ready-auto'));
+  }
+});
+
+for (const [name, mutate] of [
+  ['missing original transition', async f => {
+    f.events.set(42, f.events.get(42).filter(event => event.id !== f.original.envelope.readyEventId));
+  }],
+  ['missing recorded replacement transition', async f => {
+    const missing = f.original.readyConsumption.laterEvents[0];
+    f.events.set(42, f.events.get(42).filter(event => event.id !== missing));
+  }],
+  ['missing Writer Outcome', async f => { f.comments.length = 0; }],
+  ['duplicate Writer Outcome', async f => { f.comments.push({ ...copy(f.comments[0]), id: 9001 }); }],
+  ['edited Writer Outcome', async f => { f.comments[0].body += '\nchanged'; }]
+]) {
+  test('independent owner admission continues when only predecessor retirement proof is unavailable: ' + name, async t => {
+    const f = await replacedReadyOutcome(t);
+    await mutate(f);
+    const next = await f.broker.dispatch(f.ready(100, 42, 'manual'));
+    assert.equal(next.envelope.step, 2);
+    assert.ok(await f.store.get(100));
+    assert.equal((await f.store.get(99)).predispatchRecovery, undefined);
+    assert.deepEqual((await f.control.status()).unknown, [99]);
+    assert.equal(f.deletes(), 2);
+  });
+}
+
+for (const [name, mutate] of [
+  ['duplicate recorded transition id', async f => {
+    const record = copy(await f.store.get(99));
+    record.readyConsumption.laterEvents.push(record.readyConsumption.laterEvents[0]);
+    await f.store.put(99, record);
+  }],
+  ['conflicting duplicate transition', async f => {
+    const original = f.events.get(42).find(event => event.id === f.original.envelope.readyEventId);
+    f.events.get(42).push({ ...copy(original), actor: { login: 'foreign', type: 'User' } });
+  }],
+  ['original run rerun', async f => { f.runs.get(99).run_attempt = 2; }],
+  ['contradictory worker journal', async f => { await f.journal.put(99, { execution: null }); }],
+  ['existing checkout', async f => { f.setCheckoutExists(true); }]
+]) {
+  test('replacement retirement rejects ' + name + ' evidence before writing the new admission', async t => {
+    const f = await replacedReadyOutcome(t);
+    await mutate(f);
+    const original = copy(await f.store.get(99));
+    const nextRequest = f.ready(100, 42, 'manual');
+    await assert.rejects(f.broker.dispatch(nextRequest));
+    assert.equal(await f.store.get(100), null);
+    assert.deepEqual(await f.store.get(99), original);
+    assert.equal(f.deletes(), 1);
+  });
+}
+
+test('managed-pool Actions reruns complete through the fixed helper admission intercept', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-pool-rerun-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pathname = join(root, 'consumer.json');
+  await writeFile(pathname, JSON.stringify(copyConsumerPool()), { mode: 0o600 });
+  const source = `
+    import assert from 'node:assert/strict';
+    import {exerciseAutomaticRerun} from './controller/test/independent-admission-scenario.mjs';
+    import {completedAdmissionRecord} from './controller/src/admission-control.mjs';
+    for (const interruptAfterReceipt of [false,true]) {
+      const cleanups=[];
+      try {
+        const {f,workers}=await exerciseAutomaticRerun({after:cleanup=>cleanups.push(cleanup)},
+          {executionSlot:'primary',interruptAfterReceipt});
+        const completed=await f.store.get(100);
+        assert.equal(workers,1);
+        assert.equal(completed.envelope.executionSlot,'primary');
+        assert.equal(completed.controllerLifecycle.status,'complete');
+        assert.equal(completed.predispatchPending,undefined);
+        assert.ok(await completedAdmissionRecord(completed,f.journal));
+      } finally {for(const cleanup of cleanups.reverse()) await cleanup();}
+    }
+  `;
+  await promisify(execFile)(process.execPath, ['--input-type=module', '-e', source], {
+    cwd: fileURLToPath(new URL('../../', import.meta.url)),
+    env: { ...process.env, RELAY_CONSUMER_CONFIG: pathname, RELAY_EXECUTION_SLOT: 'primary' }
+  });
 });
 
 test('two automatic same-UID attempts overlap on distinct slots for the same Task and independent Tasks', async t => {
@@ -155,8 +390,8 @@ test('two automatic same-UID attempts overlap on distinct slots for the same Tas
         assert.equal((await f.store.get(100)).controllerLifecycle.status,'active');
         assert.equal((await f.store.get(99)).outcome,null);assert.equal((await f.store.get(100)).outcome,null);
         assert.deepEqual((await f.control.status()).active,[99,100]);
-        assert.deepEqual((await f.broker.dispatch(a)).envelope,first.envelope);
-        assert.deepEqual((await f.broker.dispatch(b)).envelope,second.envelope);
+        await assert.rejects(f.broker.dispatch(a),e=>e.code==='PREDISPATCH_ATTEMPT_FINALIZED');
+        await assert.rejects(f.broker.dispatch(b),e=>e.code==='PREDISPATCH_ATTEMPT_FINALIZED');
         assert.deepEqual(f.issues.get(secondTask).labels,[{name:'step-'+(secondTask===42?2:1)}]);
         const blocked={...f.ready(101,44,'auto'),executionSlot:'primary'};
         await assert.rejects(f.broker.dispatch(blocked),e=>e.code==='EXECUTION_SLOT_UNAVAILABLE'&&e.details.active.includes(99));

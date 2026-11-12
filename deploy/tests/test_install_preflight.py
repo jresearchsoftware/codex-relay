@@ -44,7 +44,7 @@ class LocalPrepared(preflight.PreparedInstall):
 
     def execute(self, argv, *, payload=None, timeout=180):
         if payload and 'action' in payload:
-            return preflight.remote(payload, root=self.fixture.root)
+            return preflight.remote(payload, root=self.fixture.root, service_probe=self.fixture.service_probe)
         if len(argv) > 2 and argv[2].endswith('/deploy/host_preflight.py'):
             return {'status': 'PASS', 'observedSha256': self.fixture.host_state}
         actual = [str(self.fixture.at(item)) if isinstance(item, str)
@@ -73,8 +73,11 @@ class OldInstallationTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.values = {'relay_namespace': 'fixture', 'relay_install_root': '/opt/fixture',
             'relay_release_root': '/opt/fixture/releases', 'relay_config_root': '/etc/fixture',
-            'relay_state_root': '/var/lib/fixture', 'relay_consumer_config_path': '/etc/fixture/consumer.json',
-            'relay_github_repository': 'example/consumer', 'relay_reviewer_service_name': 'fixture-reviewer.service'}
+            'relay_state_root': '/var/lib/fixture', 'relay_writer_claim_root': '/var/lib/fixture/writer-claims',
+            'relay_consumer_config_path': '/etc/fixture/consumer.json',
+            'relay_github_repository': 'example/consumer', 'relay_reviewer_service_name': 'fixture-reviewer.service',
+            'relay_production_runner_service_name': 'fixture-production.service',
+            'relay_general_runner_service_name': 'fixture-general.service'}
         self.claim = '/var/lib/fixture/writer-claims'
         self.gate = self.at(self.claim + '/admission-v1.json')
         self.gate.parent.mkdir(parents=True)
@@ -118,6 +121,15 @@ class OldInstallationTests(unittest.TestCase):
         self.secret.write_text('synthetic private credential bytes must never be read')
         self.secret.chmod(0o600)
         self.host_state = 'c' * 64
+        self.service_states = {
+            'fixture-reviewer.service': {'MainPID': '0', 'ExecMainStartTimestampMonotonic': '0',
+                'ActiveState': 'inactive', 'SubState': 'dead', 'UnitFileState': 'enabled', 'LoadState': 'loaded'},
+            'fixture-production.service': {'MainPID': '0', 'ExecMainStartTimestampMonotonic': '0',
+                'ActiveState': 'inactive', 'SubState': 'dead', 'UnitFileState': 'enabled', 'LoadState': 'loaded'},
+            'fixture-general.service': {'MainPID': '0', 'ExecMainStartTimestampMonotonic': '0',
+                'ActiveState': 'inactive', 'SubState': 'dead', 'UnitFileState': 'enabled', 'LoadState': 'loaded'},
+            'fixture-relay-manual-outcome.socket': {'ActiveState': 'inactive', 'SubState': 'dead',
+                'UnitFileState': 'not-found', 'LoadState': 'not-found'}}
         self.prepared = LocalPrepared(self)
         self.prepared.create()
         source = self.at(self.prepared.source)
@@ -132,6 +144,11 @@ class OldInstallationTests(unittest.TestCase):
 
     def at(self, logical):
         return self.root / Path(logical).relative_to('/')
+
+    def service_probe(self, unit):
+        properties = self.service_states[unit]
+        stdout = ''.join(key + '=' + value + '\n' for key, value in properties.items())
+        return subprocess.CompletedProcess(['/bin/systemctl', 'show', unit], 0, stdout, '')
 
     def holder(self, prepared):
         source = Path(prepared.source)
@@ -164,13 +181,132 @@ class OldInstallationTests(unittest.TestCase):
         gate.update(phase='applying', operationId=OP, target=TARGET)
         self.gate.write_text(json.dumps(gate))
 
+    def prepare_predispatch_bridge_abort(self):
+        self.capture_and_reserve()
+        run_id, issue, step, event = 71, 71, 2, 401
+        envelope = {'version': 2, 'repository': self.consumer['repository'], 'consumerDigest': self.digest,
+            'runId': run_id, 'attemptId': 'run-' + str(run_id), 'issueNumber': issue, 'step': step,
+            'executionSlot': 'primary', 'readyEventId': event, 'branch': 'codex/task-230',
+            'startHead': 'd' * 40, 'authorityDigest': 'e' * 64}
+        record = {'envelope': envelope, 'readyConsumption': {'status': 'uncertain', 'code': 'READY_EVENT_REPLACED'},
+            'controllerLifecycle': {'version': 1, 'status': 'complete', 'child': 'not_started',
+                'containment': 'not_required'}, 'outcome': {'status': 'BLOCKED'},
+            'publicationIntent': None, 'publishedHead': None, 'finalHead': None}
+        claim_store = self.at(self.claim) / 'publication-v2'
+        claim_store.mkdir(mode=0o700)
+        record_path = claim_store / (str(run_id) + '.json')
+        raw = json.dumps(record, separators=(',', ':')).encode() + b'\n'
+        record_path.write_bytes(raw); record_path.chmod(0o600)
+        program = ('import{createHash}from"node:crypto";import{readFileSync}from"node:fs";'
+            'const value=JSON.parse(readFileSync(0));console.log(createHash("sha256").update(JSON.stringify(value)).digest("hex"));')
+        record_digest = subprocess.check_output(['/usr/bin/node', '--input-type=module', '-e', program],
+            input=raw, text=False).decode().strip()
+        binding = {'operation': 'finalize-predispatch', 'repository': self.consumer['repository'],
+            'runId': run_id, 'attemptId': envelope['attemptId'], 'issueNumber': issue, 'step': step,
+            'executionSlot': 'primary', 'readyEventId': event, 'branch': envelope['branch'],
+            'head': envelope['startHead'], 'authorityDigest': envelope['authorityDigest'], 'recordDigest': record_digest}
+        receipt_raw = b'{"isolatedStage":true}\n'
+        stage = self.at(self.prepared.stage)
+        receipt_path = stage / 'receipt.json'
+        receipt_path.write_bytes(receipt_raw); receipt_path.chmod(0o600)
+        bridge = {'version': 1, 'operationId': OP, 'target': TARGET, 'previousRevision': OLD,
+            'runId': run_id, 'attemptId': envelope['attemptId'], 'authorizationId': 9001,
+            'predispatchBinding': binding, 'sourceIdentity': {'revision': TARGET, 'tree': 'f' * 40},
+            'stageReceiptSha256': hashlib.sha256(receipt_raw).hexdigest(),
+            'consumerSha256': hashlib.sha256(self.actual_consumer).hexdigest(),
+            'writerWrapperSha256': hashlib.sha256(self.helper.read_bytes()).hexdigest()}
+        snapshot_path = stage / 'old-installation.json'
+        snapshot = json.loads(snapshot_path.read_bytes())
+        snapshot['predispatchBridge'] = bridge
+        snapshot_path.write_bytes(json.dumps(snapshot, sort_keys=True, separators=(',', ':')).encode() + b'\n')
+        snapshot_path.chmod(0o600)
+        self.prepared.predispatch_bridge_attempted = True
+        self.prepared.predispatch_bridge_request = {'operation': 'finalize-predispatch',
+            'repository': envelope['repository'], 'runId': run_id, 'attemptId': envelope['attemptId'],
+            'authorizationId': bridge['authorizationId'], 'workflowReadToken': 'synthetic-never-persist-this-token'}
+        self.prepared.predispatch_bridge_binding = binding
+        self.prepared.cutover_started = True
+        self.prepared.predispatch_recovery = lambda _request: {'binding': binding}
+        self.prepared.consumer = lambda final=False: {**self.prepared.initial,
+            'consumerRestoreRequired': False, 'currentDigest': self.prepared.initial['baselineDigest']}
+        return record_path, record, binding
+
+    def retain_predispatch_service_snapshot(self):
+        previous = {name: {'active': False, 'enabled': 'enabled', 'load': 'loaded'}
+                    for name in ['reviewer', 'production', 'general']}
+        gate = json.loads(self.gate.read_bytes())
+        gate['previousActive'] = previous
+        self.gate.write_text(json.dumps(gate))
+        return previous
+
+    def test_prepared_predispatch_bridge_can_abort_before_writer_switch_with_unchanged_proof(self):
+        record_path, record, _binding = self.prepare_predispatch_bridge_abort()
+        before, inode = record_path.read_bytes(), record_path.stat().st_ino
+        result = self.prepared.abort()
+        self.assertEqual(result['status'], 'old-open-restored')
+        self.assertEqual(self.gate.read_bytes(), self.old_gate)
+        self.assertEqual(self.current_revision(), OLD)
+        self.assertEqual((record_path.read_bytes(), record_path.stat().st_ino), (before, inode))
+        self.assertEqual(json.loads(record_path.read_bytes()), record)
+        self.assertFalse(self.prepared.predispatch_bridge_attempted)
+        self.assertFalse(self.prepared.cutover_started)
+
+    def test_prepared_predispatch_bridge_can_abort_after_snapshot_when_service_intent_matches(self):
+        record_path, record, _binding = self.prepare_predispatch_bridge_abort()
+        self.retain_predispatch_service_snapshot()
+        before, inode = record_path.read_bytes(), record_path.stat().st_ino
+        result = self.prepared.abort()
+        self.assertEqual(result['status'], 'old-open-restored')
+        self.assertEqual(self.gate.read_bytes(), self.old_gate)
+        self.assertEqual(self.current_revision(), OLD)
+        self.assertEqual((record_path.read_bytes(), record_path.stat().st_ino), (before, inode))
+        self.assertEqual(json.loads(record_path.read_bytes()), record)
+
+    def test_prepared_predispatch_bridge_abort_refuses_changed_service_intent(self):
+        self.prepare_predispatch_bridge_abort()
+        self.retain_predispatch_service_snapshot()
+        self.service_states['fixture-reviewer.service'].update(MainPID='8123',
+            ExecMainStartTimestampMonotonic='1200', ActiveState='active', SubState='running')
+        before_gate = self.gate.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN'):
+            self.prepared.abort()
+        self.assertEqual(self.gate.read_bytes(), before_gate)
+        self.assertEqual(self.current_revision(), OLD)
+
+    def test_prepared_bridge_abort_refuses_changed_original_reservation(self):
+        record_path, record, _binding = self.prepare_predispatch_bridge_abort()
+        before_gate = self.gate.read_bytes()
+        record['outcome']['status'] = 'SUCCESS'
+        record_path.write_text(json.dumps(record)); record_path.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED'):
+            self.prepared.abort()
+        self.assertEqual(self.gate.read_bytes(), before_gate)
+        self.assertEqual(self.current_revision(), OLD)
+
+    def test_prepared_bridge_abort_refuses_after_current_writer_switch(self):
+        _record_path, _record, binding = self.prepare_predispatch_bridge_abort()
+        self.at('/opt/fixture/releases/' + TARGET).mkdir()
+        current = self.at('/opt/fixture/current')
+        current.unlink(); current.symlink_to('releases/' + TARGET)
+        before_gate = self.gate.read_bytes()
+        self.prepared.lock_writer()
+        with self.assertRaisesRegex(RuntimeError, 'OLD_INSTALLATION_CHANGED'):
+            self.prepared.action('abort', source=self.prepared.source, lease=self.prepared.lease_path,
+                                 predispatchBinding=binding)
+        self.assertEqual(self.gate.read_bytes(), before_gate)
+        self.assertEqual(current.resolve(), self.at('/opt/fixture/releases/' + TARGET))
+
+    def current_revision(self):
+        return Path(os.readlink(self.at('/opt/fixture/current'))).name
+
     def test_abort_restores_exact_old_open_bytes_and_preserves_new_manual_history(self):
         self.capture_and_reserve()
         history = self.gate.parent / 'publication-v2'
         history.mkdir(mode=0o700)
         record = history / '71.json'
         record.write_text(json.dumps({'envelope': {'version': 2, 'repository': self.consumer['repository'],
-            'consumerDigest': self.digest, 'runId': 71, 'attemptId': 'run-71', 'route': 'manual'}, 'outcome': None}))
+            'consumerDigest': self.digest, 'runId': 71, 'attemptId': 'run-71', 'route': 'manual',
+            'issueNumber': 71, 'target': 'issue', 'number': 71}, 'outcome': None}))
         record.chmod(0o600)
         before, inode = record.read_bytes(), record.stat().st_ino
         initial = copy.deepcopy(self.prepared.initial)

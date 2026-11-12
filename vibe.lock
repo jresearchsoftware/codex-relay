@@ -1,9 +1,9 @@
 [meta]
 generated_by = "vibe 1.0.7"
-generated_at = "2026-11-09T08:41:55Z"
+generated_at = "2026-11-11T13:29:15Z"
 schema_version = 7
 root_dependencies = [
-    "flow:org.jresearch.ai/codex-relay@=5.0.0",
+    "flow:org.jresearch.ai/codex-relay@=6.0.0",
     "org.jresearch.ai/development-governance",
     "org.jresearch.ai/landscape-model-guidance",
     "org.jresearch.ai/landscape-subagents",
@@ -13,9 +13,9 @@ root_dependencies = [
 kind = "flow"
 name = "codex-relay"
 group = "org.jresearch.ai"
-version = "5.0.0"
-source_url = "file:///var/lib/codex-relay/slots/pool-5/work/repositories/jresearchsoftware/codex-relay/run-42587490775/vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0"
-content_hash = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
+version = "6.0.0"
+source_url = "file:///home/hortonolite/codex-relay-task230-final-validation-42853277535/vibevm/vibepacks/org.jresearch.ai/codex-relay/v6.0.0"
+content_hash = "sha256:5dad950eb74b1abd04501da9644be77334e673852951ecfedb6d21fa8c0ad1f8"
 files_written = []
 dependencies = ["org.jresearch.ai/development-governance@=7.0.1"]
 admitted_by = "root-edge"

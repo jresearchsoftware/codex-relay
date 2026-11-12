@@ -211,6 +211,32 @@ def exec_admission(lease_path, source, consumer_path, repository, arguments):
     os.execve('/usr/bin/node', ['/usr/bin/node', str(cli), *arguments], environment)
 
 
+def exec_predispatch(lease_path, source, consumer_path, repository):
+    """The install bridge's fixed recovery child; stdin remains the typed request."""
+    require(os.geteuid() == 0, 'WRITER_LOCK_LEASE_ROOT_REQUIRED')
+    source, consumer_path = Path(source).resolve(strict=True), Path(consumer_path)
+    _path(source, directory=True)
+    helper = source / 'controller/src/privileged-writer-helper.mjs'
+    _path(helper)
+    identity, _ = _read(source / '.relay-source.json')
+    identity = json.loads(identity, object_pairs_hook=unique)
+    consumer, _ = _read(consumer_path, limit=128 * 1024)
+    consumer = json.loads(consumer, object_pairs_hook=unique)
+    require(repository in consumer.get('repositories', [consumer.get('repository')]))
+    value = verify(lease_path, Path(consumer['paths']['claimRoot']) / 'publication-v2.lock')
+    require(identity.get('revision') == value['target'])
+    program = """import {pathToFileURL} from 'node:url';
+      const chunks=[];let size=0;for await(const chunk of process.stdin){size+=chunk.length;if(size>4096)throw Error('RECOVERY_REQUEST_INVALID');chunks.push(chunk);}
+      try{const {workflowReadToken,...request}=JSON.parse(Buffer.concat(chunks));
+        if(!['predispatch-state','predispatch-authorization','finalize-predispatch'].includes(request.operation))throw Object.assign(Error(),{code:'RECOVERY_REQUEST_INVALID'});
+        const {protectedWriterBroker}=await import(pathToFileURL(process.argv[1]+'/controller/src/privileged-writer-helper.mjs'));
+        console.log(JSON.stringify(await(await protectedWriterBroker({runToken:workflowReadToken})).dispatch(request)));
+      }catch(error){console.error(JSON.stringify({code:/^[A-Z][A-Z0-9_]{0,79}$/.test(error.code??'')?error.code:'PREDISPATCH_RECOVERY_FAILED'}));process.exitCode=1;}"""
+    environment = {'PATH': '/usr/bin:/bin', 'HOME': '/root', 'LANG': 'C', 'LC_ALL': 'C',
+                   'RELAY_CONSUMER_CONFIG': str(consumer_path), 'RELAY_REPOSITORY': repository}
+    os.execve('/usr/bin/node', ['/usr/bin/node', '--input-type=module', '-e', program, str(source)], environment)
+
+
 def main(arguments=None):
     arguments = sys.argv[1:] if arguments is None else arguments
     try:
@@ -218,6 +244,8 @@ def main(arguments=None):
             hold(*arguments[1:])
         elif len(arguments) >= 6 and arguments[0] == '--exec-admission':
             exec_admission(*arguments[1:5], arguments[5:])
+        elif len(arguments) == 5 and arguments[0] == '--exec-predispatch':
+            exec_predispatch(*arguments[1:])
         else:
             raise ValueError('WRITER_LOCK_LEASE_ARGUMENTS_INVALID')
         return 0

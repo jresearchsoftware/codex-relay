@@ -243,6 +243,17 @@ lifecycle UUID stays in the existing reinstall journal. After successful
 post-check, the same operation verifies, completes the journal and resumes
 admission. A failure leaves admission closed and preserves that evidence.
 
+For a Git-sourced ordinary upgrade, the independently selected and sealed
+candidate reads the existing admission gate during drain. Each polling snapshot
+uses the same Writer mutex as the installed helper; the candidate releases it
+between polls. The installer then reacquires that mutex, repeats the drained
+check, and retains it through cutover. This allows an accepted candidate to
+recognize a valid administrative pre-dispatch receipt that the older installed
+reader cannot interpret. It does not resolve an active or unknown attempt: use
+the [pre-dispatch finalization procedure](../controller/README.md#pre-dispatch-admission-finalization)
+first, with its original evidence and authorization. A failed or changed drain
+remains a stop, and the operation preserves the existing gate and attempt history.
+
 For an interrupted managed-pool reinstall, rerun the same exact configuration
 and target with the existing `--phase reinstall --authorize-reinstall` options
 plus `--authorize-lifecycle-recovery --lifecycle-recovery-operation <original-UUID>`.
@@ -1116,6 +1127,53 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+For an exact pre-dispatch reservation that prevents an upgrade, first obtain
+independent acceptance of the candidate and use the [read-only inspection](../controller/README.md#deployment-operator-entrypoint-before-an-upgrade)
+to publish the exact native authorization. The authorized operator can then
+run the public install with its bounded same-operation bridge:
+
+```sh
+python3 scripts/predispatch-install.py --host root@relay-host \
+  --source /root/verified-accepted-checkout --config /root/verified-config-checkout/deployment-config.json \
+  --consumer-root /root/verified-consumer-checkout --revision <accepted-sha> \
+  --repository example-org/example-repository --run-id 99 --authorization-id <comment-id>
+```
+
+Replace the examples with the verified installation and original attempt. The
+source must be a clean, protected checkout at the exact accepted revision; the
+configuration path belongs to the qualified owner Git checkout. The
+transport obtains the existing Actions-read credential from `gh`, sends the
+bounded request over strict-host-key SSH stdin, and supplies the public installer
+with a root-private temporary request. It does not put the credential in command
+arguments or logs. A handled interruption removes the request; after a host crash
+or uncatchable termination, inspect and securely remove any root-private residue
+under `/run` without disclosing its contents.
+
+The bridge revalidates the original authorization and absence of other active or
+unknown work under the existing locks. It retains the first service snapshot,
+materializes the sealed release and durably switches `current` to its compatible
+Writer before finalizing the original record. It then continues the same public
+installation. If interrupted, inspect the retained operation and original
+attempt before using the same command with `--continue`; it binds the same UUID,
+attempt and authorization and resumes forward with admission closed. Never
+restore an incompatible Writer over retained pre-dispatch history. A compatible
+installed gate checks target source identity before lifecycle changes when such
+history exists; ordinary targets without that history retain their prior path.
+An expert route without a verified staged target may fail closed and should use
+the public install bridge.
+
+A durable `prepareOnly` binding by itself does not mean `current` has switched.
+If the public operation fails before that switch, its normal abort path may
+restore the exact old open gate only while the old `current` target, installation,
+consumer, Writer lease, and original no-worker reservation all still match
+their captured evidence. When a lifecycle service snapshot has been retained,
+current managed service activity must also match it. The original record must
+retain its exact digest with no recovery receipt, journal, checkout or changed
+effects. Abort preserves the bridge snapshot and original history. If any proof
+is missing, admission stays closed for same-operation recovery. Once `current`
+points to the staged Writer, rollback to the old Writer is refused and recovery
+continues forward under the same operation.
+
 For a retained Git Apply whose original target is already installed, the
 [bounded controller recovery](../docs/git-managed-installation.md#bounded-recovery-with-a-separately-accepted-controller)
 interface independently binds a corrected accepted controller, the immutable
@@ -1521,7 +1579,7 @@ A reachable General or foreign unit refuses before restart, including indirect
 paths. The integration tests direct foreign `PartOf` and foreign-to-General
 chains with unchanged process identities, then the permitted adoption path.
 
-The governed standalone CLI is pinned to **0.167.0**. The credential-free
+The governed standalone CLI is pinned to **0.167.2**. The credential-free
 launcher default for new automatic invocations is native
 `--sandbox danger-full-access`, with the existing noninteractive approval policy
 `never`. No consumer permission fields or per-Task grant hierarchy are required.

@@ -22,11 +22,10 @@ for (const route of ['auto', 'manual']) {
       assert.equal((await f.store.get(99)).stepProjected, true);
       assert.equal((await f.store.get(99)).stepProjectionFrom, undefined);
       assert.equal(f.envelope.request.lineage?.step ?? null, previous);
-      const original = copy(f.envelope);
       f.issue.labels = [{ name: `step-${expected + 7}` }];
-      const replay = await f.broker.invoke(f.admissionRequest);
-      assert.equal(replay.resumed, true); assert.deepEqual(replay.envelope, original);
-      assert.equal(currentStep(f.issue.labels), expected + 7, 'same-attempt replay cannot rewrite a later owner position');
+      if (route === 'auto') await assert.rejects(f.broker.invoke(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+      else assert.equal((await f.broker.invoke(f.admissionRequest)).resumed, true);
+      assert.equal(currentStep(f.issue.labels), expected + 7, 'a replay cannot rewrite a later owner position');
       if (previous) assert.deepEqual(await f.store.get(98), prior(previous));
     });
   }

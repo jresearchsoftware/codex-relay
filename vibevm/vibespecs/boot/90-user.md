@@ -1,6 +1,6 @@
 # Local routing conventions
 
-Apply human-owned root AGENTS once. It explicitly adopts all nine complete
+Apply human-owned root AGENTS once. It explicitly adopts all ten complete
 Shared Governance 7.0.1 protocols, each under its own conditional trigger.
 The immutable package boot pointer supplies full protocol routes; product
 mechanisms and supported exceptions are in docs/relay-guidance-ownership.md.
@@ -10,7 +10,11 @@ committed ready files offline; no resolver, cache or owner command is required.
 Candidate generation does not replace the independently frozen accepted
 source binding. Native Task/CR, Writer/Reviewer and protected operations remain
 Relay-owned. See docs/vibevm.md for deliberate routing maintenance.
-Optional Small Improvements remains unselected. Repository policy and native
+Small Improvements is adopted for deferred candidate capture and suitable
+source-changing Task/first source-changing Step/relevant CR preparation;
+analysis-only work skips the scan. Read its complete selected Shared protocol
+through the package boot and the local binding in docs/relay-guidance-ownership.md.
+Repository policy and native
 consumer routing are distinct from the standalone Skill's frozen Shared snapshot;
 that snapshot is not a missing-slot fallback. The ownership mapping also binds
 the temporary legacy closure runtime pending Task #194.

@@ -266,7 +266,7 @@ test('concurrent delivery of one native command serializes through OS flock and 
   { cwd: fileURLToPath(new URL('../../', import.meta.url)), env: { ...process.env, TEST_FIXTURE_ROOT: root, TEST_RUN_ID: String(runId) } })).stdout.trim());
   const results = await Promise.all([run(100), run(101)]);
   assert.deepEqual(results.filter(result => result.step), [{ step: 1 }], JSON.stringify(results));
-  assert.deepEqual(results.filter(result => result.code), [{ code: 'READY_LABEL_AMBIGUOUS' }]);
+  assert.deepEqual(results.filter(result => result.code), [{ code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' }]);
   const labels = JSON.parse(await readFile(join(root, 'subject.json'), 'utf8')).labels;
   assert.deepEqual(labels, [{ name: 'step-1' }]);
 });

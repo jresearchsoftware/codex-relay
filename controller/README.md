@@ -509,6 +509,58 @@ owner inspection. Drain neither relaunches Codex nor discards retained work or
 diagnostics. Registered runners remain online; graceful stop disables new
 automatic admission without stopping those runners.
 
+For new native automatic label admissions, Writer stores a pre-dispatch marker
+with the reservation before projecting the Step. It retains the marker through
+the ready-label DELETE intent and stores the durable `readyConsumed` receipt
+without removing the marker before returning a launchable envelope. Before that
+receipt, the exact original marker with no journal or checkout proves that the
+controller did not receive worker launch authority. After consumption, the
+marker alone does not prove whether the returned envelope reached a worker;
+inventory keeps the attempt active/unknown until trusted controller completion
+provides the matching terminal journal and containment proof. Only then does the
+physical slot become available and the completion operation retire the marker.
+Missing or conflicting evidence remains unknown. The original Step and
+ready-event identity remain reserved; replay of the marked attempt cannot resume
+deletion or launch a worker.
+
+The physical slot and native effects remain separate. A pre-consumption marker
+can release the slot only with the exact no-worker proof above; a consumed marker
+needs terminal containment evidence or the explicit original-run finalizer. A
+ready DELETE or blocked Outcome publication with an uncertain result remains
+unknown to drain and normally blocks a fresh Step until reconciled; it is not
+permission to repeat the DELETE or publish another Outcome. Writer may retire a
+`READY_EVENT_REPLACED` predecessor only after the exact no-worker record, original
+first-attempt failure, unchanged events, sealed unedited BLOCKED Outcome and a
+distinct durable owner admission all revalidate. The Outcome is published inside
+the original routing run, so its comment timestamp can precede that run's final
+`updated_at`; this ordering is expected and is not a retirement failure. The
+successor owner event must still be strictly later than the Outcome.
+
+Admission of otherwise valid new work is independent of that predecessor
+receipt. When only the predecessor's retirement evidence is missing or
+contradictory, the new owner admission may proceed after its own authority,
+resource and no-conflicting-effects checks; the old record stays unknown and
+continues to block drain until a later valid admission retires it. If interruption
+occurs after the new admission is durable but before ready-command consumption, the
+same exact run can recover on an Actions rerun (`run_id` unchanged,
+`run_attempt` incremented) while its ready command remains unconsumed. Writer
+revalidates the live run's workflow, repository, owner and triggering actor,
+target and command identity, and requires the original durable admission with
+no consumption intent, journal, checkout or publication effects. The original
+replaced predecessor must still be its failed first attempt. This recovery
+reuses the stored Step and event, writes no second admission, and never repeats
+a prior DELETE. An already finalized predecessor receipt is reused only for its
+exact successor envelope digest. Automatic replay revalidates the
+open admission gate and original slot before changing the ready command, then
+allows only the first journal reservation for that exact unconsumed run. Once
+the command is consumed, the marked attempt cannot replay admission or launch
+again.
+
+A missing, edited or ambiguous Outcome still cannot retire the predecessor.
+A projection failure before a DELETE intent has no such
+pending ready-label mutation and does not indefinitely occupy the lifecycle gate
+when the protected no-worker evidence is complete.
+
 The gate binds one lifecycle operation UUID, the exact selected target and the
 consumer digest. Its phases are `open`, `quiesced`, `drained`, `applying`,
 `verified` and `recovery-required`. A successful graceful stop retains
@@ -718,23 +770,77 @@ Public consumers retain `pull_request_target` label routing under the
 ## Pre-dispatch admission finalization
 
 A failed first label-routing run can stop after its immutable Step reservation
-but before `admit` returns. The bounded `predispatch-state` /
-`finalize-predispatch` Writer operations reconcile only that case. They are
-explicit operator recovery, never ordinary admission replay. They do not execute
-Codex, publish a Task Outcome, consume a ready command, project labels, push Git,
-change a PR, or fabricate a terminal runner journal.
+before `admit` returns, or after ready consumption but before the controller
+reserves its runner journal. The bounded `predispatch-state` /
+`finalize-predispatch` Writer operations reconcile only the exact supported
+original records below. They are explicit operator recovery, never ordinary
+admission replay. They do not execute Codex, publish a Task Outcome, consume a
+ready command, project labels, push Git, change a PR, or fabricate a terminal
+runner journal.
 
 The proof is the protected write ordering: before a successful automatic label
 `admit` returns, Writer durably stores `readyConsumption` and `readyConsumed`.
 An exact partial record with neither field, no completed projection, no other
 execution/publication effects and its original active lifecycle could not have
 returned normally to the controller. This is stronger than merely finding no
-process. Finalization also requires the completed original native routing run
+process. Current automatic label admissions retain `predispatchPending` after
+the durable `readyConsumed` receipt. Once consumption is complete, that marker
+alone does not prove that no controller received its envelope: the resource
+remains held until trusted controller completion verifies the matching terminal
+runner journal and clears the marker. A successful DELETE or an absent journal
+does not release this consumed reservation or authorize ordinary admission
+replay.
+
+Finalization requires the completed original native routing run
 (first attempt only, failure), unchanged native event, authority and exact
 branch/PR head, no original journal or checkout, and exclusive acquisition of
 the original controller lock under the Writer mutex. A rerun, ambiguous state,
 changed configuration, pending mutation or any contradictory evidence fails
 closed. Current source does not reinterpret retained schema-v3 executions.
+
+For a newer pending record with an interrupted ready-label DELETE, the same
+operator route can also reconcile the original attempt when the native timeline
+proves the original command was removed, no later ready transition or ready
+label exists. Inspection binds the observed removal event and the complete
+record digest; finalization rechecks that evidence and never repeats the DELETE.
+The same route accepts an exact record retaining both `readyConsumed: true` and
+`predispatchPending`, with no original runner journal. In addition to the
+original-run, lock, absent journal/checkout and unchanged live authority/ref
+checks above, its native
+removal event must exactly match the retained `readyConsumption.removalEventId`.
+No later ready transition or ready label may exist. This explicit retirement
+preserves the consumed receipt and original Step/event; it does not infer
+containment from missing execution evidence. A stale controller cannot obtain
+worker dispatch through preflight after the recovery receipt is committed.
+If a BLOCKED Outcome comment was attempted, reconciliation additionally requires
+the exact retained comment body or seal and a unique native read-back from the
+configured Writer bot, including its immutable identity. The binding records the
+comment identity and body digest; it never repeats the POST or changes the
+original record. Missing, ambiguous or contradictory evidence remains blocked.
+
+When the failed first routing run instead retained READY_EVENT_REPLACED, the
+next successfully admitted owner ready event for the same canonical Task can
+retire that no-worker reservation automatically. Writer proves the original
+owner event and every recorded later transition ID, confirms the
+original ready label is no longer live (or is the exact new command being
+admitted on the same target), and reads back one unedited BLOCKED Outcome from
+the configured Writer bot. The new command must be a later owner event after
+that Outcome, resolve to a higher Step, and have an exact current native event
+and durable admission record. The original run must be its first completed
+failure with no journal or checkout. Writer stores a version-4 administrative
+receipt bound to both immutable records and the Outcome identity under the
+existing Writer lock. It performs no extra label deletion, comment publication,
+or Step projection during retirement; it appends only the receipt and leaves the
+original event, Outcome and Step unchanged. Missing,
+ambiguous or contradictory evidence keeps the old attempt unresolved. If a
+final recheck fails after the new admission record is stored, that attempt stays
+pending without worker authority and the old reservation continues to block
+drain until a later valid admission completes reconciliation.
+
+This receipt does not make an older runtime that ignores it safe to activate or
+replay. Retained older partial and uncertain-DELETE records keep their existing
+proof and recovery rules; a historical consumed record without the retained
+pending marker does not acquire this new finalization path.
 
 Inspection returns the exact public-safe binding and `authorizationBody`.
 The owner posts those exact bytes as a fresh unedited native comment on the
@@ -757,35 +863,51 @@ exception cannot conceal an unrelated stale numbering position.
 
 ### Deployment-operator entrypoint before an upgrade
 
-An unresolved reservation may itself prevent lifecycle drain. Do not bypass that
-drain or install candidate service code to resolve the circular dependency.
+An unresolved reservation may itself prevent lifecycle drain. A retained old
+Writer can replay that attempt even with admission quiesced. Do not finalize
+the reservation while `current` still selects that incompatible Writer.
 After independent exact-source acceptance, the existing authorized deployment
 operator may stage a verified root-owned copy of that accepted source and run
 `controller/src/predispatch-recovery-entrypoint.mjs` with the unchanged protected
 consumer configuration. This source-controlled root-only entrypoint selects only
 a configured repository, bounds stdin to 4096 bytes, acquires the installation's
 existing `publication-v2.lock`, and invokes the same protected Writer broker.
-It uses the configured Writer credentials on the host; no runner-UID override,
-new sudo grant, service replacement or permission repair is required. Operator
-source acceptance/host authority still apply. The CLI accepts only repository,
-operation, runId, attemptId and (for finalization) authorizationId; it accepts no
-caller path, slot, head, executable or credential.
+It uses the configured Writer credential on the host and an existing
+Actions-read credential supplied only through its bounded stdin request. No
+runner-UID override, new sudo grant or permission repair is required for this
+inspection. Operator source acceptance and host authority still apply. Besides the
+repository, operation, runId, attemptId and (for finalization) authorizationId,
+the request contains `workflowReadToken`; it accepts no caller path, slot, head
+or executable. The credential is not put in the broker request or stored in the
+record. Use an existing credential with Actions-read access to that repository.
 
 ```sh
-# Run through the existing authorized root deployment channel. These two
-# variables name the verified accepted source and existing protected config.
-/usr/bin/env -i PATH=/usr/bin:/bin HOME=/root LANG=C LC_ALL=C \
-  RELAY_CONSUMER_CONFIG="$protected_consumer" \
-  /usr/bin/node "$accepted_source/controller/src/predispatch-recovery-entrypoint.mjs" <<'JSON'
-{"repository":"example-org/example-repository","operation":"predispatch-state","runId":99,"attemptId":"run-99"}
-JSON
+# On a workstation with the existing authenticated gh session and a configured
+# root SSH host with a verified known_hosts key, use the accepted source copy:
+python3 scripts/predispatch-ssh.py --host root@relay-host \
+  --source /root/verified-accepted-source --consumer /etc/codex-relay/consumer.json \
+  --repository example-org/example-repository --run-id 99 --operation predispatch-state
 ```
 
-After posting the exact returned authorizationBody, use the identical command
-with `operation: "finalize-predispatch"` and the native `authorizationId` added.
-Read back `predispatch-state` and normal admission status before continuing the
-ordinary lifecycle operation. Stop on any failed or contradictory readback.
-No preexisting terminal Outcome is manufactured for the old operation.
+The example paths and host must be replaced with the verified deployment's
+actual values. The helper reads `gh auth token` into memory and sends it in the
+SSH stdin payload; it does not print it, place it in arguments or environment,
+or write a token file. It requires strict host-key checking and uses the
+operator's existing SSH configuration. Do not enable shell tracing or capture
+the input stream; do not paste a credential into a shell command or history.
+The host must trust the operator and protect the root process and SSH transport.
+An unavailable or insufficient Actions-read credential fails the operation.
+
+After posting the exact returned authorizationBody, use the crash-safe public
+install bridge described in [deployment](../deploy/README.md#lifecycle-upgrade-and-rollback)
+when the installed Writer is incompatible. The bridge validates that native
+authorization, preserves the first service snapshot and installs a verified
+compatible Writer before finalizing the exact original reservation. It retains
+the same operation and closed gate on a failure. Once a compatible Writer is
+already installed, the same entrypoint may finalize with the matching native
+authorization ID; Writer verifies the installed fence before its atomic receipt.
+Read back the original state and admission inventory. No terminal Outcome or
+worker execution is fabricated.
 
 After a compatible accepted/qualified installation, the existing recovery
 entrypoint also accepts `inspect-predispatch` and `finalize-predispatch` JSON.
@@ -806,8 +928,10 @@ old display labels and an unconsumed owner event. These are separate facts.
 Writer retains a bounded, redacted exception in the protected attempt record;
 the helper wire reports only the projection suboperation, safe error code/type
 and HTTP status when available. A failed diagnostic write is reported as
-unverified retention. Neither a projection failure nor its diagnostic completes
-the controller lifecycle or proves containment of an older attempt.
+unverified retention. New native automatic label attempts have the durable
+pre-dispatch marker described above; diagnostic retention is not its proof.
+Neither the marker nor a projection diagnostic proves containment of an older
+attempt that predates the marker.
 
 The read-only `publication-state` response includes `admissionState`: reserved
 Step, projection receipt/previous labels, original ready-event ID, consumption
@@ -815,8 +939,8 @@ status, controller lifecycle and safe failure diagnostic. Private exception text
 and stack are not returned. Historical records without these receipts remain
 unknown; the projection does not manufacture negative execution evidence.
 
-For an existing automatic label admission that has not begun ready consumption,
-replay checks the original protected runner journal and its envelope binding
+For an older automatic label admission without the marker that has not begun
+ready consumption, replay checks the original protected runner journal and its envelope binding
 before changing Step/PR metadata or consuming the event. A missing or invalid
 journal stops with `JOURNAL_MISSING_EXECUTION_UNKNOWN`; a mismatched envelope
 stops with `JOURNAL_BINDING_CHANGED`. This moves the existing execution replay

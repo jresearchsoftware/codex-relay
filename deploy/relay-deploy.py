@@ -242,6 +242,8 @@ def arguments():
     p.add_argument('--authorize-lifecycle-recovery', action='store_true',
                    help='After diagnosis/disposition, recover or roll back a retained quiesced operation')
     p.add_argument('--lifecycle-recovery-operation', help='Exact retained admission operation UUID')
+    p.add_argument('--predispatch-recovery-request', type=Path,
+                   help='Root-private exact pre-dispatch finalization request; use the crash-safe same-install Writer bridge')
     p.add_argument('--authorize-install-recovery', action='store_true',
                    help='Continue one diagnosed operation using this independently accepted controller and Git pair')
     p.add_argument('--install-recovery-operation', help='Exact original operation UUID; install recovery only')
@@ -299,6 +301,9 @@ def run(args):
     require(getattr(args, 'retained_runner_maintenance', None) is None or getattr(args, 'intent_install', False),
             'runner-maintenance-install-only')
     intent_install = getattr(args, 'intent_install', False)
+    require(getattr(args, 'predispatch_recovery_request', None) is None
+            or intent_install and args.phase in ['apply', 'upgrade'] and os.geteuid() == 0,
+            'predispatch-recovery-install-root-only')
     bounded_binding = getattr(args, '_intent_bounded_recovery', None)
     require(bounded_binding is None or intent_install and args.authorize_lifecycle_recovery,
             'bounded-recovery-interface-only')
@@ -892,7 +897,11 @@ def run(args):
                         # An invalid effective consumer was provisional strategy
                         # input only. The target proof must restore/authenticate it
                         # before the ordinary resource/preflight/backend checks.
-                        strict_inventory = remote_inventory(target, key, config, git_desired=True)
+                        allowed_stage_operation = None
+                        if preparation is not None and not preparation.reinstall:
+                            allowed_stage_operation = preparation.operation
+                        strict_inventory = remote_inventory(target, key, config, git_desired=True,
+                            allowed_stage_operation=allowed_stage_operation)
                         strict_installed = strict_inventory['installed']
                         strict_revision = (strict_installed.get('revision')
                             if strict_installed.get('status') == 'present' else 'none'
@@ -929,8 +938,11 @@ def run(args):
                             args._intent_mutation_started = True
                         if not args.authorize_lifecycle_recovery:
                             progress('QUIESCE', revision)
+                            target_source_arguments = (['--target-source', preparation.source]
+                                if preparation is not None and 'predispatch-retention-v1' in
+                                locked_inventory.get('installed', {}).get('deploymentContract', {}).get('capabilities', []) else [])
                             remote_admission(target, key, values['relay_namespace'], 'quiesce',
-                                             '--operation', lifecycle_operation, '--target', revision)
+                                             '--operation', lifecycle_operation, '--target', revision, *target_source_arguments)
                         progress('DRAIN', revision)
                         if args.authorize_lifecycle_recovery:
                             if bounded_binding is not None:
@@ -947,9 +959,40 @@ def run(args):
                                     and not state['unknown'], 'lifecycle-recovery-drain-unproven')
                             recovery_admission('recovery-target', '--operation', lifecycle_operation, '--target', revision)
                         else:
-                            remote_admission(target, key, values['relay_namespace'], 'drain',
-                                             '--operation', lifecycle_operation, '--timeout', '1800')
-                        if bounded_binding is not None:
+                            if preparation is not None:
+                                bridge_request_path = getattr(args, 'predispatch_recovery_request', None)
+                                if bridge_request_path is not None:
+                                    from installed_config import read_protected
+                                    raw, _ = read_protected(bridge_request_path, {0o600}, group=0)
+                                    require(len(raw) <= 4096, 'predispatch-recovery-request-size')
+                                    recovery_request = json.loads(raw)
+                                    values['relay_intent_admission_prefix'] = preparation.admission_prefix()
+                                    proof = preparation.bridge_predispatch(recovery_request,
+                                        lambda: preflight_play('relay-predispatch-bridge-snapshot.yml'))
+                                    require(proof['operationId'] == lifecycle_operation and proof['target'] == revision,
+                                            'predispatch-bridge-install-binding')
+                                    values['relay_intent_expected_installed_revision'] = revision
+                                    args.intent_expected_installed_revision = revision
+                                    inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                                    (work / 'inventory.json').write_text(json.dumps(inventory))
+                                else:
+                                    preparation.drain_staged()
+                                # Recheck under the same lock and retain it until
+                                # cutover; the old reader may not understand a
+                                # valid candidate administrative receipt.
+                                if preparation.holder is None:
+                                    preparation.lock_writer()
+                                if bridge_request_path is None:
+                                    locked_drain = preparation.execute([*preparation.admission_prefix(), 'drain-check',
+                                        '--operation', lifecycle_operation])
+                                    require(locked_drain.get('drained') is True, 'staged-drain-changed-before-cutover')
+                            else:
+                                remote_admission(target, key, values['relay_namespace'], 'drain',
+                                                 '--operation', lifecycle_operation, '--timeout', '1800')
+                        if bounded_binding is not None or (preparation is not None and preparation.holder is not None):
+                            if bounded_binding is None:
+                                def recovery_admission(*arguments):
+                                    return preparation.execute([*preparation.admission_prefix(), *arguments])
                             recovery_admission('phase', '--operation', lifecycle_operation, '--phase', 'applying')
                         else:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
@@ -979,7 +1022,11 @@ def run(args):
                     if install_flow:
                         # Re-observe under the host mutex; a read-only report is
                         # never itself a destructive or installation capability.
-                        observed = remote_inventory(target, key, config, **({'git_desired': True} if intent_install else {}))
+                        if intent_install:
+                            observed = remote_inventory(target, key, config, git_desired=True,
+                                allowed_stage_operation=allowed_stage_operation)
+                        else:
+                            observed = remote_inventory(target, key, config)
                         if pool_reinstall_proof is not None:
                             observed = continuation_inventory(observed, pool_reinstall_proof)
                         require(not observed['blockers'], 'inventory-changed-before-install')
@@ -1133,8 +1180,10 @@ def run(args):
                         progress('OPEN', revision)
                 except Exception:
                     restored_old = False
-                    if (preparation is not None and preparation.captured and not preparation.cutover_started
-                            and lifecycle_operation and not args.authorize_lifecycle_recovery):
+                    if (preparation is not None and preparation.captured
+                            and (not preparation.cutover_started or preparation.predispatch_bridge_attempted)
+                            and lifecycle_operation
+                            and (not args.authorize_lifecycle_recovery or preparation.predispatch_bridge_attempted)):
                         try:
                             aborted = preparation.abort()
                             require(aborted['status'] == 'old-open-restored', 'INSTALL_PREFLIGHT_ABORT_UNPROVEN')

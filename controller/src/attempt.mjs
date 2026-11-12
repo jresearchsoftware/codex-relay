@@ -21,12 +21,15 @@ async function runLockedAttempt(options) {
     attemptId: options.envelope.attemptId });
 }
 
-async function runContainedAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false, persistFailure }) {
+async function runContainedAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false,
+  admissionUnstarted = false, persistFailure }) {
   const e = validateEnvelope(envelope);
   const invoke = (operation, value = {}) => broker.invoke({ operation, runId: e.runId, attemptId: e.attemptId, ...value });
   if (e.route === 'manual') return invoke('handoff');
   let record = await journal.get(e.runId);
-  if (admissionResumed && !record) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
+  if (admissionUnstarted && (!admissionResumed || e.route !== 'auto' || record))
+    fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
+  if (admissionResumed && !record && !admissionUnstarted) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && (record.version !== VERSION || !Object.hasOwn(record, 'execution'))) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
   // A durable terminal receipt ends this attempt's mutable-checkout lifetime.

@@ -4,10 +4,136 @@ import { fixture, memoryStore } from './fixture.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { serializeWriterFailure } from '../src/privileged-writer-helper.mjs';
 import { admissionFailure } from '../src/admission-diagnostic.mjs';
+import { createAdmissionControl } from '../src/admission-control.mjs';
+import { pendingPredispatchRecord } from '../src/predispatch-recovery.mjs';
+import { nextAdmissionStep } from '../src/admission-step.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const charter = 'Authority model: github-native-v1\nIssue closure policy: keep-open\nExercise bounded admission diagnostics and same-attempt replay.';
 const privatePath = '/srv/relay/private/admission-source.mjs';
 const syntheticToken = `ghp_${'S'.repeat(36)}`;
+
+test('durable pre-dispatch marker releases only proven non-execution and retains numbering', async t => {
+  const f = await failedProjection(t, new Error('projection failed'));
+  const record = await f.store.get(f.admissionRequest.runId);
+  const gateRoot = await mkdtemp(join(tmpdir(), 'projection-gate-'));
+  t.after(() => rm(gateRoot, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
+    store: f.store, journal: f.journal, protectedRoot: false, checkoutAbsent: async () => true });
+  await gate.initialize();
+  assert.ok(pendingPredispatchRecord(record));
+  assert.deepEqual((await gate.status()).active, []);
+  assert.deepEqual((await gate.status()).unknown, []);
+  await gate.assertSlotComplete('primary');
+  assert.equal(nextAdmissionStep([record], record.envelope.issueNumber, [{ name: 'step-1' }]).step, 3);
+  const replay = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal });
+  await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  const deleting = structuredClone(record);
+  deleting.readyConsumption = { status: 'deleting', eventId: record.envelope.readyEventId, label: record.envelope.readyLabel };
+  assert.ok(pendingPredispatchRecord(deleting));
+  await f.store.put(record.envelope.runId, deleting);
+  await gate.assertSlotComplete('primary');
+  assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+  await assert.rejects(replay.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+  assert.deepEqual(await f.store.get(record.envelope.runId), deleting);
+  deleting.readyConsumed = true;
+  assert.equal(pendingPredispatchRecord(deleting), false);
+  await f.journal.put(record.envelope.runId, { unexpected: true });
+  assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+  const next = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  await assert.rejects(next.dispatch({ ...f.admissionRequest, runId: record.envelope.runId + 1 }),
+    { code: 'PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT' });
+  const checkoutGate = createAdmissionControl({ root: gateRoot, consumerDigest: record.envelope.consumerDigest,
+    store: f.store, journal: memoryStore(), protectedRoot: false, checkoutAbsent: async () => false });
+  assert.deepEqual((await checkoutGate.status()).unknown, [record.envelope.runId]);
+});
+
+for (const boundary of ['projection-receipt', 'ready-delete-intent']) {
+  test(`interrupted Writer retains its pre-dispatch proof at ${boundary}`, async t => {
+    let stopped = false;
+    const f = await failedProjection(t, new Error('unused'), ({ api, store }) => {
+      api.ensureStepLabel = async () => {};
+      const put = store.put;
+      store.put = async (id, record) => {
+        await put(id, record);
+        if (!stopped && (boundary === 'projection-receipt' ? record.stepProjected === true
+          : record.readyConsumption?.status === 'deleting')) {
+          stopped = true;
+          throw Object.assign(new Error('simulated interruption after atomic write'), { code: 'EIO' });
+        }
+      };
+    });
+    assert.equal(stopped, true);
+    const record = await f.store.get(f.admissionRequest.runId);
+    assert.equal(pendingPredispatchRecord(record), true);
+    assert.equal(record.readyConsumed, undefined);
+    assert.equal(await f.journal.get(record.envelope.runId), null);
+  });
+}
+
+test('a fresh owner event advances after a marked projection failure; the old event stays spent', async t => {
+  const f = await failedProjection(t, new Error('projection failed'));
+  const original = await f.store.get(f.admissionRequest.runId);
+  const priorRun = structuredClone(f.run);
+  const nextRun = { ...priorRun, id: original.envelope.runId + 1, status: 'in_progress', conclusion: null };
+  f.api.getRun = async id => structuredClone(id === priorRun.id ? priorRun : nextRun);
+  f.api.ensureStepLabel = async () => {};
+  const nextRequest = { ...f.admissionRequest, runId: nextRun.id };
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal,
+    admission: f.admissionControl, checkoutAbsent: async () => true });
+  await assert.rejects(broker.dispatch(nextRequest), { code: 'READY_EVENT_ALREADY_CONSUMED' });
+  assert.equal(await f.store.get(nextRun.id), null);
+  const event = f.events.at(-1);
+  f.events.push({ ...event, id: event.id + 1, event: 'unlabeled' },
+    { ...event, id: event.id + 2, created_at: '2026-09-04T12:03:00Z' });
+  nextRun.created_at = '2026-09-04T12:03:01Z';
+  const next = await broker.dispatch(nextRequest);
+  assert.equal(next.envelope.step, original.envelope.step + 1);
+  assert.equal(next.envelope.readyEventId, event.id + 2);
+  assert.deepEqual(await f.store.get(original.envelope.runId), original);
+});
+
+for (const outcomeFailure of ['before-intent', 'post-uncertain']) {
+  test(`failed ready DELETE and Outcome ${outcomeFailure} release the slot but retain external uncertainty`, async t => {
+    const journal = memoryStore(); let f;
+    await assert.rejects(fixture(t, { issueBody: charter, labelLaunch: true, streamlinedAdmission: true,
+      createJournal: () => journal,
+      createAdmission: async () => ({ assertOpen: async () => {}, assertSlotComplete: async () => {},
+        reserve: async () => ({ version: 1, status: 'active' }) }),
+      beforeAdmission(value) {
+        f = value; f.issue.labels = [{ name: 'step-1' }, { name: 'codex-ready-auto' }];
+        const remove = f.api.delete, list = f.api.list, post = f.api.post; let deleteFailed = false;
+        f.api.delete = async path => {
+          if (path.endsWith('/labels/codex-ready-auto')) { await remove(path); deleteFailed = true; throw Object.assign(new Error('DELETE response lost'), { code: 'EIO' }); }
+          return remove(path);
+        };
+        f.api.list = async path => {
+          if (deleteFailed && outcomeFailure === 'before-intent' && path.endsWith('/comments')) throw new Error('comments unavailable');
+          return list(path);
+        };
+        f.api.post = async (path, body) => {
+          if (outcomeFailure === 'post-uncertain' && path.endsWith('/comments')) { await post(path, body); throw new Error('POST response lost'); }
+          return post(path, body);
+        };
+      } }));
+    const record = await f.store.get(f.admissionRequest.runId);
+    assert.equal(record.readyConsumption.status, 'uncertain');
+    assert.equal(record.controllerLifecycle.child, 'not_started');
+    assert.equal(Boolean(record.commentIntent), outcomeFailure === 'post-uncertain');
+    const root = await mkdtemp(join(tmpdir(), 'uncertain-gate-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const gate = createAdmissionControl({ root, consumerDigest: record.envelope.consumerDigest, store: f.store,
+      journal, protectedRoot: false, checkoutAbsent: async () => true });
+    await gate.initialize();
+    await gate.assertSlotComplete('primary');
+    assert.deepEqual((await gate.status()).unknown, [record.envelope.runId]);
+    const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal, checkoutAbsent: async () => true });
+    await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
+  });
+}
 
 async function failedProjection(t, cause, configure = () => {}) {
   let state;
@@ -114,7 +240,7 @@ test('accepted Step label mutation with a lost response preserves partial native
   const labels = structuredClone(f.issue.labels);
   f.resetMutations();
   const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: {}, journal: f.journal });
-  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'JOURNAL_MISSING_EXECUTION_UNKNOWN' });
+  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
   assert.equal(labelAdds, 1);
   assert.equal(readyDeletes, 0);
   assert.equal(f.mutationCount(), 0);
@@ -207,6 +333,7 @@ for (const [name, journalRecord, code] of [
     const original = await f.store.get(f.admissionRequest.runId);
     // Model the original installed incident, which predates the new diagnostic.
     delete original.admissionFailure;
+    delete original.predispatchPending;
     await f.store.put(original.envelope.runId, original);
     const labels = structuredClone(f.issue.labels);
     f.resetMutations();

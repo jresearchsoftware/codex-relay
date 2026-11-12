@@ -30,10 +30,15 @@ class CommittedFlowTests(unittest.TestCase):
         binding = self.root / QUALIFICATION.LOCAL_SUBAGENTS
         binding.parent.mkdir(parents=True)
         shutil.copyfile(QUALIFICATION.ROOT / QUALIFICATION.LOCAL_SUBAGENTS, binding)
+        shutil.copyfile(QUALIFICATION.ROOT / QUALIFICATION.LOCAL_GOVERNANCE,
+                        self.root / QUALIFICATION.LOCAL_GOVERNANCE)
         shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.SELF_SLOT, self.root / QUALIFICATION.SELF_SLOT)
         shutil.copytree(QUALIFICATION.ROOT / "vibevm/vibepacks", self.root / "vibevm/vibepacks")
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts", self.root / "guidance/artifacts")
         shutil.copyfile(QUALIFICATION.ROOT / "guidance/source.json", self.root / "guidance/source.json")
+        manual = Path("packages/codex-relay/skill/references/workflow.md")
+        (self.root / manual).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(QUALIFICATION.ROOT / manual, self.root / manual)
         # Construct a synthetic projection/receipt for structural counterexamples.
         # Actual native generation has separate pinned-tool qualification.
         shutil.copytree(QUALIFICATION.ROOT / "guidance/artifacts/vpm/skill",
@@ -85,7 +90,7 @@ class CommittedFlowTests(unittest.TestCase):
                               (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
                               (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
                               (b'@=7.0.1', b'@=6.0.0'),
-                              (b'version = "5.0.0"', b'version = "5.0.1"'),
+                              (b'version = "6.0.0"', b'version = "5.0.0"'),
                               (lock["meta"]["generated_by"].encode(), b'other'),
                               (b'file://', b'file:///foreign/')):
             with self.subTest(field=before):
@@ -107,21 +112,22 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "5.0.0")
+        self.assertEqual(facts["first_party_version"], "6.0.0")
         self.assertEqual(facts["standalone_snapshot"], "5.0.0")
         self.assertEqual({name: value["version"] for name, value in facts["landscape"].items()}, {
             "org.jresearch.ai/landscape-model-guidance": "1.0.3",
             "org.jresearch.ai/landscape-subagents": "1.0.2"})
 
     def test_historical_slot_is_immutable_and_never_a_missing_selected_fallback(self):
-        shutil.copytree(QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT,
-                        self.root / QUALIFICATION.HISTORICAL_SLOT)
-        QUALIFICATION.check_project(self.root)
-        history = self.root / QUALIFICATION.HISTORICAL_SLOT / "README.md"
-        original = history.read_bytes()
-        history.write_bytes(original + b"Changed historical evidence\n")
-        self.rejects()
-        history.write_bytes(original)
+        historical = QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT
+        if historical.exists():
+            shutil.copytree(historical, self.root / QUALIFICATION.HISTORICAL_SLOT)
+            QUALIFICATION.check_project(self.root)
+            history = self.root / QUALIFICATION.HISTORICAL_SLOT / "README.md"
+            original = history.read_bytes()
+            history.write_bytes(original + b"Changed historical evidence\n")
+            self.rejects()
+            history.write_bytes(original)
         shutil.rmtree(self.root / QUALIFICATION.SLOT)
         self.rejects()
 
@@ -245,7 +251,7 @@ class CommittedFlowTests(unittest.TestCase):
                                    (selection["revision"], "0" * 40),
                                    ('name = "' + selection["name"] + '"', 'name = "development-governance"'),
                                    ('name = "' + selection["name"] + '"',
-                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=5.0.0"]')])):
+                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=6.0.0"]')])):
                 path = self.root / name
                 original = path.read_text()
                 for before, after in changes:
@@ -313,6 +319,62 @@ class CommittedFlowTests(unittest.TestCase):
         binding = self.root / QUALIFICATION.LOCAL_SUBAGENTS
         binding.write_text(binding.read_text() + "\n## When to delegate\nCompeting copied policy.\n")
         self.rejects()
+
+    def test_manual_handoff_wait_requires_original_writer_prompt_and_failure_boundary(self):
+        path = self.root / "packages/codex-relay/skill/references/workflow.md"
+        original = path.read_text()
+        for before, after in (("complete, unmodified Writer prompt", "shortened prompt"),
+                              ("concrete terminal diagnostic", "success message"),
+                              ("observed label, event, run and Writer state", "inferred Step"),
+                              ("do not report success without Writer publication evidence",
+                               "report success without Writer publication evidence"),
+                              ("An inferred Step or pending run is not a terminal handoff",
+                               "An inferred Step or pending run is a terminal handoff"),
+                              ("through the original ready event and run", "through a new ready command")):
+            pattern = r"\s+".join(re.escape(word) for word in before.split())
+            with self.subTest(boundary=before):
+                self.assertRegex(original, pattern)
+                path.write_text(re.sub(pattern, lambda _: after, original, count=1))
+                self.rejects()
+            path.write_text(original)
+
+    def test_small_improvements_routes_cannot_use_unselected_or_bundled_protocols(self):
+        policy = (QUALIFICATION.SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
+        for name, before, after in (
+                ("AGENTS.md", policy, policy.replace("/7.0.1/", "/7.0.0/")),
+                ("AGENTS.md", "Relay explicitly adopts all ten", "Relay merely installs all ten"),
+                (QUALIFICATION.LOCAL_GOVERNANCE, "../" + policy,
+                 "../guidance/artifacts/standalone/codex-relay/references/shared/small-improvements.md"),
+                (QUALIFICATION.BOOT / "90-user.md", "Small Improvements is adopted",
+                 "Small Improvements remains unselected")):
+            path = self.root / name
+            original = path.read_text()
+            with self.subTest(route=str(name), before=before):
+                self.assertIn(before, original)
+                path.write_text(original.replace(before, after, 1))
+                self.rejects()
+            path.write_text(original)
+
+    def test_small_improvements_preserve_analysis_scope_review_and_pending_item_boundaries(self):
+        name = QUALIFICATION.LOCAL_GOVERNANCE
+        for before, after in (
+                ("label:small-improvement", "in:title Small improvement"),
+                ("Analysis-only Task | Skip the SI scan", "Analysis-only Task | Require the SI scan"),
+                ("trusted Decisions and admission remain the source of scope",
+                 "label and scheduling become the source of scope"),
+                ("one independent review assess the combined exact head",
+                 "successful tests accept the combined result"),
+                ("Keep source Issues open and labelled while work remains pending",
+                 "Close source Issues and remove their label upon scheduling"),
+                ("queue-empty gate or new mandatory CI gate", "a mandatory queue-empty CI gate")):
+            path = self.root / name
+            original = path.read_text()
+            pattern = r"\s+".join(re.escape(word) for word in before.split())
+            with self.subTest(boundary=before):
+                self.assertRegex(original, pattern)
+                path.write_text(re.sub(pattern, lambda _: after, original, count=1))
+                self.rejects()
+            path.write_text(original)
 
     def test_manifest_and_lock_graph_source_and_hash_are_bound(self):
         for name, replacements in (
@@ -494,6 +556,19 @@ class CommittedFlowTests(unittest.TestCase):
         path.write_bytes(original)
         QUALIFICATION.check_project(self.root)
         shutil.rmtree(historical)
+        self.rejects()
+
+    def test_frozen_5_0_0_registry_is_immutable_and_retained(self):
+        frozen = self.root / QUALIFICATION.PREVIOUS_SELF_SOURCE
+        self.assertEqual(QUALIFICATION.tree_hash(QUALIFICATION.files_in(frozen)),
+                         QUALIFICATION.PREVIOUS_SELF_HASH)
+        path = frozen / "skill/references/workflow.md"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\nchanged frozen package\n")
+        self.rejects()
+        path.write_bytes(original)
+        QUALIFICATION.check_project(self.root)
+        shutil.rmtree(frozen)
         self.rejects()
 
     def test_standalone_snapshot_cannot_drift_or_become_an_active_native_route(self):

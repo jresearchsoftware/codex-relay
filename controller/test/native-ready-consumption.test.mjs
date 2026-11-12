@@ -92,6 +92,8 @@ test('duplicate delivery of one native event does not invent a replacement', asy
   const record = await f.store.get(99);
   assert.equal(record.readyConsumed, true);
   assert.equal(record.readyConsumption.removalEventId, 72);
+  assert.deepEqual(record.predispatchPending, { version: 1, projectionFrom: [] });
+  assert.equal(record.stepProjected, true);
   assert.equal(record.envelope.readyEventId, 71);
 });
 

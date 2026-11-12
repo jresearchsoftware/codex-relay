@@ -667,6 +667,7 @@ class ReviewerRunnerNativeSystemdLifecycleTests(unittest.TestCase):
             fixture.write_activation_marker()
             fixture.systemctl("enable", "reviewer-mcp.service", "relay-runner.service")
             fixture.systemctl("start", "reviewer-mcp.service")
+            fixture.wait_for_listener()
             fixture.systemctl("start", "relay-runner.service")
             fixture.wait_for_state("reviewer-mcp.service", "active", "enabled")
             fixture.wait_for_state("relay-runner.service", "active", "enabled")
@@ -686,6 +687,7 @@ class ReviewerRunnerNativeSystemdLifecycleTests(unittest.TestCase):
             fixture.wait_for_state("relay-runner.service", "inactive", "enabled")
 
             fixture.systemctl("start", "reviewer-mcp.service")
+            fixture.wait_for_listener()
             fixture.systemctl("start", "relay-runner.service")
             fixture.wait_for_state("reviewer-mcp.service", "active", "enabled")
             fixture.wait_for_state("relay-runner.service", "active", "enabled")

@@ -6,7 +6,8 @@ import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
-import { completedPredispatchRecovery } from './predispatch-recovery.mjs';
+import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord,
+  consumedPredispatchMarker } from './predispatch-recovery.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -120,6 +121,8 @@ export function manualAdmissionComplete(record) {
 export async function completedAdmissionRecord(record, journal) {
   const e = record?.envelope;
   if (!e || e.version !== VERSION || !configDigest(e.consumerDigest) || !positive(e.runId)) return false;
+  // Generic callers do not provide a protected checkout reader or lock proof.
+  if (record.predispatchPending) return false;
   if (record.predispatchRecovery) return completedPredispatchRecovery(record) && !await journal.get(e.runId, e.repository);
   if (e.route === 'manual') return manualAdmissionComplete(record);
   if (e.route !== 'auto' || !publishedTerminal(record, Boolean(record.prepublicationRecovery))
@@ -182,7 +185,7 @@ function validServices(value) {
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
-  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null }) {
+  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null, checkoutAbsent = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
     || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
@@ -326,6 +329,29 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         continue;
       }
       if (e.route !== 'auto') continue;
+      // Production inventory and Writer admission share the publication lock.
+      // A pending marker cannot race the live Writer while this snapshot is read.
+      if (record.predispatchPending && record.predispatchRecovery) {
+        if (!completedPredispatchRecovery(record) || !journal || await journal.get(e.runId, e.repository)
+          || !checkoutAbsent || !await checkoutAbsent(e)) unknown.push(e.runId);
+        continue;
+      }
+      if (record.predispatchPending) {
+        // Consumption alone retains the slot, but a matching contained
+        // execution journal can release the physical resource before the
+        // separate task/PR lifecycle and external-effect boundary completes.
+        if (resourceOnly && consumedPredispatchMarker(record) && await resourceReleased(record)) continue;
+        if (consumedPredispatchMarker(record) && record.controllerLifecycle?.status === 'active' && !record.outcome) {
+          active.push(e.runId);
+          continue;
+        }
+        const safe = predispatchNoWorkerRecord(record) && journal && !await journal.get(e.runId, e.repository)
+          && checkoutAbsent && await checkoutAbsent(e);
+        // A possibly applied DELETE or Outcome publication remains an
+        // external-effect boundary even after the physical slot is released.
+        if (!safe || !resourceOnly && (!pendingPredispatchRecord(record) || record.readyConsumption)) unknown.push(e.runId);
+        continue;
+      }
       if (record.predispatchRecovery) {
         if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
         continue;
@@ -535,14 +561,24 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       }
       const lifecycle = record.controllerLifecycle;
       if (lifecycle && (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status))) fail('ADMISSION_ATTEMPT_INVALID');
-      if (lifecycle?.status === 'complete') return { complete: true };
-      const evidence = await contained(record);
+      if (lifecycle?.status === 'complete' && !record.predispatchPending) return { complete: true };
+      let evidence;
+      if (lifecycle?.status === 'complete' && consumedPredispatchMarker(record)) {
+        evidence = await contained(record);
+        if (!evidence) {
+          if (record.prepublicationRecovery) return { complete: true };
+          fail('ADMISSION_COMPLETION_UNKNOWN');
+        }
+      }
+      if (!evidence) evidence = await contained(record);
       if (!evidence) fail('ADMISSION_COMPLETION_UNKNOWN');
+      if (record.predispatchPending && !consumedPredispatchMarker(record)) fail('ADMISSION_COMPLETION_UNKNOWN');
       // This older receipt is already complete through its matching terminal
       // journal. Adding only lifecycle metadata would lose the legacy binding
       // on the next inventory; preserve both trusted receipts unchanged.
       if (!Object.hasOwn(record, 'controllerLifecycle') && record.prIntent === true && !Object.hasOwn(record, 'prNumber')) return { complete: true };
-      record.controllerLifecycle = { version: 1, status: 'complete', ...evidence };
+      if (lifecycle?.status !== 'complete') record.controllerLifecycle = { version: 1, status: 'complete', ...evidence };
+      delete record.predispatchPending;
       await store.put(runId, record);
       return { complete: true };
     }

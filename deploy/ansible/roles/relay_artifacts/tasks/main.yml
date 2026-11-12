@@ -152,7 +152,9 @@
 
 - name: Reconcile the shared pinned Rust toolchain for builds and development
   ansible.builtin.include_tasks: rust-toolchain.yml
-  when: not (relay_artifact_consume_staged | default(false) | bool) and not (relay_artifact_stage_only | default(false) | bool)
+  # The sealed consume path has already materialized or verified the prefix;
+  # it must still converge the ordinary host namespaces and access contract.
+  when: not (relay_artifact_stage_only | default(false) | bool)
 
 - name: Record the verified reused Reviewer toolchain identity
   ansible.builtin.set_fact:

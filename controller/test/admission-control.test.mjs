@@ -185,6 +185,33 @@ test('quiesce allows the existing admitted automatic controller to finish throug
   assert.equal(f.pushes(), 1);
 });
 
+test('consumed ready reservation stays held through preflight and clears only with terminal controller evidence', async t => {
+  const f = await fixtureWithGate(t, { labelLaunch: true }); const gate = f.admissionControl;
+  const admitted = await f.store.get(f.envelope.runId);
+  assert.equal(admitted.readyConsumed, true);
+  assert.ok(admitted.predispatchPending);
+  await gate.quiesce({ operationId, target });
+  const pending = await gate.status();
+  assert.deepEqual(pending.active, [f.envelope.runId]);
+  assert.deepEqual(pending.unknown, []);
+  assert.deepEqual((await gate.drained({ operationId })).drained, false);
+  const returned = await runAttempt({ ...f, execute: async () => {
+    await f.commit(); return { version: VERSION, attemptId: f.envelope.attemptId,
+      child: 'started', containment: 'reaped', result: { status: 'success', summary: 'completed', validation: [] } };
+  } });
+  assert.equal(returned.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  const completed = await f.store.get(f.envelope.runId);
+  assert.equal(completed.predispatchPending, undefined);
+  assert.deepEqual(completed.controllerLifecycle, { version: 1, status: 'complete', child: 'started', containment: 'reaped' });
+  assert.deepEqual((await gate.status()).unknown, []);
+  assert.deepEqual((await gate.status()).active, []);
+
+  completed.predispatchPending = { version: 1, projectionFrom: [] };
+  await f.store.put(f.envelope.runId, completed);
+  await gate.complete({ runId: f.envelope.runId, attemptId: f.envelope.attemptId });
+  assert.equal((await f.store.get(f.envelope.runId)).predispatchPending, undefined);
+});
+
 test('failed Ready handoff remains an unresolved drain boundary until exact transition recovery', async t => {
   const f = await fixtureWithGate(t); const gate = f.admissionControl; const ready = f.api.ready;
   f.api.ready = async () => { throw Object.assign(new Error('Ready failed'), { code: 'READY_MUTATION_FAILED' }); };

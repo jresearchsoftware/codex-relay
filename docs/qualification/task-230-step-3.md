@@ -46,8 +46,22 @@ next Step without forced label repair or reusing the original event.
 ## Operator-ready original-attempt procedure
 
 This is the concrete protected handoff, not evidence that recovery was executed.
+The original stdin examples below predate the Actions-read credential fix. For
+the current accepted entrypoint and secure credential transport, use the
+[deployment-operator procedure](../../controller/README.md#deployment-operator-entrypoint-before-an-upgrade)
+instead; do not run these historical examples unchanged.
 The [owning recovery contract](../../controller/README.md#pre-dispatch-admission-finalization)
 defines the reusable behavior and both supported entrypoints.
+
+For this incident, after source acceptance and staging, the current procedure's
+inspection command selects `--repository jresearchsoftware/docs-evolution-review
+--run-id 42608866374 --operation predispatch-state`. Substitute the actual
+verified SSH host, root-owned accepted source and protected consumer config as
+described there. Verify the returned original Step 2, event `35562373605`,
+pool-4 and PR 340/head binding before requesting the native authorization;
+re-read all protected state under the operation's locks. The helper does not
+itself grant authority or establish that the Actions credential can read this
+private repository.
 
 1. Obtain independent exact-source acceptance of this mechanism. Through the
    existing authorized root deployment channel, stage a verified root-owned copy

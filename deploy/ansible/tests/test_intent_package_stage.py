@@ -83,12 +83,12 @@ def runner_package(f, *, malformed=False, version='2.336.0'):
     return values
 
 
-def codex_package(f, *, version='0.167.0', escaping=False, fail=False):
+def codex_package(f, *, version='0.167.2', escaping=False, fail=False):
     installer = f['public'] / 'install.sh'
     installer.write_text('#!/bin/sh\nset -eu\n' + ('exit 7\n' if fail else '') +
-        'test "$#" = 2 && test "$1" = --release && test "$2" = 0.167.0\n'
+        'test "$#" = 2 && test "$1" = --release && test "$2" = 0.167.2\n'
         'test -z "${RELAY_SYNTHETIC_SECRET:-}"\n'
-        'release="$HOME/packages/standalone/releases/0.167.0-linux-x64/bin"\n'
+        'release="$HOME/packages/standalone/releases/0.167.2-linux-x64/bin"\n'
         'mkdir -p "$release" "$CODEX_INSTALL_DIR"\n'
         'printf \'#!/bin/sh\\nprintf "codex-cli ' + version + '\\\\n"\\n\' > "$release/codex"\n'
         'chmod 755 "$release/codex"\n'
@@ -97,7 +97,7 @@ def codex_package(f, *, version='0.167.0', escaping=False, fail=False):
         'ln -s "$release/codex" "$CODEX_INSTALL_DIR/codex"\n')
     (f['live'] / 'consumer.json').write_text('{"accepted":"old"}')
     return {'relay_intent_stage_root': str(f['stage']), 'relay_intent_stage_operation': OPERATION,
-        'relay_codex_cli_version': '0.167.0', 'relay_codex_installer_url': f['url'] + '/install.sh',
+        'relay_codex_cli_version': '0.167.2', 'relay_codex_installer_url': f['url'] + '/install.sh',
         'relay_codex_package_home': str(f['live'] / 'package-home'),
         'relay_codex_package_install_dir': str(f['live'] / 'package-bin'),
         'relay_codex_binary_path': str(f['live'] / 'bin/codex'),
@@ -180,7 +180,7 @@ def test_runner_stage_seal_and_tamper_rejection_preserve_live_distribution(packa
 @pytest.mark.parametrize('failure', ['download', 'installer', 'layout', 'version', 'permissions'])
 def test_codex_stage_failure_preserves_every_live_byte(package_fixture, failure):
     f = package_fixture
-    values = codex_package(f, version='0.159.0' if failure == 'version' else '0.167.0',
+    values = codex_package(f, version='0.159.0' if failure == 'version' else '0.167.2',
                             escaping=failure == 'layout', fail=failure == 'installer')
     if failure == 'download': values['relay_codex_installer_url'] += '.missing'
     if failure == 'permissions':
@@ -211,7 +211,7 @@ def test_codex_sealed_distribution_consumes_without_installer_or_network_and_reb
     command = Path(values['relay_codex_package_install_dir']) / 'codex'
     binary = command.resolve(strict=True)
     assert binary.is_relative_to(Path(values['relay_codex_package_home']))
-    assert subprocess.run([str(command), '--version'], capture_output=True, text=True, check=True).stdout.strip() == 'codex-cli 0.167.0'
+    assert subprocess.run([str(command), '--version'], capture_output=True, text=True, check=True).stdout.strip() == 'codex-cli 0.167.2'
     resource = binary.parent / 'resource'
     assert not os.path.isabs(os.readlink(resource))
     assert resource.read_bytes() == b'payload'
