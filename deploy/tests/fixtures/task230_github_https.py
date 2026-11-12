@@ -54,7 +54,7 @@ def prepare():
     with hosts.open('a') as stream:
         stream.write('\n127.0.0.1 api.github.com github.com chatgpt.com developers.openai.com\n')
     node = Path('/usr/bin/node')
-    assert node.is_symlink() and node.resolve() == Path('/usr/local/bin/node')
+    assert node.is_symlink() and node.resolve() == Path('/usr/local/bin/node').resolve(strict=True)
     node.unlink()
     node.write_text('#!/bin/sh\nexec /usr/local/bin/node --use-system-ca "$@"\n')
     node.chmod(0o755)

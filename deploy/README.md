@@ -564,6 +564,15 @@ activate services. Complete the credential/TLS, ingress and activation phases
 below only to the extent admitted by the owner, then run the final `post-check`.
 The result distinguishes installation from operational activation/qualification.
 
+Expert managed-pool `bootstrap` and `reinstall` defer pool reconciliation until
+Reviewer activation. Their pending result explicitly requires `activate`, then
+`apply` to reconcile General Runners. Register and enable the separate Production
+Runner through its public phases before the final `post-check`. Ordinary
+`--phase install` composes these transitions and retains its complete readiness
+checks. Whole installed-source verification hashes every regular source blob
+within the shared 64 MiB / 10,000-file budget; the 1 MiB default for protected
+control-file reads does not restrict individual source blobs.
+
 For an explicitly owner-authorized replacement of a pre-current installation,
 use the same interface with `--phase reinstall --authorize-reinstall`. Inventory
 must prove equivalent installed consumer identity and unambiguous local
