@@ -11,7 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 import clean_reinstall
-from test_execution_slots import inputs
+from config import load
+
+
+def inputs():
+    return load(ROOT / 'deploy/example.json', ROOT)
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')

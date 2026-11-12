@@ -441,6 +441,31 @@ def test_manual_outcome_socket_is_stopped_and_disabled_before_runtime_retirement
     assert template not in json.loads(value.paths['journal'].read_text())['units']
 
 
+@pytest.mark.parametrize('canonical', [True, False])
+def test_socket_cgroup_is_bound_to_its_managed_unit_before_retirement(installation, canonical):
+    value = installation
+    socket = reinstall.unit_names(value.config)[-2]
+    value.systemd.units[socket] = 'active'
+    original = value.systemd
+    def socket_properties(arguments, **kwargs):
+        result = original(arguments, **kwargs)
+        if arguments[1:3] == ['show', socket]:
+            group = '/system.slice/' + socket if canonical else '/system.slice/foreign.socket'
+            result.stdout += '\nControlPID=0\nControlGroup=' + group
+        return result
+    if canonical:
+        result = reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+            owner_uid=os.getuid(), user_ids=value.user_ids, runner=socket_properties)
+        assert result['state'] == 'DECOMMISSIONED'
+        assert ('stop', socket) in value.systemd.calls
+    else:
+        with pytest.raises(ValueError, match='UNIT_TRANSITION_PENDING'):
+            reinstall.decommission(value.config, TARGET, value.report, root=value.root,
+                owner_uid=os.getuid(), user_ids=value.user_ids, runner=socket_properties)
+        assert not value.paths['journal'].exists()
+        assert not any(action in ['stop', 'disable'] for action, _ in value.systemd.calls)
+
+
 def test_manual_outcome_template_override_blocks_retirement_before_reservation(installation):
     value = installation
     template = reinstall.unit_names(value.config)[-1]

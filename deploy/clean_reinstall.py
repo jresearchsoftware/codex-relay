@@ -288,13 +288,15 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         timer = name.endswith('.timer')
         activation_unit = timer or socket
         if activation_unit:
-            # Timer units expose timing state, not service PID properties. The
-            # associated managed recovery service is checked independently.
+            # Timer units expose timing state, not service PID properties. A
+            # listening socket may retain its own canonical systemd cgroup;
+            # socket-created service instances are checked independently.
             require((fields['ActiveState'], fields.get('SubState')) in [
                         *([('active', 'listening')] if socket else [('active', 'waiting'), ('active', 'elapsed')]),
                         ('inactive', 'dead'), ('failed', 'failed')]
                     and fields.get('MainPID', '0') == '0' and fields.get('ControlPID', '0') == '0'
-                    and not fields.get('ControlGroup'), 'UNIT_TRANSITION_PENDING')
+                    and fields.get('ControlGroup', '') in
+                        (['', '/system.slice/' + name] if socket else ['']), 'UNIT_TRANSITION_PENDING')
         else:
             require(fields.get('ControlPID') == '0', 'UNIT_TRANSITION_PENDING')
             require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
