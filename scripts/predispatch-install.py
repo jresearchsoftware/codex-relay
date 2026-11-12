@@ -44,7 +44,7 @@ try:
     cli=protected(source/'deploy/relay-deploy.py')
     # Only a fresh protected owner checkout may supply trusted Git metadata.
     protected(source/'.git',True);protected_tree(source);protected_tree(consumer)
-    env={'PATH':'/usr/bin:/bin','HOME':'/root','LANG':'C','LC_ALL':'C','PYTHONDONTWRITEBYTECODE':'1',
+    env={'PATH':'/usr/bin:/bin','HOME':'/root','LANG':'C.UTF-8','LC_ALL':'C.UTF-8','PYTHONDONTWRITEBYTECODE':'1',
          'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_OPTIONAL_LOCKS':'0'}
     head=subprocess.run(['/usr/bin/git','--no-replace-objects','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',
         '-C',str(source),'rev-parse','--verify','HEAD^{commit}'],env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=False)
