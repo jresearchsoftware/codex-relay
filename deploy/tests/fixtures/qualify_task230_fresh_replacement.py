@@ -134,6 +134,9 @@ def main():
         result = phase('install')
         report['ordinaryInstallResult'] = json.loads(result.stdout.split('RELAY_INSTALL_RESULT=')[-1].splitlines()[0])
         report['finalInstallationState'] = json.loads((install / 'current/artifact-manifest.json').read_text()).get('installationState')
+        assert files(archived_release) == source_before, 'Completion altered retired release bytes'
+        assert all(Path(path).is_file() and digest(Path(path)) == value for path, value in credentials.items())
+        assert all(Path(path).is_file() and digest(Path(path)) == value for path, value in history.items())
         assert command(stamp_args, cwd=source).stdout == foreign_before
         report.update(status='PASS', archive=str(archive), operationalPostCheck=True,
             incompleteOriginalPairPreserved=True,

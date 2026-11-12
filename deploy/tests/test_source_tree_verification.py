@@ -2,6 +2,7 @@
 import hashlib
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
@@ -63,7 +64,7 @@ def test_complete_candidate_git_tree_is_verified_without_exclusions(tmp_path, pr
 
 
 @pytest.mark.parametrize('fault', ['symlink', 'hardlink', 'writable', 'owner', 'parent-writable'])
-def test_large_source_file_protections_are_retained(tmp_path, protected, fault):
+def test_large_source_file_protections_are_retained(tmp_path, protected, monkeypatch, fault):
     path = write(tmp_path, 'source/blob', b'x' * (transition.MAX_BYTES + 1))
     if fault == 'symlink':
         target = tmp_path / 'outside'
@@ -74,7 +75,17 @@ def test_large_source_file_protections_are_retained(tmp_path, protected, fault):
     elif fault == 'writable':
         path.chmod(0o666)
     elif fault == 'owner':
-        protected.owner_uid = os.getuid() + 1
+        fstat = os.fstat
+
+        def foreign_file(descriptor):
+            info = fstat(descriptor)
+            if stat.S_ISREG(info.st_mode):
+                values = list(info)
+                values[4] = os.getuid() + 1
+                return os.stat_result(values)
+            return info
+
+        monkeypatch.setattr(transition.os, 'fstat', foreign_file)
     else:
         path.parent.chmod(0o777)
     with pytest.raises(PoolError, match='SOURCE_LINK_UNPROVEN|FILE_UNSAFE|PARENT_UNSAFE'):
