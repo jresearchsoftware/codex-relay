@@ -77,8 +77,8 @@ jobs:
 
       - name: Verify complete installed-source tree and tampering regressions
         run: |
-          python3 -m pip install pytest==8.3.5
-          python3 -m pytest -q deploy/tests/test_source_tree_verification.py
+          python3 -m pip install pytest==8.3.5 PyYAML==6.0.2
+          python3 -m pytest -q deploy/tests/test_source_tree_verification.py deploy/tests/test_inactive_reinstall_completion.py
 
       - name: Test Reviewer
         run: cargo test --manifest-path reviewer/Cargo.toml --locked
