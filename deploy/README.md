@@ -647,6 +647,57 @@ legacy provenance exception is involved. The same path applies to each known
 pre-current installation only after its own inventory and owner authorization;
 one consumer's state is never evidence for another's reinstall.
 
+### Replacing a diagnosed incomplete fresh installation
+
+An ordinary Git-managed install preserves a `fresh-incomplete` installation's
+exact product/configuration pair. A corrected product cannot silently replace
+that pair through `install`, and changing the old source or its pending marker
+is not recovery. If the original product cannot complete, the existing expert
+`reinstall` route can create a separate replacement after explicit owner
+authorization and qualification of that exact transition.
+
+First inspect the public inventory and original admission status. The bounded
+inactive replacement scenario requires the expected old source and manifest,
+an open admission gate with no active/unknown effects, inactive managed services,
+no runner registrations, and no unresolved operation or reinstall journal.
+Use the accepted corrected source and reviewed equivalent namespace, identities,
+paths, credentials and consumer configuration. Review and commit its exact
+workflow projection through the normal consumer change process before mutation.
+Uncertain state or a failed phase requires diagnosis of that original operation;
+do not clear its gate, markers, history or journal to make a retry pass.
+
+With `relay` below denoting the public CLI plus the same explicit `--config`,
+`--consumer-root` and `--resolved-revision` arguments on every invocation, the
+expert sequence is:
+
+```sh
+relay --phase inventory
+relay --phase workflow-verify
+relay --phase reinstall --authorize-reinstall
+relay --phase activate --authorize-reviewer-activation
+relay --phase runner-register --authorize-runner-register --runner-registration-token "$fresh_token"
+relay --phase runner-enable --authorize-runner-enable
+relay --phase apply
+relay --phase post-check
+```
+
+`fresh_token` is the existing short-lived Production Runner registration input;
+General Runner tokens remain target-local App-derived inputs. Preserve existing
+credentials and TLS through their supported references. If any credential or
+TLS prerequisite is not already reusable, complete its public preparation phase
+before activation rather than editing protected files.
+
+Verify that the original release, manifest, frozen receipt and pending marker
+remain byte-identical in
+`/opt/.<namespace>-retired-<old-SHA>-<new-SHA>/runtime`, that credentials and
+protected history remain intact, and that unrelated services keep their original
+process identities. The new installation has its own product identity. A later
+ordinary `install` establishes its new reviewed Git attestation and preserves
+existing readiness; expert replacement does not manufacture the original fresh
+pair's `ready` marker. Keep actual external GitHub registration/permission proof
+distinct from offline simulated transport evidence. This procedure grants no
+PROD authority and must not be used on an unclassified partial operation.
+
 ### First-install bootstrap and reusable state
 
 Treat missing install-time state according to ownership before asking the owner
