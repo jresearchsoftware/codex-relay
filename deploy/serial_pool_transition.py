@@ -64,7 +64,7 @@ class ProtectedFiles:
             for descriptor in reversed(descriptors):
                 os.close(descriptor)
 
-    def read(self, logical, *, modes=None, optional=False, allow_empty=False):
+    def read(self, logical, *, modes=None, optional=False, allow_empty=False, max_bytes=MAX_BYTES):
         try:
             with self.parent(logical) as (parent, name):
                 descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
@@ -74,10 +74,10 @@ class ProtectedFiles:
                     require(stat.S_ISREG(info.st_mode) and info.st_uid == self.owner_uid
                             and info.st_nlink == 1 and not info.st_mode & 0o022
                             and (modes is None or stat.S_IMODE(info.st_mode) in modes)
-                            and (allow_empty or info.st_size > 0) and info.st_size <= MAX_BYTES,
+                            and (allow_empty or info.st_size > 0) and info.st_size <= max_bytes,
                             'SERIAL_TRANSITION_FILE_UNSAFE')
-                    raw = stream.read(MAX_BYTES + 1)
-                    require(len(raw) <= MAX_BYTES and _stamp(info) == _stamp(os.fstat(stream.fileno()))
+                    raw = stream.read(max_bytes + 1)
+                    require(len(raw) <= max_bytes and _stamp(info) == _stamp(os.fstat(stream.fileno()))
                             and _stamp(info) == _stamp(os.stat(name, dir_fd=parent, follow_symlinks=False)),
                             'SERIAL_TRANSITION_FILE_CHANGED')
                     return raw
@@ -137,7 +137,12 @@ class ProtectedFiles:
                         finally:
                             os.close(child)
                     else:
-                        raw = self.read(logical + '/' + relative, allow_empty=True)
+                        # Source blobs share the bounded tree budget. The small
+                        # default read limit remains for protected control files.
+                        require(info.st_size <= MAX_SOURCE_BYTES - total_bytes,
+                                'SERIAL_TRANSITION_SOURCE_LIMIT')
+                        raw = self.read(logical + '/' + relative, allow_empty=True,
+                                        max_bytes=MAX_SOURCE_BYTES - total_bytes)
                         total_bytes += len(raw)
                         require(len(rows) < MAX_SOURCE_FILES and total_bytes <= MAX_SOURCE_BYTES,
                                 'SERIAL_TRANSITION_SOURCE_LIMIT')
