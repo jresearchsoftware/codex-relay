@@ -1,5 +1,6 @@
 """Generated recovery code parses and routes protected receipts to their slot."""
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,6 +22,21 @@ def test_generated_candidate_admission_has_one_consumer_binding_and_valid_module
     assert parsed.returncode == 0, parsed.stderr
     assert source.count('import { CONSUMER, CONSUMER_DIGEST }') == 1
     assert '../../consumer/' not in source
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+def test_generated_recovery_module_links_all_dependencies_from_retained_source(tmp_path):
+    source = clean_reinstall.recovery_admission_program(inputs(), source_base=ROOT.as_uri() + '/')
+    # Link and evaluate the real generated module outside the source checkout.
+    # Stop before the privileged state reader: this needs no root, gate or API.
+    source = source.split('assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);', 1)[0]
+    source += '\nconsole.log("REINSTALL_ADMISSION_MODULE_LINKED");\n'
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('RELAY_')}
+    environment['RELAY_CONSUMER_CONFIG'] = str(ROOT / 'consumer/fixtures/example.json')
+    result = subprocess.run(['node', '--input-type=module'], input=source, cwd=tmp_path,
+                            env=environment, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == 'REINSTALL_ADMISSION_MODULE_LINKED'
 
 
 @pytest.mark.parametrize('slot, expected', [('primary', '/var/lib/codex-relay/dispatch/attempts-v2'),

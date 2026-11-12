@@ -1306,7 +1306,10 @@ def recovery_admission_program(config, *, source_base=None):
     source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
                                ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
-                               ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs')]:
+                               ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs'),
+                               ('../../contracts/src/github-authority.mjs', base + 'contracts/src/github-authority.mjs'),
+                               ('./predispatch-recovery.mjs', base + 'controller/src/predispatch-recovery.mjs'),
+                               ('./execution-effects.mjs', base + 'controller/src/execution-effects.mjs')]:
         require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
         source = source.replace("'" + relative + "'", json.dumps(absolute))
     require(source.count('import { CONSUMER } from ') == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
