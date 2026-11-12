@@ -58,7 +58,9 @@ def register_runner(target, key, values, revision, token, guard):
         version = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
         proof = re.fullmatch(r'RUNNER_REGISTRATION_PASS url=(\S+) name=(\S+) label=([A-Za-z0-9_.,-]+) '
                              + r'version=' + version + r' state=(registered|reused) group=(\S+) work=(\S+)'
-                             r'(?: disable_update=(?:absent|true|false|invalid))?\n?', output)
+                             r'(?: disable_update=(?:absent|true|false|invalid)'
+                             r'(?: disable_update_source=\.(?:runner|runner_migrated)'
+                             r' disable_update_mismatch=(?:true|false))?)?\n?', output)
         if (proof is None or proof[1] != url or proof[2] != name
                 or proof[3] != ','.join(values['relay_runner_labels'])
                 or proof[5] != group or proof[6] != work):
