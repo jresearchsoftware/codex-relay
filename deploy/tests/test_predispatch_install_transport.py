@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,8 @@ def root_transport():
         root = Path(temporary)
         source, consumer = root / 'source', root / 'consumer'
         (source / 'deploy').mkdir(parents=True)
+        shutil.copy2(ROOT / 'deploy/ansible_transport.py', source / 'deploy/ansible_transport.py')
+        shutil.copytree(ROOT / 'deploy/ansible', source / 'deploy/ansible')
         consumer.mkdir()
         config, capture = root / 'deployment.json', root / 'capture.json'
         config.write_text(json.dumps({'capture': str(capture)})); config.chmod(0o600)
@@ -64,9 +67,22 @@ request=Path(args[args.index('--predispatch-recovery-request')+1]);raw=request.r
 assert stat.S_IMODE(request.stat().st_mode)==0o600 and request.stat().st_uid==0
 assert stat.S_IMODE(request.parent.stat().st_mode)==0o700
 assert all(token not in item for item in sys.argv) and all(token not in item for item in os.environ.values())
-Path(value['capture']).write_text(json.dumps({'path':str(request),'operation':json.loads(raw)['operation']}))
+captured={'path':str(request),'operation':json.loads(raw)['operation']}
+if value.get('ansible'):
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
+    import ansible_transport
+    answer=value['ansible'];expected=answer['input']
+    code=('import json,locale,os,sys; value=sys.stdin.read(); assert value == '+repr(expected)+'; '
+        'encoding=locale.getpreferredencoding(False); assert encoding.upper().replace("-","")=="UTF8",encoding; '
+        'assert os.environ.get("LANG")=="C.UTF-8"; assert os.environ.get("LC_ALL")=="C.UTF-8"; '
+        'print(json.dumps({"encoding":encoding,"lang":os.environ["LANG"],"lc_all":os.environ["LC_ALL"],'
+        '"input":value,"receipt":"PUBLIC_RECEIPT=PASS"},ensure_ascii=False))')
+    result=ansible_transport.run_target(None,None,['/usr/bin/python3','-I','-c',code],
+        input=expected,timeout=45,local=True)
+    captured.update({'ansible_returncode':result.returncode,'ansible_stdout':result.stdout,'ansible_stderr':result.stderr})
+Path(value['capture']).write_text(json.dumps(captured,ensure_ascii=False))
 if value.get('sleep'):time.sleep(60)
-sys.exit(value.get('exit',0))
+sys.exit(value.get('exit',captured.get('ansible_returncode',0)))
 ''')
         def git(*args):
             return subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-C', str(source), *args], text=True).strip()
@@ -90,6 +106,41 @@ def test_root_private_request_is_removed_after_success_or_failure(root_transport
     captured = json.loads(f.capture.read_bytes())
     assert captured['operation'] == 'finalize-predispatch'
     assert not Path(captured['path']).exists() and not Path(captured['path']).parent.exists()
+
+
+def test_exact_root_bridge_runs_real_ansible_local_target_with_utf8_locale(root_transport):
+    f = root_transport
+    literal = 'synthetic privé input — UTF-8: café'
+    f.config.write_text(json.dumps({'capture': str(f.capture), 'ansible': {'input': literal}}))
+    result = subprocess.run(f.argv, input=f.payload, capture_output=True, timeout=90)
+    assert result.returncode == 0, result.stderr.decode()
+    assert TOKEN.encode() not in result.stdout + result.stderr
+    captured = json.loads(f.capture.read_bytes())
+    assert captured['ansible_returncode'] == 0 and captured['ansible_stderr'] == ''
+    assert json.loads(captured['ansible_stdout']) == {
+        'encoding': 'UTF-8', 'lang': 'C.UTF-8', 'lc_all': 'C.UTF-8',
+        'input': literal, 'receipt': 'PUBLIC_RECEIPT=PASS'}
+    assert not Path(captured['path']).exists() and not Path(captured['path']).parent.exists()
+
+
+@pytest.mark.skipif(not NATIVE, reason='disposable root Linux Ansible locale proof required')
+def test_actual_ansible_refuses_non_utf8_locale_before_target_execution(tmp_path):
+    marker = tmp_path / 'must-not-run'
+    playbook = tmp_path / 'negative-locale.yml'
+    playbook.write_text(f'''- hosts: all
+  gather_facts: false
+  tasks:
+    - ansible.builtin.command: ['/usr/bin/touch', '{marker}']
+''')
+    env = {'PATH': '/usr/bin:/bin', 'HOME': '/root', 'LANG': 'C', 'LC_ALL': 'C',
+        'PYTHONCOERCECLOCALE': '0', 'PYTHONUTF8': '0', 'PYTHONDONTWRITEBYTECODE': '1',
+        'ANSIBLE_CONFIG': str(ROOT / 'deploy/ansible/ansible.cfg'),
+        'ANSIBLE_ROLES_PATH': str(ROOT / 'deploy/ansible/roles')}
+    result = subprocess.run(['/usr/bin/ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
+        cwd=ROOT / 'deploy/ansible', env=env, capture_output=True, text=True, timeout=45)
+    assert result.returncode != 0
+    assert 'Ansible requires the locale encoding to be UTF-8' in result.stdout + result.stderr
+    assert not marker.exists()
 
 
 def test_root_private_request_is_removed_after_termination(root_transport):
