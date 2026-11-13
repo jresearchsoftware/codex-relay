@@ -11,6 +11,7 @@ import { REPOSITORY, OWNER, causalEvidence, fail } from './execution-contract.mj
 import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
+import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 
 export async function main(options = {}) {
   const cancellation = new AbortController();
@@ -46,7 +47,10 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   } catch (error) {
     // These live admission decisions prove no new execution was authorized.
     // The Actions warning is the safe surface when no Writer target is admitted.
-    if (['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)) return { status: 'BLOCKED', code: error.code };
+    if (['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)) {
+      const reason = ownerRunRejectionReason(error.code, error.details?.reason);
+      return { status: 'BLOCKED', code: error.code, ...(reason ? { reason } : {}) };
+    }
     throw error;
   }
   const warning = admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings;
@@ -98,7 +102,9 @@ export async function reportRoutingResult(run, { write = value => process.stdout
       const code = value.code ?? value.envelope?.admissionBlock?.code;
       writeError(code === 'ADMISSION_QUIESCED'
         ? '::warning title=Codex admission::Automatic admission is quiesced; no worker started.\n'
-        : `::warning title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Reconcile the terminal Outcome before another attempt.\n`);
+        : code === 'OWNER_RUN_NOT_ADMITTED'
+          ? `::warning title=Codex admission::OWNER_RUN_NOT_ADMITTED${ownerRunRejectionReason(code, value.reason) ? ` (${value.reason})` : ''}; no worker started and no target-bound Outcome was authorized. Inspect the original owner run and configured admission expectations before any fresh owner command.\n`
+          : `::warning title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Reconcile the terminal Outcome before another attempt.\n`);
     }
     const warning = executionWarningSummary(value?.executionWarnings);
     if (warning) writeError(`::warning title=Codex execution::${warning}\n`);

@@ -3,6 +3,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { WriterBlockedError } from "../../runtime/src/contracts.mjs";
 import { createBoundedUtf8Capture } from "./utf8-capture.mjs";
 import { failureDiagnosticFromDetails } from "./diagnostics.mjs";
+import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 
 const DEFAULT_HELPER = CONSUMER.paths.writerHelper;
 // Includes the fixed wrapper's 300-second lock wait and a bounded 120-second
@@ -14,7 +15,10 @@ function requestError(error) {
   try { payload = JSON.parse(String(error.stderr ?? "")); } catch { payload = undefined; }
   const code = typeof payload?.code === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(payload.code) ? payload.code : "WRITER_HELPER_FAILED";
   const failureDiagnostic = failureDiagnosticFromDetails(payload);
-  return new WriterBlockedError(code, "The privileged Writer helper failed", failureDiagnostic ? { failureDiagnostic } : {});
+  const reason = ownerRunRejectionReason(code, payload?.reason);
+  return new WriterBlockedError(code, "The privileged Writer helper failed", {
+    ...(reason ? { reason } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {})
+  });
 }
 
 export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "/usr/bin/sudo", spawnImpl = nodeSpawn } = {}) {

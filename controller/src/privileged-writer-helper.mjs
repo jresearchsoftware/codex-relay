@@ -11,6 +11,7 @@ import { checkoutPath } from './attempt-runtime.mjs';
 import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
 import { assertCompatibleInstalledWriter } from './predispatch-target-compatibility.mjs';
 import { REPOSITORY, VERSION } from './execution-contract.mjs';
@@ -124,7 +125,8 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';
   const failureDiagnostic = failureDiagnosticFromDetails(error?.details);
-  return { code, ...(failureDiagnostic ? { failureDiagnostic } : {}) };
+  const reason = ownerRunRejectionReason(code, error?.details?.reason);
+  return { code, ...(reason ? { reason } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {}) };
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => {
