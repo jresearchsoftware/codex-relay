@@ -89,8 +89,45 @@ test('continuation launches implementation with the Writer identity and no remed
     assert.deepEqual(request.gitIdentity, CONSUMER.writerIdentity);
     assert.ok(!request.inputText.includes('Bounded base-branch reconciliation'));
     assert.ok(!request.inputText.includes('Native Change Request #'));
+    assert.ok(request.inputText.includes(`Issue implementation history: continue from the admitted starting head ${f.envelope.startHead}`));
+    assert.match(request.inputText, /ordinary single-parent commits using the supplied Writer bot identity/);
+    assert.match(request.inputText, /Do not create local merge commits, rebase, amend, reset or rewrite history/);
+    assert.match(request.inputText, /Reconcile needed accepted base changes as source-file edits in those linear commits/);
     return { status: 'success' };
   } });
+});
+
+test('Issue continuation reconciles advanced main through ordinary commits and publishes to its existing PR', async t => {
+  const f = await fixture(t, { continuation: true, mainAdvance: true });
+  const commits = []; let children = 0;
+  const post = f.api.post.bind(f.api);
+  f.api.post = (path, body) => { assert.notEqual(path, '/pulls'); return post(path, body); };
+  const result = await runAttempt({ ...f, execute: async e => {
+    const execution = await executeCodex(e, { runTask: async request => {
+      children++;
+      assert.equal(request.operation, 'issue-implementation');
+      assert.deepEqual(request.gitIdentity, CONSUMER.writerIdentity);
+      assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), e.startHead);
+      assert.match(request.inputText, /Reconcile needed accepted base changes as source-file edits in those linear commits/);
+      commits.push(await f.commit('main-feature.md', 'preserve main feature\n'));
+      commits.push(await f.commit('docs/work.md', 'advanced main behavior\ncompleted implementation\n'));
+      return { status: 'success', summary: 'Accepted base behavior reconciled with linear implementation commits.',
+        validation: ['source reconciliation checked'] };
+    } });
+    return { ...execution, containment: 'reaped' };
+  } });
+  assert.equal(children, 1);
+  assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.equal(result.prNumber, 43);
+  assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%P', commits[0]]), f.envelope.startHead);
+  assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%P', commits[1]]), commits[0]);
+  assert.equal(await f.remoteHead(), commits[1]);
+  assert.equal((await f.store.get(99)).publishedHead, commits[1]);
+  assert.equal(f.pushes(), 1);
+  assert.equal(await f.command(f.root, ['--git-dir=' + f.remote, 'rev-parse', CONSUMER.baseBranch]), f.envelope.targetBase);
+  assert.equal(await readFile(join(f.cwd, 'docs/prior.md'), 'utf8'), 'previous implementation progress\n');
+  assert.equal(await readFile(join(f.cwd, 'main-feature.md'), 'utf8'), 'preserve main feature\n');
+  assert.equal(await readFile(join(f.cwd, 'docs/work.md'), 'utf8'), 'advanced main behavior\ncompleted implementation\n');
 });
 
 test('an explicitly admitted existing branch without a PR can publish its first implementation PR', async t => {
@@ -298,12 +335,20 @@ test('continuation rejects transient introduced secrets before pushing', async t
 });
 
 test('implementation continuation cannot use the remediation-only merge permission', async t => {
-  const f = await fixture(t, { continuation: true });
+  const f = await fixture(t, { continuation: true, mainAdvance: true });
   await f.prepare(f.envelope);
+  await f.command(f.cwd, ['fetch', '--no-tags', f.remote, `${CONSUMER.baseBranch}:refs/remotes/main`]);
   const tree = await f.command(f.cwd, ['rev-parse', 'HEAD^{tree}']);
   const merge = await f.command(f.cwd, ['commit-tree', tree, '-p', f.envelope.startHead,
     '-p', f.envelope.targetBase, '-m', 'unauthorized integration'], f.identity);
   await f.command(f.cwd, ['update-ref', `refs/heads/${f.envelope.branch}`, merge]);
+  const tip = await f.commit();
+  assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%P', merge]), `${f.envelope.startHead} ${f.envelope.targetBase}`);
+  assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%P', tip]), merge);
+  for (const commit of [merge, tip]) {
+    assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%an%n%ae%n%cn%n%ce', commit]),
+      [CONSUMER.writerIdentity.name, CONSUMER.writerIdentity.email, CONSUMER.writerIdentity.name, CONSUMER.writerIdentity.email].join('\n'));
+  }
   const progress = await f.collect(f.envelope);
   await assert.rejects(f.broker.invoke(publication(f, progress)), { code: 'COMMIT_OWNERSHIP_INVALID' });
   assert.equal(f.pushes(), 0);
