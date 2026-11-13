@@ -297,6 +297,14 @@ cannot authorize another target or a replacement PR.
 Apply `codex-ready-auto` to the canonical Issue; `codex-ready-manual` produces the
 copyable manual handoff. This keeps Issue implementation and Writer commit
 identity, needs no Reviewer CR and grants no CR integration-merge permission.
+The worker receives this history restriction explicitly: ordinary single-parent
+commits from the admitted starting head, including when an existing PR is bound.
+Reconcile needed accepted base changes as source-file edits; do not merge, rebase,
+amend, reset or rewrite the Task history. A Task instruction to reconcile source
+does not grant the remediation-only local integration-merge exception. Preserve
+useful work and report a concrete conflict or authority boundary if safe source
+reconciliation is unavailable. The collector's existing ownership and ancestry
+checks remain unchanged.
 Each genuinely new admitted execution receives the next Step through the current
 numbering procedure. Local corrections and exact replay/recovery keep the same
 admission and Step. Exact already-admitted legacy/v3 operations keep their original
