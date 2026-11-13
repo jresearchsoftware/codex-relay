@@ -3,6 +3,8 @@
 Audit date: 2026-11-13. This is a bounded decision-preparation report, not a new
 policy, control register, remediation authorization or independent acceptance.
 Related to [Task 57](https://github.com/jresearchsoftware/codex-relay/issues/57).
+The [Step 2 continuation](task-57-step-2.md) supplies primary run-log readback,
+source clarifications and fresh validation; this report retains Step 1 provenance.
 The Issue stays open. No runtime, validation, deployment or permission behavior
 was changed by this Step.
 
@@ -373,13 +375,14 @@ Git config, hook, remote or product behavior was changed to make a check pass.
 
 Python initially lacked pytest/pip/ensurepip. A temporary task-owned directory
 received pytest 8.3.5 and its missing wheel dependencies with downloaded wheel
-hash verification, without system package installation. Remaining failures
-include protected-source/root-ownership assumptions: for example,
-`consumer_drift.restore()` checks a helper's actual source ancestry as root-owned,
-while this checkout's helper is owned by UID 65534 and the test runs as UID 990.
-That is evidence about this local test shape, not permission to weaken the
-installed protection or change source ownership. Not every failing Python case
-was individually diagnosed, and installed/root-only skips remain unproved.
+hash verification, without system package installation. Remaining failures were
+reported as environment/fixture-related, including protected ownership checks.
+The original raw failure records are not retained in this deliverable. Step 2's
+source check did not substantiate the earlier specific checkout-helper ancestry
+explanation for `consumer_drift.restore()`; that attribution and the causes of
+all 157 failures remain unverified. No complete per-case baseline diagnosis is
+claimed, and installed/root-only skips remain unproved. This grants no authority
+to weaken installed protection or change source ownership.
 The report is the only intended source delta; complete passing deployment
 qualification and native independent review are not claimed.
 
