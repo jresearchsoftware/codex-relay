@@ -17,7 +17,7 @@ elif '--expect-binding' in sys.argv[-1]:
     import shlex
     binding = shlex.split(sys.argv[-1])[-1]
     sys.stdin.read()
-    print('RUNNER_REGISTRATION_PASS ' + binding.replace(' group=', ' version=999.1.0 state=reused group=', 1) + ' disable_update=false')
+    print('RUNNER_REGISTRATION_PASS ' + binding.replace(' group=', ' version=999.1.0 state=reused group=', 1) + ' disable_update=false disable_update_source=.runner disable_update_mismatch=false')
 ''')
 
     @classmethod

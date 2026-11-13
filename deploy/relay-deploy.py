@@ -1106,8 +1106,12 @@ def run(args):
                         # Subsequent native postchecks use the ordinary fixed
                         # installed helper after the publication mutex releases.
                         clear_preparation_inventory()
+                    # Expert bootstrap/reinstall materializes an inactive
+                    # installation. Pool registration/start belongs to Apply
+                    # after the owner's separate Reviewer activation.
                     if (returncode == 0 and 'generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
+                            and not (install_flow and not intent_install)
                             and not completed_pool_reinstall and not getattr(args, '_intent_defer_pool_reconcile', False)):
                         from managed_pool_transport import reconcile_pool
                         proof = reconcile_pool(target, key, config, revision, guard,
@@ -1245,6 +1249,8 @@ def run(args):
                 print(f'RELAY_LIFECYCLE_VERIFIED={revision}')
             if install_flow:
                 print(f'RELAY_BOOTSTRAP_RESULT=PASS;phase={args.phase};installed={revision};post_check=clean;activation=owner-required')
+                if not intent_install and 'generalRunnerPool' in config['consumer']:
+                    print('RELAY_DEPLOYMENT_PENDING=ACTIVATION_AND_POOL_RECONCILIATION_REQUIRED;next=activate-then-apply')
             if args.local_reconcile:
                 require(f'PRODUCTION_LIFECYCLE_PRESERVED={revision};activation=owner-after-job' in evidence, 'local-live-lifecycle')
                 # Checkout mode retains the consumer workflow receipt ABI;

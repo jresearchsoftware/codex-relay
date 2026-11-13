@@ -288,13 +288,15 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         timer = name.endswith('.timer')
         activation_unit = timer or socket
         if activation_unit:
-            # Timer units expose timing state, not service PID properties. The
-            # associated managed recovery service is checked independently.
+            # Timer units expose timing state, not service PID properties. A
+            # listening socket may retain its own canonical systemd cgroup;
+            # socket-created service instances are checked independently.
             require((fields['ActiveState'], fields.get('SubState')) in [
                         *([('active', 'listening')] if socket else [('active', 'waiting'), ('active', 'elapsed')]),
                         ('inactive', 'dead'), ('failed', 'failed')]
                     and fields.get('MainPID', '0') == '0' and fields.get('ControlPID', '0') == '0'
-                    and not fields.get('ControlGroup'), 'UNIT_TRANSITION_PENDING')
+                    and fields.get('ControlGroup', '') in
+                        (['', '/system.slice/' + name] if socket else ['']), 'UNIT_TRANSITION_PENDING')
         else:
             require(fields.get('ControlPID') == '0', 'UNIT_TRANSITION_PENDING')
             require(re.fullmatch('[0-9]+', fields.get('MainPID', '')), 'UNIT_IDENTITY_UNPROVEN')
@@ -1306,7 +1308,10 @@ def recovery_admission_program(config, *, source_base=None):
     source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
                                ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
-                               ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs')]:
+                               ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs'),
+                               ('../../contracts/src/github-authority.mjs', base + 'contracts/src/github-authority.mjs'),
+                               ('./predispatch-recovery.mjs', base + 'controller/src/predispatch-recovery.mjs'),
+                               ('./execution-effects.mjs', base + 'controller/src/execution-effects.mjs')]:
         require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
         source = source.replace("'" + relative + "'", json.dumps(absolute))
     require(source.count('import { CONSUMER } from ') == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')

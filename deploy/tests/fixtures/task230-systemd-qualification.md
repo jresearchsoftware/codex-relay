@@ -50,13 +50,34 @@ and copied Cargo registry are selected. The actual locked Reviewer build, archiv
 extraction, artifact identities, manifests, root protection, units, sudo rules,
 namespace probes and systemd operations remain active.
 
+For a six-General-plus-one-Production clean install, omit `--reviewer-only`
+and pass `--capacity 6 --test-external-prerequisites --test-pool-prerequisites`
+to the public CLI fixture. Prepare/start the offline HTTPS fixture before the
+backend invocation. Pass an explicitly synthetic Production registration token
+to the public install command. The backend now uses the actual owner preflight
+transport and installed managed-pool helper; neither is replaced with PASS or
+an in-process substitute. The HTTPS fixture models group policy and registrations
+from this namespace's local registration markers. Verify the final manifest's
+`installationState.stage == "ready"`, six pool services, the separate Production
+service and the real Reviewer's process/listener. A successful fixture does not
+prove external GitHub registration or genuine Runner job handling.
+
+`qualify_task230_fresh_replacement.py` accepts a retained failed base fixture
+and a clean corrected source. It exercises expert replacement, separate
+activation/registration/Apply/post-check, preservation of the old frozen pair
+in its protected archive, credentials/history and the foreign ingress PID.
+It stops on any failed phase without clearing retained recovery evidence.
+Expert replacement operational readiness and ordinary fresh `ready` attestation
+are separate results.
+
 The following substitutions are intentional and must accompany any reported
 result:
 
 - GitHub pool permission and remote registration/label observations are local
-  synthetic data. No real App private key or access token is supplied. Local pool
-  `State`, `Host`, `reconcile`, registration execution under the Runner UID, and
-  systemd startup use production code.
+  synthetic HTTPS data. No real App private key or access token is supplied.
+  Actual target-side authentication code, source verification, installed pool
+  helper, `State`, `Host`, `reconcile`, registration execution under the Runner
+  UID and systemd startup use production code.
 - The external Runner distribution is a small archive with a version probe,
   registration-marker writer and a service process. It does not connect to
   GitHub Actions or accept work.

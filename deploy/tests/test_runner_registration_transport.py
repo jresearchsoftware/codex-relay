@@ -71,6 +71,33 @@ class TransportTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'proof-unproven'):
                     self.invoke()
 
+    def test_current_helper_marker_diagnostics_survive_fresh_and_reused_proofs(self):
+        original = self.process.communicate.return_value[0].rstrip('\n')
+        for state in ['registered', 'reused']:
+            for marker in ['.runner', '.runner_migrated']:
+                for mismatch in ['true', 'false']:
+                    with self.subTest(state=state, marker=marker, mismatch=mismatch):
+                        output = original.replace('state=reused', 'state=' + state)
+                        output += (' disable_update=false disable_update_source=' + marker
+                                   + ' disable_update_mismatch=' + mismatch + '\n')
+                        self.process.communicate.return_value = (output, '')
+                        proof, _ = self.invoke()
+                        self.assertEqual(proof, output.strip())
+
+    def test_unbounded_or_incomplete_marker_diagnostics_fail_closed(self):
+        original = self.process.communicate.return_value[0].rstrip('\n')
+        for suffix in [
+                ' disable_update=false disable_update_source=/foreign disable_update_mismatch=false',
+                ' disable_update=false disable_update_source=.runner disable_update_mismatch=unknown',
+                ' disable_update=false disable_update_source=.runner',
+                ' disable_update_source=.runner disable_update_mismatch=false',
+                ' disable_update=false disable_update_mismatch=false disable_update_source=.runner',
+                ' disable_update=false disable_update_source=.runner disable_update_mismatch=false extra=true']:
+            with self.subTest(suffix=suffix):
+                self.process.communicate.return_value = (original + suffix + '\n', '')
+                with self.assertRaisesRegex(RuntimeError, 'proof-unproven'):
+                    self.invoke()
+
     def test_general_helper_and_repository_identity_are_selected(self):
         self.values['relay_runner_name'] = '{{ relay_general_runner_name }}'
         self.values['relay_runner_labels'] = ['general']
