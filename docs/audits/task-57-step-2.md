@@ -18,10 +18,11 @@ publication reservation and final runtime assertion. The elapsed saving is
 
 The natural Apply log is now independently read through the connected GitHub
 tool. It confirms the phase baseline and narrows the long interval to an active
-backend call, without exposing role/task durations. The owner confirmed during
-Step 2 that no sanitized timing extract is available and requested that the gap
-be recorded. The required causal breakdown and a defensible end-to-end latency
-target remain **insufficient_evidence**. Neither the 31 duplicate calls nor Rust
+backend call, without exposing role/task durations. Step 2 did not obtain a
+sanitized host timing extract through its inspected evidence surfaces. Its
+earlier attribution of confirmation to the owner was unsupported. That access
+gap does not prove that historical host timing data do not exist. The required causal breakdown and a defensible end-to-end latency target remain
+**insufficient_evidence**. Neither the 31 duplicate calls nor Rust
 compilation is established as the dominant cause. No measured improvement or
 completion of that causal requirement is claimed.
 

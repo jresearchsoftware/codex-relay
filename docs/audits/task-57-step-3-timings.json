@@ -1,0 +1,6370 @@
+{
+  "task": 57,
+  "step": 3,
+  "attempt": "run-43507958608",
+  "product_revision": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+  "initial_test_config_revision": "89babb3078d15b24122cbd1673af8feb292e2fec",
+  "test_repositories": [
+    "jresearchsoftware/codex-relay-testbed",
+    "jresearchsoftware/codex-relay-testbed-2"
+  ],
+  "physical_pool_capacity": 2,
+  "fixed_execution_routes": 32,
+  "measurement": "Aggregate callback boundaries include controller and transport overhead, conditional evaluation, loop items and handlers; they are not exclusive module CPU time. Background helper invocations are excluded from this selected table. Never sum overlapping invocation wall times as an end-to-end total.",
+  "toolchain": {
+    "ansible_core": "2.17.14",
+    "node": "22.23.3",
+    "python": "3.11.2",
+    "git": "2.39.5",
+    "openssl": "3.0.22",
+    "rust": "1.90.0 pinned"
+  },
+  "invocations": [
+    {
+      "start_unix": 1794606446.0339944,
+      "playbooks": [
+        "relay-intent-prerequisites.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 8.021869,
+      "task_records": 11,
+      "apt_task_records": 1,
+      "apt_ok_task_records": 1,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 1.890262,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 10,
+          "seconds": 6.121925
+        },
+        "relay_base": {
+          "records": 1,
+          "seconds": 1.890262
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Observe namespace-owned services before any fresh OS package effect",
+          "records": 1,
+          "seconds": 5.232972,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_base",
+          "task": "Install only relay prerequisites",
+          "records": 1,
+          "seconds": 1.890262,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Refuse active or unknown orphan Relay state before fresh OS preparation",
+          "records": 1,
+          "seconds": 0.262899,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect configured admission and journal roots without reading retained contents",
+          "records": 1,
+          "seconds": 0.221838,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the canonical release pointer without following it",
+          "records": 1,
+          "seconds": 0.189663,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the fixed staging executable prerequisites without changing them",
+          "records": 1,
+          "seconds": 0.146103,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Refuse package preparation against an existing installed pointer",
+          "records": 1,
+          "seconds": 0.016733,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the proved missing installation before package preparation",
+          "records": 1,
+          "seconds": 0.015523,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require configured OS prerequisites before candidate staging",
+          "records": 1,
+          "seconds": 0.01276,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve retained admission for diagnosis before any fresh package preparation",
+          "records": 1,
+          "seconds": 0.011959,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Reuse only the owning product OS prerequisite tasks",
+          "records": 1,
+          "seconds": 0.011475,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 1
+    },
+    {
+      "start_unix": 1794606454.5150292,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 11.614615,
+      "task_records": 11,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 11,
+          "seconds": 11.579649
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 8.569996,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.176769,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.94174,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.488021,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Render the desired consumer solely for source compatibility validation",
+          "records": 1,
+          "seconds": 0.278034,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the frozen private staging invocation",
+          "records": 1,
+          "seconds": 0.028848,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Stage and verify the selected source and Reviewer artifact",
+          "records": 1,
+          "seconds": 0.025964,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind every deployment component to that same Relay revision",
+          "records": 1,
+          "seconds": 0.021853,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Resolve the frozen product and build identity before isolated staging",
+          "records": 1,
+          "seconds": 0.020764,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the Relay-owned immutable deployment identity",
+          "records": 1,
+          "seconds": 0.019241,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Return the exact source and desired consumer before expensive preparation",
+          "records": 1,
+          "seconds": 0.008419,
+          "ok": 0,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 2
+    },
+    {
+      "start_unix": 1794606467.574734,
+      "playbooks": [
+        "relay-intent-preflight.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 7.561733,
+      "task_records": 64,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 30,
+          "seconds": 2.576899
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.759948
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.206671
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_preflight",
+          "task": "Check protected paths",
+          "records": 1,
+          "seconds": 1.688338,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.243942,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect optional Docker[redacted] protected markers",
+          "records": 1,
+          "seconds": 0.539492,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect existing protected namespace parents before installation",
+          "records": 1,
+          "seconds": 0.528944,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate relay-owned paths do not overlap Nexus-owned paths",
+          "records": 1,
+          "seconds": 0.311098,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove installed numeric identity and ACL isolation for the complete finite pool",
+          "records": 1,
+          "seconds": 0.241242,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove the protected installed identity and the admitted desired-state route",
+          "records": 1,
+          "seconds": 0.211181,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.191681,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Collect Reviewer listening sockets with process ownership metadata",
+          "records": 1,
+          "seconds": 0.185725,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Refuse another consumer's repository or service identity before reconciliation",
+          "records": 1,
+          "seconds": 0.178001,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.175091,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.158765,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer service state",
+          "records": 1,
+          "seconds": 0.154939,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the pinned nginx container network membership",
+          "records": 1,
+          "seconds": 0.154374,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate every protected path is outside the relay namespace",
+          "records": 1,
+          "seconds": 0.151337,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer main PID",
+          "records": 1,
+          "seconds": 0.148119,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Validate the discovered gateway as a host-local IPv4 address",
+          "records": 1,
+          "seconds": 0.143941,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Validate the discovered gateway route on the host",
+          "records": 1,
+          "seconds": 0.14195,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Validate host, listener and foreign ownership boundaries",
+          "records": 1,
+          "seconds": 0.043647,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Refuse symlinked writable or foreign protected parents before mutation",
+          "records": 1,
+          "seconds": 0.036259,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 3
+    },
+    {
+      "start_unix": 1794606488.504174,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 131.736622,
+      "task_records": 91,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 34,
+          "seconds": 7.245061
+        },
+        "relay_artifacts": {
+          "records": 39,
+          "seconds": 86.77448
+        },
+        "relay_runner": {
+          "records": 9,
+          "seconds": 24.928995
+        },
+        "relay_codex_runtime": {
+          "records": 9,
+          "seconds": 12.740265
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_artifacts",
+          "task": "Build the locked reviewed Rust Reviewer release artifact",
+          "records": 1,
+          "seconds": 82.89711,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Extract the validated Runner package without touching the live namespace",
+          "records": 1,
+          "seconds": 13.097552,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the pinned official Codex package without touching live package-home",
+          "records": 1,
+          "seconds": 10.190212,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Download and verify the pinned Runner archive inside the isolated stage",
+          "records": 1,
+          "seconds": 3.519033,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Probe and seal the actual staged Runner package",
+          "records": 1,
+          "seconds": 3.426077,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Validate the staged Runner archive using the selected source validator",
+          "records": 1,
+          "seconds": 3.290242,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Probe and seal the actual staged Codex package without authentication",
+          "records": 1,
+          "seconds": 1.324495,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.308836,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Protect the complete isolated Runner payload before its version probe",
+          "records": 1,
+          "seconds": 1.229898,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Seal source and Reviewer bytes only after all package stages succeeded",
+          "records": 1,
+          "seconds": 0.964146,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.928874,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 0.680606,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.458554,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the complete pinned Rust tool set before considering reuse",
+          "records": 1,
+          "seconds": 0.453898,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Allow runtime traversal only to the reviewed release executable namespace",
+          "records": 1,
+          "seconds": 0.409229,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Download the official installer only into the isolated Codex stage",
+          "records": 1,
+          "seconds": 0.365193,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the frozen private configuration only inside isolated staging",
+          "records": 1,
+          "seconds": 0.343631,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Install stable Relay routing and recovery invocation paths",
+          "records": 1,
+          "seconds": 0.299248,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify existing pinned compiler identities without modifying their prefix",
+          "records": 1,
+          "seconds": 0.284885,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Stage the exact shared GitHub authority schemas for the Reviewer build",
+          "records": 1,
+          "seconds": 0.282313,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 4
+    },
+    {
+      "start_unix": 1794606657.095912,
+      "playbooks": [
+        "site.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 442.946347,
+      "task_records": 1734,
+      "apt_task_records": 34,
+      "apt_ok_task_records": 33,
+      "apt_skipped_task_records": 1,
+      "apt_callback_seconds": 22.309371,
+      "additional_bubblewrap_task_records": 31,
+      "additional_bubblewrap_ok_task_records": 31,
+      "additional_bubblewrap_callback_seconds": 19.87001,
+      "roles": {
+        "unassigned": {
+          "records": 625,
+          "seconds": 170.867393
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.751933
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.191873
+        },
+        "relay_runner": {
+          "records": 362,
+          "seconds": 105.966234
+        },
+        "relay_base": {
+          "records": 11,
+          "seconds": 3.393269
+        },
+        "relay_runtime": {
+          "records": 54,
+          "seconds": 16.328819
+        },
+        "relay_artifacts": {
+          "records": 62,
+          "seconds": 15.42784
+        },
+        "relay_reviewer_bind": {
+          "records": 7,
+          "seconds": 0.895798
+        },
+        "relay_nginx": {
+          "records": 15,
+          "seconds": 0.256379
+        },
+        "relay_codex_runtime": {
+          "records": 514,
+          "seconds": 114.962587
+        },
+        "relay_controller": {
+          "records": 50,
+          "seconds": 9.587295
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_codex_runtime",
+          "task": "Reconcile only fixed repository work ancestor metadata",
+          "records": 64,
+          "seconds": 27.08023,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect repository work ancestors without following aliases",
+          "records": 64,
+          "seconds": 25.815091,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Install only the existing automatic relay sudo capabilities for the general identity",
+          "records": 32,
+          "seconds": 25.797562,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create root-owned slot namespace parents",
+          "records": 31,
+          "seconds": 25.052661,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the same pinned verified runner package for this physical instance",
+          "records": 2,
+          "seconds": 23.770585,
+          "ok": 2,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the required optional parallel process namespace primitive",
+          "records": 31,
+          "seconds": 19.87001,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Preserve the private routing and shared Codex work boundaries",
+          "records": 32,
+          "seconds": 17.867813,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install fixed credential-free slot dispatcher and diagnostic wrappers",
+          "records": 31,
+          "seconds": 16.721433,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Inspect generic runtime roots before ownership reconciliation",
+          "records": 32,
+          "seconds": 16.624186,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create private runtime credential and diagnostic destinations",
+          "records": 31,
+          "seconds": 13.097928,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Extract the verified runner package into the dedicated runner namespace",
+          "records": 1,
+          "seconds": 12.988924,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create the private slot identities and work group",
+          "records": 31,
+          "seconds": 12.611679,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Verify and consume sealed source and Reviewer bytes without downloading or rebuilding",
+          "records": 1,
+          "seconds": 9.885756,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution module",
+          "records": 32,
+          "seconds": 9.197951,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same fixed owner lifecycle capability for this automatic slot",
+          "records": 31,
+          "seconds": 8.8943,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the bounded sandbox cleanup helper for the runtime identity",
+          "records": 32,
+          "seconds": 8.753124,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution wrapper",
+          "records": 32,
+          "seconds": 8.694572,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex diagnostic helper with every launcher reconciliation",
+          "records": 32,
+          "seconds": 8.660736,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed isolated-slot namespace builder",
+          "records": 32,
+          "seconds": 8.413216,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Initialize the same non-secret diagnostic policy in this slot",
+          "records": 31,
+          "seconds": 8.192902,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 5
+    },
+    {
+      "start_unix": 1794607100.7186785,
+      "playbooks": [
+        "site.yml"
+      ],
+      "check_mode": true,
+      "callback_seconds": 350.567545,
+      "task_records": 1724,
+      "apt_task_records": 34,
+      "apt_ok_task_records": 33,
+      "apt_skipped_task_records": 1,
+      "apt_callback_seconds": 15.261734,
+      "additional_bubblewrap_task_records": 31,
+      "additional_bubblewrap_ok_task_records": 31,
+      "additional_bubblewrap_callback_seconds": 14.003642,
+      "roles": {
+        "unassigned": {
+          "records": 614,
+          "seconds": 121.163655
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.760252
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 5.180074
+        },
+        "relay_runner": {
+          "records": 361,
+          "seconds": 85.664564
+        },
+        "relay_base": {
+          "records": 11,
+          "seconds": 2.392051
+        },
+        "relay_runtime": {
+          "records": 51,
+          "seconds": 10.96646
+        },
+        "relay_artifacts": {
+          "records": 73,
+          "seconds": 5.026891
+        },
+        "relay_reviewer_bind": {
+          "records": 5,
+          "seconds": 0.517316
+        },
+        "relay_nginx": {
+          "records": 15,
+          "seconds": 0.25264
+        },
+        "relay_codex_runtime": {
+          "records": 510,
+          "seconds": 111.157116
+        },
+        "relay_controller": {
+          "records": 50,
+          "seconds": 7.173789
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_codex_runtime",
+          "task": "Reconcile only fixed repository work ancestor metadata",
+          "records": 64,
+          "seconds": 27.036571,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect repository work ancestors without following aliases",
+          "records": 64,
+          "seconds": 26.824368,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Install only the existing automatic relay sudo capabilities for the general identity",
+          "records": 32,
+          "seconds": 26.123191,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create root-owned slot namespace parents",
+          "records": 31,
+          "seconds": 24.961699,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Preserve the private routing and shared Codex work boundaries",
+          "records": 32,
+          "seconds": 17.78369,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Inspect generic runtime roots before ownership reconciliation",
+          "records": 32,
+          "seconds": 17.580669,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install fixed credential-free slot dispatcher and diagnostic wrappers",
+          "records": 31,
+          "seconds": 17.233439,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the required optional parallel process namespace primitive",
+          "records": 31,
+          "seconds": 14.003642,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create private runtime credential and diagnostic destinations",
+          "records": 31,
+          "seconds": 13.027863,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create the private slot identities and work group",
+          "records": 31,
+          "seconds": 12.543681,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution module",
+          "records": 32,
+          "seconds": 9.41792,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the bounded sandbox cleanup helper for the runtime identity",
+          "records": 32,
+          "seconds": 9.058854,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution wrapper",
+          "records": 32,
+          "seconds": 8.972416,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same fixed owner lifecycle capability for this automatic slot",
+          "records": 31,
+          "seconds": 8.912134,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed isolated-slot namespace builder",
+          "records": 32,
+          "seconds": 8.762854,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex diagnostic helper with every launcher reconciliation",
+          "records": 32,
+          "seconds": 8.696066,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Assign existing generic dispatch journals to the general runner",
+          "records": 32,
+          "seconds": 4.932864,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Initialize the same non-secret diagnostic policy in this slot",
+          "records": 31,
+          "seconds": 4.764629,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Create the general runner primary group",
+          "records": 32,
+          "seconds": 4.747255,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the established primary credential metadata without its bytes",
+          "records": 31,
+          "seconds": 4.443436,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 6
+    },
+    {
+      "start_unix": 1794607489.095958,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 11.047998,
+      "task_records": 11,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 11,
+          "seconds": 11.013648
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 8.006869,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.211009,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.928557,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.480594,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Render the desired consumer solely for source compatibility validation",
+          "records": 1,
+          "seconds": 0.272056,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the frozen private staging invocation",
+          "records": 1,
+          "seconds": 0.025157,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Stage and verify the selected source and Reviewer artifact",
+          "records": 1,
+          "seconds": 0.023211,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind every deployment component to that same Relay revision",
+          "records": 1,
+          "seconds": 0.021178,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the Relay-owned immutable deployment identity",
+          "records": 1,
+          "seconds": 0.018375,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Resolve the frozen product and build identity before isolated staging",
+          "records": 1,
+          "seconds": 0.018162,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Return the exact source and desired consumer before expensive preparation",
+          "records": 1,
+          "seconds": 0.00848,
+          "ok": 0,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 7
+    },
+    {
+      "start_unix": 1794607502.8069577,
+      "playbooks": [
+        "relay-intent-preflight.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 13.093184,
+      "task_records": 69,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 35,
+          "seconds": 8.134813
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.750088
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.189422
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Inspect managed upgrade service activity before installation",
+          "records": 1,
+          "seconds": 4.656781,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Check protected paths",
+          "records": 1,
+          "seconds": 1.677537,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.281857,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect optional Docker[redacted] protected markers",
+          "records": 1,
+          "seconds": 0.541592,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect existing protected namespace parents before installation",
+          "records": 1,
+          "seconds": 0.537947,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require known service activity before a managed upgrade",
+          "records": 1,
+          "seconds": 0.433287,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind each additional runner activity to its immutable configured slot",
+          "records": 1,
+          "seconds": 0.326005,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate relay-owned paths do not overlap Nexus-owned paths",
+          "records": 1,
+          "seconds": 0.308926,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove installed numeric identity and ACL isolation for the complete finite pool",
+          "records": 1,
+          "seconds": 0.239787,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove the protected installed identity and the admitted desired-state route",
+          "records": 1,
+          "seconds": 0.212438,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.200135,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Collect Reviewer listening sockets with process ownership metadata",
+          "records": 1,
+          "seconds": 0.183542,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Refuse another consumer's repository or service identity before reconciliation",
+          "records": 1,
+          "seconds": 0.181313,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.172609,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the pinned nginx container network membership",
+          "records": 1,
+          "seconds": 0.156073,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.150752,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer service state",
+          "records": 1,
+          "seconds": 0.148607,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer main PID",
+          "records": 1,
+          "seconds": 0.148052,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate every protected path is outside the relay namespace",
+          "records": 1,
+          "seconds": 0.141281,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Validate the discovered gateway route on the host",
+          "records": 1,
+          "seconds": 0.141184,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 8
+    },
+    {
+      "start_unix": 1794607793.9298816,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 11.594031,
+      "task_records": 11,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 11,
+          "seconds": 11.559489
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 8.181044,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.564815,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.937814,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.485816,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Render the desired consumer solely for source compatibility validation",
+          "records": 1,
+          "seconds": 0.276161,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the frozen private staging invocation",
+          "records": 1,
+          "seconds": 0.024943,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Stage and verify the selected source and Reviewer artifact",
+          "records": 1,
+          "seconds": 0.022217,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind every deployment component to that same Relay revision",
+          "records": 1,
+          "seconds": 0.0211,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the Relay-owned immutable deployment identity",
+          "records": 1,
+          "seconds": 0.01937,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Resolve the frozen product and build identity before isolated staging",
+          "records": 1,
+          "seconds": 0.017739,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Return the exact source and desired consumer before expensive preparation",
+          "records": 1,
+          "seconds": 0.00847,
+          "ok": 0,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 9
+    },
+    {
+      "start_unix": 1794607808.1425257,
+      "playbooks": [
+        "relay-intent-preflight.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 13.241673,
+      "task_records": 69,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 35,
+          "seconds": 8.266835
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.750149
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.205796
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Inspect managed upgrade service activity before installation",
+          "records": 1,
+          "seconds": 4.616859,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Check protected paths",
+          "records": 1,
+          "seconds": 1.682604,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.462915,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect optional Docker[redacted] protected markers",
+          "records": 1,
+          "seconds": 0.53893,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect existing protected namespace parents before installation",
+          "records": 1,
+          "seconds": 0.53873,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require known service activity before a managed upgrade",
+          "records": 1,
+          "seconds": 0.427277,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind each additional runner activity to its immutable configured slot",
+          "records": 1,
+          "seconds": 0.323446,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate relay-owned paths do not overlap Nexus-owned paths",
+          "records": 1,
+          "seconds": 0.313335,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove installed numeric identity and ACL isolation for the complete finite pool",
+          "records": 1,
+          "seconds": 0.241651,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove the protected installed identity and the admitted desired-state route",
+          "records": 1,
+          "seconds": 0.216902,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.196158,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Collect Reviewer listening sockets with process ownership metadata",
+          "records": 1,
+          "seconds": 0.182811,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Refuse another consumer's repository or service identity before reconciliation",
+          "records": 1,
+          "seconds": 0.182463,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.171548,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the pinned nginx container network membership",
+          "records": 1,
+          "seconds": 0.155836,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.150174,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer main PID",
+          "records": 1,
+          "seconds": 0.14983,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer service state",
+          "records": 1,
+          "seconds": 0.147935,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate every protected path is outside the relay namespace",
+          "records": 1,
+          "seconds": 0.145838,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Validate the discovered gateway route on the host",
+          "records": 1,
+          "seconds": 0.14557,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 10
+    },
+    {
+      "start_unix": 1794607836.9457994,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 53.179831,
+      "task_records": 91,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 34,
+          "seconds": 7.067288
+        },
+        "relay_artifacts": {
+          "records": 39,
+          "seconds": 4.365196
+        },
+        "relay_runner": {
+          "records": 9,
+          "seconds": 24.609297
+        },
+        "relay_codex_runtime": {
+          "records": 9,
+          "seconds": 17.090409
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_runner",
+          "task": "Extract the validated Runner package without touching the live namespace",
+          "records": 1,
+          "seconds": 12.810796,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the pinned official Codex package without touching live package-home",
+          "records": 1,
+          "seconds": 7.775739,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect actual Codex destinations before creating the isolated package stage",
+          "records": 1,
+          "seconds": 6.932643,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Probe and seal the actual staged Runner package",
+          "records": 1,
+          "seconds": 3.477022,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Download and verify the pinned Runner archive inside the isolated stage",
+          "records": 1,
+          "seconds": 3.454691,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Validate the staged Runner archive using the selected source validator",
+          "records": 1,
+          "seconds": 3.24418,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Probe and seal the actual staged Codex package without authentication",
+          "records": 1,
+          "seconds": 1.321325,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Protect the complete isolated Runner payload before its version probe",
+          "records": 1,
+          "seconds": 1.259277,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.252865,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Seal source and Reviewer bytes only after all package stages succeeded",
+          "records": 1,
+          "seconds": 0.954254,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.915725,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 0.666446,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.455474,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the complete pinned Rust tool set before considering reuse",
+          "records": 1,
+          "seconds": 0.453239,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Allow runtime traversal only to the reviewed release executable namespace",
+          "records": 1,
+          "seconds": 0.407573,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Download the official installer only into the isolated Codex stage",
+          "records": 1,
+          "seconds": 0.366497,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the frozen private configuration only inside isolated staging",
+          "records": 1,
+          "seconds": 0.34058,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify existing pinned compiler identities without modifying their prefix",
+          "records": 1,
+          "seconds": 0.288229,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Inspect the current Reviewer manifest and binary for reuse eligibility",
+          "records": 1,
+          "seconds": 0.288155,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Stage reviewed Rust Reviewer source and lockfile",
+          "records": 1,
+          "seconds": 0.284644,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 11
+    },
+    {
+      "start_unix": 1794607952.128424,
+      "playbooks": [
+        "site.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 460.605789,
+      "task_records": 1753,
+      "apt_task_records": 34,
+      "apt_ok_task_records": 33,
+      "apt_skipped_task_records": 1,
+      "apt_callback_seconds": 25.514556,
+      "additional_bubblewrap_task_records": 31,
+      "additional_bubblewrap_ok_task_records": 31,
+      "additional_bubblewrap_callback_seconds": 23.036568,
+      "roles": {
+        "unassigned": {
+          "records": 650,
+          "seconds": 178.417575
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.755724
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.239172
+        },
+        "relay_runner": {
+          "records": 361,
+          "seconds": 100.443352
+        },
+        "relay_base": {
+          "records": 11,
+          "seconds": 3.416521
+        },
+        "relay_runtime": {
+          "records": 51,
+          "seconds": 10.82362
+        },
+        "relay_artifacts": {
+          "records": 60,
+          "seconds": 16.315232
+        },
+        "relay_reviewer_bind": {
+          "records": 7,
+          "seconds": 0.688137
+        },
+        "relay_nginx": {
+          "records": 15,
+          "seconds": 0.252847
+        },
+        "relay_codex_runtime": {
+          "records": 514,
+          "seconds": 134.908252
+        },
+        "relay_controller": {
+          "records": 50,
+          "seconds": 10.002055
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_codex_runtime",
+          "task": "Reconcile only fixed repository work ancestor metadata",
+          "records": 64,
+          "seconds": 30.521301,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect repository work ancestors without following aliases",
+          "records": 64,
+          "seconds": 28.854441,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Install only the existing automatic relay sudo capabilities for the general identity",
+          "records": 32,
+          "seconds": 28.297904,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create root-owned slot namespace parents",
+          "records": 31,
+          "seconds": 27.170543,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Inspect generic runtime roots before ownership reconciliation",
+          "records": 32,
+          "seconds": 23.426442,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the required optional parallel process namespace primitive",
+          "records": 31,
+          "seconds": 23.036568,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Preserve the private routing and shared Codex work boundaries",
+          "records": 32,
+          "seconds": 19.355396,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install fixed credential-free slot dispatcher and diagnostic wrappers",
+          "records": 31,
+          "seconds": 18.55932,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create the private slot identities and work group",
+          "records": 31,
+          "seconds": 17.265222,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create private runtime credential and diagnostic destinations",
+          "records": 31,
+          "seconds": 14.007056,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Verify and consume sealed source and Reviewer bytes without downloading or rebuilding",
+          "records": 1,
+          "seconds": 10.869936,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution module",
+          "records": 32,
+          "seconds": 10.386546,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution wrapper",
+          "records": 32,
+          "seconds": 9.709691,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the bounded sandbox cleanup helper for the runtime identity",
+          "records": 32,
+          "seconds": 9.698758,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same fixed owner lifecycle capability for this automatic slot",
+          "records": 31,
+          "seconds": 9.658999,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Consume the verified complete Codex distribution without installer or network access",
+          "records": 1,
+          "seconds": 9.404643,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed isolated-slot namespace builder",
+          "records": 32,
+          "seconds": 9.298226,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex diagnostic helper with every launcher reconciliation",
+          "records": 32,
+          "seconds": 9.289401,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same consumer credential inside the isolated runtime identity",
+          "records": 31,
+          "seconds": 9.010594,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Assign existing generic dispatch journals to the general runner",
+          "records": 32,
+          "seconds": 5.357271,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 12
+    },
+    {
+      "start_unix": 1794608433.5283325,
+      "playbooks": [
+        "relay-docker-nginx.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 14.873638,
+      "task_records": 94,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 7,
+          "seconds": 1.496431
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.857624
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.82542
+        },
+        "relay_reviewer_bind": {
+          "records": 7,
+          "seconds": 1.008946
+        },
+        "relay_docker_nginx": {
+          "records": 46,
+          "seconds": 6.649504
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_preflight",
+          "task": "Check protected paths",
+          "records": 1,
+          "seconds": 1.874298,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.12992,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Inspect the parameterized Nexus ownership root and support paths",
+          "records": 1,
+          "seconds": 0.90549,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect existing protected namespace parents before installation",
+          "records": 1,
+          "seconds": 0.707577,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Inspect the Docker-nginx certificate projection destinations",
+          "records": 1,
+          "seconds": 0.616327,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect optional Docker[redacted] protected markers",
+          "records": 1,
+          "seconds": 0.599028,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Stage relay certificate and client-CA projection source files without exposing contents",
+          "records": 1,
+          "seconds": 0.534126,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Inspect the Docker-nginx configuration directory and relay fragment without following links",
+          "records": 1,
+          "seconds": 0.46526,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_reviewer_bind",
+          "task": "Render the Reviewer config for the validated bind mode",
+          "records": 1,
+          "seconds": 0.403103,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate relay-owned paths do not overlap Nexus-owned paths",
+          "records": 1,
+          "seconds": 0.384587,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Inspect the expected Docker and Nexus control-plane services",
+          "records": 1,
+          "seconds": 0.31884,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Install the isolated relay Docker-nginx mTLS fragment",
+          "records": 1,
+          "seconds": 0.299784,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Validate the complete active Docker-nginx configuration with docker exec",
+          "records": 1,
+          "seconds": 0.270471,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Reload Docker nginx with docker exec, never host nginx.service",
+          "records": 1,
+          "seconds": 0.25745,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Validate configured relay certificate hostname and key pair without printing private material",
+          "records": 1,
+          "seconds": 0.250992,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the accepted installation before bootstrap staging",
+          "records": 1,
+          "seconds": 0.243227,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Validate staged certificate projection before installation",
+          "records": 1,
+          "seconds": 0.23647,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Collect Reviewer listening sockets with process ownership metadata",
+          "records": 1,
+          "seconds": 0.22057,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Create a root-controlled temporary certificate projection directory",
+          "records": 1,
+          "seconds": 0.214763,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_nginx",
+          "task": "Inspect public listener ownership for the active Docker-nginx control plane",
+          "records": 1,
+          "seconds": 0.203933,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 13
+    },
+    {
+      "start_unix": 1794608455.0948853,
+      "playbooks": [
+        "relay-reviewer-activation.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 10.658742,
+      "task_records": 87,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 76,
+          "seconds": 9.879733
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.750817
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Enable and start Reviewer through the explicit activation transition window",
+          "records": 1,
+          "seconds": 3.042551,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect address-bound Reviewer helpers",
+          "records": 1,
+          "seconds": 1.58082,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the deployed Reviewer release and non-secret manifest",
+          "records": 1,
+          "seconds": 0.473704,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Record the durable authorized Reviewer activation marker",
+          "records": 1,
+          "seconds": 0.347925,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify the activated Reviewer service state",
+          "records": 1,
+          "seconds": 0.323949,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the Reviewer activation prestate",
+          "records": 1,
+          "seconds": 0.304846,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.271587,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Clear the explicit reactivation requirement after successful activation",
+          "records": 1,
+          "seconds": 0.218719,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Read only the deployed Reviewer release manifest",
+          "records": 1,
+          "seconds": 0.213039,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.205848,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Begin or retain the exact production operation under the transition lock",
+          "records": 1,
+          "seconds": 0.193522,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify the expected private Reviewer TCP listener after activation",
+          "records": 1,
+          "seconds": 0.180174,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Clear production recovery evidence under the transition lock",
+          "records": 1,
+          "seconds": 0.180159,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify Reviewer credential readiness before service activation",
+          "records": 1,
+          "seconds": 0.169952,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the pinned nginx container network membership",
+          "records": 1,
+          "seconds": 0.165099,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the staged Reviewer service unit",
+          "records": 1,
+          "seconds": 0.160545,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify the durable authorized Reviewer activation marker",
+          "records": 1,
+          "seconds": 0.157083,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.157043,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Resolve the checked-out activation head on the Ansible controller",
+          "records": 1,
+          "seconds": 0.154661,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Read the durable authorized Reviewer activation marker after transition",
+          "records": 1,
+          "seconds": 0.149596,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 14
+    },
+    {
+      "start_unix": 1794608482.6433191,
+      "playbooks": [
+        "relay-production-runner-enable.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 12.868704,
+      "task_records": 91,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 80,
+          "seconds": 12.009562
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.834791
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Enable only the already installed registered production runner",
+          "records": 1,
+          "seconds": 2.056441,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.170195,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect pre-enable service and protected runtime boundaries",
+          "records": 1,
+          "seconds": 1.059151,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the final runner and protected service state",
+          "records": 1,
+          "seconds": 0.778034,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect address-bound Reviewer helpers",
+          "records": 1,
+          "seconds": 0.571112,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect installed runner software and unit before the lifecycle transition",
+          "records": 1,
+          "seconds": 0.458287,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Verify the installed production runner version without replacing software",
+          "records": 1,
+          "seconds": 0.456018,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Start the registered runner through the explicit runner-enable transition window",
+          "records": 1,
+          "seconds": 0.308143,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the exact current release and non-secret manifest",
+          "records": 1,
+          "seconds": 0.306452,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect registration markers",
+          "records": 1,
+          "seconds": 0.302052,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.260403,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Read only the current non-secret release manifest",
+          "records": 1,
+          "seconds": 0.232619,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.21637,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Begin or retain the exact production operation under the transition lock",
+          "records": 1,
+          "seconds": 0.20608,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the expected private Reviewer TCP listener after runner enablement",
+          "records": 1,
+          "seconds": 0.186877,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Clear production recovery evidence under the transition lock",
+          "records": 1,
+          "seconds": 0.183185,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the current release after runner enablement",
+          "records": 1,
+          "seconds": 0.178643,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.175901,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Capture the public listening boundary after runner enablement",
+          "records": 1,
+          "seconds": 0.17572,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Capture the public listening boundary before runner enablement",
+          "records": 1,
+          "seconds": 0.172991,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 15
+    },
+    {
+      "start_unix": 1794608539.7101977,
+      "playbooks": [
+        "site.yml"
+      ],
+      "check_mode": true,
+      "callback_seconds": 380.01963,
+      "task_records": 1728,
+      "apt_task_records": 34,
+      "apt_ok_task_records": 33,
+      "apt_skipped_task_records": 1,
+      "apt_callback_seconds": 17.667962,
+      "additional_bubblewrap_task_records": 31,
+      "additional_bubblewrap_ok_task_records": 31,
+      "additional_bubblewrap_callback_seconds": 16.235525,
+      "roles": {
+        "unassigned": {
+          "records": 618,
+          "seconds": 133.640046
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.823401
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.655478
+        },
+        "relay_runner": {
+          "records": 361,
+          "seconds": 92.148017
+        },
+        "relay_base": {
+          "records": 11,
+          "seconds": 2.716153
+        },
+        "relay_runtime": {
+          "records": 51,
+          "seconds": 11.331777
+        },
+        "relay_artifacts": {
+          "records": 73,
+          "seconds": 5.554287
+        },
+        "relay_reviewer_bind": {
+          "records": 5,
+          "seconds": 0.580068
+        },
+        "relay_nginx": {
+          "records": 15,
+          "seconds": 0.305232
+        },
+        "relay_codex_runtime": {
+          "records": 510,
+          "seconds": 119.90684
+        },
+        "relay_controller": {
+          "records": 50,
+          "seconds": 8.019099
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_codex_runtime",
+          "task": "Reconcile only fixed repository work ancestor metadata",
+          "records": 64,
+          "seconds": 28.982646,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect repository work ancestors without following aliases",
+          "records": 64,
+          "seconds": 28.829411,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Install only the existing automatic relay sudo capabilities for the general identity",
+          "records": 32,
+          "seconds": 28.151234,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create root-owned slot namespace parents",
+          "records": 31,
+          "seconds": 27.140152,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Preserve the private routing and shared Codex work boundaries",
+          "records": 32,
+          "seconds": 19.234268,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Inspect generic runtime roots before ownership reconciliation",
+          "records": 32,
+          "seconds": 18.946067,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install fixed credential-free slot dispatcher and diagnostic wrappers",
+          "records": 31,
+          "seconds": 18.666414,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the required optional parallel process namespace primitive",
+          "records": 31,
+          "seconds": 16.235525,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create private runtime credential and diagnostic destinations",
+          "records": 31,
+          "seconds": 14.144975,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create the private slot identities and work group",
+          "records": 31,
+          "seconds": 13.712192,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution module",
+          "records": 32,
+          "seconds": 10.259276,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the bounded sandbox cleanup helper for the runtime identity",
+          "records": 32,
+          "seconds": 9.826514,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution wrapper",
+          "records": 32,
+          "seconds": 9.705093,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same fixed owner lifecycle capability for this automatic slot",
+          "records": 31,
+          "seconds": 9.636209,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed isolated-slot namespace builder",
+          "records": 32,
+          "seconds": 9.429607,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex diagnostic helper with every launcher reconciliation",
+          "records": 32,
+          "seconds": 9.366726,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Assign existing generic dispatch journals to the general runner",
+          "records": 32,
+          "seconds": 5.247887,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Initialize the same non-secret diagnostic policy in this slot",
+          "records": 31,
+          "seconds": 5.124144,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Create the general runner primary group",
+          "records": 32,
+          "seconds": 5.065677,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the established primary credential metadata without its bytes",
+          "records": 31,
+          "seconds": 4.981769,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 16
+    },
+    {
+      "start_unix": 1794609320.3613951,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 11.087085,
+      "task_records": 11,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 11,
+          "seconds": 11.052293
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 7.819682,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.418714,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.936475,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.48727,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Render the desired consumer solely for source compatibility validation",
+          "records": 1,
+          "seconds": 0.274296,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the frozen private staging invocation",
+          "records": 1,
+          "seconds": 0.026396,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Stage and verify the selected source and Reviewer artifact",
+          "records": 1,
+          "seconds": 0.024216,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind every deployment component to that same Relay revision",
+          "records": 1,
+          "seconds": 0.021367,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require the Relay-owned immutable deployment identity",
+          "records": 1,
+          "seconds": 0.018154,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Resolve the frozen product and build identity before isolated staging",
+          "records": 1,
+          "seconds": 0.017488,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Return the exact source and desired consumer before expensive preparation",
+          "records": 1,
+          "seconds": 0.008235,
+          "ok": 0,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 17
+    },
+    {
+      "start_unix": 1794609334.1196434,
+      "playbooks": [
+        "relay-intent-preflight.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 13.116405,
+      "task_records": 69,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 35,
+          "seconds": 8.121925
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.753166
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.222054
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "unassigned",
+          "task": "Inspect managed upgrade service activity before installation",
+          "records": 1,
+          "seconds": 4.681086,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Check protected paths",
+          "records": 1,
+          "seconds": 1.694416,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.254277,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect existing protected namespace parents before installation",
+          "records": 1,
+          "seconds": 0.543328,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect optional Docker[redacted] protected markers",
+          "records": 1,
+          "seconds": 0.542274,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require known service activity before a managed upgrade",
+          "records": 1,
+          "seconds": 0.425369,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Bind each additional runner activity to its immutable configured slot",
+          "records": 1,
+          "seconds": 0.319046,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate relay-owned paths do not overlap Nexus-owned paths",
+          "records": 1,
+          "seconds": 0.311225,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove installed numeric identity and ACL isolation for the complete finite pool",
+          "records": 1,
+          "seconds": 0.246411,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove the protected installed identity and the admitted desired-state route",
+          "records": 1,
+          "seconds": 0.211704,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the durable production operation record without following links",
+          "records": 1,
+          "seconds": 0.19651,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Collect Reviewer listening sockets with process ownership metadata",
+          "records": 1,
+          "seconds": 0.186146,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Refuse another consumer's repository or service identity before reconciliation",
+          "records": 1,
+          "seconds": 0.181134,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Require same-invocation continuation for a retained clean-reinstall journal",
+          "records": 1,
+          "seconds": 0.170156,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the pinned nginx container network membership",
+          "records": 1,
+          "seconds": 0.154987,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Inspect the exact admitted Nexus Docker network",
+          "records": 1,
+          "seconds": 0.15174,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer service state",
+          "records": 1,
+          "seconds": 0.151389,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_docker_network_gateway",
+          "task": "Validate the discovered gateway route on the host",
+          "records": 1,
+          "seconds": 0.148643,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Inspect the admitted Reviewer main PID",
+          "records": 1,
+          "seconds": 0.145367,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_preflight",
+          "task": "Validate every protected path is outside the relay namespace",
+          "records": 1,
+          "seconds": 0.143642,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 18
+    },
+    {
+      "start_unix": 1794609363.10519,
+      "playbooks": [
+        "relay-intent-stage.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 52.571261,
+      "task_records": 91,
+      "apt_task_records": 0,
+      "apt_ok_task_records": 0,
+      "apt_skipped_task_records": 0,
+      "apt_callback_seconds": 0,
+      "additional_bubblewrap_task_records": 0,
+      "additional_bubblewrap_ok_task_records": 0,
+      "additional_bubblewrap_callback_seconds": 0,
+      "roles": {
+        "unassigned": {
+          "records": 34,
+          "seconds": 7.498635
+        },
+        "relay_artifacts": {
+          "records": 39,
+          "seconds": 4.433781
+        },
+        "relay_runner": {
+          "records": 9,
+          "seconds": 24.539964
+        },
+        "relay_codex_runtime": {
+          "records": 9,
+          "seconds": 16.050294
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_runner",
+          "task": "Extract the validated Runner package without touching the live namespace",
+          "records": 1,
+          "seconds": 12.606239,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the pinned official Codex package without touching live package-home",
+          "records": 1,
+          "seconds": 10.049655,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Probe and seal the actual staged Runner package",
+          "records": 1,
+          "seconds": 3.554322,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Probe and seal the actual staged Codex package without authentication",
+          "records": 1,
+          "seconds": 3.553315,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Download and verify the pinned Runner archive inside the isolated stage",
+          "records": 1,
+          "seconds": 3.485529,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Validate the staged Runner archive using the selected source validator",
+          "records": 1,
+          "seconds": 3.226108,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect actual Codex destinations before creating the isolated package stage",
+          "records": 1,
+          "seconds": 1.326013,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Gathering Facts",
+          "records": 1,
+          "seconds": 1.319926,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Protect the complete isolated Runner payload before its version probe",
+          "records": 1,
+          "seconds": 1.304842,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Seal source and Reviewer bytes only after all package stages succeeded",
+          "records": 1,
+          "seconds": 1.198573,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Parse actual candidate entrypoints without executing their privileged main functions",
+          "records": 1,
+          "seconds": 0.938191,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Validate the complete Git tree and materialize only bounded regular source bytes",
+          "records": 1,
+          "seconds": 0.774148,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Download the official installer only into the isolated Codex stage",
+          "records": 1,
+          "seconds": 0.464145,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Inspect the complete pinned Rust tool set before considering reuse",
+          "records": 1,
+          "seconds": 0.460802,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Transport the exact frozen Git archive into the private operation directory",
+          "records": 1,
+          "seconds": 0.454016,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Allow runtime traversal only to the reviewed release executable namespace",
+          "records": 1,
+          "seconds": 0.408864,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the frozen private configuration only inside isolated staging",
+          "records": 1,
+          "seconds": 0.34652,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Read the deployed Reviewer executable digest",
+          "records": 1,
+          "seconds": 0.31339,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Inspect the current Reviewer manifest and binary for reuse eligibility",
+          "records": 1,
+          "seconds": 0.291071,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Render the desired consumer solely for source compatibility validation",
+          "records": 1,
+          "seconds": 0.284869,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 19
+    },
+    {
+      "start_unix": 1794609476.6429765,
+      "playbooks": [
+        "site.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 424.281199,
+      "task_records": 1756,
+      "apt_task_records": 34,
+      "apt_ok_task_records": 33,
+      "apt_skipped_task_records": 1,
+      "apt_callback_seconds": 22.582115,
+      "additional_bubblewrap_task_records": 31,
+      "additional_bubblewrap_ok_task_records": 31,
+      "additional_bubblewrap_callback_seconds": 20.092172,
+      "roles": {
+        "unassigned": {
+          "records": 655,
+          "seconds": 162.170792
+        },
+        "relay_docker_network_gateway": {
+          "records": 11,
+          "seconds": 0.755425
+        },
+        "relay_preflight": {
+          "records": 23,
+          "seconds": 4.258253
+        },
+        "relay_runner": {
+          "records": 361,
+          "seconds": 90.239595
+        },
+        "relay_base": {
+          "records": 11,
+          "seconds": 3.43739
+        },
+        "relay_runtime": {
+          "records": 51,
+          "seconds": 11.113671
+        },
+        "relay_artifacts": {
+          "records": 60,
+          "seconds": 16.07487
+        },
+        "relay_reviewer_bind": {
+          "records": 5,
+          "seconds": 0.525491
+        },
+        "relay_nginx": {
+          "records": 15,
+          "seconds": 0.251439
+        },
+        "relay_codex_runtime": {
+          "records": 514,
+          "seconds": 125.147943
+        },
+        "relay_controller": {
+          "records": 50,
+          "seconds": 9.988537
+        }
+      },
+      "top_task_aggregates": [
+        {
+          "role": "relay_codex_runtime",
+          "task": "Reconcile only fixed repository work ancestor metadata",
+          "records": 64,
+          "seconds": 27.183478,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Inspect repository work ancestors without following aliases",
+          "records": 64,
+          "seconds": 26.899768,
+          "ok": 64,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Install only the existing automatic relay sudo capabilities for the general identity",
+          "records": 32,
+          "seconds": 26.499315,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create root-owned slot namespace parents",
+          "records": 31,
+          "seconds": 25.077155,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install the required optional parallel process namespace primitive",
+          "records": 31,
+          "seconds": 20.092172,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Preserve the private routing and shared Codex work boundaries",
+          "records": 32,
+          "seconds": 17.978229,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_runner",
+          "task": "Inspect generic runtime roots before ownership reconciliation",
+          "records": 32,
+          "seconds": 17.822293,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Install fixed credential-free slot dispatcher and diagnostic wrappers",
+          "records": 31,
+          "seconds": 17.293621,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create private runtime credential and diagnostic destinations",
+          "records": 31,
+          "seconds": 13.05998,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Create the private slot identities and work group",
+          "records": 31,
+          "seconds": 12.717563,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_artifacts",
+          "task": "Verify and consume sealed source and Reviewer bytes without downloading or rebuilding",
+          "records": 1,
+          "seconds": 10.43413,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution module",
+          "records": 32,
+          "seconds": 9.539364,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the bounded sandbox cleanup helper for the runtime identity",
+          "records": 32,
+          "seconds": 9.151342,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex execution wrapper",
+          "records": 32,
+          "seconds": 9.051555,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Preserve the same fixed owner lifecycle capability for this automatic slot",
+          "records": 31,
+          "seconds": 8.925814,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed Codex diagnostic helper with every launcher reconciliation",
+          "records": 32,
+          "seconds": 8.770181,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Install the fixed isolated-slot namespace builder",
+          "records": 32,
+          "seconds": 8.742434,
+          "ok": 32,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "relay_codex_runtime",
+          "task": "Consume the verified complete Codex distribution without installer or network access",
+          "records": 1,
+          "seconds": 8.384027,
+          "ok": 1,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove installed numeric identity and ACL isolation for the complete finite pool",
+          "records": 2,
+          "seconds": 6.296188,
+          "ok": 2,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        },
+        {
+          "role": "unassigned",
+          "task": "Prove that the optional runtime can enter its private process namespace",
+          "records": 31,
+          "seconds": 5.097105,
+          "ok": 31,
+          "skipped": 0,
+          "failed": 0,
+          "unreachable": 0,
+          "retry": 0
+        }
+      ],
+      "invocation": 20
+    }
+  ],
+  "other_completed_invocations": [
+    {
+      "start_unix": 1794606244.5769722,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.621794,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606245.5982475,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.633945,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606246.7015424,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 6.001183,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606246.7024505,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.620549,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606247.7374108,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.611087,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606248.7543335,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 2.7776,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606248.7543335,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.622276,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606249.7710512,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.617634,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606250.7878637,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.62754,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606251.975355,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.632083,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606402.4936538,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.617209,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606403.5607743,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.647752,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606430.713675,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.617094,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606431.7370834,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.630091,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606432.7722452,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1093.838601,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606432.7723901,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.61369,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606433.789086,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.611852,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606434.8056507,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1090.690558,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606434.8057938,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.625039,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606435.8794467,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.62823,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606437.0806425,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.63529,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606438.151998,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.643746,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606439.2931824,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.656037,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606440.3617687,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.443301,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794606441.2878337,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 3.209758,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606444.9127407,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.669668,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606466.50629,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.650381,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606475.5432546,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 7.793436,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606483.730822,
+      "playbooks": [
+        "relay-intent-apt-preflight.yml"
+      ],
+      "check_mode": null,
+      "callback_seconds": 4.332187,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794606620.6289423,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.199615,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606622.2547016,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 3.640603,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606626.325069,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.776609,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606628.5422,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.023758,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606629.9644403,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.644298,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606631.0313618,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.643818,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606632.1005092,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.442307,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794606633.0228546,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 2.998116,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606636.440256,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 10.019877,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606646.8807414,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.028354,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606648.3485858,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 3.627949,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606652.4240243,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.75423,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606654.5881257,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 1.018713,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794606656.0317788,
+      "playbooks": [],
+      "check_mode": null,
+      "callback_seconds": 0.656977,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607451.9852839,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.652588,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607453.1861246,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.637146,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607454.2585335,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.64827,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607455.3220797,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.652129,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607456.388371,
+      "playbooks": [
+        "relay-reviewer-credentials.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 1.623303,
+      "task_records": 9
+    },
+    {
+      "start_unix": 1794607458.421988,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.646644,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607459.6294804,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.634685,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607460.7048619,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.655511,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607461.7658286,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.645727,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607462.8663037,
+      "playbooks": [
+        "relay-writer-credentials.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 1.604923,
+      "task_records": 9
+    },
+    {
+      "start_unix": 1794607464.8988378,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.648408,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607466.1059172,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.642032,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607467.1764202,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.651111,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607468.2411866,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.651592,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607469.3076394,
+      "playbooks": [
+        "relay-codex-credentials.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 1.519666,
+      "task_records": 10
+    },
+    {
+      "start_unix": 1794607471.2241588,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.654936,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607472.4483533,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.636915,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607473.516439,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.644862,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607474.5849679,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.648875,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607475.6497712,
+      "playbooks": [
+        "relay-tls-preparation.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 3.877848,
+      "task_records": 8
+    },
+    {
+      "start_unix": 1794607479.972299,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.659203,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607481.1716552,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.636319,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607482.3254695,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.648317,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607483.393416,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.43547,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794607484.3590426,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.23938,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607488.0248876,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.663422,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607500.5123024,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.659103,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607501.5786078,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.777079,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607516.315187,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.088565,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607524.8036177,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.633944,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607525.9011698,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.637277,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607623.5380657,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.625483,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607624.5558379,
+      "playbooks": [
+        "relay-tls-preparation.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 14.339493,
+      "task_records": 8
+    },
+    {
+      "start_unix": 1794607685.6597087,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.621798,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607686.6771638,
+      "playbooks": [
+        "relay-tls-preparation.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 15.425845,
+      "task_records": 8
+    },
+    {
+      "start_unix": 1794607779.6246414,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.62348,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607780.6457872,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.631797,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607781.6812947,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1143.834929,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607781.6814196,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.617702,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607782.698862,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.615299,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607783.7157054,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1140.711999,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607783.7160263,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.622644,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607784.7922242,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.613649,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607785.997626,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.639943,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607787.1432834,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.656235,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607788.2124949,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.438332,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794607789.1351492,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.324917,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607792.8598125,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.652641,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607805.897336,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.654896,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607806.9634795,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.763602,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607821.8111954,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.155811,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607830.4064426,
+      "playbooks": [
+        "relay-intent-apt-preflight.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 4.382204,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794607835.241222,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.26962,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607890.5153856,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.021976,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607891.9388685,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.831402,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607896.1607792,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.910478,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607899.4802458,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.794085,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607901.7100267,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.43607,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794607902.580651,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.731895,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607903.7425451,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.644435,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607904.8101742,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.709665,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607905.9261734,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.018035,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607907.3434381,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.849417,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607911.6195219,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.882367,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607914.9406357,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.048799,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607917.4048753,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.776244,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607918.6292949,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 495.661452,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607918.6302485,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.631704,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607919.7211735,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.625992,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607920.7571614,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.772768,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607922.9267535,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.722909,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607924.1088612,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.44119,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794607925.0201826,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.40383,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607928.8359828,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.782962,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607930.0554307,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.313792,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607938.7901893,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.032126,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607940.2625873,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.836445,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607944.5297909,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.903974,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607947.8502991,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.113279,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607949.3688343,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.260876,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794607951.0634198,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.657128,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608413.4500782,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.731597,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608414.7467291,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.77058,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608415.962927,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.779778,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608417.2363832,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.755419,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608418.654085,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.695762,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608419.8215597,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.714608,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608420.9911187,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.753388,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608422.2083976,
+      "playbooks": [
+        "relay-tls-preparation.yml"
+      ],
+      "check_mode": true,
+      "callback_seconds": 3.345347,
+      "task_records": 8
+    },
+    {
+      "start_unix": 1794608426.0231755,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.761239,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608427.4435706,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.699141,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608428.6121223,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 21.126561,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608428.61229,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.740834,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608429.8277433,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.709485,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608431.0453012,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.757581,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608432.3125157,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.738116,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608448.9448123,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.724033,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608450.2277832,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.713037,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608451.5418665,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.724956,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608452.710729,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.725061,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608453.9285226,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.706724,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608466.3109105,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.714487,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608467.6827562,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.701877,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608468.8500106,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.263087,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608468.8501713,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.71744,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608470.0167127,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.718923,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608471.2822917,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 4.47569,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608476.2546864,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.754033,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608477.5834234,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.730977,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608478.990746,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.712148,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608480.160023,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.741024,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608481.3761802,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.727368,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608496.0100245,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.785615,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608497.3293395,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.476559,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794608498.3544126,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 35.932333,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608534.7736175,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.724401,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608536.1541295,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.709546,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608537.375927,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.702019,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608538.540386,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.712966,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608920.4694512,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.648787,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608921.5409448,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.712137,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608922.6580398,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.648585,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608923.7255287,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.639173,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794608924.8555498,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.636747,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609304.665422,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.627494,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609305.6870453,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.644271,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609306.7352197,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 622.958238,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609306.7354836,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.623382,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609307.751593,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.613022,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609308.7681735,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 619.830886,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609308.7683895,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.634465,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609309.840164,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.620566,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609310.9065359,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.826412,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609312.3224928,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.639297,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609313.4701965,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.65614,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609314.5391939,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.437853,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794609315.4628494,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.304175,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609319.1877604,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.727211,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609331.8241873,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.657493,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609332.8902354,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.783758,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609347.6795714,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.40549,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609356.5242798,
+      "playbooks": [
+        "relay-intent-apt-preflight.yml"
+      ],
+      "check_mode": false,
+      "callback_seconds": 4.428327,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794609361.3900375,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.301684,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609416.0780187,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.1899,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609417.7065527,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.884033,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609422.0308218,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.913657,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609425.4204378,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.098137,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609426.923637,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.437275,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794609427.7975368,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.725461,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609428.9590566,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.655755,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609430.024152,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.726064,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609431.203748,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.016033,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609432.6583955,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.852526,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609436.932359,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.905798,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609440.2514014,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.912744,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609442.569438,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.781983,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609443.793804,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 458.471883,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609443.7945883,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.62541,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609444.8542216,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.627482,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609445.923244,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.724644,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609447.1198063,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.71982,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609448.2581089,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.444488,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794609449.1825569,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.387775,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609453.0267632,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.789786,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609454.2223372,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 8.50322,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609463.1586773,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.022513,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609464.6276777,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 3.937469,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609468.99662,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 2.898464,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609472.317509,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.101866,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609473.8851006,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 1.268071,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609475.5775971,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.650179,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609901.6172729,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.650392,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609902.6874015,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.437938,
+      "task_records": 1
+    },
+    {
+      "start_unix": 1794609903.6118615,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 20.492812,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609924.5359566,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.71387,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609925.6527545,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.745409,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609926.8253975,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.659422,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609927.8917577,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.647662,
+      "task_records": 2
+    },
+    {
+      "start_unix": 1794609929.0221817,
+      "playbooks": [],
+      "check_mode": false,
+      "callback_seconds": 0.630678,
+      "task_records": 2
+    }
+  ],
+  "readme_test_config_revision": "36da91eb94ac5ea54ea2f52aa97c97df741aecbc",
+  "operation_walls": [
+    {
+      "operation": "initial-local-fresh-composition",
+      "status": "failed",
+      "seconds": 1096.464482,
+      "transport": "server-local",
+      "source": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "config": "89babb3078d15b24122cbd1673af8feb292e2fec"
+    },
+    {
+      "operation": "assisted-fresh-continuation",
+      "status": "passed",
+      "seconds": 1146.441414,
+      "transport": "server-local",
+      "source": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "config": "89babb3078d15b24122cbd1673af8feb292e2fec"
+    },
+    {
+      "operation": "README-only-steady-reconciliation",
+      "status": "passed",
+      "seconds": 625.59208,
+      "change": "README-only; deployment JSON bytes/blob unchanged",
+      "product": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "previous_config": "89babb3078d15b24122cbd1673af8feb292e2fec",
+      "config": "36da91eb94ac5ea54ea2f52aa97c97df741aecbc",
+      "same_config_blob": true
+    }
+  ],
+  "final_readback": {
+    "product": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+    "configuration_commit": "36da91eb94ac5ea54ea2f52aa97c97df741aecbc",
+    "no_pending_fresh_install_state": true,
+    "test_services_active": 4,
+    "both_General_runner_PID_start_identities_preserved": true,
+    "TEST_Reviewer_PID_start_identity_preserved": false,
+    "TEST_Production_runner_PID_start_identity_preserved": false,
+    "PROD_Reviewer_active": true,
+    "PROD_Reviewer_PID_start_identity_unchanged_since_before_TEST_activation": false,
+    "observed_PROD_manager_restart_UTC": "2026-11-13T22:26:28.51325Z",
+    "PROD_restart_cause": "unresolved; only system-manager lifecycle metadata inspected",
+    "test_consumer_repositories": [
+      "jresearchsoftware/codex-relay-testbed",
+      "jresearchsoftware/codex-relay-testbed-2"
+    ]
+  },
+  "warning_summary": {
+    "test_log_files_inspected_by_sanitized_extractor": 15,
+    "oversize_files_not_read": 0,
+    "warning_category_line_counts": {
+      "runner-temporary-directory-fallback": 9,
+      "foreign-unit-audit-warning": 0
+    },
+    "raw_log_messages_or_paths_exported": false
+  },
+  "method_limits": [
+    "Callback task boundaries include controller/transport and conditional/loop/handler time.",
+    "Some control guards run concurrently; neither task sums across invocations nor all invocation walls are an end-to-end total.",
+    "An invocation with check_mode=null predates that extra diagnostic label; its bootstrap phase is corroborated by source scheduling and public command output.",
+    "No baseline/candidate optimization was implemented. Shared-host load and transport/cache differences prevent a measured PROD savings claim."
+  ],
+  "claim_release": {
+    "utc": "2026-11-13T23:04:07.944533+00:00",
+    "execution": "run-43507958608",
+    "test_active_services": 4,
+    "status": "RELEASED",
+    "task": "jresearchsoftware/codex-relay#57",
+    "subsequent_status": "FREE"
+  }
+}
