@@ -78,7 +78,21 @@ Correct the metadata/authority and apply the ready label again for a fresh
 event. A rejected compatibility Step cannot become valid through a later label
 repair. New schema `4.0` admission binds the resolved protected snapshot instead.
 Unbound, unauthorized, stale or cross-target commands cause no label mutation or
-unrelated publication. Native v4 consumption reserves one DELETE of the original
+unrelated publication. Before a target is trusted, `OWNER_RUN_NOT_ADMITTED` remains an
+unbound rejection: no worker, ready-label consumption or target-bound Writer
+Outcome is authorized. The routing JSON and Actions admission warning include
+an allowlisted `reason` naming the first failed predicate (`run_id`,
+`repository`, `actor`, `triggering_actor`, `status`, `workflow_path`, `event`,
+`head_branch`, `run_attempt`, `run_title`, `subject_number`, `issue_kind`,
+`pr_base_repository`, `pr_head_repository` or `pr_head_branch`). Raw API values
+and protected consumer expectations are not projected. Older installed helpers
+may supply only the common code; missing reasons remain unknown. Inspect the
+original owner run and configured expectations before a fresh owner command;
+do not look for an Outcome on an untrusted target or blindly replay the run.
+Later run readback cannot reconstruct the status observed by the guard. A
+successful Actions wrapper reports a handled stop, not admission or execution.
+
+Native v4 consumption reserves one DELETE of the original
 ready label, revalidates immediately before it and checks native timeline IDs
 afterward. GitHub has no atomic event-conditioned DELETE: a replacement in that
 interval may already have been erased. `READY_EVENT_REPLACED` or

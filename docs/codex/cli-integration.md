@@ -120,6 +120,33 @@ On 2026-11-12, Step 21 froze **0.167.2** against **0.167.1** using the official 
 
 The exact official 0.167.2 installer and all six credential-free loopback cases passed under an ordinary Linux UID. The probe checked exact release/symlink and restrictive installer umask, native JSONL events/identity/usage, schema transmission and local semantic rejection, stdin, requested model/effort, isolated home and sandbox policy, nonzero provider failure, and optional MCP 401 with both successful and failed turns. Debian WSL's existing `/tmp` was not writable by that UID, so the probe used an ephemeral `/tmp` mount in a private mount namespace without changing host permissions. The installer emitted its expected temporary-directory PATH-alias warning; direct execution of the exact binary passed. No credential or model call was used. This bounded maintenance does not advance the capability-review baseline or establish an installed-host update or Apply.
 
+## Task 243 routine maintenance
+
+On 2026-11-13, this implementation cycle froze the official stable candidate
+[**0.169.0**](https://github.com/openai/codex/releases/tag/rust-v0.169.0), published
+that day, against the selected **0.167.2**. The exact
+[upstream comparison](https://github.com/openai/codex/compare/rust-v0.167.2...rust-v0.169.0)
+includes [explicit project trust for non-interactive runs](https://github.com/openai/codex/pull/60041).
+In the candidate's [version-bound exec implementation](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/exec/src/lib.rs),
+a writable sandbox no longer implicitly grants project trust: untrusted
+project-local configuration and MCP servers remain disabled. The new `--trust`
+option persists a grant, including with `--ephemeral`, refuses an explicitly
+untrusted project and cannot be combined with `--ignore-user-config`.
+
+Relay's launcher uses a fresh task-local `CODEX_HOME` and passes no `--trust`.
+Its existing credential-free CLI qualifier injects the optional MCP fixture via
+`-c`, without exercising project-local `.codex/config.toml` discovery. Those
+cases therefore do not establish compatibility across this trust change.
+The native exec event definitions are unchanged between these exact versions;
+the JSONL processor's final-file binding change affects an output-file option
+Relay does not use. These observations do not resolve the project-configuration
+behavior difference or qualify the candidate as preserving Relay's integration.
+
+The selected and previously qualified version remains **0.167.2** for this cycle
+because that meaningful trust change remains unresolved. This bounded assessment
+adds no validation gate or operator step, does not advance the capability-review
+baseline and proves no installed-host update or Apply.
+
 ## Established baseline
 
 The available public history starts at

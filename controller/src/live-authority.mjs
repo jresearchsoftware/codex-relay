@@ -7,6 +7,7 @@ import { readTaskAuthority } from './task-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
 import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 import { blockedCrContinuation } from './blocked-cr-continuation.mjs';
+import { rejectOwnerRun } from './owner-run-rejection.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -116,21 +117,30 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   }
   const run = await api.getRun(runId);
   const eventName = transport === 'label' ? target === 'issue' ? 'issues' : 'pull_request_target' : 'workflow_dispatch';
-  if (run.id !== runId || run.repository?.full_name !== REPOSITORY || run.actor?.login !== OWNER
-    || (run.triggering_actor && run.triggering_actor.login !== OWNER) || run.status !== 'in_progress'
-    || run.path !== CONSUMER.routingWorkflow || run.event !== eventName
-    || (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) || run.run_attempt !== 1
-    || (transport !== 'label' && run.display_title !== dispatchRunName({ route, issueNumber, step, target, number }))) fail('OWNER_RUN_NOT_ADMITTED');
+  if (run.id !== runId) rejectOwnerRun('run_id');
+  if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository');
+  if (run.actor?.login !== OWNER) rejectOwnerRun('actor');
+  if (run.triggering_actor && run.triggering_actor.login !== OWNER) rejectOwnerRun('triggering_actor');
+  if (run.status !== 'in_progress') rejectOwnerRun('status');
+  if (run.path !== CONSUMER.routingWorkflow) rejectOwnerRun('workflow_path');
+  if (run.event !== eventName) rejectOwnerRun('event');
+  if (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) rejectOwnerRun('head_branch');
+  if (run.run_attempt !== 1) rejectOwnerRun('run_attempt');
+  if (transport !== 'label' && run.display_title !== dispatchRunName({ route, issueNumber, step, target, number })) rejectOwnerRun('run_title');
   let subject, command;
   if (transport === 'label') {
     // Establish the native target before any domain-block Outcome may be
     // published. A caller cannot borrow another target's owner run and point
     // an admission error at an unrelated Issue/PR with invalid authority.
     subject = await api.get(target === 'issue' ? `/issues/${number}` : `/pulls/${number}`);
-    if (subject.number !== number || !labelRunCommandMatches(run.display_title, { route, target, number })
-      || (target === 'issue' && subject.pull_request)
-      || (target === 'pull_request' && (subject.base?.repo?.full_name !== REPOSITORY
-        || subject.head?.repo?.full_name !== REPOSITORY || ![CONSUMER.baseBranch, subject.head.ref].includes(run.head_branch)))) fail('OWNER_RUN_NOT_ADMITTED');
+    if (subject.number !== number) rejectOwnerRun('subject_number');
+    if (!labelRunCommandMatches(run.display_title, { route, target, number })) rejectOwnerRun('run_title');
+    if (target === 'issue' && subject.pull_request) rejectOwnerRun('issue_kind');
+    if (target === 'pull_request') {
+      if (subject.base?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_base_repository');
+      if (subject.head?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_head_repository');
+      if (![CONSUMER.baseBranch, subject.head.ref].includes(run.head_branch)) rejectOwnerRun('pr_head_branch');
+    }
     // Unsafe/unbound/stale commands throw outside the domain-result boundary:
     // they authorize neither consumption nor an Outcome on this target.
     const event = await readReadyEvent(api, { number, route, run, subject, rejectAmbiguous: true });
@@ -228,7 +238,7 @@ export async function revalidateReadyEvent(api, e) {
   // Check immediately before reservation/consumption, including blocked
   // admission. Never remove a replacement command created during API reads.
   const subject = await api.get(`/issues/${e.number}`);
-  if (subject.number !== e.number) fail('OWNER_RUN_NOT_ADMITTED');
+  if (subject.number !== e.number) rejectOwnerRun('subject_number');
   const event = await readReadyEvent(api, { number: e.number, route: e.route,
     run: await api.getRun(e.runId), subject, rejectAmbiguous: true });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
