@@ -1,0 +1,171 @@
+{
+  "task": 57,
+  "step": 4,
+  "attempt": "run-43574141223",
+  "starting_head": "6a5b6d73d7d1374c6ae1baa5bffc39cb894287ef",
+  "accepted_source": "efd7eac562d7fc7ca7b80088448ad57759e3217f",
+  "method": "Read-only Actions metadata/log markers and existing sanitized Step 3 data. No private host log/configuration contents, host operations or benchmark reruns.",
+  "production_runs": [
+    {
+      "run_id": 43479023265,
+      "job_id": 132070376138,
+      "config_commit": "dc17d8b9f904f6536d9d76568b94514ffd5afe87",
+      "config_blob": "d441fd0bf54dd8f24c0150cf13f5825b9ec8498d",
+      "config_sha256": "4c588286feefb8183376a8ca1a283a3dc481cdd4b18e7805dc233ae0d9995af4",
+      "target_product": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "source_policy": "accepted-main",
+      "source_resolved_to_prepared_seconds": 116.059,
+      "drain_to_apply_seconds": 20.174,
+      "apply_to_activate_verify_seconds": 566.404,
+      "wrapper_elapsed_seconds": 715,
+      "markers": [
+        {
+          "utc": "2026-11-13T18:04:50.9078806Z",
+          "marker": "resolved_revision=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:06:18.1609485Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=30"
+        },
+        {
+          "utc": "2026-11-13T18:06:46.9667985Z",
+          "marker": "RELAY_INSTALL_PREFLIGHT=prepared;operation=f5360cf3-01b6-47ad-8b18-4920eff77ec3"
+        },
+        {
+          "utc": "2026-11-13T18:06:49.9735806Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:06:57.2558379Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=DRAIN;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:07:17.4293670Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=APPLY;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:08:24.4195504Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=30"
+        },
+        {
+          "utc": "2026-11-13T18:15:54.4757679Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=480"
+        },
+        {
+          "utc": "2026-11-13T18:16:43.8330534Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=ACTIVATE/VERIFY;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:16:44.9497709Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=RESUME;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        },
+        {
+          "utc": "2026-11-13T18:16:46.0668795Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=OPEN;target=5df7e0093d93c5a55b996e34cc83359da6b22a3e"
+        }
+      ],
+      "annotations": [],
+      "annotation_scope": "Job/check execution annotations returned an empty array; host-private and UI-only surfaces not covered."
+    },
+    {
+      "run_id": 43517635060,
+      "job_id": 132203559541,
+      "config_commit": "dc17d8b9f904f6536d9d76568b94514ffd5afe87",
+      "config_blob": "d441fd0bf54dd8f24c0150cf13f5825b9ec8498d",
+      "config_sha256": "4c588286feefb8183376a8ca1a283a3dc481cdd4b18e7805dc233ae0d9995af4",
+      "target_product": "efd7eac562d7fc7ca7b80088448ad57759e3217f",
+      "source_policy": "accepted-main",
+      "source_resolved_to_prepared_seconds": 120.386,
+      "drain_to_apply_seconds": 23.725,
+      "apply_to_activate_verify_seconds": 594.301,
+      "wrapper_elapsed_seconds": 748,
+      "markers": [
+        {
+          "utc": "2026-11-13T22:14:48.9664483Z",
+          "marker": "resolved_revision=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:16:14.6942964Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=30"
+        },
+        {
+          "utc": "2026-11-13T22:16:49.3522939Z",
+          "marker": "RELAY_INSTALL_PREFLIGHT=prepared;operation=425f2089-77c1-4b5b-8b18-38bd95a7d446"
+        },
+        {
+          "utc": "2026-11-13T22:16:56.0598501Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:16:57.3264636Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=DRAIN;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:17:21.0515890Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=APPLY;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:18:25.9730949Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=30"
+        },
+        {
+          "utc": "2026-11-13T22:25:56.0268111Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=480"
+        },
+        {
+          "utc": "2026-11-13T22:26:26.0303225Z",
+          "marker": "RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds=510"
+        },
+        {
+          "utc": "2026-11-13T22:27:15.3525075Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=ACTIVATE/VERIFY;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:27:16.5691571Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=RESUME;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        },
+        {
+          "utc": "2026-11-13T22:27:17.8355747Z",
+          "marker": "RELAY_LIFECYCLE_PROGRESS=OPEN;target=efd7eac562d7fc7ca7b80088448ad57759e3217f"
+        }
+      ],
+      "annotations": [],
+      "annotation_scope": "Job/check execution annotations returned an empty array; host-private and UI-only surfaces not covered."
+    }
+  ],
+  "source_comparison": {
+    "earlier": {
+      "base": "93a48523ac0dc6310171ae39945497b83b017d8a",
+      "head": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "commits": 2,
+      "changed_files": 12,
+      "deploy_changed": false,
+      "reviewer_changed": false
+    },
+    "later": {
+      "base": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+      "head": "efd7eac562d7fc7ca7b80088448ad57759e3217f",
+      "commits": 1,
+      "changed_files": [
+        "controller/README.md",
+        "controller/src/attempt-runtime.mjs",
+        "controller/test/implementation-continuation.test.mjs",
+        "docs/qualification/task-247-commit-ownership.md"
+      ],
+      "deploy_changed": false,
+      "reviewer_changed": false
+    }
+  },
+  "restart": {
+    "utc": "2026-11-13T22:26:28.513250Z",
+    "source": "Step 3 sanitized final_readback; no new host read",
+    "within_production_apply": true,
+    "causal_command": "UNAVAILABLE",
+    "conclusion": "A separate authorized PROD Apply was in progress; TEST attribution and shared-host noninterference are not established."
+  },
+  "limits": [
+    "Rounded marker intervals are not exclusive per-task times.",
+    "Production main-backend heartbeat lower bounds are 480s and 510s; preparation contributes a separate >=30s each.",
+    "No implementation candidate, achieved savings, current live-host proof, new TEST claim or independent native acceptance."
+  ]
+}
