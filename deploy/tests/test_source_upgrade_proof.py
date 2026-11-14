@@ -11,12 +11,155 @@ import marshal
 import py_compile
 import subprocess
 import tarfile
+import threading
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import source_upgrade_proof as proof
 from installed_state import NotEligible
+
+
+@pytest.fixture
+def parallel_proof(monkeypatch):
+    import host_preflight
+    import installed_state
+    values = {'relay_source_reuse_consumer_digest': 'a' * 64}
+    binding = {'revision': 'b' * 40}
+    config = {'unchanged': True}
+    events, completed = [], set()
+    barrier = threading.Barrier(3, timeout=5)
+    package_started = threading.Event()
+    state = {'failure': None}
+    loaded_value = {'production': {'identity': 'same-process'}}
+    monkeypatch.setattr(host_preflight, 'resolved', lambda value: value)
+    monkeypatch.setattr(proof, 'gateway_values', lambda value: value)
+    monkeypatch.setattr(proof, 'read_binding', lambda value: (binding, {}, {}, config))
+    monkeypatch.setattr(proof, 'normalized_config', lambda value: value)
+    monkeypatch.setattr(proof, 'verify_source_tree', lambda *_args: events.append('source') or {'verified': True})
+    def independent(name):
+        assert events[0] == 'source'
+        events.append(name + ':start')
+        try:
+            barrier.wait()
+            error = state.get('errors', {}).get(name)
+            if error is not None:
+                if name == 'loaded': package_started.set()
+                raise error
+            if state['failure'] == name:
+                if name == 'loaded': package_started.set()
+                raise NotEligible('INJECTED_' + name.upper())
+            if name != 'loaded':
+                assert package_started.wait(5), 'packages did not overlap host/pool qualification'
+            return ({'status': 'PASS', 'pendingProductMaterial': [], 'identityPlan': {}}
+                    if name == 'host' else loaded_value if name == 'loaded' else {'members': [1]})
+        finally:
+            completed.add(name)
+    monkeypatch.setattr(host_preflight, 'inspect_inputs', lambda *_args: independent('host'))
+    monkeypatch.setattr(proof, 'pool_proof', lambda *_args: independent('pool'))
+    def loaded(_values):
+        if threading.current_thread() is threading.main_thread():
+            events.append('loaded:final')
+            return loaded_value
+        return independent('loaded')
+    monkeypatch.setattr(proof, 'loaded_proof', loaded)
+    def packages(_values, _source, observed, **_kwargs):
+        assert observed is loaded_value and 'loaded' in completed
+        assert {'host:start', 'pool:start', 'loaded:start'} <= set(events)
+        events.append('packages:start')
+        package_started.set()
+        error = state.get('errors', {}).get('packages')
+        if error is not None: raise error
+        if state['failure'] == 'packages': raise NotEligible('INJECTED_PACKAGES')
+        return {'activeRunnerUnits': ['production.service']}
+    monkeypatch.setattr(proof, 'package_proof', packages)
+    for name in ['readiness_proof', 'runtime_support_proof', 'prerequisite_proof', 'lifecycle_unit_proof']:
+        monkeypatch.setattr(proof, name, lambda *_args, **_kwargs: {'unchanged': True})
+    monkeypatch.setattr(proof, 'runtime_imports', lambda *_args: events.append('imports'))
+    def audit(_catalogue, *, live_checks):
+        assert completed == {'host', 'pool', 'loaded'} and all(live_checks.values())
+        events.append('audit')
+        return {'eligible': True}
+    monkeypatch.setattr(installed_state, 'audit_catalogue', audit)
+    return values, config, binding, events, completed, state
+
+
+def test_full_proof_overlaps_independent_checks_and_retains_final_frontier(parallel_proof):
+    values, config, binding, events, completed, _state = parallel_proof
+    result = proof.prove(values, config, '/source', {}, expected_binding=binding,
+                         stage='/stage', operation='operation', package_reference={})
+    assert result['host']['status'] == 'PASS' and result['pool'] == {'members': [1]}
+    assert completed == {'host', 'pool', 'loaded'}
+    assert events.index('source') < events.index('packages:start') < events.index('audit') < events.index('loaded:final')
+
+
+@pytest.mark.parametrize('failure', ['host', 'pool', 'loaded', 'packages'])
+def test_any_parallel_failure_joins_owned_readers_and_prevents_acceptance(parallel_proof, failure):
+    values, config, binding, events, completed, state = parallel_proof
+    state['failure'] = failure
+    with pytest.raises(NotEligible, match='INJECTED_' + failure.upper()):
+        proof.prove(values, config, '/source', {}, expected_binding=binding,
+                    stage='/stage', operation='operation', package_reference={})
+    assert completed == {'host', 'pool', 'loaded'}
+    assert 'audit' not in events and 'loaded:final' not in events
+
+
+@pytest.mark.parametrize('ordinary,hard', [('host', 'pool'), ('host', 'loaded'), ('host', 'packages'),
+                                        ('loaded', 'pool'), ('packages', 'pool')])
+def test_simultaneous_outer_boundary_failure_dominates_ordinary_fallback(parallel_proof, ordinary, hard):
+    values, config, binding, events, completed, state = parallel_proof
+    state['errors'] = {ordinary: NotEligible('ORDINARY_UNAVAILABLE'),
+                       hard: RuntimeError('SOURCE_UPGRADE_BINDING_CHANGED')}
+    with pytest.raises(RuntimeError, match='SOURCE_UPGRADE_BINDING_CHANGED'):
+        proof.prove(values, config, '/source', {}, expected_binding=binding,
+                    stage='/stage', operation='operation', package_reference={})
+    assert completed == {'host', 'pool', 'loaded'}
+    assert 'audit' not in events and 'loaded:final' not in events
+
+
+@pytest.mark.parametrize('failure', [None, 'codex', 'general-1', 'general-2', 'simultaneous'])
+def test_package_readers_overlap_only_after_all_runner_version_probes(monkeypatch, failure):
+    import host_preflight
+    import source_upgrade_packages
+    rows = [{'label': label, 'root': '/' + label, 'user': 'runner', 'service': label + '.service'}
+            for label in ['production', 'general-1', 'general-2', 'unused-capacity']]
+    monkeypatch.setattr(host_preflight, 'runner_targets', lambda _values: rows)
+    probed, completed, starts = [], set(), []
+    package = SimpleNamespace(inspect_live=lambda *_args: None,
+        runner_transition=lambda _stage, values: probed.append(values['root']))
+    monkeypatch.setattr(proof, '_module', lambda *_args: package)
+    monkeypatch.setattr(proof, 'recipe_rows', lambda *_args: [['recipe', 'same']])
+    barrier = threading.Barrier(3, timeout=5)
+    def reader(name):
+        assert probed == ['/production', '/general-1', '/general-2']
+        starts.append(name)
+        try:
+            barrier.wait()
+            if failure == 'simultaneous':
+                if name == 'codex': raise NotEligible('ORDINARY_CODEX_UNAVAILABLE')
+                if name == 'general-1': raise RuntimeError('INJECTED_PROTECTED_BINDING_CHANGED')
+            if failure == name: raise NotEligible('INJECTED_PACKAGE_READER')
+            return {'identity': name}
+        finally:
+            completed.add(name)
+    monkeypatch.setattr(source_upgrade_packages, 'verify_packages', lambda *_args: reader('codex'))
+    monkeypatch.setitem(sys.modules, 'source_upgrade_general',
+                        SimpleNamespace(capture_general=lambda runner, _source: reader(runner['label'])))
+    values = {'relay_general_runner_pool': {'desiredCapacity': 2}, 'relay_runner_package_archive': '/archive'}
+    loaded = {'production': {'identity': 'production'}}
+    if failure == 'simultaneous':
+        with pytest.raises(RuntimeError, match='INJECTED_PROTECTED_BINDING_CHANGED'):
+            proof.package_proof(values, '/source', loaded, stage='/stage', operation='op', package_reference={})
+    elif failure:
+        with pytest.raises(NotEligible, match='INJECTED_PACKAGE_READER'):
+            proof.package_proof(values, '/source', loaded, stage='/stage', operation='op', package_reference={})
+    else:
+        result = proof.package_proof(values, '/source', loaded, stage='/stage', operation='op', package_reference={})
+        expected = [{'label': row['label'], 'proof': {'identity': row['label']}} for row in rows[:3]]
+        assert result['runner']['treeSha256'] == hashlib.sha256(proof.canonical(expected)).hexdigest()
+        assert result['activeRunnerUnits'] == [row['service'] for row in rows[:3]]
+    assert completed == {'codex', 'general-1', 'general-2'}
+    assert set(starts) == completed and len(starts) == 3
 
 
 def write(path, value):
@@ -32,7 +175,7 @@ def installed(tmp_path):
     snapshot = {'source': {'repository': 'https://github.com/example/relay.git', 'revision': revision},
                 'environment': {'namespace': 'relay', 'localApply': {'source': 'owner-file'}}}
     identity = {'revision': revision, 'tree': 'b' * 40}
-    manifest = {'commit': revision, 'resolvedRevision': revision, 'installedRevision': revision,
+    manifest = {'schemaVersion': '1.0', 'commit': revision, 'resolvedRevision': revision, 'installedRevision': revision,
                 'gitTree': identity['tree'],
                 'deploymentConfigSha256': hashlib.sha256(proof.canonical(snapshot)).hexdigest(),
                 'gitConfigReceipt': {'source': 'owner-file', 'product_repository': 'example/relay',
@@ -57,6 +200,20 @@ def test_binding_binds_actual_snapshot_and_source_bytes(installed):
     assert snapshot['environment']['namespace'] == 'relay'
     write(installed[1] / 'deployment-config.json', {**snapshot, 'drift': True})
     with pytest.raises(NotEligible, match='INSTALLED_BINDING'):
+        binding(installed)
+
+
+def test_installed_manifest_schema_and_duplicate_keys_cannot_nominate_fast_path(installed):
+    path = installed[1] / 'artifact-manifest.json'
+    manifest = installed[3]
+    manifest['schemaVersion'] = 'unsupported'
+    write(path, manifest)
+    with pytest.raises(NotEligible, match='INSTALLED_BINDING'):
+        binding(installed)
+    manifest['schemaVersion'] = '1.0'
+    raw = proof.canonical(manifest)
+    path.write_bytes(raw[:-1] + b',"schemaVersion":"1.0"}')
+    with pytest.raises(NotEligible, match='JSON_INVALID'):
         binding(installed)
 
 
@@ -212,9 +369,14 @@ def test_lifecycle_units_include_missing_logical_slots_and_pending_reload():
         return SimpleNamespace(returncode=1, stdout='\n\n'.join(
             '\n'.join(key + '=' + value for key, value in row.items()) for row in states.values()).encode())
     assert len(proof.lifecycle_unit_proof(values, execute=execute)) == 5
+    states['general.service'].update(LoadState='loaded', ActiveState='active',
+                                     SubState='running', UnitFileState='enabled')
+    with pytest.raises(NotEligible, match='LOGICAL_RUNNER_ACTIVE'):
+        proof.lifecycle_unit_proof(values, execute=execute)
+    assert len(proof.lifecycle_unit_proof(values, execute=execute, active_runners=['general.service'])) == 5
     states['slot-02.service']['NeedDaemonReload'] = 'yes'
     with pytest.raises(NotEligible, match='DAEMON_RELOAD_REQUIRED'):
-        proof.lifecycle_unit_proof(values, execute=execute)
+        proof.lifecycle_unit_proof(values, execute=execute, active_runners=['general.service'])
     states['slot-02.service']['NeedDaemonReload'] = 'no'
     states.pop('general.service')
     with pytest.raises(NotEligible, match='SERVICE_STATE_UNPROVEN'):

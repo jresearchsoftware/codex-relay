@@ -19,6 +19,7 @@ import subprocess
 import struct
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
 
 
 def canonical(value):
@@ -39,6 +40,14 @@ def unchanged(value, code):
     """A moving admitted binding is a boundary, never an optimization miss."""
     if not value:
         raise RuntimeError(code)
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'SOURCE_UPGRADE_JSON_INVALID')
+        result[key] = value
+    return result
 
 
 def resolve_values(values, source_root):
@@ -140,11 +149,12 @@ def read_binding(values, *, root=Path('/'), owner_uid=0):
     records, stamps, hashes = [], [], []
     for path in paths:
         raw, stamp = protected_read(path, owner_uid=owner_uid, boundary=root)
-        records.append(json.loads(raw))
+        records.append(json.loads(raw, object_pairs_hook=unique_object))
         stamps.append(stamp)
         hashes.append(hashlib.sha256(raw).hexdigest())
     manifest, snapshot, identity = records
-    require(all(manifest.get(key) == logical.name for key in ['commit', 'resolvedRevision', 'installedRevision'])
+    require(manifest.get('schemaVersion') == '1.0'
+            and all(manifest.get(key) == logical.name for key in ['commit', 'resolvedRevision', 'installedRevision'])
             and identity.get('revision') == logical.name and identity.get('tree') == manifest.get('gitTree')
             and manifest.get('deploymentConfigSha256') == hashes[1]
             and snapshot.get('environment', {}).get('namespace') == values['relay_namespace'],
@@ -415,14 +425,33 @@ def loaded_proof(values):
     return adoption.capture_inputs(payload)
 
 
+def _future_outcomes(futures):
+    """Collect every result after executor shutdown has joined its readers."""
+    results, errors = {}, []
+    for name, future in futures.items():
+        try:
+            results[name] = future.result(timeout=0)
+        except Exception as error:
+            errors.append(error)
+    return results, errors
+
+
+def _raise_read_failures(errors):
+    # Moving bindings/guards must never become an ordinary optimization miss
+    # merely because another reader discovered unsupported inputs first.
+    if errors:
+        hard = next((error for error in errors if isinstance(error, RuntimeError)), None)
+        unexpected = next((error for error in errors if not isinstance(
+            error, (ValueError, OSError, subprocess.SubprocessError))), None)
+        raise hard or unexpected or errors[0]
+
+
 def package_proof(values, source_root, loaded, *, stage, operation, package_reference):
     import host_preflight
-    import process_adoption as adoption
     package = _module(source_root, 'deploy/ansible/roles/relay_runner/files/relay-intent-package.py',
                       'source_upgrade_package')
     from source_upgrade_packages import verify_packages
-    codex_proof = verify_packages(stage, operation, values, source_root, package_reference)
-    runner_rows = []
+    from source_upgrade_general import capture_general
     runners = host_preflight.runner_targets(values)
     if values.get('relay_general_runner_pool'):
         capacity = values['relay_general_runner_pool']['desiredCapacity']
@@ -431,16 +460,24 @@ def package_proof(values, source_root, loaded, *, stage, operation, package_refe
     for runner in runners:
         package.inspect_live('runner', {'root': runner['root'], 'archive': values['relay_runner_package_archive']})
         package.runner_transition(None, {'root': runner['root'], 'user': runner['user'], 'service': runner['service']})
-        if runner['label'] == 'production':
-            proof = loaded['production']
-        else:
-            proof = adoption.loaded_runner({'productionUser': runner['user'], 'productionRoot': runner['root']},
-                                            adoption.service(runner['service']))
-        runner_rows.append({'label': runner['label'], 'proof': proof})
+    # Listener --version may write ordinary _diag files. Complete every native
+    # probe before any General capture, then overlap only independent readers.
+    # The context joins every submitted task even when one result refuses.
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix='relay-package-proof') as executor:
+        codex_future = executor.submit(verify_packages, stage, operation, values, source_root, package_reference)
+        general = {runner['label']: executor.submit(capture_general, runner, source_root)
+                   for runner in runners if runner['label'] != 'production'}
+    results, errors = _future_outcomes({'codex': codex_future, **general})
+    _raise_read_failures(errors)
+    codex_proof = results['codex']
+    runner_rows = [{'label': runner['label'], 'proof': loaded['production']
+                    if runner['label'] == 'production' else results[runner['label']]}
+                   for runner in runners]
     recipe = hashlib.sha256(canonical(recipe_rows(source_root))).hexdigest()
     return {'runner': {'recipeSha256': recipe, 'treeSha256': hashlib.sha256(canonical(runner_rows)).hexdigest()},
             'codex': {'recipeSha256': recipe,
-                      'treeSha256': hashlib.sha256(canonical(codex_proof)).hexdigest()}}
+                      'treeSha256': hashlib.sha256(canonical(codex_proof)).hexdigest()},
+            'activeRunnerUnits': [runner['service'] for runner in runners]}
 
 
 def require_unchanged_pool_plan(plan):
@@ -546,7 +583,7 @@ def prerequisite_proof(values, *, execute=run):
     return {'managed': True, 'installed': sorted(expected)}
 
 
-def lifecycle_unit_proof(values, *, execute=None):
+def lifecycle_unit_proof(values, *, execute=None, active_runners=()):
     logical = [values['relay_general_runner_service_name'],
                *[slot['relay_runner_service_name'] for slot in values['relay_additional_execution_slots']]]
     socket = values['relay_namespace'] + '-relay-manual-outcome.socket'
@@ -574,7 +611,13 @@ def lifecycle_unit_proof(values, *, execute=None):
         require(row.get('LoadState') == 'loaded' or unit in logical and row.get('LoadState') == 'not-found',
                 'SOURCE_UPGRADE_SERVICE_STATE_UNPROVEN')
         if unit in logical:
-            require(row.get('ActiveState') in ['inactive', 'failed'],
+            # Pool projection uses these same fixed logical names for its
+            # first physical members. Their complete loaded/distribution proof
+            # must already have succeeded; other active logical units refuse.
+            require(row.get('ActiveState') in ['inactive', 'failed'] or unit in active_runners
+                    and row.get('ActiveState') == 'active' and row.get('SubState') == 'running'
+                    and row.get('LoadState') == 'loaded'
+                    and row.get('UnitFileState') in ['enabled', 'enabled-runtime'],
                     'SOURCE_UPGRADE_LOGICAL_RUNNER_ACTIVE')
         elif unit == socket:
             require((row.get('ActiveState') == 'active' and row.get('SubState') == 'listening')
@@ -612,22 +655,33 @@ def prove(values, config, source_root, catalogue, expected_binding=None, *,
     require(normalized_config(snapshot) == normalized_config(config), 'SOURCE_UPGRADE_CONFIG_CHANGED')
     source_proof = verify_source_tree(binding, identity, snapshot, catalogue, source_root)
     v.update(relay_intent_preflight_installed_revision=binding['revision'])
-    host = inspect_inputs(v, source_root)
-    require(host.get('status') == 'PASS' and not host.get('pendingProductMaterial')
-            and all(value == 0 for value in host.get('identityPlan', {}).values()),
-            'SOURCE_UPGRADE_HOST_RECONCILIATION_REQUIRED')
-    loaded = loaded_proof(v)
-    readiness = readiness_proof(v)
-    support = runtime_support_proof(v)
-    units = lifecycle_unit_proof(v)
-    prerequisites = prerequisite_proof(v)
-    runtime_imports(v)
-    packages = package_proof(v, source_root, loaded, stage=stage, operation=operation,
-                             package_reference=package_reference)
     digest = v.get('relay_source_reuse_consumer_digest')
     require(isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest),
             'SOURCE_UPGRADE_CONSUMER_DIGEST_UNPROVEN')
-    pool = pool_proof(config, digest, source_root)
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix='relay-live-proof') as executor:
+        host_future = executor.submit(inspect_inputs, v, source_root)
+        pool_future = executor.submit(pool_proof, config, digest, source_root)
+        loaded_future = executor.submit(loaded_proof, v)
+        dependency_errors = []
+        try:
+            loaded = loaded_future.result(timeout=180)
+            # Production capture must precede packages. Host/App/TLS and pool
+            # continue while the independent packages are checked.
+            packages = package_proof(v, source_root, loaded, stage=stage, operation=operation,
+                                     package_reference=package_reference)
+        except Exception as error:
+            dependency_errors.append(error)
+    results, errors = _future_outcomes({'host': host_future, 'pool': pool_future, 'loaded': loaded_future})
+    _raise_read_failures([*errors, *dependency_errors])
+    host, pool, loaded = results['host'], results['pool'], results['loaded']
+    require(host.get('status') == 'PASS' and not host.get('pendingProductMaterial')
+            and all(value == 0 for value in host.get('identityPlan', {}).values()),
+            'SOURCE_UPGRADE_HOST_RECONCILIATION_REQUIRED')
+    readiness = readiness_proof(v)
+    support = runtime_support_proof(v)
+    prerequisites = prerequisite_proof(v)
+    runtime_imports(v)
+    units = lifecycle_unit_proof(v, active_runners=packages['activeRunnerUnits'])
     # Each predicate above owns these checks; no caller-provided success flags.
     flags = {name: True for name in ['identities', 'mutableState', 'packages', 'pool',
                                    'ingress', 'loadedProcesses', 'sealedRelease']}
@@ -636,7 +690,8 @@ def prove(values, config, source_root, catalogue, expected_binding=None, *,
     unchanged(loaded_proof(v) == loaded, 'SOURCE_UPGRADE_PROCESS_MOVED')
     unchanged(readiness_proof(v) == readiness, 'SOURCE_UPGRADE_READINESS_CHANGED')
     unchanged(runtime_support_proof(v) == support, 'SOURCE_UPGRADE_RUNTIME_SUPPORT_CHANGED')
-    unchanged(lifecycle_unit_proof(v) == units, 'SOURCE_UPGRADE_SERVICE_STATE_CHANGED')
+    unchanged(lifecycle_unit_proof(v, active_runners=packages['activeRunnerUnits']) == units,
+              'SOURCE_UPGRADE_SERVICE_STATE_CHANGED')
     unchanged(prerequisite_proof(v) == prerequisites, 'SOURCE_UPGRADE_PREREQUISITES_CHANGED')
     return {'binding': binding, 'loaded': loaded, 'host': host,
             'packages': packages, 'pool': pool, 'catalogue': state, 'readiness': readiness,

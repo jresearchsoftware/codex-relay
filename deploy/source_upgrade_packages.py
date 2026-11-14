@@ -17,6 +17,13 @@ import urllib.request
 VERSION = '0.167.2'
 INSTALLER_URL = 'https://chatgpt.com/codex/install.sh'
 REFERENCE = 'codex-proof-reference'
+# This installer writes the current symlink's host-specific dev/inode/ctime
+# into selection-history exclusively for its release-pruning safety check.
+# Relay's ordinary relocation recreates that link. Never rewrite the history
+# or infer that pruning is safe from its equivalence to another installation.
+# Owner: openai/codex scripts/install/install.sh at
+# b1573f102413e96a6481087922bf425231222dee (reader 841, writer 1450).
+SELECTION_HISTORY_INSTALLER_SHA256 = '5a8eea5c3716b555fd8e539db7e5b0e7470bcee5693191b4758a0de373624a70'
 
 
 def require(value, code='SOURCE_UPGRADE_CODEX_UNPROVEN'):
@@ -56,14 +63,18 @@ def _run(argv, *, env, cwd):
 
 
 def _download(url):
-    with urllib.request.urlopen(url, timeout=30) as response:
+    # Match the ordinary get_url transport's qualified public HTTP agent.
+    # The official endpoint rejects urllib's default agent; TLS, HTTPS and
+    # the fixed installer URL remain the same as the owning package role.
+    request = urllib.request.Request(url, headers={'User-Agent': 'ansible-httpget'})
+    with urllib.request.urlopen(request, timeout=30) as response:
         require(response.url.startswith('https://'), 'SOURCE_UPGRADE_CODEX_INSTALLER_UNPROVEN')
         raw = response.read(1048577)
     require(0 < len(raw) <= 1048576, 'SOURCE_UPGRADE_CODEX_INSTALLER_UNPROVEN')
     return raw
 
 
-def _tree(packages):
+def _tree_rows(packages):
     """All distribution entries/bytes, with internal links made root-relative."""
     packages = Path(packages)
     rows, observed = [], []
@@ -91,7 +102,93 @@ def _tree(packages):
         require((info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
                  info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns) == before,
                 'SOURCE_UPGRADE_CODEX_MOVED')
-    return hashlib.sha256(canonical(rows)).hexdigest()
+    return rows
+
+
+def _tree(packages):
+    return hashlib.sha256(canonical(_tree_rows(packages))).hexdigest()
+
+
+def _stamp(info):
+    return [info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def _selection_history(home, binary):
+    """The qualified installer's three-line Unix pruning record, not payload."""
+    home = Path(home)
+    standalone = home / 'packages/standalone'
+    path, current = standalone / 'selection-history', standalone / 'current'
+    metadata = path.lstat()
+    require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == metadata.st_gid == 0
+            and metadata.st_nlink == 1 and stat.S_IMODE(metadata.st_mode) == 0o644
+            and 0 < metadata.st_size <= 512, 'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+        require(_stamp(os.fstat(stream.fileno())) == _stamp(metadata))
+        raw = stream.read(513)
+        require(_stamp(os.fstat(stream.fileno())) == _stamp(metadata))
+    require(_stamp(path.lstat()) == _stamp(metadata) and len(raw) == metadata.st_size)
+    require(raw.isascii() and raw.endswith(b'\n') and b'\r' not in raw
+            and len(raw.split(b'\n')) == 4, 'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+    selected, previous, identity, trailing = raw.split(b'\n')
+    leaf = Path(binary).relative_to(home).parts[3]
+    require(selected.decode() == leaf and re.fullmatch(rb'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', selected)
+            and (not previous or re.fullmatch(rb'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', previous))
+            and previous not in [b'.', b'..'] and not trailing,
+            'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+    number = rb'(?:0|[1-9][0-9]{0,19})'
+    require(re.fullmatch(number + rb' [1-9][0-9]{0,19} ' + number + rb'\.[0-9]{9}', identity),
+            'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+    link = current.lstat()
+    require(stat.S_ISLNK(link.st_mode) and link.st_uid == link.st_gid == 0
+            and current.resolve(strict=True) == standalone / 'releases' / leaf,
+            'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+    return {'selected': selected.decode(), 'previous': previous.decode(),
+            'historySha256': hashlib.sha256(raw).hexdigest(), 'historyIdentity': _stamp(metadata),
+            'currentIdentity': _stamp(link)}
+
+
+def _history_observation(home, rows):
+    """Bind actual history and link identity even for exact-byte comparison."""
+    standalone = Path(home) / 'packages/standalone'
+    row = next((row for row in rows if row[0] == 'standalone/selection-history'), None)
+    current = standalone / 'current'
+    return {'historyRow': row,
+            'historyIdentity': _stamp((standalone / 'selection-history').lstat()) if row is not None else None,
+            'currentIdentity': _stamp(current.lstat()) if os.path.lexists(current) else None}
+
+
+def _payload_equivalence(reference_home, live_home, reference, live, installer_sha, reference_rows, live_rows):
+    live_hash = hashlib.sha256(canonical(live_rows)).hexdigest()
+    history = {'reference': _history_observation(reference_home, reference_rows),
+               'live': _history_observation(live_home, live_rows)}
+    if reference_rows == live_rows:
+        return {'comparison': 'exact-payload', 'equivalenceSha256': live_hash, 'selectionHistory': history}
+    require(installer_sha == SELECTION_HISTORY_INSTALLER_SHA256,
+            'SOURCE_UPGRADE_CODEX_SELECTION_INSTALLER_UNQUALIFIED')
+    a = _selection_history(reference_home, reference['binary'])
+    b = _selection_history(live_home, live['binary'])
+    require((a['selected'], a['previous']) == (b['selected'], b['previous']),
+            'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_CHANGED')
+    def equivalent(rows, selected):
+        result = []
+        found = False
+        for row in rows:
+            if row[0] == 'standalone/selection-history':
+                require(row == ['standalone/selection-history', 0o644, 'file', selected['historySha256']],
+                        'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_CHANGED')
+                result.append([row[0], row[1], 'installer-selection-history-v1',
+                               selected['selected'], selected['previous']])
+                found = True
+            else:
+                result.append(row)
+        require(found, 'SOURCE_UPGRADE_CODEX_SELECTION_HISTORY_UNPROVEN')
+        return result
+    normalized_reference, normalized_live = equivalent(reference_rows, a), equivalent(live_rows, b)
+    require(normalized_reference == normalized_live, 'SOURCE_UPGRADE_CODEX_PAYLOAD_CHANGED')
+    return {'comparison': 'selection-history-kernel-identity-v1',
+            'equivalenceSha256': hashlib.sha256(canonical(normalized_live)).hexdigest(),
+            'selectionHistory': history}
 
 
 def _rust_metadata(root, expected_gid):
@@ -181,9 +278,13 @@ def verify_packages(stage, operation, values, source_root, receipt, *, execute=N
     live = codex.qualify(live_home, values['relay_codex_binary_path'], VERSION)
     require(Path(reference['binary']).relative_to(reference_home) == Path(live['binary']).relative_to(live_home),
             'SOURCE_UPGRADE_CODEX_ENTRYPOINT_CHANGED')
-    reference_tree = _tree(reference_home / 'packages')
-    live_tree = _tree(live_home / 'packages')
-    require(reference_tree == live_tree == receipt['payloadTreeSha256'], 'SOURCE_UPGRADE_CODEX_PAYLOAD_CHANGED')
+    reference_rows = _tree_rows(reference_home / 'packages')
+    live_rows = _tree_rows(live_home / 'packages')
+    reference_tree = hashlib.sha256(canonical(reference_rows)).hexdigest()
+    live_tree = hashlib.sha256(canonical(live_rows)).hexdigest()
+    require(reference_tree == receipt['payloadTreeSha256'], 'SOURCE_UPGRADE_CODEX_PAYLOAD_CHANGED')
+    equivalence = _payload_equivalence(reference_home, live_home, reference, live,
+                                       receipt['installerSha256'], reference_rows, live_rows)
     rust_version = values['relay_rust_toolchain_version']
     require(isinstance(rust_version, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', rust_version),
             'SOURCE_UPGRADE_RUST_VERSION_UNPROVEN')
@@ -210,8 +311,11 @@ def verify_packages(stage, operation, values, source_root, receipt, *, execute=N
                     'SOURCE_UPGRADE_TOOLCHAIN_RUNTIME_UNPROVEN')
     require(_tree(reference_home / 'packages') == reference_tree and _tree(live_home / 'packages') == live_tree,
             'SOURCE_UPGRADE_CODEX_MOVED')
+    require({'reference': _history_observation(reference_home, reference_rows),
+             'live': _history_observation(live_home, live_rows)} == equivalence['selectionHistory'],
+            'SOURCE_UPGRADE_CODEX_MOVED')
     require(_rust_metadata(values['relay_rust_toolchain_root'], rust_gid) == rust_metadata,
             'SOURCE_UPGRADE_RUST_MOVED')
-    return {'version': VERSION, 'treeSha256': live_tree, 'referenceTreeSha256': reference_tree,
+    return {'version': VERSION, 'treeSha256': live_tree, 'referenceTreeSha256': reference_tree, **equivalence,
             'runtimeVersions': dict(zip(['codex', 'cargo', 'rustc', 'rustfmt'], [line.strip() for line in outputs])),
             'rustMetadataSha256': rust_metadata}

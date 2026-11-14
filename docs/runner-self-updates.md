@@ -16,6 +16,17 @@ or unsafe paths require diagnosis. Native `bin -> bin.VERSION` links remain
 inside the same runner root. Frozen bootstrap bytes are not a drift baseline
 for native-updated software.
 
+Source-only Apply preserves each General Runner through a current component
+snapshot: service and cgroup/process identities, current distribution and
+settings, unit/environment inputs and namespace ownership must stay identical
+through preparation, cutover and final proof. This route writes no General
+distribution, settings or unit. The existing native version/layout and
+online/idle registration/group checks remain required. General's mutable package
+root may have changed after its service started through supported native update
+or prior reconciliation; this preservation proof covers the current operation.
+Reviewer and Production loaded-input adoption retain their separate startup
+history and loaded policy/credential/trust requirements.
+
 Apply, managed-pool preflight and staged package checks require both `bin` and
 `externals` to resolve to real, usable directories inside the instance. External
 `nodeNUMBER/bin/node` runtimes must be real executable files with searchable

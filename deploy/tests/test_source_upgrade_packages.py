@@ -1,5 +1,6 @@
 """Independent reference acquisition and read-only complete payload proof."""
 import os
+import hashlib
 from pathlib import Path
 import shutil
 import sys
@@ -91,7 +92,112 @@ def test_explicit_acquisition_uses_existing_pinned_installer_environment(prepare
     before = snapshot(root)
     proof = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
     assert proof['treeSha256'] == proof['referenceTreeSha256'] == receipt['payloadTreeSha256']
+    assert proof['comparison'] == 'exact-payload' and proof['equivalenceSha256'] == proof['treeSha256']
     assert snapshot(root) == before
+
+
+def history_distribution(prepared, monkeypatch):
+    """Simulate the qualified writer; the actual public SHA is checked on host."""
+    root, stage, values, receipt, calls = prepared
+    monkeypatch.setattr(packages, 'SELECTION_HISTORY_INSTALLER_SHA256', receipt['installerSha256'])
+    reference = stage / packages.REFERENCE / 'package-home'
+    live = Path(values['relay_codex_package_home'])
+    for home, identity in [(reference, b'1 11 1790000000.123456789'), (live, b'2 22 1790000001.987654321')]:
+        standalone = home / 'packages/standalone'
+        (standalone / 'current').symlink_to('releases/0.167.2-test-linux')
+        history = standalone / 'selection-history'
+        history.write_bytes(b'0.167.2-test-linux\n\n' + identity + b'\n')
+        history.chmod(0o644)
+    receipt = {**receipt, 'payloadTreeSha256': packages._tree(reference / 'packages')}
+    return root, stage, values, receipt, reference, live
+
+
+def test_only_qualified_history_kernel_identity_is_equivalent_and_never_rewritten(prepared, monkeypatch):
+    root, stage, values, receipt, reference, live = history_distribution(prepared, monkeypatch)
+    before = snapshot(root)
+    proof = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+    assert proof['comparison'] == 'selection-history-kernel-identity-v1'
+    assert proof['treeSha256'] != proof['referenceTreeSha256'] == receipt['payloadTreeSha256']
+    assert proof['equivalenceSha256'] not in [proof['treeSha256'], proof['referenceTreeSha256']]
+    actual = live / 'packages/standalone/selection-history'
+    assert proof['selectionHistory']['live']['historyRow'][3] == hashlib.sha256(actual.read_bytes()).hexdigest()
+    assert proof['selectionHistory']['live']['currentIdentity'] == packages._stamp(
+        (live / 'packages/standalone/current').lstat())
+    assert snapshot(root) == before
+
+
+@pytest.mark.parametrize('body', [
+    b'0.167.2-test-linux\n\n1 2 3.000000000\nextra\n',
+    b'0.167.2-test-linux\n\n1 2 3.000000000',
+    b'0.167.2-test-linux\r\n\r\n1 2 3.000000000\r\n',
+    b'other-release\n\n1 2 3.000000000\n',
+    b'0.167.2-test-linux\nprevious-release\n1 2 3.000000000\n',
+    b'0.167.2-test-linux\n../escape\n1 2 3.000000000\n',
+    b'0.167.2-test-linux\n\ntrue 2 3.000000000\n',
+    b'0.167.2-test-linux\n\n-1 2 3.000000000\n',
+    b'0.167.2-test-linux\n\n1 0 3.000000000\n',
+    b'0.167.2-test-linux\n\n1 2 3.00\n',
+    b'0.167.2-test-linux\n\n1 2 3.000000000 extra\n',
+    b'0.167.2-test-linux\n\n1 2 3.000000000\xff\n',
+])
+def test_history_schema_and_first_two_lines_are_not_ignored(prepared, monkeypatch, body):
+    _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
+    (live / 'packages/standalone/selection-history').write_bytes(body)
+    with pytest.raises(ValueError):
+        packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+
+
+@pytest.mark.parametrize('change', ['mode', 'owner', 'symlink', 'hardlink', 'extra-payload',
+                                  'current-target', 'unknown-installer'])
+def test_history_exception_preserves_all_other_owner_and_payload_checks(prepared, monkeypatch, change):
+    _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
+    history = live / 'packages/standalone/selection-history'
+    if change == 'mode': history.chmod(0o755)
+    elif change == 'owner': os.chown(history, 9999, 9999)
+    elif change == 'symlink':
+        history.unlink(); history.symlink_to('releases/0.167.2-test-linux/resource')
+    elif change == 'hardlink': os.link(history, history.with_name('another-history'))
+    elif change == 'extra-payload':
+        (live / 'packages/standalone/releases/0.167.2-test-linux/resource').write_bytes(b'different official resource')
+    elif change == 'current-target':
+        current = live / 'packages/standalone/current'
+        current.unlink(); current.symlink_to('releases/0.167.2-test-linux/resource')
+    else: monkeypatch.setattr(packages, 'SELECTION_HISTORY_INSTALLER_SHA256', '0' * 64)
+    with pytest.raises(ValueError):
+        packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+
+
+def test_history_and_current_identity_remain_bound_across_operation_proofs(prepared, monkeypatch):
+    _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
+    before = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+    current = live / 'packages/standalone/current'
+    target = os.readlink(current)
+    current.unlink(); current.symlink_to(target)
+    after = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+    assert before['treeSha256'] == after['treeSha256']
+    assert before['equivalenceSha256'] == after['equivalenceSha256']
+    assert before['selectionHistory']['live']['currentIdentity'] != after['selectionHistory']['live']['currentIdentity']
+    history = live / 'packages/standalone/selection-history'
+    history.write_bytes(b'0.167.2-test-linux\n\n3 33 1790000002.000000000\n')
+    changed = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+    assert changed['treeSha256'] != after['treeSha256']
+    assert changed['equivalenceSha256'] == after['equivalenceSha256']
+    assert changed['selectionHistory']['live']['historyRow'] != after['selectionHistory']['live']['historyRow']
+
+
+@pytest.mark.parametrize('change', ['history', 'current'])
+def test_history_or_same_target_alias_change_during_probes_is_refused(prepared, monkeypatch, change):
+    _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
+    def mutate(argv, *, env, cwd):
+        if change == 'history':
+            (live / 'packages/standalone/selection-history').write_bytes(b'0.167.2-test-linux\n\n4 44 1790000003.000000000\n')
+        else:
+            current = live / 'packages/standalone/current'
+            target = os.readlink(current)
+            current.unlink(); current.symlink_to(target)
+        return runtime(argv, env=env, cwd=cwd)
+    with pytest.raises(ValueError, match='SOURCE_UPGRADE_CODEX_MOVED'):
+        packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=mutate)
 
 
 @pytest.mark.parametrize('change', ['live-byte', 'aux-resource', 'extra', 'removed', 'mode', 'owner',
@@ -194,3 +300,22 @@ def test_reference_receipt_types_are_strict(prepared, field, value):
     _, stage, values, receipt, _ = prepared
     with pytest.raises(ValueError, match='SOURCE_UPGRADE_CODEX_REFERENCE_BINDING'):
         packages.verify_packages(stage, OPERATION, values, SOURCE, {**receipt, field: value}, execute=runtime)
+def test_official_download_matches_ordinary_get_url_agent_without_changing_tls(monkeypatch):
+    from ansible.module_utils.urls import url_argument_spec
+    class Response:
+        url = packages.INSTALLER_URL
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def read(self, limit):
+            assert limit == 1048577
+            return b'#!/bin/sh\n'
+    calls = []
+    def urlopen(request, **kwargs):
+        assert request.full_url == packages.INSTALLER_URL
+        assert request.get_header('User-agent') == url_argument_spec()['http_agent']['default']
+        assert kwargs == {'timeout': 30}  # No unverified TLS context or auth.
+        calls.append(request)
+        return Response()
+    monkeypatch.setattr(packages.urllib.request, 'urlopen', urlopen)
+    assert packages._download(packages.INSTALLER_URL) == b'#!/bin/sh\n'
+    assert len(calls) == 1

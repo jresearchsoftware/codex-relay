@@ -222,6 +222,34 @@ The existing Python `crypt`/passlib deprecation warning remains visible.
 These focused checks do not substitute for the final full candidate set or
 the still-pending measured public installer invocation.
 
+The complete native proof was then qualified against the healthy installed
+`6b80e6ab...` TEST pair using a frozen six-module prototype and an actual official
+Codex reference. Acquisition used the ordinary `get_url` HTTP agent with TLS
+verification and took 8.010 s. Earlier targeted failures identified only the
+prototype's unprotected `/var/tmp` source-parent location, a typed empty
+`EnvironmentFiles` property omitted by systemctl's text formatter, the
+installer's historical selection-link identity, and the distinction between
+General retention and Production startup adoption. Corrections use owning
+contracts and current source, without changing live expected bytes, pruning
+history or weakening Production history checks.
+
+The complete sequential proof passed in **33.311 s**; bounded parallel scheduling
+then passed the same predicates in **16.879 s**, including final rechecks and
+all 844 catalogue entries/32 native namespace probes. Components overlap, so
+their wall durations are not additive. Both calls reused only the same
+diagnostic operation's independently acquired reference after a complete actual
+rehash; ordinary source promotion always acquires a fresh operation reference.
+No Apply, admission or cutover occurred, and the binding and all six service
+identities stayed unchanged. See [initial complete proof](task-253-native-proof-initial.json)
+and [parallel complete proof](task-253-native-proof-parallel.json). This is
+mechanism qualification, **not** the required end-to-end Apply benchmark.
+
+The latest focused root run passed **230 tests**: parallel source proof including
+the real Git roundtrip fixture, package equivalence, General component snapshots
+and the unchanged strict Production suite. Simultaneous-error tests verify that
+all futures finish and a hard binding failure cannot be hidden by an earlier
+ordinary unsupported-profile result.
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The
@@ -264,8 +292,9 @@ that foreign bytes changed. No reload, fresh reset or cleanup was performed.
 See [bounded shared-host evidence](task-253-fresh-boundary.json). Existing TEST
 credential sources and registrations remain in place.
 
-The native fast source-promotion implementation and its targeted host proof,
-final policy/fault/original-operation recovery and corrected provenance cases
+The native fast source-promotion implementation and targeted host proof are
+complete at this snapshot. End-to-end Apply timing, final
+policy/fault/original-operation recovery and corrected provenance cases
 remain in progress. This snapshot asserts no final installed qualification,
 independent acceptance or PROD improvement. Requested profile is Sol/xhigh with Subagents On;
 implementation helpers were used. Actual runtime model/effort telemetry is

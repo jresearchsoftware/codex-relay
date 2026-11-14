@@ -1348,7 +1348,15 @@ bytes are compared with a newly acquired official pinned reference inside that
 operation's private stage. Version strings and an old successful Apply are
 insufficient. This bounded path requires the live Codex payload to match the
 clean reference completely; installations retaining additional historical
-payloads conservatively use the full path without deleting them.
+payloads conservatively use the full path without deleting them. The qualified
+official installer's three-line `standalone/selection-history` has one bounded
+equivalence: its historical device/inode/ctime field describes the installer's
+pruning guard. Existing Relay relocation recreates `current`, so that recorded
+kernel identity can differ between independent installations. The exact selected
+and previous release fields, complete remaining bytes/modes/links and actual
+pinned executable remain bound. The raw live history hash and current link
+identity stay in the operation proof; unknown installer bytes or schema refuse
+this equivalence. Apply preserves history and makes no pruning-readiness claim.
 Unsupported recipes/profiles, changed policy or drift select the
 full path before cutover; changing bindings or lost guards stop execution.
 
@@ -1363,6 +1371,13 @@ after cutover retains that record for the existing exact-operation recovery;
 it never falls through to a second unrelated Apply. Private proof and package
 reference are confined to the existing operation stage, with no cross-operation
 cache or additional operator command.
+
+General Runner retention uses its current component state across the operation,
+including its runnable native distribution, settings, service/cgroup identities
+and registration eligibility. The route writes no General package, settings or
+unit. Its source-owned [native update contract](../docs/runner-self-updates.md)
+remains the baseline; Reviewer/Production loaded-input adoption keeps its
+separate startup-history proof.
 
 Managed apply snapshots actual service activity and uses the existing supported
 upgrade backend. When the running Reviewer exposes the installed private
