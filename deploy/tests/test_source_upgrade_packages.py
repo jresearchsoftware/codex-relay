@@ -96,6 +96,48 @@ def test_explicit_acquisition_uses_existing_pinned_installer_environment(prepare
     assert snapshot(root) == before
 
 
+def test_reference_only_verification_never_probes_live_codex_or_rust(prepared, monkeypatch):
+    root, stage, values, receipt, _ = prepared
+    def forbidden(*_args, **_kwargs):
+        pytest.fail('reference verification must not execute, acquire, or inspect live runtime metadata')
+    monkeypatch.setattr(packages, '_run', forbidden)
+    monkeypatch.setattr(packages, '_download', forbidden)
+    monkeypatch.setattr(packages, '_rust_metadata', forbidden)
+    # Live inputs are deliberately invalid and not even supplied to the private
+    # reference reader. The mandatory full frontier still rejects this state.
+    (Path(values['relay_codex_package_home']) / 'packages/standalone/releases/0.167.2-test-linux/resource').write_bytes(b'live drift')
+    (Path(values['relay_rust_toolchain_root']) / 'support-library').chmod(0o666)
+    minimal = {key: values[key] for key in ['relay_codex_cli_version', 'relay_codex_installer_url']}
+    before = snapshot(root)
+    assert packages.verify_reference(stage, OPERATION, minimal, SOURCE, receipt) == {
+        'version': packages.VERSION, 'referenceTreeSha256': receipt['payloadTreeSha256']}
+    assert snapshot(root) == before
+    with pytest.raises(ValueError):
+        packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
+
+
+@pytest.mark.parametrize('change', ['installer', 'resource', 'mode', 'missing', 'operation', 'receipt', 'alias'])
+def test_reference_only_verification_rejects_tampering_without_reacquisition(prepared, monkeypatch, change):
+    root, stage, values, receipt, _ = prepared
+    reference = stage / packages.REFERENCE
+    resource = reference / 'package-home/packages/standalone/releases/0.167.2-test-linux/resource'
+    if change == 'installer': (reference / 'installer.sh').write_bytes(b'changed producer')
+    elif change == 'resource': resource.write_bytes(b'changed private resource')
+    elif change == 'mode': resource.chmod(0o755)
+    elif change == 'missing': shutil.rmtree(reference)
+    elif change == 'operation': receipt = {**receipt, 'operation': 'different-operation'}
+    elif change == 'receipt': receipt = {**receipt, 'payloadTreeSha256': '0' * 64}
+    else:
+        link = reference / 'package-bin/codex'
+        link.unlink(); link.symlink_to('/etc/passwd')
+    before = snapshot(root)
+    monkeypatch.setattr(packages, '_download', lambda *_args: pytest.fail('never reacquire during verification'))
+    monkeypatch.setattr(packages, '_run', lambda *_args, **_kwargs: pytest.fail('never execute during verification'))
+    with pytest.raises((ValueError, OSError)):
+        packages.verify_reference(stage, OPERATION, values, SOURCE, receipt)
+    assert snapshot(root) == before
+
+
 def history_distribution(prepared, monkeypatch):
     """Simulate the qualified writer; the actual public SHA is checked on host."""
     root, stage, values, receipt, calls = prepared

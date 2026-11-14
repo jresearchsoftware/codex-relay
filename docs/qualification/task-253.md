@@ -250,6 +250,33 @@ and the unchanged strict Production suite. Simultaneous-error tests verify that
 all futures finish and a hard binding failure cannot be hidden by an earlier
 ordinary unsupported-profile result.
 
+The first public native-path confirmation at `7dc23f1e...` stopped before sealing
+or any live effect: a preexisting private stage `bin` directory retained mode
+`0700`, so the real entrypoint readability check refused it. The complete
+invocation took **71.144488 s**, including a fresh official reference; this failed
+attempt is not a successful Apply benchmark. Installed source remained
+`6b80e6ab...`, no recovery began and all six observed service identities remained
+active and unchanged. See [failed public attempt](task-253-native-attempt-7dc.json).
+
+The coordinator now validates private directory ownership/type and explicitly
+sets their declared modes before sealing. A real frozen-helper extract/seal
+regression covers an existing `bin=0700` under `umask 077`. Intermediate checks
+now rehash only the immutable operation reference; complete live package and
+runtime proofs remain at the initial, final pre-effect and post-effect frontiers.
+The coordinator/package suites passed **90 tests**. General capture eliminates
+duplicate byte reads within one capture using fresh descriptor/path metadata
+checks, with no cross-call cache. Its **44 tests**, together with **101 unchanged
+Production tests**, passed; overwrite with restored mtime, chmod, alias and inode
+replacement refuse, and a second capture must hash bytes again. These corrections
+still require a new successful public end-to-end measurement.
+
+The unmodified complete target proof with these helpers passed in **15.404334 s**
+(17.223944 s total read-only diagnostic). The same operation reference was fully
+rehashed; no acquisition, Apply or cutover occurred. Current binding and all six
+service identities remained unchanged. This reduces repeated General byte reads
+within each independent capture while retaining the complete proof. See
+[complete proof with local reread reduction](task-253-native-proof-memo.json).
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The

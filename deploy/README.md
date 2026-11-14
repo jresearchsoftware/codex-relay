@@ -1372,12 +1372,23 @@ it never falls through to a second unrelated Apply. Private proof and package
 reference are confined to the existing operation stage, with no cross-operation
 cache or additional operator command.
 
+Intermediate seal checks revalidate the operation-bound private reference and
+its complete payload tree. Complete live package, runtime and drift proofs run
+independently during preparation, immediately before the first live effect under
+the drained gate and Writer lock, and after promotion. Intermediate checks do
+not repeat live tool execution; they cannot authorize cutover by themselves.
+
 General Runner retention uses its current component state across the operation,
 including its runnable native distribution, settings, service/cgroup identities
 and registration eligibility. The route writes no General package, settings or
 unit. Its source-owned [native update contract](../docs/runner-self-updates.md)
 remains the baseline; Reviewer/Production loaded-input adoption keeps its
 separate startup-history proof.
+Within each General capture, a file's bytes are hashed on first access. Later
+reads in that same capture reopen the path without following links and require
+the exact device, inode, size, nanosecond timestamps, mode, owner, group and link
+count before reusing that hash. A changed identity refuses the proof. Every
+subsequent capture starts afresh; no file hash survives between proof phases.
 
 Managed apply snapshots actual service activity and uses the existing supported
 upgrade backend. When the running Reviewer exposes the installed private

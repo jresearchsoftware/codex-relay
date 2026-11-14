@@ -43,8 +43,8 @@ def component(tmp_path, monkeypatch):
         return SimpleNamespace(stdout=json.dumps(value).encode())
     monkeypatch.setattr(general.subprocess, 'run', typed_property)
     monkeypatch.setattr(adoption, 'cgroup_members', lambda path: ['111'])
-    monkeypatch.setattr(general, '_process', lambda pid, uid: copy.deepcopy(process))
-    monkeypatch.setattr(general, '_trust', lambda processes, uid: {'currentTrust': True})
+    monkeypatch.setattr(general, '_process', lambda pid, uid, **kwargs: copy.deepcopy(process))
+    monkeypatch.setattr(general, '_trust', lambda processes, uid, **kwargs: {'currentTrust': True})
     return root, unit, environment, runner, state, process
 
 
@@ -163,7 +163,7 @@ def test_child_replacement_with_stable_main_pid_during_scan_is_refused(component
 def test_current_input_movement_during_long_scan_is_refused(component, monkeypatch, change):
     root, unit, environment, runner, _, _ = component
     calls = [0]
-    def trust(processes, uid):
+    def trust(processes, uid, **kwargs):
         calls[0] += 1
         if calls[0] == 1:
             if change == 'unit': unit.write_bytes(b'new loaded-unit disk input')
@@ -196,6 +196,67 @@ def test_current_mapped_inode_binding_is_not_pathname_only(tmp_path):
     assert general._file(path, os.getuid(), device=device, inode=str(meta.st_ino))['sha256']
     with pytest.raises(ValueError):
         general._file(path, os.getuid(), device=device, inode=str(meta.st_ino + 1))
+
+
+def test_verified_bytes_are_hashed_once_but_each_use_opens_fresh_metadata(tmp_path, monkeypatch):
+    path = tmp_path / 'immutable-library'; path.write_bytes(b'actual independently hashed bytes')
+    original_open, original_digest = general.os.open, general.hashlib.file_digest
+    meta = path.stat()
+    counts = {'opens': 0, 'hashes': 0}
+    def opening(selected, *args, **kwargs):
+        if str(selected) == str(path): counts['opens'] += 1
+        return original_open(selected, *args, **kwargs)
+    def hashing(stream, algorithm):
+        current = os.fstat(stream.fileno())
+        if (current.st_dev, current.st_ino) == (meta.st_dev, meta.st_ino): counts['hashes'] += 1
+        return original_digest(stream, algorithm)
+    monkeypatch.setattr(general.os, 'open', opening)
+    monkeypatch.setattr(general.hashlib, 'file_digest', hashing)
+    verified = {}
+    first = general._file(path, os.getuid(), verified=verified)
+    assert general._file(path, os.getuid(), verified=verified) == first
+    assert general._file(path, os.getuid(), verified=verified) == first
+    assert counts == {'opens': 3, 'hashes': 1}
+    device = f'{os.major(meta.st_dev):x}:{os.minor(meta.st_dev):x}'
+    with pytest.raises(ValueError):
+        general._file(path, os.getuid(), device=device, inode=str(meta.st_ino + 1), verified=verified)
+
+
+@pytest.mark.parametrize('change', ['chmod', 'overwrite-restored-mtime', 'recreate', 'alias'])
+def test_changed_identity_never_refreshes_previously_verified_bytes(tmp_path, change):
+    path = tmp_path / 'current-library'; path.write_bytes(b'initial bytes')
+    verified = {}
+    first = general._file(path, os.getuid(), verified=verified)
+    before = path.stat()
+    if change == 'chmod': path.chmod(0o400)
+    elif change == 'overwrite-restored-mtime':
+        path.write_bytes(b'changed bytes')
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    elif change == 'recreate':
+        path.unlink(); path.write_bytes(b'initial bytes')
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    else:
+        target = tmp_path / 'other-library'; target.write_bytes(b'initial bytes')
+        path.unlink(); path.symlink_to(target)
+    with pytest.raises((ValueError, OSError)):
+        general._file(path, os.getuid(), verified=verified)
+    assert verified[str(path)] == first
+
+
+def test_verified_file_reads_are_never_reused_across_capture_calls(component, monkeypatch):
+    root, _, _, runner, _, _ = component
+    path = root / 'bin/native-input'; meta = path.stat()
+    original = general.hashlib.file_digest
+    count = [0]
+    def hashing(stream, algorithm):
+        current = os.fstat(stream.fileno())
+        if (current.st_dev, current.st_ino) == (meta.st_dev, meta.st_ino): count[0] += 1
+        return original(stream, algorithm)
+    monkeypatch.setattr(general.hashlib, 'file_digest', hashing)
+    first = general.capture_general(runner, SOURCE)
+    assert count[0] == 1
+    assert general.capture_general(runner, SOURCE) == first
+    assert count[0] == 2
 
 
 def test_real_post_start_kernel_mapping_is_current_general_input_but_not_production_history():

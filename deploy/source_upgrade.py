@@ -343,11 +343,11 @@ def root_verify(journal, helper, *, final=False, full=False):
     else:
         binding = proof.read_binding(journal['context']['oldValues'])[0]
         require(canonical(binding) == canonical(journal['context']['binding']), 'SOURCE_UPGRADE_BINDING_CHANGED')
-        from source_upgrade_packages import verify_packages
-        packages = verify_packages(journal['stage'], journal['operationId'], journal['values'],
-                                   journal['sourceRoot'], journal['packageReference'])
-        require(hashlib.sha256(canonical(packages)).hexdigest()
-                == journal['proof']['packages']['codex']['treeSha256'], 'SOURCE_UPGRADE_PACKAGE_CHANGED')
+        from source_upgrade_packages import verify_reference
+        reference = verify_reference(journal['stage'], journal['operationId'], journal['values'],
+                                     journal['sourceRoot'], journal['packageReference'])
+        require(reference['referenceTreeSha256'] == journal['packageReference']['payloadTreeSha256'],
+                'SOURCE_UPGRADE_PACKAGE_CHANGED')
     receipt = helper.run('verify', journal['stage'],
                          {'operationId': journal['operationId'], 'sourceIdentity': journal['identity']})
     verify_package_modes(receipt)
@@ -511,6 +511,8 @@ def remote(action, data):
         release = root / 'release'
         binary = release / 'bin/reviewer-mcp-http'
         binary.parent.mkdir(mode=0o751, exist_ok=True)
+        helper.protected(binary.parent, directory=True)
+        binary.parent.chmod(0o751)
         old_manifest = data['context']['manifest']
         old_release = Path(data['values']['relay_release_root']) / old_manifest['commit']
         raw = helper.read_regular(old_release / 'bin/reviewer-mcp-http')
@@ -522,12 +524,18 @@ def remote(action, data):
             path.symlink_to(target)
         reviewer_source = release / 'reviewer-source'
         reviewer_source.mkdir(mode=0o750)
+        helper.protected(reviewer_source, directory=True)
+        reviewer_source.chmod(0o750)
         for name in ['Cargo.toml', 'Cargo.lock']:
             helper.atomic(reviewer_source / name, helper.read_regular(release / 'reviewed-source/reviewer' / name), 0o640)
         helper.copy_tree(release / 'reviewed-source/reviewer/src', reviewer_source / 'src')
         contracts = release / 'contracts'
         contracts.mkdir(mode=0o750)
+        helper.protected(contracts, directory=True)
+        contracts.chmod(0o750)
         (contracts / 'src').mkdir(mode=0o750)
+        helper.protected(contracts / 'src', directory=True)
+        (contracts / 'src').chmod(0o750)
         for name in ['github-authority-v1.json', 'github-authority-v4.json']:
             helper.atomic(contracts / 'src' / name, helper.read_regular(release / 'reviewed-source/contracts/src' / name), 0o640)
         helper.atomic(release / 'deployment-config.json', data['values']['relay_installed_deployment_config'].encode(), 0o600)

@@ -58,7 +58,7 @@ def _identity(info):
     return adoption.identity(info)
 
 
-def _file(path, uid, *, device=None, inode=None):
+def _file(path, uid, *, device=None, inode=None, verified=None):
     """Current inode-bound bytes, without a Production startup-time assertion."""
     path = Path(path)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
@@ -69,10 +69,22 @@ def _file(path, uid, *, device=None, inode=None):
             major, minor = (int(part, 16) for part in device.split(':'))
             require(before.st_ino == int(inode) and os.major(before.st_dev) == major
                     and os.minor(before.st_dev) == minor)
-        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        identity = _identity(before)
+        previous = verified.get(str(path)) if verified is not None else None
+        if previous is not None:
+            # Reuse only bytes actually hashed earlier in THIS capture. Every
+            # read still opens O_NOFOLLOW and checks the complete fresh FD/path
+            # identity. A changed input refuses instead of refreshing the memo.
+            require(previous['identity'] == identity)
+            digest = previous['sha256']
+        else:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         require(_identity(os.fstat(stream.fileno())) == _identity(before)
                 and _identity(path.lstat()) == _identity(before))
-    return {'identity': _identity(before), 'sha256': digest}
+    result = {'identity': identity, 'sha256': digest}
+    if verified is not None and previous is None:
+        verified[str(path)] = result
+    return result
 
 
 def _directory(path, uid, *, mutable_root=False):
@@ -92,7 +104,7 @@ def _directory(path, uid, *, mutable_root=False):
         os.close(descriptor)
 
 
-def _process(pid, uid):
+def _process(pid, uid, *, verified=None):
     root = Path('/proc', str(pid))
     before = root.joinpath('stat').read_text().rsplit(') ', 1)[1].split()[19]
     require(root.stat().st_uid == uid)
@@ -108,7 +120,7 @@ def _process(pid, uid):
         key = (fields[3], fields[4])
         require(path not in objects or objects[path] == key)
         if path not in maps:
-            maps[path] = _file(path, uid, device=fields[3], inode=fields[4])
+            maps[path] = _file(path, uid, device=fields[3], inode=fields[4], verified=verified)
             objects[path] = key
     require(maps)
     result = {'pid': str(pid), 'uid': uid, 'start': before,
@@ -120,7 +132,7 @@ def _process(pid, uid):
     return result
 
 
-def _tree(path, uid, *, scope=None):
+def _tree(path, uid, *, scope=None, verified=None):
     """Current complete tree, bounded links/topology and final movement check."""
     path = Path(path)
     scope = Path(scope) if scope is not None else path
@@ -151,7 +163,7 @@ def _tree(path, uid, *, scope=None):
                 if str(current / name) not in observed:
                     visit(current / name)
         else:
-            value = _file(current, uid)
+            value = _file(current, uid, verified=verified)
         require(_identity(current.lstat()) == _identity(before))
         observed[str(current)] = value
         visiting.remove(str(current))
@@ -161,7 +173,7 @@ def _tree(path, uid, *, scope=None):
     return observed
 
 
-def _trust_tree(path, uid, *, boundary=Path('/')):
+def _trust_tree(path, uid, *, boundary=Path('/'), verified=None):
     """Current trust inputs, including absence; no loaded-cache-age claim."""
     path = Path(path)
     require(path.is_absolute() and '..' not in path.parts and path.is_relative_to(boundary))
@@ -180,10 +192,10 @@ def _trust_tree(path, uid, *, boundary=Path('/')):
         return {'absent': True, 'parent': _identity(before), 'parents': parents}
     # Trust-store aliases legitimately cross /usr/lib/ssl -> /etc/ssl and
     # /etc/ssl/certs -> /usr/share. Their current protected targets are inputs.
-    return {'parents': parents, 'tree': _tree(path, uid, scope=boundary)}
+    return {'parents': parents, 'tree': _tree(path, uid, scope=boundary, verified=verified)}
 
 
-def _trust(processes, uid):
+def _trust(processes, uid, *, verified=None):
     own = {row.split(None, 5)[5] for row in Path('/proc/self/maps').read_text().splitlines()
            if len(row.split(None, 5)) == 6 and '/libcrypto.so' in row.split(None, 5)[5]}
     require(len(own) == 1)
@@ -196,19 +208,21 @@ def _trust(processes, uid):
     output = {}
     for pid, value in selected.items():
         require(providers[pid] == [crypto]
-                and value['maps'][crypto]['sha256'] == adoption.digest(Path(crypto).read_bytes()))
+                and value['maps'][crypto]['sha256'] == _file(crypto, 0, verified=verified)['sha256'])
         env = adoption.environment(pid)
         locations = adoption.trust_locations(env, defaults)
         home = env.get('HOME')
         require(isinstance(home, str) and home.startswith('/') and '..' not in Path(home).parts)
         locations.append(str(Path(home) / '.dotnet/corefx/cryptography/x509stores'))
-        output[pid] = {path: _trust_tree(path, uid if path.startswith(home + '/') else 0) for path in locations}
+        output[pid] = {path: _trust_tree(path, uid if path.startswith(home + '/') else 0, verified=verified)
+                       for path in locations}
     return output
 
 
 def capture_general(runner, source_root):
     """Current General component, to compare before/final/after source cutover."""
     require(runner.get('label', '').startswith('member-'))
+    verified = {}  # Per invocation only; never retained, shared or persisted.
     uid = pwd.getpwnam(runner['user']).pw_uid
     require(uid != 0)
     state = _service(runner['service'])
@@ -216,7 +230,7 @@ def capture_general(runner, source_root):
     cgroup = Path('/sys/fs/cgroup') / state['ControlGroup'].lstrip('/') / 'cgroup.procs'
     members = adoption.cgroup_members(cgroup)
     require(state['MainPID'] in members)
-    processes = {pid: _process(pid, uid) for pid in members}
+    processes = {pid: _process(pid, uid, verified=verified) for pid in members}
     root = Path(runner['root'])
     topology = _directory(root, uid, mutable_root=True)
     require(all(name in topology['entries'] for name in ['.runner', '.credentials']))
@@ -229,7 +243,7 @@ def capture_general(runner, source_root):
         if name in ['bin', 'externals']:
             continue  # Native version aliases are checked by runner_directory.
         require(not path.is_symlink())  # Fixed root interpreted files/settings.
-        files[str(path)] = _file(path, uid)
+        files[str(path)] = _file(path, uid, verified=verified)
     spec = importlib.util.spec_from_file_location('general_package_layout',
         Path(source_root) / 'deploy/ansible/roles/relay_runner/files/relay-intent-package.py')
     package = importlib.util.module_from_spec(spec)
@@ -240,27 +254,28 @@ def capture_general(runner, source_root):
         require(selected is not None)
         if (root / name).is_symlink():
             files[str(root / name)] = {'identity': _identity((root / name).lstat()), 'link': os.readlink(root / name)}
-        distribution[name] = _tree(selected, uid)
-    units = {state['FragmentPath']: _file(state['FragmentPath'], 0)}
+        distribution[name] = _tree(selected, uid, verified=verified)
+    units = {state['FragmentPath']: _file(state['FragmentPath'], 0, verified=verified)}
     for path in state['DropInPaths'].split():
-        units[path] = _file(path, 0)
+        units[path] = _file(path, 0, verified=verified)
         units[str(Path(path).parent)] = _directory(Path(path).parent, 0)
-    environment = {path: _file(path, 0) for path in adoption.service_environment_files(state)}
-    trust = _trust(processes, uid)
+    environment = {path: _file(path, 0, verified=verified) for path in adoption.service_environment_files(state)}
+    trust = _trust(processes, uid, verified=verified)
     require(_directory(root, uid, mutable_root=True) == topology)
     require(adoption.cgroup_members(cgroup) == members)
-    require({pid: _process(pid, uid) for pid in members} == processes)
+    require({pid: _process(pid, uid, verified=verified) for pid in members} == processes)
     require(adoption.cgroup_members(cgroup) == members and _service(runner['service']) == state)
     # Repeat all selected inputs after the potentially long process/trust reads.
     for path, before in files.items():
         if 'link' in before:
             require(_identity(Path(path).lstat()) == before['identity'] and os.readlink(path) == before['link'])
         else:
-            require(_file(path, uid) == before)
-    require(all(_tree(package.runner_directory(root, name), uid) == before for name, before in distribution.items()))
+            require(_file(path, uid, verified=verified) == before)
+    require(all(_tree(package.runner_directory(root, name), uid, verified=verified) == before
+                for name, before in distribution.items()))
     for path, before in units.items():
-        require((_directory(path, 0) if 'entries' in before else _file(path, 0)) == before)
-    require(all(_file(path, 0) == before for path, before in environment.items()))
-    require(_trust(processes, uid) == trust)
+        require((_directory(path, 0) if 'entries' in before else _file(path, 0, verified=verified)) == before)
+    require(all(_file(path, 0, verified=verified) == before for path, before in environment.items()))
+    require(_trust(processes, uid, verified=verified) == trust)
     return {'service': state, 'processes': processes, 'root': topology, 'files': files,
             'distribution': distribution, 'units': units, 'environment': environment, 'trust': trust}

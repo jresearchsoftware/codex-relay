@@ -307,8 +307,11 @@ def native_stage(monkeypatch):
             prove=lambda *_args, **_kwargs: copy.deepcopy(proof),
             read_binding=lambda *_args: (context['binding'], manifest, context['sourceIdentity'], {})))
         monkeypatch.setitem(sys.modules, 'source_upgrade_packages',
-                            SimpleNamespace(prepare_reference=lambda *_args: {'operationId': fixture_module.OP},
-                                            verify_packages=lambda *_args: reference_proof))
+                            SimpleNamespace(prepare_reference=lambda *_args: {
+                                'schemaVersion': 1, 'operation': fixture_module.OP, 'version': '0.167.2',
+                                'payloadTreeSha256': 'e' * 64, 'installerSha256': 'f' * 64},
+                                verify_reference=lambda *_args: {'version': '0.167.2', 'referenceTreeSha256': 'e' * 64},
+                                verify_packages=lambda *_args: reference_proof))
         monkeypatch.setattr(upgrade, 'stage_helper', lambda _source: fixture_module.stage)
         monkeypatch.setattr(upgrade, 'candidate_checks', lambda _root, _repository: None)
         data = {'values': values, 'identity': fixture.identity, 'operationId': fixture_module.OP,
@@ -376,15 +379,34 @@ def test_native_prepare_seals_only_new_release_and_journal_and_detects_drift(nat
         upgrade.remote('verify', data)
 
 
+def test_private_stage_reconciles_existing_bin_mode_even_with_restrictive_umask(native_stage):
+    fixture, helper, data, _proof = native_stage
+    helper.run('extract', fixture.root, fixture.expected, fixture.archive)
+    binary_parent = fixture.root / 'release/bin'
+    binary_parent.mkdir(mode=0o700)
+    binary_parent.chmod(0o700)
+    previous = os.umask(0o077)
+    try:
+        assert upgrade.remote('prepare', data)['status'] == 'SOURCE_STAGE_READY'
+    finally:
+        os.umask(previous)
+    receipt = helper.run('verify', fixture.root, fixture.expected)
+    assert receipt == upgrade.read_journal(data, helper)['receipt']
+    for relative, expected in [('bin', 0o751), ('reviewer-source', 0o750),
+                               ('contracts', 0o750), ('contracts/src', 0o750)]:
+        assert (fixture.root / 'release' / relative).stat().st_mode & 0o777 == expected
+
+
 def test_stage_only_rechecks_binding_seal_and_reference_without_repeating_full_host_qualification(native_stage, monkeypatch):
     _fixture, helper, data, _proof = native_stage
     upgrade.remote('prepare', data)
     journal = upgrade.read_journal(data, helper)
     module = sys.modules['source_upgrade_proof']
     monkeypatch.setattr(module, 'prove', lambda *_args, **_kwargs: pytest.fail('full host qualification is reserved for cutover'))
-    assert upgrade.root_verify(journal, helper) == journal['receipt']
     packages = sys.modules['source_upgrade_packages']
-    monkeypatch.setattr(packages, 'verify_packages', lambda *_args: {'changed': True})
+    monkeypatch.setattr(packages, 'verify_packages', lambda *_args: pytest.fail('thin stage check must not probe live tools'))
+    assert upgrade.root_verify(journal, helper) == journal['receipt']
+    monkeypatch.setattr(packages, 'verify_reference', lambda *_args: {'referenceTreeSha256': '0' * 64})
     with pytest.raises(RuntimeError, match='PACKAGE_CHANGED'):
         upgrade.root_verify(journal, helper)
 

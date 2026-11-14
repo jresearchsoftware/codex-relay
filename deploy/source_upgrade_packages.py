@@ -257,8 +257,7 @@ def prepare_reference(stage, operation, values, source_root, *, execute=None, do
             'payloadTreeSha256': _tree(home / 'packages'), 'installerSha256': hashlib.sha256(raw).hexdigest()}
 
 
-def verify_packages(stage, operation, values, source_root, receipt, *, execute=None):
-    """Verify only; absence/uncertainty never creates or reacquires anything."""
+def _verified_reference(stage, operation, values, source_root, receipt):
     root, package, codex = _context(stage, operation, values, source_root)
     require(isinstance(receipt, dict) and set(receipt) == {'schemaVersion', 'operation', 'version',
                                                          'payloadTreeSha256', 'installerSha256'}
@@ -274,15 +273,33 @@ def verify_packages(stage, operation, values, source_root, receipt, *, execute=N
             'SOURCE_UPGRADE_CODEX_REFERENCE_CHANGED')
     reference_home = root / 'package-home'
     reference = codex.qualify(reference_home, root / 'package-bin/codex', VERSION)
+    reference_rows = _tree_rows(reference_home / 'packages')
+    reference_tree = hashlib.sha256(canonical(reference_rows)).hexdigest()
+    require(reference_tree == receipt['payloadTreeSha256'], 'SOURCE_UPGRADE_CODEX_PAYLOAD_CHANGED')
+    return codex, reference_home, reference, reference_rows, reference_tree
+
+
+def verify_reference(stage, operation, values, source_root, receipt):
+    """Recheck the private producer artifact; never inspect or execute live tools.
+
+    The complete live package/runtime proof still runs at the pre-mutation and
+    post-mutation frontiers. Intermediate seal checks need only its immutable
+    operation-bound input, not another live qualification.
+    """
+    _, _, _, _, tree = _verified_reference(stage, operation, values, source_root, receipt)
+    return {'version': VERSION, 'referenceTreeSha256': tree}
+
+
+def verify_packages(stage, operation, values, source_root, receipt, *, execute=None):
+    """Verify only; absence/uncertainty never creates or reacquires anything."""
+    codex, reference_home, reference, reference_rows, reference_tree = _verified_reference(
+        stage, operation, values, source_root, receipt)
     live_home = Path(values['relay_codex_package_home'])
     live = codex.qualify(live_home, values['relay_codex_binary_path'], VERSION)
     require(Path(reference['binary']).relative_to(reference_home) == Path(live['binary']).relative_to(live_home),
             'SOURCE_UPGRADE_CODEX_ENTRYPOINT_CHANGED')
-    reference_rows = _tree_rows(reference_home / 'packages')
     live_rows = _tree_rows(live_home / 'packages')
-    reference_tree = hashlib.sha256(canonical(reference_rows)).hexdigest()
     live_tree = hashlib.sha256(canonical(live_rows)).hexdigest()
-    require(reference_tree == receipt['payloadTreeSha256'], 'SOURCE_UPGRADE_CODEX_PAYLOAD_CHANGED')
     equivalence = _payload_equivalence(reference_home, live_home, reference, live,
                                        receipt['installerSha256'], reference_rows, live_rows)
     rust_version = values['relay_rust_toolchain_version']
