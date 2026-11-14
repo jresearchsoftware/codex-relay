@@ -1340,6 +1340,12 @@ For a source-only upgrade with unchanged effective deployment inputs, ordinary
 `install` can select a bounded native promotion instead of the full Ansible
 traversal. This requires exact unchanged Reviewer source, complete build inputs
 and pinned build contract; the current binary must match the installed manifest.
+Initial source-only preparation batches the existing frozen archive/tree
+validator, canonical consumer rendering and all six actual Node syntax checks
+into one private target call. Unsupported frontend rendering or payload bounds
+retain the original source preparation play before submission. A failed or
+unproved submitted batch stops the operation. First-install prerequisite
+preparation and the later complete artifact path keep their existing ordering.
 An operation-scoped catalogue renders canonical task-owned files, modes,
 identities and all 32 namespace probes. Native checks verify current host/App/TLS
 inputs, pool units/registrations/group eligibility, runtime imports and readiness,

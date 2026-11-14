@@ -262,6 +262,31 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert 'abort' not in events
 
 
+def test_native_source_batch_replaces_only_first_source_play(invocation, monkeypatch):
+    import source_stage
+    args, events, _gate, state, _records = invocation
+    def prepare(_preparation, guard, pool_guard):
+        assert guard.poll() is None and pool_guard.poll() is None
+        state['stage_calls'] += 1
+        events.append('native-source')
+        return True
+    monkeypatch.setattr(source_stage, 'prepare', prepare)
+    backend.run(args)
+    assert events.index('native-source') < events.index('desired') < events.index('history')
+    assert 'source-stage' not in events and 'build-stage' in events
+
+
+def test_native_source_submission_failure_keeps_old_open_without_play_fallback(invocation, monkeypatch):
+    import source_stage
+    args, events, gate, _state, _records = invocation
+    def failure(*_args): raise RuntimeError('NATIVE_SOURCE_SUBMITTED_FAILURE')
+    monkeypatch.setattr(source_stage, 'prepare', failure)
+    with pytest.raises(RuntimeError, match='NATIVE_SOURCE_SUBMITTED_FAILURE'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert not {'source-stage', 'build-stage', 'quiesce', 'backend'}.intersection(events)
+
+
 def test_source_reuse_promotes_under_existing_lifecycle_without_install_traversal(invocation):
     args, events, gate, state, records = invocation
     state['source_reuse'] = True

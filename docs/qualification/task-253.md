@@ -277,6 +277,16 @@ service identities remained unchanged. This reduces repeated General byte reads
 within each independent capture while retaining the complete proof. See
 [complete proof with local reread reduction](task-253-native-proof-memo.json).
 
+The initial source-only Ansible preparation cost 12.937 s in the failed public
+attempt. A bounded native batch now uses the exact frozen archive/tree helper,
+canonical consumer template and six actual Node syntax checks in one private
+stage transport. It retains the original source play for unsupported frontend
+capabilities before submission, stops on a submitted failure, and preserves the
+first-install prerequisites and later complete build path. The native batch and
+public scheduler integration passed **53 focused Linux tests**, including actual
+Ansible template-action byte parity, restrictive umask, each entrypoint's real
+syntax failure, archive/tree/path refusal and no fallback after transport error.
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The

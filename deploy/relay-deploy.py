@@ -814,7 +814,9 @@ def run(args):
                             args._intent_product_prerequisites = True
                             preflight_play('relay-intent-prerequisites.yml')
                             args._intent_failure_stage = 'preflight-source'
-                        preflight_play('relay-intent-stage.yml')
+                        from source_stage import prepare as prepare_source_only
+                        if not prepare_source_only(preparation, guard, pool_guard):
+                            preflight_play('relay-intent-stage.yml')
                         preparation.desired()
                         args._intent_failure_stage = 'preflight-history'
                         if pool_reinstall_proof is not None and not pool_reinstall_proof['completed']:
