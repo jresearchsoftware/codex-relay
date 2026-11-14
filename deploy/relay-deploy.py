@@ -775,11 +775,18 @@ def run(args):
                         require(not strategy_inventory(locked_inventory)['blockers']
                                 and locked_revision == args.intent_expected_installed_revision,
                                 'intent-installation-changed-before-reservation')
-                    if ('generalRunnerPool' in config['consumer']
-                            and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']):
+                    pool_preflight_needed = ('generalRunnerPool' in config['consumer']
+                        and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'])
+                    defer_pool_preflight = (pool_preflight_needed and intent_install
+                        and args.phase == 'upgrade' and not args.authorize_lifecycle_recovery
+                        and bounded_binding is None
+                        and getattr(args, 'predispatch_recovery_request', None) is None)
+                    def check_pool_preflight():
                         from managed_pool_transport import preflight_pool
-                        pool_preflight_proof = preflight_pool(target, key, config, guard,
+                        return preflight_pool(target, key, config, guard,
                             local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
+                    if pool_preflight_needed and not defer_pool_preflight:
+                        pool_preflight_proof = check_pool_preflight()
                     if intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
                         from install_preflight import PreparedInstall
                         stage_operation = admission_operation_id or str(uuid.uuid4())
@@ -859,6 +866,11 @@ def run(args):
                             # nomination and stage writes have not changed live state.
                             preparation.capture()
                         else:
+                            # Native nomination already proves the identical pool
+                            # predicates in its initial/final/post-effect proofs.
+                            # Every ordinary fallback retains both owning checks.
+                            if defer_pool_preflight:
+                                pool_preflight_proof = check_pool_preflight()
                             # The owning read-only checks and real staging run before
                             # quiesce; a dry run cannot replace build/load proof.
                             args._intent_failure_stage = 'preflight-host-policy'
@@ -1056,8 +1068,7 @@ def run(args):
                             require(repeated_retirement == preparation.retained_proof,
                                     'INSTALL_PREFLIGHT_RETAINED_REPLACEMENT_CHANGED')
                         if pool_preflight_proof is not None:
-                            repeated_pool = preflight_pool(target, key, config, guard,
-                                local=args.local_reconcile or args.local_lifecycle, extra_guard=pool_guard)
+                            repeated_pool = check_pool_preflight()
                             require(str(repeated_pool) == str(pool_preflight_proof),
                                     'INSTALL_PREFLIGHT_POOL_POLICY_CHANGED')
                         if not fresh_preparation and preparation.holder is None:

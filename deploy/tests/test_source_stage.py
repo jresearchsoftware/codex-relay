@@ -1,5 +1,6 @@
 """Native source preparation uses the frozen helper and canonical templates."""
 import base64
+import gzip
 import io
 import json
 import os
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zlib
 from types import SimpleNamespace
 
 import pytest
@@ -79,7 +81,7 @@ def payload(fixture):
     return {'operationId': OP, 'sourceIdentity': preparation.identity, 'stage': preparation.stage,
             'installRoot': preparation.values['relay_install_root'], 'releaseRoot': preparation.values['relay_release_root'],
             'reinstall': False, 'compatibilityLinks': [], 'helperSource': HELPER.read_text(),
-            'archiveBase64': base64.b64encode(fixture.archive.read_bytes()).decode(),
+            'archiveGzipBase64': base64.b64encode(gzip.compress(fixture.archive.read_bytes(), mtime=0)).decode(),
             'consumerBase64': base64.b64encode(b'{"private":"fixture"}\n').decode()}
 
 
@@ -136,7 +138,7 @@ def test_frozen_input_and_private_namespace_failures_refuse_without_active_effec
             member = tarfile.TarInfo('../outside')
             member.size = 4
             archive.addfile(member, io.BytesIO(b'evil'))
-        request['archiveBase64'] = base64.b64encode(raw.getvalue()).decode()
+        request['archiveGzipBase64'] = base64.b64encode(gzip.compress(raw.getvalue(), mtime=0)).decode()
     with pytest.raises((ValueError, OSError, TypeError)):
         stage.native(request)
     assert not (fixture.root / 'outside').exists()
@@ -197,3 +199,29 @@ def test_consumer_bytes_match_real_owning_ansible_template_action(tmp_path):
     assert result.returncode == 0
     assert destination.read_bytes() == expected
     assert isinstance(json.loads(expected), dict)
+
+
+@pytest.mark.parametrize('change', ['invalid', 'truncated', 'trailing', 'member', 'crc', 'bomb'])
+def test_compressed_archive_refuses_corrupt_trailing_and_unbounded_streams(monkeypatch, change):
+    monkeypatch.setattr(stage, 'MAX_ARCHIVE', 1024)
+    compressed = gzip.compress(b'actual archive', mtime=0)
+    if change == 'invalid':
+        compressed = b'not gzip'
+    elif change == 'truncated':
+        compressed = compressed[:-1]
+    elif change == 'trailing':
+        compressed += b'extra'
+    elif change == 'member':
+        compressed += gzip.compress(b'second member', mtime=0)
+    elif change == 'crc':
+        compressed = compressed[:-8] + bytes([compressed[-8] ^ 1]) + compressed[-7:]
+    elif change == 'bomb':
+        compressed = gzip.compress(b'x' * 1025, mtime=0)
+    with pytest.raises((ValueError, zlib.error)):
+        stage.decode_archive(base64.b64encode(compressed).decode())
+
+
+def test_compressed_archive_preserves_exact_tar_bytes_and_limit(monkeypatch):
+    monkeypatch.setattr(stage, 'MAX_ARCHIVE', 1024)
+    original = b'x' * 1024
+    assert stage.decode_archive(base64.b64encode(gzip.compress(original, mtime=0)).decode()) == original

@@ -5,6 +5,8 @@ come from canonical templates; observed host bytes never become desired state.
 """
 import base64
 import copy
+import ctypes
+import errno
 import fcntl
 import grp
 import hashlib
@@ -324,6 +326,95 @@ def normalize_release(destination, values):
     os.chown(destination / 'bin/relay-codex-dispatch.mjs', 0, runner_gid, follow_symlinks=False)
 
 
+def release_move_plan(source, destination, helper):
+    """Qualify no-replace rename before any live installation mutation.
+
+    A disposable directory in the existing private stage tests filesystem/kernel
+    support. Unsupported filesystems retain the frozen consumer; no rename
+    failure after the original operation record ever retries another writer.
+    """
+    source, destination = Path(source), Path(destination)
+    if sys.platform != 'linux' or os.path.lexists(destination):
+        return None
+    source_info = helper.protected(source, directory=True)
+    parent_info = helper.protected(destination.parent, directory=True)
+    if source_info.st_dev != parent_info.st_dev:
+        return None
+    try:
+        rename = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError:
+        return None
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+
+    def no_replace(left, right):
+        if rename(-100, os.fsencode(left), -100, os.fsencode(right), 1) != 0:
+            number = ctypes.get_errno()
+            raise OSError(number, os.strerror(number))
+
+    probe = source.parent / ('.rename-probe-' + str(uuid.uuid4()))
+    moved = probe.with_name(probe.name + '-moved')
+    probe.mkdir(mode=0o700)
+    probe_identity = probe.stat()
+    try:
+        try:
+            no_replace(probe, moved)
+        except OSError as error:
+            if error.errno in [errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP, errno.EXDEV]:
+                return None
+            raise
+    finally:
+        for path in [probe, moved]:
+            if os.path.lexists(path):
+                info = path.lstat()
+                require(stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino)
+                        == (probe_identity.st_dev, probe_identity.st_ino), 'SOURCE_UPGRADE_MOVE_PROBE_CHANGED')
+                path.rmdir()
+
+    def move():
+        current = helper.protected(source, directory=True)
+        parent = helper.protected(destination.parent, directory=True)
+        require(helper.stamp(current) == helper.stamp(source_info)
+                and (parent.st_dev, parent.st_ino) == (parent_info.st_dev, parent_info.st_ino)
+                and not os.path.lexists(destination), 'SOURCE_UPGRADE_MOVE_BINDING_CHANGED')
+        no_replace(source, destination)
+        # The payload and reference receipts were already fsynced by their
+        # owning writers. Commit removal and publication of the directory name.
+        for path in [source.parent, destination.parent]:
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        observed = helper.protected(destination, directory=True)
+        require((observed.st_dev, observed.st_ino) == (source_info.st_dev, source_info.st_ino),
+                'SOURCE_UPGRADE_MOVE_BINDING_CHANGED')
+    return move
+
+
+def sync_release_directories(source, helper):
+    """Persist sealed topology once, including directory and symlink entries.
+
+    Every regular source/generated/artifact byte in this native stage was
+    written by the frozen helper's atomic writer (which fsyncs its file FD).
+    Ancestor directory links and aliases need this bottom-up directory pass.
+    """
+    def unavailable(error):
+        raise error
+    for directory, _, _ in os.walk(source, topdown=False, followlinks=False, onerror=unavailable):
+        path = Path(directory)
+        before = helper.protected(path, directory=True)
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            require(helper.stamp(os.fstat(descriptor)) == helper.stamp(before),
+                    'SOURCE_UPGRADE_MOVE_DIRECTORY_CHANGED')
+            os.fsync(descriptor)
+            require(helper.stamp(os.fstat(descriptor)) == helper.stamp(before)
+                    == helper.stamp(path.lstat()), 'SOURCE_UPGRADE_MOVE_DIRECTORY_CHANGED')
+        finally:
+            os.close(descriptor)
+
+
 def preserve_proof(before, after):
     # Full desired catalogue and host checks may intentionally change their
     # hashes at promotion. Component processes, payloads and pool must not.
@@ -413,6 +504,8 @@ def promote_root(journal, data, helper):
     # The sole full final live proof follows drain under the retained Writer
     # lease, immediately before creating the original backend mutation record.
     root_verify(journal, helper, final=True, full=True)
+    destination = values['relay_release_root'] + '/' + journal['identity']['revision']
+    move_release = release_move_plan(Path(journal['stage']) / 'release', destination, helper)
     record = Path(values['relay_production_operation_record_path'])
     descriptor = transition_lock(values, helper)
     try:
@@ -420,10 +513,25 @@ def promote_root(journal, data, helper):
         helper.atomic(record, canonical(operation_record(values, journal['identity']['revision'])) + b'\n', 0o600)
     finally:
         os.close(descriptor)
-    destination = values['relay_release_root'] + '/' + journal['identity']['revision']
     gate_ready()
-    helper.run('consume', journal['stage'], {'operationId': journal['operationId'],
-        'sourceIdentity': journal['identity'], 'releaseRoot': values['relay_release_root'], 'reinstall': False}, destination)
+    if move_release is None:
+        helper.run('consume', journal['stage'], {'operationId': journal['operationId'],
+            'sourceIdentity': journal['identity'], 'releaseRoot': values['relay_release_root'], 'reinstall': False}, destination)
+    else:
+        # Keep the frozen consumer's immediate sealed-tree revalidation. Only
+        # its per-file copy/fsync loop is replaced by the qualified atomic move.
+        receipt = helper.run('verify', journal['stage'],
+            {'operationId': journal['operationId'], 'sourceIdentity': journal['identity']})
+        verify_package_modes(receipt)
+        require(receipt == journal['receipt'], 'SOURCE_UPGRADE_STAGE_CHANGED')
+        helper.run('check-destination', journal['stage'], {'operationId': journal['operationId'],
+            'sourceIdentity': journal['identity'], 'releaseRoot': values['relay_release_root'], 'reinstall': False}, destination)
+        sync_release_directories(Path(journal['stage']) / 'release', helper)
+        move_release()
+        installed_source = str(Path(destination) / 'reviewed-source')
+        prefix = [*prefix]
+        prefix[2] = installed_source + '/deploy/writer_lock_lease.py'
+        prefix[5] = installed_source
     normalize_release(destination, values)
     gate_ready()
     current = Path(values['relay_install_root']) / 'current'
@@ -454,9 +562,17 @@ def promote_root(journal, data, helper):
         metadata = path.stat()
         helper.atomic(path, base64.b64decode(entry['contentBase64'], validate=True), entry['mode'])
         os.chown(path, metadata.st_uid, metadata.st_gid)
-    after = proof.prove(journal['values'], journal['config'], journal['sourceRoot'], journal['catalogueAfter'],
-                        stage=journal['stage'], operation=journal['operationId'],
-                        package_reference=journal['packageReference'])
+    after_source = str(Path(destination) / 'reviewed-source') if move_release is not None else journal['sourceRoot']
+    original_path = sys.path[:]
+    try:
+        # Lazy imports use the same sealed bytes at their installed name. The
+        # UUID journal, lease and package reference remain in the private stage.
+        sys.path.insert(0, after_source + '/deploy')
+        after = proof.prove(journal['values'], journal['config'], after_source, journal['catalogueAfter'],
+                            stage=journal['stage'], operation=journal['operationId'],
+                            package_reference=journal['packageReference'])
+    finally:
+        sys.path[:] = original_path
     preserve_proof(journal['proof'], after)
     require(install_preflight.observe_predispatch_service_intent(values) == activity, 'SOURCE_UPGRADE_ACTIVITY_CHANGED')
     gate_ready()

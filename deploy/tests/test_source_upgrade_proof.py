@@ -28,7 +28,7 @@ def parallel_proof(monkeypatch):
     binding = {'revision': 'b' * 40}
     config = {'unchanged': True}
     events, completed = [], set()
-    barrier = threading.Barrier(3, timeout=5)
+    barrier = threading.Barrier(4, timeout=5)
     package_started = threading.Event()
     state = {'failure': None}
     loaded_value = {'production': {'identity': 'same-process'}}
@@ -42,6 +42,7 @@ def parallel_proof(monkeypatch):
         events.append(name + ':start')
         try:
             barrier.wait()
+            assert package_started.wait(5), 'package checks did not overlap initial loaded capture'
             error = state.get('errors', {}).get(name)
             if error is not None:
                 if name == 'loaded': package_started.set()
@@ -64,20 +65,24 @@ def parallel_proof(monkeypatch):
         return independent('loaded')
     monkeypatch.setattr(proof, 'loaded_proof', loaded)
     def packages(_values, _source, observed, **_kwargs):
-        assert observed is loaded_value and 'loaded' in completed
-        assert {'host:start', 'pool:start', 'loaded:start'} <= set(events)
         events.append('packages:start')
-        package_started.set()
-        error = state.get('errors', {}).get('packages')
-        if error is not None: raise error
-        if state['failure'] == 'packages': raise NotEligible('INJECTED_PACKAGES')
-        return {'activeRunnerUnits': ['production.service']}
+        try:
+            barrier.wait()
+            assert 'loaded' not in completed, 'package checks waited for loaded capture'
+            package_started.set()
+            error = state.get('errors', {}).get('packages')
+            if error is not None: raise error
+            if state['failure'] == 'packages': raise NotEligible('INJECTED_PACKAGES')
+            assert observed.result(timeout=5) is loaded_value
+            return {'activeRunnerUnits': ['production.service']}
+        finally:
+            completed.add('packages')
     monkeypatch.setattr(proof, 'package_proof', packages)
     for name in ['readiness_proof', 'runtime_support_proof', 'prerequisite_proof', 'lifecycle_unit_proof']:
         monkeypatch.setattr(proof, name, lambda *_args, **_kwargs: {'unchanged': True})
     monkeypatch.setattr(proof, 'runtime_imports', lambda *_args: events.append('imports'))
     def audit(_catalogue, *, live_checks):
-        assert completed == {'host', 'pool', 'loaded'} and all(live_checks.values())
+        assert completed == {'host', 'pool', 'loaded', 'packages'} and all(live_checks.values())
         events.append('audit')
         return {'eligible': True}
     monkeypatch.setattr(installed_state, 'audit_catalogue', audit)
@@ -89,7 +94,7 @@ def test_full_proof_overlaps_independent_checks_and_retains_final_frontier(paral
     result = proof.prove(values, config, '/source', {}, expected_binding=binding,
                          stage='/stage', operation='operation', package_reference={})
     assert result['host']['status'] == 'PASS' and result['pool'] == {'members': [1]}
-    assert completed == {'host', 'pool', 'loaded'}
+    assert completed == {'host', 'pool', 'loaded', 'packages'}
     assert events.index('source') < events.index('packages:start') < events.index('audit') < events.index('loaded:final')
 
 
@@ -100,12 +105,12 @@ def test_any_parallel_failure_joins_owned_readers_and_prevents_acceptance(parall
     with pytest.raises(NotEligible, match='INJECTED_' + failure.upper()):
         proof.prove(values, config, '/source', {}, expected_binding=binding,
                     stage='/stage', operation='operation', package_reference={})
-    assert completed == {'host', 'pool', 'loaded'}
+    assert completed == {'host', 'pool', 'loaded', 'packages'}
     assert 'audit' not in events and 'loaded:final' not in events
 
 
 @pytest.mark.parametrize('ordinary,hard', [('host', 'pool'), ('host', 'loaded'), ('host', 'packages'),
-                                        ('loaded', 'pool'), ('packages', 'pool')])
+                                        ('loaded', 'pool'), ('packages', 'pool'), ('packages', 'loaded')])
 def test_simultaneous_outer_boundary_failure_dominates_ordinary_fallback(parallel_proof, ordinary, hard):
     values, config, binding, events, completed, state = parallel_proof
     state['errors'] = {ordinary: NotEligible('ORDINARY_UNAVAILABLE'),
@@ -113,11 +118,11 @@ def test_simultaneous_outer_boundary_failure_dominates_ordinary_fallback(paralle
     with pytest.raises(RuntimeError, match='SOURCE_UPGRADE_BINDING_CHANGED'):
         proof.prove(values, config, '/source', {}, expected_binding=binding,
                     stage='/stage', operation='operation', package_reference={})
-    assert completed == {'host', 'pool', 'loaded'}
+    assert completed == {'host', 'pool', 'loaded', 'packages'}
     assert 'audit' not in events and 'loaded:final' not in events
 
 
-@pytest.mark.parametrize('failure', [None, 'codex', 'general-1', 'general-2', 'simultaneous'])
+@pytest.mark.parametrize('failure', [None, 'codex', 'general-1', 'general-2', 'simultaneous', 'loaded-hard'])
 def test_package_readers_overlap_only_after_all_runner_version_probes(monkeypatch, failure):
     import host_preflight
     import source_upgrade_packages
@@ -138,6 +143,8 @@ def test_package_readers_overlap_only_after_all_runner_version_probes(monkeypatc
             if failure == 'simultaneous':
                 if name == 'codex': raise NotEligible('ORDINARY_CODEX_UNAVAILABLE')
                 if name == 'general-1': raise RuntimeError('INJECTED_PROTECTED_BINDING_CHANGED')
+            if failure == 'loaded-hard' and name == 'codex':
+                raise NotEligible('ORDINARY_CODEX_UNAVAILABLE')
             if failure == name: raise NotEligible('INJECTED_PACKAGE_READER')
             return {'identity': name}
         finally:
@@ -146,8 +153,17 @@ def test_package_readers_overlap_only_after_all_runner_version_probes(monkeypatc
     monkeypatch.setitem(sys.modules, 'source_upgrade_general',
                         SimpleNamespace(capture_general=lambda runner, _source: reader(runner['label'])))
     values = {'relay_general_runner_pool': {'desiredCapacity': 2}, 'relay_runner_package_archive': '/archive'}
-    loaded = {'production': {'identity': 'production'}}
-    if failure == 'simultaneous':
+    from concurrent.futures import Future
+    class LoadedFuture(Future):
+        def result(self, timeout=None):
+            assert completed == {'codex', 'general-1', 'general-2'}
+            return super().result(timeout=timeout)
+    loaded = LoadedFuture()
+    if failure == 'loaded-hard':
+        loaded.set_exception(RuntimeError('INJECTED_PROTECTED_BINDING_CHANGED'))
+    else:
+        loaded.set_result({'production': {'identity': 'production'}})
+    if failure in ['simultaneous', 'loaded-hard']:
         with pytest.raises(RuntimeError, match='INJECTED_PROTECTED_BINDING_CHANGED'):
             proof.package_proof(values, '/source', loaded, stage='/stage', operation='op', package_reference={})
     elif failure:

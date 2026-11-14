@@ -229,21 +229,45 @@ finally:
         directory.rmdir()
 '''
 
-GUARD_CONTROL = '''import os, pathlib, stat, sys
+GUARD_CONTROL = '''import os, pathlib, stat, sys, time
 directory = pathlib.Path(sys.argv[1])
-if directory.parent != pathlib.Path('/run'):
+action = sys.argv[2]
+if directory.parent != pathlib.Path('/run') or action not in ['status', 'wait-ready', 'release']:
     raise SystemExit(1)
-try:
-    info = directory.lstat()
-except FileNotFoundError:
-    print('WAIT')
-    raise SystemExit(0)
-if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o700:
-    raise SystemExit(1)
-if sys.argv[2] == 'release':
-    fd = os.open(directory / 'release', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-    os.close(fd)
-print('READY' if (directory / 'ready').is_file() else 'WAIT')
+deadline = time.monotonic() + 20
+identity = None
+while True:
+    try:
+        info = directory.lstat()
+    except FileNotFoundError:
+        if identity is not None:
+            raise SystemExit(1)
+        info = None
+    if info is not None:
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o700:
+            raise SystemExit(1)
+        observed = (info.st_dev, info.st_ino)
+        if identity is not None and identity != observed:
+            raise SystemExit(1)
+        identity = observed
+        if action == 'release':
+            fd = os.open(directory / 'release', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            os.close(fd)
+        ready = directory / 'ready'
+        try:
+            ready_info = ready.lstat()
+        except FileNotFoundError:
+            ready_info = None
+        if ready_info is not None:
+            if (not stat.S_ISREG(ready_info.st_mode) or ready_info.st_uid != 0
+                    or ready_info.st_nlink != 1 or stat.S_IMODE(ready_info.st_mode) != 0o600):
+                raise SystemExit(1)
+            print('READY')
+            break
+    if action != 'wait-ready' or time.monotonic() >= deadline:
+        print('WAIT')
+        break
+    time.sleep(0.05)
 '''
 
 
@@ -280,7 +304,9 @@ def hold_target(target, key, argv, ready):
     try:
         deadline = time.monotonic() + 60
         while guard.poll() is None and time.monotonic() < deadline:
-            if guard.control('status') == 'READY':
+            # Wait inside the same qualified target request rather than
+            # launching a full Ansible play for every pre-readiness poll.
+            if guard.control('wait-ready') == 'READY' and guard.poll() is None:
                 return guard
         raise RuntimeError('host-operation-guard-unavailable')
     except BaseException:

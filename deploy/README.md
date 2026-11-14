@@ -1342,7 +1342,10 @@ traversal. This requires exact unchanged Reviewer source, complete build inputs
 and pinned build contract; the current binary must match the installed manifest.
 Initial source-only preparation batches the existing frozen archive/tree
 validator, canonical consumer rendering and all six actual Node syntax checks
-into one private target call. Unsupported frontend rendering or payload bounds
+into one private target call. The archive travels as bounded gzip data; the
+target rejects corrupt, truncated, oversized or additional members before the
+unchanged validator receives its exact uncompressed tar bytes.
+Unsupported frontend rendering or payload bounds
 retain the original source preparation play before submission. A failed or
 unproved submitted batch stops the operation. First-install prerequisite
 preparation and the later complete artifact path keep their existing ordering.
@@ -1378,11 +1381,25 @@ it never falls through to a second unrelated Apply. Private proof and package
 reference are confined to the existing operation stage, with no cross-operation
 cache or additional operator command.
 
+An absent release destination on the same filesystem can receive the already
+sealed payload through an atomic no-replace rename. The coordinator revalidates
+the seal and destination, persists directory topology bottom-up and syncs both
+parents. Existing destinations and unsupported filesystems retain the original
+copy consumer. The original recovery record precedes either operation; a later
+failure retains the same UUID archive, receipt, journal, reference and lease.
+After a move, native checks use the installed source path. Ordinary interrupted
+operation recovery preserves the prior private stage even when its payload has
+already moved to that exact release destination.
+
 Intermediate seal checks revalidate the operation-bound private reference and
 its complete payload tree. Complete live package, runtime and drift proofs run
 independently during preparation, immediately before the first live effect under
 the drained gate and Writer lock, and after promotion. Intermediate checks do
 not repeat live tool execution; they cannot authorize cutover by themselves.
+For this selected native path, its complete pool proofs also replace the two
+equivalent frontend pool preflights. A refused nomination performs the ordinary
+pool preflight before full host/package preparation and repeats it at cutover;
+fresh installation, reinstall and recovery retain their existing pool checks.
 
 General Runner retention uses its current component state across the operation,
 including its runnable native distribution, settings, service/cgroup identities

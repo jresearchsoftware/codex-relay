@@ -287,6 +287,77 @@ public scheduler integration passed **53 focused Linux tests**, including actual
 Ansible template-action byte parity, restrictive umask, each entrypoint's real
 syntax failure, archive/tree/path refusal and no fallback after transport error.
 
+The subsequent public native Apply from `6b80e6ab...` to
+`c3efa9cef38e5ac8d392b70132689c092ff3cf29` passed with a fresh official reference,
+an exact installed product/config pair and all six active service identities
+preserved. It executed the canonical 32-route catalogue without full-site
+fallback. Complete driver E2E was **158.550815 s** (wrapper 158.499495 s), so the
+owner's tens-of-seconds objective remains **unmet**. Source preparation took
+33.677 s, including 26.996 s in its remote prepare; native promotion took
+52.975 s. Source-only batch preparation still cost 12.500 s, Writer acquisition
+12.333 s, and two redundant frontend pool preflights 4.599/4.930 s. These are
+observed phase walls, not additive independent savings. See
+[successful native Apply](task-253-native-apply-c3ef.json).
+
+The observer initially reported one route by counting an unrelated optional
+runtime-user override array. The retained protected catalogue independently
+requires and contains all 32 actual probes, each bound to its declared slot and
+runtime identity. The evidence explicitly records that observer correction;
+expected product data was not changed. See [actual route bindings](task-253-native-routes-c3ef.json).
+A current-context complete proof then passed in **14.917369 s**, with the genuine
+retained reference fully rehashed and no reacquisition or Apply. Original
+promotion logs do not expose separate durations of its two proofs. See
+[current read-only proof](task-253-native-current-proof-c3ef.json).
+
+The successful install emitted the existing consumer-integration `missing`
+compatibility warning. Generated artifacts still require ordinary publication
+in the receiving repository; no remote workflow or configuration-main mutation
+was performed, and the installer did not require another installation run.
+
+Targeted follow-up separated unchanged predicates from transport overhead. A
+bounded gzip source batch reduces the actual 22.24 MB tar's base64 payload from
+29.66 MB to 8.24 MB (compression 0.135 s); the target refuses corrupt, truncated,
+oversized, trailing and multi-member streams. Canonical lazy rendering retains
+actual Ansible byte parity. The selected native path now owns its complete pool
+preflight through initial/final/post proofs; fallback/fresh/reinstall/recovery
+retain the original frontend checks. Scheduler regressions passed **41 tests**,
+including native zero calls, ordinary fallback two calls and refusal before
+quiesce. Guard readiness uses one bounded wait inside the existing target
+transport; an isolated real-flock fixture improved from 2.394 s to 0.919 s while
+retaining process ancestry, kernel lock, EOF and release behavior. Its new and
+existing transport suites passed **22 tests**. These isolated results do not
+establish another end-to-end Apply improvement.
+
+Additional bounded target reads established that seal verification (0.370 s),
+destination verification including seal (0.443 s), fresh critical snapshot
+(0.552 s), activity observation (0.184 s), binding and source-tree reads are
+small in this sample; see [retained-stage costs](task-253-native-retained-costs.json).
+An actual isolated copy using the frozen helper took **11.240 s** for 1524
+regular files/33,762,995 bytes. Its exact tree hash matched the retained sealed
+source, with no live destination changes. See [copy measurement](task-253-native-copy-cost.json).
+
+The initial host, pool, loaded and package readers can overlap without changing
+their predicates: package assembly needs the loaded result only after all
+native version probes and inner Codex/General readers have completed. Four
+bounded readers preserve all joins, protected-error priority and final rechecks.
+All **39 proof tests**, including real Git roundtrip, passed. The exact new
+proof passed current installed TEST in **13.308109 s**, returning all 32 routes
+and 844 entries; genuine reference and service identities remained unchanged.
+See [overlapped complete proof](task-253-native-proof-overlap.json). These remain
+targeted measurements; no elapsed E2E savings are inferred by summing them.
+
+The coordinator can now atomically publish an already sealed payload to an
+absent same-filesystem destination with kernel no-replace semantics. It preserves
+the original mutation record before moving, revalidates the complete seal,
+persists topology and both parent directories, and switches subsequent native
+checks to the installed source name. Existing/unsupported destinations retain
+the frozen copy consumer. All original UUID evidence stays in its private
+stage. **45 coordinator tests** passed, including racing destination creation,
+metadata/topology movement, fsync faults, immediate after-move/current faults,
+remaining config/post-proof failures and ordinary same-operation create/recovery.
+The owning artifact suite passed **19 tests, two skips**. The frozen helper and
+all executable Ansible recipe bytes remain unchanged from `6b80e6ab...`.
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The

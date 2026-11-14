@@ -19,7 +19,7 @@ import subprocess
 import struct
 import sys
 import types
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 
 def canonical(value):
@@ -468,6 +468,11 @@ def package_proof(values, source_root, loaded, *, stage, operation, package_refe
         general = {runner['label']: executor.submit(capture_general, runner, source_root)
                    for runner in runners if runner['label'] != 'production'}
     results, errors = _future_outcomes({'codex': codex_future, **general})
+    if isinstance(loaded, Future):
+        try:
+            loaded = loaded.result(timeout=180)
+        except Exception as error:
+            errors.append(error)
     _raise_read_failures(errors)
     codex_proof = results['codex']
     runner_rows = [{'label': runner['label'], 'proof': loaded['production']
@@ -658,22 +663,18 @@ def prove(values, config, source_root, catalogue, expected_binding=None, *,
     digest = v.get('relay_source_reuse_consumer_digest')
     require(isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest),
             'SOURCE_UPGRADE_CONSUMER_DIGEST_UNPROVEN')
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix='relay-live-proof') as executor:
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix='relay-live-proof') as executor:
         host_future = executor.submit(inspect_inputs, v, source_root)
         pool_future = executor.submit(pool_proof, config, digest, source_root)
         loaded_future = executor.submit(loaded_proof, v)
-        dependency_errors = []
-        try:
-            loaded = loaded_future.result(timeout=180)
-            # Production capture must precede packages. Host/App/TLS and pool
-            # continue while the independent packages are checked.
-            packages = package_proof(v, source_root, loaded, stage=stage, operation=operation,
-                                     package_reference=package_reference)
-        except Exception as error:
-            dependency_errors.append(error)
-    results, errors = _future_outcomes({'host': host_future, 'pool': pool_future, 'loaded': loaded_future})
-    _raise_read_failures([*errors, *dependency_errors])
-    host, pool, loaded = results['host'], results['pool'], results['loaded']
+        # Native package probes/readers are independent of Production capture;
+        # only final package evidence assembly consumes its completed result.
+        package_future = executor.submit(package_proof, v, source_root, loaded_future,
+            stage=stage, operation=operation, package_reference=package_reference)
+    results, errors = _future_outcomes({'host': host_future, 'pool': pool_future,
+                                       'loaded': loaded_future, 'packages': package_future})
+    _raise_read_failures(errors)
+    host, pool, loaded, packages = (results[name] for name in ['host', 'pool', 'loaded', 'packages'])
     require(host.get('status') == 'PASS' and not host.get('pendingProductMaterial')
             and all(value == 0 for value in host.get('identityPlan', {}).values()),
             'SOURCE_UPGRADE_HOST_RECONCILIATION_REQUIRED')

@@ -417,6 +417,9 @@ def test_cutover_runs_one_full_current_proof_immediately_before_first_live_effec
     module = sys.modules['source_upgrade_proof']
     def prove(*_args, **_kwargs):
         observations.append(('proof', (fixture.parent / 'operation.json').exists()))
+        if observations[-1][1]:
+            assert Path(_args[2]).is_dir()
+            assert _args[2] == str(fixture.parent / fixture.revision / 'reviewed-source')
         return copy.deepcopy(proof)
     monkeypatch.setattr(module, 'prove', prove)
     upgrade.remote('prepare', data)
@@ -477,7 +480,7 @@ def test_moving_target_binding_is_never_downgraded_to_preparation_miss(native_st
         upgrade.remote('prepare', data)
 
 
-@pytest.mark.parametrize('failure', ['consume', 'midfile', 'postproof', None])
+@pytest.mark.parametrize('failure', ['consume', 'directory-fsync', 'after-move', 'move-fsync', 'after-current', 'midfile', 'postproof', None])
 def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(native_stage, monkeypatch, failure):
     fixture, helper, data, proof = native_stage
     if failure == 'midfile':
@@ -504,6 +507,10 @@ def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(n
     calls = []
     def observe(_prefix, command, *arguments, payload=None):
         calls.append(command)
+        installed = str(fixture.parent / fixture.revision / 'reviewed-source')
+        expected_source = installed if not (fixture.root / 'release').exists() else data['sourceRoot']
+        assert _prefix[2] == expected_source + '/deploy/writer_lock_lease.py'
+        assert _prefix[5] == expected_source
         assert arguments[-1] == data['operationId']
         if command == 'status':
             return {'phase': 'applying', 'operationId': data['operationId'],
@@ -517,6 +524,37 @@ def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(n
             raise RuntimeError('injected consume failure')
         return original_run(action, *args, **kwargs)
     monkeypatch.setattr(helper, 'run', run)
+    if failure == 'consume':
+        # Unsupported/existing destinations retain the frozen copy path. A
+        # failure there must preserve the same original recovery evidence.
+        monkeypatch.setattr(upgrade, 'release_move_plan', lambda *_args: None)
+    if failure == 'after-move':
+        def fail_normalize(destination, _values):
+            assert not (fixture.root / 'release').exists()
+            assert Path(destination).is_dir()
+            assert (fixture.parent / 'current').resolve() == fixture.old
+            raise RuntimeError('injected immediately after atomic move')
+        monkeypatch.setattr(upgrade, 'normalize_release', fail_normalize)
+    if failure == 'after-current':
+        original_replace = os.replace
+        def fail_after_current(left, right):
+            original_replace(left, right)
+            if Path(right) == fixture.parent / 'current':
+                raise RuntimeError('injected immediately after current switch')
+        monkeypatch.setattr(upgrade.os, 'replace', fail_after_current)
+    if failure == 'move-fsync':
+        original_fsync = os.fsync
+        def fail_move_fsync(descriptor):
+            if Path('/proc/self/fd/' + str(descriptor)).resolve() == fixture.root:
+                raise RuntimeError('injected moved directory fsync failure')
+            original_fsync(descriptor)
+        monkeypatch.setattr(upgrade.os, 'fsync', fail_move_fsync)
+    if failure == 'directory-fsync':
+        def fail_directory_sync(*_args):
+            assert (fixture.root / 'release').is_dir()
+            assert json.loads((fixture.parent / 'operation.json').read_text()) == upgrade.operation_record(values, fixture.revision)
+            raise RuntimeError('injected sealed directory fsync failure')
+        monkeypatch.setattr(upgrade, 'sync_release_directories', fail_directory_sync)
     if failure == 'midfile':
         atomic = helper.atomic
         def fail_second_config(path, *args, **kwargs):
@@ -547,8 +585,14 @@ def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(n
         sealed = (fixture.root / 'receipt.json').read_bytes()
         evidence = (fixture.root / 'source-upgrade.json').read_bytes()
         current_before = (fixture.parent / 'current').resolve()
-        with pytest.raises(ValueError, match='EXISTING_SOURCE_CHANGED'):
-            helper.run('extract', fixture.root, fixture.expected, fixture.archive)
+        moved = not (fixture.root / 'release').exists()
+        generated = 'reviewed-source/consumer-general-runner-smoke.mjs'
+        if moved:
+            assert (fixture.parent / fixture.revision / generated).is_file()
+            assert failure != 'consume'
+        else:
+            with pytest.raises(ValueError, match='EXISTING_SOURCE_CHANGED'):
+                helper.run('extract', fixture.root, fixture.expected, fixture.archive)
         lock = fixture.parent / 'publication.lock'
         lock.write_bytes(b'')
         lock.chmod(0o600)
@@ -580,7 +624,11 @@ def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(n
         prior, = fixture.parent.glob(fixture.root.name + '.prior-*')
         assert (prior / 'receipt.json').read_bytes() == sealed
         assert (prior / 'source-upgrade.json').read_bytes() == evidence
-        assert (prior / 'release/reviewed-source/consumer-general-runner-smoke.mjs').is_file()
+        if moved:
+            assert not (prior / 'release').exists()
+            assert (fixture.parent / fixture.revision / generated).is_file()
+        else:
+            assert (prior / 'release' / generated).is_file()
         shutil.copyfile(prior / 'source.tar', fixture.archive)
         fixture.archive.chmod(0o600)
         acquired = helper.run('extract', fixture.root, fixture.expected, fixture.archive)
@@ -595,5 +643,147 @@ def test_native_promotion_uses_original_snapshot_and_retains_record_on_failure(n
             'consumerRevision': 'f' * 40, 'previousRevision': 'a' * 40}
         assert not (fixture.parent / 'operation.json').exists()
         assert (fixture.parent / 'current').resolve().name == fixture.revision
+        assert not (fixture.root / 'release').exists()
     assert calls[:2] == ['status', 'snapshot']
     assert all(command == 'status' for command in calls[2:])
+
+
+@pytest.mark.parametrize('unsupported', ['existing', 'existing-symlink', 'cross-device', 'kernel'])
+def test_atomic_release_move_unsupported_plan_keeps_frozen_copy_available(native_stage, monkeypatch, unsupported):
+    fixture, helper, data, _proof = native_stage
+    upgrade.remote('prepare', data)
+    journal = upgrade.read_journal(data, helper)
+    source = fixture.root / 'release'
+    destination = fixture.parent / fixture.revision
+    links = helper.allowed_links(journal['receipt']['sourceAcquisition'])
+    before = helper.tree_digest(source, links)
+    if unsupported == 'existing':
+        destination.mkdir()
+    elif unsupported == 'existing-symlink':
+        destination.symlink_to(fixture.old, target_is_directory=True)
+    elif unsupported == 'cross-device':
+        protected = helper.protected
+        def other_device(path, **options):
+            info = protected(path, **options)
+            return SimpleNamespace(st_dev=info.st_dev + 1, st_ino=info.st_ino) if Path(path) == destination.parent else info
+        monkeypatch.setattr(helper, 'protected', other_device)
+    else:
+        class Unsupported:
+            def __call__(self, *_args):
+                upgrade.ctypes.set_errno(upgrade.errno.ENOSYS)
+                return -1
+        monkeypatch.setattr(upgrade.ctypes, 'CDLL', lambda *_args, **_kwargs: SimpleNamespace(renameat2=Unsupported()))
+    assert upgrade.release_move_plan(source, destination, helper) is None
+    assert helper.tree_digest(source, links) == before
+    assert not list(fixture.root.glob('.rename-probe-*'))
+
+
+@pytest.mark.parametrize('movement', ['new-destination', 'replaced-source', 'chmod-source', 'source-entry', 'source-group'])
+def test_atomic_release_move_does_not_replace_a_racing_directory(native_stage, movement):
+    fixture, helper, data, _proof = native_stage
+    upgrade.remote('prepare', data)
+    source = fixture.root / 'release'
+    destination = fixture.parent / fixture.revision
+    move = upgrade.release_move_plan(source, destination, helper)
+    assert move is not None
+    if movement == 'new-destination':
+        destination.mkdir()
+    elif movement == 'replaced-source':
+        source.rename(source.with_name('original-release'))
+        source.mkdir()
+    elif movement == 'chmod-source':
+        source.chmod(0o700)
+    elif movement == 'source-group':
+        os.chown(source, 0, 1)
+    else:
+        (source / 'unsealed-entry').write_bytes(b'changed')
+    with pytest.raises(RuntimeError, match='MOVE_BINDING_CHANGED'):
+        move()
+    assert source.is_dir()
+    assert not list(fixture.root.glob('.rename-probe-*'))
+
+
+def test_atomic_release_rename_kernel_does_not_replace_destination_created_after_binding_check(native_stage, monkeypatch):
+    fixture, helper, data, _proof = native_stage
+    upgrade.remote('prepare', data)
+    source = fixture.root / 'release'
+    destination = fixture.parent / fixture.revision
+    real = upgrade.ctypes.CDLL(None, use_errno=True).renameat2
+    real.argtypes = [upgrade.ctypes.c_int, upgrade.ctypes.c_char_p, upgrade.ctypes.c_int,
+                     upgrade.ctypes.c_char_p, upgrade.ctypes.c_uint]
+    real.restype = upgrade.ctypes.c_int
+    class RacingRename:
+        def __call__(self, left_fd, left, right_fd, right, flags):
+            if right == os.fsencode(destination):
+                destination.mkdir()
+            return real(left_fd, left, right_fd, right, flags)
+    monkeypatch.setattr(upgrade.ctypes, 'CDLL', lambda *_args, **_kwargs: SimpleNamespace(renameat2=RacingRename()))
+    move = upgrade.release_move_plan(source, destination, helper)
+    with pytest.raises(OSError) as error:
+        move()
+    assert error.value.errno == upgrade.errno.EEXIST
+    assert source.is_dir() and destination.is_dir() and list(destination.iterdir()) == []
+
+
+def test_release_directory_sync_is_bottom_up_once_without_file_rewrites(native_stage, monkeypatch):
+    fixture, helper, data, _proof = native_stage
+    upgrade.remote('prepare', data)
+    journal = upgrade.read_journal(data, helper)
+    source = fixture.root / 'release'
+    links = helper.allowed_links(journal['receipt']['sourceAcquisition'])
+    digest = helper.tree_digest(source, links)
+    expected = {Path(directory) for directory, _, _ in os.walk(source, followlinks=False)}
+    seen = []
+    real = os.fsync
+    def observe(descriptor):
+        path = Path('/proc/self/fd/' + str(descriptor)).resolve()
+        assert path.is_dir()
+        seen.append(path)
+        real(descriptor)
+    monkeypatch.setattr(upgrade.os, 'fsync', observe)
+    upgrade.sync_release_directories(source, helper)
+    assert len(seen) == len(expected) and set(seen) == expected
+    assert all(seen.index(path) < seen.index(path.parent) for path in expected if path != source)
+    assert helper.tree_digest(source, links) == digest
+
+
+def test_release_directory_sync_refuses_incomplete_walk(native_stage, monkeypatch):
+    fixture, helper, _data, _proof = native_stage
+    def unreadable(*_args, **options):
+        options['onerror'](OSError('synthetic directory enumeration failure'))
+        yield
+    monkeypatch.setattr(upgrade.os, 'walk', unreadable)
+    with pytest.raises(OSError, match='enumeration failure'):
+        upgrade.sync_release_directories(fixture.root / 'release', helper)
+
+
+def test_existing_release_retains_frozen_consumer_and_unreferenced_safe_bytes(native_stage, monkeypatch):
+    fixture, helper, data, _proof = native_stage
+    upgrade.remote('prepare', data)
+    journal = upgrade.read_journal(data, helper)
+    destination = fixture.parent / fixture.revision
+    destination.mkdir()
+    retained = destination / 'safe-unreferenced-output'
+    retained.write_bytes(b'original retained bytes')
+    retained.chmod(0o600)
+    import install_preflight
+    monkeypatch.setattr(install_preflight, 'observe_predispatch_service_intent', lambda _values: {})
+    monkeypatch.setattr(install_preflight, 'remote', lambda _data: {})
+    monkeypatch.setattr(upgrade, 'admission', lambda _prefix, command, *_args, **_kwargs:
+        {'previousActive': {}} if command == 'snapshot' else {'phase': 'applying',
+            'operationId': data['operationId'], 'target': fixture.revision, 'active': [], 'unknown': []})
+    consumed = []
+    original = helper.run
+    def consume(action, *args, **kwargs):
+        if action == 'consume': consumed.append(action)
+        return original(action, *args, **kwargs)
+    monkeypatch.setattr(helper, 'run', consume)
+    values = data['values']
+    lease = str(fixture.root / 'writer-lock.json')
+    result = upgrade.promote_root(journal, {**data, 'lease': lease, 'admissionPrefix': [
+        '/usr/bin/python3', '-I', data['sourceRoot'] + '/deploy/writer_lock_lease.py',
+        '--exec-admission', lease, data['sourceRoot'], values['relay_consumer_config_path'],
+        values['relay_github_repository']]}, helper)
+    assert result['status'] == 'SOURCE_UPGRADE_READY' and consumed == ['consume']
+    assert (fixture.root / 'release').is_dir() and retained.read_bytes() == b'original retained bytes'
+    assert (destination / 'artifact-manifest.json').stat().st_ino != (fixture.root / 'release/artifact-manifest.json').stat().st_ino

@@ -58,8 +58,12 @@ def invocation(tmp_path, monkeypatch):
     monkeypatch.setattr(backend, 'source_identity', lambda _: identity)
     monkeypatch.setattr(backend, 'clean_git', lambda _: CONSUMER)
     import managed_pool_transport
-    monkeypatch.setattr(managed_pool_transport, 'preflight_pool',
-                        lambda *_args, **_kwargs: 'MANAGED_POOL_PREFLIGHT=PASS')
+    def pool_preflight(*_args, **_kwargs):
+        events.append('pool-preflight')
+        if state['failure'] == 'pool-preflight':
+            raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_POOL_PREFLIGHT')
+        return 'MANAGED_POOL_PREFLIGHT=PASS'
+    monkeypatch.setattr(managed_pool_transport, 'preflight_pool', pool_preflight)
     monkeypatch.setattr(managed_pool_transport, 'reconcile_pool',
                         lambda *_args, **_kwargs: 'MANAGED_POOL_RESULT={"capacity":1}')
 
@@ -348,6 +352,8 @@ def test_fresh_bootstrap_allows_only_its_prepared_stage_until_cutover(invocation
 
     operation = state['preparation'].operation
     assert [call.get('allowed_stage_operation') for call in calls] == [None, None, operation, operation]
+    assert _events.count('pool-preflight') == 2
+    assert _events.index('pool-preflight') < _events.index('create')
     assert all(call.get('git_desired') is True for call in calls)
 
 
@@ -498,3 +504,49 @@ def test_same_consumer_replacement_releases_retirement_lock_and_checks_installed
     assert events.index('final') < events.index('decommission') < events.index('backend') < events.index('complete')
     assert events.count('writer-lock') == events.count('writer-release') == 2
     assert events.index('decommission') < events.index('after-retirement') < events.index('backend')
+
+
+def test_native_source_reuse_uses_its_complete_pool_proofs_without_duplicate_frontend_calls(invocation):
+    args, events, _gate, state, _records = invocation
+    state['source_reuse'] = True
+    backend.run(args)
+    assert events.count('pool-preflight') == 0
+    assert events.index('source-reuse') < events.index('quiesce') < events.index('final') < events.index('source-promote')
+
+
+def test_full_source_fallback_keeps_both_pool_checks_before_their_owning_frontiers(invocation):
+    args, events, _gate, _state, _records = invocation
+    backend.run(args)
+    checks = [index for index, name in enumerate(events) if name == 'pool-preflight']
+    assert len(checks) == 2
+    assert events.index('source-reuse') < checks[0] < events.index('compatibility') < events.index('host')
+    assert events.index('drain-check') < checks[1] < events.index('final') < events.index('backend')
+
+
+def test_deferred_pool_failure_stops_fallback_before_host_staging_or_quiesce(invocation):
+    args, events, gate, state, _records = invocation
+    state['failure'] = 'pool-preflight'
+    with pytest.raises(RuntimeError, match='INJECTED_POOL_PREFLIGHT'):
+        backend.run(args)
+    assert events.count('pool-preflight') == 1
+    assert gate == {'phase': 'open', 'operation': None}
+    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
+
+
+def test_source_proof_failure_cannot_fall_through_to_pool_or_full_install(invocation):
+    args, events, gate, state, _records = invocation
+    state['failure'] = 'source-reuse'
+    with pytest.raises(RuntimeError, match='SOURCE_REUSE'):
+        backend.run(args)
+    assert events.count('pool-preflight') == 0
+    assert gate == {'phase': 'open', 'operation': None}
+    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
+
+
+def test_changed_consumer_cannot_nominate_native_and_keeps_both_pool_checks(invocation):
+    args, events, _gate, state, _records = invocation
+    state.update(consumer_change=True, source_reuse=True)
+    backend.run(args)
+    assert 'source-reuse' not in events
+    assert events.count('pool-preflight') == 2
+    assert events.index('history') < events.index('pool-preflight') < events.index('compatibility')
