@@ -216,6 +216,13 @@ operation or clears a gate. Other uncertain or unsupported recovery
 states stop with preserved evidence and one supported next action; a blocker
 string or repeated invocation alone is not proof that replay is safe.
 
+The same-target classifier reads the retained normal installation snapshot with
+the existing 32 MiB installation-snapshot bound. A complete protected-state
+snapshot may exceed 64 KiB even without a pre-dispatch bridge. This does not
+increase the 64 KiB limit for legacy retirement evidence, receipts, journals or
+admission records; private-file identity, link, ownership and change checks
+still apply before classification.
+
 ### Bounded recovery with a separately accepted controller
 
 #### Continuing the consumer-publication frontier
@@ -286,6 +293,11 @@ epoch/capabilities without changing physical consumers, credential bindings or
 service intent. The controller and final product revision coincide in this
 route. Other target combinations require their own supported classification;
 they are not inferred from a flag or a moving branch.
+
+The complete retained source graph is verified within its existing 64 MiB and
+10,000-entry bounds, including source blobs larger than 512 KiB. The separate
+512 KiB metadata/receipt limit does not cap individual public source blobs.
+Source ownership, link, path and change checks remain mandatory.
 
 Before any transition, the installer proves the protected original manifest,
 Git-config receipt, configuration snapshot, current consumer, source graph,

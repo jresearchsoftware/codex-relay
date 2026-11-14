@@ -35,14 +35,15 @@ def test_ordinary_git_noop_retains_original_consumer_provenance_after_receiving_
         assert proof['installedConsumer'] != proof['receivingHead']
         assert proof['backendCalls'] == 1 and proof['targetInventoryProcesses'] >= 4
         assert proof['actualFinalAnsibleIdentity'] is True and proof['slots'] == 32
+        assert proof['nativeReadonlyProcesses'] == 1 and proof['legacyCapabilityFallback'] is True
 
 
 @pytest.mark.parametrize('fault,code', [
     ('consumer-missing', 'intent-readonly-consumer-provenance-unproven'),
     ('consumer-invalid', 'intent-readonly-consumer-provenance-unproven'),
     ('consumer-changed', 'intent-readonly-consumer-provenance-changed'),
-    ('product', 'intent-installation-changed-before-reservation'),
-    ('source', 'intent-installation-changed-before-reservation'),
+    ('product', 'PROVENANCE_TARGET_BINDING_CHANGED'),
+    ('source', 'PROVENANCE_TARGET_BINDING_CHANGED'),
     ('pair', 'intent-readonly-installed-binding-unproven'),
     ('receipt', 'intent-readonly-installed-binding-unproven'),
     ('config', 'intent-readonly-installed-binding-unproven'),
@@ -123,6 +124,9 @@ def fixture(root, published, fault):
     for component in ['consumer', 'controller', 'contracts', 'runtime', 'reviewer']:
         shutil.copytree(ROOT / component, source / component,
             ignore=shutil.ignore_patterns('__pycache__', 'node_modules', 'target'))
+    # Historical releases contain deploy/ but lack the new native verifier.
+    # Execute the actual capability discovery and its genuine ordinary fallback.
+    (source / 'deploy').mkdir()
     for path in [install, *install.rglob('*')]:
         path.chmod(0o755 if path.is_dir() else 0o644)
     identity = {'revision': REVISION, 'tree': TREE,
@@ -175,7 +179,7 @@ def fixture(root, published, fault):
     manifest_path.write_text(json.dumps(manifest))
     manifest_path.chmod(0o600)
     (install / 'current').symlink_to(str(release))
-    guards, calls, probes, fault_baseline = [], [], [], []
+    guards, calls, probes, fault_baseline, native_replies = [], [], [], [], []
     def damage():
         if fault == 'consumer-missing':
             manifest.pop('consumerRevision')
@@ -213,10 +217,15 @@ def fixture(root, published, fault):
     # Real target inventory source executes in a child process. This substitutes
     # transport only, never installed state, provenance, strategy or a PASS result.
     def target_process(target, key, argv, **options):
-        assert target['connection'] == 'local' and argv[:3] == ['/usr/bin/python3', '-I', '-c']
+        assert target['connection'] == 'local'
+        assert (argv[:3] == ['/usr/bin/python3', '-I', '-c']
+                or argv[:4] == ['/usr/bin/python3', '-I', '-B', '-c'] and argv[5:] == ['context'])
         probes.append(argv)
         result = subprocess.run(argv, **options, capture_output=True, text=True)
-        if fault == 'consumer-changed' and len(probes) == 2:
+        if argv[:4] == ['/usr/bin/python3', '-I', '-B', '-c']:
+            native_replies.append(json.loads(result.stdout))
+        inventory_count = sum(probe[:3] == ['/usr/bin/python3', '-I', '-c'] for probe in probes)
+        if fault == 'consumer-changed' and argv[:3] == ['/usr/bin/python3', '-I', '-c'] and inventory_count == 2:
             manifest_path.write_text(json.dumps({**manifest, 'consumerRevision': 'e' * 40}))
             fault_baseline[:] = [evidence()]
         return result
@@ -305,7 +314,11 @@ def fixture(root, published, fault):
     assert json.loads(gate.stdout)['phase'] == 'open'
     print(json.dumps({'strategy': 'verify', 'unchanged': before == evidence(), 'slots': 32,
         'installedConsumer': original_consumer, 'receivingHead': receiving_head,
-        'backendCalls': len(calls), 'targetInventoryProcesses': len(probes),
+        'backendCalls': len(calls),
+        'targetInventoryProcesses': sum(argv[:3] == ['/usr/bin/python3', '-I', '-c'] for argv in probes),
+        'nativeReadonlyProcesses': sum(argv[:4] == ['/usr/bin/python3', '-I', '-B', '-c'] for argv in probes),
+        'legacyCapabilityFallback': native_replies == [{'eligible': False}]
+            and not (source / 'deploy/provenance.py').exists(),
         'actualFinalAnsibleIdentity': True}))
 
 

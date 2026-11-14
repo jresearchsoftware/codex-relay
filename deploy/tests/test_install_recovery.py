@@ -66,6 +66,78 @@ def probe(fixture):
                             runner=fixture['runner'], resource_probe=fixture['resource_probe'])
 
 
+def normal_snapshot(fixture, raw):
+    stage = fixture['source'].parents[1] / ('.stage-' + OPERATION)
+    stage.mkdir(mode=0o700)
+    path = stage / 'old-installation.json'
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    return path
+
+
+def test_normal_large_snapshot_without_bridge_preserves_same_target_recovery(installed):
+    import install_preflight as producer
+    raw = producer.encoded({'operationId': OPERATION, 'target': TARGET,
+                            'critical': {'retainedEvidence': 'x' * 699000}})
+    path = normal_snapshot(installed, raw)
+    assert len(raw) > recovery.retained.RECOVERY_LIMIT
+    # Exercise the actual normal producer's reader, rather than inventing a
+    # differently sized snapshot protocol for this recovery classifier.
+    assert producer.read('/' + path.relative_to(installed['root']).as_posix(),
+                         root=installed['root'], owner_uid=os.geteuid()) == raw
+    assert probe(installed) == {'operationId': OPERATION, 'target': TARGET, 'installedRevision': OLD}
+    assert path.read_bytes() == raw
+    # All unspecified legacy/receipt readers still use their original 64 KiB.
+    with pytest.raises(ValueError, match='RECOVERY_EVIDENCE_UNSAFE'):
+        recovery.retained._recovery_bytes(path, installed['root'], os.geteuid(), os.geteuid(), private=True)
+    with pytest.raises(ValueError, match='RECOVERY_EVIDENCE_INVALID'):
+        recovery.retained._recovery_json(raw)
+
+
+def test_normal_snapshot_over_producer_limit_is_refused_before_read(installed):
+    import install_preflight as producer
+    path = normal_snapshot(installed, b'{}')
+    with path.open('r+b') as stream:
+        stream.truncate(recovery.retained.INSTALL_SNAPSHOT_LIMIT + 1)
+    with pytest.raises(RuntimeError, match='RESOURCE_SIZE'):
+        producer.read('/' + path.relative_to(installed['root']).as_posix(),
+                      root=installed['root'], owner_uid=os.geteuid())
+    with pytest.raises(ValueError, match='RECOVERY_EVIDENCE_UNSAFE'):
+        probe(installed)
+
+
+@pytest.mark.parametrize('damage', ['duplicate', 'nested-duplicate', 'private-mode', 'symlink', 'hardlink'])
+def test_large_snapshot_keeps_strict_json_private_file_and_alias_checks(installed, damage):
+    raw = b'{"padding":"' + b'x' * 699000 + b'",'
+    if damage == 'duplicate':
+        raw += b'"predispatchBridge":null,"predispatchBridge":null}'
+    elif damage == 'nested-duplicate':
+        raw += b'"critical":{"same":1,"same":2}}'
+    else:
+        raw += b'"predispatchBridge":null}'
+    path = normal_snapshot(installed, raw)
+    if damage == 'private-mode':
+        path.chmod(0o640)
+    elif damage == 'symlink':
+        saved = path.with_name('original-private-snapshot')
+        path.rename(saved)
+        path.symlink_to(saved)
+    elif damage == 'hardlink':
+        os.link(path, path.with_name('aliased-private-snapshot'))
+    with pytest.raises(ValueError, match='REINSTALL_'):
+        probe(installed)
+
+
+@pytest.mark.parametrize('limit', [True, 0, -1, 32 * 1024 * 1024 + 1, '33554432'])
+def test_recovery_limit_override_cannot_be_unbounded_or_malformed(installed, limit):
+    path = normal_snapshot(installed, b'{}')
+    with pytest.raises(ValueError, match='RECOVERY_EVIDENCE_INVALID'):
+        recovery.retained._recovery_bytes(path, installed['root'], os.geteuid(), os.geteuid(),
+                                           private=True, limit=limit)
+    with pytest.raises(ValueError, match='RECOVERY_EVIDENCE_INVALID'):
+        recovery.retained._recovery_json(b'{}', limit=limit)
+
+
 @pytest.mark.parametrize('backend', [False, True])
 def test_same_target_retains_original_uuid_without_changing_evidence(installed, backend):
     if backend:

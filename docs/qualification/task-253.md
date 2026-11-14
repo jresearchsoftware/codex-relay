@@ -51,6 +51,46 @@ no final Outcome or independent acceptance is claimed at this milestone.
 
 ## Implemented behavior and retained limits
 
+### Native interruption and recovery reader correction
+
+The subsequent native cutover to `ee52cff0490ab6d09727a7ce9bd1b79490cc7a82`
+encountered a task-observer exception at post-cutover proof entry. The observer
+incorrectly treated the cooperative TEST claim marker as a secret file: that
+marker intentionally permits the TEST group to write. No marker mode or inode
+was changed. The planned Runner stop/SIGTERM did **not** execute. All six service
+identities remained active and unchanged. The original operation
+`af3cf6ac-78db-466c-9024-a3d4e1ea334d`, exact target/config receipt, first activity
+snapshot, source archive and journal remain preserved with closed admission and
+the matching `apply / RECOVERY_REQUIRED` backend. See the
+[interrupted frontier](task-253-nativefault-frontier.json).
+
+The ordinary public same-pair recovery, with the observer fully disabled,
+refused before backend mutation. Its normal `old-installation.json` snapshot is
+699,095 bytes, within the producer's 32 MiB contract but beyond both legacy
+retirement reader/parser limits of 64 KiB. The snapshot is root-owned, mode
+0600, regular and singly linked, with the exact original UUID and target; it
+has no predispatch bridge. The bridge classifier nevertheless reads the whole
+snapshot through the small legacy reader. See the
+[read-only classifier trace](task-253-native-recovery-classifier.json) and
+[snapshot facts](task-253-native-recovery-snapshot.json). This is a product
+producer/consumer defect, not a successful same-pair recovery. The correction
+opts only this snapshot's strict byte reader and JSON parser into the existing
+32 MiB normal-installation bound. Default legacy limits stay 64 KiB. Fourteen
+focused tests passed, including the real producer reader accepting a roughly
+699 KiB snapshot, unchanged original evidence, oversize refusal, duplicate JSON,
+private-mode and link checks. Supported installed original-operation recovery
+and the final complete candidate checks are still pending at this snapshot.
+
+Read-only preparation for the supported corrected-controller recovery found a
+second size mismatch before invoking it: the bounded recovery source-graph
+reader applied its 512 KiB metadata cap to every public source blob. Three
+existing historical-runtime fixtures are 1,065,228, 894,708 and 815,970 bytes.
+The complete source graph is 22,583,118 bytes (21.54 MiB) and 1,896 entries, within that graph's
+existing 64 MiB / 10,000-entry bound. Metadata files are below 512 KiB. No
+recovery retry or state mutation was attempted on this finding. The graph
+must remain complete; fixture exclusions or skipped blob verification are not
+a remedy. See the [read-only cap evidence](task-253-bounded-recovery-caps.json).
+
 - First-install credential and CA preparation precede ACME dry-run/issuance;
   issuance precedes the readiness Apply. Existing-install missing/partial TLS
   refusal and exact pending-pair recovery remain binding.
