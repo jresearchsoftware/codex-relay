@@ -188,10 +188,13 @@ test('installed profile rejection never starts a child or inherits a model defau
 for (const mode of ['generated-residue', 'unreadable-task-work']) {
   test(`installed ${mode} publication observes worker ownership and collector permissions`, async t => {
     const f = await fixture(t, { installed: true, remediation: true,
-      instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+      instruction: `fixture-mode=${mode}; Маркер UTF-8`, retainCheckout: mode === 'unreadable-task-work' });
     const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
-    const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
+    const remaining = `${f.cwd}/${mode === 'generated-residue' ? 'validation-output.tmp' : 'docs/work.md'}`;
+    let beforeCollection;
+    const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); },
+      collect: async e => { beforeCollection = await stat(remaining); return f.collect(e); } };
     if (mode === 'generated-residue') {
       const result = await runAttempt(args);
       assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
@@ -205,18 +208,31 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
       assert.deepEqual(await journal.get(f.envelope.runId), saved);
       assert.deepEqual(f.comments, commentsBeforeReplay);
     } else {
-      await assert.rejects(runAttempt(args), error => {
-        assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-        assert.equal(error.details.diagnostic.orchestration, 'FAILED');
-        return true;
-      });
+      const result = await runAttempt(args);
       const saved = await journal.get(f.envelope.runId);
-      assert.equal(saved.progress, null);
-      assert.equal(saved.outcome.status, 'BLOCKED');
-      assert.equal(f.pushes(), 0);
+      assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+      assert.equal(saved.collection.clean, null);
+      assert.equal(saved.collection.preserved, true);
+      assert.equal(saved.collection.worktreeObservation.status, 'unknown');
+      assert.equal(saved.collection.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+      assert.equal(saved.collection.worktreeObservation.diagnostic.operation, 'worktree-observation');
+      assert.equal(saved.collection.worktreeObservation.diagnostic.diagnosticCode, 'EACCES');
+      assert.equal(saved.progress.head, result.head);
+      assert.equal(await f.remoteHead(), result.head);
+      const published = JSON.parse(await f.command(f.root, ['--git-dir=' + f.remote, 'show', `${result.head}:docs/work.md`]));
+      assert.equal(published.uid, 24002); // The safe committed source, not unreadable replacement bytes.
+      assert.equal(f.pushes(), 1);
+      assert.match(f.comments[0].body, /WORKTREE_OBSERVATION_INCOMPLETE/);
+      const commentsBeforeReplay = structuredClone(f.comments);
+      assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args, { retainCheckout: true })), result);
+      assert.deepEqual(await journal.get(f.envelope.runId), saved);
+      assert.deepEqual(f.comments, commentsBeforeReplay);
+      assert.equal(f.pushes(), 1);
     }
-    const remaining = `${f.cwd}/${mode === 'generated-residue' ? 'validation-output.tmp' : 'docs/work.md'}`;
     const metadata = await stat(remaining);
+    for (const field of ['uid', 'gid', 'mode', 'ino', 'dev', 'size', 'ctimeMs', 'mtimeMs']) {
+      assert.equal(metadata[field], beforeCollection[field], `collection/replay preserved ${field}`);
+    }
     assert.equal(metadata.uid, 24002);
     assert.notEqual(metadata.uid, process.getuid());
     if (mode === 'generated-residue') {

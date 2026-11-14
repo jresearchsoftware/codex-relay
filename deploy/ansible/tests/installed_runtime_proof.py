@@ -1092,6 +1092,18 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             env={**env, 'INSTALLED_RUNNER_UID': '24001', 'INSTALLED_FIXTURE_EVENT_BASE': '950'}, umask=deploy_umask)
         # Distinct invocations keep protected failure setup root-owned.
         run_installed([*node_command, '--test-name-pattern=publication|profile rejection|checkout-ownership|invalid-result|child-failure|installed cancel-', test_path], env={**env, 'INSTALLED_FIXTURE_EVENT_BASE': '1000'}, umask=deploy_umask)
+        # The unprivileged collector proves the committed candidate while the
+        # worker-private replacement remains inaccessible. Root checks its exact
+        # retained bytes only here, inside this disposable fixture boundary.
+        private_work = list(Path('/var/lib/codex-relay/dispatch-work').glob('run-*/docs/work.md'))
+        assert len(private_work) == 1, private_work
+        private_path = private_work[0]
+        assert (private_path.stat().st_uid, stat.S_IMODE(private_path.stat().st_mode)) == (24002, 0o600)
+        assert private_path.read_bytes() == b'useful uncommitted task work inaccessible to collector\n'
+        retained_checkout = private_path.parents[1]
+        assert retained_checkout.parent == Path('/var/lib/codex-relay/dispatch-work')
+        shutil.rmtree(retained_checkout)  # Dispose only after validating this fixture's retained private work.
+        print('UNREADABLE_WORK_CANDIDATE_PRESERVED_PROOF_PASS publication=once;observation=unknown;private-bytes=retained;mode=0600', flush=True)
         for offset, (mode, path) in enumerate([('missing-token', token), ('missing-binary', runtime / 'bin/codex'), ('missing-import', runtime / 'relay-codex-diagnostic.mjs')]):
             saved = path.with_suffix('.saved')
             path.rename(saved)
