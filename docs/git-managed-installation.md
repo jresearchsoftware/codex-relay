@@ -159,6 +159,48 @@ after the active mutation boundary retains the original operation and its
 specific forward-recovery evidence. Preparation does not certify those future
 results or provide a generic rollback of a partially installed system.
 
+### Configuration provenance without reinstalling unchanged inputs
+
+When only the configuration Git commit changes, `install` may select
+`strategy=provenance`. This requires the same exact product, configuration
+repository/path/blob and validated input-byte digest, source policy, equivalent
+protected deployment snapshot and consumer, and proof of a ready installed pair.
+A matching JSON blob alone is insufficient. Missing or uncertain proof takes
+ordinary reconciliation; pending operations retain their original recovery route.
+
+The installer holds the existing host and pool locks and proves current readiness
+and drift against the original receipt. A qualified same-product installation can
+use the source-owned native catalogue, complete installed source/package checks,
+all namespace probes and current host/pool/loaded-process evidence described in
+the [deployment contract](../deploy/README.md). A fresh operation-only official
+Codex reference supplies independent expected payload bytes; no admission or
+quiesce is needed for this read-only proof. The identical Git-pair no-op uses the
+same verifier. An older capability or insufficient native evidence retains the
+complete ordinary read-only post-check. Both routes refuse drift or unhealthy
+runtime/dependencies and check the running Reviewer's private loaded-input
+proof and active Production Runner inputs against that exact installed target.
+An unavailable or mismatched loaded proof selects one ordinary reconciliation;
+lost locks or a changing target stop the operation. Only after sufficient loaded
+proof does it atomically replace the existing manifest's
+Git receipt and any existing ready pair digest, preserving the deployment
+snapshot, artifact identity, consumer provenance and running processes. There is
+no release staging, live package installation, service restart, second receipt
+store or new operator action on this path. The native verifier removes only its
+own exclusively created reference stage. Proven manifest/snapshot/source hashes
+and filesystem identities are fenced again immediately before atomic promotion.
+Final inventory and the outer Git-pair verification
+attest the new pair.
+An interruption before the atomic replacement leaves the original receipt;
+after replacement the next identical invocation verifies the new pair normally.
+Lost locks, changed inputs or a third receipt refuse promotion.
+
+Successful historical upgrades may have no `installationState` marker. This
+absence permits only strategy nomination; the same sufficient locked proof
+must prove readiness and the protected manifest/snapshot/source checks still
+bind promotion. The provenance update preserves an absent marker rather than
+inventing a fresh-completion state. A present pending, malformed or mismatched
+marker refuses this path.
+
 ## Strategy, compatibility and recovery
 
 The installer distinguishes absent state, same-product reconciliation,
@@ -326,8 +368,10 @@ The unchanged-runtime maintenance route preserves the live Reviewer and Runner p
 limited to a correction whose staged Reviewer executable, configuration and unit
 remain identical to the running installation. A required Reviewer restart,
 configuration/unit change, lost listener, changed process or changed declaration
-refuses instead of stopping repaired healthy runners. Ordinary upgrades retain
-their existing restart behavior. Continue only through a separately authorized
+refuses instead of stopping repaired healthy runners. Ordinary upgrades can
+independently preserve processes through their current loaded-input proof;
+unavailable or changed evidence retains the ordinary restart behavior.
+Continue maintenance recovery only through a separately authorized
 owner operation with an independently accepted controller; this declaration does
 not authorize PROD work, admission reset, re-registration or deployment retry.
 The post-consumer-publication continuation flag never accepts a changed maintenance

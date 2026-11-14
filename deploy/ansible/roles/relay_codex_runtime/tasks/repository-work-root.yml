@@ -5,10 +5,11 @@
   ansible.builtin.stat:
     path: '{{ item }}'
     follow: false
-  loop:
-    - '{{ relay_dispatch_work_root }}/repositories'
-    - '{{ relay_dispatch_work_root }}/repositories/{{ relay_work_repository.split("/")[0] }}'
-    - '{{ relay_dispatch_work_root }}/repositories/{{ relay_work_repository }}'
+  loop: >-
+    {{ relay_repository_work_paths | default([
+         relay_dispatch_work_root ~ '/repositories',
+         relay_dispatch_work_root ~ '/repositories/' ~ (relay_work_repository | default('')).split('/')[0],
+         relay_dispatch_work_root ~ '/repositories/' ~ (relay_work_repository | default(''))]) | unique(case_sensitive=true) | list }}
   register: relay_repository_work_ancestors
 
 - name: Preserve the real directory boundary for repository work ancestors

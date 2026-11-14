@@ -727,6 +727,14 @@ Never guess or scan arbitrary protected paths for credentials, keys or
 certificates. Missing product-owned bootstrap state is not evidence that an
 operator must already have provisioned it somewhere else.
 
+The ordinary first-install composition first installs an inactive manifest,
+stages the configured credentials and prepares the client CA, then performs the
+configured ACME dry-run and issuance before readiness Apply. Apply requires the
+installed certificate/key pair; it does not extend the inactive bootstrap's
+pending-TLS exception. A failed preparation or issuance leaves the same Git
+pair pending for supported continuation and never activates the Reviewer or
+runners. Existing installations still refuse missing or partial TLS material.
+
 A read-only check may report missing bootstrap state as pending. Materializing
 certificates, trust or credentials remains a production mutation and still
 requires live authority; this contract does not broaden Task/CR scope.
@@ -1187,6 +1195,12 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+An unchanged product with a documentation-only configuration Git commit can use
+the [provenance-only path](../docs/git-managed-installation.md#configuration-provenance-without-reinstalling-unchanged-inputs).
+It verifies the complete existing runtime read-only before atomically updating
+the existing installed receipt; missing, changed, corrupt or interrupted proof
+keeps normal reconciliation/refusal and recovery behavior.
+
 For an exact pre-dispatch reservation that prevents an upgrade, first obtain
 independent acceptance of the candidate and use the [read-only inspection](../controller/README.md#deployment-operator-entrypoint-before-an-upgrade)
 to publish the exact native authorization. The authorized operator can then
@@ -1322,9 +1336,164 @@ cannot launch Codex. Drain releases that lock between observations, waits up to
 30 minutes for valid work and rejects unknown execution or publication evidence.
 No service or runner is stopped to drain. Registered runners remain online.
 
+For a source-only upgrade with unchanged effective deployment inputs, ordinary
+`install` can select a bounded native promotion instead of the full Ansible
+traversal. This requires exact unchanged Reviewer source, complete build inputs
+and pinned build contract; the current binary must match the installed manifest.
+Initial source-only preparation batches the existing frozen archive/tree
+validator, canonical consumer rendering and all six actual Node syntax checks
+into one private target call. The archive travels as bounded gzip data; the
+target rejects corrupt, truncated, oversized or additional members before the
+unchanged validator receives its exact uncompressed tar bytes.
+Unsupported frontend rendering or payload bounds
+retain the original source preparation play before submission. A failed or
+unproved submitted batch stops the operation. First-install prerequisite
+preparation and the later complete artifact path keep their existing ordering.
+An operation-scoped catalogue renders canonical task-owned files, modes,
+identities and all 32 namespace probes. Native checks verify current host/App/TLS
+inputs, pool units/registrations/group eligibility, runtime imports and readiness,
+loaded processes, complete installed source and package payloads. Codex payload
+bytes are compared with a newly acquired official pinned reference inside that
+operation's private stage. Version strings and an old successful Apply are
+insufficient. This bounded path requires the live Codex payload to match the
+clean reference completely; installations retaining additional historical
+payloads conservatively use the full path without deleting them. The qualified
+official installer's three-line `standalone/selection-history` has one bounded
+equivalence: its historical device/inode/ctime field describes the installer's
+pruning guard. Existing Relay relocation recreates `current`, so that recorded
+kernel identity can differ between independent installations. The exact selected
+and previous release fields, complete remaining bytes/modes/links and actual
+pinned executable remain bound. The raw live history hash and current link
+identity stay in the operation proof; unknown installer bytes or schema refuse
+this equivalence. Apply preserves history and makes no pruning-readiness claim.
+Unsupported recipes/profiles, changed policy or drift select the
+full path before cutover; changing bindings or lost guards stop execution.
+
+The existing host/pool/Writer locks, drained gate, original activity snapshot,
+sealed stage and recovery record remain authoritative. Promotion changes only
+the new source release, `current`, canonical artifact metadata in the two JSON
+files, fixed release-pinned diagnostic wrappers and the stale-disposition
+helper's canonical target revision. It preserves packages,
+registrations, credentials, units and process identities. Independent current
+proof after promotion precedes clearing the original recovery record. A failure
+after cutover retains that record for the existing exact-operation recovery;
+it never falls through to a second unrelated Apply. Private proof and package
+reference are confined to the existing operation stage, with no cross-operation
+cache or additional operator command.
+
+An absent release destination on the same filesystem can receive the already
+sealed payload through an atomic no-replace rename. The coordinator revalidates
+the seal and destination, persists directory topology bottom-up and syncs both
+parents. Existing destinations and unsupported filesystems retain the original
+copy consumer. The original recovery record precedes either operation; a later
+failure retains the same UUID archive, receipt, journal, reference and lease.
+After a move, native checks use the installed source path. Ordinary interrupted
+operation recovery preserves the prior private stage even when its payload has
+already moved to that exact release destination.
+
+Intermediate seal checks revalidate the operation-bound private reference and
+its complete payload tree. Complete live package, runtime and drift proofs run
+independently during preparation, immediately before the first live effect under
+the drained gate and Writer lock, and after promotion. Intermediate checks do
+not repeat live tool execution; they cannot authorize cutover by themselves.
+For this selected native path, its complete pool proofs also replace the two
+equivalent frontend pool preflights. A refused nomination performs the ordinary
+pool preflight before full host/package preparation and repeats it at cutover;
+fresh installation, reinstall and recovery retain their existing pool checks.
+
+General Runner retention uses its current component state across the operation,
+including its runnable native distribution, settings, service/cgroup identities
+and registration eligibility. The route writes no General package, settings or
+unit. Its source-owned [native update contract](../docs/runner-self-updates.md)
+remains the baseline; Reviewer/Production loaded-input adoption keeps its
+separate startup-history proof.
+Within each General capture, a file's bytes are hashed on first access. Later
+reads in that same capture reopen the path without following links and require
+the exact device, inode, size, nanosecond timestamps, mode, owner, group and link
+count before reusing that hash. A changed identity refuses the proof. Every
+subsequent capture starts afresh; no file hash survives between proof phases.
+
 Managed apply snapshots actual service activity and uses the existing supported
-upgrade backend. It consolidates try-restart of the previously active Reviewer
-and production dependency, verifies the real executable and process adoption,
+upgrade backend. When the running Reviewer exposes the installed private
+loaded-input proof, Apply may preserve its process and the dependent Production
+Runner after proving their complete effective inputs unchanged. The proof comes
+from the running process, includes the consumed configuration and CA, and is
+checked before changes, against the installed target, and at final acceptance.
+Only the validated Reviewer configuration's artifact provenance is excluded;
+matching disk JSON or a source revision alone cannot select this path. The
+transition lock, exact drained admission/target, live process identity, mapped
+executable/dependencies, service units, environment, credentials and Runner
+startup settings/distribution remain binding. No durable cache is added.
+For the .NET Production Runner, this also proves its OpenSSL-selected machine
+trust bundle/directories and user X509 store inputs unchanged since process
+startup, including certificate additions/removals and protected link/directory
+topology. `SSL_CERT_FILE`/`SSL_CERT_DIR` overrides participate. The default-path
+query must use the same loaded libcrypto as the Runner; an unknown provider or
+unavailable trust input retains restart. This closes cached OS-root adoption;
+the Reviewer's compiled webpki roots and captured inbound client CA retain their
+existing separate proof. The store selection follows the [.NET Linux machine
+store](https://github.com/dotnet/runtime/blob/v8.0.0/src/libraries/System.Security.Cryptography/src/System/Security/Cryptography/X509Certificates/OpenSslCachedSystemStoreProvider.cs)
+and [user feature directory](https://github.com/dotnet/runtime/blob/v8.0.0/src/libraries/System.Private.CoreLib/src/System/IO/PersistedFiles.Unix.cs)
+contracts.
+The proof uses each actual .NET child process's environment, which can differ
+from the service wrapper. Selected trust topology, symlinks and HOME store
+ancestry retain their pre-start history checks; shared root-owned traversal
+directories retain protected path identity without treating unrelated directory
+entries as CA inputs. This relies on the existing protected lifecycle/path
+authority and does not claim a history of adversarial root renames. Supported
+loaded systemd drop-ins, including Production local-Apply configuration, are
+proved by file and directory topology/content/startup history. Only the exact
+configured Reviewer SQLite database/WAL/SHM non-executable data mappings are
+treated as live mutable application state; inode/device, safe ownership/mode and
+exact path remain checked. Executable, deleted or aliased mappings never receive
+that exception.
+The public Runner's generated `run-helper.sh` has a separate consuming-process
+proof: its unchanged `run.sh` generator and template, exact copy recipe and
+generated bytes must agree, and the file must predate the retained consuming
+Bash process. That time bound uses both precise original systemd timestamps and
+current boot-clock evidence, with integer nanosecond comparisons. Unknown/coarse
+timestamps, changed generators/templates or absent consuming-process evidence
+retain restart. Other scripts and dependencies keep their ordinary pre-start
+history checks; see the pinned [Runner launch recipe](https://github.com/actions/runner/blob/v2.338.2/src/Misc/layoutroot/run.sh).
+When the generated copy and consuming shell birth share a `/proc` clock tick,
+an optional read-only kernel TASKSTATS live-PID query can supply a finer lower
+bound. Its elapsed microseconds are rounded down by Linux; the proof subtracts
+one full microsecond from the pre-request monotonic sample and retains both
+current and original systemd clock guards (including timestamp truncation).
+Kernel peer, response shape, PID, UID and retained process generation are checked.
+Loaded `Requires`, `BindsTo` and `PartOf` dependencies compare as validated unit
+sets; their iteration order may change on daemon reload. Command arguments,
+environment-file order and drop-in order retain exact comparison.
+Launch definitions use systemd's typed `ExecStartEx` D-Bus property through
+read-only `busctl`: executable, ordered argv, complete execution flags and
+command order remain exact. Per-command execution-history counters are omitted;
+the independently checked MainPID, original start timestamps and complete live
+process identities still bind the retained invocation. A missing `busctl`,
+unsupported property or uncertain typed response retains ordinary restart.
+The derived query time is never persisted or compared as an input identity.
+Unavailable privileges, unsupported accounting or uncertain replies keep the
+original strict tick bound and ordinary restart. No accounting listener, new
+service or launcher is installed; the public Runner launch behavior is unchanged.
+See Linux's [live-PID accounting](https://github.com/torvalds/linux/blob/v6.1/kernel/taskstats.c)
+and [elapsed-time calculation](https://github.com/torvalds/linux/blob/v6.1/kernel/tsacct.c).
+Native distribution leaf aliases such as `npm` are bounded to the proved
+`bin`/`externals` trees. Their link chain, protected directory topology and
+regular single-link target must remain unchanged since retained startup;
+escaping, writable, redirected-directory and corrupt aliases retain restart.
+Fixed registration, credential and environment paths keep no-follow checks.
+Optional cached settings count as absent only with unchanged pre-start Runner
+root directory history. The `bin`/`externals` directory trees retain the same
+deletion-aware history, so an already removed interpreted file cannot disappear
+from the first capture's proof. After all scans, the complete Runner cgroup and
+each PID/start/UID/executable/command/environment/mapping identity are revalidated;
+an unchanged systemd MainPID alone cannot conceal a replaced Listener child.
+
+Older or missing proof, changed inputs, stopped/unexpected processes, drift,
+interrupted recovery and any uncertain identity retain the consolidated
+try-restart and changed-start proof. The first upgrade installing this capability
+therefore still restarts; a later code-only update can preserve processes when
+the effective Reviewer/Runner inputs really are unchanged. Apply verifies
+the real executable and process adoption,
 installed identity, service health, recovery timer, preserved activation intent,
 and the applicable workflow compatibility before reopening admission. Git mode
 also transitions the current consumer digest under the same operation and

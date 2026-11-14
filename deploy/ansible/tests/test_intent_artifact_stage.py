@@ -103,7 +103,7 @@ class IntentArtifactStageTests(unittest.TestCase):
         payload.write_bytes(b'private toolchain fixture payload\n')
         payload.chmod(0o600)
 
-    def prepare(self, private_toolchain=False):
+    def prepare(self, private_toolchain=False, installed_reuse=False):
         acquisition = stage.run('extract', self.root, self.expected, self.archive)
         release = self.root / 'release'
         binary = release / 'bin/reviewer-mcp-http'
@@ -129,8 +129,24 @@ class IntentArtifactStageTests(unittest.TestCase):
                          'reuseSourceBinarySha256': stage.hash_bytes(binary.read_bytes()),
                          'buildContractSha256': 'c' * 64, 'previousRevision': 'none'},
             'toolchain': toolchain, 'packages': {'runner': {'treeSha256': 'd' * 64}, 'codex': {'treeSha256': 'e' * 64}}}
+        if installed_reuse:
+            metadata['packages'] = {kind: {'mode': 'installed-reuse', 'kind': kind,
+                'sourceRevision': 'a' * 40, 'recipeSha256': 'c' * 64, 'treeSha256': 'd' * 64}
+                for kind in ['runner', 'codex']}
         receipt = stage.run('seal', self.root, metadata)
         return receipt
+
+    def test_installed_reuse_seals_and_consumes_only_release_bytes(self):
+        receipt = self.prepare(installed_reuse=True)
+        self.assertEqual(stage.run('verify', self.root, self.expected), receipt)
+        self.assertFalse((self.root / 'packages').exists())
+        destination = self.parent / self.revision
+        stage.run('consume', self.root, self.expected, destination)
+        self.assertEqual((destination / 'bin/reviewer-mcp-http').read_bytes(), Path('/usr/bin/true').read_bytes())
+        self.assert_old_available()
+        (self.root / 'release/reviewed-source/source-proof.txt').write_text('drift')
+        with self.assertRaisesRegex(ValueError, 'PAYLOAD_CHANGED'):
+            stage.run('verify', self.root, self.expected)
 
     def assert_old_available(self):
         self.assertEqual((self.parent / 'current').resolve(), self.old)

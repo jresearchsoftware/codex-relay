@@ -1,0 +1,37 @@
+---
+# Transient proof only. Existing admission/Writer/operation ownership remains
+# mandatory; older, absent or uncertain loaded-input evidence means restart.
+- name: Read authenticated loaded inputs and component process identity
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -B
+      - -c
+      - '{{ lookup("file", playbook_dir + "/../process_adoption.py") }}'
+    stdin: >-
+      {{ {'reviewerUnit': relay_reviewer_service_name,
+          'productionUnit': relay_production_runner_service_name,
+          'reviewerUser': relay_reviewer_user,
+          'productionUser': relay_production_runner_user,
+          'productionRoot': relay_runner_root,
+          'productionActive': relay_upgrade_lifecycle_production_was_active | bool,
+          'socket': relay_runtime_root ~ '/reviewer-proof/loaded.sock',
+          'environmentFiles': [relay_config_root ~ '/relay.env', relay_reviewer_credential_env_file],
+          'config': relay_config_root ~ '/reviewer-mcp.json',
+          'release': relay_install_root ~ '/current',
+          'operationLock': relay_production_operation_lock_path,
+          'operationRecord': relay_production_operation_record_path,
+          'operation': relay_admission_operation_id,
+          'target': relay_production_operation_target_head,
+          'admission': relay_intent_admission_prefix | default([relay_install_root ~ '/relay-admission']),
+          'before': relay_upgrade_loaded_process_before | default(none)} | to_json }}
+    stdin_add_newline: false
+  register: relay_upgrade_loaded_process_result
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Retain only bounded non-secret process adoption evidence
+  ansible.builtin.set_fact:
+    relay_upgrade_loaded_process_observed: '{{ relay_upgrade_loaded_process_result.stdout | from_json }}'

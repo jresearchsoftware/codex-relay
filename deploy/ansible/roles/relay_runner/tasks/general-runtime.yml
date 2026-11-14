@@ -19,6 +19,7 @@
   ansible.builtin.group:
     name: '{{ relay_runner_group }}'
     system: true
+  when: not relay_execution_slot_shared_prerequisites | default(false) | bool
 
 - name: Inspect the existing shared runner account without changing its login settings
   ansible.builtin.getent:

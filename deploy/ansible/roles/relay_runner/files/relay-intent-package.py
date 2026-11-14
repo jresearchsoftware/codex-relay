@@ -203,7 +203,7 @@ def relocate_codex(root):
 
 
 def consume_codex(root, values, expected):
-    verify(root, expected)
+    value = verify(root, expected)
     inspect_live('codex', values)
     source = root / 'package-home/packages'
     destination = Path(values['home']) / 'packages'
@@ -222,12 +222,20 @@ def consume_codex(root, values, expected):
     for path in sorted(source.rglob('*')):
         target = destination / path.relative_to(source)
         if path.is_symlink():
+            if target.is_symlink() and os.readlink(target) == os.readlink(path):
+                continue
             if os.path.lexists(target):
                 target.unlink()
             target.symlink_to(os.readlink(path))
         elif path.is_dir():
             target.mkdir(mode=stat.S_IMODE(path.stat().st_mode), exist_ok=True)
         else:
+            # Both trees were checked in this call, under the same protected
+            # stage/destination boundary. Compare actual bytes and mode, never
+            # a version name or an earlier process's cached digest.
+            if (target.exists() and stat.S_IMODE(target.stat().st_mode) == stat.S_IMODE(path.stat().st_mode)
+                    and file_sha(target) == file_sha(path)):
+                continue
             shutil.copyfile(path, target, follow_symlinks=False)
             target.chmod(stat.S_IMODE(path.stat().st_mode))
     command = root / 'package-bin/codex'
@@ -236,10 +244,14 @@ def consume_codex(root, values, expected):
     install = Path(values['installDir'])
     install.mkdir(mode=0o700, parents=True, exist_ok=True)
     link = install / 'codex'
+    target = home / binary.relative_to(root / 'package-home')
     if os.path.lexists(link):
         require(link.is_symlink() and link.lstat().st_uid == 0)
+        if os.readlink(link) == str(target):
+            return value
         link.unlink()
-    link.symlink_to(home / binary.relative_to(root / 'package-home'))
+    link.symlink_to(target)
+    return value
 
 
 def main():
@@ -280,14 +292,18 @@ def main():
     elif action == 'relocate':
         require(kind == 'codex')
         relocate_codex(root)
+    elif action == 'consume':
+        require(kind == 'codex')
+        # consume_codex owns the same-call complete stage and live-path proof.
+        # Repeating it here would traverse every distribution byte twice with
+        # no intervening mutation or trust boundary.
+        value = consume_codex(root, values, expected)
+        print(json.dumps(value, sort_keys=True))
     else:
         inspect_live(kind, values)
         value = verify(root, expected)
         if kind == 'runner':
             runner_transition(root, values)
-        if action == 'consume':
-            require(kind == 'codex')
-            consume_codex(root, values, expected)
         print(json.dumps(value, sort_keys=True))
 
 

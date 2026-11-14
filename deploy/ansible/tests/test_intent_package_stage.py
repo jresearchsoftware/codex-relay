@@ -217,6 +217,34 @@ def test_codex_sealed_distribution_consumes_without_installer_or_network_and_reb
     assert resource.read_bytes() == b'payload'
     assert (f['live'] / 'consumer.json').read_text() == '{"accepted":"old"}'
     assert not Path(values['relay_codex_installer_path']).exists()
+    # The second same-boundary consume verifies the complete sealed stage and
+    # live distribution again, but leaves identical payload files and links
+    # untouched. File names/version alone do not authorize reuse.
+    packages = Path(values['relay_codex_package_home']) / 'packages'
+    previous = snapshot(packages)
+    link_before = command.lstat()
+    consumed = guard(f, 'codex', 'consume', values)
+    assert consumed.returncode == 0, consumed.stdout + consumed.stderr
+    assert snapshot(packages) == previous
+    assert command.lstat() == link_before
+    auxiliary = binary.parent / 'auxiliary'
+    auxiliary.write_text('drift')
+    consumed = guard(f, 'codex', 'consume', values)
+    assert consumed.returncode == 0, consumed.stdout + consumed.stderr
+    assert auxiliary.read_bytes() == b'payload'
+    resource.unlink()
+    resource.symlink_to('/etc/passwd')
+    previous = snapshot(f['live'])
+    assert guard(f, 'codex', 'consume', values).returncode != 0
+    assert snapshot(f['live']) == previous
+    resource.unlink()
+    resource.symlink_to('auxiliary')
+    # Corrupt or missing proof refuses before changing even a drifted file.
+    auxiliary.write_text('second drift')
+    (f['stage'] / 'codex-package/manifest.json').unlink()
+    previous = snapshot(f['live'])
+    assert guard(f, 'codex', 'consume', values).returncode != 0
+    assert snapshot(f['live']) == previous
 
 
 def test_live_roles_gate_network_and_installer_only_for_the_staged_route():

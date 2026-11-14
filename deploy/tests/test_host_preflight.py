@@ -112,6 +112,15 @@ def native_runner_alias(f, spelling='relative'):
     return runner, alias, versioned, listener, uid
 
 
+def legacy_serial_values(f):
+    """Explicit retained SERIAL scope; the current example selects a pool."""
+    values = f['values']
+    values.pop('relay_general_runner_pool')
+    values['relay_additional_execution_slots'] = []
+    values['relay_general_runner_service_name'] = values['relay_namespace'] + '-general-runner.service'
+    return values
+
+
 @pytest.mark.parametrize('spelling', ['relative', 'absolute'])
 def test_native_runner_alias_is_readonly_observed_and_limited_to_runner_listener(target, spelling):
     f = target
@@ -252,6 +261,8 @@ def test_foreign_distro_alias_owner_and_aliased_canonical_directory_are_rejected
 @pytest.mark.parametrize('kind', ['production', 'general', 'slot', 'member'])
 def test_every_runner_destination_collision_fails_before_any_mutation(target, kind):
     f = target; v = f['values']
+    if kind in ['general', 'slot']:
+        legacy_serial_values(f)
     if kind == 'slot':
         slot = {'relay_execution_slot': 'pool-2', 'relay_runner_root': '/opt/codex-relay/slots/pool-2/runner',
                 'relay_runner_work_root': '/var/lib/codex-relay/slots/pool-2/runner/work',
@@ -290,7 +301,7 @@ def test_every_runner_destination_collision_fails_before_any_mutation(target, ki
 def test_aliased_or_wrong_type_destinations_are_not_silently_repaired(target, location):
     f = target
     paths = {'helper': '/opt/codex-relay/relay-admission', 'config': '/etc/codex-relay/consumer.json',
-             'unit': '/etc/systemd/system/relay-runner.service',
+             'unit': '/etc/systemd/system/' + f['values']['relay_production_runner_service_name'],
              'codex-tmp': '/var/lib/codex-relay/codex-home/tmp', 'parent': '/opt/codex-relay/runner'}
     path = f['path'](paths[location]); path.parent.mkdir(parents=True, exist_ok=True)
     path.symlink_to('/unrelated-private-input')
@@ -301,7 +312,8 @@ def test_aliased_or_wrong_type_destinations_are_not_silently_repaired(target, lo
 
 def test_partial_registration_and_privileged_or_aliased_identities_fail_early(target):
     f = target
-    marker = f['write']('/opt/codex-relay/general-runner/.runner', b'original registration')
+    general = next(row for row in host.runner_targets(f['values']) if row['label'].startswith('member-'))
+    marker = f['write'](general['root'] + '/.runner', b'original registration')
     before = snapshot(f['root'])
     with pytest.raises(host.HostPreflightError, match='HOST_RUNNER_REGISTRATION_AMBIGUOUS'): f['inspect']()
     assert snapshot(f['root']) == before
@@ -321,7 +333,7 @@ def test_projected_reviewer_key_group_cannot_expose_it_to_general_transport(targ
 
 
 def test_active_general_transport_does_not_surprise_restart_for_planned_identity_change(target):
-    f = target; v = f['values']
+    f = target; v = legacy_serial_values(f)
     f['services'][v['relay_general_runner_service_name']] = {
         'LoadState': 'loaded', 'ActiveState': 'active', 'SubState': 'running', 'MainPID': '17', 'UnitFileState': 'enabled'}
     before = snapshot(f['root']); first = f['inspect']()
@@ -434,6 +446,10 @@ def test_only_canonical_consumer_replacement_is_excluded_from_volatile_fingerpri
 def test_verified_old_serial_service_is_observed_after_desired_pool_selection(target):
     f = target; v = f['values']; revision = 'a' * 40
     old = json.loads((DEPLOY / 'example.json').read_text())
+    # Model the accepted old unnamespaced SERIAL installation, not today's
+    # pool example (which requires the compiler's derived executionSlots).
+    old['consumer'].pop('generalRunnerPool')
+    old['environment'].pop('instance')
     raw = json.dumps(old).encode()
     f['write']('/opt/codex-relay/releases/' + revision + '/deployment-config.json', raw)
     manifest = {'commit': revision, 'deploymentConfigSha256': hashlib.sha256(raw).hexdigest()}
