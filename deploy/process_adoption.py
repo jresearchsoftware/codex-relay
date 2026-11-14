@@ -16,6 +16,7 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 
 
 def require(value):
@@ -66,15 +67,14 @@ def protected(path, *, uid=0):
 def service(unit):
     require(unit.endswith('.service') and '/' not in unit)
     fields = 'LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,NeedDaemonReload,User,ControlGroup,FragmentPath,DropInPaths,EnvironmentFiles,ExecStart,PartOf,Requires,BindsTo'
-    result = subprocess.run(['/bin/systemctl', 'show', unit, '--property=' + fields],
+    result = subprocess.run(['/bin/systemctl', '--timestamp=us', 'show', unit, '--property=' + fields],
                             capture_output=True, check=True, timeout=15,
                             env={**os.environ, 'TZ': 'UTC', 'LC_ALL': 'C'})
     values = dict(line.split('=', 1) for line in result.stdout.decode().splitlines())
     require(values['LoadState'] == 'loaded' and values['ActiveState'] == 'active'
             and values['SubState'] == 'running' and values['NeedDaemonReload'] == 'no'
             and values['MainPID'].isdigit() and int(values['MainPID']) > 0
-            and values['ControlGroup'] == '/system.slice/' + unit
-            and not values['DropInPaths'])
+            and values['ControlGroup'] == '/system.slice/' + unit)
     return values
 
 
@@ -86,16 +86,22 @@ def environment(pid):
 
 
 def service_started(state):
+    return service_started_ns(state) / 1000000000
+
+
+def service_started_ns(state):
     value = state['ExecMainStartTimestamp']
     for pattern in ['%a %Y-%m-%d %H:%M:%S UTC', '%a %Y-%m-%d %H:%M:%S.%f UTC']:
         try:
-            return datetime.strptime(value, pattern).replace(tzinfo=timezone.utc).timestamp()
+            parsed = datetime.strptime(value, pattern).replace(tzinfo=timezone.utc)
+            elapsed = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
+            return ((elapsed.days * 86400 + elapsed.seconds) * 1000000 + elapsed.microseconds) * 1000
         except ValueError:
             continue
     raise ValueError('PROCESS_ADOPTION_UNPROVEN')
 
 
-def process(pid, service_start):
+def process(pid, service_start, *, mutable_database=None):
     root = Path('/proc', str(pid))
     start = root.joinpath('stat').read_text().rsplit(') ', 1)[1].split()[19]
     boot = next(int(row.split()[1]) for row in Path('/proc/stat').read_text().splitlines() if row.startswith('btime '))
@@ -113,6 +119,9 @@ def process(pid, service_start):
             if columns[5].startswith('/memfd:doublemapper '):
                 continue  # .NET anonymous JIT allocation, not a disk dependency.
             require(not columns[5].endswith(' (deleted)'))
+            if mutable_database is not None and columns[5] in [mutable_database + suffix for suffix in ['', '-wal', '-shm']]:
+                mutable_sqlite_mapping(columns[5], columns[1], columns[3], columns[4], root.stat().st_uid)
+                continue
             identity = (columns[3], columns[4])
             require(columns[5] not in mapped_ids or mapped_ids[columns[5]] == identity)
             if columns[5] in maps:
@@ -123,6 +132,17 @@ def process(pid, service_start):
     return {'pid': str(pid), 'start': start, 'executable': digest(root.joinpath('exe').read_bytes()),
             'environment': digest(canonical(environment(pid))),
             'command': digest(root.joinpath('cmdline').read_bytes()), 'maps': maps}
+
+
+def mutable_sqlite_mapping(path, permissions, device, inode, uid):
+    """The exact configured SQLite data family is live application state."""
+    require(Path(path).is_absolute() and '..' not in Path(path).parts and 'x' not in permissions)
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+        meta = os.fstat(stream.fileno())
+        major, minor = (int(value, 16) for value in device.split(':'))
+        require(stat.S_ISREG(meta.st_mode) and meta.st_uid == uid and meta.st_nlink == 1
+                and not meta.st_mode & 0o022 and meta.st_ino == int(inode)
+                and os.major(meta.st_dev) == major and os.minor(meta.st_dev) == minor)
 
 
 def mapped_digest(path, device, inode, started):
@@ -175,12 +195,13 @@ def loaded_reviewer(payload, state):
                 'unit': digest(protected(state['FragmentPath'])),
                 'environmentFiles': {path: digest(protected(path)) for path in paths}}
     require(proof == expected)
-    live = process(pid, service_started(state))
+    live = process(pid, service_started(state), mutable_database=env.get('REVIEWER_RELAY_DB'))
     for path, expected_digest in live['maps'].items():
         require(digest(Path(path).read_bytes()) == expected_digest)
     manifest = json.loads(protected(Path(payload['release']) / 'artifact-manifest.json'))
     require(live['executable'] == manifest['reviewerBinarySha256'])
-    return {'loaded': proof, 'process': live, 'service': state}
+    return {'loaded': proof, 'process': live, 'service': state,
+            'units': service_configuration(state, service_started(state))}
 
 
 def unchanged_since_start(path, earliest, uid):
@@ -191,6 +212,250 @@ def unchanged_since_start(path, earliest, uid):
         result = hashlib.file_digest(stream, 'sha256').hexdigest()
         require(identity(os.fstat(stream.fileno())) == identity(meta))
         return result
+
+
+def trust_locations(env, defaults):
+    """The Linux .NET/OpenSSL machine store, including its default fallback."""
+    file = env.get(defaults.openssl_cafile_env, defaults.openssl_cafile)
+    directories = env.get(defaults.openssl_capath_env, defaults.openssl_capath)
+    require(isinstance(file, str) and isinstance(directories, str))
+    selected = ([file] if file else []) + [path for path in directories.split(':') if path]
+    # .NET uses this fallback when the OpenSSL default directory has no roots.
+    # Explicit SSL_CERT_DIR suppresses that fallback in the runtime contract.
+    if defaults.openssl_capath_env not in env:
+        selected.append('/etc/ssl/certs')
+    require(selected and all(Path(path).is_absolute() and '..' not in Path(path).parts for path in selected))
+    return list(dict.fromkeys(selected))
+
+
+def trust_parents(path, boundary):
+    require(Path(path).is_relative_to(boundary))
+    return [parent for parent in reversed(Path(path).parents) if parent.is_relative_to(boundary)]
+
+
+def security_identity(meta):
+    return (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_uid, meta.st_gid)
+
+
+def trust_store(path, earliest, uid=0, *, boundary=Path('/'), history_root=None):
+    """Prove loaded trust cannot predate disk changes, including removed roots.
+
+    Follow only bounded protected symlink topology. Every file, link and parent
+    directory must have remained unchanged since retained service startup.
+    """
+    observed, visiting, expanded = {}, set(), set()
+    def visit(current, descend):
+        current = Path(current)
+        require(current.is_absolute() and '..' not in current.parts)
+        key = str(current)
+        require(len(observed) < 8192)
+        meta = current.lstat()
+        require(meta.st_uid in [0, uid])
+        if not stat.S_ISLNK(meta.st_mode):
+            require(not meta.st_mode & 0o022)
+        if key in visiting:
+            require(not descend and stat.S_ISDIR(meta.st_mode))
+            return  # A symlink target shares the currently enumerated parent.
+        historical = (descend or stat.S_ISLNK(meta.st_mode) or (uid != 0 and meta.st_uid == uid)
+                      or history_root is not None and current.is_relative_to(history_root))
+        if historical:
+            require(meta.st_ctime < earliest - 2)
+        value = {'identity': identity(meta) if historical else security_identity(meta)}
+        if key in observed:
+            require(observed[key]['identity'] in [identity(meta), security_identity(meta)])
+            if not descend or key in expanded:
+                return
+        visiting.add(key)
+        if stat.S_ISLNK(meta.st_mode):
+            value['link'] = os.readlink(current)
+            resolved = current.resolve(strict=True)
+            for parent in trust_parents(resolved, boundary):
+                visit(parent, False)
+            visit(resolved, descend)
+        elif stat.S_ISREG(meta.st_mode):
+            value['sha256'] = unchanged_since_start(current, earliest, uid)
+        else:
+            require(stat.S_ISDIR(meta.st_mode))
+            if descend:
+                for child in sorted(current.iterdir()):
+                    visit(child, True)
+        require(identity(current.lstat()) == identity(meta))
+        observed[key] = value
+        if descend:
+            expanded.add(key)
+        visiting.remove(key)
+    path = Path(path)
+    for parent in trust_parents(path, boundary):
+        visit(parent, False)
+    visit(path, True)
+    return observed
+
+
+def runner_trust(processes, earliest, uid):
+    import ssl
+    # Python's default-path query must use the same libcrypto the running .NET
+    # process uses. A different or not-yet-loaded provider cannot attest its
+    # compile-time defaults, so that case takes the ordinary restart path.
+    own = {row.split(None, 5)[5] for row in Path('/proc/self/maps').read_text().splitlines()
+           if len(row.split(None, 5)) == 6 and '/libcrypto.so' in row.split(None, 5)[5]}
+    require(len(own) == 1)
+    crypto = next(iter(own))
+    crypto_digest = digest(Path(crypto).read_bytes())
+    defaults = ssl.get_default_verify_paths()
+    providers = {pid: [path for path in value['maps'] if '/libcrypto.so' in path]
+                 for pid, value in processes.items()}
+    selected = {pid: paths for pid, paths in providers.items() if paths}
+    require(selected and all(paths == [crypto] and processes[pid]['maps'][crypto] == crypto_digest
+                             for pid, paths in selected.items()))
+    # The Listener's effective environment may differ from runsvc.sh/Node's.
+    # Prove trust for each retained process actually using the crypto provider.
+    return {pid: process_trust(environment(pid), defaults, earliest, uid) for pid in selected}
+
+
+def process_trust(env, defaults, earliest, uid):
+    selected = trust_locations(env, defaults)
+    machine = {path: trust_store(path, earliest) for path in selected}
+    # .NET's user X509 stores also contribute roots/intermediates. Absence is
+    # proved through the nearest existing parent, never guessed from no files.
+    home = Path(env['HOME'])
+    require(home.is_absolute() and '..' not in home.parts)
+    user = home / '.dotnet/corefx/cryptography/x509stores'
+    absent = []
+    while not os.path.lexists(user):
+        absent.append(str(user))
+        user = user.parent
+        require(user != Path('/'))
+    user_proof = (trust_store(user, earliest, uid, history_root=home) if not absent else
+                  trust_store_parent(user, earliest, uid, history_root=home))
+    return {'machine': machine, 'user': user_proof, 'absentUserPaths': absent}
+
+
+def trust_store_parent(path, earliest, uid, *, boundary=Path('/'), history_root=None):
+    # Fingerprint only the ancestor chain when the X509 store is absent. This
+    # avoids scanning unrelated Runner home contents while detecting creation
+    # or removal of a cached user trust store after startup.
+    result = {}
+    for parent in [*trust_parents(path, boundary), Path(path)]:
+        meta = parent.lstat()
+        require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in [0, uid]
+                and not meta.st_mode & 0o022)
+        historical = (parent == Path(path) or (uid != 0 and meta.st_uid == uid)
+                      or history_root is not None and parent.is_relative_to(history_root))
+        if historical:
+            require(meta.st_ctime < earliest - 2)
+        result[str(parent)] = {'identity': identity(meta) if historical else security_identity(meta)}
+    return result
+
+
+def service_configuration(state, earliest):
+    """Loaded unit/drop-in evidence, including the managed local-Apply drop-in."""
+    files = {state['FragmentPath']: unchanged_since_start(state['FragmentPath'], earliest, 0)}
+    directories = {}
+    for path in state['DropInPaths'].split():
+        value = Path(path)
+        require(value.is_absolute() and value.name.endswith('.conf') and value.parent.name.endswith('.d'))
+        files[path] = unchanged_since_start(value, earliest, 0)
+        directories[str(value.parent)] = trust_store(value.parent, earliest)
+    return {'files': files, 'dropinDirectories': directories}
+
+
+def service_environment_files(state):
+    """Read systemd's loaded EnvironmentFiles list, never another component's."""
+    remaining = state['EnvironmentFiles']
+    paths = []
+    while remaining:
+        selected = re.match(r'(/[-A-Za-z0-9_./]+) \(ignore_errors=(?:yes|no)\)(?: |$)', remaining)
+        require(selected is not None)
+        path = selected.group(1)
+        require('..' not in Path(path).parts and str(Path(path)) == path)
+        paths.append(path)
+        remaining = remaining[selected.end():]
+    return list(dict.fromkeys(paths))
+
+
+def consumer_start_lower_bound(state, start_ticks):
+    # The public Runner generates its helper after the main wrapper starts.
+    # Bind it to the consuming shell, using both present and original clocks;
+    # a later forward wall-clock adjustment must not approve stale script code.
+    require(re.search(r'\.[0-9]{1,6} UTC$', state['ExecMainStartTimestamp']) is not None)
+    ticks = int(start_ticks) * 1000000000 // os.sysconf('SC_CLK_TCK')
+    wall_before = time.time_ns()
+    boot_after = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+    current = wall_before - boot_after + ticks
+    monotonic_before = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+    boot_after = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+    original = (service_started_ns(state) + ticks - (boot_after - monotonic_before)
+                - int(state['ExecMainStartTimestampMonotonic']) * 1000)
+    return min(current, original)
+
+
+def runner_arguments(pid, proof):
+    raw = Path('/proc', pid, 'cmdline').read_bytes()
+    require(digest(raw) == proof['command'])
+    return [part.decode() for part in raw.split(b'\0') if part]
+
+
+def generated_runner_helper(root, state, processes, earliest, uid):
+    """Narrow proof for the pinned Runner run.sh -> run-helper.sh copy."""
+    helper, template, generator = (root / name for name in ['run-helper.sh', 'run-helper.sh.template', 'run.sh'])
+    generator_hash = unchanged_since_start(generator, earliest, uid)
+    template_hash = unchanged_since_start(template, earliest, uid)
+    recipe = b'cp -f "$DIR"/run-helper.sh.template "$DIR"/run-helper.sh'
+    require(recipe in protected(generator, uid=uid))
+    wrapper = processes[state['MainPID']]
+    arguments = runner_arguments(state['MainPID'], wrapper)
+    require(len(arguments) >= 2 and arguments[1] == str(generator))
+    consumers = []
+    for pid, proof in processes.items():
+        arguments = runner_arguments(pid, proof)
+        if len(arguments) >= 2 and arguments[1] == str(helper):
+            require(proof['executable'] == wrapper['executable'])
+            consumers.append(pid)
+    require(len(consumers) == 1)
+    consumer = consumers[0]
+    lower = consumer_start_lower_bound(state, processes[consumer]['start'])
+    meta = helper.lstat()
+    require(meta.st_ctime_ns < lower)
+    helper_hash = digest(protected(helper, uid=uid))
+    require(helper_hash == template_hash and identity(helper.lstat()) == identity(meta))
+    return {'sha256': helper_hash, 'generatorSha256': generator_hash, 'templateSha256': template_hash,
+            'consumer': consumer, 'consumerStartTicks': processes[consumer]['start']}
+
+
+def distribution_alias(path, roots, earliest, uid):
+    """Bounded native distribution leaf links, never credential/settings links."""
+    current = Path(path)
+    links, directories = {}, {}
+    for _ in range(16):
+        scopes = [root for root in roots if current.is_relative_to(root)]
+        require(len(scopes) == 1)
+        scope = scopes[0]
+        # No hidden intermediate redirect is followed. Top-level native
+        # bin/externals version aliases were separately resolved and proved.
+        parent = scope
+        parents = [scope]
+        for component in current.parent.relative_to(scope).parts:
+            parent = parent / component
+            parents.append(parent)
+        for parent in parents:
+            meta = parent.lstat()
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in [0, uid]
+                    and not meta.st_mode & 0o022 and meta.st_ctime < earliest - 2)
+            directories[str(parent)] = identity(meta)
+        meta = current.lstat()
+        if not stat.S_ISLNK(meta.st_mode):
+            result = unchanged_since_start(current, earliest, uid)
+            require(all(identity(Path(name).lstat()) == info for name, info in directories.items()))
+            require(all(identity(Path(name).lstat()) == value['identity']
+                        and os.readlink(name) == value['target'] for name, value in links.items()))
+            return {'links': links, 'directories': directories, 'target': str(current), 'sha256': result}
+        require(str(current) not in links and meta.st_uid in [0, uid] and meta.st_nlink == 1
+                and meta.st_ctime < earliest - 2)
+        target = os.readlink(current)
+        links[str(current)] = {'identity': identity(meta), 'target': target}
+        candidate = Path(target) if Path(target).is_absolute() else current.parent / target
+        current = Path(os.path.normpath(candidate))
+    raise ValueError('PROCESS_ADOPTION_UNPROVEN')
 
 
 def loaded_runner(payload, state):
@@ -209,12 +474,13 @@ def loaded_runner(payload, state):
     # started; byte equality alone would not establish loaded settings.
     names = ['.runner', '.runner_migrated', '.credentials', '.credentials_rsaparams', '.env', '.path']
     files = {str(root / name): unchanged_since_start(root / name, earliest, uid)
-             for name in names if (root / name).exists()}
+             for name in names if os.path.lexists(root / name)}
     require(str(root / '.runner') in files and str(root / '.credentials') in files)
     # runsvc.sh/RunnerService.js and managed DLLs can be interpreted/read into
     # memory rather than represented by a distinct executable mapping. Prove
     # unchanged complete startup distribution, not only Runner.Listener's name.
     inputs = [path for path in root.iterdir() if path.is_file()]
+    distribution_roots = []
     for directory in ['bin', 'externals']:
         entry = root / directory
         if entry.is_symlink():
@@ -225,20 +491,29 @@ def loaded_runner(payload, state):
             files[str(entry)] = digest(os.readlink(entry).encode())
             entry = resolved
         require(entry.is_dir())
+        distribution_roots.append(entry)
         for parent, directories, names in os.walk(entry):
             require(all(not (Path(parent) / name).is_symlink() for name in directories))
             inputs.extend(Path(parent) / name for name in names)
             require(len(inputs) <= 20000)
     for path in inputs:
+        if path == root / 'run-helper.sh':
+            files[str(path)] = generated_runner_helper(root, state, processes, earliest, uid)
+            continue
+        if path.is_symlink():
+            files[str(path)] = distribution_alias(path, distribution_roots, earliest, uid)
+            continue
         files[str(path)] = unchanged_since_start(path, earliest, uid)
-    for path in [state['FragmentPath'], *payload['environmentFiles']]:
+    for path in service_environment_files(state):
         files[path] = unchanged_since_start(path, earliest, 0)
     for process_value in processes.values():
         for path, expected in process_value['maps'].items():
             # Same mapped object and same intended disk object, never a renamed
             # old DLL or runtime accepted against a new installation.
             require(digest(Path(path).read_bytes()) == expected)
-    return {'service': state, 'processes': processes, 'files': files}
+    trust = runner_trust(processes, earliest, uid)
+    return {'service': state, 'processes': processes, 'files': files, 'trust': trust,
+            'units': service_configuration(state, earliest)}
 
 
 def capture_inputs(payload):
@@ -287,11 +562,13 @@ def capture(payload):
 def main():
     payload = json.load(sys.stdin)
     try:
-        current = capture(payload)
+        # The initial proof crosses Ansible's JSON boundary. Normalize native
+        # stat tuples before comparing its later JSON-decoded representation.
+        current = json.loads(canonical(capture(payload)))
         previous = payload.get('before')
         require(previous is None or current == previous)
         print(json.dumps({'eligible': True, 'proof': current}))
-    except (OSError, ValueError, KeyError, TypeError, StopIteration, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError, StopIteration, subprocess.SubprocessError):
         # Normal fall back, with no exception/credential/path disclosure.
         print(json.dumps({'eligible': False}))
 

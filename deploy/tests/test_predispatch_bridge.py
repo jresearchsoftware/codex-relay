@@ -263,6 +263,7 @@ export async function token(){log('token');return 'synthetic-writer-token';}''',
         'controller/src/execution-contract.mjs': '''export const REPOSITORY='example/repository',VERSION=2;
 export const fail=code=>{throw Object.assign(Error(code),{code});};''',
         'controller/src/diagnostics.mjs': 'export const failureDiagnosticFromDetails=()=>undefined;',
+        'controller/src/owner-run-rejection.mjs': 'export const ownerRunRejectionReason=()=>undefined;',
         'controller/src/admission-cli.mjs': 'export const installedAdmissionControl=()=>({});',
         'controller/src/predispatch-target-compatibility.mjs': 'export const assertCompatibleInstalledWriter=()=>{throw Error("NO_FINALIZATION");};',
         'controller/src/slot-journal.mjs': 'export const createSlotJournal=()=>({});',

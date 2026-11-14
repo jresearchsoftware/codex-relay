@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 from unittest.mock import patch
@@ -58,6 +59,12 @@ def test_only_complete_unchanged_proof_selects_preservation():
     assert run({'before': proof}, observed=proof) == {'eligible': True, 'proof': proof}
 
 
+def test_complete_proof_survives_actual_json_roundtrip_of_native_stat_tuples():
+    native = {'trust': {'/synthetic/certs': {'identity': (1, 2, 3)}}}
+    wire = json.loads(json.dumps(native))
+    assert run({'before': wire}, observed=native) == {'eligible': True, 'proof': wire}
+
+
 def test_kernel_change_time_rejects_stale_cached_runner_settings(tmp_path):
     settings = tmp_path / '.runner'
     settings.write_text('{"agentName":"current"}')
@@ -93,6 +100,242 @@ def test_original_systemd_start_time_must_be_explicit_and_utc():
     assert adoption.service_started({'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00 UTC'}) == 1794646800
     with pytest.raises(ValueError):
         adoption.service_started({'ExecMainStartTimestamp': ''})
+
+
+def test_openssl_explicit_store_selection_and_default_dotnet_fallback():
+    defaults = SimpleNamespace(openssl_cafile_env='SSL_CERT_FILE', openssl_cafile='/default/bundle.pem',
+                               openssl_capath_env='SSL_CERT_DIR', openssl_capath='/default/certs')
+    assert adoption.trust_locations({}, defaults) == ['/default/bundle.pem', '/default/certs', '/etc/ssl/certs']
+    assert adoption.trust_locations({'SSL_CERT_FILE': '/custom/root.pem',
+                                     'SSL_CERT_DIR': '/custom/one:/custom/two'}, defaults) == [
+                                         '/custom/root.pem', '/custom/one', '/custom/two']
+    with pytest.raises(ValueError):
+        adoption.trust_locations({'SSL_CERT_FILE': 'relative.pem'}, defaults)
+
+
+def trust_epoch(path):
+    return max(item.lstat().st_ctime for item in [path, *path.parents, *path.rglob('*')]) + 5
+
+
+@pytest.mark.parametrize('change', ['add', 'remove', 'content', 'link', 'directory'])
+def test_trust_store_detects_roots_and_topology_changes_since_loaded_start(tmp_path, change):
+    store = tmp_path / 'certs'; store.mkdir()
+    first = store / 'root.pem'; first.write_bytes(b'synthetic-root-one')
+    second = store / 'other.pem'; second.write_bytes(b'synthetic-root-two')
+    alias = store / 'hash.0'; alias.symlink_to('root.pem')
+    earliest = trust_epoch(tmp_path)
+    before = adoption.trust_store(store, earliest, os.getuid(), boundary=tmp_path)
+    if change == 'add':
+        (store / 'new.pem').write_bytes(b'new-root')
+    elif change == 'remove':
+        first.unlink(); alias.unlink()
+    elif change == 'content':
+        first.write_bytes(b'changed-root')
+    elif change == 'link':
+        alias.unlink(); alias.symlink_to('other.pem')
+    else:
+        store.chmod(0o700)
+    assert adoption.trust_store(store, trust_epoch(tmp_path), os.getuid(), boundary=tmp_path) != before
+    # Real retained processes predate the mutation. Even reverted bytes cannot
+    # prove that the loaded runtime has adopted a changed system trust store.
+    changed_epoch = max(item.lstat().st_ctime for item in [store, *store.rglob('*')])
+    with pytest.raises(ValueError):
+        adoption.trust_store(store, changed_epoch + 1, os.getuid(), boundary=tmp_path)
+
+
+@pytest.mark.parametrize('kind', ['missing', 'writable', 'dangling', 'cycle'])
+def test_unknown_or_unsafe_trust_store_refuses_fast_path(tmp_path, kind):
+    store = tmp_path / 'certs'; store.mkdir()
+    root = store / 'root.pem'; root.write_bytes(b'synthetic-root')
+    if kind == 'missing':
+        root.unlink(); store.rmdir()
+    elif kind == 'writable':
+        root.chmod(0o666)
+    elif kind == 'dangling':
+        (store / 'hash.0').symlink_to('absent.pem')
+    else:
+        (store / 'hash.0').symlink_to('hash.0')
+    with pytest.raises((OSError, ValueError, RuntimeError)):
+        adoption.trust_store(store, trust_epoch(tmp_path), os.getuid(), boundary=tmp_path)
+
+
+def test_absent_user_x509_store_requires_unchanged_nearest_parent(tmp_path):
+    before = adoption.trust_store_parent(tmp_path, trust_epoch(tmp_path), os.getuid(), boundary=tmp_path)
+    (tmp_path / '.dotnet').mkdir()
+    assert adoption.trust_store_parent(tmp_path, trust_epoch(tmp_path), os.getuid(), boundary=tmp_path) != before
+    with pytest.raises(ValueError):
+        adoption.trust_store_parent(tmp_path, tmp_path.stat().st_ctime + 1, os.getuid(), boundary=tmp_path)
+
+
+def test_unrelated_outer_directory_entries_are_not_loaded_ca_inputs(tmp_path):
+    if os.getuid() != 0:
+        pytest.skip('root-owned outer traversal fixture required')
+    store = tmp_path / 'certs'; store.mkdir()
+    (store / 'root.pem').write_bytes(b'synthetic-root')
+    before = adoption.trust_store(store, trust_epoch(tmp_path), boundary=tmp_path)
+    (tmp_path / 'unrelated-operation-record').write_bytes(b'not-a-CA-input')
+    assert adoption.trust_store(store, trust_epoch(tmp_path), boundary=tmp_path) == before
+
+def test_sqlite_data_mapping_changes_do_not_become_startup_dependency_drift(tmp_path):
+    data = tmp_path / 'reviewer.sqlite3-shm'; data.write_bytes(b'first-live-state'); data.chmod(0o600)
+    meta = data.stat()
+    device = format(os.major(meta.st_dev), 'x') + ':' + format(os.minor(meta.st_dev), 'x')
+    adoption.mutable_sqlite_mapping(data, 'rw-s', device, str(meta.st_ino), os.getuid())
+    data.write_bytes(b'changed-live-state')
+    adoption.mutable_sqlite_mapping(data, 'rw-s', device, str(meta.st_ino), os.getuid())
+    for permissions, inode, uid in [('r-xs', str(meta.st_ino), os.getuid()),
+                                    ('rw-s', str(meta.st_ino + 1), os.getuid()),
+                                    ('rw-s', str(meta.st_ino), os.getuid() + 1)]:
+        with pytest.raises(ValueError):
+            adoption.mutable_sqlite_mapping(data, permissions, device, inode, uid)
+    alias = tmp_path / 'aliased.sqlite3-shm'; alias.symlink_to(data)
+    with pytest.raises(OSError):
+        adoption.mutable_sqlite_mapping(alias, 'rw-s', device, str(meta.st_ino), os.getuid())
+
+
+def test_actual_managed_dropin_is_proved_instead_of_blanket_rejected(tmp_path):
+    if os.getuid() != 0:
+        pytest.skip('root-owned systemd configuration fixture required')
+    unit = tmp_path / 'runner.service'; unit.write_text('[Service]\nExecStart=/synthetic/runner\n')
+    directory = tmp_path / 'runner.service.d'; directory.mkdir()
+    dropin = directory / 'production-local-apply.conf'; dropin.write_text('[Service]\nReadWritePaths=/synthetic\n')
+    state = {'FragmentPath': str(unit), 'DropInPaths': str(dropin)}
+    # Bound only the root filesystem traversal for this isolated fixture.
+    native = adoption.trust_store
+    with patch.object(adoption, 'trust_store', side_effect=lambda path, earliest: native(path, earliest, boundary=tmp_path)):
+        before = adoption.service_configuration(state, trust_epoch(tmp_path))
+        assert str(dropin) in before['files']
+        dropin.write_text('[Service]\nReadWritePaths=/changed\n')
+        with pytest.raises(ValueError):
+            adoption.service_configuration(state, dropin.stat().st_ctime + 1)
+
+
+def test_runner_environment_file_selection_uses_loaded_component_configuration():
+    state = {'EnvironmentFiles': '/etc/synthetic/relay.env (ignore_errors=yes)'}
+    assert adoption.service_environment_files(state) == ['/etc/synthetic/relay.env']
+    assert '/etc/synthetic/reviewer-credentials/github-app.env' not in adoption.service_environment_files(state)
+    assert adoption.service_environment_files({'EnvironmentFiles': ''}) == []
+    with pytest.raises(ValueError):
+        adoption.service_environment_files({'EnvironmentFiles': '/etc/synthetic/../foreign.env (ignore_errors=no)'})
+
+
+def test_generated_helper_consumer_bound_keeps_original_and_current_clock_guards():
+    state = {'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00.123456 UTC',
+             'ExecMainStartTimestampMonotonic': '5000000'}
+    base = 1794646800000000000
+    hz = os.sysconf('SC_CLK_TCK')
+    with patch.object(adoption.time, 'time_ns', return_value=base + 100000000000), \
+            patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
+        assert adoption.consumer_start_lower_bound(state, str(6 * hz)) == base + 1123456000
+    with patch.object(adoption.time, 'time_ns', return_value=base - 100000000000), \
+            patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
+        assert adoption.consumer_start_lower_bound(state, str(6 * hz)) == base - 104000000000
+    with pytest.raises(ValueError):
+        adoption.consumer_start_lower_bound({**state, 'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00 UTC'}, str(6 * hz))
+
+
+@pytest.mark.parametrize('change', [None, 'bytes', 'consumer-time', 'template', 'generator', 'no-consumer'])
+def test_generated_runner_helper_requires_template_generator_and_consuming_time(tmp_path, change):
+    generator = tmp_path / 'run.sh'
+    generator.write_bytes(b'cp -f "$DIR"/run-helper.sh.template "$DIR"/run-helper.sh\n')
+    template = tmp_path / 'run-helper.sh.template'; template.write_bytes(b'#!/bin/bash\n/synthetic/Runner.Listener run\n')
+    helper = tmp_path / 'run-helper.sh'; helper.write_bytes(template.read_bytes())
+    state = {'MainPID': 'wrapper'}
+    processes = {'wrapper': {'executable': 'bash'}, 'consumer': {'executable': 'bash', 'start': '600'}}
+    arguments = {'wrapper': ['bash', str(generator)], 'consumer': ['bash', str(helper)]}
+    epoch = trust_epoch(tmp_path)
+    lower = helper.stat().st_ctime_ns + 1000000000
+    if change == 'bytes':
+        helper.write_bytes(b'changed executable script')
+    elif change == 'consumer-time':
+        lower = helper.stat().st_ctime_ns
+    elif change == 'template':
+        template.write_bytes(b'changed template')
+    elif change == 'generator':
+        generator.write_bytes(b'unqualified copy recipe')
+    elif change == 'no-consumer':
+        arguments['consumer'] = ['bash', '/unrelated/script']
+    with patch.object(adoption, 'runner_arguments', side_effect=lambda pid, _proof: arguments[pid]), \
+            patch.object(adoption, 'consumer_start_lower_bound', return_value=lower):
+        if change is None:
+            result = adoption.generated_runner_helper(tmp_path, state, processes, epoch, os.getuid())
+            assert result['sha256'] == adoption.digest(template.read_bytes()) and result['consumer'] == 'consumer'
+        else:
+            with pytest.raises(ValueError):
+                adoption.generated_runner_helper(tmp_path, state, processes, epoch, os.getuid())
+
+
+@pytest.mark.parametrize('target_spelling', ['relative', 'absolute'])
+def test_native_npm_leaf_alias_proves_only_unchanged_same_distribution_target(tmp_path, target_spelling):
+    distribution = tmp_path / 'externals'
+    cli = distribution / 'node/bin/npm'; cli.parent.mkdir(parents=True)
+    target = distribution / 'node/lib/npm-cli.js'; target.parent.mkdir()
+    target.write_bytes(b'public-native-npm-entrypoint')
+    cli.symlink_to('../lib/npm-cli.js' if target_spelling == 'relative' else str(target))
+    result = adoption.distribution_alias(cli, [distribution], trust_epoch(tmp_path), os.getuid())
+    assert result['sha256'] == adoption.digest(target.read_bytes())
+    assert result['target'] == str(target) and str(cli) in result['links']
+
+
+@pytest.mark.parametrize('change', ['escape', 'credentials', 'hardlink', 'directory-link', 'writable', 'new-link', 'new-target', 'cycle'])
+def test_distribution_alias_never_weakens_fixed_input_or_immutable_target_proof(tmp_path, change):
+    distribution = tmp_path / 'externals'; distribution.mkdir()
+    target = distribution / 'npm-cli.js'; target.write_bytes(b'public-script')
+    link = distribution / 'npm'; link.symlink_to('npm-cli.js')
+    if change == 'escape':
+        link.unlink(); link.symlink_to('../../foreign-input')
+    elif change == 'credentials':
+        credentials = tmp_path / '.credentials'; credentials.write_bytes(b'synthetic-private-input')
+        link.unlink(); link.symlink_to('../.credentials')
+    elif change == 'hardlink':
+        os.link(target, distribution / 'hardlink')
+    elif change == 'directory-link':
+        directory = distribution / 'alias'; directory.symlink_to('.', target_is_directory=True)
+        link.unlink(); link.symlink_to('alias/npm-cli.js')
+    elif change == 'writable':
+        target.chmod(0o666)
+    elif change == 'cycle':
+        link.unlink(); link.symlink_to('npm')
+    epoch = trust_epoch(tmp_path)
+    if change == 'new-link':
+        epoch = link.lstat().st_ctime + 1
+    elif change == 'new-target':
+        epoch = target.stat().st_ctime + 1
+    with pytest.raises((ValueError, OSError)):
+        adoption.distribution_alias(link, [distribution], epoch, os.getuid())
+
+
+def test_runner_trust_uses_actual_crypto_child_environment_not_service_wrapper():
+    import ssl
+    paths = {row.split(None, 5)[5] for row in Path('/proc/self/maps').read_text().splitlines()
+             if len(row.split(None, 5)) == 6 and '/libcrypto.so' in row.split(None, 5)[5]}
+    assert len(paths) == 1
+    crypto = next(iter(paths))
+    child = {'HOME': '/synthetic/listener-home', 'SSL_CERT_FILE': '/synthetic/listener-roots.pem'}
+    processes = {'wrapper': {'maps': {}}, 'listener': {'maps': {crypto: adoption.digest(Path(crypto).read_bytes())}}}
+    with patch.object(adoption, 'environment', return_value=child) as environment, \
+            patch.object(adoption, 'process_trust', return_value={'verified': True}) as trust:
+        assert adoption.runner_trust(processes, 100, 1000) == {'listener': {'verified': True}}
+        environment.assert_called_once_with('listener')
+        assert trust.call_args.args[0] == child
+
+
+def test_real_sqlite_wal_mapping_is_mutable_state_not_an_executable_dependency(tmp_path):
+    import sqlite3
+    database = tmp_path / 'reviewer.sqlite3'
+    with sqlite3.connect(database) as connection:
+        assert connection.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
+        connection.execute('CREATE TABLE evidence (value TEXT)')
+        connection.commit()
+        maps = Path('/proc/self/maps').read_text()
+        assert str(database) + '-shm' in maps
+        proof = adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database))
+        assert not any(path.startswith(str(database)) for path in proof['maps'])
+        with pytest.raises(ValueError):
+            adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database) + '-other')
+        connection.execute('INSERT INTO evidence VALUES (?)', ('new-live-state',))
+        connection.commit()
+        assert adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database)) == proof
 
 
 def test_lost_operation_or_drain_rejects_reuse():

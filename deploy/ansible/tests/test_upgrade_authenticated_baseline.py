@@ -12,6 +12,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'deploy'))
+from config import derive_managed_pool_slots
 ANSIBLE = ROOT / 'deploy/ansible'
 OP = '12345678-1234-1234-1234-123456789abc'
 PREVIOUS, TARGET = 'a' * 40, 'b' * 40
@@ -28,6 +30,7 @@ class UpgradeAuthenticatedBaselineTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.config = json.loads((ROOT / 'deploy/example.json').read_bytes())
+        derive_managed_pool_slots(self.config)
         self.install, self.config_root = self.root / 'opt/codex-relay', self.root / 'etc/codex-relay'
         self.release = self.install / 'releases' / PREVIOUS
         (self.release / 'reviewed-source').mkdir(parents=True)

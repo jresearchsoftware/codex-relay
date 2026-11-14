@@ -157,7 +157,10 @@ class CertificateHostnameExecutionTests(unittest.TestCase):
         parent.symlink_to(cert.parent, target_is_directory=True)
         with self.assertRaisesRegex(validator.ValidationError, 'PARENT_UNSAFE'):
             validator.validate_sources(parent / cert.name, key, HOST, trust_store=self.ca)
-        with tempfile.TemporaryDirectory() as unsafe:
+        # TMPDIR may itself be a protected task-private directory. Create the
+        # unsafe metadata explicitly instead of assuming a world-writable /tmp.
+        with tempfile.TemporaryDirectory(dir=self.fixture) as unsafe:
+            Path(unsafe).chmod(0o770)
             outside = Path(unsafe) / 'cert.pem'
             shutil.copyfile(cert, outside)
             with self.assertRaisesRegex(validator.ValidationError, 'PARENT_UNSAFE'):

@@ -229,7 +229,11 @@ class PublishConsumerTests(unittest.TestCase):
             config.chmod(0o755)
             claims.mkdir(mode=0o700)
             consumer = config / 'consumer.json'
-            old = json.loads((ROOT / 'deploy/example.json').read_text())['consumer']
+            sys.path.insert(0, str(ROOT / 'deploy'))
+            from config import derive_managed_pool_slots
+            deployment = json.loads((ROOT / 'deploy/example.json').read_text())
+            derive_managed_pool_slots(deployment)
+            old = deployment['consumer']
             old['paths']['claimRoot'] = str(claims)
             old['defaultProfile']['effort'] = 'xhigh'
             consumer.write_text(json.dumps(old))

@@ -153,6 +153,38 @@ def test_code_only_new_product_revision_still_selects_upgrade(invocation):
     assert result['strategy'] == 'upgrade' and result['phase'] == 'upgrade'
 
 
+@pytest.mark.parametrize('bounded', [True, False])
+def test_provenance_nomination_cannot_leak_old_receipt_or_ready_marker_into_recovery(invocation, monkeypatch, bounded):
+    import bounded_recovery
+    import install_recovery
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    assert install.provenance_equivalent(report, desired)
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    operation = '12345678-1234-4234-8234-123456789abc'
+    proof = {'operationId': operation, 'target': TARGET, 'installedRevision': TARGET}
+    if bounded:
+        args.authorize_install_recovery = True
+        args.install_recovery_operation, args.install_recovery_target = operation, TARGET
+        monkeypatch.setattr(bounded_recovery, 'remote_probe', lambda *_a, **_kw: proof)
+    else:
+        monkeypatch.setattr(install_recovery, 'remote_probe', lambda *_a, **_kw: proof)
+    calls = []
+    def primitive(inner):
+        assert inner.phase == 'upgrade' and inner.git_intent == desired
+        assert inner._intent_installation_state == {}
+        assert inner.lifecycle_recovery_operation == operation
+        calls.append(inner)
+        report['installed']['gitConfigReceipt'] = desired
+        del report['installed']['installationState']
+    install.run(args, primitive, ROOT, {'revision': TARGET})
+    assert len(calls) == 1
+
+
 def test_epoch_metadata_selects_upgrade_without_per_commit_entries():
     assert planned(observed(metadata=CONTRACT))['strategy'] == 'upgrade'
     older = copy.deepcopy(CONTRACT)

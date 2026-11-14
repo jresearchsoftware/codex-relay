@@ -127,8 +127,7 @@ class GitHub:
             None, ['/usr/bin/python3', '-I', '-c', managed_pool_transport.OWNER_POOL_SCRIPT],
             input=payload, timeout=45)
         assert result.returncode == 0, result.stderr
-        assert result.stdout == ('MANAGED_POOL_PREFLIGHT=PASS\nMANAGED_POOL_SERIAL_TRANSITION=none\n'
-                                 'MANAGED_POOL_SERIAL_OPERATION=none\n')
+        assert result.stdout == 'MANAGED_POOL_PREFLIGHT=PASS\n'
         assert result.stderr == ''
         assert 'synthetic-target-only-token' not in result.stdout
         assert key.exists() and key.stat().st_mode & 0o777 == 0o600

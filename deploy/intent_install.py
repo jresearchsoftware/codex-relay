@@ -677,6 +677,11 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 selected = {**selected, 'strategy': 'recovery', 'phase': 'upgrade'}
                 attested_receipt = receipt
                 print('RELAY_INSTALL_RECOVERY=' + json.dumps(recovery, sort_keys=True), flush=True)
+            # A read-only nomination may have retained the previous pair's ready
+            # marker before protected recovery selected mutable desired inputs.
+            # Never publish that marker against a different recovery receipt.
+            if retained_state.get('pairSha256') != pair_digest(attested_receipt):
+                retained_state = {}
             receipt_applied = selected['strategy'] != 'fresh-continuation'
             schedule = [(selected['phase'], 'primary')]
             if completion:

@@ -216,6 +216,10 @@ def test_outer_install_allows_authenticated_open_gate_profile_drift_repair(invoc
         (paths['install'] / 'current').symlink_to('releases/' + OLD)
         for key, value in config['consumer']['paths'].items():
             config['consumer']['paths'][key] = str(root / value.lstrip('/'))
+        # The real current Node consumer requires the current pool's complete
+        # derived routes, with the primary paths bound to this private root.
+        from config import derive_managed_pool_slots
+        derive_managed_pool_slots(config)
         unit_root = root / 'etc/systemd/system'
         unit_root.mkdir(parents=True)
         names = recovery.retained.unit_names(config)
