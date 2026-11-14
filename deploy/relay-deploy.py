@@ -731,6 +731,8 @@ def run(args):
                 try:
                     lifecycle_operation = None
                     preparation = None
+                    fast_source = False
+                    source_proof = None
                     pool_preflight_proof = None
                     def clear_preparation_inventory():
                         for name in ['relay_intent_writer_lock_lease', 'relay_intent_admission_prefix',
@@ -842,35 +844,48 @@ def run(args):
                             require(gate['operationId'] == admission_operation_id and gate['target'] == revision
                                     and gate['phase'] == 'recovery-required', 'bounded-recovery-target-unproven')
                             preparation.release_writer()
-                        # The owning read-only checks and real staging run before
-                        # quiesce; a dry run cannot replace build/load proof.
-                        args._intent_failure_stage = 'preflight-host-policy'
-                        backend_expected = values['relay_intent_expected_installed_revision']
-                        values['relay_intent_expected_installed_revision'] = args.intent_expected_installed_revision
-                        if preparation.initial is not None and preparation.initial['consumerRestoreRequired']:
-                            values['relay_intent_preflight_consumer_path'] = preparation.initial['effectiveConsumerPath']
-                            values['relay_intent_preflight_baseline_digest'] = preparation.initial['baselineDigest']
-                            values['relay_intent_preflight_claim_root'] = preparation.initial['claimRoot']
-                        preflight_play('relay-intent-preflight.yml')
-                        for name in ['relay_intent_preflight_consumer_path', 'relay_intent_preflight_baseline_digest',
-                                     'relay_intent_preflight_claim_root']:
-                            values.pop(name, None)
-                            inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
-                        values['relay_intent_expected_installed_revision'] = backend_expected
-                        inventory['all']['children']['relay']['hosts'][target['host']]['relay_intent_expected_installed_revision'] = backend_expected
-                        preparation.host()
-                        # A transient signed-repository/hash failure must be
-                        # discovered while the known-good runtime and its gate
-                        # still retain their original state. No package installs
-                        # or live APT-list changes occur in this acquisition proof.
-                        args._intent_failure_stage = 'prerequisite-acquisition'
-                        preflight_play('relay-intent-apt-preflight.yml')
-                        if preparation.initial is not None and not args.authorize_lifecycle_recovery:
+                        source_reuse = False
+                        if (args.phase == 'upgrade' and not args.authorize_lifecycle_recovery
+                                and bounded_binding is None and preparation.initial is not None
+                                and not preparation.initial['consumerChange']
+                                and not preparation.initial['consumerRestoreRequired']
+                                and getattr(args, 'predispatch_recovery_request', None) is None):
+                            args._intent_failure_stage = 'source-reuse-preparation'
+                            source_reuse = preparation.prepare_source_reuse(config, guard, pool_guard)
+                        if source_reuse:
+                            # Retain the same original-operation rollback proof;
+                            # nomination and stage writes have not changed live state.
                             preparation.capture()
-                        values['relay_intent_stage_source_only'] = False
-                        args._intent_failure_stage = 'candidate-stage'
-                        preflight_play('relay-intent-stage.yml')
-                        preparation.verify_stage()
+                        else:
+                            # The owning read-only checks and real staging run before
+                            # quiesce; a dry run cannot replace build/load proof.
+                            args._intent_failure_stage = 'preflight-host-policy'
+                            backend_expected = values['relay_intent_expected_installed_revision']
+                            values['relay_intent_expected_installed_revision'] = args.intent_expected_installed_revision
+                            if preparation.initial is not None and preparation.initial['consumerRestoreRequired']:
+                                values['relay_intent_preflight_consumer_path'] = preparation.initial['effectiveConsumerPath']
+                                values['relay_intent_preflight_baseline_digest'] = preparation.initial['baselineDigest']
+                                values['relay_intent_preflight_claim_root'] = preparation.initial['claimRoot']
+                            preflight_play('relay-intent-preflight.yml')
+                            for name in ['relay_intent_preflight_consumer_path', 'relay_intent_preflight_baseline_digest',
+                                         'relay_intent_preflight_claim_root']:
+                                values.pop(name, None)
+                                inventory['all']['children']['relay']['hosts'][target['host']].pop(name, None)
+                            values['relay_intent_expected_installed_revision'] = backend_expected
+                            inventory['all']['children']['relay']['hosts'][target['host']]['relay_intent_expected_installed_revision'] = backend_expected
+                            preparation.host()
+                            # A transient signed-repository/hash failure must be
+                            # discovered while the known-good runtime and its gate
+                            # still retain their original state. No package installs
+                            # or live APT-list changes occur in this acquisition proof.
+                            args._intent_failure_stage = 'prerequisite-acquisition'
+                            preflight_play('relay-intent-apt-preflight.yml')
+                            if preparation.initial is not None and not args.authorize_lifecycle_recovery:
+                                preparation.capture()
+                            values['relay_intent_stage_source_only'] = False
+                            args._intent_failure_stage = 'candidate-stage'
+                            preflight_play('relay-intent-stage.yml')
+                            preparation.verify_stage()
                         values['relay_intent_staged_release'] = preparation.stage + '/release'
                         inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                         (work / 'inventory.json').write_text(json.dumps(inventory))
@@ -1057,7 +1072,8 @@ def run(args):
                         (work / 'inventory.json').write_text(json.dumps(inventory))
                         preparation.cutover_started = True
                         args._intent_failure_stage = 'controlled-cutover'
-                    if intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
+                    if (intent_install and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
+                            and not (preparation is not None and getattr(preparation, 'source_reuse', False))):
                         args._intent_mutation_started = True
                         from intent_install import prepare_target
                         if prepare_target(target, key, config, revision, guard):
@@ -1095,7 +1111,13 @@ def run(args):
                             if holder is not None and holder.poll() is not None:
                                 return holder.poll()
                         return None
-                    if preparation is not None and preparation.holder is not None:
+                    fast_source = preparation is not None and getattr(preparation, 'source_reuse', False)
+                    if fast_source:
+                        args._intent_mutation_started = True
+                        source_proof = preparation.promote_source_reuse(config, guard, pool_guard)
+                        returncode = 0
+                        print('RELAY_SOURCE_UPGRADE_VALIDATED=' + revision, flush=True)
+                    elif preparation is not None and preparation.holder is not None:
                         returncode = None if completed_pool_reinstall else run_backend(argv, BACKEND, env, log, guard,
                             SimpleNamespace(poll=cutover_poll))
                     else:
@@ -1112,7 +1134,8 @@ def run(args):
                     if (returncode == 0 and 'generalRunnerPool' in config['consumer']
                             and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']
                             and not (install_flow and not intent_install)
-                            and not completed_pool_reinstall and not getattr(args, '_intent_defer_pool_reconcile', False)):
+                            and not completed_pool_reinstall and not fast_source
+                            and not getattr(args, '_intent_defer_pool_reconcile', False)):
                         from managed_pool_transport import reconcile_pool
                         proof = reconcile_pool(target, key, config, revision, guard,
                                                local=args.local_reconcile or args.local_lifecycle,
@@ -1120,7 +1143,7 @@ def run(args):
                         log.write(proof + '\n')
                         log.flush()
                         print(proof, flush=True)
-                    if (lifecycle_required or install_flow) and not completed_pool_reinstall:
+                    if (lifecycle_required or install_flow) and not completed_pool_reinstall and not fast_source:
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
@@ -1155,7 +1178,7 @@ def run(args):
                                 args.phase + '-post-check-installed-identity-proof')
                         if args.phase == 'reinstall' and not pool_reinstall:
                             remote_action(target, key, config, revision, observed, action='complete', guard=guard)
-                    if args.local_lifecycle and args.phase in ['apply', 'upgrade']:
+                    if args.local_lifecycle and args.phase in ['apply', 'upgrade'] and not fast_source:
                         log.flush()
                         require(returncode == 0
                                 and f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in Path(log_name).read_text(),
@@ -1216,7 +1239,8 @@ def run(args):
             evidence = Path(log_name).read_text()
             if returncode:
                 raise RuntimeError(f'BACKEND_FAILED;phase={args.phase};log={log_name};next=diagnose-operation-before-retry')
-            require('failed=0' in evidence, 'backend-recap')
+            if not fast_source:
+                require('failed=0' in evidence, 'backend-recap')
             if args.phase == 'tls-check':
                 require(f'TLS_BOOTSTRAP_CHECK=PASS;head={revision}' in evidence, 'tls-check-proof')
             if args.phase in ['tls-prepare', 'tls-dry-run', 'tls-issue']:
@@ -1239,10 +1263,19 @@ def run(args):
             if args.phase == 'apply':
                 require(f'PRODUCTION_APPLY_VALIDATED={revision}' in evidence, 'final-runtime-proof')
             if args.phase in ['apply', 'upgrade', 'post-check', 'bootstrap', 'reinstall']:
-                require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in evidence, 'installed-identity-proof')
-                previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', evidence)
-                require(previous is not None, 'previous-revision-proof')
-                print(f'installed_revision={revision}\nprevious_revision={previous[1]}\nRELAY_INSTALL_RESULT=PASS')
+                if fast_source:
+                    require(source_proof['status'] == 'SOURCE_UPGRADE_READY'
+                            and source_proof['revision'] == revision
+                            and source_proof['consumerRevision'] == consumer_revision
+                            and source_proof['previousRevision'] == args.intent_expected_installed_revision,
+                            'source-upgrade-final-proof')
+                    previous_revision = source_proof['previousRevision']
+                else:
+                    require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in evidence, 'installed-identity-proof')
+                    previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', evidence)
+                    require(previous is not None, 'previous-revision-proof')
+                    previous_revision = previous[1]
+                print(f'installed_revision={revision}\nprevious_revision={previous_revision}\nRELAY_INSTALL_RESULT=PASS')
             if args.phase == 'upgrade':
                 print(f'RELAY_UPGRADE_RESULT=PASS;installed={revision};projection={revision};verification=same-operation')
             if args.local_lifecycle:

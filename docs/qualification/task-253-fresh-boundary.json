@@ -1,0 +1,58 @@
+{
+  "configurationHistory": {
+    "actualForeignConfigBytesChangedProved": false,
+    "completeForeignEntrySetWitnessPredatingWorkers": "not found in available accepted baseline/adapter evidence",
+    "postWorkerConfigurationFileLabels": [
+      "TEST_MANAGED_CONF"
+    ],
+    "remainingUncertainty": "Shared *.conf directory history cannot establish absence of a foreign added/removed route awaiting reload; current unchanged selected files do not prove the past complete entry set.",
+    "sharedConfGlobRootHistoryPredatesAcceptingWorkers": false
+  },
+  "execution": "run-43578199509",
+  "foreignInputsModified": false,
+  "freshResetExecuted": false,
+  "handoff": "Preserve usable TEST and claim; continue independent safe clean-Apply, provenance and original-UUID recovery cases. No new infrastructure, forced reload, foreign repair or permission request.",
+  "nginxVersion": "1.29.1",
+  "observedConfig": "685e0cfeb88dd5a255c65c09b3ea621e9543fd0d",
+  "observedProduct": "fa803e1d528c1473c04b87ef0ecdb265477dff55",
+  "qualifiedExistingAdapterIdentity": true,
+  "readOnlyInputCounts": {
+    "directoryTopologyObjects": 13,
+    "hostConfigurationFiles": 5,
+    "runtimeTLSOrAuthFiles": 11,
+    "staticImageFiles": 2
+  },
+  "result": "STOP_AFFECTED_FRESH_OPERATION_BEFORE_CLEANUP",
+  "retainedWorkerSetStable": true,
+  "scenario": "fresh shared-ingress qualification boundary",
+  "selectedForeignTLSLinks": {
+    "count": 4,
+    "linkHistoryPredatesWorkers": true,
+    "onlyPostWorkerAncestorClass": "MOUNT_ROOT",
+    "regularTargetProtectedAndHistoryPredatesWorkers": true,
+    "rootOwnedSingleLink": true,
+    "sameConfiguredMountContained": true,
+    "selectedParentChainProtectedAndHistoryPredatesWorkers": true,
+    "traversalOnlyMountRootSiblingHistoryUsedAsGate": false
+  },
+  "sharedReloadExecuted": false,
+  "sourceLimit": "Nginx 1.29.1 sets the graceful-shutdown process title before closing listeners; there were no draining workers, so no title-based threshold exclusion was used.",
+  "sourcePointers": [
+    "https://github.com/nginx/nginx/blob/release-1.29.1/src/os/unix/ngx_process_cycle.c#L676-L686",
+    "docs/audits/task-57-step-3.md",
+    "deploy/ansible/tools/tls-webroot-bootstrap.py"
+  ],
+  "task": "jresearchsoftware/codex-relay#253",
+  "warnings": {
+    "disposition": "Existing foreign nginx warnings retained as material inputs; no foreign configuration was changed to silence them.",
+    "foreignDeprecatedListen": 8,
+    "foreignOCSPStapling": 4,
+    "foreignProtocolOptions": 6,
+    "total": 18
+  },
+  "workerRoles": {
+    "exactAccepting": 8,
+    "exactShuttingDown": 0,
+    "otherChildren": 0
+  }
+}

@@ -102,6 +102,16 @@ def invocation(tmp_path, monkeypatch):
                 stage.mkdir(mode=0o700)
                 stage.chmod(0o700)
         def desired(self): injected('desired')
+        def prepare_source_reuse(self, *_args):
+            injected('source-reuse')
+            self.source_reuse = state.get('source_reuse', False)
+            return self.source_reuse
+        def promote_source_reuse(self, *_args):
+            injected('source-promote')
+            assert self.cutover_started and self.captured and self.holder is not None
+            state['installed'] = TARGET
+            return {'status': 'SOURCE_UPGRADE_READY', 'revision': TARGET,
+                    'consumerRevision': CONSUMER, 'previousRevision': OLD}
         def consumer(self, **_options):
             injected('history')
             self.initial = {'baselineDigest': '1' * 64, 'consumerChange': state['consumer_change'],
@@ -250,6 +260,39 @@ def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
     assert events.index('final') < events.index('prepare-target') < events.index('backend')
     assert events.index('backend') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
     assert 'abort' not in events
+
+
+def test_source_reuse_promotes_under_existing_lifecycle_without_install_traversal(invocation):
+    args, events, gate, state, records = invocation
+    state['source_reuse'] = True
+    backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert events.index('source-stage') < events.index('source-reuse') < events.index('capture') < events.index('quiesce')
+    assert events.index('drain-check') < events.index('final') < events.index('source-promote')
+    assert events.index('source-promote') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
+    assert not {'compatibility', 'apt-preflight', 'build-stage', 'backend', 'prepare-target', 'abort'}.intersection(events)
+    assert records == [{'runId': 7, 'terminal': True}]
+
+
+def test_source_promotion_failure_retains_original_uuid_and_does_not_reinstall(invocation):
+    args, events, gate, state, records = invocation
+    state.update(source_reuse=True, failure='source-promote')
+    with pytest.raises(RuntimeError, match='SOURCE_PROMOTE'):
+        backend.run(args)
+    assert gate['phase'] == 'recovery-required'
+    assert gate['operation'] == state['preparation'].operation
+    assert not {'backend', 'build-stage', 'abort', 'resume'}.intersection(events)
+    assert records == [{'runId': 7, 'terminal': True}]
+
+
+def test_source_reuse_final_failure_restores_old_gate_before_any_live_effect(invocation):
+    args, events, gate, state, _records = invocation
+    state.update(source_reuse=True, failure='final')
+    with pytest.raises(RuntimeError, match='FINAL'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert 'abort' in events
+    assert not {'source-promote', 'backend', 'phase:recovery-required'}.intersection(events)
 
 
 def test_fresh_bootstrap_allows_only_its_prepared_stage_until_cutover(invocation, monkeypatch, tmp_path):

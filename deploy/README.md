@@ -1336,6 +1336,34 @@ cannot launch Codex. Drain releases that lock between observations, waits up to
 30 minutes for valid work and rejects unknown execution or publication evidence.
 No service or runner is stopped to drain. Registered runners remain online.
 
+For a source-only upgrade with unchanged effective deployment inputs, ordinary
+`install` can select a bounded native promotion instead of the full Ansible
+traversal. This requires exact unchanged Reviewer source, complete build inputs
+and pinned build contract; the current binary must match the installed manifest.
+An operation-scoped catalogue renders canonical task-owned files, modes,
+identities and all 32 namespace probes. Native checks verify current host/App/TLS
+inputs, pool units/registrations/group eligibility, runtime imports and readiness,
+loaded processes, complete installed source and package payloads. Codex payload
+bytes are compared with a newly acquired official pinned reference inside that
+operation's private stage. Version strings and an old successful Apply are
+insufficient. This bounded path requires the live Codex payload to match the
+clean reference completely; installations retaining additional historical
+payloads conservatively use the full path without deleting them.
+Unsupported recipes/profiles, changed policy or drift select the
+full path before cutover; changing bindings or lost guards stop execution.
+
+The existing host/pool/Writer locks, drained gate, original activity snapshot,
+sealed stage and recovery record remain authoritative. Promotion changes only
+the new source release, `current`, canonical artifact metadata in the two JSON
+files, fixed release-pinned diagnostic wrappers and the stale-disposition
+helper's canonical target revision. It preserves packages,
+registrations, credentials, units and process identities. Independent current
+proof after promotion precedes clearing the original recovery record. A failure
+after cutover retains that record for the existing exact-operation recovery;
+it never falls through to a second unrelated Apply. Private proof and package
+reference are confined to the existing operation stage, with no cross-operation
+cache or additional operator command.
+
 Managed apply snapshots actual service activity and uses the existing supported
 upgrade backend. When the running Reviewer exposes the installed private
 loaded-input proof, Apply may preserve its process and the dependent Production

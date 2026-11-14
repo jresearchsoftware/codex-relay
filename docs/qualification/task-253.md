@@ -6,6 +6,14 @@ This records evidence for admitted manual Step 2, `run-43578199509`, under
 starting source is `feefb6cf13daaf1c027e24d0a51fe834d68d26ba`. Source acceptance,
 installation and Task closure remain separate. No PROD Apply is authorized.
 
+The owner's later trusted [purpose Decision](https://github.com/jresearchsoftware/codex-relay/issues/253#issuecomment-6877201325)
+requires eligible small code-only changes to complete in **tens of seconds
+end-to-end**, including preparation and necessary checks. A roughly 10–12%
+reduction from 643 seconds does not meet that goal. Upgrade correctness and
+security remain mandatory; equivalent current-input/drift proof can replace a
+full Ansible traversal. This purpose amendment changes neither the original
+Step/admission binding nor protected operational boundaries.
+
 ## Implemented behavior and retained limits
 
 - First-install credential and CA preparation precede ACME dry-run/issuance;
@@ -14,10 +22,12 @@ installation and Task closure remain separate. No PROD Apply is authorized.
 - The site prepares Bubblewrap and shared slot prerequisites once while retaining
   all 32 fixed routes, private destinations and namespace probes. Repository
   ancestors are deduplicated within a slot without traversing retained descendants.
-- A configuration Git commit with identical validated input bytes can use the
-  complete locked read-only post-check before atomically promoting its existing
-  installed receipt. A fresh ready marker is preserved when present; completed
-  historical upgrades without that marker rely on the same full readiness proof.
+- A configuration Git commit with identical validated input bytes can use
+  sufficient locked current native proof before atomically promoting its existing
+  installed receipt; older/unsupported capability retains the complete ordinary
+  post-check. The identical-pair no-op shares this verifier. A fresh ready marker
+  is preserved when present; completed historical upgrades without that marker
+  rely on the same sufficient readiness proof.
   Corrupt/pending state refuses. Recovery cannot carry an old ready marker into
   a different desired pair.
 - Reviewer provides frozen loaded-input evidence over a private Unix socket in
@@ -31,9 +41,21 @@ installation and Task closure remain separate. No PROD Apply is authorized.
   call and avoids identical file/link writes after actual current verification.
   Acquisition/resealing across operations remains unchanged: version equality
   alone cannot prove native-updated Runner bytes or a previous operation's stage.
+- Eligible source-only upgrades can replace the full site traversal with
+  canonical desired file/identity/namespace checks and current native
+  host/App/TLS/package/pool/loaded-process proof. An independent official pinned
+  Codex reference lives only in the operation's private stage. Full Reviewer
+  source/build/toolchain invalidation stays exact. The existing sealed release,
+  locks, gate, original activity snapshot and recovery record protect promotion;
+  complete current proof immediately precedes mutation and follows it before
+  record clearance. Static stage checks do not repeat full external host checks.
+  Installed Python caches are accepted only as exact current-interpreter
+  compilations of canonical tracked source, including nested code metadata;
+  their hashes/stat identities are separate from reconstructed Git identity.
 - The intermediate inactive-bootstrap full check remains. Existing negative
   tests use it to detect post-materialization drift; equivalent shorter proof
-  was not established. Ordinary upgrade already has one full traversal.
+  was not established. This retained fresh-install pass does not impose a full
+  traversal on eligible source-only upgrades.
 
 The owning [deployment contract](../../deploy/README.md),
 [Git installation contract](../git-managed-installation.md) and
@@ -96,6 +118,14 @@ assumption. Corrections preserve the negative and real transition assertions;
 the corrected complete root rerun on `78796955c0350bbdc5b0f8ac9487064cbd1e0002`
 passed 2923 tests, with 13 skipped and one existing passlib/crypt deprecation
 warning. A later full candidate run still must cover subsequent source changes.
+
+Two `test_partial_install_recovery.py` orchestration cases explicitly substitute
+the loader for their unchanged historical SERIAL fixture, alongside the existing
+compiler/backend transport substitutes. They verify ordering, original receipt
+and incident-history preservation after that boundary; they do not establish
+that today's public loader admits fresh SERIAL. Separate loader/native gate
+tests remain applicable. Installed qualification in this Task concerns its
+current exact pair, not acceptance of that historical incident.
 
 Native Linux validation has passed Node (1169 passed, seven skipped), Rust
 (163 passed), the three-consumer production-binary qualifier, candidate scanning,
@@ -182,6 +212,16 @@ See [policy-change evidence](task-253-policy.json) and
 
 ## Remaining installed evidence at this snapshot
 
+The new native source/provenance verifier's combined targeted Linux root suites
+passed **293 tests, one skip** in 24.87 s before final candidate qualification.
+This includes canonical Ansible template rendering, real Git archive/object-tree
+reconstruction, exact derived Python cache checks, native sealed-stage
+promotion/failure boundaries, distinct installed-reuse receipts, independent
+Codex reference negative cases and scheduler selection/fallback/binding checks.
+The existing Python `crypt`/passlib deprecation warning remains visible.
+These focused checks do not substitute for the final full candidate set or
+the still-pending measured public installer invocation.
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The
@@ -206,8 +246,26 @@ order. Runtime identity remains independently checked. No process proof was
 weakened in response to the unlocalized class. See
 [second intermediate evidence](task-253-codeonly-fa8.json).
 
-Corrected-source process preservation, changed-policy and original-operation
-recovery cases, corrected provenance, and unassisted fresh ACME qualification
+The `6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc` installation subsequently
+qualified the corrected loaded-process proof: all three captures and the final
+complete proof assertion passed, restart was skipped, and all six observed
+TEST/pool/PROD PID/start identities were preserved. All 32 real namespace probes
+executed. The complete public install took **584.591986 s**, including the
+375.571824 s site backend; this proves process preservation and **does not meet
+the tens-of-seconds goal**. See [corrected process evidence](task-253-codeonly-6b80.json).
+Further field diagnosis uses bounded targeted reads before one confirming
+end-to-end fast-path Apply, rather than repeated full Applies.
+
+Unassisted fresh ACME qualification stopped before cleanup at a concrete shared
+nginx boundary. The configuration glob changed after the eight current accepting
+workers started, and no complete pre-worker set witness establishes which
+foreign additions/removals a reload would activate. The evidence does not assert
+that foreign bytes changed. No reload, fresh reset or cleanup was performed.
+See [bounded shared-host evidence](task-253-fresh-boundary.json). Existing TEST
+credential sources and registrations remain in place.
+
+The native fast source-promotion implementation and its targeted host proof,
+final policy/fault/original-operation recovery and corrected provenance cases
 remain in progress. This snapshot asserts no final installed qualification,
 independent acceptance or PROD improvement. Requested profile is Sol/xhigh with Subagents On;
 implementation helpers were used. Actual runtime model/effort telemetry is

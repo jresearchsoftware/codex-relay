@@ -703,6 +703,12 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 if automatic_requested(config) and 'generalRunnerPool' in config['consumer']:
                     schedule.append(('managed-pool', 'primary'))
                 schedule.append(('post-check', 'primary'))
+            native_readonly = None
+            if (selected['strategy'] in ['provenance', 'verify'] and not completion
+                    and recovery is None and bounded_proof is None):
+                from provenance import native_ready
+                stage = 'native-readonly-proof'
+                native_readonly = native_ready(target, key, config, identity['revision'], guard, pool_guard)
             for phase, slot in schedule:
                 stage = ('fresh-' if completion else '') + phase
                 require(guard.poll() is None and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
@@ -728,6 +734,8 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                         proof = reconcile_pool(target, key, config, identity['revision'], guard,
                             local=target.get('connection') == 'local', extra_guard=pool_guard)
                         print(proof, flush=True)
+                    elif phase == 'post-check' and native_readonly is not None:
+                        print('RELAY_NATIVE_READONLY_VALIDATED=' + identity['revision'], flush=True)
                     else:
                         primitive(inner)
                 finally:
@@ -743,7 +751,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     require(observed['installed'].get('installationState') == pending,
                             'FRESH_PENDING_MARKER_UNPROVEN')
                 expected = identity['revision']
-                if selected['strategy'] == 'provenance' and phase == 'post-check':
+                if selected['strategy'] == 'provenance' and phase == 'post-check' and native_readonly is None:
                     # Disk/readiness checks cannot establish the policy and CA
                     # already consumed by a long-lived Reviewer process.
                     from provenance import loaded_ready
@@ -763,7 +771,8 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 stage = 'provenance-persistence'
                 mutation = True
                 promote_remote(target, key, config, identity['revision'], attested_receipt,
-                               receipt, guard, pool_guard)
+                               receipt, guard, pool_guard,
+                               **({'current_binding': native_readonly['binding']} if native_readonly is not None else {}))
                 attested_receipt = receipt
                 observed = remote_inventory(target, key, config, git_desired=True)
                 readback(observed, identity['revision'], receipt)

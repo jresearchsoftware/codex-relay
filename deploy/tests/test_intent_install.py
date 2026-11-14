@@ -145,6 +145,47 @@ def test_provenance_runs_full_readonly_proof_before_atomic_promotion(invocation,
         assert calls == ['check', 'promote']
 
 
+@pytest.mark.parametrize('strategy', ['provenance', 'verify'])
+def test_native_readonly_proof_skips_full_site_and_binds_provenance(invocation, monkeypatch, strategy):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40} if strategy == 'provenance' else desired
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = old
+    report['installed'].pop('installationState', None)
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    binding = {'manifestSha256': 'a' * 64}
+    def ready(*arguments):
+        assert arguments[-2].poll() is None
+        calls.append('native')
+        return {'binding': binding, 'liveProofSha256': 'b' * 64}
+    def promote(*arguments, **kwargs):
+        assert calls == ['native'] and kwargs == {'current_binding': binding}
+        calls.append('promote')
+        report['installed']['gitConfigReceipt'] = desired
+    monkeypatch.setattr(provenance, 'native_ready', ready)
+    monkeypatch.setattr(provenance, 'promote_remote', promote)
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a: pytest.fail('redundant loaded proof'))
+    install.run(args, lambda *_a: pytest.fail('unexpected full site traversal'), ROOT, {'revision': TARGET})
+    assert calls == (['native', 'promote'] if strategy == 'provenance' else ['native'])
+
+
+def test_native_readonly_binding_failure_never_falls_through_to_site(invocation, monkeypatch):
+    import provenance
+    args, _, desired, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = desired
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    def changed(*_a):
+        raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
+    monkeypatch.setattr(provenance, 'native_ready', changed)
+    with pytest.raises(RuntimeError, match='PROVENANCE_TARGET_BINDING_CHANGED'):
+        install.run(args, lambda *_a: pytest.fail('unexpected fallback after boundary'), ROOT, {'revision': TARGET})
+
+
 @pytest.mark.parametrize('missing', ['missing-capability', 'stale-policy', 'stale-ca',
                                      'HOST_LOCK_LOST', 'PROVENANCE_TARGET_BINDING_CHANGED'])
 def test_provenance_missing_loaded_proof_runs_one_normal_apply(invocation, monkeypatch, missing):
@@ -353,6 +394,10 @@ def invocation(tmp_path, monkeypatch):
     monkeypatch.setattr(install, 'loads', lambda text, _: json.loads(text))
     import install_recovery
     monkeypatch.setattr(install_recovery, 'remote_probe', lambda *_args: None)
+    import provenance
+    # Native proof has its own real target/transport tests; ordinary scheduler
+    # fixtures retain the older-capability full-path branch unless overridden.
+    monkeypatch.setattr(provenance, 'native_ready', lambda *_args: None)
     artifact = {'directory': str(tmp_path / 'integration'), 'files': ['.github/workflows/route.yml'],
                 'compatibility': 'missing'}
     monkeypatch.setattr(workflow_projection, 'integration', lambda *_: artifact, raising=False)
