@@ -172,6 +172,7 @@ def test_prerequisite_proof_does_not_promote_missing_git_or_bubblewrap():
         proof.prerequisite_proof(values, execute=execute)
 
 
+@pytest.mark.skipif(os.getuid() != 0, reason='installed bytecode evidence requires root-owned Linux fixture')
 def test_derived_bytecode_must_be_exact_canonical_source_compilation(tmp_path, monkeypatch):
     source = tmp_path / 'source'
     source.mkdir(mode=0o755)
