@@ -1383,6 +1383,12 @@ Native distribution leaf aliases such as `npm` are bounded to the proved
 regular single-link target must remain unchanged since retained startup;
 escaping, writable, redirected-directory and corrupt aliases retain restart.
 Fixed registration, credential and environment paths keep no-follow checks.
+Optional cached settings count as absent only with unchanged pre-start Runner
+root directory history. The `bin`/`externals` directory trees retain the same
+deletion-aware history, so an already removed interpreted file cannot disappear
+from the first capture's proof. After all scans, the complete Runner cgroup and
+each PID/start/UID/executable/command/environment/mapping identity are revalidated;
+an unchanged systemd MainPID alone cannot conceal a replaced Listener child.
 
 Older or missing proof, changed inputs, stopped/unexpected processes, drift,
 interrupted recovery and any uncertain identity retain the consolidated

@@ -1,11 +1,13 @@
 """Loaded proof is transient and absence/uncertainty never suppresses restart."""
 import importlib.util
+import copy
 import io
 import json
 import os
 from types import SimpleNamespace
 from pathlib import Path
 import sys
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -305,6 +307,64 @@ def test_distribution_alias_never_weakens_fixed_input_or_immutable_target_proof(
         adoption.distribution_alias(link, [distribution], epoch, os.getuid())
 
 
+@pytest.mark.parametrize('name', ['.env', '.path', '.runner_migrated', '.credentials_rsaparams',
+                                  'bin/removed.dll', 'externals/node/lib/removed.js'])
+def test_deletion_before_first_capture_cannot_hide_loaded_optional_or_interpreted_input(tmp_path, name):
+    root = tmp_path / 'runner'; root.mkdir()
+    value = root / name; value.parent.mkdir(parents=True, exist_ok=True)
+    value.write_bytes(b'previously-loaded-input')
+    directory = value.parent
+    before = adoption.distribution_directory(directory, trust_epoch(tmp_path), os.getuid())
+    value.unlink()
+    assert adoption.distribution_directory(directory, trust_epoch(tmp_path), os.getuid()) != before
+    # A fresh capture after deletion still has to refuse: no previous in-memory
+    # proof is needed to detect a post-start loss of cached settings/code.
+    with pytest.raises(ValueError):
+        adoption.distribution_directory(directory, directory.stat().st_ctime + 1, os.getuid())
+
+
+def test_existing_generated_helper_write_keeps_directory_topology_but_not_file_history(tmp_path):
+    helper = tmp_path / 'run-helper.sh'; helper.write_bytes(b'public-generated-template')
+    before = adoption.distribution_directory(tmp_path, trust_epoch(tmp_path), os.getuid())
+    helper.write_bytes(b'public-generated-template')
+    assert adoption.distribution_directory(tmp_path, trust_epoch(tmp_path), os.getuid()) == before
+    # The separate consuming-process proof remains necessary for this file.
+    with pytest.raises(ValueError):
+        adoption.unchanged_since_start(helper, helper.stat().st_ctime + 1, os.getuid())
+
+
+@pytest.mark.parametrize('movement', [None, 'membership', 'start', 'executable', 'command', 'maps', 'environment', 'uid'])
+def test_end_scan_detects_child_movement_even_with_same_main_pid(tmp_path, movement):
+    group = tmp_path / 'cgroup.procs'; group.write_text('101\n102\n')
+    original = {'101': {'start': '1', 'executable': 'wrapper', 'command': 'wrapper-command',
+                        'maps': {'/public/bash': 'a'}, 'environment': 'first', 'uid': 1000},
+                '102': {'start': '2', 'executable': 'listener', 'command': 'listener-command',
+                        'maps': {'/public/runtime': 'b'}, 'environment': 'second', 'uid': 1000}}
+    observed = copy.deepcopy(original)
+    if movement == 'membership':
+        group.write_text('101\n103\n')
+    elif movement is not None:
+        observed['102'][movement] = {'/changed/runtime': 'c'} if movement == 'maps' else 'changed'
+    state = {'MainPID': '101', 'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00 UTC'}
+    with patch.object(adoption, 'process', side_effect=lambda pid, _start: observed[pid]):
+        if movement is None:
+            adoption.revalidate_runner_processes(group, original, state)
+        else:
+            with pytest.raises(ValueError):
+                adoption.revalidate_runner_processes(group, original, state)
+
+
+def test_child_movement_during_end_scan_is_also_refused(tmp_path):
+    group = tmp_path / 'cgroup.procs'; group.write_text('101\n102\n')
+    original = {'101': {'start': '1'}, '102': {'start': '2'}}
+    def observe(pid, _start):
+        if pid == '102':
+            group.write_text('101\n103\n')
+        return original[pid]
+    with patch.object(adoption, 'process', side_effect=observe), pytest.raises(ValueError):
+        adoption.revalidate_runner_processes(group, original, {'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00 UTC'})
+
+
 def test_runner_trust_uses_actual_crypto_child_environment_not_service_wrapper():
     import ssl
     paths = {row.split(None, 5)[5] for row in Path('/proc/self/maps').read_text().splitlines()
@@ -321,21 +381,42 @@ def test_runner_trust_uses_actual_crypto_child_environment_not_service_wrapper()
 
 
 def test_real_sqlite_wal_mapping_is_mutable_state_not_an_executable_dependency(tmp_path):
-    import sqlite3
-    database = tmp_path / 'reviewer.sqlite3'
-    with sqlite3.connect(database) as connection:
-        assert connection.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
-        connection.execute('CREATE TABLE evidence (value TEXT)')
-        connection.commit()
-        maps = Path('/proc/self/maps').read_text()
-        assert str(database) + '-shm' in maps
-        proof = adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database))
-        assert not any(path.startswith(str(database)) for path in proof['maps'])
-        with pytest.raises(ValueError):
-            adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database) + '-other')
-        connection.execute('INSERT INTO evidence VALUES (?)', ('new-live-state',))
-        connection.commit()
-        assert adoption.process(os.getpid(), trust_epoch(tmp_path), mutable_database=str(database)) == proof
+    # Other native suites can legitimately leave unrelated deleted mappings in
+    # pytest. Keep the production refusal intact and inspect a fresh process.
+    import mmap
+    script = r'''
+import importlib.util,json,os,sqlite3,sys,time
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('isolated_process_adoption',sys.argv[1])
+adoption=importlib.util.module_from_spec(spec);spec.loader.exec_module(adoption)
+database=Path(sys.argv[2])/'reviewer.sqlite3'
+with sqlite3.connect(database) as connection:
+    assert connection.execute('PRAGMA journal_mode=WAL').fetchone()==('wal',)
+    connection.execute('CREATE TABLE evidence (value TEXT)');connection.commit()
+    assert str(database)+'-shm' in Path('/proc/self/maps').read_text()
+    proof=adoption.process(os.getpid(),time.time()+5,mutable_database=str(database))
+    assert not any(path.startswith(str(database)) for path in proof['maps'])
+    try:
+        adoption.process(os.getpid(),time.time()+5,mutable_database=str(database)+'-other')
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('wrong configured database bypassed loaded-map refusal')
+    connection.execute('INSERT INTO evidence VALUES (?)',('new-live-state',));connection.commit()
+    assert adoption.process(os.getpid(),time.time()+5,mutable_database=str(database))==proof
+print(json.dumps({'real_wal_mapping':True,'mutation_preserved':True,'wrong_database_refused':True}))
+'''
+    prior = tmp_path / 'unrelated-prior-suite-mapping'
+    prior.write_bytes(b'x' * 4096)
+    with prior.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as held:
+        prior.unlink()
+        assert str(prior) + ' (deleted)' in Path('/proc/self/maps').read_text()
+        result = subprocess.run([sys.executable, '-I', '-B', '-c', script,
+                                 str(spec.origin), str(tmp_path)],
+                                text=True, capture_output=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {'real_wal_mapping': True, 'mutation_preserved': True,
+                                       'wrong_database_refused': True}
 
 
 def test_lost_operation_or_drain_rejects_reuse():

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 
 import pytest
@@ -181,3 +182,128 @@ def test_repository_identity_is_typed_even_when_python_numeric_equality_matches(
     with pytest.raises(ValueError, match='PROVENANCE_BINDING_UNPROVEN'):
         provenance.promote(payload, root=root, owner_uid=os.getuid())
     assert path.read_bytes() == before
+
+
+def adoption_module(capture):
+    import process_adoption
+    return {'identity': process_adoption.identity, 'protected': process_adoption.protected,
+            'capture_inputs': capture}
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='real root-owned installed binding')
+@pytest.mark.parametrize('active', [True, False])
+@pytest.mark.parametrize('capability', ['ready', 'missing', 'stale-policy', 'stale-ca'])
+def test_provenance_loaded_frontier_checks_bound_target_and_discards_private_proof(pair, monkeypatch, active, capability):
+    root, path, payload = pair
+    payload = {**payload, 'productionUnit': 'test-runner.service'}
+    state = {'LoadState': 'loaded', 'ActiveState': 'active' if active else 'inactive',
+             'SubState': 'running' if active else 'dead', 'MainPID': '123' if active else '0',
+             'NeedDaemonReload': 'no'}
+    monkeypatch.setattr(provenance.subprocess, 'run', lambda *_a, **_kw:
+        subprocess.CompletedProcess([], 0, '\n'.join(f'{key}={value}' for key, value in state.items()).encode()))
+    calls = []
+
+    def capture(received):
+        assert received['productionActive'] is active
+        assert 'operation' not in received and 'admission' not in received
+        calls.append('capture')
+        if capability == 'missing':
+            raise FileNotFoundError('private socket path')
+        if capability.startswith('stale'):
+            raise ValueError('private cached input mismatch')
+        return {'private-proof-must-not-leave-target': 'synthetic'}
+
+    original = path.read_bytes()
+    result = provenance.loaded_ready_target(payload, adoption_module(capture), root=root)
+    assert result == ('PROVENANCE_LOADED_READY' if capability == 'ready' else 'PROVENANCE_LOADED_UNAVAILABLE')
+    assert calls == ['capture'] and path.read_bytes() == original
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='real root-owned installed binding')
+@pytest.mark.parametrize('changed', ['manifest', 'current', 'source'])
+@pytest.mark.parametrize('capability', ['ready', 'missing'])
+def test_loaded_frontier_target_movement_is_a_boundary_even_if_capability_unavailable(pair, monkeypatch, changed, capability):
+    root, path, payload = pair
+    payload = {**payload, 'productionUnit': 'test-runner.service'}
+    state = b'LoadState=loaded\nActiveState=inactive\nSubState=dead\nMainPID=0\nNeedDaemonReload=no\n'
+    monkeypatch.setattr(provenance.subprocess, 'run', lambda *_a, **_kw: subprocess.CompletedProcess([], 0, state))
+
+    def capture(_received):
+        if changed == 'manifest':
+            value = json.loads(path.read_text()); value['consumerRevision'] = '0' * 40
+            path.write_text(json.dumps(value))
+        elif changed == 'current':
+            link = root / 'opt/test/current'; link.unlink(); link.symlink_to(path.parent / 'foreign')
+        else:
+            (path.parent / 'reviewed-source/.relay-source.json').write_text('{}')
+        if capability == 'missing':
+            raise FileNotFoundError('missing capability')
+
+    with pytest.raises((ValueError, OSError)):
+        provenance.loaded_ready_target(payload, adoption_module(capture), root=root)
+
+
+class LiveGuard:
+    lost = False
+    def poll(self):
+        return 1 if self.lost else None
+
+
+@pytest.mark.parametrize(('output', 'expected'), [
+    ('PROVENANCE_LOADED_READY', True), ('PROVENANCE_LOADED_UNAVAILABLE', False),
+    ('PROVENANCE_LOADED_BINDING_CHANGED', 'PROVENANCE_TARGET_BINDING_CHANGED'),
+    ('private unexpected proof', 'PROVENANCE_LOADED_PROOF_UNPROVEN')])
+@pytest.mark.parametrize('instance', [False, True])
+def test_loaded_adapter_sends_only_fixed_component_payload_and_requires_exact_status(monkeypatch, output, expected, instance):
+    import ansible_transport
+    config = json.loads((Path(__file__).resolve().parents[2] / 'deploy/example.json').read_text())
+    if instance:
+        config['environment']['instance'] = {'reviewerPort': 18787, 'publicationEnabled': False}
+    else:
+        config['environment'].pop('instance', None)
+    guard, pool_guard = LiveGuard(), LiveGuard()
+
+    def target(target, key, argv, *, input, timeout):
+        payload = json.loads(input)
+        assert argv[:4] == ['/usr/bin/python3', '-I', '-B', '-c']
+        assert '"__name__":"relay_provenance_loaded_inputs"' in argv[4]
+        assert 'capture_inputs' in argv[4]
+        assert timeout == 180
+        assert payload['namespace'] == config['environment']['namespace']
+        assert payload['productionRoot'] == '/opt/' + payload['namespace'] + '/runner'
+        assert payload['reviewerUser'] == config['environment']['reviewerUser']
+        assert payload['productionUser'] == config['environment']['runner']['user']
+        assert payload['reviewerUnit'] == (payload['namespace'] + '-reviewer.service' if instance else 'reviewer-mcp.service')
+        assert payload['productionUnit'] == (payload['namespace'] + '-runner.service' if instance else 'relay-runner.service')
+        assert payload['environmentFiles'] == ['/etc/' + payload['namespace'] + suffix
+            for suffix in ['/relay.env', '/reviewer-credentials/github-app.env']]
+        assert set(payload) == {'namespace', 'revision', 'reviewerUnit', 'productionUnit', 'reviewerUser',
+            'productionUser', 'productionRoot', 'socket', 'environmentFiles', 'config', 'release'}
+        return subprocess.CompletedProcess(argv, 0, output, 'private diagnostics are not exposed')
+
+    monkeypatch.setattr(ansible_transport, 'run_target', target)
+    if isinstance(expected, bool):
+        assert provenance.loaded_ready({}, None, config, 'a' * 40, guard, pool_guard) is expected
+    else:
+        with pytest.raises(ValueError, match=expected):
+            provenance.loaded_ready({}, None, config, 'a' * 40, guard, pool_guard)
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+@pytest.mark.parametrize('selected', ['host', 'pool'])
+def test_loaded_adapter_lost_lock_stops_before_any_reconcile_fallback(monkeypatch, when, selected):
+    import ansible_transport
+    config = json.loads((Path(__file__).resolve().parents[2] / 'deploy/example.json').read_text())
+    host, pool = LiveGuard(), LiveGuard()
+    guard = host if selected == 'host' else pool
+    if when == 'before':
+        guard.lost = True
+    calls = []
+    def target(*_a, **_kw):
+        calls.append('target')
+        guard.lost = True
+        return subprocess.CompletedProcess([], 0, 'PROVENANCE_LOADED_UNAVAILABLE')
+    monkeypatch.setattr(ansible_transport, 'run_target', target)
+    with pytest.raises(ValueError, match='HOST_LOCK_LOST'):
+        provenance.loaded_ready({}, None, config, 'a' * 40, host, pool)
+    assert calls == ([] if when == 'before' else ['target'])

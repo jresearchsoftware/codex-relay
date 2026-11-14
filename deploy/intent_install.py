@@ -743,6 +743,18 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     require(observed['installed'].get('installationState') == pending,
                             'FRESH_PENDING_MARKER_UNPROVEN')
                 expected = identity['revision']
+                if selected['strategy'] == 'provenance' and phase == 'post-check':
+                    # Disk/readiness checks cannot establish the policy and CA
+                    # already consumed by a long-lived Reviewer process.
+                    from provenance import loaded_ready
+                    stage = 'provenance-loaded-proof'
+                    if not loaded_ready(target, key, config, identity['revision'], guard, pool_guard):
+                        selected = {'strategy': 'reconcile', 'phase': 'apply'}
+                        attested_receipt = receipt
+                        if retained_state.get('pairSha256') != pair_digest(receipt):
+                            retained_state = {}
+                        schedule.append(('apply', 'primary'))
+                        print('RELAY_PROVENANCE_FALLBACK=loaded-state-unavailable', flush=True)
             if selected['strategy'] == 'provenance':
                 require(recovery is None and bounded_proof is None, 'PROVENANCE_RECOVERY_UNSUPPORTED')
                 require(provenance_equivalent(observed, receipt), 'PROVENANCE_BINDING_CHANGED')

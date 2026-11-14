@@ -142,14 +142,38 @@ Its transient proof must cover unchanged trust-store content/topology since
 startup before the first installed preservation test. Reviewer WebPKI roots are
 compiled into its proved binary; its inbound client CA is separately captured.
 
+## Intermediate unchanged-input cases
+
+The subsequent code-only installation from `cdc829f9...` to
+`284e3f1f783f12b31b88332d7cde63f67dbd426a` passed in 565.946 s, with a
+363.795 s main site and reused Reviewer build. This is 77.449 s (12.0%) below
+the measured 643.395 s accepted-source baseline, with shared-host/cache limits.
+The initial loaded proof succeeded, but the post-install comparison selected
+ordinary restart. Reviewer and Production Runner restarted safely; this result
+does **not** qualify unchanged-process preservation. All 32 namespace probes
+executed, with one Bubblewrap task and 31 additional package skips. See
+[initial code-only evidence](task-253-codeonly-initial.json).
+
+An identical-pair no-op passed in 306.029 s (291.224 s site), preserving all six
+observed TEST/pool/PROD PID/start identities. Its read-only check skipped namespace
+probe execution; it does not substitute for the real installation probes. See
+[no-op evidence](task-253-noop.json).
+
+A README-only configuration commit with the same JSON blob passed the initial
+provenance path in 308.640 s (291.549 s site), preserving all six identities.
+See [initial README evidence](task-253-readme-initial.json). Subsequent source
+correction adds an explicit loaded-input proof before provenance promotion;
+the earlier disk/post-check result alone does not qualify that corrected path.
+Both read-only cases emitted one existing nonfatal temporary-directory fallback
+warning. Generated consumer workflow publication remains separate; the observed
+integration compatibility warning is not live Actions-dispatch qualification.
+
 ## Remaining installed evidence at this snapshot
 
-The subsequent unchanged-component code-only comparison is separate from the
-accepted-source baseline and changed-binary installation above. Its measured
-result, provenance-only/no-op/config-change cases and unassisted fresh ACME
-qualification will be recorded after execution. No candidate speedup, final
-installed qualification, independent acceptance or PROD improvement is asserted
-by this baseline snapshot. Requested profile is Sol/xhigh with Subagents On;
+Corrected-source process preservation, changed-policy and original-operation
+recovery cases, corrected provenance, and unassisted fresh ACME qualification
+remain in progress. This snapshot asserts no final installed qualification,
+independent acceptance or PROD improvement. Requested profile is Sol/xhigh with Subagents On;
 implementation helpers were used. Actual runtime model/effort telemetry is
 unavailable. The native chat rename succeeded but readback exposed a truncated
 title; Task/Step/admission identity remains exact and that navigation limit is

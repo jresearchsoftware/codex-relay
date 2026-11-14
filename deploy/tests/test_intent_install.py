@@ -135,6 +135,7 @@ def test_provenance_runs_full_readonly_proof_before_atomic_promotion(invocation,
         if ready_marker:
             report['installed']['installationState']['pairSha256'] = install.pair_digest(desired)
     monkeypatch.setattr(provenance, 'promote_remote', promote)
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a, **_kw: True)
     if failure:
         with pytest.raises(RuntimeError):
             install.run(args, check, ROOT, {'revision': TARGET})
@@ -142,6 +143,43 @@ def test_provenance_runs_full_readonly_proof_before_atomic_promotion(invocation,
     else:
         install.run(args, check, ROOT, {'revision': TARGET})
         assert calls == ['check', 'promote']
+
+
+@pytest.mark.parametrize('missing', ['missing-capability', 'stale-policy', 'stale-ca',
+                                     'HOST_LOCK_LOST', 'PROVENANCE_TARGET_BINDING_CHANGED'])
+def test_provenance_missing_loaded_proof_runs_one_normal_apply(invocation, monkeypatch, missing):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    def proof(*_a, **_kw):
+        calls.append('loaded-' + missing)
+        if missing.isupper():
+            raise RuntimeError(missing)
+        return False
+    monkeypatch.setattr(provenance, 'loaded_ready', proof)
+    monkeypatch.setattr(provenance, 'promote_remote', lambda *_a, **_kw: pytest.fail('unexpected promotion'))
+    def primitive(inner):
+        calls.append(inner.phase)
+        if inner.phase == 'post-check':
+            assert inner.git_intent == old
+        else:
+            assert inner.phase == 'apply' and inner.git_intent == desired
+            assert inner._intent_installation_state == {}
+            report['installed']['gitConfigReceipt'] = desired
+            del report['installed']['installationState']
+    if missing.isupper():
+        with pytest.raises(RuntimeError, match=missing):
+            install.run(args, primitive, ROOT, {'revision': TARGET})
+        assert calls == ['post-check', 'loaded-' + missing]
+    else:
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+        assert calls == ['post-check', 'loaded-' + missing, 'apply']
 
 
 def test_code_only_new_product_revision_still_selects_upgrade(invocation):

@@ -129,7 +129,7 @@ def process(pid, service_start, *, mutable_database=None):
             maps[columns[5]] = mapped_digest(columns[5], columns[3], columns[4], started)
             mapped_ids[columns[5]] = identity
     require(maps)
-    return {'pid': str(pid), 'start': start, 'executable': digest(root.joinpath('exe').read_bytes()),
+    return {'pid': str(pid), 'uid': root.stat().st_uid, 'start': start, 'executable': digest(root.joinpath('exe').read_bytes()),
             'environment': digest(canonical(environment(pid))),
             'command': digest(root.joinpath('cmdline').read_bytes()), 'maps': maps}
 
@@ -458,17 +458,49 @@ def distribution_alias(path, roots, earliest, uid):
     raise ValueError('PROCESS_ADOPTION_UNPROVEN')
 
 
+def distribution_directory(path, earliest, uid):
+    """Deletion-aware history for optional settings and interpreted files."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        meta = os.fstat(descriptor)
+        require(stat.S_ISDIR(meta.st_mode) and meta.st_uid in [0, uid]
+                and not meta.st_mode & 0o022 and meta.st_ctime < earliest - 2)
+        entries = sorted(os.listdir(descriptor))
+        require(len(entries) <= 20000 and identity(os.fstat(descriptor)) == identity(meta)
+                and identity(Path(path).lstat()) == identity(meta))
+        return {'identity': identity(meta), 'entries': entries}
+    finally:
+        os.close(descriptor)
+
+
+def cgroup_members(path):
+    values = Path(path).read_text().splitlines()
+    require(values and all(re.fullmatch('[1-9][0-9]*', value) for value in values)
+            and len(values) == len(set(values)))
+    return sorted(values, key=int)
+
+
+def revalidate_runner_processes(cgroup, expected, state):
+    # MainPID alone cannot detect a replaced Listener/child during file scans.
+    # Require the complete same cgroup and each loaded identity at the end.
+    require(cgroup_members(cgroup) == sorted(expected, key=int))
+    for pid, original in expected.items():
+        require(process(pid, service_started(state)) == original)
+    require(cgroup_members(cgroup) == sorted(expected, key=int))
+
+
 def loaded_runner(payload, state):
     uid = pwd.getpwnam(payload['productionUser']).pw_uid
     require(state['User'] == payload['productionUser'])
     cgroup = Path('/sys/fs/cgroup') / state['ControlGroup'].lstrip('/') / 'cgroup.procs'
-    pids = cgroup.read_text().splitlines()
+    pids = cgroup_members(cgroup)
     require(state['MainPID'] in pids and pids)
     processes = {pid: process(pid, service_started(state)) for pid in pids}
     require(all(Path('/proc', pid).stat().st_uid == uid for pid in pids))
     boot = next(int(row.split()[1]) for row in Path('/proc/stat').read_text().splitlines() if row.startswith('btime '))
     earliest = min(service_started(state), boot + min(int(value['start']) for value in processes.values()) / os.sysconf('SC_CLK_TCK'))
     root = Path(payload['productionRoot'])
+    topology = {str(root): distribution_directory(root, earliest, uid)}
     # Runner's own settings/credentials are cached on Listener startup. Kernel
     # ctime proves they have not changed since any retained service process
     # started; byte equality alone would not establish loaded settings.
@@ -481,6 +513,8 @@ def loaded_runner(payload, state):
     # unchanged complete startup distribution, not only Runner.Listener's name.
     inputs = [path for path in root.iterdir() if path.is_file()]
     distribution_roots = []
+    def unreadable_distribution(error):
+        raise error
     for directory in ['bin', 'externals']:
         entry = root / directory
         if entry.is_symlink():
@@ -492,7 +526,9 @@ def loaded_runner(payload, state):
             entry = resolved
         require(entry.is_dir())
         distribution_roots.append(entry)
-        for parent, directories, names in os.walk(entry):
+        for parent, directories, names in os.walk(entry, onerror=unreadable_distribution):
+            topology[str(parent)] = distribution_directory(parent, earliest, uid)
+            require(len(topology) <= 20000)
             require(all(not (Path(parent) / name).is_symlink() for name in directories))
             inputs.extend(Path(parent) / name for name in names)
             require(len(inputs) <= 20000)
@@ -512,8 +548,11 @@ def loaded_runner(payload, state):
             # old DLL or runtime accepted against a new installation.
             require(digest(Path(path).read_bytes()) == expected)
     trust = runner_trust(processes, earliest, uid)
+    units = service_configuration(state, earliest)
+    require(all(distribution_directory(path, earliest, uid) == original for path, original in topology.items()))
+    revalidate_runner_processes(cgroup, processes, state)
     return {'service': state, 'processes': processes, 'files': files, 'trust': trust,
-            'units': service_configuration(state, earliest)}
+            'units': units, 'distributionDirectories': topology}
 
 
 def capture_inputs(payload):

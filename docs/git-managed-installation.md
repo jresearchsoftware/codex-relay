@@ -170,7 +170,11 @@ ordinary reconciliation; pending operations retain their original recovery route
 
 The installer holds the existing host and pool locks, runs the complete ordinary
 read-only post-check against the original receipt, and refuses drift or unhealthy
-runtime/dependencies. Only then does it atomically replace the existing manifest's
+runtime/dependencies. It also checks the running Reviewer's private loaded-input
+proof and the active Production Runner inputs against that exact installed target.
+An unavailable or mismatched loaded proof selects one ordinary reconciliation;
+lost locks or a changing target stop the operation. Only after sufficient loaded
+proof does it atomically replace the existing manifest's
 Git receipt and any existing ready pair digest, preserving the deployment
 snapshot, artifact identity, consumer provenance and running processes. There is
 no staging, package installation, service restart, second receipt store or new

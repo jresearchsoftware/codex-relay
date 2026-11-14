@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import tempfile
 
 
@@ -152,3 +153,117 @@ def promote_remote(target, key, config, revision, previous, receipt, guard, pool
                         input=json.dumps(payload), timeout=60)
     if result.returncode != 0 or result.stdout.strip() != 'PROVENANCE_PROMOTED' or not held():
         raise ValueError('PROVENANCE_PROMOTION_UNPROVEN')
+
+
+def loaded_ready_target(payload, adoption, *, root=Path('/')):
+    """Read loaded inputs without creating an applying admission operation."""
+    def require(value):
+        if not value:
+            raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
+
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            require(key not in value)
+            value[key] = item
+        return value
+
+    def binding():
+        revision, namespace = payload['revision'], payload['namespace']
+        require(re.fullmatch('[0-9a-f]{40}', revision)
+                and re.fullmatch('[a-z][a-z0-9-]{0,30}', namespace))
+        install = root / 'opt' / namespace
+        release = install / 'releases' / revision
+        for path in [release / 'reviewed-source', *(release / 'reviewed-source').parents]:
+            meta = path.lstat()
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == 0 and not meta.st_mode & 0o022)
+            if path == root:
+                break
+        current = install / 'current'
+        link = current.lstat()
+        require(stat.S_ISLNK(link.st_mode) and link.st_uid == 0
+                and current.resolve(strict=True) == release)
+        paths = [release / 'artifact-manifest.json', release / 'reviewed-source/.relay-source.json']
+        values, stamps = [], []
+        for path in paths:
+            before = path.lstat()
+            raw = adoption['protected'](path)
+            require(adoption['identity'](path.lstat()) == adoption['identity'](before))
+            values.append(json.loads(raw, object_pairs_hook=unique))
+            stamps.append((adoption['identity'](before), hashlib.sha256(raw).hexdigest()))
+        manifest, source = values
+        require(all(manifest.get(key) == revision for key in ['commit', 'installedRevision', 'resolvedRevision'])
+                and source.get('revision') == revision and source.get('tree') == manifest.get('gitTree')
+                and re.fullmatch('[0-9a-f]{40}', manifest.get('gitTree', '')))
+        return adoption['identity'](link), stamps
+
+    before = binding()
+    ready = False
+    try:
+        result = subprocess.run(['/bin/systemctl', 'show', payload['productionUnit'],
+            '--property=LoadState,ActiveState,SubState,MainPID,NeedDaemonReload'],
+            capture_output=True, check=True, timeout=15,
+            env={**os.environ, 'LC_ALL': 'C'})
+        state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines())
+        if state == {'LoadState': 'loaded', 'ActiveState': 'inactive', 'SubState': 'dead',
+                     'MainPID': '0', 'NeedDaemonReload': 'no'}:
+            active = False
+        else:
+            if not (state.get('LoadState') == 'loaded' and state.get('ActiveState') == 'active'
+                    and state.get('SubState') == 'running' and state.get('NeedDaemonReload') == 'no'
+                    and re.fullmatch('[1-9][0-9]*', state.get('MainPID', ''))):
+                raise ValueError('PROVENANCE_LOADED_UNAVAILABLE')
+            active = True
+        adoption['capture_inputs']({**payload, 'productionActive': active})
+        ready = True
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError,
+            StopIteration, subprocess.SubprocessError):
+        # Missing/older capability or mismatched loaded input chooses the
+        # existing reconcile path. The independent target binding still must
+        # remain exact, even when this optional proof was unavailable.
+        pass
+    require(binding() == before)
+    return 'PROVENANCE_LOADED_READY' if ready else 'PROVENANCE_LOADED_UNAVAILABLE'
+
+
+def loaded_ready(target, key, config, revision, guard, pool_guard):
+    from ansible_transport import run_target
+    from config import compile_inputs
+
+    def held():
+        return guard is not None and guard.poll() is None and (pool_guard is None or pool_guard.poll() is None)
+
+    if not held():
+        raise ValueError('HOST_LOCK_LOST')
+    values = compile_inputs(config)
+    install, configuration = values['relay_install_root'], values['relay_config_root']
+    payload = {'namespace': values['relay_namespace'], 'revision': revision,
+        'reviewerUnit': values.get('relay_reviewer_service_name', 'reviewer-mcp.service'),
+        'productionUnit': values.get('relay_production_runner_service_name', 'relay-runner.service'),
+        'reviewerUser': values['relay_reviewer_user'],
+        'productionUser': values['relay_production_runner_user'],
+        'productionRoot': values.get('relay_runner_root', install + '/runner'),
+        'socket': values['relay_runtime_root'] + '/reviewer-proof/loaded.sock',
+        'environmentFiles': [configuration + '/relay.env', configuration + '/reviewer-credentials/github-app.env'],
+        'config': configuration + '/reviewer-mcp.json', 'release': install + '/current'}
+    source = Path(__file__).with_name('process_adoption.py').read_text()
+    # Execute the exact component implementation in a separate module namespace;
+    # its managed-Apply __main__/admission path is deliberately not entered.
+    program = ('import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n'
+               'adoption={"__name__":"relay_provenance_loaded_inputs"}\n'
+               + 'exec(' + repr(source) + ',adoption)\n'
+               + inspect.getsource(loaded_ready_target)
+               + '\ntry:\n print(loaded_ready_target(json.load(sys.stdin),adoption))\n'
+               'except Exception:\n print("PROVENANCE_LOADED_BINDING_CHANGED")\n')
+    result = run_target(target, key, ['/usr/bin/python3', '-I', '-B', '-c', program],
+                        input=json.dumps(payload), timeout=180)
+    if not held():
+        raise ValueError('HOST_LOCK_LOST')
+    if result.returncode != 0:
+        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN')
+    observed = result.stdout.strip()
+    if observed == 'PROVENANCE_LOADED_BINDING_CHANGED':
+        raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
+    if observed not in ['PROVENANCE_LOADED_READY', 'PROVENANCE_LOADED_UNAVAILABLE']:
+        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN')
+    return observed == 'PROVENANCE_LOADED_READY'
