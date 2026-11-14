@@ -149,9 +149,7 @@ would not change the worker prompt or owner-applied ChatGPT instructions.
 The [runtime prompt module][prompt] supplies progress-bounded execution, not
 either complete candidate procedure. [Runtime][runtime-input] appends it to
 automatic input; the [manual handoff][manual-input] uses the same module and
-repository/live-authority instruction. The optional [hook contract][hooks]
-and inspected Stop helper only support bounded diagnosis/session recovery;
-they do not supply approval comparisons or redundant-proof decisions. The
+repository/live-authority instruction. The
 [Reviewer publication contract][reviewer] validates supplied verdict/CR and
 exact-head publication; substantive independent judgment remains the reviewer's
 responsibility. These product/developer bindings cannot prove package coverage
@@ -233,5 +231,4 @@ successor execution remain separate.
 [prompt]: https://github.com/jresearchsoftware/codex-relay/blob/4d49ff52a3747389f0b1e3e4e6c6add716cc3363/runtime/src/execution-policy.mjs
 [runtime-input]: https://github.com/jresearchsoftware/codex-relay/blob/4d49ff52a3747389f0b1e3e4e6c6add716cc3363/runtime/src/codex-runtime.mjs#L442-L454
 [manual-input]: https://github.com/jresearchsoftware/codex-relay/blob/4d49ff52a3747389f0b1e3e4e6c6add716cc3363/controller/src/publication-broker.mjs#L515-L516
-[hooks]: https://github.com/jresearchsoftware/codex-relay/blob/4d49ff52a3747389f0b1e3e4e6c6add716cc3363/.codex/hooks/README.md
 [reviewer]: https://github.com/jresearchsoftware/codex-relay/blob/4d49ff52a3747389f0b1e3e4e6c6add716cc3363/reviewer/README.md#L207-L231

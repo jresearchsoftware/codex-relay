@@ -25,7 +25,7 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
     primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_INVALID'), fallbackReference: capsule.reference }); }
   let diagnosticMode = state.diagnosticStore?.mode === 'debug' ? 'debug' : 'normal';
   const dispatchObservation = safeFailureDiagnosticReference(failure) ?? {};
-  // Only the trusted dispatcher's synchronous no-child observation may
+  // Only the trusted dispatcher's proven no-child observation may
   // complete its untouched initial capsule. Pending actual runtime diagnostics
   // and known runtime observations retain their original persistence boundary.
   const dispatchNeverStarted = failure?.code === 'DISPATCH_NOT_STARTED'

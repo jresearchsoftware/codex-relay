@@ -631,16 +631,52 @@ def live_smoke_proof(install, release, env, token):
         assert len(added_work) == (1 if retained else 0), (proof, added_work)
         new_capsules = set(fallback_root.glob('*/*.json')) - capsules_before
         assert (fallback_root.stat().st_uid, stat.S_IMODE(fallback_root.stat().st_mode)) == (24003, 0o700)
-        # Success releases the slot with a durable tombstone; the next
-        # reservation may reclaim it, while failed-attempt evidence stays live.
+        # Capacity retirement follows contained terminal evidence, independently
+        # of semantic success. Failed operations require their complete final
+        # facts archived outside the reclaimable capsule before retirement.
         assert len(new_capsules) == 1, new_capsules
         for capsule in new_capsules:
             raw = capsule.read_text()
             assert len(raw.encode('utf8')) <= 16 * 1024 and 'fixture-only-credential' not in raw
             state = json.loads(raw)
-            assert state.get('released', False) == (expected_code == 'GENERAL_RUNNER_SMOKE_PASS'), state
+            archive = state.get('terminalDiagnostic', {})
+            archived = archive.get('status') == 'stored'
+            if archived:
+                assert archive['executionId'] == state['executionId'] + '-finalization', state
+                archived_path = Path('/var/lib/codex-relay/debug') / (archive['executionId'] + '.json')
+                archived_raw = archived_path.read_text()
+                assert 'fixture-only-credential' not in archived_raw
+                final = json.loads(archived_raw)
+                assert final['executionId'] == archive['executionId'] and final['mode'] == archive['mode']
+                archived_lifecycle = final['lifecycle']
+                for field in ['childState', 'containment', 'cleanupContainment', 'cleanup', 'persistence', 'retention']:
+                    assert archived_lifecycle[field] == state[field], (field, state)
+                assert archived_lifecycle.get('failureDiagnostic') == state.get('failureDiagnostic'), state
+                # Finalization preserves the earlier diagnostic's identity and
+                # body; the new archive never overwrites its causal evidence.
+                primary = state.get('diagnosticStore', {})
+                if primary.get('status') == 'stored':
+                    assert archived_lifecycle['diagnosticStore'] == primary, state
+                    original_path = archived_path.with_name(primary['executionId'] + '.json')
+                    original = json.loads(original_path.read_text())
+                    assert original['executionId'] == primary['executionId']
+                    assert original_path != archived_path
+                assert (archived_path.stat().st_uid, stat.S_IMODE(archived_path.stat().st_mode)) == (0, 0o600)
+            known_terminal = (state.get('childState') in ['started', 'not_started']
+                and state.get('containment') in ['reaped', 'not_required']
+                and state.get('cleanupContainment') in ['reaped', 'not_required']
+                and state.get('persistence') in ['stored', 'not_required'])
+            ordinary_complete = (not state.get('failureDiagnostic') and not state.get('controllerFailure')
+                and state.get('cleanup') == 'complete' and state.get('retention') == 'none')
+            assert state.get('released', False) == (known_terminal and (ordinary_complete or archived)), state
             assert state['containment'] in ['reaped', 'not_required'], state
-            assert state['cleanup'] == ('retained' if retained else 'complete'), state
+            if expected_code == 'DISPATCH_NOT_STARTED':
+                assert state['childState'] == 'not_started' and state['containment'] == 'not_required', state
+                assert state['sandboxCreated'] is False and state['inputSchemaCreated'] is False, state
+                assert state['cleanup'] == 'not_required' and state['retention'] == 'none', state
+                assert archived and state['released'] is True, state
+            else:
+                assert state['cleanup'] == ('retained' if retained else 'complete'), state
             if expected_code == 'GENERAL_RUNNER_SMOKE_PASS':
                 assert state['retention'] == 'none' and state['persistence'] == 'not_required', state
             assert (capsule.stat().st_uid, stat.S_IMODE(capsule.stat().st_mode)) == (24003, 0o600)
@@ -687,7 +723,7 @@ def live_smoke_proof(install, release, env, token):
     saved_dispatch = dispatch.with_suffix('.smoke-saved')
     dispatch.rename(saved_dispatch)
     try:
-        invoke('not_started', 'EXECUTION_FAILED', retained=True)
+        invoke('not_started', 'DISPATCH_NOT_STARTED')
     finally:
         saved_dispatch.rename(dispatch)
     # An ordinary child succeeds but the primary protected store is missing.

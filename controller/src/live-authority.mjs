@@ -7,6 +7,7 @@ import { readTaskAuthority } from './task-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
 import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 import { blockedCrContinuation } from './blocked-cr-continuation.mjs';
+import { readPriorOutcomeContext, appendPriorOutcomeContext } from './prior-outcome-context.mjs';
 import { rejectOwnerRun } from './owner-run-rejection.mjs';
 
 // Ordering is native identity, never API order or a prose reference to an older review.
@@ -77,6 +78,13 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
         starting_head: retainedHead, existing_pr: existing?.number ?? null };
     }
   }
+  let priorOutcome = continuationState?.priorOutcome;
+  let priorUnavailable = false;
+  if (!snapshot && previousRecord && !priorOutcome) {
+    try { priorOutcome = await readPriorOutcomeContext(api, previousRecord, lineage, issueNumber); }
+    catch { priorUnavailable = true; }
+  }
+  const priorContext = appendPriorOutcomeContext(typed.input, priorOutcome, { unavailable: priorUnavailable });
   const q = snapshot ? validateAdmissionSnapshot(snapshot, { step, route, attempt: `run-${runId}` })
     : createAdmissionSnapshot(typed, { step, route, runId, attempt: `run-${runId}`, lineage, ...continuationState });
   const noSource = q.route === 'manual' && q.branch === null && q.base_sha === null && q.starting_head === null;
@@ -93,11 +101,14 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
     // Typed acceptance closes the Issue explicitly after task_complete and
     // remaining-work checks. A PR closing keyword would bypass those checks.
     closure: `Related to #${issueNumber}`,
-    input: typed.input, validation: q.validation, request: q, requestReference: typed.reference,
+    input: priorContext.input, validation: q.validation, request: q, requestReference: typed.reference,
     authorityDigest: typed.authorityDigest,
     ...(snapshot ? { currentRequest: semantic, authorityDrift: typed.authorityDrift,
       originalRequest: typed.originalAuthority.request } : {}),
-    admission: { kind: 'github-native-admission', warnings: typed.warnings.map(code => ({ code, field: 'closure', resolved: 'keep-open' })) },
+    admission: { kind: 'github-native-admission', warnings: [
+      ...typed.warnings.map(code => ({ code, field: 'closure', resolved: 'keep-open' })),
+      ...priorContext.warnings.map(code => ({ code, field: 'context', resolved: 'bounded-prior-outcome',
+        message: code === 'PRIOR_OUTCOME_CONTEXT_TRUNCATED' ? 'Prior Writer Outcome context was clipped to its bounded projection; inspect the exact native source for complete evidence.' : 'Prior Writer Outcome context could not be verified; no prior result or external effect is inferred.' }))] },
     ...(continuation ? { continuation } : {}) };
   if (continuation?.pullRequest) {
     execution.pr = await findCurrentIssuePullRequest(api, execution, continuation.pullRequest);

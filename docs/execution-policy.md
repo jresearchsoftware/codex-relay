@@ -315,10 +315,3 @@ A technical BLOCKED handoff with no source delta includes a compact
 - `cleanup_boundary_status`: preserved work, safe cleanup and protected next step.
 
 This is conditional terminal evidence, not a new ledger or a debugging algorithm.
-The optional [Stop helper](../.codex/hooks/README.md) checks that extra contract only for
-an explicitly technical, `none_justified` classification. Protected boundaries,
-starting-state mismatches and unknown classifications must not acquire new
-mutation obligations. A reminder permits at most one bounded read-only diagnostic
-pass and never launches a worker, retries an external mutation or authorizes a
-protected action. Relay admission, execution and publication do not depend on
-this developer helper or its textual summary checks.

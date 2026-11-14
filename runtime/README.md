@@ -91,11 +91,13 @@ JSON Schema `maxLength` does. A malformed or oversized record remains a failure,
 even after an earlier valid result. Diagnostic capture clipping is reported and
 does not invalidate an otherwise complete independently parsed result or usage.
 
-The prompt discloses the resolved execution budget: 90 minutes by default,
-with supported consumer overrides from one second through two hours. The outer
-dispatcher reserves the same execution budget plus ten minutes for containment
-and terminal routing; the default remains 100 minutes. This does not increase a
-consumer's native workflow or other external deadline.
+The prompt discloses the resolved execution budget. Ordinary automatic dispatch
+uses a 90-minute worker budget and a 100-minute outer deadline, reserving ten
+minutes for containment and terminal routing. The scrubbed dispatch environment
+does not forward `CODEX_RUNTIME_TIMEOUT_MS`; setting it on the controller does
+not change either automatic deadline. Direct trusted runtime callers retain
+bounded overrides from one second through two hours and must arrange their own
+outer deadline. This does not increase native workflow or external deadlines.
 
 On Debian, the namespace reconstructs only the fixed public `cc`, `c++` and
 `awk` alternative aliases when their resolved targets are under the already

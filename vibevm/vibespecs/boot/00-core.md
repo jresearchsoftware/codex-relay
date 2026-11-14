@@ -11,6 +11,5 @@ to the admitted work. Preserve owner, worker, Writer and independent Reviewer
 responsibilities and all existing protected boundaries. File routing grants no
 execution, publication, approval, deployment, merge or closure authority.
 
-Recovery follows Relay's existing optional, session-owned developer hooks.
 This route adds no mandatory WAL, specification hierarchy, disputed-spec
 implementation rule, session-time command or persistent task state.

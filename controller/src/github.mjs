@@ -6,7 +6,7 @@ import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
-import { resolvedCodexRuntimeTimeoutMs } from '../../runtime/src/codex-runtime.mjs';
+import { DEFAULT_CODEX_RUNTIME_TIMEOUT_MS } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 const TERMINATION_GRACE_MS = 5000;
 function signalProcessGroup(pid, signal) {
@@ -54,7 +54,7 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 }
 
 
-function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = resolvedCodexRuntimeTimeoutMs(process.env.CODEX_RUNTIME_TIMEOUT_MS) + 10 * 60 * 1000,
+function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = DEFAULT_CODEX_RUNTIME_TIMEOUT_MS + 10 * 60 * 1000,
   reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
   return {
     async dispatch(envelope) {
@@ -123,9 +123,9 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         const innerContained = value?.containment === 'reaped' || diagnostic?.containment === 'reaped'
           || (diagnostic?.containment === 'not_required' && diagnostic?.observed?.child === 'not_started');
         const contained = outerContained && (spawnFailed || innerContained);
-        containment = contained ? 'reaped' : 'unknown';
+        containment = contained ? (spawnFailed ? 'not_required' : 'reaped') : 'unknown';
         if (!contained || timedOut || cancelled || exit !== 0 || out.truncated || value?.version !== VERSION || value?.attemptId !== envelope.attemptId) {
-          const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
+          const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : spawnFailed ? 'DISPATCH_NOT_STARTED' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
           throw Object.assign(new Error(code), { code, details: { causal: diagnostic, executionId: envelope.attemptId,
             codexUsage: normalizeCodexUsage(err.truncated ? undefined : diagnostic?.codexUsage),
             childState: spawnFailed ? 'not_started' : diagnostic?.observed?.child ?? 'unknown', containment,

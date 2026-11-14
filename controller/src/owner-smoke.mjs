@@ -16,7 +16,10 @@ export const OWNER_SMOKE_INPUT = `Owner-authorized non-routing general runner sm
 run commands, modify files, create commits, access GitHub or any external service,
 publish, push, invoke a Reviewer, or change production. Perform no external work.
 Only return {"status":"success","summary":"general-runner-smoke-child-started","validation":[],"blockedReason":""}.
-The scratch fixture is intentionally complete and requires no implementation.`;
+The scratch fixture is intentionally complete and requires no implementation.
+Subagents: Off
+Do not delegate or start helpers.
+`;
 const KEYS = ['approvedHead', 'attemptId', 'consumerDigest', 'kind', 'repository', 'version'].sort().join('\0');
 
 export function validateOwnerSmokeRequest(value) {

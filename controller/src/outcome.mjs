@@ -36,6 +36,8 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
 // admission defaults. Never infer that uncommitted bytes are disposable.
 export function executionWarningSummary(warnings) {
   const descriptions = {
+    PRIOR_OUTCOME_CONTEXT_TRUNCATED: 'Prior Writer Outcome context was clipped; its exact native source remains the complete evidence. Clipping grants no new authority.',
+    PRIOR_OUTCOME_CONTEXT_UNAVAILABLE: 'The exact prior Writer Outcome could not be verified as continuation context; no prior result or external effect was inferred.',
     PRESENTATION_REPAIR_UNAVAILABLE: 'The native result binding is verified, but derived PR title/Step presentation could not be repaired. Inspect and correct the display without changing admitted identity.',
     UNCOMMITTED_WORK_REMAINS: 'Uncommitted checkout work requires reconciliation before acceptance. Uncommitted/non-ignored checkout residue was retained; the owner and independent reviewer must reconcile it before acceptance or another attempt.',
     WORKTREE_OBSERVATION_INCOMPLETE: 'The committed candidate was safely collected, but checkout residue could not be completely observed. Retain local work and inspect the collection diagnostic; no clean-checkout claim is made.',

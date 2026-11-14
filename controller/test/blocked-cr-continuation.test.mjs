@@ -173,6 +173,10 @@ for (const route of ['auto', 'manual']) test(`contained BLOCKED CR progress admi
   assert.equal(e.request.existing_pr, 43);
   assert.equal(e.request.change_request_id, f.prior.envelope.request.change_request_id);
   assert.deepEqual(e.request.authority.change_request, f.prior.envelope.request.authority.change_request);
+  assert.match(e.input, /Prior verified Writer Outcome \(context only/);
+  assert.ok(e.input.includes('Writer preserves useful remediation progress'));
+  assert.ok(e.input.includes('Fixture local source change'));
+  assert.ok(e.input.includes(f.prior.outcome.bodySha256));
   assert.deepEqual(e.request.lineage, { attempt: f.prior.envelope.attemptId, step: f.prior.envelope.step,
     sha256: digest(f.prior.envelope) });
   assert.deepEqual(e.profile, { cliModelId: direction.model, effort: direction.effort });

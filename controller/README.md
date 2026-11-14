@@ -1332,3 +1332,16 @@ bounded cleanup allowances; the child sees the remaining execution budget.
 The owner-facing command and required privileges are unchanged. Local fixture
 success proves only the installed behavior actually exercised, not a native
 admission, independent acceptance or production authorization.
+
+### Prior execution context at continuation
+
+Fresh admission may append the exact verified prior Writer Outcome as context-only
+claims and diagnostics; it does not amend authority or change the admission
+snapshot fields. Same-CR continuation reuses its existing native readback. Other
+continuations read only the protected prior comment ID and verify its Writer,
+parent, body hash and original admission/lineage, without another history scan.
+Missing optional context warns rather than creating a new launch gate. The
+secret-redacted projection retains at most 64 KiB of body text, preserving its
+start and final diagnostics when clipping is necessary; clipping is explicit in
+the input and execution warning. Original native bytes and source hashes remain
+unchanged, and current Task scope, holds and publication boundaries still govern.

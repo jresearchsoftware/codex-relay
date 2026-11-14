@@ -70,7 +70,11 @@ export async function main() {
     if (await realpath(CURRENT) !== release) fail('SMOKE_INSTALLED_HEAD_CHANGED');
   } catch (caught) {
     error = caught;
-    runtimeCleanupComplete = caught.details?.cleanup === 'complete';
+    runtimeCleanupComplete = caught.details?.cleanup === 'complete'
+      || (caught.code === 'DISPATCH_NOT_STARTED' && caught.details?.cleanup === 'not_required'
+        && caught.details?.childState === 'not_started' && caught.details?.containment === 'not_required'
+        && caught.details?.diagnosticStore?.status === 'stored'
+        && caught.details?.fallbackReference?.status === 'released');
     if (dispatchStarted && !contained) {
       contained = caught.details?.containment === 'reaped' || caught.details?.containment === 'not_required';
       child = caught.details?.childState ?? 'unknown';

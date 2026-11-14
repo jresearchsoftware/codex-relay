@@ -3902,3 +3902,194 @@ async fn no_pr_v4_acceptance_uses_native_admission_when_owner_numbering_has_adva
         "step-8"
     );
 }
+
+// Exercise cancellation inside both actual typed publication handlers, after
+// their durable reservation and at a real pending GitHub HTTP await. No clock
+// policy or production delay is changed by this deterministic fault fixture.
+#[derive(Clone)]
+struct PublicationCancellationGate {
+    state: MockState,
+    operation: String,
+    decisive_path: String,
+    after_send: bool,
+    blocked: Arc<std::sync::atomic::AtomicBool>,
+    reached: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+async fn gated_publication_github(
+    State(gate): State<PublicationCancellationGate>,
+    headers: HeaderMap,
+    method: Method,
+    uri: Uri,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    let reserved = gate
+        .state
+        .store
+        .lock()
+        .unwrap()
+        .known(&gate.operation)
+        .unwrap()
+        .is_some_and(|operation| operation.status == "RESERVED");
+    let boundary = if gate.after_send {
+        method == Method::POST && uri.path() == gate.decisive_path
+    } else {
+        method == Method::GET && reserved
+    };
+    let block = boundary && !gate.blocked.swap(true, std::sync::atomic::Ordering::SeqCst);
+    if block && !gate.after_send {
+        gate.reached.notify_one();
+        gate.release.notified().await;
+    }
+    let response = mock_github(State(gate.state.clone()), headers, method, uri, body).await;
+    if block && gate.after_send {
+        // The synthetic native effect exists; only its HTTP response is lost.
+        gate.reached.notify_one();
+        gate.release.notified().await;
+    }
+    response
+}
+
+async fn cancellation_app(gate: PublicationCancellationGate) -> App {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let state = gate.state.clone();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .fallback(any(gated_publication_github))
+                .with_state(gate),
+        )
+        .await
+        .unwrap();
+    });
+    App {
+        policy: state.policy.clone(),
+        repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
+        enabled: true,
+        store: state.store.clone(),
+        github: github::Github::mock_api(format!("http://{address}"))
+            .with_test_installation(state.installation_id),
+        trusted_client_ca: Arc::new(Vec::new()),
+        observed_arguments: state.observed_arguments.clone(),
+    }
+}
+
+async fn typed_handler_cancellation(review: bool, after_send: bool) {
+    let state = admitted();
+    let (arguments, operation, decisive_path) = if review {
+        outcome_v4(
+            &state,
+            authority_v4(vec![], Value::Null, Value::Null),
+            json!({"kind":"issue","number":24}),
+            json!({"kind":"git","revision":HEAD,"identities":[]}),
+        );
+        let args = base_args("APPROVE");
+        let operation = operation_id(&state.policy.validation_names, &args);
+        (
+            args,
+            operation,
+            format!("/repos/{TEST_REPOSITORY}/pulls/25/reviews"),
+        )
+    } else {
+        let record = decision_v4();
+        crate::task_authority::validate_record(&record).unwrap();
+        let operation = authority_operation(&record);
+        (
+            json!({"repository":TEST_REPOSITORY,"record":record}),
+            operation,
+            format!("/repos/{TEST_REPOSITORY}/issues/24/comments"),
+        )
+    };
+    let gate = PublicationCancellationGate {
+        state: state.clone(),
+        operation: operation.clone(),
+        decisive_path: decisive_path.clone(),
+        after_send,
+        blocked: Default::default(),
+        reached: Default::default(),
+        release: Default::default(),
+    };
+    let app = cancellation_app(gate.clone()).await;
+    let worker_app = app.clone();
+    let worker_arguments = arguments.clone();
+    let mut worker = tokio::spawn(async move {
+        let target = worker_app.target(&worker_arguments).unwrap();
+        if review {
+            crate::publication::publish_review(&target, &worker_arguments).await
+        } else {
+            crate::task_authority::publish(&target, &worker_arguments).await
+        }
+    });
+    tokio::select! {
+        result = &mut worker => panic!("typed handler returned before cancellation boundary: {result:?}"),
+        reached = tokio::time::timeout(std::time::Duration::from_secs(5), gate.reached.notified()) => reached.expect("handler reached reserved HTTP await"),
+    }
+    assert_eq!(
+        state
+            .store
+            .lock()
+            .unwrap()
+            .known(&operation)
+            .unwrap()
+            .unwrap()
+            .status,
+        "RESERVED"
+    );
+    let decisive_sends = || {
+        state
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| *request == &format!("POST {decisive_path}"))
+            .count()
+    };
+    assert_eq!(decisive_sends(), usize::from(after_send));
+    worker.abort();
+    assert!(worker.await.unwrap_err().is_cancelled());
+    assert_eq!(
+        state
+            .store
+            .lock()
+            .unwrap()
+            .known(&operation)
+            .unwrap()
+            .unwrap()
+            .status,
+        if after_send {
+            "RESERVED"
+        } else {
+            "RETRYABLE_FAILURE"
+        }
+    );
+    gate.release.notify_one();
+    let target = app.target(&arguments).unwrap();
+    let recovered = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        if review {
+            crate::publication::publish_review(&target, &arguments).await
+        } else {
+            crate::task_authority::publish(&target, &arguments).await
+        }
+    })
+    .await
+    .expect("identical typed retry/recovery completes");
+    assert_ne!(recovered["isError"], true, "{recovered}");
+    // Before-send cancellation permits one new decisive send. After-send
+    // cancellation recovers the existing exact native effect without another.
+    assert_eq!(decisive_sends(), 1, "{recovered}");
+}
+
+#[tokio::test]
+async fn current_typed_review_cancellation_refunds_only_before_decisive_http_send() {
+    typed_handler_cancellation(true, false).await;
+    typed_handler_cancellation(true, true).await;
+}
+
+#[tokio::test]
+async fn current_typed_authority_cancellation_refunds_only_before_decisive_http_send() {
+    typed_handler_cancellation(false, false).await;
+    typed_handler_cancellation(false, true).await;
+}

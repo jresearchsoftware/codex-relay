@@ -82,5 +82,6 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
     if (comparison.status !== 'ahead' || comparison.base_commit?.sha !== e.startHead
       || comparison.merge_base_commit?.sha !== e.startHead) fail('STARTING_STATE_MISMATCH');
   }
-  return { branch: q.branch, base_sha: q.base_sha, starting_head: head, existing_pr: pr.number };
+  return { branch: q.branch, base_sha: q.base_sha, starting_head: head, existing_pr: pr.number,
+    priorOutcome: { body: native.body, id: native.id, sha256: prior.outcome.bodySha256, attempt: e.attemptId, step: e.step } };
 }

@@ -7,7 +7,7 @@
   "delivery_form": "standalone",
   "files": {
     "LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "SKILL.md": "2059902a406f7200507a28f8121fdf22b7bf875a88391028e68e7d2d0e766350",
+    "SKILL.md": "33bfcca4616b777c7a3557089e7b9dbe5972c343a9f6e139c2c82daa9d756f7a",
     "references/compatibility.md": "0fdbf5c36b1cb3b61cb77cc62c7f06d3c3af401a6c7b3e8b856fffa271b8f4bc",
     "references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "references/examples.md": "8c5c27458a804a233cb1a2d5c5c83db1013d81e9154f6648ed93460f0fa48158",
@@ -61,7 +61,7 @@
     "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
     "guidance/source.json": "de0a1a9c98f5e4a12a7206fd8ac1c651ecb120f664aa8c69225d44a907a78b51",
     "packages/codex-relay/skill/LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
-    "packages/codex-relay/skill/SKILL.md": "2059902a406f7200507a28f8121fdf22b7bf875a88391028e68e7d2d0e766350",
+    "packages/codex-relay/skill/SKILL.md": "33bfcca4616b777c7a3557089e7b9dbe5972c343a9f6e139c2c82daa9d756f7a",
     "packages/codex-relay/skill/references/compatibility.md": "0fdbf5c36b1cb3b61cb77cc62c7f06d3c3af401a6c7b3e8b856fffa271b8f4bc",
     "packages/codex-relay/skill/references/diagnostics.md": "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9",
     "packages/codex-relay/skill/references/examples.md": "8c5c27458a804a233cb1a2d5c5c83db1013d81e9154f6648ed93460f0fa48158",

@@ -145,7 +145,6 @@ published verdict grants merge, release or production authority.
 | `deploy/` | Product deployment, revision reporting and internal replaceable backend |
 | `examples/` | Plain synthetic configuration and secondary rendering examples |
 | `.github/ISSUE_TEMPLATE/` | Human bug/question paths and owner Codex task baseline |
-| `.codex/hooks/` | Optional PowerShell Core developer helpers; see the [contract and qualification](.codex/hooks/README.md) |
 
 The [VibeVM governance distribution design](docs/vibevm-governance-design.md)
 maps candidate shared context and specialist guidance while preserving Relay's

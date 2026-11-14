@@ -142,6 +142,35 @@ test('synchronous spawn failure reaches finalization with safe OS evidence and n
   assert.doesNotMatch(JSON.stringify(finalized.failure), /private/);
 });
 
+test('asynchronous missing executable proves no child and retires only after durable failure evidence', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-missing-dispatch-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let archived;
+  const dispatcher = fixture({
+    reserveDiagnostic: value => reserveRuntimeDiagnostic({ ...value, root }),
+    spawnImpl: (command, args, options) => spawn(join(root, 'missing-dispatch'), args, options),
+    finalizeArtifacts: value => finalizeRuntimeArtifacts({ ...value,
+      readDiagnosticConfig: async () => ({ mode: 'normal' }),
+      diagnosticStore: async diagnostic => {
+        archived = diagnostic;
+        return { status: 'stored', mode: 'normal', executionId: diagnostic.executionId };
+      }, cleanupSandbox: () => assert.fail('no runtime or sandbox existed') })
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'DISPATCH_NOT_STARTED');
+    assert.equal(error.details.childState, 'not_started');
+    assert.equal(error.details.containment, 'not_required');
+    assert.equal(error.details.primaryCause, 'ENOENT');
+    return true;
+  });
+  const handle = await openRuntimeDiagnostic({ executionId: envelope.attemptId, root, includeReleased: true });
+  const capsule = await handle.read();
+  assert.equal(capsule.released, true);
+  assert.equal(capsule.terminalDiagnostic.status, 'stored');
+  assert.equal(archived.lifecycle.failureDiagnostic.code, 'DISPATCH_NOT_STARTED');
+  assert.equal(archived.lifecycle.failureDiagnostic.primaryCause, 'ENOENT');
+});
+
 test('successful process cannot hide a cleanup failure', async () => {
   const dispatcher = fixture({
     spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',containment:'reaped',result:{status:'success'}}));`),
@@ -208,4 +237,24 @@ test('contained cleanup failure preserves the semantic result with an explicit r
   assert.equal(result.result.status, 'success');
   assert.deepEqual(result.executionWarnings, ['RUNTIME_CLEANUP_FAILED']);
   assert.equal(result.runtimeLifecycle.retention, 'retained');
+});
+
+
+test('automatic dispatch default follows the scrubbed worker budget rather than the controller environment', async t => {
+  const old = process.env.CODEX_RUNTIME_TIMEOUT_MS;
+  process.env.CODEX_RUNTIME_TIMEOUT_MS = '1000';
+  t.after(() => { if (old === undefined) delete process.env.CODEX_RUNTIME_TIMEOUT_MS; else process.env.CODEX_RUNTIME_TIMEOUT_MS = old; });
+  const delays = [], nativeTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
+    delays.push(delay);
+    return nativeTimer(callback, delay, ...args);
+  });
+  const start = launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',containment:'reaped',result:{status:'success'}}));`);
+  const dispatcher = fixture({ spawnImpl: (command, args, options) => {
+    assert.equal(options.env.CODEX_RUNTIME_TIMEOUT_MS, undefined);
+    return start(command, args, options);
+  } });
+  assert.equal((await dispatcher.dispatch(envelope)).result.status, 'success');
+  assert.ok(delays.includes(100 * 60 * 1000), JSON.stringify(delays));
+  assert.ok(!delays.includes(1000 + 10 * 60 * 1000), JSON.stringify(delays));
 });

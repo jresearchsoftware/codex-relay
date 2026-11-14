@@ -41,7 +41,7 @@ function replaceExact(text, value, replacement) {
   return text.split(value).join(replacement);
 }
 
-export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [] } = {}) {
+export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], preserveNewlines = false } = {}) {
   let text = String(value ?? "");
   text = replaceExact(text, codexAccessToken, "[REDACTED_CODEX_ACCESS_TOKEN]");
   text = replaceExact(text, githubToken, "[REDACTED_GITHUB_TOKEN]");
@@ -51,7 +51,7 @@ export function redactDiagnosticText(value, { codexAccessToken = "", githubToken
   text = text.replace(/\b(?:authorization\s*:\s*bearer|bearer)\s+[^\s,;]+/gi, match => `${match.slice(0, match.toLowerCase().indexOf("bearer") + 6)} [REDACTED_BEARER]`);
   text = text.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
   text = text.replace(/\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)\b\s*[:=]\s*[^\s,;]+/gi, match => `${match.split(/[:=]/, 1)[0]}=[REDACTED_SECRET]`);
-  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, character => preserveNewlines && ["\n", "\r"].includes(character) ? character : " ");
 }
 
 export function boundedDiagnosticText(value, maxBytes, secrets = {}) {

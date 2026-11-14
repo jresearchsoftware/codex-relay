@@ -5,8 +5,8 @@ These instructions govern **owner-admitted Relay/Codex development**. The
 also defines owner acceptance and ordinary authorized standalone/manual work;
 native admission and publication rules apply to the Relay route. Ordinary
 human contributors use [CONTRIBUTING.md](CONTRIBUTING.md); they do not need
-Task/Step admission, an installed Relay consumer, Codex UI tools or these
-optional developer hooks to propose a change.
+Task/Step admission, an installed Relay consumer or Codex UI tools to propose
+a change.
 
 ## Shared governance and Relay routing
 
@@ -30,7 +30,7 @@ These are the single portable rule owners. The
 [Relay bindings](docs/relay-guidance-ownership.md) retain native authority,
 actors and supported product behavior. Read [architecture](docs/architecture.md)
 for orchestration/trust changes, the affected component contract for API changes,
-[CONTRIBUTING](CONTRIBUTING.md) for validation, and deployment/hook/subagent
+[CONTRIBUTING](CONTRIBUTING.md) for validation, and deployment/subagent
 contracts when those surfaces are active. The canonical authored user manual is
 [the product Skill](packages/codex-relay/skill/SKILL.md).
 [Native self-adoption](docs/self-adoption.md) supplies committed ready files;
@@ -352,13 +352,6 @@ CD-005–007 owns promotion and same-change documentation. Relay executable
 Task authority uses its trusted Decision/legacy compatibility mechanisms;
 component policy belongs in the existing owning contract.
 
-Optional [developer hooks](.codex/hooks/README.md) provide bounded diagnostic
-reads, session-owned recovery and a bounded Stop reminder. They are not Relay
-runtime authority. A missing checkpoint is silent and nonblocking. When useful,
-write only the irreconstructible diagnostic frontier through the validated
-atomic writer; never store secrets, transcripts or a parallel task ledger.
-After recovery revalidate mutable authority and exact Git/runtime facts.
-
 ## Preserve the product boundaries
 
 - Edit Relay-managed workflow behavior in `deploy/workflows/*.yml.in`, never
@@ -441,9 +434,7 @@ python3 scripts/check-candidate.py
 ```
 
 The candidate check scans tracked files; stage intended additions before using
-it. Do not stage unrelated work. For hook changes also run the PowerShell Core
-checks and state the platform evidence described in the
-[hook contract](.codex/hooks/README.md#qualification). Local contract tests do
+it. Do not stage unrelated work. Local contract tests do
 not qualify consumer sudo wrappers, process isolation, credentials, ingress or
 a production service.
 Native checks and independent review remain separate evidence.

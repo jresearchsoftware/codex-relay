@@ -55,7 +55,7 @@ PAYLOAD_HASH = "af758c7c375f54741e46b8c0bfa1ea5311d315839aeae385b3d0ffd468473c36
 RECEIPT_HASH = "f4a568278ba45cc6bd64280f4fae74a337de3d3c9384e0e72bd5912e74487c61"
 TREE_HASH = "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
-CORE_HASH = "2251ff094522c58cfbfd1fc6833286c0eb02bc52eb35e3057e49b5709d6a2157"
+CORE_HASH = "7ee75b41d178fd639d3bc97521cf950a96915ba0bfae29269b564e9ea515df3a"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
 BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
 LOCAL_SUBAGENTS = Path("docs/codex/SUBAGENTS.md")
