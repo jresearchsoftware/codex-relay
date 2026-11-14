@@ -75,6 +75,13 @@ def service(unit):
             and values['SubState'] == 'running' and values['NeedDaemonReload'] == 'no'
             and values['MainPID'].isdigit() and int(values['MainPID']) > 0
             and values['ControlGroup'] == '/system.slice/' + unit)
+    for field in ['Requires', 'BindsTo', 'PartOf']:
+        members = values[field].split()
+        # systemd exports these dependency sets in iteration order, which may
+        # change after daemon-reload. No ordering semantics apply to members.
+        require(all(re.fullmatch(r'(?:[A-Za-z0-9:_.@-]|\\x[0-9a-fA-F]{2})+\.(?:service|socket|target|device|mount|automount|swap|timer|path|slice|scope)',
+                                 member) for member in members))
+        values[field] = ' '.join(sorted(set(members)))
     return values
 
 

@@ -18,6 +18,28 @@ adoption = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adoption)
 
 
+def test_service_dependency_sets_ignore_iteration_order_but_keep_configuration_order():
+    values = {'LoadState': 'loaded', 'ActiveState': 'active', 'SubState': 'running',
+              'NeedDaemonReload': 'no', 'MainPID': '42', 'ControlGroup': '/system.slice/example.service',
+              'Requires': 'z.mount a.service z.mount', 'BindsTo': 'x.device y.socket',
+              'PartOf': 'parent.target other.service', 'ExecStart': 'first second',
+              'DropInPaths': '/one.conf /two.conf', 'EnvironmentFiles': '/first /second'}
+    def observed(selected):
+        response = SimpleNamespace(stdout='\n'.join(f'{key}={value}' for key, value in selected.items()).encode())
+        with patch.object(adoption.subprocess, 'run', return_value=response):
+            return adoption.service('example.service')
+    before = observed(values)
+    permuted = {**values, 'Requires': 'a.service z.mount', 'BindsTo': 'y.socket x.device',
+                'PartOf': 'other.service parent.target'}
+    assert observed(permuted) == before
+    for field in ['Requires', 'BindsTo', 'PartOf']:
+        assert observed({**permuted, field: permuted[field] + ' changed.service'}) != before
+        with pytest.raises(ValueError):
+            observed({**values, field: '../invalid.service'})
+    for field in ['ExecStart', 'DropInPaths', 'EnvironmentFiles']:
+        assert observed({**permuted, field: ' '.join(reversed(values[field].split()))}) != before
+
+
 def run(payload, observed=None, error=None):
     output = io.StringIO()
     with patch.object(sys, 'stdin', io.StringIO(json.dumps(payload))), patch.object(sys, 'stdout', output), \

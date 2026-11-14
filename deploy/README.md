@@ -1384,6 +1384,9 @@ bound. Its elapsed microseconds are rounded down by Linux; the proof subtracts
 one full microsecond from the pre-request monotonic sample and retains both
 current and original systemd clock guards (including timestamp truncation).
 Kernel peer, response shape, PID, UID and retained process generation are checked.
+Loaded `Requires`, `BindsTo` and `PartOf` dependencies compare as validated unit
+sets; their iteration order may change on daemon reload. Command arguments,
+environment-file order and drop-in order retain exact comparison.
 The derived query time is never persisted or compared as an input identity.
 Unavailable privileges, unsupported accounting or uncertain replies keep the
 original strict tick bound and ordinary restart. No accounting listener, new
