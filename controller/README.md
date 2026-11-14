@@ -1308,3 +1308,27 @@ node --import ./consumer/test-support/consumer-env.mjs --test controller/test/pu
 
 The complete local candidate checks are in [development guidance](../AGENTS.md).
 Consumer workflows supply native exact-head and installed-runtime checks.
+
+
+## Owner-local non-routing smoke
+
+The existing root-only `relay-general-runner-smoke --approved-head SHA` helper
+qualifies the installed dispatcher and launcher against an exclusive local
+`event-N` scratch checkout. Its internal `owner-smoke` request contains only the
+repository/consumer binding, event identity and approved installed head. It
+contains no Task, Issue number, Step, route, admission, prompt or model override.
+The dispatcher verifies the exact installed producer, approved-head arguments,
+current release, configured scratch path and exact root-owned `runuser`
+parent command/transition. The root-only helper already verifies the protected
+release manifest before that transition; the runner reuses this proof without
+reading private installation metadata before using its fixed probe prompt/profile. Native Task
+execution still requires the unchanged schema-v4 admission validator.
+
+The internal dispatcher/launcher mode uses the same diagnostic reservation,
+lifetime pipes, containment acknowledgement and finalization as ordinary
+execution. It does not enter Writer, publish, allocate a Step or authorize Task
+work. The existing two-minute probe bound includes native termination and
+bounded cleanup allowances; the child sees the remaining execution budget.
+The owner-facing command and required privileges are unchanged. Local fixture
+success proves only the installed behavior actually exercised, not a native
+admission, independent acceptance or production authorization.

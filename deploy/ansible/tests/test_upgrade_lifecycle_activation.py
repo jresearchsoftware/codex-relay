@@ -191,7 +191,10 @@ class UpgradeActivationTests(unittest.TestCase):
                 'try: print(json.dumps(prove(value,native)))\n'
                 'except ValueError as error:\n print(str(error),file=sys.stderr);sys.exit(1)\n')
             proof_tasks = yaml.safe_load((ROOT / 'tasks/upgrade-maintained-runners.yml').read_text())
-            proof_tasks[0]['ansible.builtin.command']['argv'] = ['/usr/bin/python3', str(probe)]
+            # This synthetic probe imports pytest-backed fixture Evidence.
+            # Use the test environment's interpreter rather than assuming those
+            # test-only dependencies exist in the host's production Python.
+            proof_tasks[0]['ansible.builtin.command']['argv'] = [sys.executable, str(probe)]
             (root / 'upgrade-maintained-runners.yml').write_text(yaml.safe_dump(proof_tasks, sort_keys=False))
         return tasks, values, trace
 

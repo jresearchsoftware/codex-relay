@@ -6,19 +6,16 @@ import { randomInt } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { createOnDemandDispatchAdapter } from './controller/src/github.mjs';
-import { REPOSITORY, VERSION, digest, exactSha, fail } from './controller/src/execution-contract.mjs';
+import { createOwnerSmokeDispatchAdapter } from './controller/src/github.mjs';
+import { REPOSITORY, VERSION, exactSha, fail } from './controller/src/execution-contract.mjs';
 import { WORK_ROOT } from './controller/src/attempt-runtime.mjs';
 import { grantSharedCheckoutAccess } from './runtime/src/codex-runtime.mjs';
 
 const exec = promisify(execFile);
-const CURRENT = '{{ relay_install_root }}/current';
-const PROFILE = Object.freeze({ cliModelId: 'gpt-6-astra', effort: 'low' });
-const INPUT = `Owner-authorized non-routing general runner smoke. Do not use tools,
-run commands, modify files, create commits, access GitHub or any external service,
-publish, push, invoke a Reviewer, or change production. Perform no external work.
-Only return {"status":"success","summary":"general-runner-smoke-child-started","validation":[],"blockedReason":""}.
-The scratch fixture is intentionally complete and requires no implementation.`;
+export const OWNER_SMOKE_RUNNER_USER = '{{ relay_general_runner_user }}';
+export const OWNER_SMOKE_CURRENT = '{{ relay_install_root }}/current';
+export const OWNER_SMOKE_RELEASE_ROOT = '{{ relay_release_root }}';
+const CURRENT = OWNER_SMOKE_CURRENT;
 const ENV = Object.freeze({ PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C',
   GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
   GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'false', GIT_ALLOW_PROTOCOL: '',
@@ -55,14 +52,10 @@ export async function main() {
     const base = await git(['rev-parse', 'HEAD']);
     const config = await readFile(`${cwd}/.git/config`, 'utf8');
     await grantSharedCheckoutAccess(cwd);
-    const envelope = { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId: eventId, eventId,
-      target: 'issue', number: 263, issueNumber: 263, route: 'manual', startHead: base,
-      historicalBase: base, targetBase: base, branch: 'codex/general-runner-smoke',
-      authorityDigest: digest({ purpose: 'owner-local-smoke', approvedHead }),
-      validation: ['diff-check'], thread: 'General runner non-routing smoke', profile: PROFILE,
-      subagentsAllowed: false, input: INPUT };
+    const request = { version: VERSION, kind: 'owner-smoke', repository: REPOSITORY,
+      consumerDigest: CONSUMER_DIGEST, attemptId, approvedHead };
     boundary = 'dispatch'; dispatchStarted = true; contained = false;
-    const result = await createOnDemandDispatchAdapter({ timeoutMs: 120000 }).dispatch(envelope);
+    const result = await createOwnerSmokeDispatchAdapter().dispatch(request);
     runtimeCleanupComplete = result.runtimeLifecycle?.cleanup === 'complete';
     contained = result.containment === 'reaped'; child = result.child;
     if (!contained || child !== 'started') fail('SMOKE_CHILD_START_UNPROVEN');
@@ -98,7 +91,8 @@ export async function main() {
     approvedHead: exactSha(approvedHead) ? approvedHead : null,
     child: ['started', 'not_started'].includes(child) ? child : 'unknown',
     containment: contained ? 'reaped-or-not-required' : 'unknown', cleanup,
-    boundary, primaryCause: error?.details?.primaryCause ? safeCode(error.details.primaryCause) : null };
+    boundary, operation: /^[a-z][a-z0-9-]{0,63}$/.test(error?.details?.causal?.publication?.operation ?? error?.details?.operation ?? '')
+      ? error.details?.causal?.publication?.operation ?? error.details?.operation : null, primaryCause: error?.details?.primaryCause ? safeCode(error.details.primaryCause) : null };
   process.stdout.write(`GENERAL_RUNNER_SMOKE_RESULT=${JSON.stringify(proof)}\n`);
   if (error || proof.child !== 'started' || cleanup !== 'cleaned') process.exitCode = 1;
 }

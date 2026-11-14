@@ -395,7 +395,7 @@ export async function runGovernedCodexTask({
     diagnosticMode = (await readDiagnosticConfig()).mode;
     stderrCapture = createBoundedUtf8Capture(diagnosticMode === 'debug' ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES);
     stdoutCapture = createBoundedUtf8Capture(diagnosticMode === 'debug' ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES);
-    taskInput = `${inputText}\n\n${PROGRESS_BOUNDED_EXECUTION}\nRuntime budget: this invocation has ${Math.floor(resolvedCodexRuntimeTimeoutMs(env?.CODEX_RUNTIME_TIMEOUT_MS) / 1000)} seconds for Codex execution. Preserve useful progress before the deadline; containment and trusted publication have separate outer time. Consumer configuration owns this budget.\n`;
+    taskInput = `${inputText}\n\n${operation === 'owner-smoke' ? '' : PROGRESS_BOUNDED_EXECUTION}\nRuntime budget: this invocation has ${Math.floor(resolvedCodexRuntimeTimeoutMs(env?.CODEX_RUNTIME_TIMEOUT_MS) / 1000)} seconds for Codex execution. Preserve useful progress before the deadline; containment and trusted publication have separate outer time. Consumer configuration owns this budget.\n`;
     schemaText = `${JSON.stringify(resultSchema)}\n`;
     await checkpoint({ operation: 'sandbox-preflight', pathContext: 'sandbox' });
     // Existing sandboxes may be the last evidence of an earlier failed attempt.
@@ -413,6 +413,7 @@ export async function runGovernedCodexTask({
     if (process.platform !== "win32") {
       await chmod(inputPath, 0o660);
       await chmod(schemaPath, 0o660);
+      await chmod(join(stagingDir, "config", "openssl.cnf"), 0o660);
     }
     diagnosticPhases.push("input-schema-written");
     await checkpoint({ inputSchemaCreated: true, operation: 'build-arguments', pathContext: 'sandbox' });

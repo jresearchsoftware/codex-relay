@@ -79,9 +79,9 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
       let code;
       try {
         const launched = spawn(process.execPath, [launcher,
-      'exec', ...(remediation ? ['--operation', 'review-remediation'] : []), '--json',
+      'exec', ...(remediation === true ? ['--operation', 'review-remediation'] : []), '--json',
       '--model', model, '--effort', effort, '--input-file', input, '--cwd', taskRoot,
-      remediation ? '--pull-request' : '--issue', '210'], {
+      ...(remediation === 'owner-smoke' ? ['--owner-smoke'] : [remediation ? '--pull-request' : '--issue', '210'])], {
           env: { PATH: '/caller/untrusted/bin', CARGO_HOME: '/protected/build-cache', GITHUB_TOKEN: 'synthetic-should-not-cross' },
           stdio: ['pipe', output.fd, error.fd]
         });
@@ -227,4 +227,14 @@ writeSync(1,JSON.stringify({type:'item.updated',details:{[${JSON.stringify(secre
   assert.equal(event.details.token, '[REDACTED_SECRET]');
   assert.ok(!output.stdout.includes(secretKey));
   assert.doesNotMatch(output.stdout, /synthetic-sensitive-field-value/);
+});
+
+
+test('internal owner-smoke launcher mode needs no synthetic Task number', async t => {
+  const f = await fixture(t);
+  const result = await f.run('gpt-6-astra', 'low', 'owner-smoke');
+  assert.match(result.stderr, /CODEX_EXIT_OK/);
+  const child = JSON.parse(await readFile(f.record, 'utf8'));
+  assert.equal(child.args[child.args.indexOf('--model') + 1], 'gpt-6-astra');
+  assert.ok(!child.args.includes('--issue') && !child.args.includes('--pull-request'));
 });

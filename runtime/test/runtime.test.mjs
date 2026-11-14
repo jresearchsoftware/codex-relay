@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { mkdtemp, mkdir, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, symlink, chmod, chown, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
 import { join } from 'node:path';
@@ -191,4 +191,29 @@ test('Codex child exit remains an execution exit and is not confused with public
     return true;
   });
   assert.equal(causalEvidence(failure, { child: 'started', containment: 'reaped', stage: 'execution' }).observed.exitCode, 7);
+});
+
+
+test('fresh task OpenSSL config remains group-readable under a private deployment umask', async t => {
+  if (process.platform === 'win32') return t.skip('Unix shared-group file-mode contract');
+  const crossUid = process.platform === 'linux' && process.getuid?.() === 0;
+  const cwd = await mkdtemp(join(crossUid ? '/run' : tmpdir(), 'relay-openssl-umask-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  if (crossUid) await chown(cwd, 0, 62095);
+  await chmod(cwd, 0o2770);
+  const originalUmask = process.umask(0o077);
+  t.after(() => process.umask(originalUmask));
+  const result = await runGovernedCodexTask({ cwd, inputText: 'Fixed local file-access fixture',
+    env: { PATH: '/usr/bin:/bin' }, buildArgs: () => [], diagnosticStore: async () => undefined,
+    fallbackStore: async () => ({ reference: { status: 'stored', executionId: 'openssl-umask', slot: 0 }, write: async () => undefined }),
+    spawnImpl(_command, _args, options) {
+      const config = join(cwd, '.codex-sandbox/config/openssl.cnf');
+      const code = `const fs=require('node:fs');const p=process.env.OPENSSL_CONF;const m=fs.statSync(p);if((m.mode&511)!==432||!fs.readFileSync(p,'utf8').includes('[req]'))process.exit(9);process.stdout.write(JSON.stringify({type:'task_result',result:{status:'success',summary:'group-read-proven',validation:[],blockedReason:''}})+'\\n');`;
+      assert.equal(options.env.OPENSSL_CONF, config);
+      return spawn(process.execPath, ['-e', code], { ...options,
+        ...(crossUid ? { uid: 65534, gid: 62095 } : {}) });
+    }
+  });
+  assert.equal(result.summary, 'group-read-proven');
+  assert.equal((await stat(join(cwd, '.codex-sandbox/config/openssl.cnf'))).mode & 0o777, 0o660);
 });

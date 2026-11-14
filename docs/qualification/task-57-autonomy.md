@@ -56,12 +56,27 @@ private bind alias and task-owned `/tmp` fixtures, without changing owner source
 permissions. The installed-runtime fixture stages the real routing aliases and
 uses a traversable cwd and synthetic temporary storage for its runtime users.
 The deliberate excessive-sudo-grant test asserts the current effective-policy
-failure instead of an obsolete diagnostic string. Six rapid metadata-mutation
+failure instead of an obsolete diagnostic string. Ten rapid metadata-mutation
 failures were reproduced on untouched accepted source: this ext3 host can reuse
 ctime/mtime ticks and inodes. The fixtures now establish an actual metadata
 change before testing the existing guard; product guards are unchanged. These
 tests do not prove detection of a changed-and-restored input with an identical
 complete observed identity.
+
+The installed public general-runner smoke producer still emitted a pre-native
+Task-like envelope that current admission correctly rejected. It now uses a
+separate fixed owner-local request, authenticated against the installed producer
+and its exact root transition. It cannot supply Task/Step/admission, arbitrary
+input or profile, or native publication authority. The existing public command,
+two-minute boundary, model profile, containment and finalization remain. An
+explicit mode correction on the newly generated task-local OpenSSL configuration
+allows the model UID's existing shared group to read it under a restrictive
+umask; host configuration and owner files are unchanged.
+
+One maintained-activation fixture also invoked the system Python without pytest
+while importing its own pytest-based test module. This was reproduced on the
+accepted baseline and corrected only in the synthetic fixture to use its active
+test interpreter; production interpreter selection is unchanged.
 
 Deployment-suite and composed installed-runtime results are recorded in the
 final canonical Outcome after completion. The latter installs actual candidate
@@ -74,7 +89,9 @@ production deployment, new App permissions, real model compliance or acceptance.
 The shared TEST marker was freshly claimed by this attempt only after free
 readback; installed TEST routing identifies the dedicated testbed repositories.
 The live TEST gate was read back open with no active or unknown controllers,
-and no systemd jobs or active deployment frontend were observed. Source,
+and no systemd jobs or active deployment frontend were observed. The exact
+attempt-owned claim was released and the marker read back free, with admission
+open/idle and production-operation state STABLE. Source,
 private-namespace qualification and shared-service facts are separate evidence.
 No PROD mutation, product merge, external package publication, credential change,
 GitHub App/runner ACL change or Task closure was performed.
@@ -88,3 +105,55 @@ within this Step. They did not supply native independent acceptance.
 Small Improvements discovery found #248, #250 and #251. Their separate guidance
 and live-settings work was not admitted into this implementation. No candidate
 was silently added or closed.
+
+## Optional developer hooks: assessment, decision still open
+
+The owner's supplemental [Windows evidence](https://github.com/jresearchsoftware/codex-relay/issues/57#issuecomment-6884117090)
+is retrospective evidence for R8/D5, not removal authority. It reports eleven
+rollouts, twelve actual compactions, delivery of SessionStart announcements,
+no observed checkpoint Write/capture/recovery and no demonstrated Stop benefit.
+Four command-definition trust prompts and the PowerShell Core prerequisite are
+concrete costs. Missing complete execution traces and checkpoint-directory
+inspection prevent claiming that hooks never ran. Reused parent session IDs do
+not establish independent helper-session execution or isolation.
+
+This Debian execution has no confirmed useful hook/checkpoint use. We did not
+invoke hooks, write checkpoints, read private rollouts/checkpoints or manufacture
+lifecycle events for this assessment. Durable source commits, live authority and
+ordinary native context supported continuation; this does not prove absence of
+invisible lifecycle execution or a causal zero benefit from hooks.
+
+Recommendation: **remove the complete optional developer-hook subsystem after
+an explicit owner decision**. It currently occupies nine files and 2,378 lines
+(1,468 implementation, 731 tests, 123 documentation, 56 registration). Line count
+is a footprint rather than a measured maintenance cost. The recurring work is
+session identity/expiry/atomic capture and consumption, lexical Stop matching,
+path/regex/redaction bounds, PowerShell platform differences, definition trust
+and separate native lifecycle qualification. No runtime/admission/deployment
+caller or ordinary CI invocation was found; the coupling is hook discovery,
+development guidance and the helpers' own qualification.
+
+| Option | Benefit retained | Cost and consequences |
+| --- | --- | --- |
+| Full removal — recommended | Ordinary Git/Issue/native context and required stop-evidence policy remain. | Removes four automatic definitions, their trust work and the PowerShell requirement specific to this subsystem. Loses the optional bounded JSON reader, frontier transfer and wording reminder; none has demonstrated indispensable benefit in the supplied executions. Relay admission, publication, containment and independent review are unaffected. |
+| Keep selected manual helpers | The only defensible candidate is the stateless `targeted-diagnostic-read.ps1`: bounded JSON locations/slices, confinement, regex deadline and sensitive-output rejection. | About 900 implementation/test lines plus documentation remain, with PowerShell needed only when invoked. It duplicates much ordinary bounded search/read work and has no observed consumer proving that this interface earns its cost. No automatic registration or lifecycle proof would remain. |
+| Keep the checkpoint manually | Preserves a possible irreconstructible-frontier note mechanism. | Not recommended: the current Recover path requires a PreCompact capture, while Validate does not return the frontier. A clean manual reader needs refactoring; keeping all 619 implementation/232 test lines merely for hypothetical future use is poor value. |
+
+The Stop helper should not be retained as a manual tool: it checks wording and
+shape, cannot prove diagnostic quality or containment, and does not replace the
+existing policy or independent assessment. The Windows observations establish
+announcement delivery, not useful recovery; this assessment does not attribute
+Task 253 duration or success causally to hooks.
+
+A removal change must close active references in root AGENTS/CONTRIBUTING/README,
+execution policy, guidance ownership, `vibevm/vibespecs/boot/00-core.md`, authored
+Skill and current generated projections. Dated audit/design references should
+retain their historical meaning through accepted-source permalinks or a
+retirement note. Preserve immutable historical hash evidence and frozen packages.
+Existing ignored private notes, global hook settings and trust records must not
+be automatically deleted or changed. Keeping `.codex/local/` ignored remains
+useful generic local-data protection.
+
+No hook files or supported hook behavior were changed by this assessment. The
+owner's final removal/retention decision remains open; no extra Task, Step or
+special hook qualification was introduced.

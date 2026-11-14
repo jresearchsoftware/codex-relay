@@ -1,6 +1,7 @@
 import { executionConsumer } from '../../consumer/consumer.mjs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createBoundedUtf8Capture } from './utf8-capture.mjs';
+import { OWNER_SMOKE_TIMEOUT_MS, validateOwnerSmokeRequest } from './owner-smoke.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
@@ -53,11 +54,11 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 }
 
 
-export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs = resolvedCodexRuntimeTimeoutMs(process.env.CODEX_RUNTIME_TIMEOUT_MS) + 10 * 60 * 1000,
+function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = resolvedCodexRuntimeTimeoutMs(process.env.CODEX_RUNTIME_TIMEOUT_MS) + 10 * 60 * 1000,
   reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
   return {
     async dispatch(envelope) {
-      validateEnvelope(envelope);
+      validate(envelope);
       if (signal?.aborted) throw Object.assign(new Error('EXECUTION_CANCELLED'), { code: 'EXECUTION_CANCELLED',
         details: { childState: 'not_started', containment: 'not_required', executionId: envelope.attemptId } });
       // Reserve independent durable evidence before the process can create any
@@ -86,7 +87,7 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
           containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown',
           sandboxCreated: false, inputSchemaCreated: false });
         try {
-          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, [], {
+          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, dispatchArgs, {
             env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
             // fd3 is a separate lifetime pipe: envelope stdin still ends after
             // its unchanged JSON body. Caller death closes fd3 in the helper.
@@ -181,4 +182,11 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         ...(runtimeLifecycle?.cleanup === 'failed' ? { executionWarnings: ['RUNTIME_CLEANUP_FAILED'] } : {}) };
     }
   };
+}
+
+export function createOnDemandDispatchAdapter(options = {}) {
+  return createDispatchAdapter({ ...options, validate: validateEnvelope, dispatchArgs: [] });
+}
+export function createOwnerSmokeDispatchAdapter(options = {}) {
+  return createDispatchAdapter({ timeoutMs: OWNER_SMOKE_TIMEOUT_MS, ...options, validate: validateOwnerSmokeRequest, dispatchArgs: ['--owner-smoke'] });
 }

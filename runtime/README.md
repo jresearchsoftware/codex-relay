@@ -105,6 +105,14 @@ key/CSR fixtures work without exposing host configuration includes, private keys
 or custom providers. A task may use its own configuration inside the checkout.
 Task dependency caches and downloads remain local to the attempt.
 
+The owner-local smoke uses a separate internal `owner-smoke` dispatcher and
+launcher operation with a fixed prompt/profile and no synthetic Task or Issue
+number. It shares containment and diagnostics, while the installed producer and
+root `runuser` transition supply its qualification authority. Its fixed probe
+input is not supplemented with Task-implementation instructions. The external
+root-only smoke helper command is unchanged; native Task admission remains
+mandatory for all Task executions.
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching
