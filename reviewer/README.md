@@ -36,6 +36,29 @@ shape-validated metadata, not verification by the running binary. The consumer
 owns TLS termination; the service also verifies the forwarded client certificate.
 Do not bind this binary publicly.
 
+Managed Linux deployments can set `REVIEWER_ADOPTION_SOCKET`,
+`REVIEWER_ADOPTION_UNIT_FILE` and `REVIEWER_ADOPTION_ENV_FILES` for the private
+loaded-input proof used by ordinary Apply. This is a read-only Unix socket in a
+service-owned `0700` runtime directory, with socket mode `0600`. The same Reviewer
+process answers only peers whose kernel `SO_PEERCRED` UID is root; the root
+deployment client also checks the server's PID and dedicated service UID.
+There is no additional service, HTTP route, MCP tool or credential. Existing
+network mTLS, forwarded caller identity, origin validation and private bind
+requirements remain unchanged.
+
+Evidence contains hashes of the actual parsed startup configuration, consumed
+CA bytes, environment, key and unit/environment-file inputs, plus the process
+PID. It exposes no raw configuration, environment or key material. Only the
+validated `artifact` provenance object is omitted from the configuration hash;
+all other fields conservatively invalidate preservation. The snapshot is frozen
+at startup rather than reread from disk for requests, so stale in-memory policy
+or CA cannot match changed files. Apply separately proves loaded executable and
+dependencies, exact service/process continuity, credentials, admission/locks and
+Runner readiness. A missing socket or unproved input selects normal restart;
+it never establishes readiness or publication authority by itself. The proof
+schema must be revised if future runtime fields give artifact metadata effective
+behavior.
+
 `publish_task_authority` implements the opted-in
 [`github-native-v1` authority contract](../contracts/README.md#github-native-task-authority). Its input is
 `repository` and one structured `record`: Task Decision, independent exact-head

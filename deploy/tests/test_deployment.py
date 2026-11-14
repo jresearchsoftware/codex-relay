@@ -244,6 +244,12 @@ class EntrypointTests(unittest.TestCase):
         (cls.product / 'deploy/managed_pool_transport.py').write_text(
             'def preflight_pool(*args, **kwargs): return "MANAGED_POOL_PREFLIGHT=PASS"\n'
             'def reconcile_pool(*args, **kwargs): return \'MANAGED_POOL_RESULT={"capacity":1}\'\n')
+        # This fixture records every target command through its Ansible stub.
+        # Running the suite as root on Debian must not select the real local
+        # target adapter (or inspect/mutate the test runner's host).
+        transport = cls.product / 'deploy/ansible_transport.py'
+        transport.write_text(transport.read_text()
+            + '\n\ndef native_local_eligible(target, *, local=False):\n    return False\n')
         cls.revision = commit(cls.product)
         cls.consumer = cls.base / 'consumer'
         cls.consumer.mkdir()

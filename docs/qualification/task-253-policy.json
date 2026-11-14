@@ -1,0 +1,151 @@
+{
+  "backendDurations": [
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 11.263180486857891
+    },
+    {
+      "playbook": "relay-intent-preflight.yml",
+      "seconds": 13.354294829070568
+    },
+    {
+      "playbook": "relay-intent-apt-preflight.yml",
+      "seconds": 4.375326462090015
+    },
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 52.79392708837986
+    },
+    {
+      "playbook": "site.yml",
+      "seconds": 366.33830285072327
+    }
+  ],
+  "case": "policy",
+  "config": "d2282c958287efad53fa603b72a76077d6ca3f2a",
+  "endToEndSeconds": 569.5357014536858,
+  "executedTaskCounts": {
+    "beforeRetained": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "finalProof": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 1
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "reader": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 2,
+      "ok": 2,
+      "skipped": 0
+    },
+    "restart": {
+      "changed": 1,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "Actual shared-host TEST only; no PROD qualification",
+    "No full proof/arguments/private diagnostics in summary",
+    "Public generated receiving-repository integration remains outside host installer; no workflow dispatch attestation"
+  ],
+  "markers": [
+    {
+      "elapsed": 122.35662307590246,
+      "marker": "RELAY_INSTALL_PREFLIGHT=prepared;operation=0fe954cf-7bce-45c0-9c0f-938d47d50280"
+    },
+    {
+      "elapsed": 125.46398527175188,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    },
+    {
+      "elapsed": 126.63065969944,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=DRAIN;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    },
+    {
+      "elapsed": 147.62148243188858,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=APPLY;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    },
+    {
+      "elapsed": 564.0721666440368,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=ACTIVATE/VERIFY;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    },
+    {
+      "elapsed": 565.188964523375,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=RESUME;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    },
+    {
+      "elapsed": 566.3055020868778,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=OPEN;target=284e3f1f783f12b31b88332d7cde63f67dbd426a"
+    }
+  ],
+  "phase": "apply",
+  "returncode": 0,
+  "services": {
+    "codex-relay-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": false
+    },
+    "codex-relay-test-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": false
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "source": "284e3f1f783f12b31b88332d7cde63f67dbd426a",
+  "strategy": "reconcile",
+  "warningCount": 2
+}

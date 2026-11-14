@@ -21,6 +21,9 @@ DIGEST = re.compile(r'[0-9a-f]{64}')
 UUID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
 UNIX_IDENTITY = re.compile(r'[a-z_][a-z0-9_-]{0,31}')
 LIMIT = 512 * 1024
+# The installed source graph has its own existing aggregate byte budget. Source
+# blobs may exceed the metadata/receipt limit while remaining inside that graph.
+SOURCE_LIMIT = 64 * 1024 * 1024
 
 
 def require(condition, code):
@@ -62,15 +65,16 @@ def protect(path, root, owner_uid, *, directory=False):
     require(False, 'PATH_UNSAFE')
 
 
-def read(path, root, owner_uid, *, private=False):
+def read(path, root, owner_uid, *, private=False, limit=LIMIT):
+    require(type(limit) is int and 0 < limit <= SOURCE_LIMIT, 'EVIDENCE_UNSAFE')
     before = protect(path, root, owner_uid)
-    require(before.st_size <= LIMIT and (not private or stat.S_IMODE(before.st_mode) == 0o600),
+    require(before.st_size <= limit and (not private or stat.S_IMODE(before.st_mode) == 0o600),
             'EVIDENCE_UNSAFE')
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, 'rb') as stream:
         opened = os.fstat(stream.fileno())
-        raw = stream.read(LIMIT + 1)
-        require(len(raw) <= LIMIT and stamp(before) == stamp(opened)
+        raw = stream.read(limit + 1)
+        require(len(raw) <= limit and stamp(before) == stamp(opened)
                 == stamp(os.fstat(stream.fileno())) == stamp(Path(path).lstat()), 'EVIDENCE_CHANGED')
     return raw
 
@@ -272,7 +276,7 @@ def installed(release, revision, root, owner_uid):
             info = path.lstat()
             count += 1
             total += info.st_size
-            require(count <= 10000 and total <= 64 * 1024 * 1024, 'SOURCE_LIMIT')
+            require(count <= 10000 and total <= SOURCE_LIMIT, 'SOURCE_LIMIT')
             graph.update(str(path.relative_to(source_root)).encode() + b'\0')
             if stat.S_ISLNK(info.st_mode):
                 target = os.readlink(path)
@@ -285,7 +289,7 @@ def installed(release, revision, root, owner_uid):
                 protect(path, root, owner_uid, directory=True)
                 graph.update(b'directory\0')
             else:
-                graph.update(b'file\0' + read(path, root, owner_uid))
+                graph.update(b'file\0' + read(path, root, owner_uid, limit=SOURCE_LIMIT))
             graph.update(b'\0')
     return manifest, snapshot, {'manifestSha256': sha(manifest_raw), 'sourceSha256': sha(source_raw),
         'snapshotSha256': sha(snapshot_raw), 'sourceGraphSha256': graph.hexdigest()}

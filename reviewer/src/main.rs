@@ -18,6 +18,7 @@ use std::{
 use unicode_normalization::UnicodeNormalization;
 mod executable_cr;
 mod github;
+mod loaded_inputs;
 mod manual_outcome;
 mod mtls_identity;
 mod publication;
@@ -1160,6 +1161,10 @@ fn configured_repositories(config: &Value) -> BTreeSet<String> {
 }
 
 fn load_runtime_config(path: &str) -> RuntimeConfig {
+    load_runtime_config_with_inputs(path).0
+}
+
+fn load_runtime_config_with_inputs(path: &str) -> (RuntimeConfig, Value) {
     let text = fs::read_to_string(path).expect("REVIEWER_MCP_CONFIG must be readable");
     let config = serde_json::from_str::<strict_json::StrictJson>(&text)
         .expect("REVIEWER_MCP_CONFIG must be unambiguous JSON")
@@ -1218,7 +1223,7 @@ fn load_runtime_config(path: &str) -> RuntimeConfig {
         gateway_validated,
     };
     validate_effective_runtime_config(&runtime_config);
-    runtime_config
+    (runtime_config, config)
 }
 
 fn is_lower_hex(value: &str, length: usize) -> bool {
@@ -1282,7 +1287,7 @@ fn publication_enabled(value: Option<&str>) -> bool {
 #[tokio::main]
 async fn main() {
     let a = Args::parse();
-    let effective_config = effective_runtime_config(&a);
+    let (effective_config, loaded_config) = load_runtime_config_with_inputs(&a.config);
     validate_effective_runtime_config(&effective_config);
     let RuntimeConfig {
         policy,
@@ -1311,6 +1316,28 @@ async fn main() {
     );
     let enabled = publication_enabled(std::env::var("REVIEWER_RELAY_ENABLED").ok().as_deref());
     tracing::info!(event = "publication_mode", enabled);
+    let trusted_client_ca = fs::read(
+        std::env::var("REVIEWER_CLIENT_CA_FILE").expect("REVIEWER_CLIENT_CA_FILE must be set"),
+    )
+    .expect("REVIEWER_CLIENT_CA_FILE must be readable");
+    #[cfg(unix)]
+    if let Ok(path) = std::env::var("REVIEWER_ADOPTION_SOCKET") {
+        match loaded_inputs::capture(&loaded_config, &trusted_client_ca) {
+            Ok(proof) => {
+                tokio::spawn(async move {
+                    if loaded_inputs::serve(&path, proof).await.is_err() {
+                        tracing::warn!(event = "loaded_input_proof_unavailable");
+                    }
+                });
+            }
+            Err(_) => {
+                // Adoption evidence is optional. Missing or unreadable proof
+                // inputs retain normal service startup and Apply restart proof.
+                // Never disclose filesystem paths or private input diagnostics.
+                tracing::warn!(event = "loaded_input_proof_unavailable");
+            }
+        }
+    }
     let app = router(App {
         policy,
         repositories,
@@ -1325,13 +1352,7 @@ async fn main() {
             .expect("database failed"),
         )),
         github: github::Github::new(),
-        trusted_client_ca: Arc::new(
-            fs::read(
-                std::env::var("REVIEWER_CLIENT_CA_FILE")
-                    .expect("REVIEWER_CLIENT_CA_FILE must be set"),
-            )
-            .expect("REVIEWER_CLIENT_CA_FILE must be readable"),
-        ),
+        trusted_client_ca: Arc::new(trusted_client_ca),
     });
     let addr: SocketAddr = format!("{}:{}", configured_host, configured_port)
         .parse()

@@ -1,0 +1,25 @@
+---
+# These fixed parents and groups have identical metadata in every route. Keep
+# them outside the per-slot include; private destinations and namespace probes
+# still run for all installed routes regardless of physical pool capacity.
+- name: Create unique additional slot identity and work groups
+  ansible.builtin.group:
+    name: '{{ item }}'
+    system: true
+  loop: >-
+    {{ ((relay_additional_execution_slots | default([]) | map(attribute='relay_runner_group') | list)
+        + (relay_additional_execution_slots | default([]) | map(attribute='relay_codex_group') | list)
+        + (relay_additional_execution_slots | default([]) | map(attribute='relay_codex_work_group') | list)) | unique(case_sensitive=true) | list }}
+
+- name: Create common root-owned slot namespace parents
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - '{{ relay_install_root }}/slots'
+    - '{{ relay_config_root }}/slots'
+    - '{{ relay_state_root }}/slots'
+  when: relay_additional_execution_slots | default([]) | length > 0

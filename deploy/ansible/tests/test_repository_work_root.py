@@ -83,7 +83,46 @@ def test_repository_ancestor_aliases_fail_without_touching_target(tmp_path, dept
 def test_every_slot_launcher_reconciliation_provisions_repository_roots():
     launcher = yaml.safe_load((TASKS.parent / 'launcher.yml').read_text())
     task, = [entry for entry in launcher if entry.get('ansible.builtin.include_tasks') == TASKS.name]
-    assert task['loop'] == '{{ relay_github_repositories | default([]) }}'
-    assert task['loop_control']['loop_var'] == 'relay_work_repository'
+    assert 'loop' not in task
+    assert task['when'] == 'relay_github_repositories | default([]) | length > 0'
+    assert 'relay_repository_work_paths' in task['vars']
     slots = (ROOT / 'deploy/ansible/tasks/execution-slot.yml').read_text()
     assert 'tasks_from: launcher.yml' in slots
+
+
+def test_launcher_batches_shared_ancestors_without_touching_retained_descendants(tmp_path):
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+
+    work = tmp_path / 'work'
+    work.mkdir()
+    retained = work / 'repositories/example-org/one/run-1/evidence'
+    retained.parent.mkdir(parents=True)
+    retained.write_text('retained bytes')
+    before = retained.stat()
+    launcher = yaml.safe_load((TASKS.parent / 'launcher.yml').read_text())
+    include, = [entry for entry in launcher if entry.get('ansible.builtin.include_tasks') == TASKS.name]
+    variables = {
+        'relay_dispatch_work_root': str(work),
+        'relay_github_repositories': ['example-org/one', 'example-org/two', 'other/three', 'Example-org/four'],
+        'relay_dispatch_user': pwd.getpwuid(os.getuid()).pw_name,
+        'relay_codex_work_group': grp.getgrgid(os.getgid()).gr_name,
+    }
+    paths = Templar(loader=DataLoader(), variables=variables).template(
+        include['vars']['relay_repository_work_paths'])
+    assert paths == [str(work / suffix) for suffix in [
+        'repositories', 'repositories/example-org', 'repositories/other', 'repositories/Example-org',
+        'repositories/example-org/one', 'repositories/example-org/two',
+        'repositories/other/three', 'repositories/Example-org/four']]
+    play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': variables,
+             'tasks': [{'ansible.builtin.include_tasks': str(TASKS),
+                        'vars': {'relay_repository_work_paths': paths}}]}]
+    path = tmp_path / 'batch.yml'
+    path.write_text(yaml.safe_dump(play))
+    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(path)],
+                            capture_output=True, text=True,
+                            env={**os.environ, 'ANSIBLE_NOCOLOR': '1'})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(stat.S_IMODE(Path(p).stat().st_mode) == 0o2770 for p in paths)
+    assert retained.stat() == before
+    assert retained.read_text() == 'retained bytes'

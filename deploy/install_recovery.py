@@ -71,7 +71,11 @@ def predispatch_bridge_binding(paths, config, gate, status, revision, root, owne
     if not retained.present(snapshot_path):
         return None
     read = lambda path: retained._recovery_bytes(path, root, owner_uid, owner_uid, private=True)
-    snapshot = retained._recovery_json(read(snapshot_path))
+    # This is a normal install_preflight snapshot, not a bounded legacy
+    # retirement receipt. It may contain far more than 64 KiB even with no
+    # predispatch bridge. Keep all other evidence at its existing default bound.
+    snapshot = retained._recovery_json(retained._recovery_bytes(snapshot_path, root, owner_uid, owner_uid,
+        private=True, limit=retained.INSTALL_SNAPSHOT_LIMIT), limit=retained.INSTALL_SNAPSHOT_LIMIT)
     binding = snapshot.get('predispatchBridge')
     if binding is None:
         return None

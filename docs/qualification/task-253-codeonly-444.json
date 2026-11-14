@@ -1,0 +1,167 @@
+{
+  "backendDurations": [
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 11.020997427403927
+    },
+    {
+      "playbook": "relay-intent-preflight.yml",
+      "seconds": 13.004590384662151
+    },
+    {
+      "playbook": "relay-intent-apt-preflight.yml",
+      "seconds": 4.39143330603838
+    },
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 51.176039069890976
+    },
+    {
+      "playbook": "site.yml",
+      "seconds": 371.13613525032997
+    }
+  ],
+  "case": "codeonly4",
+  "config": "22fff9e0ace7b3b68c966e40f383377c10dd6c78",
+  "diagnosticAdditionalReadSeconds": 3.4346234276890755,
+  "endToEndMinusDiagnosticReadSecondsForContextOnly": 571.0891582593322,
+  "endToEndSeconds": 574.5237816870213,
+  "executedTaskCounts": {
+    "beforeRetained": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "finalProof": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 1
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "reader": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 2,
+      "ok": 2,
+      "skipped": 0
+    },
+    "restart": {
+      "changed": 1,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "Actual shared-host TEST only; no PROD qualification",
+    "No full proof/arguments/private diagnostics in summary",
+    "Public generated receiving-repository integration remains outside host installer; no workflow dispatch attestation",
+    "Actual safe fallback restarted TEST components; this is not a successful preservation benchmark",
+    "Approved post-false read-only recapture added 3.434623 seconds; subtracting it is arithmetic context, not a separate measured run",
+    "First diagnostic retained service classes only; exact differing public service fields unavailable"
+  ],
+  "markers": [
+    {
+      "elapsed": 120.6135680153966,
+      "marker": "RELAY_INSTALL_PREFLIGHT=prepared;operation=70e1bc35-d596-4426-b18c-b75a2a23c0e4"
+    },
+    {
+      "elapsed": 123.67229556292295,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    },
+    {
+      "elapsed": 124.83884982019663,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=DRAIN;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    },
+    {
+      "elapsed": 147.71942830085754,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=APPLY;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    },
+    {
+      "elapsed": 569.0447192490101,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=ACTIVATE/VERIFY;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    },
+    {
+      "elapsed": 570.1619478389621,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=RESUME;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    },
+    {
+      "elapsed": 571.2803474217653,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=OPEN;target=4440f0dca5be71dd745387d22b88e165f48fc178"
+    }
+  ],
+  "phase": "upgrade",
+  "postfalseDiagnostic": [
+    {
+      "additionalReadSeconds": 3.4346234276890755,
+      "classes": [
+        "reviewer.service",
+        "production.service"
+      ],
+      "code": "DIFFERENCE"
+    }
+  ],
+  "processPreservationQualified": false,
+  "returncode": 0,
+  "services": {
+    "codex-relay-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": false
+    },
+    "codex-relay-test-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": false
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "source": "4440f0dca5be71dd745387d22b88e165f48fc178",
+  "strategy": "upgrade",
+  "warningCount": 2
+}

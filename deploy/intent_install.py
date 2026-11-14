@@ -209,6 +209,8 @@ def plan(report, target, target_contract, *, root, repository, legacy=legacy_str
                 and pair_digest(attested) == pair_digest(receipt)
                 and report.get('configuration', {}).get('status') == 'equivalent'):
             return {'strategy': 'verify', 'phase': 'post-check', 'installed': previous}
+        if provenance_equivalent(report, receipt):
+            return {'strategy': 'provenance', 'phase': 'post-check', 'installed': previous}
         return {'strategy': 'reconcile', 'phase': 'apply', 'installed': previous}
     if metadata is None:
         strategy = legacy(root, repository, previous)
@@ -217,6 +219,35 @@ def plan(report, target, target_contract, *, root, repository, legacy=legacy_str
                     and 'lifecycle-v1' in metadata['capabilities'] else 'reinstall')
     require(strategy in ['upgrade', 'reinstall'], 'TRANSITION_UNSUPPORTED')
     return {'strategy': strategy, 'phase': strategy, 'installed': previous}
+
+
+def provenance_equivalent(report, receipt):
+    """Only nominate a path: full installed post-check still proves readiness/drift."""
+    installed = report.get('installed', {})
+    old = installed.get('gitConfigReceipt')
+    if not isinstance(old, dict) or not isinstance(receipt, dict):
+        return False
+    stable = ['product_repository', 'product_sha',
+              'config_repository', 'config_path',
+              'config_blob_sha', 'config_sha256', 'source_policy']
+    state = installed.get('installationState')
+    # Successful historical upgrades need not carry the fresh-completion
+    # marker. Absence is only a nomination: the locked complete post-check
+    # still proves readiness. A present pending/corrupt marker is never ignored.
+    state_valid = ('installationState' not in installed
+                   or (isinstance(state, dict) and type(state.get('schemaVersion')) is int
+                       and state == {'schemaVersion': 1, 'stage': 'ready',
+                                     'pairSha256': pair_digest(old)}))
+    return (report.get('blockers') == []
+            and all(key in old and old[key] == receipt.get(key) for key in stable)
+            and all(old.get(key) == receipt.get(key) and (key in old) == (key in receipt)
+                    and (key not in old or (type(old[key]) is int and old[key] > 0
+                         and type(receipt[key]) is int and receipt[key] > 0))
+                    for key in ['product_repository_id', 'config_repository_id'])
+            and report.get('configuration', {}).get('status') == 'equivalent'
+            and state_valid
+            and REVISION.fullmatch(old.get('config_sha', '')) is not None
+            and REVISION.fullmatch(receipt.get('config_sha', '')) is not None)
 
 
 def _receipt(args, config, root, identity, config_raw):
@@ -568,11 +599,12 @@ def run(args, primitive, root, identity, *, guard_factory=None):
         # A new native dispatch proves this invocation. An unchanged Git pair
         # retains its existing protected installation attestation verbatim.
         attested_receipt = (copy.deepcopy(report['installed']['gitConfigReceipt'])
-                            if selected['strategy'] == 'verify' else receipt)
+                            if selected['strategy'] in ['verify', 'provenance'] else receipt)
         completion = fresh_completion(config, report, args) if fresh else []
         pending = {'schemaVersion': 1, 'stage': 'fresh-incomplete', 'pairSha256': pair_digest(receipt)}
         retained_state = report.get('installed', {}).get('installationState', {})
-        if retained_state.get('stage') != 'ready' or retained_state.get('pairSha256') != pair_digest(receipt):
+        if (retained_state.get('stage') != 'ready'
+                or retained_state.get('pairSha256') != pair_digest(attested_receipt)):
             retained_state = {}
         print('RELAY_INSTALL_PLAN=' + json.dumps({**selected, 'target': identity['revision'],
             'config': receipt.get('config_sha', receipt['config_sha256']),
@@ -612,6 +644,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 stage = 'bounded-recovery-proof'
                 bounded_proof = bounded_probe(target, key, config, bounded_binding, guard, pool_guard)
                 selected = {**selected, 'strategy': 'bounded-recovery', 'phase': 'upgrade'}
+                attested_receipt = receipt
                 print('RELAY_INSTALL_RECOVERY=' + json.dumps({'operationId': bounded_binding['operationId'],
                     'retainedTarget': bounded_binding['retainedTarget'], 'controllerRevision': identity['revision'],
                     'desiredProduct': identity['revision'], 'desiredConfig': receipt.get('config_sha'),
@@ -642,7 +675,13 @@ def run(args, primitive, root, identity, *, guard_factory=None):
             if recovery is not None:
                 require(selected['phase'] in ['apply', 'upgrade', 'post-check'], 'RECOVERY_REQUIRES_DIAGNOSIS')
                 selected = {**selected, 'strategy': 'recovery', 'phase': 'upgrade'}
+                attested_receipt = receipt
                 print('RELAY_INSTALL_RECOVERY=' + json.dumps(recovery, sort_keys=True), flush=True)
+            # A read-only nomination may have retained the previous pair's ready
+            # marker before protected recovery selected mutable desired inputs.
+            # Never publish that marker against a different recovery receipt.
+            if retained_state.get('pairSha256') != pair_digest(attested_receipt):
+                retained_state = {}
             receipt_applied = selected['strategy'] != 'fresh-continuation'
             schedule = [(selected['phase'], 'primary')]
             if completion:
@@ -650,14 +689,26 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 # bounded credential staging. The second pass enforces full
                 # token/slot readiness without changing frozen desired bytes.
                 credentials = [item for item in completion if item[0].endswith('-credentials')]
-                tls_preparation = [item for item in completion if item[0] == 'tls-prepare']
+                # Issuance needs the inactive installed manifest and staged
+                # credentials/CA. Readiness Apply, in turn, requires installed
+                # TLS material: it must not inherit bootstrap's pending-TLS
+                # exception after the first manifest has been installed.
+                tls_preparation = [item for item in completion
+                                   if item[0] in ['tls-prepare', 'tls-dry-run', 'tls-issue']]
                 after_apply = [item for item in completion
-                               if not item[0].endswith('-credentials') and item[0] != 'tls-prepare']
+                               if not item[0].endswith('-credentials')
+                               and item[0] not in ['tls-prepare', 'tls-dry-run', 'tls-issue']]
                 schedule = ([('bootstrap', 'primary')] if selected['strategy'] == 'fresh' else [])
                 schedule += credentials + tls_preparation + [('apply', 'primary')] + after_apply
                 if automatic_requested(config) and 'generalRunnerPool' in config['consumer']:
                     schedule.append(('managed-pool', 'primary'))
                 schedule.append(('post-check', 'primary'))
+            native_readonly = None
+            if (selected['strategy'] in ['provenance', 'verify'] and not completion
+                    and recovery is None and bounded_proof is None):
+                from provenance import native_ready
+                stage = 'native-readonly-proof'
+                native_readonly = native_ready(target, key, config, identity['revision'], guard, pool_guard)
             for phase, slot in schedule:
                 stage = ('fresh-' if completion else '') + phase
                 require(guard.poll() is None and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
@@ -683,6 +734,8 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                         proof = reconcile_pool(target, key, config, identity['revision'], guard,
                             local=target.get('connection') == 'local', extra_guard=pool_guard)
                         print(proof, flush=True)
+                    elif phase == 'post-check' and native_readonly is not None:
+                        print('RELAY_NATIVE_READONLY_VALIDATED=' + identity['revision'], flush=True)
                     else:
                         primitive(inner)
                 finally:
@@ -698,6 +751,31 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     require(observed['installed'].get('installationState') == pending,
                             'FRESH_PENDING_MARKER_UNPROVEN')
                 expected = identity['revision']
+                if selected['strategy'] == 'provenance' and phase == 'post-check' and native_readonly is None:
+                    # Disk/readiness checks cannot establish the policy and CA
+                    # already consumed by a long-lived Reviewer process.
+                    from provenance import loaded_ready
+                    stage = 'provenance-loaded-proof'
+                    if not loaded_ready(target, key, config, identity['revision'], guard, pool_guard):
+                        selected = {**selected, 'strategy': 'reconcile', 'phase': 'apply'}
+                        attested_receipt = receipt
+                        if retained_state.get('pairSha256') != pair_digest(receipt):
+                            retained_state = {}
+                        schedule.append(('apply', 'primary'))
+                        print('RELAY_PROVENANCE_FALLBACK=loaded-state-unavailable', flush=True)
+            if selected['strategy'] == 'provenance':
+                require(recovery is None and bounded_proof is None, 'PROVENANCE_RECOVERY_UNSUPPORTED')
+                require(provenance_equivalent(observed, receipt), 'PROVENANCE_BINDING_CHANGED')
+                require(args.config.read_bytes() == config_raw, 'CONFIG_BYTES_CHANGED')
+                from provenance import promote_remote
+                stage = 'provenance-persistence'
+                mutation = True
+                promote_remote(target, key, config, identity['revision'], attested_receipt,
+                               receipt, guard, pool_guard,
+                               **({'current_binding': native_readonly['binding']} if native_readonly is not None else {}))
+                attested_receipt = receipt
+                observed = remote_inventory(target, key, config, git_desired=True)
+                readback(observed, identity['revision'], receipt)
             if fresh:
                 stage = 'fresh-completion'
                 ready = complete_fresh(target, key, config, identity['revision'], receipt, guard, pool_guard)

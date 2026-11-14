@@ -791,35 +791,41 @@ def complete(config, revision, *, root=Path('/'), owner_uid=0, operation_id=None
 
 
 RECOVERY_LIMIT = 65536
+# Normal install snapshots include the complete protected pre-cutover evidence.
+# Match install_preflight.read's producer/reader bound without widening legacy
+# retirement receipts, journals, admission state or other default reads.
+INSTALL_SNAPSHOT_LIMIT = 32 * 1024 * 1024
 
 
-def _recovery_json(raw):
+def _recovery_json(raw, *, limit=RECOVERY_LIMIT):
+    require(type(limit) is int and 0 < limit <= INSTALL_SNAPSHOT_LIMIT, 'RECOVERY_EVIDENCE_INVALID')
     def unique(pairs):
         value = {}
         for key, item in pairs:
             require(key not in value, 'RECOVERY_EVIDENCE_INVALID')
             value[key] = item
         return value
-    require(len(raw) <= RECOVERY_LIMIT, 'RECOVERY_EVIDENCE_INVALID')
+    require(len(raw) <= limit, 'RECOVERY_EVIDENCE_INVALID')
     value = json.loads(raw, object_pairs_hook=unique)
     require(isinstance(value, dict), 'RECOVERY_EVIDENCE_INVALID')
     return value
 
 
-def _recovery_bytes(path, root, owner_uid, owner_gid, *, private=False):
+def _recovery_bytes(path, root, owner_uid, owner_gid, *, private=False, limit=RECOVERY_LIMIT):
+    require(type(limit) is int and 0 < limit <= INSTALL_SNAPSHOT_LIMIT, 'RECOVERY_EVIDENCE_INVALID')
     protected(path, root, owner_uid)
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, 'rb') as stream:
         before = os.fstat(stream.fileno())
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-                and before.st_uid == owner_uid and before.st_size <= RECOVERY_LIMIT
+                and before.st_uid == owner_uid and before.st_size <= limit
                 and (not private or (before.st_gid == owner_gid
                      and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE')
-        raw = stream.read(RECOVERY_LIMIT + 1)
+        raw = stream.read(limit + 1)
         def stamp(info):
             return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,
                     info.st_size, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
-        require(len(raw) <= RECOVERY_LIMIT and stamp(before) == stamp(os.fstat(stream.fileno()))
+        require(len(raw) <= limit and stamp(before) == stamp(os.fstat(stream.fileno()))
                 and stamp(before) == stamp(path.lstat()), 'RECOVERY_EVIDENCE_CHANGED')
     return raw
 

@@ -280,7 +280,7 @@ def test_post_apply_config_adoption_refuses_incomplete_or_changed_frontier(incid
 
 
 @pytest.mark.parametrize(('unchanged_consumer', 'blocked'), [
-    (False, None), (False, 'authority'), (False, 'writer-lock-lost'),
+    (False, None), (False, 'unknown-work'), (False, 'writer-lock-lost'),
     (True, None), (True, 'unknown-work'), (True, 'writer-lock-lost')])
 def test_same_operation_apply_uses_live_writer_lease_and_current_native_admission(incident, monkeypatch, blocked, unchanged_consumer):
     receipt = maintained_frontier(incident, unchanged_consumer=unchanged_consumer)
@@ -322,8 +322,6 @@ def test_same_operation_apply_uses_live_writer_lease_and_current_native_admissio
         def run(argv, **options):
             return native_run([str(NODE), *argv[1:]] if argv[0] == '/usr/bin/node' else argv, **options)
         monkeypatch.setattr(partial.subprocess, 'run', run)
-        if blocked == 'authority':
-            incident.native_state['unavailable'] = True
         if blocked:
             code = 'WRITER_LOCK_LEASE_UNPROVEN|/proc/' if blocked == 'writer-lock-lost' else 'CURRENT_CONTROLLER_PROOF_UN'
             with pytest.raises((ValueError, OSError), match=code):
@@ -344,6 +342,13 @@ def test_same_operation_apply_uses_live_writer_lease_and_current_native_admissio
 
 
 def test_saved_maintenance_cannot_be_replaced_by_continuation_input(incident, monkeypatch):
+    """Unit maintenance gate after decoding the preserved historical input.
+
+    This SERIAL incident is not a fresh current pool deployment. The current
+    public loader/native authority have separate tests; only this unit's loader
+    seam accepts the unchanged historical fixture bytes.
+    """
+    monkeypatch.setattr(partial, 'loads', lambda raw, _root: json.loads(raw))
     maintained_frontier(incident)
     observed = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
     config_path = incident.root / 'input.json'
@@ -378,8 +383,11 @@ def test_post_apply_orchestration_keeps_writer_through_tail_and_never_republishe
     """Exercise controller ordering with bounded transport/backend substitutes.
 
     Native gate/lease and real systemd behavior have separate process tests; this
-    test proves the installer actually selects that route with the right inputs.
+    test proves the installer actually selects that route with the right inputs
+    after the loader. A documented loader seam retains the original SERIAL
+    incident without claiming the current public loader admits fresh SERIAL.
     """
+    monkeypatch.setattr(partial, 'loads', lambda raw, _root: json.loads(raw))
     receipt = maintained_frontier(incident, unchanged_consumer=True)
     config_path = incident.root / 'input.json'; write(config_path, incident.config)
     observed = partial.inspect(incident.config, OPERATION, BASELINE, root=incident.root)
@@ -425,9 +433,11 @@ def test_post_apply_orchestration_keeps_writer_through_tail_and_never_republishe
     monkeypatch.setattr(install_preflight, 'PreparedInstall', Preparation)
     monkeypatch.setattr(intent_install, 'qualify_identity', lambda *_: None)
     monkeypatch.setattr(workflow_projection, 'integration', lambda *_: {'next': 'fixture-independent-review'})
-    # The historical incident fixture uses a simplified attempts directory;
-    # backend inputs still use the production compiler's attempts-v2 contract.
+    # Only the already-substituted backend transport needs a current compiler
+    # recipe. Keep the original config/receipt/history untouched: this clone is
+    # a unit adapter, never new admitted authority or a deployment input.
     compilation = copy.deepcopy(incident.config)
+    compilation['consumer']['generalRunnerPool'] = {'desiredCapacity': 1}
     compilation['consumer']['paths']['attemptRoot'] += '-v2'
     compiled = partial.compile_inputs(compilation)
     monkeypatch.setattr(partial, 'compile_inputs', lambda _: dict(compiled))

@@ -1,0 +1,115 @@
+{
+  "ansibleWarningLines": 2,
+  "capacity": 2,
+  "config": "36da91eb94ac5ea54ea2f52aa97c97df741aecbc",
+  "configBlob": "d2c4a6dd807ae4b5802293c4ee453e6e900ee1eb",
+  "configProvenance": "remote accepted main validated by owner-checkout receipt; no workflow dispatch attestation",
+  "configSha256": "f97bd8529e95f77d61c518412bf181bf4832f14f02b203b9a05f01fefab1bec0",
+  "endToEndSeconds": 643.3950581476092,
+  "executedTaskCounts": {
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "Shared-host TEST; no PROD speedup claim",
+    "End-to-end outer preparation/transition timestamps were not individually captured; backend durations are separate",
+    "Per-file aggregate timer did not separately start handlers, so those aggregates are not used as exact activation timings",
+    "One pre-mutation protected-receipt ancestor refusal was corrected by using task-owned root-private receipt path; excluded from successful duration"
+  ],
+  "mainSiteSeconds": 428.7358007207513,
+  "preparationBackends": [
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 13.055200450122356
+    },
+    {
+      "playbook": "relay-intent-preflight.yml",
+      "seconds": 13.033113345503807
+    },
+    {
+      "playbook": "relay-intent-apt-preflight.yml",
+      "seconds": 4.4097253158688545
+    },
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 62.04359210282564
+    }
+  ],
+  "productAfter": "feefb6cf13daaf1c027e24d0a51fe834d68d26ba",
+  "productBefore": "5df7e0093d93c5a55b996e34cc83359da6b22a3e",
+  "proofs": {
+    "fullCandidateApply": true,
+    "installedIdentity": true,
+    "upgradeActivation": true
+  },
+  "returncode": 0,
+  "scenario": "accepted baseline code-only upgrade",
+  "services": {
+    "codex-relay-reviewer.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": false
+    },
+    "codex-relay-test-runner.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": false
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "sourcePolicy": "accepted-main",
+  "taskCountEvidence": "Bounded task-name/result-status extraction from this attempt own captured Ansible output; no task arguments, result payloads, credential data or historical protected diagnostics exposed.",
+  "taskNameOccurrences": {
+    "Install the optional qualified parallel namespace primitive": 1,
+    "Install the required optional parallel process namespace primitive": 31,
+    "Prove that the optional runtime can enter its private process namespace": 31,
+    "Prove the primary runtime can enter its private process namespace": 1
+  },
+  "temporaryDirectoryWarningMentions": 1,
+  "warnings": [
+    {
+      "category": "ansible-remote-tmp-fallback",
+      "count": 2,
+      "disposition": "Nonfatal execution warnings: selected TEST runner temporary directories were not usable, Ansible used system temporary storage. No host permission change made; timing contribution not isolated."
+    }
+  ]
+}

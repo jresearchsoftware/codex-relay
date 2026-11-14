@@ -76,14 +76,181 @@ def test_effective_drift_or_missing_historical_snapshot_selects_reconcile(invoca
     assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
 
 
-def test_new_config_commit_with_identical_content_is_a_new_git_pair(invocation):
+def test_new_config_commit_with_identical_content_nominates_provenance_after_historical_upgrade(invocation):
     _, _, receipt, _ = invocation
     report = observed(TARGET, CONTRACT)
     report['configuration']['status'] = 'equivalent'
     report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
     selected = {**receipt, 'config_sha': 'e' * 40}
     result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=selected)
-    assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
+    assert result['strategy'] == 'provenance' and result['phase'] == 'post-check'
+
+
+def test_new_config_commit_can_promote_only_complete_ready_equivalent_pair(invocation):
+    _, _, receipt, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
+    report['installed']['installationState'] = {'schemaVersion': 1, 'stage': 'ready',
+                                               'pairSha256': install.pair_digest(receipt)}
+    desired = {**receipt, 'config_sha': 'e' * 40}
+    assert install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product',
+                        receipt=desired)['strategy'] == 'provenance'
+    for field in ['product_sha', 'config_path', 'config_blob_sha', 'config_sha256', 'source_policy']:
+        assert not install.provenance_equivalent(report, {**desired, field: 'changed'})
+    report['installed']['installationState']['pairSha256'] = '0' * 64
+    assert not install.provenance_equivalent(report, desired)
+
+
+@pytest.mark.parametrize('failure', [None, 'drift', 'lost-lock', 'changed-receipt'])
+@pytest.mark.parametrize('ready_marker', [True, False])
+def test_provenance_runs_full_readonly_proof_before_atomic_promotion(invocation, monkeypatch, failure, ready_marker):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    if not ready_marker:
+        del report['installed']['installationState']
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    def check(inner):
+        assert inner.phase == 'post-check' and inner.git_intent == old
+        assert inner._intent_installation_state == (report['installed']['installationState'] if ready_marker else {})
+        assert inner._intent_host_guard.poll() is None
+        calls.append('check')
+        if failure == 'drift':
+            raise RuntimeError('post-check-drift')
+        if failure == 'lost-lock':
+            inner._intent_host_guard.lost = True
+        if failure == 'changed-receipt':
+            report['installed']['gitConfigReceipt'] = {**old, 'product_sha': PREVIOUS}
+    def promote(_target, _key, _config, revision, previous, receipt, guard, pool):
+        assert calls == ['check'] and previous == old and receipt == desired
+        assert revision == TARGET and guard.poll() is None
+        calls.append('promote')
+        report['installed']['gitConfigReceipt'] = desired
+        if ready_marker:
+            report['installed']['installationState']['pairSha256'] = install.pair_digest(desired)
+    monkeypatch.setattr(provenance, 'promote_remote', promote)
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a, **_kw: True)
+    if failure:
+        with pytest.raises(RuntimeError):
+            install.run(args, check, ROOT, {'revision': TARGET})
+        assert calls == ['check']
+    else:
+        install.run(args, check, ROOT, {'revision': TARGET})
+        assert calls == ['check', 'promote']
+
+
+@pytest.mark.parametrize('strategy', ['provenance', 'verify'])
+def test_native_readonly_proof_skips_full_site_and_binds_provenance(invocation, monkeypatch, strategy):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40} if strategy == 'provenance' else desired
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = old
+    report['installed'].pop('installationState', None)
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    binding = {'manifestSha256': 'a' * 64}
+    def ready(*arguments):
+        assert arguments[-2].poll() is None
+        calls.append('native')
+        return {'binding': binding, 'liveProofSha256': 'b' * 64}
+    def promote(*arguments, **kwargs):
+        assert calls == ['native'] and kwargs == {'current_binding': binding}
+        calls.append('promote')
+        report['installed']['gitConfigReceipt'] = desired
+    monkeypatch.setattr(provenance, 'native_ready', ready)
+    monkeypatch.setattr(provenance, 'promote_remote', promote)
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a: pytest.fail('redundant loaded proof'))
+    install.run(args, lambda *_a: pytest.fail('unexpected full site traversal'), ROOT, {'revision': TARGET})
+    assert calls == (['native', 'promote'] if strategy == 'provenance' else ['native'])
+
+
+def test_native_readonly_binding_failure_never_falls_through_to_site(invocation, monkeypatch):
+    import provenance
+    args, _, desired, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = desired
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    def changed(*_a):
+        raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
+    monkeypatch.setattr(provenance, 'native_ready', changed)
+    with pytest.raises(RuntimeError, match='PROVENANCE_TARGET_BINDING_CHANGED'):
+        install.run(args, lambda *_a: pytest.fail('unexpected fallback after boundary'), ROOT, {'revision': TARGET})
+
+
+@pytest.mark.parametrize('missing', ['missing-capability', 'stale-policy', 'stale-ca',
+                                     'HOST_LOCK_LOST', 'PROVENANCE_TARGET_BINDING_CHANGED'])
+def test_provenance_missing_loaded_proof_runs_one_normal_apply(invocation, monkeypatch, missing):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    def proof(*_a, **_kw):
+        calls.append('loaded-' + missing)
+        if missing.isupper():
+            raise RuntimeError(missing)
+        return False
+    monkeypatch.setattr(provenance, 'loaded_ready', proof)
+    monkeypatch.setattr(provenance, 'promote_remote', lambda *_a, **_kw: pytest.fail('unexpected promotion'))
+    def primitive(inner):
+        calls.append(inner.phase)
+        if inner.phase == 'post-check':
+            assert inner.git_intent == old
+        else:
+            assert inner.phase == 'apply' and inner.git_intent == desired
+            assert inner._intent_installation_state == {}
+            report['installed']['gitConfigReceipt'] = desired
+            del report['installed']['installationState']
+    if missing.isupper():
+        with pytest.raises(RuntimeError, match=missing):
+            install.run(args, primitive, ROOT, {'revision': TARGET})
+        assert calls == ['post-check', 'loaded-' + missing]
+    else:
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+        assert calls == ['post-check', 'loaded-' + missing, 'apply']
+
+
+def test_failed_provenance_fallback_preserves_original_installed_identity_and_failure_evidence(invocation, monkeypatch, capsys):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a, **_kw: False)
+    monkeypatch.setattr(provenance, 'promote_remote', lambda *_a, **_kw: pytest.fail('unexpected promotion'))
+    calls = []
+    def primitive(inner):
+        calls.append(inner.phase)
+        if inner.phase == 'apply':
+            assert inner.git_intent == desired and inner._intent_installation_state == {}
+            inner._intent_mutation_started = True
+            raise RuntimeError('INJECTED_APPLY_FAILURE')
+    with pytest.raises(RuntimeError, match='stage=apply;cause=INJECTED_APPLY_FAILURE'):
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+    assert calls == ['post-check', 'apply']
+    output = capsys.readouterr().out
+    failure = json.loads(output.split('RELAY_INSTALL_FAILURE=')[1])
+    assert failure['cause'] == 'INJECTED_APPLY_FAILURE'
+    assert failure['installed'] == TARGET and failure['strategy'] == 'reconcile'
+    assert failure['hostMutation'] == 'unknown'
+    assert failure['recovery'] == 'retained-state-requires-diagnosis'
+    assert failure['automaticRetrySafe'] is False
 
 
 def test_code_only_new_product_revision_still_selects_upgrade(invocation):
@@ -93,6 +260,38 @@ def test_code_only_new_product_revision_still_selects_upgrade(invocation):
     report['installed']['gitConfigReceipt'] = {**receipt, 'product_sha': PREVIOUS}
     result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=receipt)
     assert result['strategy'] == 'upgrade' and result['phase'] == 'upgrade'
+
+
+@pytest.mark.parametrize('bounded', [True, False])
+def test_provenance_nomination_cannot_leak_old_receipt_or_ready_marker_into_recovery(invocation, monkeypatch, bounded):
+    import bounded_recovery
+    import install_recovery
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    assert install.provenance_equivalent(report, desired)
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    operation = '12345678-1234-4234-8234-123456789abc'
+    proof = {'operationId': operation, 'target': TARGET, 'installedRevision': TARGET}
+    if bounded:
+        args.authorize_install_recovery = True
+        args.install_recovery_operation, args.install_recovery_target = operation, TARGET
+        monkeypatch.setattr(bounded_recovery, 'remote_probe', lambda *_a, **_kw: proof)
+    else:
+        monkeypatch.setattr(install_recovery, 'remote_probe', lambda *_a, **_kw: proof)
+    calls = []
+    def primitive(inner):
+        assert inner.phase == 'upgrade' and inner.git_intent == desired
+        assert inner._intent_installation_state == {}
+        assert inner.lifecycle_recovery_operation == operation
+        calls.append(inner)
+        report['installed']['gitConfigReceipt'] = desired
+        del report['installed']['installationState']
+    install.run(args, primitive, ROOT, {'revision': TARGET})
+    assert len(calls) == 1
 
 
 def test_epoch_metadata_selects_upgrade_without_per_commit_entries():
@@ -195,6 +394,10 @@ def invocation(tmp_path, monkeypatch):
     monkeypatch.setattr(install, 'loads', lambda text, _: json.loads(text))
     import install_recovery
     monkeypatch.setattr(install_recovery, 'remote_probe', lambda *_args: None)
+    import provenance
+    # Native proof has its own real target/transport tests; ordinary scheduler
+    # fixtures retain the older-capability full-path branch unless overridden.
+    monkeypatch.setattr(provenance, 'native_ready', lambda *_args: None)
     artifact = {'directory': str(tmp_path / 'integration'), 'files': ['.github/workflows/route.yml'],
                 'compatibility': 'missing'}
     monkeypatch.setattr(workflow_projection, 'integration', lambda *_: artifact, raising=False)
@@ -515,7 +718,7 @@ def test_fresh_install_composes_all_configured_phases_and_isolates_optional_toke
     state, calls, _, primitive = native_composition(invocation, monkeypatch, before)
     install.run(args, primitive, ROOT, {'revision': TARGET})
     assert [call.phase for call in calls] == ['bootstrap', 'reviewer-credentials', 'writer-credentials',
-        'codex-credentials', 'tls-prepare', 'apply', 'tls-dry-run', 'tls-issue', 'tls-check',
+        'codex-credentials', 'tls-prepare', 'tls-dry-run', 'tls-issue', 'apply', 'tls-check',
         'ingress', 'activate', 'runner-register', 'runner-enable', 'post-check']
     assert [call.phase for call in calls].index('tls-prepare') < [call.phase for call in calls].index('apply')
     for call in calls:

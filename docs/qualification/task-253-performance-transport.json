@@ -1,0 +1,18 @@
+{
+  "baselineFrontendLocation": "remote Debian root",
+  "candidateFrontendLocation": "remote Debian root",
+  "baselineConnection": "local",
+  "candidateConnection": "local",
+  "wslRole": "preparation and SSH launch only",
+  "baselineProductTransport": "accepted Ansible local",
+  "candidateProductTransport": "qualified native local with same target proof",
+  "sameRemoteHost": true,
+  "frontendRelocationCredited": false,
+  "basis": "Retained root baseline driver cmd() and execute() plus original baseline result; retained candidate root driver and complete result; no new invocation",
+  "baselineEndToEndSeconds": 643.395,
+  "candidateEndToEndSeconds": 95.96038,
+  "limits": [
+    "One observed run per selected case; no statistical performance claim.",
+    "Product transport optimization is part of this implementation; comparison does not isolate every individual optimization."
+  ]
+}

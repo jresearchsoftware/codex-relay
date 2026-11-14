@@ -540,6 +540,42 @@ class PreparedInstall:
         self.predispatch_bridge_proof = None
         self.stage_observation = None
         self.retained_proof = None
+        self.source_reuse = False
+
+    def prepare_source_reuse(self, config, guard, pool_guard):
+        """Nominate a sealed source-only stage before any live mutation.
+
+        Missing equivalence evidence selects the ordinary preparation route.
+        Once nominated, later proof failures must retain this operation instead
+        of silently selecting another installation mechanism after quiesce.
+        """
+        require(not self.source_reuse and not self.cutover_started and not self.captured
+                and not self.reinstall, 'SOURCE_REUSE_SEQUENCE_INVALID')
+        from source_upgrade import prepare
+        eligible = prepare(self, config, guard, pool_guard)
+        require(type(eligible) is bool, 'SOURCE_REUSE_RESULT_UNPROVEN')
+        self.source_reuse = eligible
+        return eligible
+
+    def verify_source_reuse(self, *, final=False):
+        require(self.source_reuse, 'SOURCE_REUSE_SEQUENCE_INVALID')
+        if final:
+            require(self.holder is not None and self.holder.poll() is None, 'WRITER_LOCK_MISSING')
+        from source_upgrade import verify
+        return verify(self, final=final)
+
+    def promote_source_reuse(self, config, guard, pool_guard):
+        require(self.source_reuse and self.cutover_started and self.captured
+                and self.holder is not None and self.holder.poll() is None,
+                'SOURCE_REUSE_SEQUENCE_INVALID')
+        from source_upgrade import promote
+        proof = promote(self, config, guard, pool_guard)
+        require(isinstance(proof, dict) and proof.get('status') == 'SOURCE_UPGRADE_READY'
+                and proof.get('revision') == self.identity['revision']
+                and proof.get('consumerRevision') == self.values['relay_consumer_revision']
+                and proof.get('previousRevision') == self.values['relay_intent_expected_installed_revision'],
+                'SOURCE_REUSE_PROMOTION_UNPROVEN')
+        return proof
 
     def execute(self, argv, *, payload=None, timeout=180):
         from ansible_transport import run_target
@@ -713,6 +749,8 @@ try {
         return result
 
     def verify_stage(self):
+        if self.source_reuse:
+            return self.verify_source_reuse()
         helper = Path(__file__).parent / 'ansible/roles/relay_artifacts/files/relay-intent-stage.py'
         receipt = self.execute(['/usr/bin/python3', '-I', '-c', helper.read_text(), 'verify', self.stage],
                                payload={'operationId': self.operation, 'sourceIdentity': self.identity})
@@ -793,9 +831,12 @@ try {
                 self.consumer_retained(self.retained_proof, final=True)
             else:
                 self.consumer(final=True)
-        self.host(final=not bool(getattr(self, 'predispatch_bridge_proof', None)))
-        self.verify_stage()
-        if self.captured and not getattr(self, 'predispatch_bridge_proof', None):
+        if self.source_reuse:
+            self.verify_source_reuse(final=True)
+        else:
+            self.host(final=not bool(getattr(self, 'predispatch_bridge_proof', None)))
+            self.verify_stage()
+        if self.captured and not self.source_reuse and not getattr(self, 'predispatch_bridge_proof', None):
             self.action('verify')
 
     def predispatch_recovery(self, request):

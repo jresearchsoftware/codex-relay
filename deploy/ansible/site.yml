@@ -133,8 +133,14 @@
       changed_when: false
       when: relay_execution_slots is defined and not ansible_check_mode | bool
 
+    - name: Reconcile common additional execution slot prerequisites once
+      ansible.builtin.include_tasks: tasks/execution-slot-shared.yml
+      when: not (relay_consumer_publication_continuation | default(false) | bool and relay_retained_reviewer_config_adoption | default(false) | bool)
+
     - name: Reconcile finite additional automatic execution slots without activation
       ansible.builtin.include_tasks: tasks/execution-slot.yml
+      vars:
+        relay_execution_slot_shared_prerequisites: true
       loop: '{{ relay_additional_execution_slots | default([]) }}'
       loop_control:
         loop_var: relay_slot_inputs

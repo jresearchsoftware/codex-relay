@@ -5,6 +5,16 @@
   ansible.builtin.include_tasks: upgrade-maintained-runners.yml
   when: relay_upgrade_lifecycle_maintenance_proof is defined
 
+- name: Reprove preserved loaded inputs at the final acceptance frontier
+  ansible.builtin.include_tasks: upgrade-loaded-process-proof.yml
+  when: relay_upgrade_loaded_process_preserved | default(false) | bool
+
+- name: Require preserved components to retain the same complete loaded proof
+  ansible.builtin.assert:
+    that: relay_upgrade_loaded_process_observed.eligible | bool
+    fail_msg: RELAY_UPGRADE_PRESERVED_LOADED_INPUTS_UNPROVEN
+  when: relay_upgrade_loaded_process_preserved | default(false) | bool
+
 - name: Inspect managed upgrade service activity after exact installed proof
   ansible.builtin.command:
     argv:
@@ -67,6 +77,7 @@
     loop_var: service_index
   when:
     - relay_upgrade_lifecycle_maintenance_proof is not defined
+    - not relay_upgrade_loaded_process_preserved | default(false) | bool
     - relay_upgrade_lifecycle_previous_active[['reviewer', 'production'][service_index]].active | bool
     - relay_upgrade_lifecycle_initial_services.results[service_index].stdout is search('(?m)^ActiveState=active$')
 

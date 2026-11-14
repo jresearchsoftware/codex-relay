@@ -49,13 +49,16 @@
       ansible.builtin.apt:
         name: bubblewrap
         state: present
-      when: relay_manage_base_packages | bool
+      when:
+        - relay_manage_base_packages | bool
+        - not relay_execution_slot_shared_prerequisites | default(false) | bool
 
     - name: Create the private slot identities and work group
       ansible.builtin.group:
         name: '{{ item }}'
         system: true
       loop: ['{{ relay_runner_group }}', '{{ relay_codex_group }}', '{{ relay_codex_work_group }}']
+      when: not relay_execution_slot_shared_prerequisites | default(false) | bool
 
     - name: Create the isolated slot runtime identity with only its work membership
       ansible.builtin.user:
@@ -76,13 +79,11 @@
         owner: root
         group: root
         mode: '0755'
-      loop:
-        - '{{ relay_install_root }}/slots'
-        - '{{ relay_config_root }}/slots'
-        - '{{ relay_state_root }}/slots'
-        - '{{ relay_execution_slot_install_root }}'
-        - '{{ relay_diagnostics_config_path | dirname }}'
-        - '{{ relay_state_root }}/slots/{{ relay_execution_slot }}'
+      loop: >-
+        {{ ([] if relay_execution_slot_shared_prerequisites | default(false) | bool else
+            [relay_install_root ~ '/slots', relay_config_root ~ '/slots', relay_state_root ~ '/slots'])
+           + [relay_execution_slot_install_root, relay_diagnostics_config_path | dirname,
+              relay_state_root ~ '/slots/' ~ relay_execution_slot] }}
 
     - name: Create private runtime credential and diagnostic destinations
       ansible.builtin.file:

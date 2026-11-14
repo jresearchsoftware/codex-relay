@@ -4,6 +4,16 @@
 # already active production runner under the existing transition lock.
 # For a SERIAL/pool transition these flags come from the separate target gate.
 # A new inactive pool transport is never activated by Reviewer restart here.
+- name: Reprove unchanged loaded inputs against the newly installed release
+  ansible.builtin.include_tasks: upgrade-loaded-process-proof.yml
+  when: relay_upgrade_loaded_process_before is defined
+
+- name: Select preserved processes only after complete loaded input equivalence
+  ansible.builtin.set_fact:
+    relay_upgrade_loaded_process_preserved: >-
+      {{ relay_upgrade_loaded_process_before is defined and
+         (relay_upgrade_loaded_process_observed | default({})).eligible | default(false) | bool }}
+
 - name: Adopt exact artifact-only Reviewer configuration during maintained recovery
   ansible.builtin.include_tasks: upgrade-reviewer-config-adoption.yml
   when:
@@ -19,6 +29,7 @@
   when:
     - relay_upgrade_lifecycle_reviewer_was_active | bool
     - relay_upgrade_lifecycle_maintenance_proof is not defined
+    - not relay_upgrade_loaded_process_preserved | default(false) | bool
 
 - name: Wait for the previously active Reviewer listener after activation
   ansible.builtin.wait_for:

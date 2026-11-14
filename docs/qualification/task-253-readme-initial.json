@@ -1,0 +1,106 @@
+{
+  "backendDurations": [
+    {
+      "playbook": "site.yml",
+      "seconds": 291.54870626330376
+    }
+  ],
+  "case": "readme",
+  "config": "1ed2d2e8fb14bac16d0430e5d892563c4f3ded50",
+  "endToEndSeconds": 308.6400859206915,
+  "executedTaskCounts": {
+    "beforeRetained": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 0,
+      "ok": 0,
+      "skipped": 0
+    },
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "finalProof": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 0,
+      "ok": 0,
+      "skipped": 0
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 1
+    },
+    "reader": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 0,
+      "ok": 0,
+      "skipped": 0
+    },
+    "restart": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 0,
+      "ok": 0,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "Actual shared-host TEST only; no PROD qualification",
+    "No full proof/arguments/private diagnostics in summary",
+    "Public generated receiving-repository integration remains outside host installer; no workflow dispatch attestation"
+  ],
+  "markers": [],
+  "phase": "post-check",
+  "returncode": 0,
+  "services": {
+    "codex-relay-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "source": "284e3f1f783f12b31b88332d7cde63f67dbd426a",
+  "strategy": "provenance",
+  "warningCount": 1
+}

@@ -204,3 +204,343 @@ def test_local_target_identity_checks_the_existing_public_host_key(tmp_path, mon
     with pytest.raises(SystemExit):
         exec(transport.TARGET_PROOF, {'__name__': '__main__'})
     assert capsys.readouterr().err == 'RELAY_TARGET_IDENTITY_UNPROVEN\n'
+
+
+@pytest.fixture
+def native_target():
+    if sys.platform != 'linux' or os.geteuid() != 0:
+        pytest.skip('native root Debian target required')
+    for public in Path('/etc/ssh').glob('ssh_host_*_key.pub'):
+        fingerprint = subprocess.check_output(['/usr/bin/ssh-keygen', '-lf', str(public)], text=True).split()[1]
+        target = {**LOCAL, 'hostFingerprint': fingerprint}
+        if transport.native_local_eligible(target):
+            transport.prove_native_local(target)
+            return target
+    pytest.skip('private TEST namespace must supply protected synthetic public host key')
+
+
+@pytest.mark.parametrize('payload', ['literal {{ unsafe }}\n', '{"private":"literal"}', b'bytes\x00exact\n'])
+def test_native_local_exact_stdin_eof_private_spools_and_real_exit(native_target, payload, capfd):
+    expected = payload if isinstance(payload, bytes) else payload.encode()
+    code = 'import sys; data=sys.stdin.buffer.read(); assert data.hex()==sys.argv[1]; print("READY"); print("PRIVATE",file=sys.stderr);sys.exit(7)'
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, expected.hex()])
+    output, errors = process.communicate(input=payload, timeout=5)
+    assert process.native and process.returncode == 7 and output == 'READY\n' and errors == 'PRIVATE\n'
+    assert not Path(process.temporary.name).exists()
+    assert not ''.join(capfd.readouterr())
+
+
+def test_native_start_large_input_never_waits_for_helper_to_read(native_target, tmp_path):
+    release = tmp_path / 'release'
+    code = ('import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); '
+            'exec("while not p.exists(): time.sleep(0.01)"); '
+            'print(len(sys.stdin.buffer.read()))')
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, str(release)])
+    payload = 'x' * (8 * 1024 * 1024)
+    try:
+        process.start(payload)
+        assert process.poll() is None
+        for name in ['input', 'stdout', 'stderr']:
+            path = Path(process.temporary.name) / name
+            assert path.stat().st_mode & 0o777 == 0o600
+        assert (Path(process.temporary.name) / 'input').read_text() == payload
+        release.touch()
+        assert process.communicate(timeout=5) == (str(len(payload)) + '\n', '')
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def test_native_timeout_observes_same_operation_without_replay(native_target, tmp_path):
+    effect = tmp_path / 'effect'
+    code = 'import pathlib,sys,time; p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text()+"x" if p.exists() else "x");time.sleep(.2);print("DONE")'
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, str(effect)])
+    with pytest.raises(subprocess.TimeoutExpired) as timeout:
+        process.communicate(timeout=.01)
+    assert str(effect) not in str(timeout.value) and timeout.value.cmd == 'relay-target-operation'
+    assert process.communicate(timeout=5) == ('DONE\n', '')
+    assert effect.read_text() == 'x'
+
+
+@pytest.mark.parametrize('channel', ['stdout', 'stderr'])
+def test_native_oversized_result_is_bounded_and_redacted(native_target, channel):
+    code = 'import sys;sys.' + channel + '.write("private"*200000)'
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code])
+    assert process.communicate(timeout=5) == ('', 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n')
+    assert process.returncode == 255 and not Path(process.temporary.name).exists()
+
+
+def test_native_bad_fingerprint_stops_before_helper_and_reproves_each_command(native_target, tmp_path, monkeypatch):
+    calls = []
+    original = transport.prove_native_local
+    def prove(target):
+        calls.append(target['hostFingerprint'])
+        return original(target)
+    monkeypatch.setattr(transport, 'prove_native_local', prove)
+    for _ in range(2):
+        assert transport.run_target(native_target, None, ['/usr/bin/true']).returncode == 0
+    marker = tmp_path / 'must-not-run'
+    target = {**native_target, 'hostFingerprint': 'SHA256:' + 'A' * 43}
+    with pytest.raises(RuntimeError, match='target-identity'):
+        transport.run_target(target, None, ['/usr/bin/touch', str(marker)])
+    assert not marker.exists() and len(calls) == 3
+
+
+def test_native_group_termination_stops_helper_descendant(native_target, tmp_path):
+    child = tmp_path / 'pid'
+    code = ('import pathlib,subprocess,sys,time; p=subprocess.Popen(["/usr/bin/python3","-c","import time;time.sleep(60)"]);'
+            'pathlib.Path(sys.argv[1]).write_text(str(p.pid));time.sleep(60)')
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, str(child)])
+    process.start()
+    try:
+        deadline = time.monotonic() + 5
+        while not child.exists():
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        pid = int(child.read_text())
+        process.terminate()
+        assert process.wait(timeout=5) != 0
+        deadline = time.monotonic() + 5
+        while Path('/proc', str(pid), 'stat').exists():
+            if Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'Z':
+                break
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def test_native_original_guard_ready_eof_and_release_preserve_kernel_locks(native_target, tmp_path, monkeypatch):
+    monkeypatch.setitem(globals(), 'LOCAL', native_target)
+    test_real_ansible_holds_original_host_and_pool_locks_until_release(tmp_path, monkeypatch, 'local')
+
+
+def test_native_interrupted_guard_channel_releases_original_kernel_lock(native_target, tmp_path, monkeypatch):
+    monkeypatch.setitem(globals(), 'LOCAL', native_target)
+    test_interrupted_ansible_channel_releases_kernel_lock_without_replaying_work(tmp_path, monkeypatch, 'local')
+
+
+@pytest.mark.parametrize('change', ['ssh', 'nonroot', 'caller', 'fingerprint', 'platform'])
+def test_native_eligibility_preserves_unsupported_ansible_routes(native_target, monkeypatch, change):
+    target = dict(native_target)
+    if change == 'ssh': target['connection'] = 'ssh'
+    elif change == 'nonroot': target['user'] = 'ordinary'
+    elif change == 'caller': monkeypatch.setattr(os, 'geteuid', lambda: 1000)
+    elif change == 'fingerprint': target.pop('hostFingerprint')
+    else: monkeypatch.setattr(sys, 'platform', 'win32')
+    assert not transport.native_local_eligible(target)
+
+
+@pytest.mark.parametrize('change', ['ssh', 'nonroot', 'caller'])
+def test_unqualified_native_context_still_launches_original_ansible_adapter(native_target, monkeypatch, change):
+    target = dict(native_target)
+    if change == 'ssh': target['connection'] = 'ssh'
+    elif change == 'nonroot': target['user'] = 'ordinary'
+    else: monkeypatch.setattr(os, 'geteuid', lambda: 1000)
+    calls = []
+    def popen(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return type('Completed', (), {'returncode': 0})()
+    monkeypatch.setattr(transport.subprocess, 'Popen', popen)
+    process = transport.TargetProcess(target, '/synthetic/key', ['/usr/bin/true'])
+    try:
+        process.start()
+        assert not process.native and len(calls) == 1
+        assert calls[0][0][0] == 'ansible-playbook'
+        inventory = json.loads((Path(process.temporary.name) / 'inventory.json').read_text())
+        selected = inventory['all']['children']['relay']['hosts'][target['host']]
+        assert selected['ansible_user'] == target['user']
+        assert selected['ansible_connection'] == target['connection']
+    finally:
+        process.temporary.cleanup()
+
+
+def test_native_failed_launch_never_retries_and_removes_private_work(native_target, monkeypatch):
+    original = transport.subprocess.Popen
+    helper = ['/usr/bin/true']
+    calls = []
+    def popen(argv, **kwargs):
+        if argv == helper:
+            calls.append(argv)
+            raise OSError('synthetic unavailable helper')
+        return original(argv, **kwargs)
+    monkeypatch.setattr(transport.subprocess, 'Popen', popen)
+    process = transport.TargetProcess(native_target, None, helper)
+    with pytest.raises(OSError, match='unavailable helper'):
+        process.start('private')
+    assert not Path(process.temporary.name).exists()
+    with pytest.raises(RuntimeError, match='launch-unproven'):
+        process.start('private')
+    assert len(calls) == 1
+
+
+def test_native_does_not_inherit_protected_parent_file_descriptors(native_target, tmp_path):
+    with (tmp_path / 'private').open('w+b') as private:
+        os.set_inheritable(private.fileno(), True)
+        code = ('import os,sys\nfd=int(sys.argv[1])\ntry: os.fstat(fd)\n'
+                'except OSError: print("CLOSED")\nelse: raise SystemExit(1)')
+        result = transport.run_target(native_target, None,
+            ['/usr/bin/python3', '-c', code, str(private.fileno())], timeout=5)
+        assert result.returncode == 0 and result.stdout == 'CLOSED\n'
+
+
+def test_native_communicate_waits_for_descendant_channel_eof_on_same_process(native_target):
+    child = 'import time;time.sleep(.3);print("LATE")'
+    code = 'import subprocess;subprocess.Popen(["/usr/bin/python3","-c",' + repr(child) + '])'
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code])
+    with pytest.raises(subprocess.TimeoutExpired):
+        process.communicate(timeout=.05)
+    pid = process.process.pid
+    assert process.process.poll() == 0 and process.poll() is None and process.pending_output()
+    assert process.communicate(timeout=5) == ('LATE\n', '')
+    assert process.process.pid == pid and not process.pending_output()
+
+
+def test_native_output_path_replacement_refuses_without_reading_symlink_target(native_target, tmp_path):
+    release = tmp_path / 'release'
+    code = 'import pathlib,sys,time; p=pathlib.Path(sys.argv[1]);exec("while not p.exists(): time.sleep(.01)");print("OWNED")'
+    process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, str(release)])
+    process.start()
+    private = tmp_path / 'must-not-read'
+    private.write_text('PRIVATE')
+    output = process.output_paths[0]
+    output.unlink()
+    output.symlink_to(private)
+    release.touch()
+    assert process.communicate(timeout=5) == ('', 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n')
+    assert process.returncode == 255 and private.read_text() == 'PRIVATE'
+    assert not Path(process.temporary.name).exists()
+
+
+def test_run_target_timeout_kills_descendant_group_even_after_main_exits(native_target, tmp_path, monkeypatch):
+    child = tmp_path / 'pid'
+    code = ('import pathlib,subprocess,sys; p=subprocess.Popen(["/usr/bin/python3","-c","import time;time.sleep(60)"]);'
+            'pathlib.Path(sys.argv[1]).write_text(str(p.pid))')
+    instances = []
+    original = transport.TargetProcess
+    class Observed(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+    monkeypatch.setattr(transport, 'TargetProcess', Observed)
+    with pytest.raises(subprocess.TimeoutExpired):
+        transport.run_target(native_target, None, ['/usr/bin/python3', '-c', code, str(child)], timeout=.2)
+    assert len(instances) == 1
+    process = instances[0]
+    assert not process.pending_output() and not Path(process.temporary.name).exists()
+    pid = int(child.read_text())
+    if Path('/proc', str(pid), 'stat').exists():
+        assert Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'Z'
+
+
+def test_native_escaped_descendant_channel_loss_is_bounded_and_unknown(native_target, tmp_path, monkeypatch):
+    import signal
+    child = tmp_path / 'escaped-pid'
+    code = ('import pathlib,subprocess,sys; p=subprocess.Popen(["/usr/bin/python3","-c","import time;time.sleep(60)"],start_new_session=True);'
+            'pathlib.Path(sys.argv[1]).write_text(str(p.pid))')
+    instances = []
+    original = transport.TargetProcess
+    class Observed(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+    monkeypatch.setattr(transport, 'TargetProcess', Observed)
+    monkeypatch.setattr(transport, 'CHANNEL_CLEANUP_TIMEOUT', .1)
+    started = time.monotonic()
+    try:
+        with pytest.raises(RuntimeError, match='channel-unproven;inspect-before-retry'):
+            transport.run_target(native_target, None, ['/usr/bin/python3', '-c', code, str(child)], timeout=.2)
+        assert time.monotonic() - started < 3
+        assert len(instances) == 1 and instances[0].pending_output()
+        assert Path(instances[0].temporary.name).is_dir()
+    finally:
+        if child.exists():
+            os.killpg(int(child.read_text()), signal.SIGKILL)
+        if instances:
+            instances[0].wait(timeout=5)
+    assert not Path(instances[0].temporary.name).exists()
+
+
+@pytest.mark.parametrize('failure', ['guard', 'deadline'])
+def test_existing_guarded_promote_monitors_parent_exit_until_channel_eof(native_target, tmp_path, monkeypatch, failure):
+    import source_upgrade
+    from types import SimpleNamespace
+    child = tmp_path / 'child-pid'
+    helper = tmp_path / 'source/deploy/source_upgrade.py'
+    helper.parent.mkdir(parents=True)
+    helper.write_text('import json,pathlib,subprocess,sys\njson.load(sys.stdin)\n'
+        'p=subprocess.Popen(["/usr/bin/python3","-c","import time;time.sleep(60)"])\n'
+        'pathlib.Path(' + repr(str(child)) + ').write_text(str(p.pid))\n')
+    instances = []
+    original = transport.TargetProcess
+    class Observed(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+    monkeypatch.setattr(transport, 'TargetProcess', Observed)
+    def child_started():
+        return child.exists() and instances and instances[0].process.poll() == 0
+    holder = SimpleNamespace(poll=lambda: 1 if failure == 'guard' and child_started() else None)
+    if failure == 'deadline':
+        calls = []
+        def clock():
+            calls.append(True)
+            if len(calls) == 1:
+                return 0
+            deadline = time.monotonic() + 5
+            while not child_started():
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            return 181
+        monkeypatch.setattr(source_upgrade, 'time', SimpleNamespace(monotonic=clock, sleep=time.sleep))
+    prepared = SimpleNamespace(target=native_target, key=None, source=str(helper.parents[1]), local=True,
+        values={}, identity={}, operation='op', stage='/stage', lease_path='/stage/writer-lock.json',
+        admission_prefix=lambda: ['bound-admission'])
+    with pytest.raises(RuntimeError, match='GUARD_LOST' if failure == 'guard' else 'OPERATION_TIMEOUT'):
+        source_upgrade.guarded_promote(prepared, {}, [holder])
+    assert child_started()
+    process = instances[0]
+    assert process.poll() == 0 and not process.pending_output()
+    assert not Path(process.temporary.name).exists()
+    pid = int(child.read_text())
+    if Path('/proc', str(pid), 'stat').exists():
+        assert Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'Z'
+
+
+def test_guarded_promote_cancelled_escaped_channel_has_bounded_unknown_wait(native_target, tmp_path, monkeypatch):
+    import source_upgrade
+    import signal
+    from types import SimpleNamespace
+    child = tmp_path / 'escaped-child'
+    helper = tmp_path / 'source/deploy/source_upgrade.py'
+    helper.parent.mkdir(parents=True)
+    helper.write_text('import json,pathlib,subprocess,sys\njson.load(sys.stdin)\n'
+        'p=subprocess.Popen(["/usr/bin/python3","-c","import time;time.sleep(60)"],start_new_session=True)\n'
+        'pathlib.Path(' + repr(str(child)) + ').write_text(str(p.pid))\n')
+    instances = []
+    original = transport.TargetProcess
+    class Observed(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+    monkeypatch.setattr(transport, 'TargetProcess', Observed)
+    monkeypatch.setattr(transport, 'CHANNEL_CLEANUP_TIMEOUT', .1)
+    holder = SimpleNamespace(poll=lambda: 1 if child.exists() else None)
+    prepared = SimpleNamespace(target=native_target, key=None, source=str(helper.parents[1]), local=True,
+        values={}, identity={}, operation='op', stage='/stage', lease_path='/stage/writer-lock.json',
+        admission_prefix=lambda: ['bound-admission'])
+    started = time.monotonic()
+    try:
+        with pytest.raises(RuntimeError, match='channel-unproven;inspect-before-retry'):
+            source_upgrade.guarded_promote(prepared, {}, [holder])
+        assert time.monotonic() - started < 3
+        assert instances[0].pending_output() and Path(instances[0].temporary.name).exists()
+    finally:
+        if child.exists():
+            os.killpg(int(child.read_text()), signal.SIGKILL)
+        if instances:
+            instances[0].communicate(timeout=5)
+    assert not instances[0].pending_output() and not Path(instances[0].temporary.name).exists()

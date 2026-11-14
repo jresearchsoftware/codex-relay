@@ -1,0 +1,138 @@
+{
+  "bounded-original-uuid": {
+    "backendLogsObserved": 1,
+    "backendWarnings": [
+      {
+        "logClass": "ordinary-product-backend",
+        "counts": {
+          "ansibleTempDirectoryFallback": 2,
+          "nginxDeprecatedListen": 0,
+          "nginxProtocolOptionsRedefined": 0,
+          "nginxOcspUnavailable": 0,
+          "otherNginxWarning": 0,
+          "unclassifiedAnsibleWarning": 0,
+          "fatalTask": 0,
+          "ignoredFailure": 0,
+          "playRecapFailed": 0,
+          "playRecapUnreachable": 0
+        }
+      }
+    ],
+    "severity": "warning for emitted warnings; failures reported separately",
+    "rawLogLinesExported": false
+  },
+  "signal-samepair-recovery": {
+    "backendLogsObserved": 2,
+    "backendWarnings": [
+      {
+        "logClass": "ordinary-product-backend",
+        "counts": {
+          "ansibleTempDirectoryFallback": 2,
+          "nginxDeprecatedListen": 0,
+          "nginxProtocolOptionsRedefined": 0,
+          "nginxOcspUnavailable": 0,
+          "otherNginxWarning": 0,
+          "unclassifiedAnsibleWarning": 0,
+          "fatalTask": 0,
+          "ignoredFailure": 0,
+          "playRecapFailed": 0,
+          "playRecapUnreachable": 0
+        }
+      },
+      {
+        "logClass": "native-source-promotion",
+        "counts": {
+          "ansibleTempDirectoryFallback": 0,
+          "nginxDeprecatedListen": 0,
+          "nginxProtocolOptionsRedefined": 0,
+          "nginxOcspUnavailable": 0,
+          "otherNginxWarning": 0,
+          "unclassifiedAnsibleWarning": 0,
+          "fatalTask": 0,
+          "ignoredFailure": 0,
+          "playRecapFailed": 0,
+          "playRecapUnreachable": 0
+        }
+      }
+    ],
+    "severity": "warning for emitted warnings; failures reported separately",
+    "rawLogLinesExported": false
+  },
+  "policy": {
+    "backendLogsObserved": 1,
+    "backendWarnings": [
+      {
+        "logClass": "ordinary-product-backend",
+        "counts": {
+          "ansibleTempDirectoryFallback": 2,
+          "nginxDeprecatedListen": 0,
+          "nginxProtocolOptionsRedefined": 0,
+          "nginxOcspUnavailable": 0,
+          "otherNginxWarning": 0,
+          "unclassifiedAnsibleWarning": 0,
+          "fatalTask": 0,
+          "ignoredFailure": 0,
+          "playRecapFailed": 0,
+          "playRecapUnreachable": 0
+        }
+      }
+    ],
+    "severity": "warning for emitted warnings; failures reported separately",
+    "rawLogLinesExported": false
+  },
+  "restore": {
+    "backendLogsObserved": 1,
+    "backendWarnings": [
+      {
+        "logClass": "ordinary-product-backend",
+        "counts": {
+          "ansibleTempDirectoryFallback": 2,
+          "nginxDeprecatedListen": 0,
+          "nginxProtocolOptionsRedefined": 0,
+          "nginxOcspUnavailable": 0,
+          "otherNginxWarning": 0,
+          "unclassifiedAnsibleWarning": 0,
+          "fatalTask": 0,
+          "ignoredFailure": 0,
+          "playRecapFailed": 0,
+          "playRecapUnreachable": 0
+        }
+      }
+    ],
+    "severity": "warning for emitted warnings; failures reported separately",
+    "rawLogLinesExported": false
+  },
+  "disposition": {
+    "ansibleTempDirectoryFallback": {
+      "cases": [
+        "bounded-original-uuid",
+        "signal-samepair-recovery",
+        "policy",
+        "restore"
+      ],
+      "countPerCompletedFullCase": 2,
+      "severity": "warning",
+      "assessment": "Temporary-directory permission/fallback warnings retained as execution evidence. Every complete backend and final installed validation passed; no permission rewrite or protected check bypass was used."
+    },
+    "consumerIntegrationProjection": {
+      "compatibility": "missing",
+      "assessment": "Generated integration artifacts retained for ordinary receiving-repository publication. No workflow/configmain mutation or installer rerun performed.",
+      "severity": "warning"
+    },
+    "nginx": {
+      "newFullCaseWarningsObserved": 0,
+      "earlierFreshBoundaryWarnings": 18,
+      "assessment": "Earlier nginx warnings belong to the stopped fresh/shared-reload assessment; they were not observed again in these four completed full cases."
+    },
+    "ignoredFailures": {
+      "observed": 0
+    },
+    "unclassifiedWarnings": {
+      "observed": 0
+    },
+    "limits": [
+      "Intentional native cutover fault and its public expected failure are qualified separately; zero fatalTask count in backend logs is not a claim that the injected public fault succeeded.",
+      "Class/count facts contain no raw private diagnostic lines."
+    ]
+  }
+}

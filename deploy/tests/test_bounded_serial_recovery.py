@@ -24,7 +24,7 @@ import pytest
 
 from test_bounded_install_recovery import BASELINE, Incident, NODE, OPERATION, ROOT, write
 sys.path.insert(0, str(ROOT / 'deploy/ansible/tests'))
-from test_git_consumer_history_recovery import HISTORY
+from test_git_consumer_history_recovery import HISTORICAL_V3_HISTORY as HISTORY
 
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,

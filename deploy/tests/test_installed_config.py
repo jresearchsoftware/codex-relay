@@ -18,6 +18,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 import installed_config
+from config import derive_managed_pool_slots
 
 HEAD = 'a' * 40
 CONSUMER_HEAD = 'b' * 40
@@ -53,6 +54,9 @@ def installed():
         config['consumer']['repository'] = 'example/codex-relay'
         config['target']['host'] = PRIVATE_MARKER + '.example.invalid'
         config['environment']['localApply'] = {'source': 'installed'}
+        # Persist the same canonical fixed routes produced by ordinary config
+        # loading, so byte/provenance assertions exercise a valid installation.
+        derive_managed_pool_slots(config)
         fixture = {
             'base': base, 'install': install, 'release': release, 'source': source,
             'current': current, 'config': config,
@@ -184,6 +188,7 @@ def test_owner_pool_verification_preserves_all_snapshot_boundaries(external_pool
 
 def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installed, capsys, monkeypatch):
     import deployment_lock
+    import managed_pool_transport
     spec = importlib.util.spec_from_file_location('installed_cli_fixture', ROOT / 'deploy/relay-deploy.py')
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
@@ -195,6 +200,10 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
     state = installed['base'] / 'state'
     state.mkdir()
     original_compile, original_acquire = cli.compile_inputs, deployment_lock.acquire
+    expected_locks = ['/var/lib/codex-relay-deployment.lock',
+                      '/var/lib/codex-relay-pool-relay-general-deployment.lock']
+    observed_locks = []
+    pool_calls = []
 
     def compile_fixture(config):
         values = original_compile(config)
@@ -202,11 +211,17 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
         return values
 
     def acquire_fixture(path):
-        assert path == '/var/lib/codex-relay-deployment.lock'
-        return original_acquire(installed['base'] / 'deployment.lock')
+        assert path in expected_locks
+        observed_locks.append(path)
+        return original_acquire(installed['base'] / Path(path).name)
 
     def backend(argv, cwd, env, log, guard, pool_guard=None):
         assert pool_guard is None
+        assert observed_locks == expected_locks
+        for path in expected_locks:
+            with pytest.raises(ValueError, match='deployment-lock-busy'):
+                with original_acquire(installed['base'] / Path(path).name):
+                    pytest.fail('local reconciliation released its host or pool mutex')
         values = json.loads(Path(argv[argv.index('-i') + 1]).read_text())['all']['children']['relay']['hosts']
         values = next(iter(values.values()))
         assert values['ansible_connection'] == 'local'
@@ -220,10 +235,28 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
                   f'PRODUCTION_LIFECYCLE_PRESERVED={HEAD};activation=owner-after-job\n')
         return 0
 
+    # This adapter test uses an inert Ansible backend. Keep the equally
+    # external pool adapter inert while asserting its canonical input/order;
+    # target-local signing has separate real-transport qualification.
+    def pool_preflight(target, key, config, guard, *, local, extra_guard):
+        assert config == installed['config'] and local and guard is None and extra_guard is None
+        assert observed_locks == expected_locks
+        pool_calls.append('preflight')
+        return 'MANAGED_POOL_PREFLIGHT=PASS'
+
+    def pool_reconcile(target, key, config, revision, guard, *, local, extra_guard):
+        assert revision == HEAD
+        assert config == installed['config'] and local and guard is None and extra_guard is None
+        assert pool_calls == ['preflight']
+        pool_calls.append('reconcile')
+        return 'MANAGED_POOL_RESULT={"capacity":1}'
+
     monkeypatch.setattr(cli, 'ROOT', installed['source'])
     monkeypatch.setattr(cli, 'compile_inputs', compile_fixture)
     monkeypatch.setattr(cli, 'run_backend', backend)
     monkeypatch.setattr(deployment_lock, 'acquire', acquire_fixture)
+    monkeypatch.setattr(managed_pool_transport, 'preflight_pool', pool_preflight)
+    monkeypatch.setattr(managed_pool_transport, 'reconcile_pool', pool_reconcile)
     monkeypatch.setattr(sys, 'argv', ['relay-deploy', '--config', str(installed['snapshot']),
                         '--phase', 'apply', '--local-reconcile', '--expected-installed-head', HEAD,
                         '--workflow-consumer-revision', WORKFLOW_HEAD,
@@ -236,6 +269,7 @@ def test_local_cli_keeps_consumer_provenance_and_emits_product_receipts(installe
     finally:
         os.umask(previous_umask)
     output = capsys.readouterr().out
+    assert pool_calls == ['preflight', 'reconcile']
     assert f'consumer_revision={CONSUMER_HEAD}' in output
     assert f'PRODUCTION_APPLY_VALIDATED={HEAD}' in output
     assert f'PRODUCTION_LIFECYCLE_PRESERVED={HEAD};' in output

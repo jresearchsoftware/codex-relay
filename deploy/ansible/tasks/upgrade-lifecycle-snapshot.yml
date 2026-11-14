@@ -52,3 +52,18 @@
     that:
       - not relay_upgrade_lifecycle_production_was_active | bool or relay_upgrade_lifecycle_reviewer_was_active | bool
     fail_msg: RELAY_UPGRADE_PRODUCTION_REVIEWER_ACTIVITY_UNPROVEN
+
+- name: Inspect loaded process inputs before ordinary managed Apply changes
+  ansible.builtin.include_tasks: upgrade-loaded-process-proof.yml
+  when:
+    - relay_upgrade_lifecycle_reviewer_was_active | bool
+    - not relay_admission_recovery_authorized | default(false) | bool
+    - relay_upgrade_lifecycle_maintenance_proof is not defined
+    - relay_runtime_root is defined
+    - relay_reviewer_credential_env_file is defined
+    - relay_reviewer_user is defined
+
+- name: Retain eligible loaded process identity for this traversal only
+  ansible.builtin.set_fact:
+    relay_upgrade_loaded_process_before: '{{ relay_upgrade_loaded_process_observed.proof }}'
+  when: (relay_upgrade_loaded_process_observed | default({})).eligible | default(false) | bool

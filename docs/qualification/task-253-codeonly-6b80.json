@@ -1,0 +1,170 @@
+{
+  "backendDurations": [
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 12.250287093222141
+    },
+    {
+      "playbook": "relay-intent-preflight.yml",
+      "seconds": 13.28429989516735
+    },
+    {
+      "playbook": "relay-intent-apt-preflight.yml",
+      "seconds": 4.373211182653904
+    },
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 55.962121926248074
+    },
+    {
+      "playbook": "site.yml",
+      "seconds": 375.57182366400957
+    }
+  ],
+  "case": "codeonly6",
+  "config": "f42435b4e47d745c403d72cb6361cc8e9af1b069",
+  "diagnosticAdditionalReadSeconds": 0,
+  "endToEndSeconds": 584.5919859111309,
+  "executedTaskCounts": {
+    "beforeRetained": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "finalProof": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "reader": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 3,
+      "ok": 3,
+      "skipped": 0
+    },
+    "restart": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 1
+    }
+  },
+  "limits": [
+    "Actual shared-host TEST only; no PROD qualification",
+    "No full proof/arguments/private diagnostics in summary",
+    "Public generated receiving-repository integration remains outside host installer; no workflow dispatch attestation",
+    "All three loaded-proof readers and final assertion executed successfully; restart skipped and six measured service PID/start identities preserved",
+    "Raw total includes public CLI preparation and every required check; 584.591986 seconds does not achieve owner tens-of-seconds total goal",
+    "No further full code-only Apply or redundant targeted daemon-reload is authorized before fast-design qualification sequence is resolved"
+  ],
+  "markers": [
+    {
+      "elapsed": 126.12378732860088,
+      "marker": "RELAY_INSTALL_PREFLIGHT=prepared;operation=6bd5677e-9d4c-4111-b400-bcc06d846d98"
+    },
+    {
+      "elapsed": 129.18149653077126,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    },
+    {
+      "elapsed": 130.2980656772852,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=DRAIN;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    },
+    {
+      "elapsed": 152.02191799134016,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=APPLY;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    },
+    {
+      "elapsed": 579.0717391595244,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=ACTIVATE/VERIFY;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    },
+    {
+      "elapsed": 580.1882635429502,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=RESUME;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    },
+    {
+      "elapsed": 581.3046683594584,
+      "marker": "RELAY_LIFECYCLE_PROGRESS=OPEN;target=6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc"
+    }
+  ],
+  "phase": "upgrade",
+  "postfalseDiagnosticTriggered": false,
+  "processPreservationQualified": true,
+  "qualifiedProofFrontiers": [
+    "before",
+    "after-installed-inputs",
+    "final-acceptance"
+  ],
+  "returncode": 0,
+  "services": {
+    "codex-relay-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-runner.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "active": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "source": "6b80e6abd3e5e130bd975f4bec8570ccfec8e0cc",
+  "strategy": "upgrade",
+  "tensOfSecondsTotalEndToEndGoalAchieved": false,
+  "warningCount": 2,
+  "warnings": [
+    {
+      "category": "ANSIBLE_REMOTE_TMP_FALLBACK",
+      "count": 2,
+      "disposition": "Existing nonfatal TEST runner temporary-directory fallback; no permission changes and cost not isolated."
+    }
+  ]
+}

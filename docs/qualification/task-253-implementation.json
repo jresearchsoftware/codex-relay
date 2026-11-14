@@ -1,0 +1,161 @@
+{
+  "ansibleWarningLines": 2,
+  "backendDurations": [
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 11.431342087686062
+    },
+    {
+      "playbook": "relay-intent-preflight.yml",
+      "seconds": 12.802299834787846
+    },
+    {
+      "playbook": "relay-intent-apt-preflight.yml",
+      "seconds": 4.365935944020748
+    },
+    {
+      "playbook": "relay-intent-stage.yml",
+      "seconds": 137.69710990786552
+    },
+    {
+      "playbook": "site.yml",
+      "seconds": 356.3768824338913
+    }
+  ],
+  "configProvenance": "local TEST qualification commit; no remote accepted-main or workflow-dispatch attestation",
+  "endToEndSeconds": 645.613467156887,
+  "executedTaskCounts": {
+    "bubblewrapAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 0,
+      "skipped": 31
+    },
+    "bubblewrapPrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "namespaceAdditional": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 31,
+      "ok": 31,
+      "skipped": 0
+    },
+    "namespacePrimary": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 1,
+      "skipped": 0
+    },
+    "preservedFinalProof": {
+      "changed": 0,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 1
+    },
+    "reviewerRestart": {
+      "changed": 1,
+      "failed": 0,
+      "headers": 1,
+      "ok": 0,
+      "skipped": 0
+    }
+  },
+  "inventory": {
+    "blockers": [],
+    "configCommit": "1f3412b75fd43871cf2c7f7e8eadb2fcf364537e",
+    "configuration": {
+      "consumer": "equivalent",
+      "deployment": "equivalent",
+      "status": "equivalent"
+    },
+    "installedRevision": "cdc829f9e9501056c65ef794560fcde30e95b42b",
+    "runners": {
+      "general": "reusable",
+      "production": "reusable"
+    }
+  },
+  "limits": [
+    "Shared-host TEST; no PROD performance claim",
+    "First implementation changes Reviewer binary/unit/environment inputs and is not the steady-state unchanged-component sample",
+    "Task-only timing callback and stdout receipt times retain ordinary proof callbacks and execute no task skips"
+  ],
+  "loadedProofCapability": {
+    "boundedProofBytes": 657,
+    "fields": "config/environment/CA/key/unit/environment-file digests only; no input bytes",
+    "kernelPeerMatchesReviewerMainPid": true,
+    "nonRootReviewerPeerDenied": true,
+    "peerIsDedicatedReviewer": true,
+    "schemaVersion": 1,
+    "socket": "present-private0600"
+  },
+  "phaseObservedElapsedSeconds": {
+    "ACTIVATE/VERIFY": 640.0370154678822,
+    "APPLY": 233.20467466115952,
+    "DRAIN": 211.22611024975777,
+    "OPEN": 642.3208198323846,
+    "QUIESCE": 210.10972480475903,
+    "RESUME": 641.2037251740694,
+    "prepared": 207.04904699325562
+  },
+  "product": "cdc829f9e9501056c65ef794560fcde30e95b42b",
+  "proofs": {
+    "fullCandidateApply": true,
+    "installedIdentity": true,
+    "upgradeActivation": true
+  },
+  "receipt": {
+    "config_blob_sha": "b0dd70cee6596d3d6dc0170cd14cac6398033c34",
+    "config_path": "test/relay.json",
+    "config_repository": "jresearchsoftware/codex-relay-deployment-testbed",
+    "config_sha": "1f3412b75fd43871cf2c7f7e8eadb2fcf364537e",
+    "config_sha256": "026f63a3085cfd512e4ccd2595dd3597ee5916aecbd97be98b819c91c80a2697",
+    "product_repository": "jresearchsoftware/codex-relay",
+    "product_sha": "cdc829f9e9501056c65ef794560fcde30e95b42b",
+    "source": "owner-checkout",
+    "source_policy": "test-qualified-exact"
+  },
+  "returncode": 0,
+  "scenario": "implementation",
+  "services": {
+    "codex-relay-reviewer.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-runner.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "codex-relay-test-reviewer.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": false
+    },
+    "codex-relay-test-runner.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": false
+    },
+    "relay-test-managed-pool-pool-1.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    },
+    "relay-test-managed-pool-pool-2.service": {
+      "activeAfter": true,
+      "pidAndStartPreserved": true
+    }
+  },
+  "taskCountEvidence": "bounded extraction of public task names and result statuses from this attempt own output; no task arguments/private payloads retained",
+  "warnings": [
+    {
+      "category": "ansible-remote-tmp-fallback",
+      "count": 2,
+      "disposition": "Nonfatal TEST runner temporary directory fallback; permissions not changed, cost not isolated."
+    }
+  ]
+}
