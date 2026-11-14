@@ -1041,8 +1041,42 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         diagnostics_before = set(Path('/var/lib/codex-relay/debug').glob('*.json'))
         rust_test = [*node_command, '--test-name-pattern=dedicated Rust development', test_path]
         run_installed(rust_test, env={**env, 'INSTALLED_RUST_LINKER': 'missing', 'INSTALLED_FIXTURE_EVENT_BASE': '960'}, umask=deploy_umask)
+        # The original Cargo cause and the independent retirement archive are
+        # separate records. Bind both exact IDs instead of counting every new
+        # diagnostic as though it were another child execution.
+        diagnostics_root = Path('/var/lib/codex-relay/debug')
+        added_diagnostics = set(diagnostics_root.glob('*.json')) - diagnostics_before
+        expected_diagnostics = {diagnostics_root / 'run-960.json',
+                                diagnostics_root / 'run-960-finalization.json'}
+        assert added_diagnostics == expected_diagnostics, added_diagnostics
+        original_path = diagnostics_root / 'run-960.json'
+        original_bytes = original_path.read_bytes()
+        original = json.loads(original_bytes)
+        final_path = diagnostics_root / 'run-960-finalization.json'
+        final = json.loads(final_path.read_bytes())
+        assert original['executionId'] == 'run-960' and original['classification'] == 'CODEX_NONZERO_EXIT'
+        assert final['executionId'] == 'run-960-finalization' and final['phase'] == 'finalization'
+        lifecycle = final['lifecycle']
+        assert lifecycle['childState'] == 'started' and lifecycle['containment'] == 'reaped', lifecycle
+        assert lifecycle['cleanupContainment'] == 'reaped' and lifecycle['cleanup'] == 'complete', lifecycle
+        assert lifecycle['persistence'] == 'stored' and lifecycle['retention'] == 'none', lifecycle
+        assert lifecycle['diagnosticStore']['status'] == 'stored', lifecycle
+        assert lifecycle['diagnosticStore']['executionId'] == original['executionId'], lifecycle
+        assert lifecycle['failureDiagnostic']['code'] == 'CODEX_NONZERO_EXIT', lifecycle
+        capsules = list(Path('/var/lib/codex-relay/dispatch/attempts-v2/runtime-diagnostics').glob('*/run-960.json'))
+        assert len(capsules) == 1, capsules
+        capsule = json.loads(capsules[0].read_bytes())
+        assert capsule['released'] is True and capsule['terminalDiagnostic']['executionId'] == final['executionId'], capsule
+        assert capsule['diagnosticStore'] == lifecycle['diagnosticStore'], capsule
+        assert capsule['failureDiagnostic'] == lifecycle['failureDiagnostic'], capsule
+        for path in expected_diagnostics:
+            assert not path.is_symlink() and (path.stat().st_uid, stat.S_IMODE(path.stat().st_mode)) == (0, 0o600)
         records = launcher_diagnostics_since(diagnostics_before)
-        assert len(records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
+        assert len(records) == 2, 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
+        child_records = [record for record in records if record['code'] is not None]
+        assert len(child_records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
+        records = child_records
+        assert original_path.read_bytes() == original_bytes, 'RUST_PROOF_ORIGINAL_DIAGNOSTIC_CHANGED'
         assert records[0]['childStarted'] is True and records[0]['childExitCode'] == 1, records
         preview = records[0]['preview']
         assert 'RUST_DEVELOPMENT_PROOF_FAILED' in preview and 'cargo-test' in preview, records

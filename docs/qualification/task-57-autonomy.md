@@ -18,7 +18,7 @@ this report is implementation evidence, not independent acceptance.
 | R3: preserved candidates | Trusted import acquires only the missing reachable object closure, supports loose/packed refs and indexed packs, and never executes Git against worker metadata. A safely collected candidate survives inaccessible or unsafe unrelated residue with an explicit unknown worktree state. Cross-UID [generated package](../../controller/test/generated-package-collection.test.mjs), [private source](../../controller/test/privileged-collection.test.mjs) and [observation](../../controller/test/worktree-observation.test.mjs) tests preserve private bytes and modes. |
 | R4: continuation and meaningful results | Unchanged authority needs no repetitive technical-continuation Decision. Fresh authenticated launch, new Step, native lineage, holds and unknown-effect reconciliation remain mandatory. Automatic/manual exact-head no-change remediation needs no cosmetic commit. Draft results can receive substantive CR findings; approval remains distinct and requires Ready. See [continuation](../../controller/test/blocked-cr-continuation.test.mjs), [no-change](../../controller/test/task-authority.test.mjs) and Reviewer tests. |
 | R5: completion, resources and diagnostics | A contained cleanup failure retains the semantic result with a visible warning. Complete safe terminal evidence is archived through the existing primary diagnostic store before active capacity retires, including known pre-runtime failures. Retained resources are not deleted. Unknown child/cleanup, failed persistence and missing archive receipts remain protected. [Durability tests](../../runtime/test/durability.test.mjs) exceed eight successive failures without increasing capacity. |
-| R6: native bindings | Exact Task/admission/PR/head and later native results govern identity. PR presentation is repaired or warned, without rewinding owner-maintained Issue numbering or replacing a later admission. Informational links and `steps-to-reproduce` do not create extra authority. Node and Rust agree on compatibility relationship grammar and Unicode schema units. |
+| R6: native bindings | Exact Task/admission/PR/head and later native results govern identity. PR presentation is repaired or warned, without rewinding owner-maintained Issue numbering or replacing a later admission. Informational links and `steps-to-reproduce` do not create extra authority. Node and Rust agree on compatibility relationship grammar and current-v4 Unicode schema units; retained legacy executable-CR byte limits remain unchanged. |
 | R7: bounded output and diagnostics | JSONL streams have separate record/result/diagnostic bounds; a long valid stream retains its late result and errors. Geometric buffers avoid per-fragment memory growth. Malformed raw records are rejected before forwarding; decoded values and property names are redacted. Unicode limits count codepoints while transport bytes remain independently bounded. Worker failure/validation context is retained with explicit clipping. Paginated authority/evidence scans reach relevant late records under declared work/byte/request/time bounds. |
 | R8: instructions and tools | Automatic instructions grant ordinary task-owned methods while keeping credentials/publication separate. Manual and standalone routes retain their own authority. Fixed cc/c++/awk aliases point only into existing read-only `/usr`; OpenSSL uses neutral task-local configuration. The actual runtime budget is disclosed. Scrubbed automatic execution retains its 90-minute worker budget and 100-minute outer deadline; direct trusted runtime callers retain bounded overrides without forwarding controller environment settings. |
 
@@ -35,10 +35,11 @@ this report is implementation evidence, not independent acceptance.
 
 ## Validation and environment
 
-The first full Node suite passed: **1,209 passed, five explicit skips**; the
-subsequent controller archive integration passed 62 focused durability tests.
-Final complete-suite counts belong to the canonical Outcome. Rust formatting
-and **172 Rust tests** passed. Guidance generation and self-adoption tests passed,
+The final full Node suite passed: **1,234 passed, five explicit skips**. The
+three permission scenarios skipped as root were also exercised under UID 65534
+with all five residue tests passing. Controller archive integration passed 62
+focused durability tests. Final deployment and installed-proof counts belong
+to the canonical Outcome. Rust formatting and **174 Rust tests** passed. Guidance generation and self-adoption tests passed,
 as did hash-pinned VibeVM 1.0.11 native self-adoption and VPM compatibility,
 update/rollback/offline/removal qualification. These tool checks do not prove
 model compliance or activate an installed service.
