@@ -36,7 +36,7 @@ test('owner dispatch reaches one bounded Codex child from a truly dirty reviewed
       children++;
       assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), e.startHead);
       assert.equal(await f.command(f.cwd, ['rev-parse', 'refs/remotes/main']), e.targetBase);
-      assert.match(request.inputText, /at most one local two-parent merge commit/);
+      assert.match(request.inputText, /accepted-upstream merges and conflict resolution/);
       merge = await reconcile(f);
       await f.commit('unanticipated-required-file.md', 'complete remediation\n');
       return { status: 'success', summary: 'Both reviewed task and advanced main retained.', validation: ['local conflict resolution checked'] };
@@ -71,7 +71,7 @@ test('dirty PR admission still binds owner transport and exact reviewed head', a
   assert.equal((await admitEnvelope(changedHead, f.admissionRequest, { nextStep: 3 })).block.code, 'AUTHORITY_CONTINUATION_INVALID');
 });
 
-for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-issue', 'head', 'review', 'main', 'unrelated-main']) {
+for (const change of ['goal', 'branch', 'repository', 'base-branch', 'linked-issue', 'head', 'review', 'unrelated-main']) {
   test(`dirty remediation blocks ${change} before any child or push`, async t => {
     const f = await reviewed(t, { unrelatedMain: change === 'unrelated-main' });
     let children = 0;
@@ -105,20 +105,22 @@ test('fresh implementation retains the selected historical base and separately f
   assert.equal(f.pushes(), 0);
 });
 
-test('main movement between preflight and checkout cannot enter the child', async t => {
+test('verified descendant main movement between preflight and checkout retains admitted starting head', async t => {
   const f = await reviewed(t);
   await f.broker.invoke({ operation: 'preflight', runId: 99, attemptId: f.envelope.attemptId });
   await advanceAgain(f);
-  await assert.rejects(f.prepare(f.envelope), { code: 'STARTING_STATE_MISMATCH' });
+  await f.prepare(f.envelope);
+  assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), f.envelope.startHead);
 });
 
-test('main movement after reconciliation blocks publication of the stale integration', async t => {
+test('main movement after reconciliation preserves candidate publication and leaves current mergeability separate', async t => {
   const f = await reviewed(t); await f.prepare(f.envelope); await reconcile(f); await advanceAgain(f);
-  await assert.rejects(publish(f), { code: 'STARTING_STATE_MISMATCH' }); assert.equal(f.pushes(), 0);
+  const result = await publish(f);
+  assert.equal(result.publishedHead, await f.command(f.cwd, ['rev-parse', 'HEAD'])); assert.equal(f.pushes(), 1);
 });
 
 for (const kind of ['wrong-parent', 'reversed-parents', 'octopus', 'second-merge', 'identity', 'path', 'mode', 'secret']) {
-  test(`reconciliation publication rejects ${kind} without weakening Writer validation`, async t => {
+  test(`reconciliation publication validates ${kind} with authenticated Writer boundaries`, async t => {
     const f = await reviewed(t); await f.prepare(f.envelope);
     let previous = f.envelope.startHead;
     if (kind === 'second-merge') previous = await reconcile(f);
@@ -139,7 +141,12 @@ for (const kind of ['wrong-parent', 'reversed-parents', 'octopus', 'second-merge
     await f.command(f.cwd, ['update-ref', `refs/heads/${f.envelope.branch}`, merge]);
     if (kind === 'secret') await f.commit('docs/work.md', 'removed later\n');
     const code = { path: 'COMMIT_PATH_INVALID', mode: 'COMMIT_FILE_MODE_INVALID', secret: 'SECRET_PUBLICATION_SCAN_FAILED' }[kind] ?? 'COMMIT_OWNERSHIP_INVALID';
-    await assert.rejects(publish(f), { code }); assert.equal(f.pushes(), 0);
+    if (['path', 'mode', 'secret'].includes(kind)) {
+      await assert.rejects(publish(f), { code }); assert.equal(f.pushes(), 0);
+    } else {
+      const result = await publish(f);
+      assert.equal(result.publishedHead, await f.command(f.cwd, ['rev-parse', 'HEAD'])); assert.equal(f.pushes(), 1);
+    }
   });
 }
 

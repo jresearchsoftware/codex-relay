@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("relay_project", ROOT / "guidance/project.py")
@@ -223,7 +224,8 @@ class GeneratedTests(unittest.TestCase):
         root = Path(temporary.name)
         files = {name: builder.read_file(ROOT, name) for name in (
             "scripts/build-relay-guidance.py", "guidance/source.json", "guidance/project.py",
-            "guidance/licenses.json", "LICENSE")}
+            "guidance/licenses.json", "LICENSE", "contracts/src/github-authority-v4.json",
+            "contracts/src/github-authority-v1.json", "deploy/workflows/contract.json", "toolchain/vibevm.json")}
         for relative in ("packages/codex-relay/skill", "guidance/dependency-closure", "guidance/artifacts"):
             files.update({str(Path(relative) / name): data
                           for name, data in builder.inventory(ROOT / relative).items()})
@@ -233,6 +235,23 @@ class GeneratedTests(unittest.TestCase):
         files["vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/consumer.txt"] = b"Native Shared 7\n"
         builder.materialize(files, root)
         return root
+
+    def test_source_tree_contract_build_is_offline_and_needs_no_branch_commit_object(self):
+        root = self.build_fixture()
+        with patch.object(builder.subprocess, "check_output", side_effect=AssertionError("Unexpected Git lookup")):
+            self.assertEqual(builder.build(root, check=True)["guidance"], "PASS")
+        provenance = json.loads((root / "guidance/artifacts/vpm/skill/PROVENANCE.json").read_text())
+        self.assertEqual(provenance["contract_source"], "source-tree")
+        self.assertEqual(provenance["contract_revision_role"], "accepted-baseline")
+        source = root / "contracts/src/github-authority-v4.json"
+        self.assertEqual(provenance["source_files"]["contracts/src/github-authority-v4.json"],
+                         hashlib.sha256(source.read_bytes()).hexdigest())
+        schema = json.loads(source.read_text())
+        schema["description"] = "Changed source-tree contract fixture"
+        source.write_text(json.dumps(schema))
+        report = builder.build(root, check=True)
+        self.assertEqual(report["guidance"], "FAIL")
+        self.assertIn("vpm/skill/references/product/github-authority-v4.json", report["changed"])
 
     def test_project_shared_update_preserves_every_frozen_delivery_byte(self):
         root = self.build_fixture()

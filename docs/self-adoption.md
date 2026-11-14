@@ -7,7 +7,7 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **6.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **6.1.0** candidate uses the
 native export. Its registry, slot, lock, boot index and projected native Skill
 travel together. Its Shared dependency requirement is separate from the
 standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
@@ -39,6 +39,9 @@ lifecycle eligibility. Guidance 6.0.0 adds mandatory owner wait and original-eve
 for manual handoff. This is a MAJOR change under PV-002; see [the release
 classification](relay-guidance.md#version-and-provenance).
 
+Guidance 6.1.0 adds compatible Task 57 engineering-autonomy and meaningful-result
+paths without new mandatory operator work. Frozen 6.0.0 bytes remain unchanged.
+
 ## Accepted-source binding and ordinary use
 
 A clean accepted checkout provides plain committed files. Codex discovers
@@ -50,8 +53,12 @@ or additional owner command. Checkout/pull advances the accepted ready files.
 Relay's execution binding identifies the independently accepted source commit,
 separately from candidate root/nested AGENTS, boot and Skills. Task #199's execution freezes independently accepted Relay source
 `512b2b5ea2867b92958580f17f6aee24c23b1fba` before candidate edits;
-the unchanged Skill product-contract baseline remains
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. These are distinct identities, and the
+its historical Skill product-contract baseline was
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Task 57 freezes accepted execution
+guidance at `cfeb633c86408327bf9941a5dfaaa41f98706ac1` while its 6.1.0
+artifact uses source-tree contract input hashes and the accepted baseline
+revision as provenance context. Candidate schema bytes do not replace the
+accepted guidance governing this execution. These are distinct identities, and the
 candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
@@ -84,18 +91,17 @@ produces its lock, complete slots/receipts and INDEX together without requiring
 another Skill projection or startup command.
 The single `build-relay-guidance.py` builder reads the pinned Shared 5.0.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
-disposable input adapter or unselected root slot. This changes the new 6.0.0
-Relay candidate's recorded builder provenance while preserving the frozen 5.0.0
-older registry payload. The active root policy graph remains at Shared 7.0.1.
+disposable input adapter or unselected root slot. This retains the accepted
+builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph remains at Shared 7.0.1.
 The verifier
 compares the complete standalone snapshot with its own accepted distribution
 and separately validates the root consumer lock/slot. Native install prunes the
 obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v6.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v6.1.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0` or `v5.0.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0` or `v6.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

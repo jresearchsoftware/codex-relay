@@ -40,14 +40,25 @@ def test_native_binding_fences_atomic_promotion(pair):
 def test_native_binding_movement_refuses_provenance_write(pair, changed):
     root, path, payload = pair
     payload['currentBinding'] = native_binding(root, path, payload['revision'])
+    target = root / 'opt/test/current' if changed == 'current' else {
+        'manifest': path, 'snapshot': path.with_name('deployment-config.json'),
+        'source': path.parent / 'reviewed-source/.relay-source.json'}[changed]
+    original = target.lstat()
+    replacement = target.with_name(target.name + '.replacement')
+    # Allocate the replacement while the original inode is still live. This
+    # creates real byte-equivalent object movement even on filesystems whose
+    # metadata clock is coarse and which immediately reuse unlinked inodes.
     if changed == 'current':
-        current = root / 'opt/test/current'
-        target = os.readlink(current); current.unlink(); current.symlink_to(target)
+        replacement.symlink_to(os.readlink(target))
     else:
-        target = {'manifest': path, 'snapshot': path.with_name('deployment-config.json'),
-                  'source': path.parent / 'reviewed-source/.relay-source.json'}[changed]
-        # Byte-equivalent replacement is still movement from the proved object.
-        target.write_bytes(target.read_bytes())
+        replacement.write_bytes(target.read_bytes())
+        replacement.chmod(stat.S_IMODE(original.st_mode))
+    os.replace(replacement, target)
+    assert target.lstat().st_ino != original.st_ino
+    moved = native_binding(root, path, payload['revision'])
+    for field in ['manifestSha256', 'snapshotSha256', 'sourceSha256']:
+        assert moved[field] == payload['currentBinding'][field]
+    assert moved != payload['currentBinding']
     before = path.read_bytes()
     with pytest.raises(ValueError, match='PROVENANCE_BINDING_UNPROVEN'):
         provenance.promote(payload, root=root, owner_uid=os.getuid())

@@ -27,13 +27,15 @@ async function fixture(t, options) {
   return f;
 }
 
-async function retireVerifiedFixtureCapsule(f) {
-  // Test-owned synthetic teardown after assertions; product failure retention
-  // remains occupied until separate operator inspection/disposition.
-  const capsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId });
+async function assertRuntimeDiagnosticRetired(f) {
+  // Product finalization, not fixture teardown, retires known contained
+  // terminal diagnostics. Retained resources have their own truthful status.
+  assert.equal(await openRuntimeDiagnostic({ executionId: f.envelope.attemptId }), null);
+  const capsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId, includeReleased: true });
   if (capsule) {
-    assert.equal((await capsule.read()).executionId, f.envelope.attemptId);
-    await capsule.release();
+    const state = await capsule.read();
+    assert.equal(state.executionId, f.envelope.attemptId);
+    assert.equal(state.released, true);
   }
 }
 
@@ -62,7 +64,7 @@ test('installed dedicated Rust development qualification', async t => {
   }
   assert.equal(f.pushes(), 0);
   assert.equal(f.comments.length, 0);
-  await retireVerifiedFixtureCapsule(f);
+  await assertRuntimeDiagnosticRetired(f);
 });
 
 test('installed former production runner cannot reserve migrated general-runner diagnostics', { skip: process.getuid() !== 24001 }, async t => {
@@ -120,7 +122,7 @@ for (const mode of ['cancel-term', 'cancel-ignoreterm']) {
     await assert.rejects(runAttempt(await terminalReplay(f, f.journal, args)), { code: 'EXECUTION_CANCELLED' });
     assert.deepEqual(await f.journal.get(f.envelope.runId), saved);
     assert.equal(calls, 1); assert.equal(f.comments.length, 1);
-    await retireVerifiedFixtureCapsule(f);
+    await assertRuntimeDiagnosticRetired(f);
   });
 }
 
@@ -186,10 +188,13 @@ test('installed profile rejection never starts a child or inherits a model defau
 for (const mode of ['generated-residue', 'unreadable-task-work']) {
   test(`installed ${mode} publication observes worker ownership and collector permissions`, async t => {
     const f = await fixture(t, { installed: true, remediation: true,
-      instruction: `fixture-mode=${mode}; Маркер UTF-8` });
+      instruction: `fixture-mode=${mode}; Маркер UTF-8`, retainCheckout: mode === 'unreadable-task-work' });
     const journal = f.journal;
     const dispatcher = createOnDemandDispatchAdapter(); let calls = 0;
-    const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); } };
+    const remaining = `${f.cwd}/${mode === 'generated-residue' ? 'validation-output.tmp' : 'docs/work.md'}`;
+    let beforeCollection;
+    const args = { ...f, journal, execute: e => { calls++; return dispatcher.dispatch(e); },
+      collect: async e => { beforeCollection = await stat(remaining); return f.collect(e); } };
     if (mode === 'generated-residue') {
       const result = await runAttempt(args);
       assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
@@ -203,18 +208,31 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
       assert.deepEqual(await journal.get(f.envelope.runId), saved);
       assert.deepEqual(f.comments, commentsBeforeReplay);
     } else {
-      await assert.rejects(runAttempt(args), error => {
-        assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-        assert.equal(error.details.diagnostic.orchestration, 'FAILED');
-        return true;
-      });
+      const result = await runAttempt(args);
       const saved = await journal.get(f.envelope.runId);
-      assert.equal(saved.progress, null);
-      assert.equal(saved.outcome.status, 'BLOCKED');
-      assert.equal(f.pushes(), 0);
+      assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+      assert.equal(saved.collection.clean, null);
+      assert.equal(saved.collection.preserved, true);
+      assert.equal(saved.collection.worktreeObservation.status, 'unknown');
+      assert.equal(saved.collection.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+      assert.equal(saved.collection.worktreeObservation.diagnostic.operation, 'worktree-observation');
+      assert.equal(saved.collection.worktreeObservation.diagnostic.diagnosticCode, 'EACCES');
+      assert.equal(saved.progress.head, result.head);
+      assert.equal(await f.remoteHead(), result.head);
+      const published = JSON.parse(await f.command(f.root, ['--git-dir=' + f.remote, 'show', `${result.head}:docs/work.md`]));
+      assert.equal(published.uid, 24002); // The safe committed source, not unreadable replacement bytes.
+      assert.equal(f.pushes(), 1);
+      assert.match(f.comments[0].body, /WORKTREE_OBSERVATION_INCOMPLETE/);
+      const commentsBeforeReplay = structuredClone(f.comments);
+      assert.deepEqual(await runAttempt(await terminalReplay(f, journal, args, { retainCheckout: true })), result);
+      assert.deepEqual(await journal.get(f.envelope.runId), saved);
+      assert.deepEqual(f.comments, commentsBeforeReplay);
+      assert.equal(f.pushes(), 1);
     }
-    const remaining = `${f.cwd}/${mode === 'generated-residue' ? 'validation-output.tmp' : 'docs/work.md'}`;
     const metadata = await stat(remaining);
+    for (const field of ['uid', 'gid', 'mode', 'ino', 'dev', 'size', 'ctimeMs', 'mtimeMs']) {
+      assert.equal(metadata[field], beforeCollection[field], `collection/replay preserved ${field}`);
+    }
     assert.equal(metadata.uid, 24002);
     assert.notEqual(metadata.uid, process.getuid());
     if (mode === 'generated-residue') {
@@ -231,7 +249,7 @@ for (const mode of ['generated-residue', 'unreadable-task-work']) {
     }
     assert.equal(calls, 1);
     assert.equal(f.comments.filter(c => c.body.includes('## Codex Outcome')).length, 1);
-    await retireVerifiedFixtureCapsule(f);
+    await assertRuntimeDiagnosticRetired(f);
   });
 }
 
@@ -291,7 +309,24 @@ for (const [mode, code, state] of [
     const saved = await journal.get(f.envelope.runId); const d = saved.diagnostic;
     assert.equal(d.executionState, state); assert.equal(d.executionId, f.envelope.attemptId);
     assert.equal(d.durable.diagnosticStore.status, 'stored');
-    assert.equal(d.durable.diagnosticStore.executionId, f.envelope.attemptId);
+    const expectedDiagnostic = retainCheckout ? f.envelope.attemptId : `${f.envelope.attemptId}-finalization`;
+    assert.equal(d.durable.diagnosticStore.executionId, expectedDiagnostic);
+    if (!retainCheckout) {
+      // The final capsule archive points back to the original runtime bundle.
+      // Reclaim only active capacity: do not substitute a successful cleanup
+      // assertion for preservation of the actual primary failure evidence.
+      const capsule = await openRuntimeDiagnostic({ executionId: f.envelope.attemptId, includeReleased: true });
+      assert.ok(capsule);
+      const finalState = await capsule.read();
+      assert.equal(finalState.released, true);
+      assert.equal(finalState.terminalDiagnostic.status, 'stored');
+      assert.equal(finalState.terminalDiagnostic.executionId, expectedDiagnostic);
+      assert.equal(finalState.diagnosticStore.status, 'stored');
+      assert.equal(finalState.diagnosticStore.executionId, f.envelope.attemptId);
+      assert.equal(finalState.containment, 'reaped');
+      assert.ok(['reaped', 'not_required'].includes(finalState.cleanupContainment));
+      assert.equal(await openRuntimeDiagnostic({ executionId: f.envelope.attemptId }), null);
+    }
     assert.ok(d.lastSuccessfulBoundary); assert.ok(d.failureBoundary);
     if (mode === 'invalid-result') assert.equal(d.primaryCause, 'CODEX_RESULT_MISSING');
     if (mode === 'missing-token') assert.equal(d.primaryCause, 'CODEX_LAUNCHER_ACCESS_TOKEN_UNAVAILABLE');
@@ -325,6 +360,15 @@ for (const [mode, code, state] of [
       assert.ok(retainedCapsule);
       retainedState = await retainedCapsule.read();
       assert.equal(retainedState.executionId, f.envelope.attemptId);
+      // The original diagnostic is durable, but unknown inner execution is
+      // not an independently proven terminal result and must not be archived
+      // as retireable capacity. Keep this exact active capsule and sandbox.
+      assert.equal(retainedState.terminalDiagnostic, undefined);
+      assert.equal(retainedState.diagnosticStore.status, 'stored');
+      assert.equal(retainedState.diagnosticStore.executionId, expectedDiagnostic);
+      assert.equal(retainedState.childState, 'unknown');
+      assert.equal(retainedState.containment, 'unknown');
+      assert.ok(!['reaped', 'not_required'].includes(retainedState.cleanupContainment));
       assert.equal(retainedState.cleanup, 'retained');
       assert.equal(retainedState.retention, 'retained');
       assert.notEqual(retainedState.released, true);
@@ -368,7 +412,7 @@ for (const [mode, code, state] of [
       const after = await lstat(`${f.cwd}/.codex-sandbox`, { bigint: true });
       assert.equal(after.dev, retainedSandbox.dev); assert.equal(after.ino, retainedSandbox.ino);
       console.log('INSTALLED_IMPORT_FAILURE_PRESERVED containment=unknown;cleanup=retained;release=denied;replay=once');
-    } else await retireVerifiedFixtureCapsule(f);
+    } else await assertRuntimeDiagnosticRetired(f);
   });
 }
 

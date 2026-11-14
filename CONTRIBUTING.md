@@ -9,8 +9,8 @@ See [SECURITY.md](SECURITY.md) for sensitive findings.
 Work on a normal branch (or fork when the public repository exists). Keep
 unrelated changes separate. Add regression coverage for changed behavior;
 documentation corrections only need relevant consistency checks. The maintainer
-reviews scope and trust boundaries before merge. `AGENTS.md` and `.codex/hooks/`
-describe the owner's optional Codex workflow, not human contribution gates.
+reviews scope and trust boundaries before merge. `AGENTS.md` describes the
+owner's Codex workflow, not human contribution gates.
 
 ## Keep workflow documentation current
 
@@ -126,7 +126,6 @@ node --import ./consumer/test-support/consumer-env.mjs --test consumer/test/secu
 | Task/Decision/CR authority or validation policy | `contracts/README.md`, Node authority/CR tests, Reviewer tests and `scripts/qualify.py` |
 | Reviewer config/transport/publication | `reviewer/README.md`, Cargo fmt/tests and qualification |
 | Consumer config/examples/docs | `consumer/README.md`, portability tests, qualification, candidate scan |
-| Optional developer hooks | Only for hook changes: suites in the [hook qualification contract](.codex/hooks/README.md#qualification) |
 
 Local contract qualification does not qualify installed sudoers, wrappers,
 process containment, App permissions, workflow runner restrictions or mTLS

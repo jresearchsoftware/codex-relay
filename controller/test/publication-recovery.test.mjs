@@ -393,7 +393,11 @@ for (const kind of ['identity', 'path', 'file-mode', 'secret', 'merge']) {
     const { request } = await f.authorize();
     const code = { identity: 'COMMIT_OWNERSHIP_INVALID', path: 'COMMIT_PATH_INVALID', 'file-mode': 'COMMIT_FILE_MODE_INVALID',
       secret: 'SECRET_PUBLICATION_SCAN_FAILED', merge: 'INTEGRATION_BASE_INVALID' }[kind];
-    await assert.rejects(f.broker.invoke(request), { code }); assert.equal(f.pushes(), 0);
+    if (['identity', 'merge'].includes(kind)) {
+      const result = await f.broker.invoke(request); assert.equal(result.publishedHead, f.progress.head); assert.equal(f.pushes(), 1);
+    } else {
+      await assert.rejects(f.broker.invoke(request), { code }); assert.equal(f.pushes(), 0);
+    }
   });
 }
 

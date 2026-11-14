@@ -4,8 +4,8 @@ use super::*;
 use std::{collections::HashSet, time::Duration};
 
 const SOURCE_BYTES: usize = 256 * 1024;
-const COLLECTION_BYTES: usize = 8 * 1024 * 1024;
-const COLLECTION_RECORDS: usize = 500;
+const COLLECTION_BYTES: usize = 16 * 1024 * 1024;
+const COLLECTION_RECORDS: usize = 10_000;
 
 impl Github {
     async fn authority_request(
@@ -144,9 +144,8 @@ impl Github {
                     Ok(records)
                 };
             }
-            // A full page at exactly 500 still needs an empty completion page.
-            // At most 501 successful responses plus four size reductions fit
-            // this reader; transfer and the enclosing 60s operation stay bounded.
+            // Complete history is bounded by transferred bytes and deadline,
+            // rather than a Task-lifetime count of unrelated discussion records.
         }
     }
 

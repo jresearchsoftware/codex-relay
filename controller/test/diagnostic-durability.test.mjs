@@ -7,6 +7,10 @@ import { reserveRuntimeDiagnostic, openRuntimeDiagnostic, RUNTIME_FALLBACK_LIMIT
 import { safeFailureDiagnosticReference, createExecutionDiagnostic } from '../src/diagnostics.mjs';
 import { causalEvidence, safeDomainTerminal } from '../src/execution-contract.mjs';
 import { terminalOutcomeBody } from '../src/outcome.mjs';
+import { createOnDemandDispatchAdapter } from '../src/github.mjs';
+import { currentEnvelope } from './fixture.mjs';
+import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
+import { writeDiagnosticBundle } from '../src/diagnostic-store.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'relay-fallback-'));
@@ -139,4 +143,75 @@ test('known worker domain results cannot hide physical cleanup or diagnostic fai
   }
   record.execution.diagnostic.runtime = { cleanup: 'complete', persistence: 'stored' };
   assert.equal(safeDomainTerminal(failure, record, 'execution'), true);
+});
+
+test('retained-resource capsules retire only with exact independent final diagnostic and containment proof', async t => {
+  for (const missing of ['none', 'archive', 'archive-identity', 'child', 'cleanup-process', 'persistence']) await t.test(missing, async t => {
+    const root = await fixture(t);
+    const handle = await reserveRuntimeDiagnostic({ executionId: 'run-39', root });
+    const state = { cleanup: 'failed', retention: 'retained', persistence: 'stored', childState: 'started',
+      containment: 'reaped', cleanupContainment: 'reaped', sandboxCreated: true, sandboxIdentity: { device: '123', inode: '456' },
+      terminalDiagnostic: { status: 'stored', executionId: 'run-39-finalization', mode: 'normal' } };
+    if (missing === 'archive') delete state.terminalDiagnostic;
+    if (missing === 'archive-identity') state.terminalDiagnostic.executionId = 'run-38-finalization';
+    if (missing === 'child') state.containment = 'unknown';
+    if (missing === 'cleanup-process') state.cleanupContainment = 'unknown';
+    if (missing === 'persistence') state.persistence = 'failed';
+    await handle.write(state);
+    if (missing !== 'none') {
+      await assert.rejects(handle.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
+      assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root })); return;
+    }
+    await handle.release();
+    assert.equal(await openRuntimeDiagnostic({ executionId: 'run-39', root }), null);
+    const released = await handle.read();
+    assert.equal(released.cleanup, 'failed'); assert.equal(released.retention, 'retained');
+    assert.deepEqual(released.sandboxIdentity, state.sandboxIdentity);
+    const next = await reserveRuntimeDiagnostic({ executionId: 'run-40', root });
+    assert.equal(next.reference.slot, handle.reference.slot);
+    assert.equal((await next.read()).executionId, 'run-40');
+  });
+});
+
+test('repeated native dispatcher spawn failures archive their proven no-child state and reuse bounded slots', async t => {
+  const root = await fixture(t); const fallbackRoot = join(root, 'fallback'); const primaryRoot = join(root, 'primary');
+  let spawns = 0;
+  const adapter = createOnDemandDispatchAdapter({
+    reserveDiagnostic: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: fallbackRoot }),
+    spawnImpl: () => { spawns++; throw Object.assign(new Error('dispatch could not start'), { code: 'EACCES', syscall: 'spawn' }); },
+    finalizeArtifacts: options => finalizeRuntimeArtifacts({ ...options,
+      diagnosticStore: value => writeDiagnosticBundle(value, { root: primaryRoot }),
+      cleanupSandbox: () => assert.fail('no runtime mutation occurred') }) });
+  for (let index = 0; index < 12; index++) {
+    const envelope = currentEnvelope({ runId: 300 + index });
+    await assert.rejects(adapter.dispatch(envelope), error => {
+      assert.equal(error.code, 'DISPATCH_NOT_STARTED');
+      assert.equal(error.details.childState, 'not_started'); assert.equal(error.details.containment, 'not_required');
+      assert.equal(error.details.fallbackReference.status, 'released');
+      assert.equal(error.details.diagnosticStore.executionId, `${envelope.attemptId}-finalization`);
+      return true;
+    });
+    const archive = JSON.parse(await readFile(join(primaryRoot, `${envelope.attemptId}-finalization.json`), 'utf8'));
+    assert.equal(archive.lifecycle.childState, 'not_started'); assert.equal(archive.lifecycle.primaryCause, 'EACCES');
+    assert.equal(archive.lifecycle.persistence, 'not_required'); assert.equal(archive.lifecycle.cleanup, 'not_required');
+    assert.equal(await openRuntimeDiagnostic({ executionId: envelope.attemptId, root: fallbackRoot }), null);
+  }
+  assert.equal(spawns, 12); assert.equal((await readdir(fallbackRoot)).length, 1);
+});
+
+test('proven no-runtime dispatch archive follows the existing debug diagnostics configuration', async t => {
+  const root = await fixture(t); const fallbackRoot = join(root, 'fallback'); const primaryRoot = join(root, 'primary');
+  const envelope = currentEnvelope({ runId: 900 });
+  const adapter = createOnDemandDispatchAdapter({
+    reserveDiagnostic: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: fallbackRoot }),
+    spawnImpl: () => { throw Object.assign(new Error('dispatch could not start'), { code: 'EACCES', syscall: 'spawn' }); },
+    finalizeArtifacts: options => finalizeRuntimeArtifacts({ ...options, readDiagnosticConfig: async () => ({ mode: 'debug' }),
+      diagnosticStore: value => writeDiagnosticBundle(value, { root: primaryRoot, mode: 'debug' }),
+      cleanupSandbox: () => assert.fail('no runtime mutation occurred') }) });
+  await assert.rejects(adapter.dispatch(envelope), error => {
+    assert.equal(error.code, 'DISPATCH_NOT_STARTED'); assert.equal(error.details.fallbackReference.status, 'released');
+    assert.equal(error.details.diagnosticStore.mode, 'debug'); return true;
+  });
+  const archived = JSON.parse(await readFile(join(primaryRoot, 'run-900-finalization.json'), 'utf8'));
+  assert.equal(archived.mode, 'debug');
 });

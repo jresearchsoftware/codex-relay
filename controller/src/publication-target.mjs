@@ -1,7 +1,6 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { fail } from './execution-contract.mjs';
-import { assertPr, linkedIssue } from './live-authority.mjs';
-import { labelNames, stepLike } from './step-metadata.mjs';
+import { assertPr, linkedIssue, verifyPublishedBase } from './live-authority.mjs';
 
 // Branch reuse makes closed/merged PRs history, not current publication targets.
 // Count current candidates before checking compatibility; never select one by
@@ -31,11 +30,10 @@ export async function findCurrentIssuePullRequest(api, envelope, expectedNumber 
     && [publishedTransition.previous, publishedTransition.head].every(head => /^[0-9a-f]{40}$/.test(head ?? ''))
     && [summary.head.sha, pr.head.sha].every(head => [publishedTransition.previous, publishedTransition.head].includes(head));
   if (pr.head.ref !== envelope.branch || linkedIssue(pr.body) !== envelope.issueNumber
-    || pr.head.sha !== summary.head.sha && !knownTransition
-    || pr.base.sha !== summary.base.sha) fail('PR_AUTHORITY_CHANGED');
-  // Hydration must not erase a conflicting admission Step/title observation.
-  if (pr.title !== summary.title) fail('STEP_DISPLAY_MISMATCH');
-  if (JSON.stringify(labelNames(pr.labels).filter(stepLike).sort())
-    !== JSON.stringify(labelNames(summary.labels).filter(stepLike).sort())) fail('STEP_LABEL_MISMATCH');
+    || pr.head.sha !== summary.head.sha && !knownTransition) fail('PR_AUTHORITY_CHANGED');
+  // Main can advance between list/detail reads without replacing the PR.
+  // Prove a descendant relationship rather than coupling identity to a moving
+  // base observation. Titles and labels are derived presentation, not identity.
+  if (pr.base.sha !== summary.base.sha) await verifyPublishedBase(api, summary.base.sha, pr.base.sha);
   return pr;
 }

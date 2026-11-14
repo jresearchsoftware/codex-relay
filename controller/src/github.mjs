@@ -1,10 +1,12 @@
 import { executionConsumer } from '../../consumer/consumer.mjs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createBoundedUtf8Capture } from './utf8-capture.mjs';
+import { OWNER_SMOKE_TIMEOUT_MS, validateOwnerSmokeRequest } from './owner-smoke.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
+import { DEFAULT_CODEX_RUNTIME_TIMEOUT_MS } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 const TERMINATION_GRACE_MS = 5000;
 function signalProcessGroup(pid, signal) {
@@ -52,11 +54,11 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 }
 
 
-export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs = 100 * 60 * 1000,
+function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = DEFAULT_CODEX_RUNTIME_TIMEOUT_MS + 10 * 60 * 1000,
   reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
   return {
     async dispatch(envelope) {
-      validateEnvelope(envelope);
+      validate(envelope);
       if (signal?.aborted) throw Object.assign(new Error('EXECUTION_CANCELLED'), { code: 'EXECUTION_CANCELLED',
         details: { childState: 'not_started', containment: 'not_required', executionId: envelope.attemptId } });
       // Reserve independent durable evidence before the process can create any
@@ -82,9 +84,10 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
       const onSignal = () => { cancelled = true; void reap().then(() => finishWait?.(null)); };
       try {
         await fallbackStore.write({ stage: 'dispatcher', operation: 'dispatch', childState: 'unknown',
-          containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown' });
+          containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown',
+          sandboxCreated: false, inputSchemaCreated: false });
         try {
-          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, [], {
+          child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, dispatchArgs, {
             env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
             // fd3 is a separate lifetime pipe: envelope stdin still ends after
             // its unchanged JSON body. Caller death closes fd3 in the helper.
@@ -120,9 +123,9 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         const innerContained = value?.containment === 'reaped' || diagnostic?.containment === 'reaped'
           || (diagnostic?.containment === 'not_required' && diagnostic?.observed?.child === 'not_started');
         const contained = outerContained && (spawnFailed || innerContained);
-        containment = contained ? 'reaped' : 'unknown';
+        containment = contained ? (spawnFailed ? 'not_required' : 'reaped') : 'unknown';
         if (!contained || timedOut || cancelled || exit !== 0 || out.truncated || value?.version !== VERSION || value?.attemptId !== envelope.attemptId) {
-          const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
+          const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : spawnFailed ? 'DISPATCH_NOT_STARTED' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
           throw Object.assign(new Error(code), { code, details: { causal: diagnostic, executionId: envelope.attemptId,
             codexUsage: normalizeCodexUsage(err.truncated ? undefined : diagnostic?.codexUsage),
             childState: spawnFailed ? 'not_started' : diagnostic?.observed?.child ?? 'unknown', containment,
@@ -153,7 +156,14 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
           runtimeLifecycle = lifecycle;
         } catch (error) {
           lifecycle = error.details ?? {};
-          if (!pendingError) pendingError = error;
+          // Keep a proven semantic result when only bounded cleanup failed and
+          // that cleanup's process is also contained. Retain the resource and
+          // its capsule; neither reuse nor diagnostic loss is authorized.
+          if (!pendingError && error.code === 'SANDBOX_CLEANUP_FAILED'
+              && containment === 'reaped' && lifecycle.cleanupContainment === 'reaped'
+              && ['stored', 'not_required'].includes(lifecycle.persistence)) {
+            runtimeLifecycle = lifecycle;
+          } else if (!pendingError) pendingError = error;
         }
         if (pendingError) {
           const original = pendingError.details ?? {};
@@ -168,7 +178,15 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         }
       }
       if (pendingError) throw pendingError;
-      return { ...value, codexUsage: normalizeCodexUsage(value.codexUsage), containment: 'reaped', runtimeLifecycle };
+      return { ...value, codexUsage: normalizeCodexUsage(value.codexUsage), containment: 'reaped', runtimeLifecycle,
+        ...(runtimeLifecycle?.cleanup === 'failed' ? { executionWarnings: ['RUNTIME_CLEANUP_FAILED'] } : {}) };
     }
   };
+}
+
+export function createOnDemandDispatchAdapter(options = {}) {
+  return createDispatchAdapter({ ...options, validate: validateEnvelope, dispatchArgs: [] });
+}
+export function createOwnerSmokeDispatchAdapter(options = {}) {
+  return createDispatchAdapter({ timeoutMs: OWNER_SMOKE_TIMEOUT_MS, ...options, validate: validateOwnerSmokeRequest, dispatchArgs: ['--owner-smoke'] });
 }

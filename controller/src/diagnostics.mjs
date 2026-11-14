@@ -41,7 +41,7 @@ function replaceExact(text, value, replacement) {
   return text.split(value).join(replacement);
 }
 
-export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [] } = {}) {
+export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], preserveNewlines = false } = {}) {
   let text = String(value ?? "");
   text = replaceExact(text, codexAccessToken, "[REDACTED_CODEX_ACCESS_TOKEN]");
   text = replaceExact(text, githubToken, "[REDACTED_GITHUB_TOKEN]");
@@ -51,7 +51,7 @@ export function redactDiagnosticText(value, { codexAccessToken = "", githubToken
   text = text.replace(/\b(?:authorization\s*:\s*bearer|bearer)\s+[^\s,;]+/gi, match => `${match.slice(0, match.toLowerCase().indexOf("bearer") + 6)} [REDACTED_BEARER]`);
   text = text.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
   text = text.replace(/\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)\b\s*[:=]\s*[^\s,;]+/gi, match => `${match.split(/[:=]/, 1)[0]}=[REDACTED_SECRET]`);
-  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, character => preserveNewlines && ["\n", "\r"].includes(character) ? character : " ");
 }
 
 export function boundedDiagnosticText(value, maxBytes, secrets = {}) {
@@ -273,7 +273,11 @@ function safePath(value) { return typeof value === "string" && value.length <= 1
 // Native failure details are JSONL stdout, independently of incidental stderr.
 // Retain only observed top-level error messages, never agent/tool output. This
 // is protected diagnostic evidence, not a replacement for the child exit code.
-function codexErrorDiagnostics(stdout, stdoutTruncated, secrets) {
+function codexErrorDiagnostics(stdout, stdoutTruncated, secrets, streamed) {
+  if (streamed && Array.isArray(streamed.events)) return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true,
+    omittedEvents: streamed.omittedEvents ?? 0, events: streamed.events.slice(-4).map(event => ({ type: event.type, message: typeof event.message === 'object' && typeof event.message?.text === 'string'
+      ? { ...boundedDiagnosticText(event.message.text, 4096, secrets), bytes: event.message.bytes, truncated: event.message.truncated === true }
+      : boundedDiagnosticText(event.message, 4096, secrets) })) };
   const events = [];
   let omittedEvents = 0;
   const lines = String(stdout ?? "").split(/\r?\n/);
@@ -291,7 +295,7 @@ function codexErrorDiagnostics(stdout, stdoutTruncated, secrets) {
   return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true, omittedEvents, events };
 }
 
-export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stdoutTruncated = false, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
+export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stdoutTruncated = false, codexErrorEvents, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
   const limit = mode === "debug" ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES;
   const output = {
     schemaVersion: "1.0",
@@ -312,7 +316,7 @@ export function createExecutionDiagnostic({ executionId = randomUUID(), mode, st
     classification: classification ?? null,
     launcherDiagnostic: launcherDiagnostic ?? null,
     stderr: boundedDiagnosticText(stderr, limit, secrets),
-    codexErrors: codexErrorDiagnostics(stdout, stdoutTruncated, secrets),
+    codexErrors: codexErrorDiagnostics(stdout, stdoutTruncated, secrets, codexErrorEvents),
   };
   if (runtimeFailure && typeof runtimeFailure === "object") {
     const safe = safeFailureDiagnosticReference(runtimeFailure) ?? {};

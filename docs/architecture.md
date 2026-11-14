@@ -103,8 +103,8 @@ resulting execution Step/title. The native review body remains CR authority,
 linked to the canonical Issue, without a competing full public Request.
 
 For schema-v4 same-CR continuation after `BLOCKED`, the native CR keeps its
-immutable reviewed head A. A newer trusted Task Decision can resolve the blocker;
-a fresh native owner ready event admits the next Step at exact Writer-proven B.
+immutable reviewed head A. With unchanged effective authority and a reconciled contained result, no repeated
+technical-continuation Decision is needed; a fresh native owner ready event admits the next Step at exact Writer-proven B.
 Writer joins the prior protected admission/journal and authentic canonical native
 Writer Outcome to the same Task/PR/CR, branch/base and attempt lineage, then
 verifies live refs and ancestry. Automatic provenance requires verified

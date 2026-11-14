@@ -256,7 +256,7 @@ fn valid_input(
             .and_then(Value::as_str)
             .unwrap_or("");
         if body.trim().is_empty()
-            || body.len() > 12_000
+            || body.chars().count() > 12_000
             || !body.nfc().eq(body.chars())
             || body.to_ascii_lowercase().contains("filecite")
             || body.lines().any(|line| {
@@ -315,7 +315,7 @@ fn valid_finding(finding: &Value) -> bool {
     let valid_text = |key, max| {
         f.get(key).and_then(Value::as_str).is_some_and(|value| {
             !value.trim().is_empty()
-                && value.len() <= max
+                && value.chars().count() <= max
                 && value.nfc().eq(value.chars())
                 && !value.chars().any(char::is_control)
         })
@@ -333,7 +333,7 @@ fn valid_finding(finding: &Value) -> bool {
                 && xs.iter().all(|x| {
                     x.as_str().is_some_and(|s| {
                         !s.trim().is_empty()
-                            && s.len() <= 500
+                            && s.chars().count() <= 500
                             && s.nfc().eq(s.chars())
                             && !s.chars().any(char::is_control)
                     })
@@ -600,7 +600,9 @@ fn new_cr_step_rejection(pr: &Value, arguments: &Value) -> Option<&'static str> 
     let steps: Vec<&str> = labels
         .iter()
         .filter_map(|label| label["name"].as_str())
-        .filter(|name| name.to_ascii_lowercase().starts_with("step"))
+        .filter(|name| {
+            name.to_ascii_lowercase().starts_with("step-") || name.eq_ignore_ascii_case("step")
+        })
         .collect();
     if steps.is_empty() {
         return Some("STEP_LABEL_MISSING");

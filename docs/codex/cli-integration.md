@@ -1,9 +1,18 @@
 # Governed Codex CLI integration
 
-Relay qualifies an exact **0.167.2** installation, selected by the product
+Relay qualifies an exact **0.169.0** installation, selected by the product
 deployment contract. Installation still uses `--release` and verifies the exact
 version. Runtime and installation never follow a floating latest or self-update.
 Routine source maintenance follows the separate development policy below.
+
+The Task 57 maintenance check selected official stable 0.169.0 (2026-11-14).
+The official installer and all six credential-free loopback cases passed under
+an ordinary Linux UID, covering production argv, native JSONL/usage, schema and
+semantic validation, stdin, isolated home, permission policy, failed provider and
+optional MCP refusal. The installer emitted temporary-directory PATH-alias and
+old-release-cleanup warnings; direct execution passed and no existing release
+was modified. This is compatibility evidence, not a capability review or an
+installed-service update. Historical evidence below retains its original pins.
 
 ## Relay development maintenance policy
 

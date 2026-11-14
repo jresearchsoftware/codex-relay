@@ -165,9 +165,8 @@ additive protection and do not enlarge charter scope. Requested profile values
 do not prove actual runtime model or effort.
 
 The CR's reviewed head A is immutable finding provenance, distinct from a later
-remediation admission's starting head B. After a terminal `BLOCKED` result, a
-trusted Task-scoped Decision newer than the canonical Writer Outcome may resolve
-the blocker and permit a fresh owner ready event to admit the next Step on the
+remediation admission's starting head B. After a terminal `BLOCKED` result, unchanged effective authority and reconciled prior effects permit a fresh owner ready event
+without a repetitive technical-continuation Decision to admit the next Step on the
 same PR and CR at exactly Writer-proven B. The preceding protected journal and
 authentic native Writer Outcome must bind the same Task/PR/CR, branch/base and
 attempt lineage. Automatic evidence includes verified `publishedHead`; manual

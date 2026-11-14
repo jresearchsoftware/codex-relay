@@ -193,30 +193,26 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         || current.base.ref !== pr.base.ref || linkedIssue(current.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
       return current;
     };
-    assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
-    const labels = (await api.get(`/issues/${pr.number}`)).labels;
-    // A new durable admission may advance its bound PR. Result association and
-    // replay only repair missing same-Step metadata; conflicting labels stop.
-    if (labelNames(labels).some(stepLike)) {
-      const current = currentStep(labels);
-      if (advance ? current > e.step : current !== e.step) fail('STEP_LABEL_MISMATCH');
-    }
     const observed = await read();
-    const identity = /^Task\s+#?([0-9]+)\s*[-–—:·|]+\s*Step\s+([0-9]+)\b/i.exec(observed.title ?? '');
-    if (identity && (Number(identity[1]) !== e.issueNumber
-      || (advance ? Number(identity[2]) > e.step : Number(identity[2]) !== e.step)))
-      fail('STEP_DISPLAY_MISMATCH');
-    for (const label of labelNames(labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
-      await api.delete(`/issues/${pr.number}/labels/${encodeURIComponent(label)}`);
-    if (!labelNames(labels).includes(`step-${e.step}`)) {
-      await api.ensureStepLabel(e.step);
-      await api.post(`/issues/${pr.number}/labels`, { labels: [`step-${e.step}`] });
+    try {
+      const labels = (await api.get(`/issues/${pr.number}`)).labels;
+      for (const label of labelNames(labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
+        await api.delete(`/issues/${pr.number}/labels/${encodeURIComponent(label)}`);
+      if (!labelNames(labels).includes(`step-${e.step}`)) {
+        await api.ensureStepLabel(e.step);
+        await api.post(`/issues/${pr.number}/labels`, { labels: [`step-${e.step}`] });
+      }
+      assertStep((await api.get(`/issues/${pr.number}`)).labels, e.step);
+      if (observed.title !== titleFor(e)) await api.patch(`/pulls/${pr.number}`, { title: titleFor(e) });
+      if ((await read()).title !== titleFor(e)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
+    } catch (error) {
+      if (error.code === 'PR_AUTHORITY_CHANGED') throw error;
+      r.presentationWarnings = ['PRESENTATION_REPAIR_UNAVAILABLE'];
+      await store.put(r.envelope.runId, r);
     }
-    assertStep((await api.get(`/issues/${pr.number}`)).labels, e.step);
-    if (observed.title !== titleFor(e)) await api.patch(`/pulls/${pr.number}`, { title: titleFor(e) });
+    // Canonical Issue numbering is owner-maintained input for the next launch.
+    // A presentation repair of this result never rewinds that position.
     const current = await read();
-    if (current.title !== titleFor(e)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
-    assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
     return current;
   }
   function publicationFailure(code, { cause, diagnostic = {} } = {}) {
@@ -367,18 +363,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       && other.prIntent && !other.prNumber)) fail('PR_PUBLICATION_UNCERTAIN');
     if (e.continuation && !e.continuation.pullRequest && !r.publishedHead
       && !r.prepublicationRecovery?.publication?.publishedHead && pr) fail('PR_AUTHORITY_CHANGED');
-    if (e.continuation && pr) {
-      // Only our own newly created PR can finish a missing Step mirror.
-      // Every observed conflicting Step/title must stop before another push.
-      if (!allowStepMirror || e.continuation.pullRequest || labelNames(pr.labels).some(stepLike)) assertStep(pr.labels, projection.step);
-      assertPrStepTitle(pr, e.issueNumber, projection.step);
-    }
+    // Native admission and exact Task/PR/head relationships bind this result.
+    // Step/title drift is presentation; admission/handoff projection repairs it
+    // without inventing a different execution or overwriting a later attempt.
     if (pr) {
       // An uncertain POST has no number receipt yet. Reconcile its own native
       // attempt binding, not a different compatible PR created in the meantime.
       if (r.prIntent && !r.prNumber && !String(pr.body).split(/\r?\n/).includes(`Attempt: ${e.attemptId}`)) fail('PR_PUBLICATION_UNCERTAIN');
       await rememberPullRequest(r, pr);
-      if (e.request && pr.title !== projectedRequestTitle(projection.request)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
     }
     return pr;
   }
@@ -837,7 +829,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           || saved.execution?.reserved !== true || saved.execution.returned !== true
           || saved.execution.child !== 'started' || saved.execution.containment !== 'reaped'
           || saved.execution.result?.status !== 'success'
-          || typeof saved.collection?.clean !== 'boolean' || saved.collection.head !== r.finalHead
+          || !(typeof saved.collection?.clean === 'boolean' || saved.collection?.clean === null && saved.collection?.preserved === true && saved.collection?.worktreeObservation?.status === 'unknown') || saved.collection.head !== r.finalHead
           || r.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
           || !['status', 'head', 'prNumber', 'outcomeId'].every(key => saved.outcome?.[key] === r.outcome[key])
           || r.publicationIntent || r.commentIntent) fail('EXECUTION_HANDOFF_NOT_PROVEN');
@@ -1000,7 +992,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             if (!pr || pr.state !== 'open' || pr.merged) return;
             if (!await isCurrentProjection(e)) return;
             await guardPublication(e);
-            if (!draft && (result.result.kind !== 'git' || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
+            if (!draft && (!['git', 'no-change'].includes(result.result.kind) || result.result.revision !== pr.head.sha)) fail('PUBLISHED_HEAD_REQUIRED');
             await transitionPr({ api, store, key: e.runId, record, head: pr.head.sha, draft,
               readPr: async () => { await revalidateAuthority(api, e, { handoff: true, publicationTarget: pr.number }); const current = await api.get(`/pulls/${pr.number}`);
                 assertPr(current, pr.number); if (current.head.ref !== pr.head.ref || linkedIssue(current.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
@@ -1010,11 +1002,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       if (request.operation === 'finish-no-change') {
         if (r.outcome) return receipt(r.outcome);
         if (e.route !== 'auto' || e.request?.kind !== 'admission'
-          || e.target !== 'issue' || request.head !== e.startHead || r.publishedHead || r.publicationIntent) fail('NO_CHANGE_COMPLETION_INVALID');
+          || request.head !== e.startHead || r.publishedHead || r.publicationIntent) fail('NO_CHANGE_COMPLETION_INVALID');
+        if (request.executionWarnings !== undefined && !Array.isArray(request.executionWarnings)) fail('EXECUTION_WARNING_INVALID');
+        const executionWarnings = [...new Set([...(request.executionWarnings ?? []), ...(r.presentationWarnings ?? [])])];
+        if (!Array.isArray(executionWarnings) || executionWarnings.some(code => !['RUNTIME_CLEANUP_FAILED', 'PRESENTATION_REPAIR_UNAVAILABLE', 'WORKTREE_OBSERVATION_INCOMPLETE'].includes(code)) || executionWarnings.length > 3) fail('EXECUTION_WARNING_INVALID');
         const pr = await existingPullRequest(r);
         if (pr && pr.head.sha !== e.startHead) fail('PR_HEAD_OBSERVATION_STALE');
         const number = pr?.number ?? e.issueNumber;
-        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent Task review remains required.`, { pr, head: e.startHead, authorityDrift: r.authorityDrift }), e.startHead, pr?.number ?? null);
+        const body = await successfulOutcomeIntent(r, boundOutcomeBody(e, `## Codex Outcome\n\nStatus: IMPLEMENTED_PENDING_FRESH_REVIEW\nThread: ${e.thread}\nAttempt: ${e.attemptId}\nSource/result head: ${e.startHead}\nArtifact: ${pr ? `PR #${pr.number}` : 'No PR; unchanged source'}\nCompletion: COMPLETED\n\n${workerOutcomeClaims(request.taskResult)}\n\nThe contained worker completed without source changes. No push or artificial PR was required. Independent exact-result review remains required.`, { pr, head: e.startHead, executionWarnings, authorityDrift: r.authorityDrift }), e.startHead, pr?.number ?? null);
         let outcome = await commentOnce(r, 'outcome', number, body);
         const expectedBody = outcome.body;
         outcome = await api.get(`/issues/comments/${outcome.id}`);
@@ -1088,9 +1083,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       if (request.operation === 'finish') {
         if (r.outcome && r.outcome.status !== 'BLOCKED') return receipt(r.outcome);
         if (!r.publishedHead || request.head !== r.publishedHead) fail('PUBLISHED_HEAD_REQUIRED');
-        const executionWarnings = request.executionWarnings ?? [];
-        if (!Array.isArray(executionWarnings) || executionWarnings.length > 1
-          || executionWarnings.some(value => value !== 'UNCOMMITTED_WORK_REMAINS')) fail('EXECUTION_WARNING_INVALID');
+        if (request.executionWarnings !== undefined && !Array.isArray(request.executionWarnings)) fail('EXECUTION_WARNING_INVALID');
+        const executionWarnings = [...new Set([...(request.executionWarnings ?? []), ...(r.presentationWarnings ?? [])])];
+        if (!Array.isArray(executionWarnings) || executionWarnings.length > 4
+          || executionWarnings.some(value => !['UNCOMMITTED_WORK_REMAINS', 'WORKTREE_OBSERVATION_INCOMPLETE', 'RUNTIME_CLEANUP_FAILED', 'PRESENTATION_REPAIR_UNAVAILABLE'].includes(value))) fail('EXECUTION_WARNING_INVALID');
         if (r.outcome?.status === 'BLOCKED') {
           const recovery = r.publicationRecoveries?.find(value => value.authorizationId === request.recoveryAuthorizationId);
           if (r.publicationIntent || recovery?.result?.status !== 'PUBLISHED'

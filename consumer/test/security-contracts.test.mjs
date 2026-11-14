@@ -57,9 +57,9 @@ print(json.dumps([[bool(base.search(s.encode())), bool(base.search(s.encode()) o
   { cwd: root, input: JSON.stringify(samples), encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const rows = JSON.parse(result.stdout);
-  assert.deepEqual(publication, [true, true, true, false, false, false, false]);
+  assert.deepEqual(publication, [true, true, false, false, false, false, false]);
   assert.deepEqual(rows.map(row => row[0]), publication);
-  assert.deepEqual(rows.map(row => row[1]), [true, true, true, true, true, false, false]);
+  assert.deepEqual(rows.map(row => row[1]), [true, true, false, true, true, false, false]);
 });
 
 test('launcher isolation can be recreated after an env-reset boundary, without inherited credentials', async t => {

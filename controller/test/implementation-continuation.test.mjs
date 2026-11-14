@@ -82,17 +82,17 @@ test('the normal Issue label path continues the exact implementation head and re
   assert.equal(f.pushes(), 1);
 });
 
-test('continuation launches implementation with the Writer identity and no remediation integration exception', async t => {
+test('continuation launches implementation with ordinary task-owned Git capabilities', async t => {
   const f = await fixture(t, { continuation: true });
   await executeCodex(f.envelope, { runTask: async request => {
     assert.equal(request.operation, 'issue-implementation');
     assert.deepEqual(request.gitIdentity, CONSUMER.writerIdentity);
     assert.ok(!request.inputText.includes('Bounded base-branch reconciliation'));
     assert.ok(!request.inputText.includes('Native Change Request #'));
-    assert.ok(request.inputText.includes(`Issue implementation history: continue from the admitted starting head ${f.envelope.startHead}`));
-    assert.match(request.inputText, /ordinary single-parent commits using the supplied Writer bot identity/);
-    assert.match(request.inputText, /Do not create local merge commits, rebase, amend, reset or rewrite history/);
-    assert.match(request.inputText, /Reconcile needed accepted base changes as source-file edits in those linear commits/);
+    assert.ok(request.inputText.includes(`Task-owned Git work: start from admitted head ${f.envelope.startHead}`));
+    assert.match(request.inputText, /accepted-upstream merges and conflict resolution/);
+    assert.match(request.inputText, /amend, squash, cherry-pick, rebase or reset your own unpublished work/);
+    assert.match(request.inputText, /preserving the admitted published frontier and everyone else's work/);
     return { status: 'success' };
   } });
 });
@@ -108,7 +108,7 @@ test('Issue continuation reconciles advanced main through ordinary commits and p
       assert.equal(request.operation, 'issue-implementation');
       assert.deepEqual(request.gitIdentity, CONSUMER.writerIdentity);
       assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), e.startHead);
-      assert.match(request.inputText, /Reconcile needed accepted base changes as source-file edits in those linear commits/);
+      assert.match(request.inputText, /preserving the admitted published frontier and everyone else's work/);
       commits.push(await f.commit('main-feature.md', 'preserve main feature\n'));
       commits.push(await f.commit('docs/work.md', 'advanced main behavior\ncompleted implementation\n'));
       return { status: 'success', summary: 'Accepted base behavior reconciled with linear implementation commits.',
@@ -153,9 +153,6 @@ for (const [name, mutate, code] of [
   ['wrong base', f => { f.pr.base.ref = 'another-base'; }, 'PR_NOT_ADMITTED'],
   ['wrong head repository', f => { f.pr.head.repo.full_name = 'other/repo'; }, 'PR_NOT_ADMITTED'],
   ['wrong base repository', f => { f.pr.base.repo.full_name = 'other/repo'; }, 'PR_NOT_ADMITTED'],
-  ['multiple Steps', f => { f.pr.labels = [{ name: 'step-1' }, { name: 'step-2' }]; }, 'STEP_LABEL_MULTIPLE'],
-  ['different Step', f => { f.pr.labels = [{ name: 'step-2' }]; }, 'STEP_LABEL_MISMATCH'],
-  ['stale PR Step title', f => { f.pr.title = 'Task 42 · Step 2 · stale'; }, 'STEP_DISPLAY_MISMATCH'],
   ['closed PR', f => { f.pr.state = 'closed'; }, 'PR_AUTHORITY_CHANGED'],
   ['merged PR', f => { f.pr.merged = true; }, 'PR_NOT_ADMITTED'],
   ['multiple PR candidates including wrong base', f => {
@@ -171,14 +168,6 @@ for (const [name, mutate, code] of [
   }, 'PR_AUTHORITY_CHANGED']
 ]) {
   test(`continuation admission blocks ${name} before worker access`, async t => {
-    if (['multiple Steps', 'different Step', 'stale PR Step title'].includes(name)) {
-      let context;
-      await assert.rejects(fixture(t, { continuation: true, beforeAdmission: value => {
-        context = value; return mutate(value);
-      } }), { code });
-      assert.equal((await context.api.list('/issues/42/comments')).filter(value => value.user?.login?.endsWith('writer[bot]')).length, 0);
-      return;
-    }
     const f = await fixture(t, { continuation: true, continuationPr: name !== 'missing branch', beforeAdmission: mutate });
     assert.equal(f.admission.status, 'BLOCKED');
     assert.equal(f.envelope.admissionBlock.code, code);
@@ -227,17 +216,15 @@ test('an advanced base does not grant continuation the remediation integration g
   assert.equal(f.pushes(), 1);
 });
 
-for (const changed of ['closed', 'replaced', 'step', 'authority']) {
+for (const changed of ['closed', 'replaced', 'authority']) {
   test(`continuation cannot publish after its admitted PR/authority is ${changed}`, async t => {
     const f = await fixture(t, { continuation: true });
     const progress = await candidate(f);
     if (changed === 'closed') f.pr.state = 'closed';
     if (changed === 'replaced') f.pr.number = 44;
-    if (changed === 'step') f.pr.labels = [{ name: 'step-2' }];
     if (changed === 'authority') f.issue.body += '\nNew owner decision.';
     await assert.rejects(f.broker.invoke(publication(f, progress)), {
-      code: changed === 'closed' ? 'PR_AUTHORITY_CHANGED' : changed === 'step' ? 'STEP_LABEL_MISMATCH'
-        : changed === 'authority' ? 'AUTHORITY_SOURCE_MISMATCH' : 'PR_AUTHORITY_CHANGED'
+      code: changed === 'closed' ? 'PR_AUTHORITY_CHANGED' : changed === 'authority' ? 'AUTHORITY_SOURCE_MISMATCH' : 'PR_AUTHORITY_CHANGED'
     });
     assert.equal(f.pushes(), 0);
     assert.equal((await f.store.get(99)).publicationIntent, null);
@@ -245,7 +232,7 @@ for (const changed of ['closed', 'replaced', 'step', 'authority']) {
 }
 
 for (const changed of ['Step', 'title']) {
-  test(`a ${changed} mismatch observed in the last continuation PR lookup blocks before push`, async t => {
+  test(`a ${changed} display mismatch in a list snapshot preserves native-bound continuation`, async t => {
     const f = await fixture(t, { continuation: true });
     const progress = await candidate(f);
     const list = f.api.list.bind(f.api); let lookups = 0;
@@ -255,15 +242,14 @@ for (const changed of ['Step', 'title']) {
       return rows.map(pr => changed === 'Step' ? { ...pr, labels: [{ name: 'step-99' }] }
         : { ...pr, title: 'Task 42 · Step 99 · unexpected' });
     };
-    await assert.rejects(f.broker.invoke(publication(f, progress)), {
-      code: changed === 'Step' ? 'STEP_LABEL_MISMATCH' : 'STEP_DISPLAY_MISMATCH'
-    });
-    assert.equal(f.pushes(), 0);
+    const result = await f.broker.invoke(publication(f, progress));
+    assert.equal(result.publishedHead, progress.head);
+    assert.equal(f.pushes(), 1);
     assert.equal((await f.store.get(99)).publicationIntent, null);
   });
 }
 
-test('a PR first created by branch-only continuation must retain its Step before subsequent progress', async t => {
+test('a PR first created by branch-only continuation retains native identity despite later label display drift', async t => {
   const f = await fixture(t, { continuation: true, continuationPr: false });
   const first = await candidate(f);
   await f.broker.invoke(publication(f, first));
@@ -272,9 +258,10 @@ test('a PR first created by branch-only continuation must retain its Step before
   const list = f.api.list.bind(f.api);
   f.api.list = async path => (await list(path)).map(pr => path.startsWith('/pulls?')
     ? { ...pr, labels: [{ name: 'step-99' }] } : pr);
-  await assert.rejects(f.broker.invoke(publication(f, next)), { code: 'STEP_LABEL_MISMATCH' });
-  assert.equal(f.pushes(), 1);
-  assert.equal(await f.remoteHead(), first.head);
+  const result = await f.broker.invoke(publication(f, next));
+  assert.equal(result.publishedHead, next.head);
+  assert.equal(f.pushes(), 2);
+  assert.equal(await f.remoteHead(), next.head);
 });
 
 test('remote movement to a candidate ancestor during authority revalidation blocks rather than being overwritten', async t => {
@@ -334,13 +321,13 @@ test('continuation rejects transient introduced secrets before pushing', async t
   assert.equal(f.pushes(), 0);
 });
 
-test('implementation continuation cannot use the remediation-only merge permission', async t => {
+test('implementation continuation supports accepted-upstream integration with full object validation', async t => {
   const f = await fixture(t, { continuation: true, mainAdvance: true });
   await f.prepare(f.envelope);
   await f.command(f.cwd, ['fetch', '--no-tags', f.remote, `${CONSUMER.baseBranch}:refs/remotes/main`]);
   const tree = await f.command(f.cwd, ['rev-parse', 'HEAD^{tree}']);
   const merge = await f.command(f.cwd, ['commit-tree', tree, '-p', f.envelope.startHead,
-    '-p', f.envelope.targetBase, '-m', 'unauthorized integration'], f.identity);
+    '-p', f.envelope.targetBase, '-m', 'accepted upstream integration'], f.identity);
   await f.command(f.cwd, ['update-ref', `refs/heads/${f.envelope.branch}`, merge]);
   const tip = await f.commit();
   assert.equal(await f.command(f.cwd, ['show', '-s', '--format=%P', merge]), `${f.envelope.startHead} ${f.envelope.targetBase}`);
@@ -350,6 +337,18 @@ test('implementation continuation cannot use the remediation-only merge permissi
       [CONSUMER.writerIdentity.name, CONSUMER.writerIdentity.email, CONSUMER.writerIdentity.name, CONSUMER.writerIdentity.email].join('\n'));
   }
   const progress = await f.collect(f.envelope);
-  await assert.rejects(f.broker.invoke(publication(f, progress)), { code: 'COMMIT_OWNERSHIP_INVALID' });
+  const result = await f.broker.invoke(publication(f, progress));
+  assert.equal(result.publishedHead, tip);
+  assert.equal(f.pushes(), 1);
+});
+
+for (const display of ['multiple Steps', 'different Step', 'title']) test(`native continuation tolerates ${display} presentation drift at admission`, async t => {
+  const f = await fixture(t, { continuation: true, beforeAdmission: ({ pr }) => {
+    if (display === 'multiple Steps') pr.labels = [{ name: 'step-1' }, { name: 'step-2' }];
+    else if (display === 'different Step') pr.labels = [{ name: 'step-8' }];
+    else pr.title = 'Owner supplied title';
+  } });
+  assert.notEqual(f.admission.status, 'BLOCKED');
+  await f.broker.invoke(preflight(f));
   assert.equal(f.pushes(), 0);
 });

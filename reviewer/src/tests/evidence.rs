@@ -272,6 +272,24 @@ async fn handler(
             return StatusCode::FORBIDDEN.into_response();
         }
         if mock.mode.starts_with("typedoutcome") {
+            if mock.mode == "typedoutcomelate" {
+                let page = uri
+                    .query()
+                    .and_then(|query| query.split('&').find_map(|part| part.strip_prefix("page=")))
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(1);
+                if page <= 4 {
+                    return Json(json!((0..25)
+                        .map(|offset| comment(
+                            page * 25 + offset,
+                            "unrelated-author",
+                            "Ordinary Task discussion."
+                        ))
+                        .collect::<Vec<_>>()))
+                    .into_response();
+                }
+            }
+
             let mut authority = json!({"charter":{"kind":"issue-body","id":560,"parent":{"kind":"issue","number":56},"sha256":"c".repeat(64)},"decisions":[],"change_request":null,"compatibility_request":null});
             authority["sha256"] = json!(crate::task_authority::hash(
                 &serde_json::to_string_pretty(&authority).unwrap()
@@ -1268,4 +1286,14 @@ async fn every_warning_field_is_sanitized_and_genuine_loss_remains_unknown() {
     assert_eq!(evidence["observed_check_annotation_warnings"], 0);
     assert_eq!(evidence["required_surfaces_complete"], false);
     assert_eq!(evidence["warning_observation"], "unknown");
+}
+
+#[tokio::test]
+async fn late_outcome_after_unrelated_history_remains_reachable_in_bounded_scan() {
+    let evidence = acquire("typedoutcomelate").await.0.unwrap();
+    let outcomes = surface(&evidence, "github_relay_execution_outcomes");
+    assert_eq!(outcomes["availability"], "available", "{evidence}");
+    assert_eq!(outcomes["items"][0]["workflow_run_id"], 41);
+    assert!(outcomes["pages_observed"].as_u64().unwrap() > 3);
+    assert!(evidence["requests_observed"].as_u64().unwrap() <= 40);
 }

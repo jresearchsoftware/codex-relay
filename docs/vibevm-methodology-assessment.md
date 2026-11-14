@@ -159,14 +159,6 @@ of comment recency or remembered state. The
 [GitHub-native contract](../contracts/README.md#github-native-task-authority)
 documents these bindings and independent acceptance.
 
-The [optional recovery helpers](../.codex/hooks/README.md#session-owned-checkpoint)
-save only a bounded irreconstructible diagnostic frontier, validate before
-atomic replacement, isolate sessions and expire notes/captures after 24 hours.
-Missing, stale or malformed notes do not block work. Compaction captures an
-already valid note and consumes only that session's capture; it cannot recover
-reasoning never written down. A different session cannot read the foreign
-note. Exact Git and mutable authority must be refreshed after recovery.
-
 This separation protects authority and avoids central state contention, but
 can lose an unfinished investigation's rationale across independent sessions.
 Git preserves a patch, not why three hypotheses were ruled out. A compact
@@ -336,7 +328,6 @@ projects are removed. Reproduce after obtaining the pinned binary separately:
 ```sh
 python3 scripts/research/vibevm-methodology/probe.py --vibe /absolute/disposable/path/vibe
 python3 scripts/qualify-vibevm-routing.py --vibe /absolute/disposable/path/vibe
-pwsh -NoProfile -NonInteractive -File .codex/hooks/test-long-session-checkpoint.ps1
 ```
 
 | Observation | Actual result | Interpretation and limit |
@@ -351,7 +342,6 @@ pwsh -NoProfile -NonInteractive -File .codex/hooks/test-long-session-checkpoint.
 | Two readers followed by full-file replacements A then B | A's frontier disappeared; resulting WAL passed check. | Controlled Python interleaving illustrates a singleton failure mode. It is not an observed VibeVM writer race or concurrency benchmark. |
 | Undated disagreement marker versus old dated marker | Undated: zero findings. Dated `2000-01-01`: one aging warning, exit 0. | Marker presence alone does not establish follow-up enforcement. |
 | Existing routing probe | PASS, 16 offline commands, stock boot sources 1,813 bytes; bounded replacements preserved. | Reproduces file routing/ownership, not task understanding or precedence obedience. |
-| Existing Relay checkpoint suite | PASS on Linux x86_64, PowerShell 7.6.5: session isolation, atomic validation, corruption handling and bounded recovery. | Deterministic helper tests; no native Codex lifecycle or cross-session transfer proof. |
 | Step 1 Relay authority tests within complete Node suite | 623 tests passed with an isolated synthetic consumer config on Node 24.19.0. | Historical native binding/supersession/evidence rejection evidence. Step 2 separately reran the complete suite on Node 22.20.0 below. Neither is a comparative model trial. |
 
 The existing authority tests include edited selected evidence rejection,
@@ -608,8 +598,7 @@ and selection actually happening.
    committed, but the author had ruled out two parser hypotheses and was about
    to inspect a third. A repository checkpoint, and especially the optional
    package's CONTINUE, can preserve that orientation independently of the
-   session. B reconstructs authority and committed work precisely; its foreign
-   session cannot recover the private frontier through the helper. C preserves
+   session. B reconstructs authority and committed work precisely. C preserves
    only the discriminating observation and ruled-out hypotheses in existing
    selected evidence. All three lose unwritten reasoning after an abrupt crash.
    Source design favors A for simple cold orientation; C may avoid duplicating

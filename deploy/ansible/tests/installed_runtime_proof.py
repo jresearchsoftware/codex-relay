@@ -50,6 +50,7 @@ def require_supported_node():
 
 
 def run(args, **kwargs):
+    kwargs.setdefault('cwd', '/')
     result = subprocess.run(args, text=True, **kwargs)
     if result.returncode:
         raise RuntimeError(f'{args}:\n{result.stdout or ""}\n{result.stderr or ""}')
@@ -513,7 +514,10 @@ def general_runner_proof(temp, values, env):
             excessive.chmod(0o440)
             failed = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(validation)],
                                     env=env, text=True, capture_output=True)
-            expected = 'failed_when_result' if grant == 'ALL' else 'GENERAL_RUNNER_SUDO_POLICY_UNEXPECTED'
+            expected = 'failed_when_result'
+            # Both injected grants are rejected by the current per-command
+            # effective-policy gate. A diagnostic string from the former
+            # aggregate sudo parser is not part of this native proof.
             assert failed.returncode != 0 and expected in failed.stdout, failed.stdout
     finally:
         excessive.unlink()
@@ -627,16 +631,52 @@ def live_smoke_proof(install, release, env, token):
         assert len(added_work) == (1 if retained else 0), (proof, added_work)
         new_capsules = set(fallback_root.glob('*/*.json')) - capsules_before
         assert (fallback_root.stat().st_uid, stat.S_IMODE(fallback_root.stat().st_mode)) == (24003, 0o700)
-        # Success releases the slot with a durable tombstone; the next
-        # reservation may reclaim it, while failed-attempt evidence stays live.
+        # Capacity retirement follows contained terminal evidence, independently
+        # of semantic success. Failed operations require their complete final
+        # facts archived outside the reclaimable capsule before retirement.
         assert len(new_capsules) == 1, new_capsules
         for capsule in new_capsules:
             raw = capsule.read_text()
             assert len(raw.encode('utf8')) <= 16 * 1024 and 'fixture-only-credential' not in raw
             state = json.loads(raw)
-            assert state.get('released', False) == (expected_code == 'GENERAL_RUNNER_SMOKE_PASS'), state
+            archive = state.get('terminalDiagnostic', {})
+            archived = archive.get('status') == 'stored'
+            if archived:
+                assert archive['executionId'] == state['executionId'] + '-finalization', state
+                archived_path = Path('/var/lib/codex-relay/debug') / (archive['executionId'] + '.json')
+                archived_raw = archived_path.read_text()
+                assert 'fixture-only-credential' not in archived_raw
+                final = json.loads(archived_raw)
+                assert final['executionId'] == archive['executionId'] and final['mode'] == archive['mode']
+                archived_lifecycle = final['lifecycle']
+                for field in ['childState', 'containment', 'cleanupContainment', 'cleanup', 'persistence', 'retention']:
+                    assert archived_lifecycle[field] == state[field], (field, state)
+                assert archived_lifecycle.get('failureDiagnostic') == state.get('failureDiagnostic'), state
+                # Finalization preserves the earlier diagnostic's identity and
+                # body; the new archive never overwrites its causal evidence.
+                primary = state.get('diagnosticStore', {})
+                if primary.get('status') == 'stored':
+                    assert archived_lifecycle['diagnosticStore'] == primary, state
+                    original_path = archived_path.with_name(primary['executionId'] + '.json')
+                    original = json.loads(original_path.read_text())
+                    assert original['executionId'] == primary['executionId']
+                    assert original_path != archived_path
+                assert (archived_path.stat().st_uid, stat.S_IMODE(archived_path.stat().st_mode)) == (0, 0o600)
+            known_terminal = (state.get('childState') in ['started', 'not_started']
+                and state.get('containment') in ['reaped', 'not_required']
+                and state.get('cleanupContainment') in ['reaped', 'not_required']
+                and state.get('persistence') in ['stored', 'not_required'])
+            ordinary_complete = (not state.get('failureDiagnostic') and not state.get('controllerFailure')
+                and state.get('cleanup') == 'complete' and state.get('retention') == 'none')
+            assert state.get('released', False) == (known_terminal and (ordinary_complete or archived)), state
             assert state['containment'] in ['reaped', 'not_required'], state
-            assert state['cleanup'] == ('retained' if retained else 'complete'), state
+            if expected_code == 'DISPATCH_NOT_STARTED':
+                assert state['childState'] == 'not_started' and state['containment'] == 'not_required', state
+                assert state['sandboxCreated'] is False and state['inputSchemaCreated'] is False, state
+                assert state['cleanup'] == 'not_required' and state['retention'] == 'none', state
+                assert archived and state['released'] is True, state
+            else:
+                assert state['cleanup'] == ('retained' if retained else 'complete'), state
             if expected_code == 'GENERAL_RUNNER_SMOKE_PASS':
                 assert state['retention'] == 'none' and state['persistence'] == 'not_required', state
             assert (capsule.stat().st_uid, stat.S_IMODE(capsule.stat().st_mode)) == (24003, 0o600)
@@ -683,7 +723,7 @@ def live_smoke_proof(install, release, env, token):
     saved_dispatch = dispatch.with_suffix('.smoke-saved')
     dispatch.rename(saved_dispatch)
     try:
-        invoke('not_started', 'EXECUTION_FAILED', retained=True)
+        invoke('not_started', 'DISPATCH_NOT_STARTED')
     finally:
         saved_dispatch.rename(dispatch)
     # An ordinary child succeeds but the primary protected store is missing.
@@ -880,6 +920,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             task(artifacts, 'Create the exact relay release namespace'),
             task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),
             {'ansible.builtin.include_role': {'name': 'relay_artifacts', 'tasks_from': 'stage-source.yml'}},
+            task(artifacts, 'Install stable Relay routing and recovery invocation paths'),
             task(codex_tasks, 'Create the fixed Codex runtime and credential namespaces'),
             {'ansible.builtin.include_role': {'name': 'relay_controller', 'tasks_from': 'writer-proof-files.yml'}},
         ]
@@ -910,6 +951,9 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         # Installed entrypoints must resolve their deployed snapshot even when
         # the source-workspace/workflow consumer environment is absent.
         env.pop('RELAY_CONSUMER_CONFIG', None)
+        # Runtime identities must not inherit the manual root user's private
+        # temporary path. Their synthetic fixtures use the namespace's /tmp.
+        env['TMPDIR'] = '/tmp'
         # This is the real production runner service's deploy umask. A normal
         # interactive root shell (0022) hides the installed-package EACCES.
         result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)], env=env, text=True, capture_output=True, umask=deploy_umask)
@@ -997,8 +1041,42 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         diagnostics_before = set(Path('/var/lib/codex-relay/debug').glob('*.json'))
         rust_test = [*node_command, '--test-name-pattern=dedicated Rust development', test_path]
         run_installed(rust_test, env={**env, 'INSTALLED_RUST_LINKER': 'missing', 'INSTALLED_FIXTURE_EVENT_BASE': '960'}, umask=deploy_umask)
+        # The original Cargo cause and the independent retirement archive are
+        # separate records. Bind both exact IDs instead of counting every new
+        # diagnostic as though it were another child execution.
+        diagnostics_root = Path('/var/lib/codex-relay/debug')
+        added_diagnostics = set(diagnostics_root.glob('*.json')) - diagnostics_before
+        expected_diagnostics = {diagnostics_root / 'run-960.json',
+                                diagnostics_root / 'run-960-finalization.json'}
+        assert added_diagnostics == expected_diagnostics, added_diagnostics
+        original_path = diagnostics_root / 'run-960.json'
+        original_bytes = original_path.read_bytes()
+        original = json.loads(original_bytes)
+        final_path = diagnostics_root / 'run-960-finalization.json'
+        final = json.loads(final_path.read_bytes())
+        assert original['executionId'] == 'run-960' and original['classification'] == 'CODEX_NONZERO_EXIT'
+        assert final['executionId'] == 'run-960-finalization' and final['phase'] == 'finalization'
+        lifecycle = final['lifecycle']
+        assert lifecycle['childState'] == 'started' and lifecycle['containment'] == 'reaped', lifecycle
+        assert lifecycle['cleanupContainment'] == 'reaped' and lifecycle['cleanup'] == 'complete', lifecycle
+        assert lifecycle['persistence'] == 'stored' and lifecycle['retention'] == 'none', lifecycle
+        assert lifecycle['diagnosticStore']['status'] == 'stored', lifecycle
+        assert lifecycle['diagnosticStore']['executionId'] == original['executionId'], lifecycle
+        assert lifecycle['failureDiagnostic']['code'] == 'CODEX_NONZERO_EXIT', lifecycle
+        capsules = list(Path('/var/lib/codex-relay/dispatch/attempts-v2/runtime-diagnostics').glob('*/run-960.json'))
+        assert len(capsules) == 1, capsules
+        capsule = json.loads(capsules[0].read_bytes())
+        assert capsule['released'] is True and capsule['terminalDiagnostic']['executionId'] == final['executionId'], capsule
+        assert capsule['diagnosticStore'] == lifecycle['diagnosticStore'], capsule
+        assert capsule['failureDiagnostic'] == lifecycle['failureDiagnostic'], capsule
+        for path in expected_diagnostics:
+            assert not path.is_symlink() and (path.stat().st_uid, stat.S_IMODE(path.stat().st_mode)) == (0, 0o600)
         records = launcher_diagnostics_since(diagnostics_before)
-        assert len(records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
+        assert len(records) == 2, 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
+        child_records = [record for record in records if record['code'] is not None]
+        assert len(child_records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
+        records = child_records
+        assert original_path.read_bytes() == original_bytes, 'RUST_PROOF_ORIGINAL_DIAGNOSTIC_CHANGED'
         assert records[0]['childStarted'] is True and records[0]['childExitCode'] == 1, records
         preview = records[0]['preview']
         assert 'RUST_DEVELOPMENT_PROOF_FAILED' in preview and 'cargo-test' in preview, records
@@ -1014,6 +1092,18 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             env={**env, 'INSTALLED_RUNNER_UID': '24001', 'INSTALLED_FIXTURE_EVENT_BASE': '950'}, umask=deploy_umask)
         # Distinct invocations keep protected failure setup root-owned.
         run_installed([*node_command, '--test-name-pattern=publication|profile rejection|checkout-ownership|invalid-result|child-failure|installed cancel-', test_path], env={**env, 'INSTALLED_FIXTURE_EVENT_BASE': '1000'}, umask=deploy_umask)
+        # The unprivileged collector proves the committed candidate while the
+        # worker-private replacement remains inaccessible. Root checks its exact
+        # retained bytes only here, inside this disposable fixture boundary.
+        private_work = list(Path('/var/lib/codex-relay/dispatch-work').glob('run-*/docs/work.md'))
+        assert len(private_work) == 1, private_work
+        private_path = private_work[0]
+        assert (private_path.stat().st_uid, stat.S_IMODE(private_path.stat().st_mode)) == (24002, 0o600)
+        assert private_path.read_bytes() == b'useful uncommitted task work inaccessible to collector\n'
+        retained_checkout = private_path.parents[1]
+        assert retained_checkout.parent == Path('/var/lib/codex-relay/dispatch-work')
+        shutil.rmtree(retained_checkout)  # Dispose only after validating this fixture's retained private work.
+        print('UNREADABLE_WORK_CANDIDATE_PRESERVED_PROOF_PASS publication=once;observation=unknown;private-bytes=retained;mode=0600', flush=True)
         for offset, (mode, path) in enumerate([('missing-token', token), ('missing-binary', runtime / 'bin/codex'), ('missing-import', runtime / 'relay-codex-diagnostic.mjs')]):
             saved = path.with_suffix('.saved')
             path.rename(saved)

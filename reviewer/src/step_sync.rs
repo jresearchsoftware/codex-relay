@@ -13,7 +13,7 @@ pub(crate) fn current_step(subject: &Value) -> Result<u64, &'static str> {
         .collect::<Result<_, _>>()?;
     let steps: Vec<_> = names
         .into_iter()
-        .filter(|s| s.to_ascii_lowercase().starts_with("step"))
+        .filter(|s| s.to_ascii_lowercase().starts_with("step-") || s.eq_ignore_ascii_case("step"))
         .collect();
     if steps.is_empty() {
         return Err("STEP_LABEL_MISSING");
@@ -72,27 +72,47 @@ pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static s
             continue;
         }
         let suffix = &lower[at..];
-        let Some(keyword) = ["closes", "fixes", "resolves", "related"]
-            .into_iter()
-            .find(|key| suffix.starts_with(key))
-        else {
+        let Some(keyword) = [
+            "closes", "closed", "close", "fixes", "fixed", "fix", "resolves", "resolved",
+            "resolve", "related",
+        ]
+        .into_iter()
+        .find(|key| suffix.starts_with(key)) else {
             continue;
         };
         let mut rest = &suffix[keyword.len()..];
+        if keyword == "related" {
+            let Some(count) = after_space(rest) else {
+                continue;
+            };
+            let Some(after_to) = rest[count..].strip_prefix("to") else {
+                continue;
+            };
+            rest = after_to;
+        }
+        if let Some(after_colon) = rest.strip_prefix(':') {
+            rest = after_colon;
+        }
         let Some(count) = after_space(rest) else {
             continue;
         };
         rest = &rest[count..];
-        if keyword == "related" {
-            let Some(after_to) = rest.strip_prefix("to") else {
+        // Qualified references must name this PR's repository. Bare links
+        // without a relationship keyword remain informational.
+        let value = if let Some(value) = rest.strip_prefix('#') {
+            value
+        } else if let Some(repository) = pr["base"]["repo"]["full_name"].as_str() {
+            let repository = repository.to_ascii_lowercase();
+            let url = format!("https://github.com/{repository}/issues/");
+            let qualified = format!("{repository}#");
+            let Some(value) = rest
+                .strip_prefix(&url)
+                .or_else(|| rest.strip_prefix(&qualified))
+            else {
                 continue;
             };
-            let Some(count) = after_space(after_to) else {
-                continue;
-            };
-            rest = &after_to[count..];
-        }
-        let Some(value) = rest.strip_prefix('#') else {
+            value
+        } else {
             continue;
         };
         let count = value.bytes().take_while(u8::is_ascii_digit).count();
@@ -445,4 +465,40 @@ pub(crate) async fn synchronize(
         return Err("STEP_DISPLAY_MISMATCH");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod autonomy_tests {
+    use super::*;
+    #[test]
+    fn task_relationship_vocabulary_preserves_same_repository_and_ignores_informational_links() {
+        for body in [
+            "Related to: #24",
+            "closed #24",
+            "fix jresearchsoftware/codex-relay#24",
+            "Resolves https://github.com/jresearchsoftware/codex-relay/issues/24",
+        ] {
+            assert_eq!(linked_issue_candidates(&json!({"body":body,"base":{"repo":{"full_name":"jresearchsoftware/codex-relay"}}})).unwrap(), vec![24]);
+        }
+        for body in [
+            "Related to 24",
+            "See https://github.com/jresearchsoftware/codex-relay/issues/24",
+            "Related to foreign/repo#24",
+            "Related to #024",
+            "Related to #24suffix",
+        ] {
+            assert!(linked_issue_candidates(
+                &json!({"body":body,"base":{"repo":{"full_name":"jresearchsoftware/codex-relay"}}})
+            )
+            .unwrap()
+            .is_empty());
+        }
+    }
+    #[test]
+    fn unrelated_step_named_labels_are_not_execution_metadata() {
+        assert_eq!(
+            current_step(&json!({"labels":[{"name":"steps-to-reproduce"},{"name":"step-6"}]})),
+            Ok(6)
+        );
+    }
 }

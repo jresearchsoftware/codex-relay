@@ -41,7 +41,9 @@ def recipe_digest(source_root):
 
 
 # Frozen against the reviewed recipe surface, not an observed installation.
-RECIPE_SHA256 = '072327500c8d3eb022ddb545592ad3ac7450ca0b4827de87e2d8fec080f93544'
+# Task 57 retains the owned task/module/path/mode/identity catalogue while
+# qualifying the CLI pin and bounded launcher/isolation implementation changes.
+RECIPE_SHA256 = 'c52dedc57839f20c6c2f554d6bd954d81d622a3da4c9b4a1615e736442826965'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",

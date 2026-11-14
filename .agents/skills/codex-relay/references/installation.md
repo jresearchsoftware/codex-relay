@@ -2,23 +2,22 @@
 
 Guidance, an installed Relay service and live Task authority are separate.
 Select an independently accepted immutable Relay Git revision containing the
-desired guidance version. `PROVENANCE.json` records the accepted product
+desired guidance version. `PROVENANCE.json` records the immutable pinned product
 contract, delivery form and shared source selection plus hashes of the authored
 and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **4.0.0** becomes a first-party source release only on independent
+Version **6.1.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
 that another consumer adopted it. An unmerged artifact remains a candidate.
 The 3.0.0 major removed the native Skill's bundled Shared protocol paths and
 changed its supported dependency routing and packaging contract. It was not
 caused by the Shared package's major number. Frozen accepted earlier registry
-bytes, including 2.0.1, remain unchanged for identity and rollback. The selected
-product-contract baseline is
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`; it is separate from the
-enclosing accepted guidance release.
+bytes, including 2.0.1, remain unchanged for identity and rollback. The selected product-contract
+revision is recorded in `PROVENANCE.json`; it is separate from the enclosing
+accepted guidance release. Candidate schema pins do not establish acceptance.
 
 Version 4.0.0 updates the complete standalone snapshot to Shared 5.0.0. Its
 bundled `references/shared/tools/chatgpt` helper removes ownership receipts and
@@ -27,12 +26,17 @@ its included README before updating. These shipped interface changes determine
 Relay's major version. Relay's own `scripts/project.py` installer receipts,
 native Skill receipts and consumer-selected Shared requirement are unchanged.
 
+Version 6.1.0 adds compatible engineering-autonomy, technical-continuation and
+meaningful-result paths without new mandatory consumer work. Frozen 6.0.0 and
+earlier payloads remain unchanged. Source acceptance, external publication and
+installed activation remain separate.
+
 ## Choose a delivery form
 
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `4.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `6.1.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 5.0.0
@@ -91,7 +95,7 @@ retrying. There is no background repair or auto-update.
 
 ## VibeVM installation and maintenance
 
-Use the hash-checked VibeVM 1.0.7 binary identified in the assembled
+Use the hash-checked VibeVM 1.0.11 binary identified in the assembled
 `product/vibevm.json`. Start from the generated `vpm-consumer.toml.in`; replace
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
@@ -102,7 +106,7 @@ compatible Shared version keeps its own reviewed source and lock. Relay's suppor
 declared in the native manifest; it does not pin consumers to the standalone
 snapshot or impose an upper bound from the Shared major number.
 
-VibeVM 1.0.7 follows string version edges but ignores transitive Git-table source
+The supported VibeVM acquisition path follows string version edges but ignores transitive Git-table source
 declarations. Explicit immutable Relay and Shared Git source roots in the consumer
 project are necessary for the supported external acquisition path. The source
 project

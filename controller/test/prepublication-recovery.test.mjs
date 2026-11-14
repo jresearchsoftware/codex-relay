@@ -345,9 +345,13 @@ for (const boundary of ['identity', 'mode', 'transient-secret']) {
       return fixture.command(fixture.cwd, ['rev-parse', 'HEAD']);
     } });
     const { request } = await f.authorize();
-    await assert.rejects(f.broker.invoke(request), { code: boundary === 'identity' ? 'COMMIT_OWNERSHIP_INVALID'
-      : boundary === 'mode' ? 'COMMIT_FILE_MODE_INVALID' : 'SECRET_PUBLICATION_SCAN_FAILED' });
-    assert.equal(f.pushes(), 0); await assertHistorical(f);
+    if (boundary === 'identity') {
+      const result = await f.broker.invoke(request); assert.equal(result.head, await f.remoteHead()); assert.equal(f.pushes(), 1);
+    } else {
+      await assert.rejects(f.broker.invoke(request), { code: boundary === 'mode' ? 'COMMIT_FILE_MODE_INVALID' : 'SECRET_PUBLICATION_SCAN_FAILED' });
+      assert.equal(f.pushes(), 0);
+    }
+    await assertHistorical(f);
   });
 }
 

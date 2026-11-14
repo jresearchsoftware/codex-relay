@@ -92,7 +92,7 @@ test('checkout acquisition rejects symlinks in any absolute ancestor', async t =
     { code: 'UNTRUSTED_GIT_DIRECTORY_INVALID' });
 });
 
-test('object import rejects metadata/ref directory symlinks and hardlinked object bytes', async t => {
+test('object import rejects unsafe selected refs and ignores unreachable object residue', async t => {
   for (const surface of ['object-directory', 'ref-directory', 'object-file']) {
     const f = await fixture(t); await f.prepare(f.envelope); await f.commit();
     const outside = join(f.root, 'outside-source'); await mkdir(outside);
@@ -108,36 +108,38 @@ test('object import rejects metadata/ref directory symlinks and hardlinked objec
     if (surface === 'object-directory') {
       await writeFile(join(outside, '0'.repeat(38)), 'outside object bytes must not be read\n');
       await symlink(outside, join(objects, folder));
-      await assert.rejects(f.collect(f.envelope), { code: 'UNTRUSTED_GIT_DIRECTORY_INVALID' });
+      assert.equal((await f.collect(f.envelope)).clean, true);
     } else {
       await mkdir(join(objects, folder));
       const bytes = join(outside, 'private'); await writeFile(bytes, 'outside hardlinked bytes\n', { mode: 0o600 });
       await link(bytes, join(objects, folder, '0'.repeat(38)));
-      await assert.rejects(f.collect(f.envelope), { code: 'UNTRUSTED_GIT_FILE_INVALID' });
+      assert.equal((await f.collect(f.envelope)).clean, true);
       assert.equal(await readFile(bytes, 'utf8'), 'outside hardlinked bytes\n');
     }
   }
 });
 
-test('worktree observation rejects hardlinks and sanitizes inaccessible-path failures', async t => {
+test('worktree observation preserves candidates with unknown hardlink or inaccessible residue', async t => {
   const f = await fixture(t); await f.prepare(f.envelope); await f.commit();
   const outside = join(f.root, 'outside-private'); await writeFile(outside, 'never copy a shared inode\n', { mode: 0o600 });
   await link(outside, join(f.cwd, 'untracked-hardlink'));
-  await assert.rejects(f.collect(f.envelope), { code: 'UNTRUSTED_GIT_FILE_INVALID' });
+  const preserved = await f.collect(f.envelope);
+  assert.equal(preserved.clean, null);
+  assert.equal(preserved.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+  assert.ok(preserved.bundle);
   const other = await fixture(t); await other.prepare(other.envelope); await other.commit();
   const privatePath = join(other.cwd, 'private-filename-does-not-belong-in-outcome');
   await writeFile(privatePath, 'unreadable bytes\n'); await chmod(privatePath, 0o000);
   try {
     if (process.getuid?.() === 0) return;
-    await assert.rejects(other.collect(other.envelope), error => {
-      const diagnostic = error.details.failureDiagnostic;
-      assert.equal(diagnostic.pathContext, 'checkout'); assert.match(diagnostic.preview, /EACCES/);
-      assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open');
-      assert.match(diagnostic.preview, /source-read/);
-      assert.ok(!JSON.stringify(diagnostic).includes(other.cwd));
-      assert.ok(!JSON.stringify(diagnostic).includes('private-filename'));
-      return true;
-    });
+    const progress = await other.collect(other.envelope);
+    assert.equal(progress.clean, null);
+    const diagnostic = progress.worktreeObservation.diagnostic;
+    assert.equal(diagnostic.pathContext, 'checkout'); assert.match(diagnostic.preview, /EACCES/);
+    assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open');
+    assert.match(diagnostic.preview, /source-read/);
+    assert.ok(!JSON.stringify(diagnostic).includes(other.cwd));
+    assert.ok(!JSON.stringify(diagnostic).includes('private-filename'));
   } finally { await chmod(privatePath, 0o600); }
 });
 
@@ -182,8 +184,14 @@ test(`distinct Linux UIDs preserve private ${artifactName} while recording an ac
   const config = join(scratch, 'consumer.json');
   await writeFile(config, await readFile(fileURLToPath(new URL('../../consumer/fixtures/example.json', import.meta.url))), { mode: 0o600 });
   await chown(config, collectorUid, sharedGid);
+  const library = join(scratch, 'library'); await mkdir(library);
+  for (const path of ['controller/src', 'runtime/src', 'contracts', 'consumer']) {
+    await cp(fileURLToPath(new URL('../../' + path, import.meta.url)), join(library, path), { recursive: true });
+  }
+  await mkdir(join(library, 'reviewer/src'), { recursive: true });
+  await cp(fileURLToPath(new URL('../../reviewer/src/executable-cr-v2.json', import.meta.url)), join(library, 'reviewer/src/executable-cr-v2.json'));
   const script = join(scratch, 'observe.mjs');
-  await writeFile(script, `import { collectProgress } from ${JSON.stringify(new URL('../src/trusted-git.mjs', import.meta.url).href)};
+  await writeFile(script, `import { collectProgress } from ${JSON.stringify(new URL('file://' + join(library, 'controller/src/trusted-git.mjs')).href)};
 try { console.log(JSON.stringify({ progress: await collectProgress(${JSON.stringify(f.cwd)}, ${JSON.stringify(f.envelope)}, ${JSON.stringify({ root: scratch, remote })}) })); }
 catch (error) { console.log(JSON.stringify({ error: { code: error.code, details: error.details } })); }
 `, { mode: 0o600 });
@@ -196,11 +204,11 @@ catch (error) { console.log(JSON.stringify({ error: { code: error.code, details:
   assert.equal((await lstat(ignored)).mode & 0o777, 0o700);
   assert.equal((await lstat(join(ignored, '.gitignore'))).mode & 0o777, 0o600);
   await chmod(artifact, 0o600);
-  const denied = (await observe()).error;
-  assert.equal(denied.code, 'TRUSTED_GIT_FAILED');
-  assert.equal(denied.details.failureDiagnostic.operation, 'worktree-observation');
-  assert.match(denied.details.failureDiagnostic.preview, /EACCES/);
-  const diagnostic = denied.details.failureDiagnostic;
+  const denied = (await observe()).progress;
+  assert.equal(denied.clean, null);
+  assert.equal(denied.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+  assert.equal(denied.worktreeObservation.diagnostic.operation, 'worktree-observation');
+  const diagnostic = denied.worktreeObservation.diagnostic;
   assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open');
   assert.match(diagnostic.preview, /source-read; syscall=open; collector-euid=985; collector-egid=979/);
   assert.deepEqual(safeFailureDiagnosticReference(diagnostic), diagnostic);
@@ -222,7 +230,7 @@ catch (error) { console.log(JSON.stringify({ error: { code: error.code, details:
   // separate causes even when every OS access denial uses the same errno.
   await chmod(artifact, 0o640);
   const docs = join(f.cwd, 'docs'); await chmod(docs, 0o700);
-  const directory = (await observe()).error.details.failureDiagnostic;
+  const directory = (await observe()).progress.worktreeObservation.diagnostic;
   assert.equal(directory.diagnosticCode, 'EACCES'); assert.equal(directory.syscall, 'open');
   assert.match(directory.preview, /source-directory/);
   assert.equal((await lstat(docs)).mode & 0o777, 0o700);

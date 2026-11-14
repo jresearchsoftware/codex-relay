@@ -136,9 +136,14 @@ if (mode === 'baseline' || mode === 'fixed') {
     assert.equal(await readFile(join(packageRoot, 'receipt.json'), 'utf8'), 'atomically replaced public receipt\n');
     return all;
   };
-  const assertDenied = (result, context) => {
-    assert.equal(result.progress, undefined); assert.equal(result.error.code, 'TRUSTED_GIT_FAILED');
-    const diagnostic = result.error.details.failureDiagnostic;
+  const assertPreservedWithUnknownResidue = (result, context) => {
+    assert.equal(result.error, undefined);
+    assert.equal(result.progress.head, head); assert.ok(result.progress.bundle);
+    assert.equal(result.progress.clean, null);
+    assert.equal(result.progress.worktreeObservation.status, 'unknown');
+    assert.equal(result.progress.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+    const diagnostic = result.progress.worktreeObservation.diagnostic;
+    assert.equal(diagnostic.code, 'TRUSTED_GIT_FAILED');
     assert.equal(diagnostic.classification, 'GIT_LOCAL_FAILURE'); assert.equal(diagnostic.operation, 'worktree-observation');
     assert.equal(diagnostic.diagnosticCode, 'EACCES'); assert.equal(diagnostic.syscall, 'open'); assert.equal(diagnostic.pathContext, 'checkout');
     assert.match(diagnostic.preview, new RegExp(context + '; syscall=open; collector-euid=985; collector-egid=982'));
@@ -150,7 +155,7 @@ if (mode === 'baseline' || mode === 'fixed') {
   assert.equal(baseline.uid, workerUid); assert.equal(baseline.gid, workerPrivateGid); assert.ok(baseline.groups.includes(sharedGid));
   assert.deepEqual(renameIdentity(baseline.installed), renameIdentity(baseline.staged)); // Rename preserved mode, group and inode despite the setgid destination.
   const beforeDenied = await assertPackage(workerPrivateGid);
-  assertDenied(await observe(), 'source-directory');
+  assertPreservedWithUnknownResidue(await observe(), 'source-directory');
   assert.deepEqual(await packageFacts(), beforeDenied);
 
   const fixed = JSON.parse((await produce('fixed')).stdout);
@@ -171,7 +176,10 @@ if (mode === 'baseline' || mode === 'fixed') {
     await produce('private-' + kind);
     const path = join(f.cwd, 'unknown-private-' + kind); const before = await facts(path);
     assert.equal(before.uid, workerUid); assert.equal(before.mode, expectedMode);
-    assertDenied(await observe(), context); assert.deepEqual(await facts(path), before);
+    const privateFile = kind === 'file' ? path : join(path, 'private');
+    const privateBytes = await readFile(privateFile);
+    assertPreservedWithUnknownResidue(await observe(), context); assert.deepEqual(await facts(path), before);
+    assert.deepEqual(await readFile(privateFile), privateBytes);
     // Preserve private evidence outside the checkout using the producer's own
     // rename; the collector never broadens it to obtain a successful result.
     await produce('retain-private-' + kind);

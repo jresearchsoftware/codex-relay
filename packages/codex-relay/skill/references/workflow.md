@@ -296,8 +296,8 @@ fresh independent review. Draft/Ready denotes execution handoff, not acceptance,
 passing CI or merge permission.
 
 If schema-v4 remediation safely publishes head B and reports terminal `BLOCKED`,
-retain the CR and its original reviewed head A. A trusted Task-scoped Decision
-after the canonical Writer Outcome resolves the blocker; a fresh owner ready
+retain the CR and its original reviewed head A. When effective authority is unchanged and the prior result is contained and
+reconciled, no repetitive technical-continuation Decision is required. A fresh owner ready
 command on the same PR may then admit the next Step at Writer-proven B.
 Writer verifies protected automatic publication or manual submission, authentic
 native Writer Outcome, exact Task/PR/CR, branch/base/attempt lineage and current
@@ -567,3 +567,38 @@ dual active privileged dispatcher. Source acceptance and TEST proof authorize no
 live PROD Apply. The source repository's
 [installation contract](https://github.com/jresearchsoftware/codex-relay/blob/main/docs/git-managed-installation.md)
 provides the detailed strategy, readback and cutover procedure.
+
+
+## Engineering methods and meaningful results
+
+On a qualified installation implementing the Task 57 autonomy contract, an
+executor chooses ordinary local tools and task-owned Git methods inside the
+admitted goal. Preserve published history and others' work. Original authorship
+is retained as data; trusted Writer authenticates publication and scans all
+introduced reachable objects, including intermediate deleted content. A verified
+descendant movement of main is ordinary integration context; the task's own
+remote head, repository, branch and authority bindings still require exact checks.
+
+Technical continuation under unchanged authority needs a fresh authenticated
+owner launch, a new admitted Step and reconciled prior effects, without a Decision
+that merely repeats the existing scope. Real holds, material authority changes
+and unknown execution/publication effects retain their supported reconciliation.
+A completed remediation may rebut or establish an already satisfied finding with
+an exact-head no-change result, without a cosmetic commit. Independent review
+decides acceptance. A stopped/Draft result may receive substantive findings or a
+genuine change request; approval still requires a complete Ready candidate.
+
+Candidate and worktree observations are separate. Writer can preserve a safely
+collected committed candidate while reporting incomplete residue inspection;
+this does not claim the checkout clean or discard local work. A completed
+contained result can retain a cleanup warning and an unavailable resource.
+Reviewers and owners must disposition those warnings before the next action.
+Diagnostic launch capacity is reclaimed only after contained execution, durable
+evidence and safe cleanup; semantic failure alone does not retain a launch slot.
+
+Automatic workers have repository-local execution and task dependency tools,
+without GitHub credentials or publication authority. Admitted manual executors
+use their actual authorized terminal and connected tools and submit one bound
+result to Writer. Standalone/manual work follows its explicit owner authority
+and does not fabricate native admission. Requested profiles and instructions are
+not proof of actual runtime settings, tool access or installed activation.

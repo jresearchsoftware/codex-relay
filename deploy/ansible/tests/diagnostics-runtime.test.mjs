@@ -96,6 +96,7 @@ test('failed runtime persists late JSONL errors separately from early stderr wit
   await assert.rejects(runGovernedCodexTask({
     operation: 'issue-implementation', attemptId: 'late-jsonl-failure', inputText: 'bounded fixture input', cwd: root,
     buildArgs: () => [], env: { PATH: '/usr/bin:/bin' }, evidence,
+    readDiagnosticConfig: async () => ({ mode: 'normal' }),
     fallbackStore: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: join(root, 'fallback') }),
     spawnImpl() {
       const child = new EventEmitter();
@@ -125,7 +126,10 @@ test('failed runtime persists late JSONL errors separately from early stderr wit
   assert.equal(parsed.launcherDiagnostic.primaryCause, null);
   assert.equal(parsed.launcherDiagnostic.preview, early);
   assert.equal(parsed.stdout, undefined);
-  assert.equal(parsed.codexErrors.stdoutTruncated, false);
+  // Normal retained capture is capped independently of complete JSONL parsing.
+  // This tool record exceeds that cap, but its later error remains observed.
+  assert.equal(evidence.codexStdoutTruncated, true);
+  assert.equal(parsed.codexErrors.stdoutTruncated, true);
   assert.deepEqual(parsed.codexErrors.events.map(event => event.message.text), ['Distinct late synthetic provider failure']);
   assert.doesNotMatch(saved, /PRIVATE_COMMAND_OUTPUT/);
 });

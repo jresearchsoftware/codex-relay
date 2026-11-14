@@ -123,8 +123,8 @@ fn conforms(value: &Value, schema: &Value) -> bool {
                         .all(|(index, item)| !items[..index].contains(item)))
         }),
         Some("string") => value.as_str().is_some_and(|text| {
-            text.len() >= schema["minLength"].as_u64().unwrap_or(0) as usize
-                && text.len() <= schema["maxLength"].as_u64().unwrap_or(1000) as usize
+            text.chars().count() >= schema["minLength"].as_u64().unwrap_or(0) as usize
+                && text.chars().count() <= schema["maxLength"].as_u64().unwrap_or(1000) as usize
                 && safe_text(text)
                 && schema["format"]
                     .as_str()
@@ -787,7 +787,7 @@ async fn execution_records(
             Some("task-request" | "change-request")
         ) && payload["schema_version"] == "3.0"
     });
-    if records.len() > 500 {
+    if records.len() > 10_000 {
         return Err("AUTHORITY_SOURCE_TRUNCATED");
     }
     Ok(records)
@@ -915,9 +915,6 @@ async fn effective_authority(
     )?;
     if let Some(pr) = existing_pr {
         let comments = app.github.authority_comments(&app.repository, pr).await?;
-        if comments.len() + state.comments.len() > 500 {
-            return Err("AUTHORITY_SOURCE_TRUNCATED");
-        }
         decisions.extend(list_records(
             app,
             state,
@@ -1273,9 +1270,9 @@ async fn validate_v4_live(
                 return Err("AUTHORITY_PR_BINDING_MISMATCH");
             }
             let mut publication_pr = pr.clone();
-            if published.is_some() {
-                publication_pr["draft"] = json!(false);
-            }
+            // A substantive CR is a finding, not acceptance or integration.
+            // Stopped candidates remain reviewable while Draft.
+            publication_pr["draft"] = json!(false);
             if let Some(code) = publication_rejection(&publication_pr, &record["reviewed_head_sha"])
             {
                 return Err(code);
@@ -1364,9 +1361,6 @@ async fn validate_v4_live(
             if let Some(pr) = existing_pr {
                 outcomes.extend(app.github.authority_comments(&app.repository, pr).await?);
             }
-            if outcomes.len() > 500 {
-                return Err("AUTHORITY_SOURCE_TRUNCATED");
-            }
             for native in outcomes {
                 if trusted_user(&native["user"], &state.writer)
                     && native["id"]
@@ -1385,9 +1379,6 @@ async fn validate_v4_live(
                         }
                     }
                 }
-            }
-            if step_sync::current_step(&state.issue)? != record["step"].as_u64().unwrap() {
-                return Err("AUTHORITY_STEP_MISMATCH");
             }
         }
         _ => return Err("AUTHORITY_RECORD_INVALID"),
@@ -2251,6 +2242,7 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         if !reserved {
             return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
         }
+        let mut reservation = crate::publication::PreSendReservation::new(app, &operation);
         let before_post = async {
             verify_publication_authority(app, &state, record, &operation, true).await?;
             let final_state = load(app, record).await?;
@@ -2269,14 +2261,7 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         .await;
         let final_state = match before_post {
             Ok(state) => state,
-            Err(code) => {
-                app.store
-                    .lock()
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                    .retryable_failure(&operation)
-                    .map_err(|_| "INTERNAL_RELAY_ERROR")?;
-                return Err(code);
-            }
+            Err(code) => return Err(code),
         };
         let prepared = if record["kind"] == "change-request" {
             app.github.prepare_review(&app.repository, record["parent"]["number"].as_i64().unwrap(),
@@ -2291,8 +2276,16 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 .await
         };
         let mutation = match prepared {
-            Ok(prepared) => app.github.send_mutation(prepared).await,
-            Err(failure) => Err(failure),
+            Ok(prepared) => {
+                reservation.sending();
+                app.github.send_mutation(prepared).await
+            }
+            Err(failure) => {
+                let mut result = error(failure.code);
+                result["structuredContent"] = json!({"operation":operation,"diagnostics":failure.diagnostics(),
+                    "operator_action":"No decisive send began. Repeat the identical input after correcting the preparation failure."});
+                return Ok(result);
+            }
         };
         match mutation {
             Ok(native) => {
@@ -2347,11 +2340,9 @@ pub(crate) async fn approved_continuation(
             .authority_comments(&app.repository, pr["number"].as_u64().unwrap())
             .await?,
     );
-    if native_outcomes.len() > 500 {
-        return Err("AUTHORITY_SOURCE_TRUNCATED");
-    }
     let mut v4_outcomes = Vec::new();
     let mut has_v4_outcome = false;
+    let mut latest_result_step = 0;
     for native in &native_outcomes {
         if !trusted_user(&native["user"], &state.writer) {
             continue;
@@ -2365,15 +2356,22 @@ pub(crate) async fn approved_continuation(
             && belongs(&outcome, &hint)
         {
             has_v4_outcome = true;
+            if outcome["result"]["revision"] == *approved_head
+                && (outcome["parent"]["number"] == pr["number"]
+                    || outcome["parent"]["kind"] == "issue")
+            {
+                latest_result_step = latest_result_step.max(outcome["step"].as_u64().unwrap_or(0));
+            }
         }
         if outcome["kind"] == "outcome"
             && outcome["schema_version"] == "4.0"
             && belongs(&outcome, &hint)
             && outcome["status"] == "implemented"
-            && outcome["result"]["kind"] == "git"
+            && matches!(
+                outcome["result"]["kind"].as_str(),
+                Some("git" | "no-change")
+            )
             && outcome["result"]["revision"] == *approved_head
-            && outcome["step"].as_u64() == Some(step_sync::current_step(&state.issue)?)
-            && outcome["step"].as_u64() == Some(step_sync::current_step(pr)?)
         {
             let reference = native_ref(native, "issue-comment", &outcome["parent"])?;
             source_binding(&app.repository, native, &reference)?;
@@ -2405,6 +2403,7 @@ pub(crate) async fn approved_continuation(
                 "issue_closure_policy":closure,"warnings":warnings,"completion_conditions":"trusted-owner-canonical-state-required"}));
         }
     }
+    v4_outcomes.retain(|result| result["admission"]["step"].as_u64() == Some(latest_result_step));
     if v4_outcomes.len() > 1 {
         return Err("AUTHORITY_EXACT_OUTCOME_REQUIRED");
     }
@@ -2637,4 +2636,16 @@ async fn source_pr_continuation(
         "continuation":continuation,"issue_closure_policy":closure,"warnings":warnings,
         "completion_conditions":"trusted-owner-canonical-state-required"
     })))
+}
+
+#[cfg(test)]
+mod unicode_length_tests {
+    use super::*;
+    #[test]
+    fn current_authority_lengths_follow_schema_unicode_units_with_separate_byte_bounds() {
+        let schema = json!({"type":"string","minLength":1,"maxLength":2});
+        assert!(conforms(&json!("é😀"), &schema));
+        assert!(!conforms(&json!("é😀x"), &schema));
+        assert_eq!("é😀".len(), 6);
+    }
 }

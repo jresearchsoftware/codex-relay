@@ -95,15 +95,21 @@ def test_large_source_file_protections_are_retained(tmp_path, protected, monkeyp
 def test_large_source_change_during_verification_is_rejected(tmp_path, protected, monkeypatch):
     path = write(tmp_path, 'source/blob', b'x' * (transition.MAX_BYTES + 1))
     read = protected.read
+    reads = []
 
     def changed(*args, **kwargs):
         raw = read(*args, **kwargs)
-        path.write_bytes(b'y' * len(raw))
+        reads.append(len(raw))
+        # A same-size overwrite can preserve mtime/ctime within one coarse
+        # filesystem tick. Change the actual size so the fault is observable
+        # independently of metadata clock precision, after the real bounded read.
+        path.write_bytes(b'y' * (len(raw) + 1))
         return raw
 
     monkeypatch.setattr(protected, 'read', changed)
     with pytest.raises(PoolError, match='SOURCE_CHANGED'):
         protected.tree_sha256('/source')
+    assert reads == [transition.MAX_BYTES + 1]
 
 
 @pytest.mark.parametrize('sizes', [(17,), (8, 9)])

@@ -10,7 +10,19 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance `6.0.0` is a `MAJOR` candidate from independently accepted
+Guidance **6.1.0** is a **MINOR** candidate from independently accepted **6.0.0**.
+It adds compatible engineering-autonomy methods, unchanged-authority technical
+continuation, meaningful evidence-only/no-change results and findings on stopped
+or Draft results. It preserves authenticated owner launch, protected actor
+separation, non-force publication, independent exact-head acceptance and unknown-
+effect reconciliation. It adds no mandatory consumer action or automatic policy
+adoption. The complete native and standalone exports retain their respective
+Shared dependency routes and immutable standalone snapshot. Accepted 6.0.0 and
+earlier registry bytes remain unchanged. Candidate generation establishes neither
+source acceptance, external publication nor installed activation.
+
+
+Guidance `6.0.0` was a `MAJOR` change from independently accepted
 `5.0.0`; the earlier `5.1.0` candidate was never accepted and is replaced in this
 PR. It adds mandatory owner work to the existing `codex-ready-manual` route: wait
 for trusted Writer to publish the complete admitted handoff or a verified terminal
@@ -91,15 +103,21 @@ it a major Relay release; the Shared package's major number does not determine
 Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
-The selected independently accepted Relay product-contract baseline is
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Exact schema/workflow/tool contract
-files come from that immutable revision rather than candidate copies. Managed
+The historical independently accepted Relay product-contract baseline was
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 6.1.0 uses `contract_source: source-tree` and records the accepted
+Task 57 baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` in
+`guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
+`source_files` hashes in provenance and, after acceptance, the enclosing source
+commit. The accepted-baseline revision is context, not a claim that candidate
+contract changes are accepted. Historical artifacts retain their Git-revision
+pins. Source-tree mode keeps clean offline generation valid after squash merge
+without requiring an unmerged branch commit object. Managed
 pool ABI remains `relay-workflows-v4`; SERIAL remains `relay-workflows-v3`.
 Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 6.0.0 is a candidate. Native source
+release. Before independent acceptance, 6.1.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

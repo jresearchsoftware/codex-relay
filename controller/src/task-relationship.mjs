@@ -2,7 +2,7 @@
 // repositories and unrelated PR prose retain their original content.
 function relationshipPattern(repository) {
   const escaped = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\b(close[sd]?|fix(?:es|ed)?|resolve[sd]?|Related to):?\\s+(#([1-9][0-9]*)|${escaped}#([1-9][0-9]*)|https://github\\.com/${escaped}/issues/([1-9][0-9]*))\\b`, 'gi');
+  return new RegExp(`\\b(close[sd]?|fix(?:es|ed)?|resolve[sd]?|Related\\s+to):?\\s+(#([1-9][0-9]*)|${escaped}#([1-9][0-9]*)|https://github\\.com/${escaped}/issues/([1-9][0-9]*))\\b`, 'gi');
 }
 
 export function taskReferences(body, repository) {

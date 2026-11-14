@@ -101,8 +101,12 @@ Dispatch and Writer adapters start helpers with only `PATH=/usr/bin:/bin`,
 and pin its runtime executable. The optional Writer environment aliases
 `RELAY_WRITER_CREDENTIAL_ENV`, `RELAY_WRITER_CREDENTIAL_KEY_FILE` and
 `RELAY_WRITER_CLAIM_ROOT`, if present, must equal consumer config; they cannot
-override it. `CODEX_RUNTIME_TIMEOUT_MS` is a trusted runtime input (1000–7200000
-ms, default 5400000); it is not automatically forwarded to the worker.
+override it. `CODEX_RUNTIME_TIMEOUT_MS` remains a direct trusted runtime input
+(1000–7200000 ms, default 5400000); the scrubbed automatic dispatch environment
+does not forward it. Ordinary automatic execution therefore uses the fixed
+90-minute inner budget and 100-minute outer deadline, independent of a
+controller environment override. Direct runtime callers own their matching outer
+deadlines. The separate owner-local smoke retains its fixed two-minute bound.
 
 Writer `credentialEnv` is literal `KEY=value`, one per line: `GITHUB_APP_ID`,
 `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY_FILE`. Blank lines and

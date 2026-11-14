@@ -4,7 +4,7 @@
   "fence": "relay-authority",
   "max_payload_bytes": 60000,
   "max_body_bytes": 100000,
-  "max_native_records": 500,
+  "max_native_records": 10000,
   "max_context_bytes": 250000,
   "record_titles": {
     "decision": "Decision",

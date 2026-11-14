@@ -124,11 +124,25 @@ test('current PR remediation publishes a new head under its exact native CR admi
   assert.equal(pr.body, 'Related to #42');
 });
 
-test('a descriptive title projection mismatch after typed publication blocks visibly without a second push', async t => {
+test('a descriptive title drift does not invalidate the native result binding', async t => {
   const f = await migrated(t);
   const completed = await runAttempt({ ...f, journal: f.journal, execute: async () => { await f.commit(); return success(f.envelope); } });
   await f.api.patch('/pulls/43', { title: 'Task 42 · Step 1 · Unrelated purpose' });
-  await assert.rejects(f.broker.invoke({ operation: 'observe-readiness', runId: 99, attemptId: f.envelope.attemptId, head: completed.head }),
-    { code: 'AUTHORITY_TITLE_PROJECTION_MISMATCH' });
+  const observed = await f.broker.invoke({ operation: 'observe-readiness', runId: 99, attemptId: f.envelope.attemptId, head: completed.head });
+  assert.equal(observed.head, completed.head);
   assert.equal(f.pushes(), 1);
+});
+
+
+test('current remediation can rebut a finding without a cosmetic commit or self-approval', async t => {
+  const f = await fixture(t, { remediation: true });
+  const result = await runAttempt({ ...f, journal: f.journal,
+    execute: async () => ({ ...success(f.envelope), result: { status: 'success',
+      summary: 'Finding rebutted against current source; independent review is required.',
+      validation: ['Reproduced the reported scenario and verified the expected behavior.'] } }) });
+  assert.equal(result.noChange, true); assert.equal(result.prNumber, 43);
+  assert.equal(f.pushes(), 0); assert.equal(f.comments.length, 1);
+  const outcome = extractAuthorityRecord(f.comments[0].body);
+  assert.equal(outcome.result.kind, 'no-change'); assert.equal(outcome.parent.kind, 'pull_request');
+  assert.equal(outcome.result.revision, f.envelope.startHead);
 });

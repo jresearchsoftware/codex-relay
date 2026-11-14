@@ -1,7 +1,7 @@
 import { CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { REPOSITORY, WRITER, digest, exactSha, positive, fail, validateEnvelope } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, extractAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
-import { revalidateAuthority } from './live-authority.mjs';
+import { revalidateAuthority, verifyPublishedBase } from './live-authority.mjs';
 
 const equal = (left, right) => canonicalAuthorityJson(left) === canonicalAuthorityJson(right);
 const invalid = () => fail('AUTHORITY_CONTINUATION_INVALID');
@@ -19,7 +19,6 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
     || !positive(step) || step <= e.step || e.repository !== REPOSITORY || e.consumerDigest !== CONSUMER_DIGEST
     || e.target !== 'pull_request' || e.number !== pr.number || e.issueNumber !== q.task
     || e.branch !== q.branch || e.branch !== pr.head.ref || e.historicalBase !== q.base_sha
-    || e.targetBase !== targetBase || pr.base.sha !== e.targetBase
     || e.reviewId !== typed.reference.id || !equal(e.request.authority.change_request, typed.authority.change_request)
     || e.request.change_request_id !== q.change_request_id || e.request.reviewed_head_sha !== q.reviewed_head_sha
     || prior.admissionBlock || prior.outcome?.status !== 'BLOCKED' || prior.outcome.prNumber !== pr.number
@@ -28,6 +27,8 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
     || prior.publicationIntent || prior.commentIntent || prior.lifecycleIntent || prior.relationshipIntent
     || prior.readinessIntent || prior.successOutcomeIntent || prior.prepublicationRecovery
     || prior.handoffComplete === false || prior.prIntent && prior.prNumber !== pr.number) invalid();
+  await verifyPublishedBase(api, e.targetBase, targetBase);
+  await verifyPublishedBase(api, e.targetBase, pr.base.sha);
   if (pr.head.sha !== head) fail('STARTING_STATE_MISMATCH');
   if (e.route === 'auto' ? prior.publishedHead !== head : !prior.manualSubmission || prior.outcome.manual !== true) invalid();
 
@@ -63,10 +64,9 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
       || !originals.some(value => sha256Body(canonicalAuthorityJson(value))
       === prior.manualSubmission.sha256)) invalid();
   }
-  const directions = typed.decisions.filter(({ reference, decision }) => decision.parent.kind === 'issue'
-    && decision.parent.number === q.task && reference.id > native.id
-    && !e.request.authority.decisions.some(previous => equal(previous, reference)));
-  if (!directions.length) invalid();
+  // A fresh authenticated owner launch can continue contained technical work
+  // under unchanged authority. New permissions and explicit holds are still
+  // resolved by the normal current-authority path, not inferred from an Outcome.
   const amendments = Object.assign({}, ...typed.decisions.filter(({ reference }) =>
     !e.request.authority.decisions.some(previous => equal(previous, reference))).map(({ decision }) => decision.amendments));
   const pins = { branch: q.branch, base_sha: q.base_sha, starting_head: head, existing_pr: pr.number };
@@ -82,5 +82,6 @@ export async function blockedCrContinuation(api, { typed, pr, step, lineage, pre
     if (comparison.status !== 'ahead' || comparison.base_commit?.sha !== e.startHead
       || comparison.merge_base_commit?.sha !== e.startHead) fail('STARTING_STATE_MISMATCH');
   }
-  return { branch: q.branch, base_sha: q.base_sha, starting_head: head, existing_pr: pr.number };
+  return { branch: q.branch, base_sha: q.base_sha, starting_head: head, existing_pr: pr.number,
+    priorOutcome: { body: native.body, id: native.id, sha256: prior.outcome.bodySha256, attempt: e.attemptId, step: e.step } };
 }

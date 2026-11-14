@@ -24,7 +24,7 @@ and any separately authorized successor Request.
   a disputed specification before reporting the disagreement conflicts with
   Relay when authority or the next material correction is uncertain. Its
   central per-session WAL and broad boot-directory reading also differ from
-  Relay's optional recovery and targeted context loading. Some stock practices
+  Relay's targeted context loading. Some stock practices
   are useful or equivalent to Relay's; overlap alone is not a conflict.
 - **Native routing is not semantic task selection or acceptance.** Both relevant
   and irrelevant sample tasks have the same unconditional boot references.
@@ -34,7 +34,7 @@ and any separately authorized successor Request.
 - **Recommended next target: the complete native routing mechanism with bounded
   authored instructions (option C below).** This uses option A's generator,
   rather than a second hand-maintained routing engine, while retaining Relay's
-  accepted authority and optional recovery model. It is a proposal, not adopted
+  accepted authority. It is a proposal, not adopted
   policy. Keep the present direct route until the owner authorizes the change.
 
 No `org.jresearch.ai/development-governance` dependency, other real package or
@@ -190,7 +190,6 @@ flowchart TD
     R[Admitted charter and current trusted Request] --> P[Worker input plus trusted execution boundary]
     P --> E[Progress-bounded execution instructions]
     A[Root AGENTS.md] --> C[Relevant contracts loaded just in time]
-    A --> H[Optional session-owned diagnostic recovery]
     A --> S[Empty VibeVM INDEX: no active redirect or boot content]
 ```
 
@@ -210,10 +209,7 @@ Repository boot prose cannot become a trusted Request, relax the worker's
 boundary, authorize deployment or substitute for Writer/Reviewer. Root and
 subdirectory agent instructions and trusted local overlays retain their
 existing client-dependent precedence; this investigation did not redefine
-that precedence or inspect private/global configuration. Optional
-[developer hooks](../.codex/hooks/README.md) preserve a bounded, session-owned
-diagnostic frontier and revalidate live authority on recovery. They are not a
-central Task ledger or a prerequisite for ordinary work.
+that precedence or inspect private/global configuration.
 
 ### C: complete native mechanism, bounded Relay-authored policy
 
@@ -272,8 +268,7 @@ These comparisons use the accepted
 [architecture](architecture.md),
 [execution policy](execution-policy.md),
 [Task authority contract](../contracts/README.md#github-native-task-authority),
-[documentation maintenance rule](../CONTRIBUTING.md#keep-workflow-documentation-current)
-and hook contract. The current report/fixture introduces no material operator
+[documentation maintenance rule](../CONTRIBUTING.md#keep-workflow-documentation-current). The current report/fixture introduces no material operator
 contract change. Any active integration would require that gate to be assessed
 under new canonical authority.
 
@@ -333,7 +328,7 @@ qualify XML semantics separately if needed.
 | Maintenance | Generator plus stock and user methodology | Existing contracts and pointers | Generator plus short bounded sources; no edited generated router |
 | Future dependencies | Native composition available; new instructions/capabilities need review | Scaffold can resolve later; routing would need a deliberate change | Native composition already available; package adoption still separate |
 | Clean clone/offline | Readable if generated files and named bytes committed | Current AGENTS/contracts readable; empty INDEX preserved | Same passive readability as A; no bootstrap command at session time |
-| Default Codex workflow | Adds mandatory native boot and stock seed behavior | Current targeted context and optional hooks | Adds small mandatory boot; keeps detail loading targeted by instruction |
+| Default Codex workflow | Adds mandatory native boot and stock seed behavior | Current targeted context | Adds small mandatory boot; keeps detail loading targeted by instruction |
 | Generated ownership | Managed blocks, INDEX/STATIC derived; seeds authored | Passive manifest/lock/empty INDEX; AGENTS authored | Managed blocks/INDEX derived; core/user authored; existing AGENTS outside block |
 | Reproducibility | Stock bytes reproduced in fixture | Existing scaffold probe passed on tracked-file copy | Customized fixture bytes reproduced; final integration not yet implemented |
 | Failure/rollback | Clean can leave dangling route; no boot fallback | No active route to repair | Same native lifecycle limits; ordinary Git revert of integration restores B |
@@ -361,7 +356,7 @@ A minimal separately admitted PR would:
 
 1. Resolve a new exact starting head and complete Request after the owner's
    choice. Retain all existing protected boundaries, Writer/Reviewer separation,
-   worker prompt authority, hooks and checks.
+   worker prompt authority and checks.
 2. Add short Markdown core/user boot sources that identify existing Relay
    authority and targeted loading, without broad directory recursion, a WAL
    obligation, global hierarchy replacement or new approval ceremony. Keep
@@ -407,7 +402,7 @@ The owner must explicitly choose:
 
 Upstream offers better reusable mechanics here: managed co-tenant blocks,
 explicit authored/generated ownership and deterministic package composition.
-Relay already has useful targeted context, live authority and optional recovery.
+Relay already has useful targeted context and live authority.
 A native integration can retain both. Adopting broader spec-first/WAL practices
 could also be a legitimate owner choice, but needs an evidenced benefit and
 explicit migration rather than an inference from an installed file.

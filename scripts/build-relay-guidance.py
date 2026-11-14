@@ -73,8 +73,16 @@ def assemble(root=ROOT):
     source_files = {"packages/codex-relay/skill/" + key: digest(value) for key, value in skill.items()}
     for path in ("contracts/src/github-authority-v4.json", "contracts/src/github-authority-v1.json",
                  "deploy/workflows/contract.json", "toolchain/vibevm.json"):
-        # Read accepted Git blob bytes, independent of Windows checkout newline conversion.
-        data = subprocess.check_output(["git", "show", metadata["contract_revision"] + ":" + path], cwd=root)
+        # New source-tree releases freeze actual input hashes in provenance;
+        # contract_revision identifies their independently accepted baseline.
+        # Historical artifacts retain their exact Git-pinned behavior.
+        mode = metadata.get("contract_source", "git-revision")
+        if mode == "source-tree":
+            data = read_file(root, path)
+        elif mode == "git-revision":
+            data = subprocess.check_output(["git", "show", metadata["contract_revision"] + ":" + path], cwd=root)
+        else:
+            raise ValueError("Unsupported Relay contract source mode")
         skill["references/product/" + Path(path).name] = data
         source_files[path] = digest(data)
     workflow = json.loads(skill["references/product/contract.json"])
@@ -171,13 +179,13 @@ spec_format = "mixed"
     expected["vpm/LICENSE"] = (root / "LICENSE").read_bytes()
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 
-Generated source candidate for `org.jresearch.ai/{name}`. It describes accepted
-Relay contract `{metadata['contract_revision']}` with native shared requirement
+Generated source candidate for `org.jresearch.ai/{name}`. It describes the immutable pinned
+Relay contract with accepted baseline `{metadata['contract_revision']}` and native shared requirement
 `{metadata['shared_requirement']}`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 
 Acquire this package by an explicitly selected immutable revision through the
-supported VibeVM 1.0.7 package interface. The generated sibling
+supported VibeVM package interface identified by `skill/references/product/vibevm.json`. The generated sibling
 `vpm-consumer.toml.in` shows both required immutable Git source roots; the native
 package declares the semantic lower-bound edge, while 1.0.7 ignores transitive Git
 source tables. Then explicitly project its Skill with

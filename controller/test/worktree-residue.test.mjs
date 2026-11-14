@@ -43,58 +43,49 @@ async function denyAccess(t, path, operation) {
   } finally { await chmod(path, originalMode); }
 }
 
-test('an unreadable generated regular file fails complete observation without changing its bytes', async t => {
+async function assertCandidateWithUnknownObservation(f, head, denied) {
+  const progress = await f.collect(f.envelope);
+  assert.equal(progress.head, head);
+  assert.ok(progress.bundle, 'the committed candidate remains available');
+  assert.equal(progress.clean, null, 'incomplete observation must not claim clean or dirty');
+  assert.equal(progress.worktreeObservation.status, 'unknown');
+  assert.equal(progress.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+  const diagnostic = progress.worktreeObservation.diagnostic;
+  assert.equal(diagnostic.operation, 'worktree-observation');
+  assert.equal(diagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
+  assert.match(diagnostic.preview, /EACCES/);
+  assert.equal((await lstat(denied)).mode & 0o7777, 0o000, 'collection does not repair source permissions');
+  assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), head);
+}
+
+test('an unreadable generated regular file preserves the candidate with unknown observation and unchanged bytes', async t => {
   const f = await fixture(t); await f.prepare(f.envelope); const head = await f.commit();
   const residue = join(f.cwd, 'generated-output.tmp');
   await writeFile(residue, 'repeatable generated output\n');
-  await denyAccess(t, residue, async () => {
-    await assert.rejects(f.collect(f.envelope), error => {
-      assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
-      assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
-      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
-      return true;
-    });
-  });
+  await denyAccess(t, residue, async () => assertCandidateWithUnknownObservation(f, head, residue));
   assert.equal(await readFile(residue, 'utf8'), 'repeatable generated output\n');
   assert.equal(f.pushes(), 0);
 });
 
-test('an unreadable ignored cache is irrelevant while an unreadable non-ignored directory fails collection', async t => {
+test('an unreadable ignored cache is irrelevant while inaccessible non-ignored work preserves an unknown observation', async t => {
   const f = await fixture(t); await f.prepare(f.envelope);
-  await f.commit('.gitignore', '.generated-cache/\n');
+  const head = await f.commit('.gitignore', '.generated-cache/\n');
   const cache = join(f.cwd, '.generated-cache'); await mkdir(cache);
   await writeFile(join(cache, 'output'), 'generated output\n');
   await denyAccess(t, cache, async () => assert.equal((await f.collect(f.envelope)).clean, true));
   const unknown = join(f.cwd, 'uncollected-work'); await mkdir(unknown);
   await writeFile(join(unknown, 'task.md'), 'potentially useful work\n');
-  await denyAccess(t, unknown, async () => {
-    await assert.rejects(f.collect(f.envelope), error => {
-      assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
-      assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
-      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
-      return true;
-    });
-  });
+  await denyAccess(t, unknown, async () => assertCandidateWithUnknownObservation(f, head, unknown));
   assert.equal(await readFile(join(unknown, 'task.md'), 'utf8'), 'potentially useful work\n');
   assert.equal(f.pushes(), 0);
 });
 
-test('tracked permission failures are not accepted as ordinary diff exit one', async t => {
-  const f = await fixture(t); await f.prepare(f.envelope); await f.commit();
+test('tracked permission failures preserve the candidate without classifying unreadable changes as a diff', async t => {
+  const f = await fixture(t); await f.prepare(f.envelope); const head = await f.commit();
   const tracked = join(f.cwd, 'docs/work.md');
   // Force content inspection even on filesystems with coarse timestamps.
   await writeFile(tracked, 'changed task work remains unreadable\n');
-  await denyAccess(t, tracked, async () => {
-    await assert.rejects(f.collect(f.envelope), error => {
-      assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-      assert.equal(error.details.failureDiagnostic.operation, 'worktree-observation');
-      assert.equal(error.details.failureDiagnostic.primaryCause, 'GIT_LOCAL_FAILURE');
-      assert.match(error.details.failureDiagnostic.preview, /EACCES/);
-      return true;
-    });
-  });
+  await denyAccess(t, tracked, async () => assertCandidateWithUnknownObservation(f, head, tracked));
   assert.equal(await readFile(tracked, 'utf8'), 'changed task work remains unreadable\n');
   assert.equal(f.pushes(), 0);
 });

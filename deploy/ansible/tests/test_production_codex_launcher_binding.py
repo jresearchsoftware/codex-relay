@@ -19,7 +19,7 @@ def launcher_contract_is_current(source):
             "const remediationMode = argv.length === 14",
             'argv[2] === "review-remediation"',
             'argv[12] === "--pull-request"',
-            'if (!issueMode && !remediationMode) fail("ARGUMENT_CONTRACT_INVALID");',
+            'if (!issueMode && !remediationMode && !ownerSmokeMode) fail("ARGUMENT_CONTRACT_INVALID");',
         )
     )
 
@@ -159,7 +159,7 @@ class ProductionCodexLauncherBindingTests(unittest.TestCase):
         self.assertFalse(launcher_contract_is_current(stale_launcher))
         for marker in (
             "childStarted: observedChildStarted",
-            'if (!issueMode && !remediationMode) fail("ARGUMENT_CONTRACT_INVALID");',
+            'if (!issueMode && !remediationMode && !ownerSmokeMode) fail("ARGUMENT_CONTRACT_INVALID");',
             "PRODUCTION_CODEX_LAUNCHER_BINDING_INVALID",
             "CODEX_LAUNCHER_CHECK_MODE_PLAN",
         ):

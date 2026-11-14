@@ -46,7 +46,13 @@ export async function readTaskAuthority(api, issue, pr, options = {}) {
   const author = await api.userIdentity(REVIEWER);
   if (author.login !== REVIEWER || author.type !== 'Bot' || !Number.isSafeInteger(author.id) || author.id < 1) fail('AUTHORITY_TRUST_BINDING_INVALID');
   const records = new Map();
-  const add = record => { records.set(referenceKey(record), record); if (records.size > 500) fail('AUTHORITY_RECORDS_INVALID'); };
+  let recordBytes = 0;
+  const add = record => {
+    const key = referenceKey(record);
+    recordBytes += Buffer.byteLength(record.body ?? '') - Buffer.byteLength(records.get(key)?.body ?? '');
+    records.set(key, record);
+    if (records.size > 10000 || recordBytes > 16 * 1024 * 1024) fail('AUTHORITY_RECORDS_INVALID');
+  };
   add(native({ ...issue, id: issue.id ?? issue.number }, 'issue-body', { kind: 'issue', number: issue.number }));
   const trusted = value => value.user?.login === author.login && value.user?.id === author.id && value.user?.type === 'Bot';
   const loadedPrs = new Set();

@@ -43,7 +43,7 @@ function conforms(value, spec) {
       && value.every(item => conforms(item, spec.items))
       && (!spec.uniqueItems || new Set(value.map(canonicalAuthorityJson)).size === value.length);
     case 'string': return typeof value === 'string' && safeText(value)
-      && bytes(value) >= (spec.minLength ?? 0) && bytes(value) <= (spec.maxLength ?? 1000)
+      && Array.from(value).length >= (spec.minLength ?? 0) && Array.from(value).length <= (spec.maxLength ?? 1000)
       && (!spec.format || formats[spec.format]?.(value) === true);
     case 'integer': return Number.isSafeInteger(value) && value >= spec.minimum && value <= spec.maximum;
     case 'boolean': return typeof value === 'boolean';

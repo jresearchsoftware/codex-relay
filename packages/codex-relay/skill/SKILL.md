@@ -5,7 +5,7 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **6.0.0** as a source
+This Skill supplies Relay product guidance version **6.1.0** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source, delivery form and shared protocol source. Guidance
 availability does not prove an installed service, workflow or connected App is
@@ -59,7 +59,7 @@ responsibilities. Never turn a copied assessment into a native approval.
 
 Preserve consumer-owned AGENTS.md, Skills, overlays, profile, checks, language,
 client preferences and authorized integration policy. Relay's own development
-defaults and optional developer hooks are not universal consumer requirements.
+defaults are not universal consumer requirements.
 Installing this Skill does not change ChatGPT Project Instructions or install,
 upgrade, deploy or activate Relay services. Select explicit guidance versions
 and use the installation reference for reviewable updates and rollback.
