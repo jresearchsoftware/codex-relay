@@ -182,6 +182,36 @@ def test_provenance_missing_loaded_proof_runs_one_normal_apply(invocation, monke
         assert calls == ['post-check', 'loaded-' + missing, 'apply']
 
 
+def test_failed_provenance_fallback_preserves_original_installed_identity_and_failure_evidence(invocation, monkeypatch, capsys):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    monkeypatch.setattr(provenance, 'loaded_ready', lambda *_a, **_kw: False)
+    monkeypatch.setattr(provenance, 'promote_remote', lambda *_a, **_kw: pytest.fail('unexpected promotion'))
+    calls = []
+    def primitive(inner):
+        calls.append(inner.phase)
+        if inner.phase == 'apply':
+            assert inner.git_intent == desired and inner._intent_installation_state == {}
+            inner._intent_mutation_started = True
+            raise RuntimeError('INJECTED_APPLY_FAILURE')
+    with pytest.raises(RuntimeError, match='stage=apply;cause=INJECTED_APPLY_FAILURE'):
+        install.run(args, primitive, ROOT, {'revision': TARGET})
+    assert calls == ['post-check', 'apply']
+    output = capsys.readouterr().out
+    failure = json.loads(output.split('RELAY_INSTALL_FAILURE=')[1])
+    assert failure['cause'] == 'INJECTED_APPLY_FAILURE'
+    assert failure['installed'] == TARGET and failure['strategy'] == 'reconcile'
+    assert failure['hostMutation'] == 'unknown'
+    assert failure['recovery'] == 'retained-state-requires-diagnosis'
+    assert failure['automaticRetrySafe'] is False
+
+
 def test_code_only_new_product_revision_still_selects_upgrade(invocation):
     _, _, receipt, _ = invocation
     report = observed(PREVIOUS, CONTRACT)

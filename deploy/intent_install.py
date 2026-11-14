@@ -749,7 +749,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                     from provenance import loaded_ready
                     stage = 'provenance-loaded-proof'
                     if not loaded_ready(target, key, config, identity['revision'], guard, pool_guard):
-                        selected = {'strategy': 'reconcile', 'phase': 'apply'}
+                        selected = {**selected, 'strategy': 'reconcile', 'phase': 'apply'}
                         attested_receipt = receipt
                         if retained_state.get('pairSha256') != pair_digest(receipt):
                             retained_state = {}
