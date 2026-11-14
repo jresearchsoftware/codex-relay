@@ -76,14 +76,72 @@ def test_effective_drift_or_missing_historical_snapshot_selects_reconcile(invoca
     assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
 
 
-def test_new_config_commit_with_identical_content_is_a_new_git_pair(invocation):
+def test_new_config_commit_with_identical_content_nominates_provenance_after_historical_upgrade(invocation):
     _, _, receipt, _ = invocation
     report = observed(TARGET, CONTRACT)
     report['configuration']['status'] = 'equivalent'
     report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
     selected = {**receipt, 'config_sha': 'e' * 40}
     result = install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product', receipt=selected)
-    assert result['strategy'] == 'reconcile' and result['phase'] == 'apply'
+    assert result['strategy'] == 'provenance' and result['phase'] == 'post-check'
+
+
+def test_new_config_commit_can_promote_only_complete_ready_equivalent_pair(invocation):
+    _, _, receipt, _ = invocation
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed']['gitConfigReceipt'] = copy.deepcopy(receipt)
+    report['installed']['installationState'] = {'schemaVersion': 1, 'stage': 'ready',
+                                               'pairSha256': install.pair_digest(receipt)}
+    desired = {**receipt, 'config_sha': 'e' * 40}
+    assert install.plan(report, TARGET, CONTRACT, root=ROOT, repository='example/product',
+                        receipt=desired)['strategy'] == 'provenance'
+    for field in ['product_sha', 'config_path', 'config_blob_sha', 'config_sha256', 'source_policy']:
+        assert not install.provenance_equivalent(report, {**desired, field: 'changed'})
+    report['installed']['installationState']['pairSha256'] = '0' * 64
+    assert not install.provenance_equivalent(report, desired)
+
+
+@pytest.mark.parametrize('failure', [None, 'drift', 'lost-lock', 'changed-receipt'])
+@pytest.mark.parametrize('ready_marker', [True, False])
+def test_provenance_runs_full_readonly_proof_before_atomic_promotion(invocation, monkeypatch, failure, ready_marker):
+    import provenance
+    args, _, desired, _ = invocation
+    old = {**desired, 'config_sha': 'e' * 40, 'workflow_run_id': 1}
+    report = observed(TARGET, CONTRACT)
+    report['configuration']['status'] = 'equivalent'
+    report['installed'].update(gitConfigReceipt=old, installationState={
+        'schemaVersion': 1, 'stage': 'ready', 'pairSha256': install.pair_digest(old)})
+    if not ready_marker:
+        del report['installed']['installationState']
+    monkeypatch.setattr(inventory, 'remote_inventory', lambda *_a, **_kw: copy.deepcopy(report))
+    calls = []
+    def check(inner):
+        assert inner.phase == 'post-check' and inner.git_intent == old
+        assert inner._intent_installation_state == (report['installed']['installationState'] if ready_marker else {})
+        assert inner._intent_host_guard.poll() is None
+        calls.append('check')
+        if failure == 'drift':
+            raise RuntimeError('post-check-drift')
+        if failure == 'lost-lock':
+            inner._intent_host_guard.lost = True
+        if failure == 'changed-receipt':
+            report['installed']['gitConfigReceipt'] = {**old, 'product_sha': PREVIOUS}
+    def promote(_target, _key, _config, revision, previous, receipt, guard, pool):
+        assert calls == ['check'] and previous == old and receipt == desired
+        assert revision == TARGET and guard.poll() is None
+        calls.append('promote')
+        report['installed']['gitConfigReceipt'] = desired
+        if ready_marker:
+            report['installed']['installationState']['pairSha256'] = install.pair_digest(desired)
+    monkeypatch.setattr(provenance, 'promote_remote', promote)
+    if failure:
+        with pytest.raises(RuntimeError):
+            install.run(args, check, ROOT, {'revision': TARGET})
+        assert calls == ['check']
+    else:
+        install.run(args, check, ROOT, {'revision': TARGET})
+        assert calls == ['check', 'promote']
 
 
 def test_code_only_new_product_revision_still_selects_upgrade(invocation):
@@ -515,7 +573,7 @@ def test_fresh_install_composes_all_configured_phases_and_isolates_optional_toke
     state, calls, _, primitive = native_composition(invocation, monkeypatch, before)
     install.run(args, primitive, ROOT, {'revision': TARGET})
     assert [call.phase for call in calls] == ['bootstrap', 'reviewer-credentials', 'writer-credentials',
-        'codex-credentials', 'tls-prepare', 'apply', 'tls-dry-run', 'tls-issue', 'tls-check',
+        'codex-credentials', 'tls-prepare', 'tls-dry-run', 'tls-issue', 'apply', 'tls-check',
         'ingress', 'activate', 'runner-register', 'runner-enable', 'post-check']
     assert [call.phase for call in calls].index('tls-prepare') < [call.phase for call in calls].index('apply')
     for call in calls:

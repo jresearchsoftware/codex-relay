@@ -96,6 +96,61 @@ def test_slot_journal_creation_preserves_final_runner_ownership():
                 assert all(args['path'] not in journals for args in rendered_files(task))
 
 
+@pytest.mark.parametrize('capacity', [1, 2, 32])
+@pytest.mark.parametrize('manage_packages', [False, True])
+@pytest.mark.parametrize('retained', [False, True])
+def test_shared_slot_work_runs_once_without_removing_any_namespace_probe(capacity, manage_packages, retained):
+    public = inputs()
+    public['consumer']['generalRunnerPool']['desiredCapacity'] = capacity
+    compiled = config.compile_inputs(public)
+    defaults = yaml.safe_load((ROOT / 'deploy/ansible/group_vars/all.yml').read_text())
+    site = yaml.safe_load((ROOT / 'deploy/ansible/site.yml').read_text())[1]['post_tasks']
+    slot, = yaml.safe_load((ROOT / 'deploy/ansible/tasks/execution-slot.yml').read_text())
+    shared = yaml.safe_load((ROOT / 'deploy/ansible/tasks/execution-slot-shared.yml').read_text())
+    values = {**defaults, **compiled, 'ansible_check_mode': False,
+              'relay_manage_base_packages': manage_packages,
+              'relay_consumer_publication_continuation': retained,
+              'relay_retained_reviewer_config_adoption': retained}
+
+    def enabled(task, scope=values):
+        conditions = task.get('when', [])
+        if isinstance(conditions, str):
+            conditions = [conditions]
+        templar = Templar(loader=DataLoader(), variables=scope)
+        return all(templar.template('{{ ' + condition + ' }}') for condition in conditions)
+
+    package, = [task for task in site if task.get('ansible.builtin.apt', {}).get('name') == 'bubblewrap']
+    primary = next(task for task in site if task['name'] ==
+                   'Prove the primary runtime can enter its private process namespace')
+    extra = next(task for task in site if task.get('ansible.builtin.include_tasks') == 'tasks/execution-slot.yml')
+    shared_include = next(task for task in site if task.get('ansible.builtin.include_tasks') == 'tasks/execution-slot-shared.yml')
+    assert site.index(package) < site.index(primary) < site.index(shared_include) < site.index(extra)
+    assert enabled(package) == (manage_packages and not retained)
+    assert enabled(shared_include) == enabled(extra) == (not retained)
+    # A failed package operation retains Ansible's ordinary fatal failure; it
+    # cannot reach a namespace probe with an ignored installation failure.
+    assert 'ignore_errors' not in package and 'failed_when' not in package
+    assert extra['vars']['relay_execution_slot_shared_prerequisites'] is True
+    assert len(compiled['relay_additional_execution_slots']) == 31
+    assert enabled(primary)
+    for inputs_slot in compiled['relay_additional_execution_slots']:
+        scope = {**values, 'relay_slot_inputs': inputs_slot, **extra['vars']}
+        scope.update(Templar(loader=DataLoader(), variables=scope).template(slot['vars']))
+        fallback = next(task for task in slot['block'] if 'ansible.builtin.apt' in task)
+        probe = next(task for task in slot['block'] if task['name'] ==
+                     'Prove that the optional runtime can enter its private process namespace')
+        assert not enabled(fallback, scope)
+        assert enabled(probe, scope)
+        # Direct include callers retain the package fallback, including the
+        # package-management-disabled contract.
+        scope.pop('relay_execution_slot_shared_prerequisites')
+        assert enabled(fallback, scope) == manage_packages
+    groups = Templar(loader=DataLoader(), variables=values).template(shared[0]['loop'])
+    expected = {slot[key] for slot in compiled['relay_additional_execution_slots']
+                for key in ('relay_runner_group', 'relay_codex_group', 'relay_codex_work_group')}
+    assert set(groups) == expected and len(groups) == len(expected)
+
+
 @pytest.mark.parametrize('mutate', [
     lambda v: v['environment'].pop('instance'),
     lambda v: v['consumer']['executionSlots'][0].update(runnerUser='foreign-runner'),

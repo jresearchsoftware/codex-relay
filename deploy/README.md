@@ -727,6 +727,14 @@ Never guess or scan arbitrary protected paths for credentials, keys or
 certificates. Missing product-owned bootstrap state is not evidence that an
 operator must already have provisioned it somewhere else.
 
+The ordinary first-install composition first installs an inactive manifest,
+stages the configured credentials and prepares the client CA, then performs the
+configured ACME dry-run and issuance before readiness Apply. Apply requires the
+installed certificate/key pair; it does not extend the inactive bootstrap's
+pending-TLS exception. A failed preparation or issuance leaves the same Git
+pair pending for supported continuation and never activates the Reviewer or
+runners. Existing installations still refuse missing or partial TLS material.
+
 A read-only check may report missing bootstrap state as pending. Materializing
 certificates, trust or credentials remains a production mutation and still
 requires live authority; this contract does not broaden Task/CR scope.
@@ -1187,6 +1195,12 @@ canonical owner authority and is not granted by this recovery flag.
 
 ## Lifecycle, upgrade and rollback
 
+An unchanged product with a documentation-only configuration Git commit can use
+the [provenance-only path](../docs/git-managed-installation.md#configuration-provenance-without-reinstalling-unchanged-inputs).
+It verifies the complete existing runtime read-only before atomically updating
+the existing installed receipt; missing, changed, corrupt or interrupted proof
+keeps normal reconciliation/refusal and recovery behavior.
+
 For an exact pre-dispatch reservation that prevents an upgrade, first obtain
 independent acceptance of the candidate and use the [read-only inspection](../controller/README.md#deployment-operator-entrypoint-before-an-upgrade)
 to publish the exact native authorization. The authorized operator can then
@@ -1323,8 +1337,23 @@ cannot launch Codex. Drain releases that lock between observations, waits up to
 No service or runner is stopped to drain. Registered runners remain online.
 
 Managed apply snapshots actual service activity and uses the existing supported
-upgrade backend. It consolidates try-restart of the previously active Reviewer
-and production dependency, verifies the real executable and process adoption,
+upgrade backend. When the running Reviewer exposes the installed private
+loaded-input proof, Apply may preserve its process and the dependent Production
+Runner after proving their complete effective inputs unchanged. The proof comes
+from the running process, includes the consumed configuration and CA, and is
+checked before changes, against the installed target, and at final acceptance.
+Only the validated Reviewer configuration's artifact provenance is excluded;
+matching disk JSON or a source revision alone cannot select this path. The
+transition lock, exact drained admission/target, live process identity, mapped
+executable/dependencies, service units, environment, credentials and Runner
+startup settings/distribution remain binding. No durable cache is added.
+
+Older or missing proof, changed inputs, stopped/unexpected processes, drift,
+interrupted recovery and any uncertain identity retain the consolidated
+try-restart and changed-start proof. The first upgrade installing this capability
+therefore still restarts; a later code-only update can preserve processes when
+the effective Reviewer/Runner inputs really are unchanged. Apply verifies
+the real executable and process adoption,
 installed identity, service health, recovery timer, preserved activation intent,
 and the applicable workflow compatibility before reopening admission. Git mode
 also transitions the current consumer digest under the same operation and

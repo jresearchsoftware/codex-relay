@@ -7,9 +7,12 @@
 
 - name: Reconcile shared repository work ancestors before installing the launcher
   ansible.builtin.include_tasks: repository-work-root.yml
-  loop: '{{ relay_github_repositories | default([]) }}'
-  loop_control:
-    loop_var: relay_work_repository
+  vars:
+    relay_repository_work_paths: >-
+      {{ ([relay_dispatch_work_root ~ '/repositories']
+          + (relay_github_repositories | map('regex_replace', '/.*$', '') | map('regex_replace', '^', relay_dispatch_work_root ~ '/repositories/') | list)
+          + (relay_github_repositories | map('regex_replace', '^', relay_dispatch_work_root ~ '/repositories/') | list)) | unique(case_sensitive=true) | list }}
+  when: relay_github_repositories | default([]) | length > 0
 
 - name: Install the fixed Codex diagnostic helper with every launcher reconciliation
   ansible.builtin.copy:

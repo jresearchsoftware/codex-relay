@@ -159,6 +159,34 @@ after the active mutation boundary retains the original operation and its
 specific forward-recovery evidence. Preparation does not certify those future
 results or provide a generic rollback of a partially installed system.
 
+### Configuration provenance without reinstalling unchanged inputs
+
+When only the configuration Git commit changes, `install` may select
+`strategy=provenance`. This requires the same exact product, configuration
+repository/path/blob and validated input-byte digest, source policy, equivalent
+protected deployment snapshot and consumer, and proof of a ready installed pair.
+A matching JSON blob alone is insufficient. Missing or uncertain proof takes
+ordinary reconciliation; pending operations retain their original recovery route.
+
+The installer holds the existing host and pool locks, runs the complete ordinary
+read-only post-check against the original receipt, and refuses drift or unhealthy
+runtime/dependencies. Only then does it atomically replace the existing manifest's
+Git receipt and any existing ready pair digest, preserving the deployment
+snapshot, artifact identity, consumer provenance and running processes. There is
+no staging, package installation, service restart, second receipt store or new
+operator action on this path. Final inventory and the outer Git-pair verification
+attest the new pair.
+An interruption before the atomic replacement leaves the original receipt;
+after replacement the next identical invocation verifies the new pair normally.
+Lost locks, changed inputs or a third receipt refuse promotion.
+
+Successful historical upgrades may have no `installationState` marker. This
+absence permits only strategy nomination; the same complete locked post-check
+must prove readiness and the protected manifest/snapshot/source checks still
+bind promotion. The provenance update preserves an absent marker rather than
+inventing a fresh-completion state. A present pending, malformed or mismatched
+marker refuses this path.
+
 ## Strategy, compatibility and recovery
 
 The installer distinguishes absent state, same-product reconciliation,
