@@ -182,6 +182,30 @@ See [policy-change evidence](task-253-policy.json) and
 
 ## Remaining installed evidence at this snapshot
 
+The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
+ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
+subtracting it is an extrapolation, not a separate successful benchmark. The
+before proof was eligible; post-install recapture differed only in Reviewer
+and Production service metadata. The callback retained component classes but
+omitted the authorized public field names, so that finer historical frontier
+is unavailable. No proof was accepted and restart remained mandatory. See
+[intermediate code-only evidence](task-253-codeonly-444.json).
+
+The source now compares only `Requires`, `BindsTo` and `PartOf` as their owning
+systemd unit-set semantics require. Command arguments, environment files and
+drop-ins keep their ordered comparison. A subsequent installed case must still
+establish actual preservation; this source correction alone does not do so.
+
+The subsequent `fa803e1d...` installation passed in 569.630431 s, again with
+ordinary restart. Its 3.447694 s diagnostic recapture identified the public
+`ExecStart` service field in both components, plus an unexpanded Production
+process-identity class during the additional capture. The textual systemd
+property mixes configured commands with execution history; the next source
+uses typed `ExecStartEx`, retaining path, ordered argv, all flags and command
+order. Runtime identity remains independently checked. No process proof was
+weakened in response to the unlocalized class. See
+[second intermediate evidence](task-253-codeonly-fa8.json).
+
 Corrected-source process preservation, changed-policy and original-operation
 recovery cases, corrected provenance, and unassisted fresh ACME qualification
 remain in progress. This snapshot asserts no final installed qualification,

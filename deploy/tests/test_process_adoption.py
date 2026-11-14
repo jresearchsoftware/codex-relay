@@ -26,7 +26,8 @@ def test_service_dependency_sets_ignore_iteration_order_but_keep_configuration_o
               'DropInPaths': '/one.conf /two.conf', 'EnvironmentFiles': '/first /second'}
     def observed(selected):
         response = SimpleNamespace(stdout='\n'.join(f'{key}={value}' for key, value in selected.items()).encode())
-        with patch.object(adoption.subprocess, 'run', return_value=response):
+        with patch.object(adoption.subprocess, 'run', return_value=response), \
+                patch.object(adoption, 'service_exec_start', return_value=selected['ExecStart']):
             return adoption.service('example.service')
     before = observed(values)
     permuted = {**values, 'Requires': 'a.service z.mount', 'BindsTo': 'y.socket x.device',
@@ -38,6 +39,46 @@ def test_service_dependency_sets_ignore_iteration_order_but_keep_configuration_o
             observed({**values, field: '../invalid.service'})
     for field in ['ExecStart', 'DropInPaths', 'EnvironmentFiles']:
         assert observed({**permuted, field: ' '.join(reversed(values[field].split()))}) != before
+
+
+def test_typed_exec_start_preserves_every_definition_field_and_command_order():
+    command = ['/usr/bin/bash', ['bash', '/runner/run.sh', 'argument with spaces'],
+               ['ignore-failure', 'no-env-expand', 'fully-privileged'], 1, 2, 3, 4, 42, 0, 0]
+    def observed(commands):
+        replies = [{'type': 'o', 'data': ['/org/freedesktop/systemd1/unit/example_2eservice']},
+                   {'type': 'a(sasasttttuii)', 'data': commands}]
+        with patch.object(adoption.subprocess, 'run', side_effect=[SimpleNamespace(stdout=json.dumps(value).encode()) for value in replies]):
+            return adoption.service_exec_start('example.service')
+    before = observed([command])
+    assert observed([command[:3] + [0] * 7]) == before
+    for index, replacement in [(0, '/different/executable'), (1, list(reversed(command[1]))),
+                               (2, command[2][:-1]), (2, command[2] + ['unknown-future-flag'])]:
+        changed = copy.deepcopy(command); changed[index] = replacement
+        assert observed([changed]) != before
+    second = copy.deepcopy(command); second[1] = ['another command']
+    assert observed([command, second]) != observed([second, command])
+
+
+@pytest.mark.parametrize('fault', ['location-type', 'location-data', 'location-path', 'signature',
+                                  'empty', 'shape', 'argv', 'flags', 'timestamp', 'missing', 'method-wrapper'])
+def test_typed_exec_start_unknown_or_unavailable_interface_refuses_proof(fault):
+    location = {'type': 'o', 'data': ['/org/freedesktop/systemd1/unit/example_2eservice']}
+    command = ['/usr/bin/bash', ['bash', '/runner/run.sh'], [], 1, 2, 3, 4, 42, 0, 0]
+    definition = {'type': 'a(sasasttttuii)', 'data': [command]}
+    if fault == 'location-type': location['type'] = 's'
+    elif fault == 'location-data': location['data'] = []
+    elif fault == 'location-path': location['data'] = ['/unrelated/object']
+    elif fault == 'signature': definition['type'] = 'a(sasbttttuii)'
+    elif fault == 'empty': definition['data'] = []
+    elif fault == 'shape': command.pop()
+    elif fault == 'argv': command[1] = 'untyped argv'
+    elif fault == 'flags': command[2] = 'untyped flags'
+    elif fault == 'timestamp': command[3] = True
+    elif fault == 'method-wrapper': definition['data'] = [definition['data']]
+    replies = [SimpleNamespace(stdout=json.dumps(value).encode()) for value in [location, definition]]
+    with patch.object(adoption.subprocess, 'run', side_effect=FileNotFoundError('unsupported') if fault == 'missing' else replies):
+        with pytest.raises((ValueError, OSError)):
+            adoption.service_exec_start('example.service')
 
 
 def run(payload, observed=None, error=None):

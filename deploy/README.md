@@ -1387,6 +1387,12 @@ Kernel peer, response shape, PID, UID and retained process generation are checke
 Loaded `Requires`, `BindsTo` and `PartOf` dependencies compare as validated unit
 sets; their iteration order may change on daemon reload. Command arguments,
 environment-file order and drop-in order retain exact comparison.
+Launch definitions use systemd's typed `ExecStartEx` D-Bus property through
+read-only `busctl`: executable, ordered argv, complete execution flags and
+command order remain exact. Per-command execution-history counters are omitted;
+the independently checked MainPID, original start timestamps and complete live
+process identities still bind the retained invocation. A missing `busctl`,
+unsupported property or uncertain typed response retains ordinary restart.
 The derived query time is never persisted or compared as an input identity.
 Unavailable privileges, unsupported accounting or uncertain replies keep the
 original strict tick bound and ordinary restart. No accounting listener, new

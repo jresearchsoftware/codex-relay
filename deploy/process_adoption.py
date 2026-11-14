@@ -64,6 +64,42 @@ def protected(path, *, uid=0):
         return data
 
 
+def service_exec_start(unit):
+    """Retain the complete typed launch definition, excluding execution history."""
+    def read(arguments):
+        result = subprocess.run(['/bin/busctl', '--system', '--json=short', '--timeout=5s', *arguments],
+                                capture_output=True, check=True, timeout=8)
+        require(len(result.stdout) <= 1048576)
+        return json.loads(result.stdout)
+
+    location = read(['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+                     'org.freedesktop.systemd1.Manager', 'GetUnit', 's', unit])
+    require(isinstance(location, dict) and location.get('type') == 'o'
+            and isinstance(location.get('data'), list) and len(location['data']) == 1)
+    path = location['data'][0]
+    require(isinstance(path, str) and re.fullmatch(r'/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+', path))
+    definition = read(['get-property', 'org.freedesktop.systemd1', path,
+                       'org.freedesktop.systemd1.Service', 'ExecStartEx'])
+    require(isinstance(definition, dict) and definition.get('type') == 'a(sasasttttuii)'
+            and isinstance(definition.get('data'), list) and definition['data'])
+    commands = []
+    # get-property unwraps its D-Bus variant; unlike call, data is the value
+    # itself, not an array containing all method return arguments.
+    for command in definition['data']:
+        require(isinstance(command, list) and len(command) == 10)
+        executable, arguments, flags = command[:3]
+        require(isinstance(executable, str) and executable.startswith('/') and '\0' not in executable
+                and isinstance(arguments, list) and arguments
+                and all(isinstance(value, str) and '\0' not in value for value in arguments)
+                and isinstance(flags, list)
+                and all(isinstance(value, str) and value and '\0' not in value for value in flags))
+        require(all(type(value) is int and 0 <= value < 2**64 for value in command[3:7])
+                and type(command[7]) is int and 0 <= command[7] < 2**32
+                and all(type(value) is int and -2**31 <= value < 2**31 for value in command[8:]))
+        commands.append([executable, arguments, flags])
+    return commands
+
+
 def service(unit):
     require(unit.endswith('.service') and '/' not in unit)
     fields = 'LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,NeedDaemonReload,User,ControlGroup,FragmentPath,DropInPaths,EnvironmentFiles,ExecStart,PartOf,Requires,BindsTo'
@@ -82,6 +118,7 @@ def service(unit):
         require(all(re.fullmatch(r'(?:[A-Za-z0-9:_.@-]|\\x[0-9a-fA-F]{2})+\.(?:service|socket|target|device|mount|automount|swap|timer|path|slice|scope)',
                                  member) for member in members))
         values[field] = ' '.join(sorted(set(members)))
+    values['ExecStart'] = service_exec_start(unit)
     return values
 
 
