@@ -309,7 +309,7 @@ for (const [mode, code, state] of [
     const saved = await journal.get(f.envelope.runId); const d = saved.diagnostic;
     assert.equal(d.executionState, state); assert.equal(d.executionId, f.envelope.attemptId);
     assert.equal(d.durable.diagnosticStore.status, 'stored');
-    const expectedDiagnostic = `${f.envelope.attemptId}-finalization`;
+    const expectedDiagnostic = retainCheckout ? f.envelope.attemptId : `${f.envelope.attemptId}-finalization`;
     assert.equal(d.durable.diagnosticStore.executionId, expectedDiagnostic);
     if (!retainCheckout) {
       // The final capsule archive points back to the original runtime bundle.
@@ -360,9 +360,15 @@ for (const [mode, code, state] of [
       assert.ok(retainedCapsule);
       retainedState = await retainedCapsule.read();
       assert.equal(retainedState.executionId, f.envelope.attemptId);
-      assert.equal(retainedState.terminalDiagnostic.status, 'stored');
-      assert.equal(retainedState.terminalDiagnostic.executionId, expectedDiagnostic);
-      assert.equal(retainedState.diagnosticStore.executionId, f.envelope.attemptId);
+      // The original diagnostic is durable, but unknown inner execution is
+      // not an independently proven terminal result and must not be archived
+      // as retireable capacity. Keep this exact active capsule and sandbox.
+      assert.equal(retainedState.terminalDiagnostic, undefined);
+      assert.equal(retainedState.diagnosticStore.status, 'stored');
+      assert.equal(retainedState.diagnosticStore.executionId, expectedDiagnostic);
+      assert.equal(retainedState.childState, 'unknown');
+      assert.equal(retainedState.containment, 'unknown');
+      assert.ok(!['reaped', 'not_required'].includes(retainedState.cleanupContainment));
       assert.equal(retainedState.cleanup, 'retained');
       assert.equal(retainedState.retention, 'retained');
       assert.notEqual(retainedState.released, true);
