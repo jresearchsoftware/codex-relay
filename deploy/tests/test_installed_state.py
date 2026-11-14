@@ -267,3 +267,142 @@ def test_drift_diagnostics_expose_only_source_owner_field_and_index(catalogue, i
         assert error.index == index and error.owner == catalogue['entryOwners'][index]
     report = json.dumps({'code': str(error), 'owner': error.owner, 'field': error.field, 'index': error.index})
     assert str(path) not in report and entry['path'] not in report and 'PRIVATE-' not in report
+
+
+def test_compiled_code_reuses_no_rendered_values_and_preserves_undefined_and_overlays(monkeypatch):
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+    from ansible.errors import AnsibleUndefinedVariable
+    templar = Templar(loader=DataLoader(), variables={'release': 'old', 'slot': 'primary'})
+    calls = []
+    native = type(templar.environment).compile
+    def compile(environment, source, *args, **kwargs):
+        calls.append(source)
+        return native(environment, source, *args, **kwargs)
+    monkeypatch.setattr(type(templar.environment), 'compile', compile)
+    state._memoize_compilation(templar)
+    source = '{{ release }}:{{ slot }}'
+    assert templar.do_template(source) == 'old:primary'
+    templar.available_variables = {'release': 'new', 'slot': 'slot-32'}
+    assert templar.do_template(source) == 'new:slot-32'
+    assert calls.count(source) == 1
+    templar.available_variables = {'release': 'new'}
+    with pytest.raises(AnsibleUndefinedVariable):
+        templar.do_template(source, fail_on_undefined=True)
+    templar.available_variables = {'release': 'new', 'slot': 'slot-32'}
+    assert templar.do_template(source + ':changed') == 'new:slot-32:changed'
+    assert templar.do_template('#jinja2:variable_start_string:"<<",variable_end_string:">>"\n<< release >>') == 'new'
+    assert templar.do_template(source) == 'new:slot-32'
+    environment = templar.environment
+    assert isinstance(environment.compile(source, raw=True), str)
+    assert not isinstance(environment.compile(source), str)
+    overlay = environment.overlay(variable_start_string='<<', variable_end_string='>>')
+    assert overlay.from_string('<< release >>').render(release='overlay') == 'overlay'
+    environment.variable_start_string, environment.variable_end_string = '<<', '>>'
+    assert environment.from_string('<< release >>').render(release='changed-options') == 'changed-options'
+
+
+def test_catalogue_memos_are_local_preserve_nodes_and_match_uncached_compilation(monkeypatch):
+    import yaml
+    values = config.compile_inputs(json.loads((SOURCE / 'deploy/example.json').read_text()))
+    values.update(relay_deployment_profile='production', relay_release_commit='a' * 40,
+                  relay_release_sha256='b' * 64, relay_release_path='/opt/relay-test/releases/' + 'a' * 40,
+                  relay_controller_source_tree_sha256='c' * 64,
+                  relay_codex_launcher_source_tree_sha256='d' * 64, relay_consumer_revision='e' * 40)
+    values['relay_github_repositories'] = values['relay_writer_repositories']
+    native_memo = state._memoize_compilation
+    monkeypatch.setattr(state, '_memoize_compilation', lambda templar: None)
+    expected = state.build_catalogue(SOURCE, values)
+    changed = {**values, 'relay_release_commit': 'f' * 40, 'relay_review_check_name': 'new check'}
+    expected_changed = state.build_catalogue(SOURCE, changed)
+    monkeypatch.setattr(state, '_memoize_compilation', native_memo)
+    original, observations = yaml.safe_load, []
+    def load(text):
+        value = original(text)
+        observations.append((value, copy.deepcopy(value)))
+        return value
+    monkeypatch.setattr(yaml, 'safe_load', load)
+    assert state.build_catalogue(SOURCE, values) == expected
+    first_count = len(observations)
+    assert first_count < 25
+    assert state.build_catalogue(SOURCE, changed) == expected_changed
+    assert len(observations) == first_count * 2
+    assert all(value == frozen for value, frozen in observations)
+    assert expected != expected_changed
+
+
+def test_compiled_code_rejects_changed_filter_test_and_global_bindings(monkeypatch):
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+    templar = Templar(loader=DataLoader(), variables={'input': 'literal'})
+    environment = templar.environment
+    calls = []
+    native = type(environment).compile
+    def compile(current, source, *args, **kwargs):
+        calls.append(source)
+        return native(current, source, *args, **kwargs)
+    monkeypatch.setattr(type(environment), 'compile', compile)
+    environment.filters['custom'] = lambda value: 'old'
+    environment.tests['customtest'] = lambda value: True
+    environment.globals['customglobal'] = lambda: 'old'
+    state._memoize_compilation(templar)
+    cases = [('{{ input | custom }}', 'old', 'new'),
+             ('{{ input is customtest }}', True, False),
+             ('{{ customglobal() }}', 'old', 'new')]
+    for index, (source, before, after) in enumerate(cases):
+        assert templar.template(source) == before
+        assert templar.template(source) == before
+        assert calls.count(source) == 1
+        # Unrelated lazy additions must not invalidate an existing compilation.
+        environment.filters['unrelated_' + str(index)] = lambda value: value
+        assert templar.template(source) == before
+        assert calls.count(source) == 1
+        if ' | custom' in source:
+            environment.filters['custom'] = lambda value: 'new'
+        elif ' is customtest' in source:
+            environment.tests['customtest'] = lambda value: False
+        else:
+            environment.globals['customglobal'] = lambda: 'new'
+        assert templar.template(source) == after
+        assert calls.count(source) == 2
+    source = '{{ customglobal() }}'
+    del environment.globals['customglobal']
+    from ansible.errors import AnsibleUndefinedVariable
+    with pytest.raises(AnsibleUndefinedVariable):
+        templar.template(source)
+    assert calls.count(source) == 3
+
+
+def test_compilation_memo_capacity_is_bounded(monkeypatch):
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+    templar = Templar(loader=DataLoader(), variables={})
+    environment = templar.environment
+    calls = []
+    native = type(environment).compile
+    def compile(current, source, *args, **kwargs):
+        calls.append(source)
+        return native(current, source, *args, **kwargs)
+    monkeypatch.setattr(type(environment), 'compile', compile)
+    state._memoize_compilation(templar)
+    for index in range(2049):
+        environment.compile(str(index))
+    environment.compile('0')
+    environment.compile('2048')
+    assert calls.count('0') == 1 and calls.count('2048') == 2
+
+
+def test_static_stateful_filter_keeps_native_compile_time_evaluation():
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.template import Templar
+    templar = Templar(loader=DataLoader(), variables={})
+    calls = []
+    def stateful(value):
+        calls.append(value)
+        return str(len(calls))
+    templar.environment.filters['stateful'] = stateful
+    state._memoize_compilation(templar)
+    source = '{{ "literal" | stateful }}'
+    assert templar.do_template(source) == '1'
+    assert templar.do_template(source) == '2'
+    assert calls == ['literal', 'literal']

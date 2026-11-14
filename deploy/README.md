@@ -959,7 +959,7 @@ prerequisites; a missing staging Node executable or C compiler stops before
 candidate staging. Package presence does not establish Node 22 qualification.
 
 On the verified Debian host, use the same public command and durable configuration
-with `--connection local`. This selects Ansible's local connection without changing
+with `--connection local`. This selects the qualified local target without changing
 the configuration digest, original installation identity or recovery binding:
 
 ```sh
@@ -972,10 +972,18 @@ transport; `identityFile` and `identityFingerprint` may be omitted. `host`, `use
 authorization, Debian 12 and the configured fingerprint against the host's protected
 public SSH host keys, without loopback SSH, a login identity or reading a private
 host key. SSH execution retains its owner-key and known-host fingerprint checks.
-Ansible performs the configured root privilege escalation; no new credential or
-runner privilege is required. Other platforms and connection plugins are unsupported.
+Full deployment plays use Ansible's local connection. Bounded target helper
+commands can execute directly when the caller is already root on Debian 12 and
+the configured fingerprint matches the protected public host keys; that same
+target proof repeats before every direct command. The helper argv, sanitized
+environment, private input/output, output bounds, EOF handling and process-group
+cancellation remain binding. A failed target proof stops before the helper;
+launch failure or timeout never retries it through another transport.
+SSH, non-root callers and unsupported direct contexts retain the Ansible adapter
+and its configured privilege escalation. No new credential or runner privilege
+is required. Other platforms and connection plugins are unsupported.
 
-The blocking Ansible guard keeps stdin open to the existing reviewed lock helper.
+The blocking target guard keeps stdin open to the existing reviewed lock helper.
 Private, invocation-specific rendezvous files under `/run` carry only readiness
 and release signals. They add no durable operation state, lease, lock stealing or
 operator step. Guard/channel loss stops orchestration and requires inspection of

@@ -358,6 +358,54 @@ remaining config/post-proof failures and ordinary same-operation create/recovery
 The owning artifact suite passed **19 tests, two skips**. The frozen helper and
 all executable Ansible recipe bytes remain unchanged from `6b80e6ab...`.
 
+The next complete public Apply to `cb0e30a2ee44582f5e53965ca0a57fc43124be47`
+passed in **130.398785 s** (wrapper 130.343259 s), with exact installed Git pair,
+32 routes, atomic sealed-payload move and all six process identities retained.
+Writer acquisition improved from 12.333 s to 1.118 s; frontend pool preflight
+calls were absent as selected native proof owned their predicates. Source stage
+still took 11.423 s, source preparation 32.622 s and native promotion 38.527 s.
+The tens-of-seconds goal remains unmet. See [second native Apply](task-253-native-apply-cb0.json).
+
+The root timing observer was not selected because its task hook tested an
+explicit `local` flag instead of the owning resolved connection. This was a
+diagnostic binding error, not a candidate failure: no root proof/status timing
+is claimed for this case. The hook now resolves connection through the existing
+transport; five mock routing checks passed, without another Apply for profiling.
+The existing timeline identifies a 13.161 s gap spanning locked drain-check and
+phase-applying transition; an 11.608 s transport receipt lacks a command label,
+so its exact attribution remains unproved. See [bounded timeline](task-253-native-timeline-cb0.json).
+
+Follow-up measurements ruled out the initial source-tree and SERIAL hypotheses
+for that entire gap: the protected source predicate took 0.615 s with an explicit
+synthetic diagnostic trigger; actual installed status took 0.077 s and had no
+SERIAL compatibility receipt or original/composite calls. A temporary genuine
+TEST publication-lock holder measured direct bound status at 0.096 s versus
+1.067 s through the existing Ansible command adapter. The holder released by
+EOF and no live gate was changed. These are bounded diagnostics, not native
+admission/history proofs or another Apply.
+
+The qualified local/root adapter now uses the same source-controlled commands
+directly after the original Debian/public-host-key proof on every command.
+SSH, non-root and unsupported contexts keep Ansible. Its isolated private mount
+namespace median was **0.0230 s** versus **0.9189 s** through Ansible, both with
+the same actual target proof. Private input supplies complete EOF at launch;
+bounded PIPE readers preserve completion through descendant EOF. Original
+guarded-promotion tests cover main exit, guard loss, deadline and escaped channels;
+unknown channels fail after bounded cleanup instead of claiming completion.
+
+Catalogue construction reuses parsed canonical task nodes and compiled code
+only inside its own build/environment. Rendered output is always fresh;
+overlays, compiler/binding changes, static filter/test evaluation and late
+undefined values retain native semantics. **35 tests** passed, including actual
+Ansible byte parity. Two isolated catalogue builds fell from **4.801 s to
+1.486 s** with the semantic guards enabled.
+
+The combined exact-source Linux root run passed **254 tests, two skips** in
+55.11 s, with the existing crypt deprecation. This run used Node 22 and a
+synthetic protected public host key only in a private mount namespace. Its two
+Cargo-dependent artifact fixtures were skipped because this targeted invocation
+did not supply the Rust toolchain; the required full candidate run remains due.
+
 The `4440f0dc...` code-only attempt passed installation in 574.523782 s with
 ordinary restart. A task-only diagnostic added 3.434623 s of read-only work;
 subtracting it is an extrapolation, not a separate successful benchmark. The

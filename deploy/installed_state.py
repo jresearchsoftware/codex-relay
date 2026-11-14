@@ -4,6 +4,7 @@ This is a verifier, not an Ansible executor. Explicit task owners below supply
 the file recipes; unknown source/profile/recipes refuse the optimization.
 """
 import base64
+import copy
 import grp
 import hashlib
 import json
@@ -172,6 +173,78 @@ def _tasks(value):
                 yield from _tasks(task[key])
 
 
+def _memoize_compilation(templar):
+    """Memoize only code, within this Templar's unchanged Jinja environment.
+
+    from_string still constructs a fresh Template and Ansible variable context.
+    Overlay instances and changed compiler options use the native compiler.
+    """
+    environment = templar.environment
+    native = type(environment)
+    options = ('block_start_string', 'block_end_string', 'variable_start_string',
+               'variable_end_string', 'comment_start_string', 'comment_end_string',
+               'line_statement_prefix', 'line_comment_prefix', 'trim_blocks',
+               'lstrip_blocks', 'newline_sequence', 'keep_trailing_newline',
+               'optimized', 'undefined', 'finalize', 'autoescape', 'is_async',
+               'code_generator_class', 'sandboxed')
+    initial = tuple(getattr(environment, name) for name in options)
+    policies = copy.deepcopy(environment.policies)
+    extensions = tuple(environment.extensions.items())
+    cache, eligible_sources = {}, {}
+
+    def bindings(current):
+        # Ansible wraps filters on every lookup. Observe the underlying binding
+        # table rather than those freshly allocated presentation wrappers.
+        return [getattr(mapping, '_delegatee', mapping)
+                for mapping in [current.filters, current.tests, current.globals]]
+
+    def same_bindings(current, captured):
+        return all(all(key in mapping and mapping[key] is value for key, value in original.items())
+                   for mapping, original in zip(bindings(current), captured))
+
+    class CatalogueEnvironment(native):
+        def compile(self, source, name=None, filename=None, raw=False, defer_init=False):
+            eligible = (self is environment and isinstance(source, str)
+                and len(source) <= 1024 * 1024
+                and tuple(getattr(self, option) for option in options) == initial
+                and self.policies == policies and tuple(self.extensions.items()) == extensions)
+            if not eligible:
+                return super().compile(source, name, filename, raw, defer_init)
+            key = (source, name, filename, raw, defer_init)
+            if key not in eligible_sources:
+                from jinja2 import nodes
+                def runtime_subject(node):
+                    if isinstance(node, (nodes.Name, nodes.Call)):
+                        return True
+                    if isinstance(node, (nodes.Getattr, nodes.Getitem, nodes.Filter, nodes.Test)):
+                        return runtime_subject(node.node)
+                    return False
+                tree = self._parse(source, name, filename)
+                safe = all(runtime_subject(node.node)
+                           for node in tree.find_all((nodes.Filter, nodes.Test)))
+                if len(eligible_sources) < 2048:
+                    eligible_sources[key] = safe
+            else:
+                safe = eligible_sources[key]
+            # Static filters/tests may execute while compiling. Their callables
+            # can be stateful even with identical bindings; preserve native
+            # compile-time evaluation on every invocation in that case.
+            if not safe:
+                return super().compile(source, name, filename, raw, defer_init)
+            if key in cache:
+                result, captured = cache[key]
+                if same_bindings(self, captured):
+                    return result
+                del cache[key]
+            result = super().compile(source, name, filename, raw, defer_init)
+            current = bindings(self)
+            if len(cache) < 2048 and all(len(mapping) <= 4096 for mapping in current):
+                cache[key] = (result, [dict(mapping) for mapping in current])
+            return result
+
+    environment.__class__ = CatalogueEnvironment
+
+
 def build_catalogue(source_root, values):
     """Use exact owned task nodes/templates and compiled variables, no facts.
 
@@ -183,7 +256,14 @@ def build_catalogue(source_root, values):
     from ansible.template import Templar
     root = Path(source_root).resolve()
     require(recipe_digest(root) == RECIPE_SHA256, 'INSTALLED_RECIPE_NOT_SUPPORTED')
-    raw = yaml.safe_load((root / 'deploy/ansible/group_vars/all.yml').read_text())
+    parsed = {}
+    def read_yaml(path):
+        path = path.resolve()
+        if path not in parsed:
+            require(len(parsed) < 128, 'INSTALLED_RECIPE_INPUT_UNAVAILABLE')
+            parsed[path] = yaml.safe_load(path.read_text())
+        return copy.deepcopy(parsed[path])
+    raw = read_yaml(root / 'deploy/ansible/group_vars/all.yml')
     v = {**raw, **values, 'ansible_check_mode': False, 'playbook_dir': str(root / 'deploy/ansible')}
     require(v.get('relay_deployment_profile') == 'production'
             and isinstance(v.get('relay_general_runner_pool'), dict)
@@ -199,6 +279,7 @@ def build_catalogue(source_root, values):
     require(not any(key in v for key in ['CODEX_ACCESS_TOKEN', 'GITHUB_TOKEN']), 'INSTALLED_SECRET_INPUT_REFUSED')
     entries, owners, probes, identities, entry_owners = {}, [], [], {}, {}
     templar = Templar(loader=DataLoader(), variables=v)
+    _memoize_compilation(templar)
     active_owner = None
 
     def expand(value, variables):
@@ -224,7 +305,7 @@ def build_catalogue(source_root, values):
         path = root / 'deploy/ansible' / relative
         role = next((part for part in path.parts if part.startswith('relay_')), '')
         variables = {**context, 'role_path': str(root / 'deploy/ansible/roles' / role)}
-        rows = {task.get('name'): task for task in _tasks(yaml.safe_load(path.read_text()))}
+        rows = {task.get('name'): task for task in _tasks(read_yaml(path))}
         expected = OWNERS[relative] if names is None else names
         for name in expected:
             active_owner = relative + ':' + name
@@ -301,7 +382,7 @@ def build_catalogue(source_root, values):
         if relative not in ['tasks/execution-slot.yml', 'roles/relay_runner/tasks/general-runtime.yml',
                             'roles/relay_codex_runtime/tasks/repository-work-root.yml']:
             selected(relative, primary)
-    general = yaml.safe_load((root / 'deploy/ansible/vars/general-runner.yml').read_text())
+    general = read_yaml(root / 'deploy/ansible/vars/general-runner.yml')
     for index, slot in enumerate([None, *v['relay_additional_execution_slots']]):
         context = {**primary, **general} if slot is None else {**v, **slot, 'relay_execution_slot_isolation': True,
                                                 'relay_execution_slot_shared_prerequisites': True}
@@ -309,7 +390,7 @@ def build_catalogue(source_root, values):
             selected('roles/relay_codex_runtime/tasks/launcher.yml', context)
             selected('tasks/execution-slot.yml', context)
         selected('roles/relay_runner/tasks/general-runtime.yml', context)
-        launcher_tasks = yaml.safe_load((root / 'deploy/ansible/roles/relay_codex_runtime/tasks/launcher.yml').read_text())
+        launcher_tasks = read_yaml(root / 'deploy/ansible/roles/relay_codex_runtime/tasks/launcher.yml')
         work_owner = next(task for task in launcher_tasks
                           if task['name'] == 'Reconcile shared repository work ancestors before installing the launcher')
         if expand(context.get('relay_github_repositories', []), context):
