@@ -1,0 +1,73 @@
+{
+  "scenario": "actual_public_bounded_original_uuid_recovery",
+  "returncode": 0,
+  "endToEndSeconds": 507.2396314367652,
+  "originalOperationId": "af3cf6ac-78db-466c-9024-a3d4e1ea334d",
+  "retainedProduct": "ee52cff0490ab6d09727a7ce9bd1b79490cc7a82",
+  "controllerAndFinalProduct": "20f0fc705e8b67353fb14bd64891dce56b36055f",
+  "configCommit": "e371d5d407d68daa7d9ea8ef150f88a6579a56ef",
+  "configBlob": "03a7c507f0e3f8c5a4c43541bb9e219afde85fff",
+  "exactInstalledPair": true,
+  "originalBackendArchiveByteExact": true,
+  "activeBackendRecordAbsent": true,
+  "continuationState": "complete",
+  "continuationOriginalUuid": true,
+  "continuationRetainedTarget": true,
+  "continuationBindingFieldNames": [
+    "controllerRevision",
+    "desiredRevision",
+    "gitConfigReceipt",
+    "installedRevision",
+    "operationId",
+    "retainedTarget"
+  ],
+  "archiveRootPrivate": true,
+  "gatesAfter": {
+    "PROD": {
+      "phase": "open",
+      "admissionsEmpty": true,
+      "operationStable": true
+    },
+    "TEST": {
+      "phase": "open",
+      "admissionsEmpty": true,
+      "operationStable": true
+    }
+  },
+  "allSixActiveRunningNoReload": true,
+  "serviceIdentityPreserved": {
+    "codex-relay-reviewer.service": true,
+    "codex-relay-runner.service": true,
+    "codex-relay-test-reviewer.service": false,
+    "codex-relay-test-runner.service": false,
+    "relay-test-managed-pool-pool-1.service": true,
+    "relay-test-managed-pool-pool-2.service": true
+  },
+  "readiness": "preserved-existing",
+  "integrationCompatibility": "missing",
+  "warnings": [
+    "Consumer integration projection missing; generated artifacts retained for normal receiving-repository publication."
+  ],
+  "limits": [
+    "Manual factual owner-checkout/test-qualified-exact TEST receipt; no Actions attestation or source acceptance.",
+    "Recovery is a full ordinary staged Apply, not a performance benchmark.",
+    "Earlier controlled attempt failed a Task observer guard before Stop/SIGTERM; this recovery must not be reported as stopped-process signal recovery."
+  ],
+  "actualBackendNamespaceProbeCounts": {
+    "primary": {
+      "taskOccurrences": 1,
+      "ok": 1,
+      "skipped": 0,
+      "unknown": 0
+    },
+    "additional": {
+      "taskOccurrences": 31,
+      "ok": 31,
+      "skipped": 0,
+      "unknown": 0
+    }
+  },
+  "all32NamespaceRoutesExecutedSuccessfully": true,
+  "canonicalClaimExactStillHeld": true,
+  "originalSnapshotRetainedInPriorStage": true
+}

@@ -91,6 +91,21 @@ recovery retry or state mutation was attempted on this finding. The graph
 must remain complete; fixture exclusions or skipped blob verification are not
 a remedy. See the [read-only cap evidence](task-253-bounded-recovery-caps.json).
 
+The corrected public bounded recovery subsequently **passed in 507.239631 s**,
+using the same original UUID `af3cf6ac-78db-466c-9024-a3d4e1ea334d`, retained target
+`ee52cff...`, controller/final product `20f0fc705e8b67353fb14bd64891dce56b36055f`
+and configuration `e371d5d407d68daa7d9ea8ef150f88a6579a56ef` (source-pin-only
+semantic delta). The continuation completed and archived the original backend
+**byte for byte**; the active record was removed. Both gates are open/idle and
+STABLE; all six services are active/running with no pending unit reload. PROD
+and both General runner process identities were preserved; TEST Reviewer and
+Production services were correctly restarted/restored by full recovery. All 32
+actual namespace probes ran successfully. This is a full recovery timing,
+separate from the eligible code-only performance result. See the
+[original-operation recovery evidence](task-253-bounded-recovery-20f.json).
+The original observer attempt still does not establish Runner stop/SIGTERM;
+a genuine native interruption and ordinary same-pair recovery remain pending.
+
 - First-install credential and CA preparation precede ACME dry-run/issuance;
   issuance precedes the readiness Apply. Existing-install missing/partial TLS
   refusal and exact pending-pair recovery remain binding.
@@ -183,6 +198,29 @@ before mutation; moving this attempt's receipt into root-private storage allowed
 the same accepted pair to proceed. It is excluded from the successful duration.
 
 ## Source validation and CLI maintenance
+
+On corrected recovery candidate
+`20f0fc705e8b67353fb14bd64891dce56b36055f`, Node passed 1,169 tests with seven
+skips; Rust formatting and all 163 tests passed; three-consumer qualification
+returned `THREE_CONSUMER_PASS`; candidate scanning passed 1,511 tracked files.
+The Reviewer production artifact SHA-256 is
+`912992960bd84c93bff4e006bc6b596d44e2382721322ff7a011b3ab076fa8fa`.
+An independent native source copy at that exact revision ran the complete
+writer-repository, Codex-primary-group and sandbox-cleanup test files as actual
+ordinary UID 1000: **53 passed, zero skipped**, including the cases skipped
+under root. These are complementary local checks, not independent acceptance.
+The complete root deployment-suite rerun is in progress at this snapshot.
+
+The preceding complete run on `ee52cff...` returned 3,266 passed, 13 skipped
+and 11 failed. The one recorded-entrypoint fixture unintentionally selected
+the real local adapter under root; it now explicitly keeps its recorded target
+transport. The ten provenance failures came from a transport seam rejecting the
+new actual read-only probe and an inventory race tied to call ordinal. The
+corrected fixtures execute the genuine old-capability fallback, retain the
+32-slot/final-Ansible/provenance assertions and inject the race between the
+owning inventory observations. All 13 provenance cases and the exact root
+entrypoint regression passed before the full rerun. Production checks were not
+disabled in response to these fixture failures.
 
 The first complete root deployment run returned 2811 passed, 25 failed and
 16 skipped. All 25 failures reproduced on the accepted source in bounded
