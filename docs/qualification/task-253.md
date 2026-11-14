@@ -29,6 +29,13 @@ The observed reduction is **85.1%**. See
 [native Apply evidence](task-253-native-apply-a0.json) and
 [non-overlapping timeline](task-253-native-timeline-a0.json).
 
+Both baseline and candidate ran the public installer frontend on the same
+remote Debian host as root with `--connection local`; WSL supplied preparation
+and SSH launch. The change from accepted Ansible-local command transport to
+qualified native-local transport is part of this product change. No WSL-to-host
+frontend relocation is credited as product savings. See the retained-driver
+[transport facts](task-253-performance-transport.json).
+
 | Corrected installed case on `a0e03ab7...` | Complete E2E | Result |
 | --- | ---: | --- |
 | Same-pair no-op | 31.583764 s | Native verify; receipt and all seven managed bindings unchanged |
@@ -46,12 +53,25 @@ The public installer frontend runs on the remote Debian TEST host; the separate
 WSL validation checkout has a different kernel instance, CPU model and native
 filesystem. WSL provides Git setup and SSH transport for the installed cases.
 See [execution-resource facts](task-253-execution-resources.json). Remaining
-policy/fault/original-operation recovery and full candidate checks are pending;
-no final Outcome or independent acceptance is claimed at this milestone.
+full local candidate checks, bounded original-operation recovery, ordinary
+recovery after genuine SIGTERM and final policy/restore qualification passed
+below. Independent source acceptance remains separate.
 
-## Implemented behavior and retained limits
+| Additional actual TEST case | Complete E2E | Verified result |
+| --- | ---: | --- |
+| Bounded original-operation recovery | 507.239631 s | Original UUID, byte-equal original backend archive, all 32 probes |
+| Genuine native stop/self-SIGTERM | 71.394251 s expected failure | Closed same-UUID frontier; actually stopped TEST Runner |
+| Ordinary same-pair signal recovery | 492.454811 s | Same UUID, stopped Runner restored, all 32 probes |
+| Actual policy JSON change | 511.478978 s | Full reconcile, owning policy updated, all 32 probes |
+| Byte-exact original JSON restoration | 519.826053 s | Full reconcile, original bytes/blob/hash and policy restored |
 
-### Native interruption and recovery reader correction
+The recovery/policy rows deliberately exercise the full path and are separate
+from eligible code-only performance. Final installed product is `c94c20c1...`,
+with configuration `fdef308c21aa9e7910ef4fe6c9bcb9ecffcf5df9`. All runtime/test
+source code is frozen at `20f0fc70...`; later commits contain qualification
+documentation/data only. No installation of a later documentation head is claimed.
+
+## Recovery qualification
 
 The subsequent native cutover to `ee52cff0490ab6d09727a7ce9bd1b79490cc7a82`
 encountered a task-observer exception at post-cutover proof entry. The observer
@@ -78,8 +98,8 @@ opts only this snapshot's strict byte reader and JSON parser into the existing
 32 MiB normal-installation bound. Default legacy limits stay 64 KiB. Fourteen
 focused tests passed, including the real producer reader accepting a roughly
 699 KiB snapshot, unchanged original evidence, oversize refusal, duplicate JSON,
-private-mode and link checks. Supported installed original-operation recovery
-and the final complete candidate checks are still pending at this snapshot.
+private-mode and link checks. Subsequent complete local checks and supported
+bounded original-operation recovery passed as recorded below.
 
 Read-only preparation for the supported corrected-controller recovery found a
 second size mismatch before invoking it: the bounded recovery source-graph
@@ -104,7 +124,81 @@ actual namespace probes ran successfully. This is a full recovery timing,
 separate from the eligible code-only performance result. See the
 [original-operation recovery evidence](task-253-bounded-recovery-20f.json).
 The original observer attempt still does not establish Runner stop/SIGTERM;
-a genuine native interruption and ordinary same-pair recovery remain pending.
+a genuine native interruption and ordinary same-pair recovery were selected next.
+
+The genuine native interruption from `20f0fc70...` to
+`c94c20c15a215207a2de50f7a8e7fb6ef8788829` produced the expected public failure
+after 71.394251 s. All 19 fault guards passed, including exact installed target,
+canonical TEST claim, original gate/journal/manifest binding, kernel Writer lease
+and separation of the frontend/guards/services from the native helper's process
+group. The observer actually stopped only idle `codex-relay-test-runner.service`,
+then executed `os.killpg(own, SIGTERM)` with the default handler. Current target,
+snapshot/archive/receipt/journal and UUID
+`f3bcd87f-f9f3-443a-8bab-7a0d02fed99b` were retained with idle closed admission and
+the matching backend. The other five process identities were preserved; the
+Writer lease released. See the [signal frontier](task-253-native-signal-fault.json).
+
+The new snapshot is **705,463 bytes**, distinct from the earlier 699,095-byte
+snapshot. Ordinary same-pair public recovery, with all observer/fault hooks
+removed and no special recovery flags or new UUID, passed actual classification
+through the corrected reader. Signal evidence records durable stop confirmation, the exact self-kill
+call and all guards, followed by native child failure; the independent native
+child signal exit-status was not captured. No second signal test is claimed.
+
+The ordinary same-pair recovery **passed in 492.454811 s**, retaining UUID
+`f3bcd87f-f9f3-443a-8bab-7a0d02fed99b` and exact product/configuration pair
+`c94c20c15a215207a2de50f7a8e7fb6ef8788829` /
+`ea65df1135ec5e6f0c8ee5fbb570b1a28df99fd4`. The actually stopped TEST Production
+Runner was restored; all six services are active/running with no pending reload.
+PROD and both General process identities were preserved; TEST Reviewer and
+Production restarted/restored through full recovery. Both gates are open/idle
+and STABLE, the backend record is absent, and the original 705,463-byte snapshot
+is retained in the prior stage. All 32 actual namespace probes ran successfully.
+The canonical TEST claim remains held for the remaining cases. See the
+[same-UUID signal recovery evidence](task-253-native-signal-recovery.json).
+
+The final actual `environment.reviewCheckName` JSON change passed in
+**511.478978 s** on product `c94c20c1...` / configuration
+`33dc51041cd17079b405297101dfb41c39fe8249`. The public plan selected
+`reconcile / apply`, and the ordinary full backend ran; neither provenance nor
+native code-only promotion handled this changed input. The requested policy
+was confirmed in both `deployment-config.json` and its owning
+`reviewer-mcp.json.reviewCheckName` field (`consumer.json` does not own that
+field). TEST Reviewer/Production correctly restarted; PROD and both General
+identities were preserved. All six services are active/running without pending
+reload, both gates are open/idle/STABLE, and all 32 actual namespace probes ran.
+See the [final policy evidence](task-253-final-policy.json).
+
+The byte-exact original JSON restoration then **passed in 519.826053 s** through
+full `reconcile`, on configuration `fdef308c21aa9e7910ef4fe6c9bcb9ecffcf5df9`.
+Its actual bytes, SHA-256 and Git blob
+`62b0b8d5c0d4edb3caa5aaf0b2eb3a8336d028c3` equal the original `ea65df11...`
+configuration; the owning Reviewer policy is restored. Default profile and
+source pin remain unchanged. All 32 actual probes passed. See the
+[exact restoration evidence](task-253-final-restore.json).
+
+Final bounded readback found all six services active/running without pending
+reload, both gates open/idle/STABLE, no manager jobs, no dpkg audit problems and
+no active backend or clean-reinstall journal. Installed source is unpatched and
+all task frontends/fault/timing hooks are inactive. Both PROD and both General
+PID/start identities are preserved from the initial baseline. The original
+bounded backend archive remains byte-equal. The canonical helper verified and
+released **only** Task 253 / `run-43578199509`'s own claim; readback is `FREE`, with
+the marker inode and mode preserved. No further TEST access is planned. See
+[final health and release facts](task-253-final-health-release.json).
+
+Each of the four completed full recovery/policy/restore cases emitted two
+existing Ansible temporary-directory permission/fallback warnings. No target
+permission rewrite was used. Those completed backend logs contained no nginx,
+unclassified warning, ignored failure, failed or unreachable recap entries;
+the deliberate native public fault remains separately recorded as an expected
+failure. The earlier 18 nginx warnings belong to the stopped fresh/shared-reload
+assessment. `integration.compatibility=missing` persists: generated artifacts
+remain available for normal receiving-repository publication, without a remote
+workflow/config-main change or a live Actions-attestation claim. See the
+[bounded warning classification and disposition](task-253-final-warnings.json).
+
+## Implemented behavior and retained limits
 
 - First-install credential and CA preparation precede ACME dry-run/issuance;
   issuance precedes the readiness Apply. Existing-install missing/partial TLS
@@ -209,7 +303,15 @@ An independent native source copy at that exact revision ran the complete
 writer-repository, Codex-primary-group and sandbox-cleanup test files as actual
 ordinary UID 1000: **53 passed, zero skipped**, including the cases skipped
 under root. These are complementary local checks, not independent acceptance.
-The complete root deployment-suite rerun is in progress at this snapshot.
+The complete root deployment-suite rerun passed **3,297 tests**, with 13 skipped
+and one existing passlib/crypt deprecation warning, in 1,279.26 s. The seven
+root-context skips were covered by the ordinary-UID run above. Four remaining
+cases need Docker/systemd fixtures; two need explicit upstream-download opt-in.
+No skip is represented as an executed test. The root run used Node 22.20.0,
+Rust 1.90.0 and a private mount view containing synthetic public host identity;
+the real host's SSH identity was not changed. All required local candidate
+commands passed on this exact code revision. Later qualification-only commits
+do not change those runtime/test sources.
 
 The preceding complete run on `ee52cff...` returned 3,266 passed, 13 skipped
 and 11 failed. The one recorded-entrypoint fixture unintentionally selected
@@ -323,7 +425,7 @@ PID/start. Each emitted two existing temporary-directory fallback warnings.
 See [policy-change evidence](task-253-policy.json) and
 [exact restoration evidence](task-253-restore.json).
 
-## Remaining installed evidence at this snapshot
+## Intermediate native-proof and performance qualification
 
 The new native source/provenance verifier's combined targeted Linux root suites
 passed **293 tests, one skip** in 24.87 s before final candidate qualification.
@@ -332,8 +434,9 @@ reconstruction, exact derived Python cache checks, native sealed-stage
 promotion/failure boundaries, distinct installed-reuse receipts, independent
 Codex reference negative cases and scheduler selection/fallback/binding checks.
 The existing Python `crypt`/passlib deprecation warning remains visible.
-These focused checks do not substitute for the final full candidate set or
-the still-pending measured public installer invocation.
+At this intermediate stage, those focused checks did not yet establish the
+final full candidate set or the measured public installer result. Subsequent
+complete checks and installed results are recorded above.
 
 The complete native proof was then qualified against the healthy installed
 `6b80e6ab...` TEST pair using a frozen six-module prototype and an actual official
@@ -562,10 +665,12 @@ See [bounded shared-host evidence](task-253-fresh-boundary.json). Existing TEST
 credential sources and registrations remain in place.
 
 The native fast source-promotion implementation, end-to-end code-only timing,
-same-pair no-op and README-only provenance are qualified above. Final
-policy/fault/original-operation recovery and full candidate checks remain in
-progress. This snapshot asserts no complete installed qualification,
-independent acceptance or PROD improvement. Requested profile is Sol/xhigh with Subagents On;
+same-pair no-op, README-only provenance, original bounded recovery, genuine
+signal/same-UUID recovery, final policy/byte-exact restoration and complete local
+candidate checks are qualified above. TEST is returned healthy and the own claim
+is released. The unassisted fresh ACME gap remains explicit; no complete fresh
+installation qualification, independent acceptance or PROD improvement is
+claimed. Requested profile is Sol/xhigh with Subagents On;
 implementation helpers were used. Actual runtime model/effort telemetry is
 unavailable. The native chat rename succeeded but readback exposed a truncated
 title; Task/Step/admission identity remains exact and that navigation limit is
