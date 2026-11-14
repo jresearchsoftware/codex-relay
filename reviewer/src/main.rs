@@ -1322,13 +1322,21 @@ async fn main() {
     .expect("REVIEWER_CLIENT_CA_FILE must be readable");
     #[cfg(unix)]
     if let Ok(path) = std::env::var("REVIEWER_ADOPTION_SOCKET") {
-        let proof = loaded_inputs::capture(&loaded_config, &trusted_client_ca)
-            .expect("Reviewer loaded-input capture failed");
-        tokio::spawn(async move {
-            if loaded_inputs::serve(&path, proof).await.is_err() {
+        match loaded_inputs::capture(&loaded_config, &trusted_client_ca) {
+            Ok(proof) => {
+                tokio::spawn(async move {
+                    if loaded_inputs::serve(&path, proof).await.is_err() {
+                        tracing::warn!(event = "loaded_input_proof_unavailable");
+                    }
+                });
+            }
+            Err(_) => {
+                // Adoption evidence is optional. Missing or unreadable proof
+                // inputs retain normal service startup and Apply restart proof.
+                // Never disclose filesystem paths or private input diagnostics.
                 tracing::warn!(event = "loaded_input_proof_unavailable");
             }
-        });
+        }
     }
     let app = router(App {
         policy,

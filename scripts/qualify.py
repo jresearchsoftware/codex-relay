@@ -74,6 +74,19 @@ def qualify_binary(executable):
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'REVIEWER_RELAY_ENABLED': 'false',
                    'REVIEWER_RELAY_DB': str(root / f'{instance}.sqlite3'), 'REVIEWER_CLIENT_CA_FILE': str(root / 'ca.pem'),
                    'GITHUB_APP_ID': c['reviewerApp']['appId'], 'GITHUB_APP_INSTALLATION_ID': c['reviewerApp']['installationId']}
+            proof_socket = root / f'{instance}-loaded.sock'
+            if not multiple:
+                # Exercise the actual production startup with each optional
+                # proof input missing. Normal MCP/mTLS behavior must survive;
+                # no partial socket or private error details may escape.
+                env.update(REVIEWER_ADOPTION_SOCKET=str(proof_socket),
+                           REVIEWER_ADOPTION_UNIT_FILE=str(path),
+                           REVIEWER_ADOPTION_ENV_FILES=str(path),
+                           GITHUB_APP_PRIVATE_KEY_FILE=str(root / 'ca.key'))
+                missing = {'example': 'REVIEWER_ADOPTION_ENV_FILES',
+                           'canary': 'GITHUB_APP_PRIVATE_KEY_FILE',
+                           'inventory': 'REVIEWER_ADOPTION_UNIT_FILE'}[consumer]
+                env[missing] = str(root / 'optional-proof-private-canary-missing')
             process = subprocess.Popen([str(executable), '--config', str(path)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             def rpc(method, params, supplied_headers=headers):
                 request = urllib.request.Request(f'http://127.0.0.1:{port}/mcp',
@@ -113,6 +126,7 @@ def qualify_binary(executable):
                 wrong = rpc('tools/call', {'name': 'check_pr_review_target', 'arguments':
                     {'repository': 'foreign/repository', 'pr_number': 1, 'expected_head_sha': 'a' * 40}})
                 assert 'error' in wrong or wrong.get('result', {}).get('isError') is True
+                assert not proof_socket.exists()
             finally:
                 process.terminate()
                 try:
@@ -121,6 +135,9 @@ def qualify_binary(executable):
                     process.kill()
                     stdout, stderr = process.communicate()
                 assert b'publication_mode' in stdout and b'false' in stdout
+                if not multiple:
+                    assert b'loaded_input_proof_unavailable' in stdout
+                    assert b'optional-proof-private-canary' not in stdout + stderr
 
 
 def main():

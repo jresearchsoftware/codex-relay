@@ -119,7 +119,7 @@ mod tests {
         fs::write(&key, "synthetic-private-input").unwrap();
         fs::write(&unit, "unit").unwrap();
         fs::write(&env, "environment").unwrap();
-        let environment = BTreeMap::from([
+        let environment: BTreeMap<String, String> = BTreeMap::from([
             (
                 "GITHUB_APP_PRIVATE_KEY_FILE".into(),
                 key.to_str().unwrap().into(),
@@ -141,6 +141,36 @@ mod tests {
         assert_eq!(proof["ca"], digest(b"consumed-ca"));
         assert_ne!(proof["ca"], digest(b"replacement-ca"));
         assert!(!proof.to_string().contains("synthetic-private-input"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn missing_optional_input_is_an_error_without_a_partial_proof_or_panic() {
+        let directory =
+            std::env::temp_dir().join(format!("reviewer-missing-inputs-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let present = directory.join("present");
+        fs::write(&present, "synthetic-private-input").unwrap();
+        let missing = directory.join("missing");
+        let environment: BTreeMap<String, String> = BTreeMap::from([
+            (
+                "GITHUB_APP_PRIVATE_KEY_FILE".into(),
+                present.to_str().unwrap().into(),
+            ),
+            (
+                "REVIEWER_ADOPTION_UNIT_FILE".into(),
+                present.to_str().unwrap().into(),
+            ),
+            (
+                "REVIEWER_ADOPTION_ENV_FILES".into(),
+                present.to_str().unwrap().into(),
+            ),
+        ]);
+        for name in environment.keys() {
+            let mut inputs = environment.clone();
+            inputs.insert(name.clone(), missing.to_str().unwrap().into());
+            assert!(capture_with_environment(&json!({}), b"consumed-ca", &inputs).is_err());
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 
