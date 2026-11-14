@@ -11,9 +11,25 @@ import { boundedDiagnosticText } from './diagnostics.mjs';
 
 const exec = promisify(execFile);
 export const REMOTE = `https://github.com/${REPOSITORY}.git`;
-const SECRET = /github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/;
+const SECRET = /github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9_]{20,}/;
+const PRIVATE_KEY_HEADER = /-----BEGIN (?:RSA |DSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/g;
+function hasPrivateKeyMaterial(text) {
+  // Documentation may name a PEM marker without publishing a key. Require
+  // plausible body material; a truncated real key still contains sensitive
+  // bytes and is blocked even without its END marker. Scan linearly so a
+  // whitespace-heavy hostile blob cannot trigger regex backtracking.
+  for (const header of text.matchAll(PRIVATE_KEY_HEADER)) {
+    let material = 0;
+    for (let i = header.index + header[0].length; i < text.length; i++) {
+      const char = text[i];
+      if (/[A-Za-z0-9+/=]/.test(char)) { if (++material >= 32) return true; }
+      else if (!/[\t \r\n]/.test(char)) break;
+    }
+  }
+  return false;
+}
 const GIT_DIAGNOSTIC_BYTES = 2048;
-const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-parse', 'merge-base', 'update-ref', 'read-tree', 'diff', 'ls-files', 'check-ignore', 'ls-tree', 'bundle', 'cat-file', 'rev-list', 'show', 'diff-tree']);
+const GIT_OPERATION_NAMES = new Set(['init', 'fetch', 'push', 'ls-remote', 'rev-parse', 'merge-base', 'update-ref', 'read-tree', 'diff', 'ls-files', 'check-ignore', 'ls-tree', 'bundle', 'cat-file', 'rev-list', 'show', 'diff-tree', 'fsck']);
 // Retain only trusted acquisition categories, never a worker-selected path or
 // the filesystem error message. Inner snapshot writes take precedence over an
 // enclosing source traversal when both share the same failure boundary.
@@ -28,7 +44,7 @@ async function acquire(context, action, facts) {
     throw error;
   }
 }
-export const secretFree = text => { if (SECRET.test(text)) fail('SECRET_PUBLICATION_SCAN_FAILED'); return text; };
+export const secretFree = text => { if (SECRET.test(text) || hasPrivateKeyMaterial(String(text))) fail('SECRET_PUBLICATION_SCAN_FAILED'); return text; };
 
 function gitOperation(args) {
   return args.find(value => GIT_OPERATION_NAMES.has(value)) ?? 'git-command';
@@ -169,23 +185,131 @@ async function copyObservedFile(source, destination, expected, device, max = 100
       || !sameObservedFile(before, await lstat(source))) observationChanged();
   } finally { if (output) await acquire('snapshot-write', () => output.close()); await handle.close(); }
 }
-async function boundedSourceText(parent, name, device) {
+async function boundedSourceBytes(parent, name, device, max = 1024) {
   const path = pinnedPath(parent, name); const expected = await lstat(path);
-  checkRegular(expected, device, 1024);
+  checkRegular(expected, device, max);
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const before = await handle.stat(); checkRegular(before, device, 1024);
+    const before = await handle.stat(); checkRegular(before, device, max);
     if (!sameObservedFile(before, expected)) observationChanged();
-    const bytes = Buffer.alloc(1025); let size = 0;
-    while (size <= 1024) {
+    const bytes = Buffer.alloc(before.size + 1); let size = 0;
+    while (size < bytes.length) {
       const next = await handle.read(bytes, size, bytes.length - size, null);
       if (!next.bytesRead) break;
       size += next.bytesRead;
     }
     if (size !== before.size || !sameObservedFile(before, await handle.stat())
       || !sameObservedFile(before, await lstat(path))) observationChanged();
-    return bytes.subarray(0, size).toString('utf8').trim();
+    return bytes.subarray(0, size);
   } finally { await handle.close(); }
+}
+async function boundedSourceText(parent, name, device, max = 1024) {
+  return (await boundedSourceBytes(parent, name, device, max)).toString('utf8').trim();
+}
+
+// Acquire only missing objects reachable from the selected candidate. Unrelated
+// loose objects, stale packs and local experiment refs are not publication work.
+// Git operates solely on this fresh trusted repository; no source config/index,
+// hooks, alternates, grafts, external gitdir or replacement ref is interpreted.
+async function importCandidateObjects(dir, metadata, device, head) {
+  const objects = await pinDirectory(pinnedPath(metadata, 'objects'), device);
+  let packDirectory;
+  const importedPacks = new Set(); let indexes;
+  const imported = new Set();
+  let bytes = 0; let files = 0; let entries = 0;
+  const copied = async (parent, name, destination) => {
+    const source = pinnedPath(parent, name); const stat = await lstat(source);
+    checkRegular(stat, device);
+    if ((bytes += stat.size) > 100 * 1024 * 1024 || ++files > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+    await copyObservedFile(source, destination, stat, device);
+  };
+  const acquireObject = async object => {
+    const folder = object.slice(0, 2); const name = object.slice(2);
+    let at;
+    try {
+      at = await pinDirectory(pinnedPath(objects, folder), device);
+      const destination = join(dir, 'objects', folder);
+      await acquire('snapshot-write', () => mkdir(destination, { recursive: true }));
+      await copied(at, name, join(destination, name));
+      imported.add(object);
+      return;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    finally { await at?.close(); }
+    if (!indexes) {
+      indexes = [];
+      try { packDirectory = await pinDirectory(pinnedPath(objects, 'pack'), device); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (packDirectory) for await (const entry of await opendir(pinnedPath(packDirectory))) {
+        if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+        if (!/^pack-[a-f0-9]{40}\.idx$/.test(entry.name)) continue;
+        // An index supplies names only, and never authorizes arbitrary paths.
+        const index = await boundedSourceBytes(packDirectory, entry.name, device, 8 * 1024 * 1024);
+        bytes += index.length;
+        if (bytes > 100 * 1024 * 1024) fail('OBJECT_IMPORT_TOO_LARGE');
+        if (index.length < 1032 || index.readUInt32BE(0) !== 0xff744f63 || index.readUInt32BE(4) !== 2) fail('UNTRUSTED_GIT_FILE_INVALID');
+        const count = index.readUInt32BE(1028);
+        if (count > 50000 || index.length < 1032 + count * 28 + 40) fail('OBJECT_IMPORT_TOO_LARGE');
+        indexes.push({ name: entry.name, index, count });
+      }
+    }
+    const wanted = Buffer.from(object, 'hex');
+    for (const pack of indexes) {
+      let low = 0; let high = pack.count;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        const comparison = Buffer.compare(pack.index.subarray(1032 + mid * 20, 1032 + (mid + 1) * 20), wanted);
+        if (comparison < 0) low = mid + 1; else high = mid;
+      }
+      if (low === pack.count || !pack.index.subarray(1032 + low * 20, 1032 + (low + 1) * 20).equals(wanted)) continue;
+      if (!importedPacks.has(pack.name)) {
+        const names = Array.from({ length: pack.count }, (_, i) =>
+          pack.index.subarray(1032 + i * 20, 1032 + (i + 1) * 20).toString('hex'));
+        const before = await git(dir, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], { input: names.join('\n') + '\n' });
+        for (const line of before.trim().split('\n')) if (/^[a-f0-9]{40} missing$/.test(line)) imported.add(line.slice(0, 40));
+        await acquire('snapshot-write', () => mkdir(join(dir, 'objects', 'pack'), { recursive: true }));
+        await copied(packDirectory, pack.name.replace(/\.idx$/, '.pack'), join(dir, 'objects', 'pack', pack.name.replace(/\.idx$/, '.pack')));
+        await copied(packDirectory, pack.name, join(dir, 'objects', 'pack', pack.name));
+        importedPacks.add(pack.name);
+      }
+      return;
+    }
+    fail('CANDIDATE_OBJECT_MISSING');
+  };
+  try {
+    let frontier = new Map([[head, 'commit']]); const visited = new Set();
+    while (frontier.size) {
+      const batch = [...frontier]; frontier = new Map();
+      const check = (await git(dir, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
+        input: batch.map(([id]) => id).join('\n') + '\n'
+      })).trim().split('\n');
+      for (let i = 0; i < batch.length; i++) {
+        const [object, type] = batch[i];
+        if (visited.has(object)) continue;
+        visited.add(object);
+        if (visited.size > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+        // Trusted fetched objects already have a complete closure.
+        if (check[i] === `${object} ${type}` && !imported.has(object)) continue;
+        if (check[i] === `${object} missing`) await acquireObject(object);
+        else if (check[i] !== `${object} ${type}`) fail('CANDIDATE_OBJECT_INVALID');
+        if (type === 'commit') {
+          const value = await git(dir, ['cat-file', 'commit', object]);
+          const header = value.split('\n\n')[0];
+          for (const line of header.split('\n')) {
+            const match = /^(tree|parent) ([a-f0-9]{40})$/.exec(line);
+            if (match && !visited.has(match[2])) frontier.set(match[2], match[1] === 'tree' ? 'tree' : 'commit');
+          }
+        } else if (type === 'tree') {
+          for (const row of (await git(dir, ['ls-tree', '-z', object])).split('\0').filter(Boolean)) {
+            const [, childType, child] = row.slice(0, row.indexOf('\t')).split(' ');
+            if (childType === 'commit') continue; // gitlink policy belongs to publication validation.
+            if (!visited.has(child)) frontier.set(child, childType);
+          }
+        } else await git(dir, ['cat-file', '-e', `${object}^{blob}`]);
+      }
+    }
+    // Type/closure validation is independent of any worker-controlled ref.
+    await git(dir, ['fsck', '--no-reflogs', '--connectivity-only', '--no-dangling', head]);
+  } finally { await packDirectory?.close(); await objects.close(); }
 }
 function sourceFailure(error, operation, observedHead) {
   if (error.code === 'TRUSTED_GIT_FAILED' || error.code && !/^E[A-Z0-9]+$/.test(error.code)) throw error;
@@ -330,6 +454,13 @@ export async function collectProgress(checkout, e, options = {}) {
             at = next;
           }
           head = await boundedSourceText(at, parts.at(-1), device);
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+          const packed = await boundedSourceText(metadata, 'packed-refs', device, 4 * 1024 * 1024);
+          const matches = packed.split(/\r?\n/).filter(line => !/^[#^]/.test(line))
+            .map(line => /^([a-f0-9]{40}) (refs\/[^ ]+)$/.exec(line)).filter(match => match?.[2] === `refs/heads/${e.branch}`);
+          if (matches.length !== 1) fail('WORKING_HEAD_INVALID');
+          head = matches[0][1];
         } finally { if (at !== metadata) await at.close(); }
       }
       if (!exactSha(head)) fail('WORKING_HEAD_INVALID');
@@ -338,94 +469,84 @@ export async function collectProgress(checkout, e, options = {}) {
     const head = await observedHead();
     return await temporaryRepo(async dir => {
       if (e.target === 'pull_request' || e.continuation) await git(dir, ['fetch', '--no-tags', options.remote ?? REMOTE, `refs/heads/${e.branch}:refs/remotes/task`], options);
-      const objects = await pinDirectory(pinnedPath(metadata, 'objects'), device);
-      try {
-        const objectsStat = await objects.stat();
-        let bytes = 0; let files = 0; let entries = 0;
-        for await (const folderEntry of await opendir(pinnedPath(objects))) {
-          if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
-          const folder = folderEntry.name;
-          if (!/^[a-f0-9]{2}$/.test(folder) && folder !== 'pack') continue;
-          const folderPath = pinnedPath(objects, folder);
-          const objectsFolder = await pinDirectory(folderPath, device);
-          try {
-            const folderStat = await objectsFolder.stat();
-            await acquire('snapshot-write', () => mkdir(join(dir, 'objects', folder), { recursive: true }));
-            for await (const entry of await opendir(pinnedPath(objectsFolder))) {
-              if (++entries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
-              const name = entry.name;
-              if (!(folder === 'pack' ? /^pack-[a-f0-9]{40}\.(pack|idx)$/.test(name) : /^[a-f0-9]{38}$/.test(name))) continue;
-              const objectPath = pinnedPath(objectsFolder, name); const stat = await lstat(objectPath);
-              checkRegular(stat, device); bytes += stat.size;
-              if (bytes > 100 * 1024 * 1024 || ++files > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
-              const destination = join(dir, 'objects', folder, name);
-              let exists = false;
-              try { await lstat(destination); exists = true; }
-              catch (error) { if (error.code !== 'ENOENT') throw error; }
-              // Read even duplicate source objects completely, but never
-              // overwrite a verified object fetched into the trusted repo.
-              await copyObservedFile(objectPath, exists ? null : destination, stat, device);
-            }
-            if (!sameObservedFile(folderStat, await objectsFolder.stat())
-              || !sameObservedFile(folderStat, await lstat(folderPath))) observationChanged();
-          } finally { await objectsFolder.close(); }
-        }
-        if (!sameObservedFile(objectsStat, await objects.stat())
-          || !sameObservedFile(objectsStat, await lstat(pinnedPath(metadata, 'objects')))) observationChanged();
-      } finally { await objects.close(); }
+      await importCandidateObjects(dir, metadata, device, head);
       await git(dir, ['cat-file', '-e', `${head}^{commit}`]);
       await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);
       await git(dir, ['update-ref', 'refs/heads/progress', head]);
       await git(dir, ['read-tree', head]);
-      const clean = await observeWorktree(dir, source, head, device);
+      let clean; let worktreeObservation;
+      try { clean = await observeWorktree(dir, source, head, device); }
+      catch (error) {
+        // Candidate bytes were imported independently. Retain that candidate
+        // and useful residue, without claiming complete checkout observation.
+        // Trusted snapshot-write failures remain collection failures.
+        if (acquisitionContexts.get(error) === 'snapshot-write'
+          || error.details?.failureDiagnostic?.pathContext === 'unknown') throw error;
+        clean = null;
+        worktreeObservation = { status: 'unknown', code: 'WORKTREE_OBSERVATION_INCOMPLETE',
+          diagnostic: error.details?.failureDiagnostic ?? { code: error.code ?? 'SOURCE_OBSERVATION_FAILED' } };
+      }
       if (await observedHead() !== head
         || !sameObservedFile(metadataStat, await metadata.stat())
         || !sameObservedFile(metadataStat, await lstat(pinnedPath(source, '.git')))) observationChanged();
       const bundle = join(dir, 'progress.bundle');
-      if (head === e.startHead) return { head, bundle: null, clean };
+      if (head === e.startHead) return { head, bundle: null, clean, ...(worktreeObservation ? { worktreeObservation } : {}) };
       await git(dir, ['bundle', 'create', bundle, 'refs/heads/progress', `^${e.startHead}`]);
-      return { head, bundle: (await readFile(bundle)).toString('base64'), clean };
+      return { head, bundle: (await readFile(bundle)).toString('base64'), clean, ...(worktreeObservation ? { worktreeObservation } : {}) };
     }, options);
   } catch (error) { sourceFailure(error, 'object-import'); }
   finally { await metadata?.close(); await source?.close(); }
 }
 export async function validateCommits(dir, e, head) {
+  // Authentication belongs to Writer/admission, not forgeable author strings
+  // or the shape of the executor's unpublished commit graph. Published task
+  // history must remain reachable, while ordinary merges/rebases of local work
+  // preserve original authorship and are checked like any other candidate.
   await git(dir, ['merge-base', '--is-ancestor', e.startHead, head]);
-  // Only the task's first-parent chain is worker-owned. An exact admitted main
-  // may enter once as a second parent; its already-published authors are not bots.
-  const commits = (await git(dir, ['rev-list', '--first-parent', '--reverse', `${e.startHead}..${head}`])).trim().split(/\r?\n/).filter(Boolean);
-  if (commits.length > 128) fail('COMMIT_RANGE_TOO_LARGE');
-  let previous = e.startHead;
-  let integrationBase = null;
+  const commits = (await git(dir, ['rev-list', '--reverse', '--topo-order', `${e.startHead}..${head}`])).trim().split(/\r?\n/).filter(Boolean);
+  // Bound actual publication work rather than a small arbitrary commit quota.
+  if (commits.length > 50000) fail('COMMIT_RANGE_TOO_LARGE');
+  const introduced = new Set((await git(dir, ['rev-list', '--objects', '--no-object-names', head, `^${e.startHead}`, '^refs/remotes/main'])).trim().split(/\s+/));
+  let scannedBytes = 0;
+  const scanned = new Set();
+  const scan = async (type, object) => {
+    if (scanned.has(object) || !introduced.has(object)) return;
+    scanned.add(object);
+    const size = Number((await git(dir, ['cat-file', '-s', object])).trim());
+    if (!Number.isSafeInteger(size) || size < 0 || (scannedBytes += size) > 100 * 1024 * 1024) fail('OBJECT_IMPORT_TOO_LARGE');
+    secretFree(await git(dir, ['cat-file', type, object]));
+  };
+  const inspectedTrees = new Set(); let inspectedEntries = 0;
+  const inspectTree = async (tree, prefix = '') => {
+    await scan('tree', tree);
+    const binding = `${prefix}\0${tree}`;
+    if (inspectedTrees.has(binding)) return;
+    inspectedTrees.add(binding);
+    for (const row of (await git(dir, ['ls-tree', '-z', tree])).split('\0').filter(Boolean)) {
+      if (++inspectedEntries > 50000) fail('OBJECT_IMPORT_TOO_LARGE');
+      const tab = row.indexOf('\t'); const [mode, type, object] = row.slice(0, tab).split(' ');
+      const path = prefix + row.slice(tab + 1);
+      if (!safePath(path)) fail('COMMIT_PATH_INVALID');
+      if (mode === '040000' && type === 'tree') await inspectTree(object, path + '/');
+      else {
+        if (!['100644', '100755'].includes(mode) || type !== 'blob') fail('COMMIT_FILE_MODE_INVALID');
+        await scan('blob', object);
+      }
+    }
+  };
   for (const commit of commits) {
-    const [parents, author, committer, authorEmail, committerEmail] = (await git(dir, ['show', '-s', '--format=%P%n%an%n%cn%n%ae%n%ce', commit])).trimEnd().split('\n');
-    const { name: identity, email } = e.target === 'pull_request' ? CONSUMER.remediationIdentity : CONSUMER.writerIdentity;
-    const parentList = parents.trim().split(' ');
-    if (parentList[0] !== previous || author.trim() !== identity || committer.trim() !== identity
-      || authorEmail.trim() !== email || committerEmail.trim() !== email) fail('COMMIT_OWNERSHIP_INVALID');
-    if (parentList.length !== 1) {
-      if (e.target !== 'pull_request' || integrationBase || parentList.length !== 2
-        || parentList[1] !== e.targetBase) fail('COMMIT_OWNERSHIP_INVALID');
-      if ((await git(dir, ['rev-parse', 'refs/remotes/main'])).trim() !== e.targetBase) fail('STARTING_STATE_MISMATCH');
-      const bases = await git(dir, ['merge-base', '--all', previous, e.targetBase], { allowFailure: true });
-      if (!bases || bases.trim().split(/\s+/).length !== 1 || bases.trim() === e.targetBase) fail('INTEGRATION_BASE_INVALID');
-      integrationBase = e.targetBase;
-    }
-    // An explicit first-parent diff also scans merge resolutions and introduced
-    // main blobs. Default diff-tree output would silently skip a merge commit.
-    const paths = (await git(dir, ['diff-tree', '--no-commit-id', '--name-only', '-r', '-z', previous, commit])).split('\0').filter(Boolean);
-    if (paths.some(path => !safePath(path))) fail('COMMIT_PATH_INVALID');
-    secretFree(await git(dir, ['cat-file', 'commit', commit]));
-    // Check every introduced blob, including transient secrets later deleted.
-    const rows = (await git(dir, ['diff-tree', '--no-commit-id', '--raw', '-r', '--no-renames', '-z', previous, commit])).split('\0');
-    for (let i = 0; i < rows.length - 1; i += 2) {
-      const fields = rows[i].split(' '); const mode = fields[1]; const object = fields[3];
-      if (mode === '000000') continue;
-      if (!['100644', '100755'].includes(mode)) fail('COMMIT_FILE_MODE_INVALID');
-      secretFree(await git(dir, ['cat-file', 'blob', object]));
-    }
-    previous = commit;
+    if (!introduced.has(commit)) continue; // Accepted upstream is authenticated input.
+    await scan('commit', commit);
+    // Inspect every newly reachable commit/tree, including side branches whose
+    // hostile content disappears before merge. Cache immutable path/tree pairs
+    // so repeated baseline trees do not consume the candidate work budget.
+    const tree = (await git(dir, ['show', '-s', '--format=%T', commit])).trim();
+    await inspectTree(tree);
   }
+  const main = (await git(dir, ['rev-parse', 'refs/remotes/main'])).trim();
+  const integrationBase = main !== e.startHead
+    && await git(dir, ['merge-base', '--is-ancestor', e.targetBase, head], { allowFailure: true }) !== null
+    ? e.targetBase : null;
   return { commits, integrationBase };
 }
 export function createGitPublisher({ remote = REMOTE, token, root = tmpdir() } = {}) {

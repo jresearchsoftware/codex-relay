@@ -58,6 +58,8 @@ def test_catalogued_bytes_match_real_ansible_template_action(tmp_path, catalogue
                   relay_release_sha256='b' * 64, relay_release_path='/opt/relay-test/releases/' + 'a' * 40,
                   relay_controller_source_tree_sha256='c' * 64,
                   relay_codex_launcher_source_tree_sha256='d' * 64, relay_consumer_revision='e' * 40)
+    values['relay_github_repositories'] = values['relay_writer_repositories']
+    launcher_destination = tmp_path / 'launcher.mjs'
     destination = tmp_path / 'rendered.env'
     json_destination = tmp_path / 'rendered.json'
     play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': {**raw, **values},
@@ -66,7 +68,10 @@ def test_catalogued_bytes_match_real_ansible_template_action(tmp_path, catalogue
                  'dest': str(destination), 'mode': '0600'}},
                        {'ansible.builtin.template': {
                            'src': str(SOURCE / 'deploy/ansible/roles/relay_runtime/templates/reviewer-mcp.json.j2'),
-                           'dest': str(json_destination), 'mode': '0600'}}]}]
+                           'dest': str(json_destination), 'mode': '0600'}},
+                       {'ansible.builtin.template': {
+                           'src': str(SOURCE / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2'),
+                           'dest': str(launcher_destination), 'mode': '0600'}}]}]
     playbook = tmp_path / 'canonical-render.yml'; playbook.write_text(yaml.safe_dump(play))
     result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
                             capture_output=True, timeout=30)
@@ -77,12 +82,27 @@ def test_catalogued_bytes_match_real_ansible_template_action(tmp_path, catalogue
     # This catches native-JSON auto-conversion: str(dict) is not template bytes.
     assert json_destination.read_bytes() == base64.b64decode(expected_json['contentBase64'])
     json.loads(json_destination.read_bytes())
+    launcher_path = state.render('{{ relay_codex_launcher_path }}.mjs', {**raw, **values})
+    expected_launcher = next(row for row in catalogue['entries'] if row['path'] == launcher_path)
+    assert launcher_destination.read_bytes() == base64.b64decode(expected_launcher['contentBase64'])
+    syntax = subprocess.run(['node', '--check', str(launcher_destination)], capture_output=True, timeout=10)
+    assert syntax.returncode == 0, syntax.stderr.decode()
 
 
 def test_new_unhandled_recipe_refuses_before_catalogue(tmp_path):
     root = tmp_path / 'source'
     (root / 'deploy/ansible').mkdir(parents=True)
     (root / 'deploy/ansible/new.yml').write_text('- ansible.builtin.command: unexpected\n')
+    with pytest.raises(state.NotEligible, match='INSTALLED_RECIPE_NOT_SUPPORTED'):
+        state.build_catalogue(root, {})
+
+
+def test_changed_launcher_bytes_refuse_an_unqualified_recipe(tmp_path):
+    root = tmp_path / 'source'
+    shutil.copytree(SOURCE / 'deploy/ansible', root / 'deploy/ansible',
+                    ignore=shutil.ignore_patterns('tests', '__pycache__'))
+    launcher = root / 'deploy/ansible/roles/relay_codex_runtime/templates/relay-codex-launcher.mjs.j2'
+    launcher.write_bytes(launcher.read_bytes() + b'\n// Unqualified launcher change\n')
     with pytest.raises(state.NotEligible, match='INSTALLED_RECIPE_NOT_SUPPORTED'):
         state.build_catalogue(root, {})
 

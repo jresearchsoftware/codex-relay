@@ -278,7 +278,8 @@ export async function revalidateAuthority(api, e, { reporting = false, handoff =
 }
 
 export async function revalidateIntegrationBase(api, e) {
-  if ((await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha !== e.targetBase) fail('STARTING_STATE_MISMATCH');
+  const current = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha;
+  await verifyPublishedBase(api, e.targetBase, current);
 }
 
 // GitHub comparison binds two exact repository commits, not a moving branch.

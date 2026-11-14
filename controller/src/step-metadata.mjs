@@ -3,7 +3,7 @@ import { RUN_NAME_IDENTITY_MAX_CHARS } from './run-name.mjs';
 
 export const READY_LABELS = ['codex-ready-auto', 'codex-ready-manual'];
 export const labelNames = labels => (labels ?? []).map(label => typeof label === 'string' ? label : label.name);
-export const stepLike = name => /^step/i.test(name ?? '');
+export const stepLike = name => /^step(?:-|$)/i.test(name ?? '');
 
 // Read only current native metadata. No defaults, history or attempt arithmetic.
 export function currentStep(labels) {

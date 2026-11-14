@@ -9,7 +9,7 @@ import sys
 
 MARKER = re.compile(
     rb"(github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9_]{20,}|"
-    rb"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|"
+    rb"-----BEGIN (?:RSA |DSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----(?:[ \t\r\n]*[A-Za-z0-9+/=]){32}|"
     rb"x-access-token:gh[pousr]_[A-Za-z0-9_]{20,})"
 )
 

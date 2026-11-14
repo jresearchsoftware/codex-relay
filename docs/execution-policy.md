@@ -88,9 +88,12 @@ sandbox boundary.
 A successful, contained, durable Task PR/Outcome handoff can carry a visible
 `UNCOMMITTED_WORK_REMAINS` warning when residue remains. That warning does not
 prove the residue is disposable or accepted: material execution warnings remain
-mandatory decision inputs at the next owner/review boundary. Incomplete
-collection, uncertain publication, lost evidence and unknown containment remain
-automation failures. No second worker pass or cleanup daemon is authorized.
+mandatory decision inputs at the next owner/review boundary. A safely imported candidate with incomplete residue observation carries
+`WORKTREE_OBSERVATION_INCOMPLETE`; retained local state stays unknown. Candidate
+validation, uncertain publication, lost evidence and unknown containment remain
+automation failures. A contained cleanup failure may preserve a completed result
+with `RUNTIME_CLEANUP_FAILED`, while its resource remains retained and unavailable
+for reuse. No second worker pass or cleanup daemon is authorized.
 
 This policy applies inside one authorized execution. For Relay this is one
 admitted invocation; standalone work does not manufacture native records.

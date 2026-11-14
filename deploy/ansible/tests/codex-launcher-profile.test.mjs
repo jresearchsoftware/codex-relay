@@ -70,7 +70,7 @@ writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   assert.doesNotMatch(rendered, /{%|{{/, 'Fixture rendering must resolve every template directive');
   await writeFile(launcher, rendered);
   let invocation = 0;
-  return { cwd, input, schema, sandbox, token, record, rust,
+  return { cwd, input, schema, sandbox, token, record, rust, child,
     run: async (model, effort, remediation = false, taskRoot = cwd) => {
       // Regular files also work in unprivileged sandboxes that restrict Node's
       // nested socket-backed stdio. The launched template and child are real.
@@ -151,4 +151,80 @@ test('rendered launcher still rejects outside workspaces and escaping input syml
     assert.match(error.stderr, /PATH_OUTSIDE_WORK_ROOT/);
     assert.match(error.stderr, /"childStarted":false/); return true;
   });
+});
+
+
+test('launcher forwards a long JSONL stream and scans each bounded record before forwarding', async t => {
+  const f = await fixture(t);
+  await writeFile(f.child, `#!${process.execPath}
+import { writeSync } from 'node:fs';
+const tool = JSON.stringify({type:'item.updated', text:'x'.repeat(64*1024)})+'\\n';
+for(let i=0;i<300;i++) writeSync(1,tool);
+writeSync(1,JSON.stringify({type:'task_result',result:{status:'success',summary:'late small result',validation:[],blockedReason:''}})+'\\n');
+`);
+  const output = await f.run('future-model', 'high');
+  assert.ok(Buffer.byteLength(output.stdout) > 16 * 1024 * 1024);
+  assert.match(output.stdout, /late small result/);
+  assert.doesNotMatch(output.stderr, /OUTPUT_TOO_LARGE/);
+});
+
+test('launcher refuses an oversized record without forwarding its partial bytes', async t => {
+  const f = await fixture(t);
+  await writeFile(f.child, `#!${process.execPath}
+import { writeSync } from 'node:fs';
+for(let i=0;i<258;i++) writeSync(1,'x'.repeat(64*1024));
+`);
+  await assert.rejects(f.run('future-model', 'high'), error => {
+    assert.match(error.stderr, /CODEX_LAUNCHER_OUTPUT_TOO_LARGE/);
+    assert.equal(error.stdout, '');
+    return true;
+  });
+});
+
+
+test('launcher redaction preserves JSON punctuation and safe failure context', async t => {
+  const f = await fixture(t);
+  await writeFile(f.child, `#!${process.execPath}
+import { writeSync } from 'node:fs';
+writeSync(1,JSON.stringify({type:'task_result',result:{status:'blocked',summary:'operation failed; retry with token=synthetic-value',validation:['safe validation context'],blockedReason:'actual reason'}})+'\\n');
+`);
+  const output = await f.run('future-model', 'high');
+  const record = JSON.parse(output.stdout);
+  assert.match(record.result.summary, /operation failed; retry with.*REDACTED_SECRET/);
+  assert.equal(record.result.blockedReason, 'actual reason');
+  assert.deepEqual(record.result.validation, ['safe validation context']);
+  assert.doesNotMatch(output.stdout, /synthetic-value/);
+});
+
+
+test('launcher refuses raw multiline private-key output before any secret bytes cross to runner', async t => {
+  const f = await fixture(t);
+  const sensitive = 'synthetic-private-key-body-must-stay-inside-child';
+  const raw = [['-----BEGIN', 'PRIVATE KEY-----'].join(' '), sensitive, ['-----END', 'PRIVATE KEY-----'].join(' ')].join('\n') + '\n';
+  await writeFile(f.child, `#!${process.execPath}
+import { writeSync } from 'node:fs';
+writeSync(1,${JSON.stringify(raw)});
+`);
+  await assert.rejects(f.run('future-model', 'high'), error => {
+    assert.match(error.stderr, /CODEX_LAUNCHER_JSON_INVALID/);
+    assert.equal(error.stdout, '');
+    assert.doesNotMatch(error.stderr, /synthetic-private-key-body/);
+    return true;
+  });
+});
+
+
+test('launcher redacts secret-bearing JSON property names and sensitive field values', async t => {
+  const f = await fixture(t);
+  const secretKey = 'ghp_' + 'Z'.repeat(32);
+  await writeFile(f.child, `#!${process.execPath}
+import { writeSync } from 'node:fs';
+writeSync(1,JSON.stringify({type:'item.updated',details:{[${JSON.stringify(secretKey)}]:'safe context',token:'synthetic-sensitive-field-value'}})+'\\n');
+`);
+  const output = await f.run('future-model', 'high');
+  const event = JSON.parse(output.stdout);
+  assert.equal(event.details['[REDACTED_SECRET]'], 'safe context');
+  assert.equal(event.details.token, '[REDACTED_SECRET]');
+  assert.ok(!output.stdout.includes(secretKey));
+  assert.doesNotMatch(output.stdout, /synthetic-sensitive-field-value/);
 });

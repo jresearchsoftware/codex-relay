@@ -2,6 +2,38 @@
 //! immutable meaning and the single permitted auxiliary-check recovery send.
 use crate::*;
 
+// Cancellation before a decisive request is sent proves no external effect.
+// Drop also covers timeout/task cancellation while an awaited read is pending.
+// Once send begins, the durable reservation must survive every cancellation.
+pub(crate) struct PreSendReservation {
+    store: Arc<Mutex<store::Store>>,
+    operation: String,
+    armed: bool,
+}
+impl PreSendReservation {
+    pub(crate) fn new(app: &RepositoryTarget<'_>, operation: &str) -> Self {
+        Self {
+            store: app.store.clone(),
+            operation: operation.to_owned(),
+            armed: true,
+        }
+    }
+    pub(crate) fn sending(&mut self) {
+        self.armed = false;
+    }
+}
+impl Drop for PreSendReservation {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Ok(store) = self.store.lock() {
+                // Failure retains RESERVED and is therefore safe, though it
+                // requires explicit operator reconciliation rather than retry.
+                let _ = store.retryable_failure(&self.operation);
+            }
+        }
+    }
+}
+
 pub(crate) struct CheckEvidence {
     pub check: Value,
     pub warnings: Vec<&'static str>,
@@ -178,7 +210,7 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
             .get_pr(&app.repository, arguments["pr_number"].as_i64().unwrap())
             .await?;
         let mut publication_pr = pr.clone();
-        if native.is_some() && arguments["action"] == "REQUEST_CHANGES" {
+        if arguments["action"] == "REQUEST_CHANGES" {
             publication_pr["draft"] = json!(false);
         }
         if let Some(code) = target_binding_rejection(&app.policy, &pr, arguments)
@@ -259,6 +291,7 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         if !reserved {
             return Err("PUBLICATION_UNCERTAIN");
         }
+        let mut reservation = PreSendReservation::new(app, &operation);
         let before_post = async {
             verify_approval_authority(app, &operation, binding.as_ref(), true)?;
             if let Some(code) = new_cr_step_rejection(&pr, arguments) {
@@ -279,11 +312,6 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         }
         .await;
         if let Err(code) = before_post {
-            app.store
-                .lock()
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?
-                .retryable_failure(&operation)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
             return Err(code);
         }
         let payload = json!({"commit_id":arguments["expected_head_sha"],"event":arguments["action"],"body":body});
@@ -296,8 +324,17 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
             )
             .await
         {
-            Ok(prepared) => app.github.send_mutation(prepared).await,
-            Err(failure) => Err(failure),
+            Ok(prepared) => {
+                reservation.sending();
+                app.github.send_mutation(prepared).await
+            }
+            Err(failure) => {
+                // Drop refunds only this still-unspent decisive reservation.
+                let mut result = task_authority::error(failure.code);
+                result["structuredContent"] = json!({"operation":operation,"diagnostics":failure.diagnostics(),
+                    "operator_action":"No decisive send began. Repeat the identical input after correcting the preparation failure."});
+                return Ok(result);
+            }
         };
         match mutation {
             Ok(review) => Ok(record_review(app, &operation, &review, "PUBLISHED", arguments).await),
@@ -319,4 +356,52 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         .await
         .unwrap_or(Err("PUBLICATION_UNCERTAIN"))
         .unwrap_or_else(task_authority::error)
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    async fn cancel_at_boundary(sending: bool) -> String {
+        let store = Arc::new(Mutex::new(store::Store::open(":memory:").unwrap()));
+        assert!(
+            store
+                .lock()
+                .unwrap()
+                .reserve_publication("cancelled", "body", "legacy")
+                .unwrap()
+                .0
+        );
+        let future = async {
+            let mut guard = PreSendReservation {
+                store: store.clone(),
+                operation: "cancelled".into(),
+                armed: true,
+            };
+            if sending {
+                guard.sending();
+            }
+            std::future::pending::<()>().await;
+        };
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), future)
+                .await
+                .is_err()
+        );
+        let status = store
+            .lock()
+            .unwrap()
+            .known("cancelled")
+            .unwrap()
+            .unwrap()
+            .status;
+        status
+    }
+    #[tokio::test]
+    async fn timeout_before_decisive_send_refunds_reservation() {
+        assert_eq!(cancel_at_boundary(false).await, "RETRYABLE_FAILURE");
+    }
+    #[tokio::test]
+    async fn timeout_after_decisive_send_preserves_unknown_effect_guard() {
+        assert_eq!(cancel_at_boundary(true).await, "RESERVED");
+    }
 }

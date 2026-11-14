@@ -190,8 +190,13 @@ changes after acceptance require fresh acceptance before protected
 continuation. Native PR approval retains its acceptance-time authority binding
 in the review; a receipt cannot silently attach an old approval to newer Task
 semantics. Retained v3 currentness and exact source bindings remain unchanged.
-Git results bind an exact SHA; deployment, qualification, evidence and no-change
-results bind an immutable revision or native run/result identities. Approval
+Git and PR no-change results bind an exact SHA; no-change remediation may explain
+that a finding is rebutted, already satisfied or not reproducible without a
+cosmetic commit. It remains subject to independent exact-head acceptance.
+Deployment, qualification and evidence results bind immutable revisions or
+native run/result identities. A trusted v4 Outcome's admission and latest bound
+result supply execution identity for acceptance; incidental title/label drift
+does not invalidate that identity or override deliberate owner Step numbering. Approval
 preserves every Outcome warning's source and impact, records disposition and
 evidence gaps, and retains all limitations. An open implementation PR needs a
 native exact-head PR verdict, rather than an additional Task Approval. Genuine
@@ -225,7 +230,10 @@ Fresh databases contain six operation fields:
 
 The short SQLite transaction and primary key elect one decisive publisher
 across concurrent processes and restarts. They never span a network request or
-hold unrelated operations. The original reservation survives an ambiguous
+hold unrelated operations. Cancellation or timeout during pre-send validation or request preparation makes
+that original reservation retryable only while no decisive send has begun. A
+cancellation guard refunds the unspent reservation; it is disarmed immediately
+before entering the send call. The original reservation survives an ambiguous
 Review or authority-comment POST; neither missing readback nor a missing local
 receipt authorizes another decisive POST. Complete, bounded native readback
 must identify exactly one trusted original operation, including its body,
@@ -292,22 +300,16 @@ order. Already acquired records are retained; duplicate native IDs and invalid
 pages fail closed rather than being silently deduplicated. Server Link URLs are
 never followed; a short page advertising a next page is incomplete evidence.
 
-Each collection retains the intended 500-record capacity, with an empty
-completion read after a full final page, and an 8 MiB aggregate response-body
-transfer budget including oversized attempts. The reader performs at most 501
-successful page reads and four size reductions. Each collection also has a
-60-second deadline, including token acquisition, so callers outside the typed
-publisher cannot accumulate unbounded time across smaller pages. The enclosing
-typed operation still has its own 60-second deadline, and selected context
-remains limited to 250 KiB.
-The independent byte budget bounds repeated transfer and retained JSON without
-reserving the pathological 128 MiB implied by 500 maximum-sized sources. It
-allows the observed Task 84/109-sized histories and ordinary longer histories
-whose aggregate bytes exceed the single-response limit. It is an internal
-bounded acquisition policy, with no new owner input or prerequisite.
+Each collection admits up to 10,000 records with an empty completion read after
+a full final page, bounded by 16 MiB of transferred response bodies including
+oversized attempts. The 60-second deadline includes token acquisition; the
+enclosing typed operation retains its own 60-second deadline. Selected context
+remains limited to 250 KiB. Unrelated historical discussion no longer creates a
+500-comment Task lifetime ceiling. These are internal acquisition limits, with
+no new owner input or prerequisite.
 
 An individual record that cannot fit a one-record response fails with
-`AUTHORITY_SOURCE_TOO_LARGE`; more than 500 records or a contradictory completion
+`AUTHORITY_SOURCE_TOO_LARGE`; more than 10,000 records or a contradictory completion
 page fails with `AUTHORITY_SOURCE_TRUNCATED`. Aggregate transfer exhaustion is
 `AUTHORITY_COLLECTION_BUDGET_EXCEEDED`, malformed/duplicate data is
 `AUTHORITY_SOURCE_INVALID`, and API or response-stream failure remains
@@ -483,7 +485,9 @@ not disclose configuration/diagnostics or add a second evidence channel to work
 around it. Source tests do not establish adoption by an installed Reader.
 
 Acquisition is limited to 256 KiB per response, 2 MiB aggregate transfer,
-40 requests including authentication, three pages of 25 items per source,
+40 requests including authentication, three pages of 25 items per ordinary
+check/run/annotation source, with Outcome history scanning within that shared
+request budget and retaining at most 75 candidate-related Writer records,
 250 annotations overall, five seconds per request and 30 seconds per read.
 Every budget or source failure remains visible. No response URL, redirect,
 caller-selected path or pagination cursor is followed.
@@ -618,9 +622,10 @@ Manual handoff revalidates the transition before publication. The owner
 orchestration channel can also consume the returned action directly; a failed
 or uncertain action stops continuation and retains same-CR/head recovery.
 Reviewer performs no
-Draft/Ready mutation and requires no new App permission. Recovery of the same
-already-published CR is allowed after Writer drafts it; a fresh review or approval
-still requires a Ready candidate.
+Draft/Ready mutation and requires no new App permission. A substantive native CR may report findings on a stopped Draft candidate at its
+exact bound head. This does not approve the result, integrate it or change its
+Draft state. Native APPROVE still requires a Ready candidate. Recovery of an
+already published CR preserves its original body and native identity.
 
 Writer marks Ready only after durable exact-candidate publication, successful
 Outcome readback and protected controller execution handoff. It revalidates and
@@ -646,3 +651,22 @@ The binary does not implement OAuth discovery, API-key authentication or
 alternate public MCP routes. No secret or certificate material belongs in this
 repository. The pinned client identity SAN above is a protocol boundary, not a
 consumer hostname.
+
+### Bounded history and Unicode
+
+Authority history uses complete pagination within 10,000 native records, 16 MiB
+of transferred bytes and the existing 60-second collection deadline. Reaching a
+budget or incomplete page returns an explicit gap, never a complete prefix. This
+replaces the 500-comment Task lifetime ceiling; exact selected SourceRefs still
+require native identity, parent and body-hash readback.
+
+Execution-warning acquisition scans Outcome history within the existing shared
+40-request, 2 MiB and 30-second evidence budget. Only candidate-related Writer
+records consume the 75-item retained Outcome budget; unrelated discussion can
+precede a current result. The advertised per-surface page ceiling is 40 while
+ordinary check/run/annotation listings retain their three-page limits. Exhausted
+budget remains an explicit evidence gap and cannot establish absence of warnings.
+
+Current typed authority string lengths count Unicode scalar values, matching
+JSON Schema, while payload/body and transfer bounds count UTF-8 bytes. Retained
+legacy executable-CR wire validation preserves its historical byte limits.

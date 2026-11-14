@@ -1175,11 +1175,7 @@ mod pagination {
                 state.source(&list_path(source, 24), expected.clone());
                 let github = paged_api(state.clone()).await;
                 let collected = collect(&github, source, 24).await;
-                if count > 500 {
-                    assert_eq!(collected, Err("AUTHORITY_SOURCE_TRUNCATED"), "{source}");
-                } else {
-                    assert_eq!(collected.unwrap(), expected, "{source}/{count}");
-                }
+                assert_eq!(collected.unwrap(), expected, "{source}/{count}");
                 if count == 500 {
                     assert!(
                         state
@@ -1235,19 +1231,19 @@ mod pagination {
     async fn oversized_record_and_aggregate_budget_have_distinct_errors() {
         for (count, bytes, error) in [
             (1, 262144, "AUTHORITY_SOURCE_TOO_LARGE"),
-            (500, 15700, "AUTHORITY_COLLECTION_BUDGET_EXCEEDED"),
+            (1000, 15700, "AUTHORITY_COLLECTION_BUDGET_EXCEEDED"),
         ] {
             let state = Pages::new(admitted());
             let source = records(count, bytes);
-            if count == 500 {
+            if count == 1000 {
                 // The source itself fits the aggregate bound. Failed oversized
                 // attempts also consume transferred bytes and exhaust it.
-                assert!(serde_json::to_vec(&source).unwrap().len() < 8 * 1024 * 1024);
+                assert!(serde_json::to_vec(&source).unwrap().len() < 16 * 1024 * 1024);
             }
             state.source("issues/24/comments", source);
             let github = paged_api(state.clone()).await;
             assert_eq!(collect(&github, "comments", 24).await, Err(error));
-            assert!(state.reads.lock().unwrap().len() <= 505);
+            assert!(state.reads.lock().unwrap().len() <= 1005);
             if count == 1 {
                 assert_eq!(state.reads.lock().unwrap().last().unwrap().size, 1);
             }
@@ -3820,4 +3816,89 @@ async fn source_pr_current_v4_ignores_unrelated_historical_request_branch_and_pr
         );
         assert_eq!(state.reviews.lock().unwrap().len(), 1);
     }
+}
+
+#[tokio::test]
+async fn native_v4_result_binding_ignores_incidental_display_drift_and_supports_no_change() {
+    for kind in ["git", "no-change"] {
+        let state = admitted();
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let decision = publish_retained(&state, &http, &url, &decision_v4()).await;
+        let authority = authority_v4(
+            vec![decision["structuredContent"]["reference"].clone()],
+            Value::Null,
+            Value::Null,
+        );
+        outcome_v4(
+            &state,
+            authority,
+            json!({"kind":"issue","number":24}),
+            json!({"kind":kind,"revision":HEAD,"identities":[]}),
+        );
+        state.issue.lock().unwrap().as_mut().unwrap()["labels"] =
+            json!([{"name":"steps-to-reproduce"},{"name":"step-8"}]);
+        let mut pr = live_pr();
+        pr["labels"] = json!([{"name":"steps-to-reproduce"}]);
+        pr["title"] = json!("Owner edited presentation");
+        *state.pr.lock().unwrap() = Some(pr);
+        let approved = rpc(
+            &http,
+            &url,
+            2,
+            "tools/call",
+            json!({"name":"submit_pr_review","arguments":base_args("APPROVE")}),
+        )
+        .await;
+        assert_ne!(approved["result"]["isError"], true, "{kind}: {approved}");
+        assert_eq!(
+            approved["result"]["structuredContent"]["post_review_continuation"]
+                ["request_authority"]["admission"]["step"],
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn draft_v4_candidate_accepts_substantive_findings_without_approval() {
+    let state = admitted();
+    let mut pr = live_pr();
+    pr["draft"] = json!(true);
+    pr["base"]["sha"] = json!("b".repeat(40));
+    *state.pr.lock().unwrap() = Some(pr);
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let result = publish_retained(&state, &http, &url, &v4_cr()).await;
+    assert_ne!(result["isError"], true, "{result}");
+    let approved = rpc(
+        &http,
+        &url,
+        2,
+        "tools/call",
+        json!({"name":"submit_pr_review","arguments":base_args("APPROVE")}),
+    )
+    .await;
+    assert_eq!(
+        approved["result"]["content"][0]["text"],
+        "DRAFT_PR_NOT_READY"
+    );
+    assert!(state.pr.lock().unwrap().as_ref().unwrap()["draft"] == true);
+}
+
+#[tokio::test]
+async fn no_pr_v4_acceptance_uses_native_admission_when_owner_numbering_has_advanced() {
+    let state = admitted();
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let (reference, outcome) = outcome_v4(
+        &state,
+        authority_v4(vec![], Value::Null, Value::Null),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"qualification","revision":"run-10","identities":[]}),
+    );
+    state.issue.lock().unwrap().as_mut().unwrap()["labels"] =
+        json!([{"name":"step-8"},{"name":"steps-to-reproduce"}]);
+    let result = publish_retained(&state, &http, &url, &approval_v4(reference, &outcome)).await;
+    assert_ne!(result["isError"], true, "{result}");
+    assert_eq!(
+        state.issue.lock().unwrap().as_ref().unwrap()["labels"][0]["name"],
+        "step-8"
+    );
 }

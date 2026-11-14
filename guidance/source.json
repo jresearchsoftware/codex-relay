@@ -1,9 +1,11 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4",
+  "contract_revision": "cfeb633c86408327bf9941a5dfaaa41f98706ac1",
+  "contract_revision_role": "accepted-baseline",
+  "contract_source": "source-tree",
   "name": "codex-relay",
-  "publication": "MAJOR 6.0.0 candidate from accepted 5.0.0; adds mandatory owner orchestration to await the complete trusted manual handoff or a verified terminal routing error and reconcile the original event if publication is ambiguous; no external publication, deployment or adoption claim",
+  "publication": "MINOR 6.1.0 candidate from accepted 6.0.0; compatible engineering-autonomy methods, meaningful no-change and stopped-result findings, technical continuation and retained-warning guidance; no new consumer obligation or activation claim",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -13,6 +15,6 @@
   "shared_requirement": ">=2.5.0",
   "shared_source_revision": "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
   "shared_version": "5.0.0",
-  "version": "6.0.0",
+  "version": "6.1.0",
   "workflow_contract": "relay-workflows-v4"
 }

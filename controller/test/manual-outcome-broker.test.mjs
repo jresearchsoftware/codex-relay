@@ -27,6 +27,14 @@ async function manualBroker(t, race) {
   const originalList = f.api.list.bind(f.api);
   const originalPost = f.api.post.bind(f.api);
   const originalPatch = f.api.patch.bind(f.api);
+  const originalDelete = f.api.delete.bind(f.api);
+  f.api.delete = async path => {
+    if (path.startsWith('/issues/43/labels/')) {
+      const name = decodeURIComponent(path.split('/').at(-1));
+      pr.labels = pr.labels.filter(label => label.name !== name); return;
+    }
+    return originalDelete(path);
+  };
   const originalIdentity = f.api.userIdentity.bind(f.api);
   const originalPut = f.store.put.bind(f.store);
   f.api.get = path => ['/pulls/43', '/issues/43'].includes(path) ? Promise.resolve(copy(pr)) : originalGet(path);
@@ -106,12 +114,13 @@ for (const [name, mutate, code] of [
   ['ambiguous Steps', pr => { pr.labels = [{ name: 'step-1' }, { name: 'step-9' }]; }, 'STEP_LABEL_MULTIPLE'],
   ['malformed Step', pr => { pr.labels = [{ name: 'step-invalid' }]; }, 'STEP_LABEL_INVALID'],
   ['conflicting title', pr => { pr.title = 'Task 41 · Step 1 · unrelated'; }, 'STEP_DISPLAY_MISMATCH']
-]) test(`manual PR projection rejects ${name} without publishing or becoming Ready`, async t => {
+]) test(`manual PR projection repairs ${name} using the admitted native identity`, async t => {
   const f = await manualBroker(t);
   mutate(f.pr);
-  await assert.rejects(f.invoke(), { code });
-  assert.equal(f.posts(), 0); assert.equal(f.ready(), 0); assert.equal(f.pr.draft, true);
-  assert.equal((await f.store.get(f.envelope.runId)).manualSubmission, undefined);
+  await f.invoke();
+  assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
+  assert.deepEqual(f.pr.labels, [{ name: `step-${f.envelope.step}` }]);
+  assert.match(f.pr.title, new RegExp(`^Task 42 · Step ${f.envelope.step} · `));
 });
 
 test('manual successful Outcome remains review-ready under new Deliberative approval constraints, including replay', async t => {

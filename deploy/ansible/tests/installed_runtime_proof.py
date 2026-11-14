@@ -50,6 +50,7 @@ def require_supported_node():
 
 
 def run(args, **kwargs):
+    kwargs.setdefault('cwd', '/')
     result = subprocess.run(args, text=True, **kwargs)
     if result.returncode:
         raise RuntimeError(f'{args}:\n{result.stdout or ""}\n{result.stderr or ""}')
@@ -513,7 +514,10 @@ def general_runner_proof(temp, values, env):
             excessive.chmod(0o440)
             failed = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(validation)],
                                     env=env, text=True, capture_output=True)
-            expected = 'failed_when_result' if grant == 'ALL' else 'GENERAL_RUNNER_SUDO_POLICY_UNEXPECTED'
+            expected = 'failed_when_result'
+            # Both injected grants are rejected by the current per-command
+            # effective-policy gate. A diagnostic string from the former
+            # aggregate sudo parser is not part of this native proof.
             assert failed.returncode != 0 and expected in failed.stdout, failed.stdout
     finally:
         excessive.unlink()
@@ -880,6 +884,7 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
             task(artifacts, 'Create the exact relay release namespace'),
             task(artifacts, 'Allow runtime traversal only to the reviewed release executable namespace'),
             {'ansible.builtin.include_role': {'name': 'relay_artifacts', 'tasks_from': 'stage-source.yml'}},
+            task(artifacts, 'Install stable Relay routing and recovery invocation paths'),
             task(codex_tasks, 'Create the fixed Codex runtime and credential namespaces'),
             {'ansible.builtin.include_role': {'name': 'relay_controller', 'tasks_from': 'writer-proof-files.yml'}},
         ]
@@ -910,6 +915,9 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         # Installed entrypoints must resolve their deployed snapshot even when
         # the source-workspace/workflow consumer environment is absent.
         env.pop('RELAY_CONSUMER_CONFIG', None)
+        # Runtime identities must not inherit the manual root user's private
+        # temporary path. Their synthetic fixtures use the namespace's /tmp.
+        env['TMPDIR'] = '/tmp'
         # This is the real production runner service's deploy umask. A normal
         # interactive root shell (0022) hides the installed-package EACCES.
         result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)], env=env, text=True, capture_output=True, umask=deploy_umask)

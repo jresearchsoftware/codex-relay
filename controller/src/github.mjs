@@ -5,6 +5,7 @@ import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
+import { resolvedCodexRuntimeTimeoutMs } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 const TERMINATION_GRACE_MS = 5000;
 function signalProcessGroup(pid, signal) {
@@ -52,7 +53,7 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 }
 
 
-export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs = 100 * 60 * 1000,
+export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs = resolvedCodexRuntimeTimeoutMs(process.env.CODEX_RUNTIME_TIMEOUT_MS) + 10 * 60 * 1000,
   reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
   return {
     async dispatch(envelope) {
@@ -82,7 +83,8 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
       const onSignal = () => { cancelled = true; void reap().then(() => finishWait?.(null)); };
       try {
         await fallbackStore.write({ stage: 'dispatcher', operation: 'dispatch', childState: 'unknown',
-          containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown' });
+          containment: 'unknown', cleanup: 'pending', persistence: 'pending', retention: 'unknown',
+          sandboxCreated: false, inputSchemaCreated: false });
         try {
           child = spawnImpl(executionConsumer(envelope.executionSlot).paths.dispatch, [], {
             env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
@@ -153,7 +155,14 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
           runtimeLifecycle = lifecycle;
         } catch (error) {
           lifecycle = error.details ?? {};
-          if (!pendingError) pendingError = error;
+          // Keep a proven semantic result when only bounded cleanup failed and
+          // that cleanup's process is also contained. Retain the resource and
+          // its capsule; neither reuse nor diagnostic loss is authorized.
+          if (!pendingError && error.code === 'SANDBOX_CLEANUP_FAILED'
+              && containment === 'reaped' && lifecycle.cleanupContainment === 'reaped'
+              && ['stored', 'not_required'].includes(lifecycle.persistence)) {
+            runtimeLifecycle = lifecycle;
+          } else if (!pendingError) pendingError = error;
         }
         if (pendingError) {
           const original = pendingError.details ?? {};
@@ -168,7 +177,8 @@ export function createOnDemandDispatchAdapter({ spawnImpl = nodeSpawn, timeoutMs
         }
       }
       if (pendingError) throw pendingError;
-      return { ...value, codexUsage: normalizeCodexUsage(value.codexUsage), containment: 'reaped', runtimeLifecycle };
+      return { ...value, codexUsage: normalizeCodexUsage(value.codexUsage), containment: 'reaped', runtimeLifecycle,
+        ...(runtimeLifecycle?.cleanup === 'failed' ? { executionWarnings: ['RUNTIME_CLEANUP_FAILED'] } : {}) };
     }
   };
 }

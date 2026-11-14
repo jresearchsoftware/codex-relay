@@ -9,11 +9,12 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from '../../controller/src/diagnostic-fallback.mjs';
 import { captureSandboxIdentity } from './sandbox-cleanup.mjs';
-import { CODEX_RESULT_SCHEMA, isBoundedCodexRuntimeIdentifier, normalizeCodexSemanticResult } from "./codex-result-schema.mjs";
+import { CODEX_RESULT_SCHEMA } from "./codex-result-schema.mjs";
 import { WriterBlockedError } from "./contracts.mjs";
 import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig } from "../../controller/src/diagnostics.mjs";
 import { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
-import { normalizeCodexUsage, usageFromCodexJsonLines } from "../../controller/src/codex-usage.mjs";
+import { normalizeCodexUsage } from "../../controller/src/codex-usage.mjs";
+import { createCodexJsonlParser } from './codex-jsonl.mjs';
 import { buildCodexProcessSpec } from './codex-process.mjs';
 export { buildCodexProcessSpec, CODEX_SUDO_PATH, CODEX_RUNTIME_USER, CODEX_LAUNCHER_PATH } from './codex-process.mjs';
 import { CODEX_LAUNCHER_PATH } from './codex-process.mjs';
@@ -23,8 +24,8 @@ export const CODEX_INPUT_NAME = "task-input.md";
 export const CODEX_SCHEMA_NAME = "codex-result-schema.json";
 export const DEFAULT_CODEX_RUNTIME_TIMEOUT_MS = 90 * 60 * 1000;
 export const CODEX_TERMINATION_GRACE_MS = 5000;
-// Functional JSONL is retained long enough to parse the native stream, while
-// stderr remains on the smaller mode-specific diagnostic limit.
+// Compatibility export: the cap now applies to one JSONL record; retained
+// diagnostics and semantic result limits are independent of stream duration.
 export const MAX_CODEX_FUNCTIONAL_STDOUT_BYTES = 16 * 1024 * 1024;
 export { MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES };
 export { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
@@ -62,6 +63,7 @@ export function buildCodexEnvironment(source = process.env, { sandboxRoot = join
   env.XDG_CACHE_HOME = cache;
   env.XDG_DATA_HOME = data;
   env.XDG_STATE_HOME = state;
+  env.OPENSSL_CONF = join(config, "openssl.cnf");
   env.TMP = temp;
   env.TEMP = temp;
   env.TMPDIR = temp;
@@ -209,64 +211,12 @@ export function parseLauncherDiagnostic(stderr, { truncated = false } = {}) {
   return { code: "UNCLASSIFIED_CHILD_FAILURE", bytes: Buffer.byteLength(String(stderr ?? ""), "utf8"), truncated, preview: "", childStarted: null, childState: "unknown", childExitCode: null, signal: null, primaryCause: null };
 }
 
-function nativeIdentifier(event, names) {
-  for (const name of names) {
-    if (typeof event?.[name] !== "string") continue;
-    const value = event[name].trim();
-    if (value !== "" && value !== "UNAVAILABLE" && !/^(?:unknown|pending|not[-_ ]?available)$/i.test(value) && isBoundedCodexRuntimeIdentifier(value)) return value;
-  }
-  return undefined;
-}
-
 export function parseCodexJsonLines(stdout, evidence = {}) {
-  evidence.codexUsage = usageFromCodexJsonLines(stdout, { truncated: evidence.codexStdoutTruncated === true });
-  const lines = String(stdout ?? "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  if (lines.length === 0) throw new WriterBlockedError("CODEX_JSON_INVALID", "Codex must return structured JSON events");
-  let threadId;
-  let sessionId;
-  let semanticResult;
-  const eventTypes = new Set();
-  let nativeAgentMessageCount = 0;
-  let nativeAgentMessageBytes = 0;
-  for (const line of lines) {
-    let event;
-    try { event = JSON.parse(line); } catch { throw new WriterBlockedError("CODEX_JSON_INVALID", "Codex emitted a non-JSON event"); }
-    if (!event || typeof event !== "object" || Array.isArray(event)) throw new WriterBlockedError("CODEX_JSON_INVALID", "Codex emitted a non-object JSON event");
-    if (typeof event.type === "string") eventTypes.add(event.type);
-    threadId = nativeIdentifier(event, ["threadId", "thread_id"]) ?? threadId;
-    sessionId = nativeIdentifier(event, ["sessionId", "session_id"]) ?? sessionId;
-    if (event.type === "task_result" || event.kind === "task_result") semanticResult = event.result ?? event;
-    else if (event.status === "success" && Object.hasOwn(event, "summary")) semanticResult = event;
-    else if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string") {
-      nativeAgentMessageCount += 1;
-      nativeAgentMessageBytes += Buffer.byteLength(event.item.text, "utf8");
-      const text = event.item.text.trim();
-      if (text.startsWith("{") && text.endsWith("}")) {
-        try {
-          const parsed = JSON.parse(text);
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) semanticResult = parsed.result ?? parsed;
-        } catch { /* Plain agent prose is not a task result. */ }
-      }
-    }
-  }
-  evidence.codexEventCount = lines.length;
-  evidence.codexEventTypes = [...eventTypes].sort();
-  evidence.codexNativeAgentMessageCount = nativeAgentMessageCount;
-  evidence.codexNativeAgentMessageBytes = nativeAgentMessageBytes;
-  if (!semanticResult || typeof semanticResult !== "object") throw new WriterBlockedError("CODEX_RESULT_MISSING", "Codex did not emit a structured semantic task result");
-  let normalized;
-  try { normalized = normalizeCodexSemanticResult(semanticResult); }
-  catch { throw new WriterBlockedError("CODEX_RESULT_INVALID", "Codex semantic result does not match the unified result contract"); }
-  const nativeThreadId = threadId ?? "UNAVAILABLE";
-  // Codex CLI's native JSONL currently exposes the execution identifier as
-  // thread_id and may omit a separate session_id. A native thread identifier
-  // is the CR's allowed session/thread evidence; it is not model-generated
-  // prose and must not be downgraded to UNAVAILABLE.
-  const nativeSessionId = sessionId ?? threadId ?? "UNAVAILABLE";
-  evidence.threadId = nativeThreadId;
-  evidence.sessionId = nativeSessionId;
-  evidence.sessionIdSource = sessionId ? "native-session" : threadId ? "native-thread" : "unavailable";
-  return { ...normalized, threadId: nativeThreadId, sessionId: nativeSessionId };
+  const parser = createCodexJsonlParser(evidence);
+  parser.push(String(stdout ?? ''));
+  const result = parser.finish();
+  if (evidence.codexStdoutTruncated === true) evidence.codexUsage = normalizeCodexUsage();
+  return result;
 }
 
 export function terminateCodexChild(child) {
@@ -312,8 +262,8 @@ function filesystemSnapshot(paths) {
   })).then(entries => Object.fromEntries(entries));
 }
 
-function timeoutFrom(source) {
-  const configured = Number(source?.CODEX_RUNTIME_TIMEOUT_MS ?? DEFAULT_CODEX_RUNTIME_TIMEOUT_MS);
+export function resolvedCodexRuntimeTimeoutMs(value) {
+  const configured = Number(value ?? DEFAULT_CODEX_RUNTIME_TIMEOUT_MS);
   return Number.isInteger(configured) && configured >= 1000 && configured <= 2 * 60 * 60 * 1000 ? configured : DEFAULT_CODEX_RUNTIME_TIMEOUT_MS;
 }
 
@@ -405,16 +355,18 @@ export async function runGovernedCodexTask({
   let childLaunchError = false;
   let launcherDiagnostic;
   let pendingError;
-  const stdoutCapture = createBoundedUtf8Capture(MAX_CODEX_FUNCTIONAL_STDOUT_BYTES);
+  let stdoutCapture = createBoundedUtf8Capture(MAX_NORMAL_DIAGNOSTIC_BYTES);
+  const jsonlParser = createCodexJsonlParser(evidence, secrets);
   let stderrCapture = createBoundedUtf8Capture(MAX_NORMAL_DIAGNOSTIC_BYTES);
   let stdoutCapturedBytes = 0;
   let stderrCapturedBytes = 0;
   let stdoutTruncated = false;
   let stderrTruncated = false;
-  let streamsFinalized = false;
+  let streamsFinalized = false, jsonlResult, jsonlError;
   const finalizeStreams = () => {
     if (streamsFinalized) return;
     streamsFinalized = true;
+    try { jsonlResult = jsonlParser.finish(); } catch (error) { jsonlError = error; }
     const stdoutResult = stdoutCapture.finish();
     const stderrResult = stderrCapture.finish();
     stdout = stdoutResult.value;
@@ -442,7 +394,8 @@ export async function runGovernedCodexTask({
     await checkpoint({ operation: 'diagnostic-config', pathContext: 'diagnostic-store' });
     diagnosticMode = (await readDiagnosticConfig()).mode;
     stderrCapture = createBoundedUtf8Capture(diagnosticMode === 'debug' ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES);
-    taskInput = `${inputText}\n\n${PROGRESS_BOUNDED_EXECUTION}\n`;
+    stdoutCapture = createBoundedUtf8Capture(diagnosticMode === 'debug' ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES);
+    taskInput = `${inputText}\n\n${PROGRESS_BOUNDED_EXECUTION}\nRuntime budget: this invocation has ${Math.floor(resolvedCodexRuntimeTimeoutMs(env?.CODEX_RUNTIME_TIMEOUT_MS) / 1000)} seconds for Codex execution. Preserve useful progress before the deadline; containment and trusted publication have separate outer time. Consumer configuration owns this budget.\n`;
     schemaText = `${JSON.stringify(resultSchema)}\n`;
     await checkpoint({ operation: 'sandbox-preflight', pathContext: 'sandbox' });
     // Existing sandboxes may be the last evidence of an earlier failed attempt.
@@ -454,6 +407,9 @@ export async function runGovernedCodexTask({
     diagnosticPhases.push("sandbox-created", "path-preflight-passed");
     await writeFile(inputPath, taskInput, { mode: 0o660 });
     await writeFile(schemaPath, schemaText, { mode: 0o660 });
+    // A task-local config supports ordinary key/CSR fixtures without mounting
+    // host OpenSSL includes, engines, private keys or provider policy.
+    await writeFile(join(stagingDir, "config", "openssl.cnf"), "[req]\ndistinguished_name = req_distinguished_name\n[req_distinguished_name]\n", { flag: "wx", mode: 0o660 });
     if (process.platform !== "win32") {
       await chmod(inputPath, 0o660);
       await chmod(schemaPath, 0o660);
@@ -490,10 +446,10 @@ export async function runGovernedCodexTask({
       evidence.launcherStarted = true;
       diagnosticPhases.push("launcher-started");
     });
-    child.stdout.on("data", chunk => stdoutCapture.push(chunk));
+    child.stdout.on("data", chunk => { stdoutCapture.push(chunk); jsonlParser.push(chunk); });
     child.stderr.on("data", chunk => stderrCapture.push(chunk));
     child.stdin?.on('error', () => {});
-    const timeoutMs = timeoutFrom(env);
+    const timeoutMs = resolvedCodexRuntimeTimeoutMs(env?.CODEX_RUNTIME_TIMEOUT_MS);
     const exit = await new Promise((resolveExit, rejectExit) => {
       let settled = false;
       const cancel = () => { evidence.codexTerminationRequested = true; child.stdin?.end(); };
@@ -534,7 +490,6 @@ export async function runGovernedCodexTask({
     evidence.codexStdoutBytes = stdoutBytes;
     evidence.codexStdoutCapturedBytes = stdoutCapturedBytes;
     evidence.codexStdoutTruncated = stdoutTruncated;
-    evidence.codexUsage = usageFromCodexJsonLines(stdout, { truncated: stdoutTruncated });
     launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
     evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
     if (signal?.aborted) {
@@ -550,7 +505,7 @@ export async function runGovernedCodexTask({
       evidence.codexFailureClass = launcherDiagnostic.code;
       evidence.codexDiagnosticPreview = launcherDiagnostic.preview;
       evidence.codexDiagnosticTruncated = launcherDiagnostic.truncated;
-      if (launcherDiagnostic.code === "CODEX_LAUNCHER_OUTPUT_TOO_LARGE" || stdoutTruncated) {
+      if (launcherDiagnostic.code === "CODEX_LAUNCHER_OUTPUT_TOO_LARGE") {
         throw new WriterBlockedError("CODEX_OUTPUT_TOO_LARGE", "Codex functional stdout exceeded the bounded byte limit", { outputBytes: stdoutBytes, outputCapturedBytes: stdoutCapturedBytes, outputLimit: MAX_CODEX_FUNCTIONAL_STDOUT_BYTES });
       }
       throw new WriterBlockedError("CODEX_NONZERO_EXIT", "Codex execution did not complete successfully", { childExitCode, diagnosticCode: launcherDiagnostic.code, diagnosticBytes: launcherDiagnostic.bytes, diagnosticTruncated: launcherDiagnostic.truncated, childStarted: evidence.codexChildStarted });
@@ -558,14 +513,12 @@ export async function runGovernedCodexTask({
     evidence.codexStderrBytes = stderrBytes;
     evidence.codexStderrCapturedBytes = stderrCapturedBytes;
     evidence.codexStderrTruncated = stderrTruncated;
-    if (stdoutTruncated) {
-      throw new WriterBlockedError("CODEX_OUTPUT_TOO_LARGE", "Codex functional stdout exceeded the bounded byte limit", { outputBytes: stdoutBytes, outputCapturedBytes: stdoutCapturedBytes, outputLimit: MAX_CODEX_FUNCTIONAL_STDOUT_BYTES });
-    }
     launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
     evidence.codexChildStarted = launcherDiagnostic.childStarted;
     await checkpoint({ stage: 'result-parse', boundary: 'result-parse', operation: 'result-parse',
       childState: launcherDiagnostic.childState, lastSuccessfulBoundary: 'codex-child' });
-    const result = parseCodexJsonLines(stdout, evidence);
+    if (jsonlError) throw jsonlError;
+    const result = jsonlResult;
     evidence.codexChildStarted = true;
     await checkpoint({ stage: 'finalization', boundary: 'finalization', operation: 'runtime-finalization',
       childState: 'started', lastSuccessfulBoundary: 'result-parse' });
@@ -614,7 +567,7 @@ export async function runGovernedCodexTask({
           argv: finalProcessSpec?.args ?? [], env: childEnv ? diagnosticEnvironmentSnapshot(childEnv) : {}, checkout: checkoutRoot,
           filesystem, input: { path: inputPath, bytes: Buffer.byteLength(taskInput), exists: filesystem.input?.exists === true },
           schema: { path: schemaPath, bytes: Buffer.byteLength(schemaText), exists: filesystem.schema?.exists === true },
-          stdout, stdoutTruncated, stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
+          stdout, stdoutTruncated, codexErrorEvents: jsonlParser.diagnostics(), stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
           classification: pendingError?.code ?? launcherDiagnostic?.code ?? 'CODEX_EXIT_OK',
           runtimeFailure: cause ? { operation: state.operation, code: cause.code, syscall: cause.syscall, path: cause.path, dest: cause.dest } : undefined,
           secrets

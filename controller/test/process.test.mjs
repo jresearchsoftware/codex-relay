@@ -194,3 +194,18 @@ test('dispatcher process crash leaves an independently readable durable capsule'
   const saved = await readFile(join(root, String(reopened.reference.slot), `${envelope.attemptId}.json`), 'utf8');
   assert.ok(Buffer.byteLength(saved) < 16 * 1024);
 });
+
+
+test('contained cleanup failure preserves the semantic result with an explicit retained-resource warning', async () => {
+  const dispatcher = fixture({
+    spawnImpl: launch(`const e=JSON.parse(require('node:fs').readFileSync(0,'utf8'));writeSync(1, JSON.stringify({version:e.version,attemptId:e.attemptId,child:'started',containment:'reaped',result:{status:'success'}}));`),
+    finalizeArtifacts: async () => {
+      throw Object.assign(new Error('cleanup failed'), { code: 'SANDBOX_CLEANUP_FAILED', details: {
+        cleanup: 'failed', cleanupContainment: 'reaped', persistence: 'stored', retention: 'retained',
+        fallbackReference: { status: 'stored', executionId: envelope.attemptId, slot: 0 } } });
+    } });
+  const result = await dispatcher.dispatch(envelope);
+  assert.equal(result.result.status, 'success');
+  assert.deepEqual(result.executionWarnings, ['RUNTIME_CLEANUP_FAILED']);
+  assert.equal(result.runtimeLifecycle.retention, 'retained');
+});

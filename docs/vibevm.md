@@ -2,7 +2,7 @@
 
 Relay selects Shared Governance **7.0.1** for its project-wide adoption under
 Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
-Candidate Relay **6.0.0** retains Shared 5.0.0 for its standalone
+Candidate Relay **6.1.0** retains Shared 5.0.0 for its standalone
 snapshot and publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
 frozen Relay 4.1.1 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
@@ -150,7 +150,7 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=7.0.1` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=6.0.0`,
+source and exact commit. The native local registry supplies Relay `=6.1.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7
@@ -163,7 +163,7 @@ index and projected Skill belong to the same reviewable source change.
 | Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9` |
 | Shared annotated tag | `v7.0.1`, tag object `dddb250d5eb133347f0b1712740a96be7a1d823b`, peels to the distribution above |
 | Complete native distribution tree hash | `sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f` |
-| Relay guidance product-contract baseline | `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` |
+| Relay guidance contract source | `source-tree`, with actual input hashes in provenance; accepted baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` |
 
 The producer source and distribution commit are distinct identities. The
 receipt's payload hashes and native tree hash use different recipes: the tree
@@ -179,6 +179,8 @@ MAJOR classification is independent of the Shared 7.0.1 patch. Guidance 6.0.0
 adds a mandatory owner wait and original-event reconciliation to the manual
 handoff route; it is MAJOR under PV-002. See
 [relay-guidance.md](relay-guidance.md#version-and-provenance).
+Guidance 6.1.0 adds compatible Task 57 engineering-autonomy and meaningful-result
+paths without new mandatory consumer work; accepted 6.0.0 bytes remain frozen.
 Guidance 4.1.1 was a PATCH clarification of existing automatic Writer Draft
 preparation before remediation, with no new owner operation or runtime route.
 Accepted 4.1.0 added compatible ordinary Git-pair installer guidance and retained

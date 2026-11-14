@@ -27,16 +27,19 @@ async function rejectProgress(f, code) {
   assert.equal(f.pushes(), 0);
 }
 
-for (const remediation of [false, true]) test(`Writer verifies bot identity for repository-wide changes, remediation=${remediation}`, async t => {
+for (const remediation of [false, true]) test(`Writer preserves original commit attribution for repository-wide changes, remediation=${remediation}`, async t => {
   const f = await fixture(t, { remediation }); await f.prepare(f.envelope);
   await writeFile(join(f.cwd, 'new-file.md'), 'task required\n');
   await f.command(f.cwd, ['add', 'new-file.md']);
   // The fixture command defaults to the owner, not the expected worker bot.
   await f.command(f.cwd, ['commit', '-m', 'incorrect identity']);
-  await rejectProgress(f, 'COMMIT_OWNERSHIP_INVALID');
+  const progress = await f.collect(f.envelope);
+  const result = await f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: progress.bundle });
+  assert.equal(result.publishedHead, progress.head);
+  assert.equal(await f.command(f.root, ['--git-dir=' + f.remote, 'show', '-s', '--format=%an', progress.head]), 'owner');
 });
 
-test('Writer rejects a non-linear task commit even with the expected bot identity', async t => {
+test('Writer accepts a non-linear unpublished task commit with truthful attribution', async t => {
   const f = await fixture(t); await f.prepare(f.envelope); await f.commit();
   const first = await f.command(f.cwd, ['rev-parse', 'HEAD']);
   const tree = await f.command(f.cwd, ['rev-parse', 'HEAD^{tree}']);
@@ -45,7 +48,9 @@ test('Writer rejects a non-linear task commit even with the expected bot identit
     GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email
   });
   await f.command(f.cwd, ['update-ref', `refs/heads/${f.envelope.branch}`, merge]);
-  await rejectProgress(f, 'COMMIT_OWNERSHIP_INVALID');
+  const progress = await f.collect(f.envelope);
+  const result = await f.broker.invoke({ operation: 'publish-progress', runId: 99, attemptId: f.envelope.attemptId, bundle: progress.bundle });
+  assert.equal(result.publishedHead, merge);
 });
 
 test('Writer rejects symlink and gitlink file modes on any repository path', async t => {

@@ -161,8 +161,8 @@ test('both worker operations receive supplied launch metadata despite historical
     assert.ok(request.inputText.includes(`Task: #42\nStep: 42\nThread name: ${f.envelope.thread}`));
     assert.equal(request.taskTitle, f.envelope.thread);
     assert.ok(request.inputText.includes(`Subagents: ${remediation ? 'Off' : 'On'}`));
-    assert.match(request.inputText, /Do not push, publish, merge PRs, close Issues/);
-    assert.equal(request.inputText.includes('Bounded base-branch reconciliation:'), remediation);
+    assert.match(request.inputText, /GitHub publication, PR integration, Issue closure and independent review belong to trusted actors/);
+    assert.equal(request.inputText.includes('refs/remotes/main contains the verified current descendant'), remediation);
   }
 });
 

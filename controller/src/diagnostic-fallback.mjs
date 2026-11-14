@@ -10,6 +10,24 @@ const DEFAULT_ROOT = join(CONSUMER.paths.attemptRoot, 'runtime-diagnostics');
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 function fail(code) { throw Object.assign(new Error(code), { code }); }
 
+// Resource retention and active diagnostic capacity are independent. A retained
+// resource needs a durable final diagnostic elsewhere before its slot retires.
+function independentlyArchived(capsule) {
+  const archive = capsule.terminalDiagnostic;
+  return archive?.status === 'stored' && archive.executionId === `${capsule.executionId}-finalization`
+    && ['normal', 'debug'].includes(archive.mode)
+    && ['started', 'not_started'].includes(capsule.childState)
+    && ['reaped', 'not_required'].includes(capsule.containment)
+    && ['reaped', 'not_required'].includes(capsule.cleanupContainment)
+    && ['stored', 'not_required'].includes(capsule.persistence)
+    && ['complete', 'failed', 'retained', 'not_required'].includes(capsule.cleanup);
+}
+function releasable(capsule) {
+  return (!capsule.controllerFailure && !capsule.terminalDiagnostic
+    && capsule.cleanup === 'complete' && capsule.retention === 'none'
+    && ['stored', 'not_required'].includes(capsule.persistence)) || independentlyArchived(capsule);
+}
+
 async function protectedStat(path, directory) {
   const value = await lstat(path);
   if (value.isSymbolicLink() || (directory ? !value.isDirectory() : !value.isFile() || value.nlink !== 1)
@@ -44,6 +62,7 @@ export function normalizeRuntimeCapsule(value, executionId) {
     ...(integer(value.sandboxIdentity?.device) && integer(value.sandboxIdentity?.inode)
       ? { sandboxIdentity: { device: String(value.sandboxIdentity.device), inode: String(value.sandboxIdentity.inode) } } : {}),
     ...(safeDiagnosticStoreReference(value.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(value.diagnosticStore) } : {}),
+    ...(safeDiagnosticStoreReference(value.terminalDiagnostic) ? { terminalDiagnostic: safeDiagnosticStoreReference(value.terminalDiagnostic) } : {}),
     ...(safeFallbackReference(value.fallbackReference) ? { fallbackReference: safeFallbackReference(value.fallbackReference) } : {}),
     ...(failure ? { failureDiagnostic: failure } : {}),
     ...(controllerFailure ? { controllerFailure } : {}) };
@@ -100,8 +119,8 @@ function handleFor(root, slot, executionId) {
       const entries = await readdir(directory);
       if (entries.length !== 1 || entries[0] !== `${executionId}.json`) fail('DIAGNOSTIC_FALLBACK_RESIDUE');
       const capsule = await this.read();
-      if (capsule.cleanup !== 'complete' || capsule.retention !== 'none' || !['stored', 'not_required'].includes(capsule.persistence)) fail('DIAGNOSTIC_FALLBACK_NOT_RELEASABLE');
-      // A durable success tombstone avoids deleting the last evidence before
+      if (!releasable(capsule)) fail('DIAGNOSTIC_FALLBACK_NOT_RELEASABLE');
+      // A durable retirement tombstone avoids deleting the last evidence before
       // a possible release/fsync failure. Only an admitted new reservation may
       // replace it, under the exclusive per-slot reclamation claim below.
       await this.write({ ...capsule, released: true });
@@ -145,17 +164,17 @@ export async function reserveRuntimeDiagnostic({ executionId, root = DEFAULT_ROO
       let previous;
       try { previous = await handleFor(root, slot, previousId).read(); }
       catch (readError) { if (readError.code === 'ENOENT') continue; throw readError; }
-      if (previous.released !== true || previous.cleanup !== 'complete' || previous.retention !== 'none') continue;
+      if (previous.released !== true || !releasable(previous)) continue;
       try { await mkdir(join(directory, '.reclaim'), { mode: 0o700 }); }
       catch (claimError) { if (claimError.code === 'EEXIST') continue; throw claimError; }
       // Revalidate under the claim: another reservation may have replaced the
-      // observed success while we waited. A stale claim fails closed.
+      // observed retired capsule while we waited. A stale claim fails closed.
       const claimedEntries = await readdir(directory);
       if (claimedEntries.length !== 2 || !claimedEntries.includes(entries[0])) {
         await rmdir(join(directory, '.reclaim')); await syncDirectory(directory); continue;
       }
       const claimed = await handleFor(root, slot, previousId).read();
-      if (claimed.released !== true) {
+      if (claimed.released !== true || !releasable(claimed)) {
         await rmdir(join(directory, '.reclaim')); await syncDirectory(directory); continue;
       }
       reclaimed = entries[0];

@@ -83,7 +83,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
         const returned = await execute(e);
         if (returned?.version !== VERSION || returned.attemptId !== e.attemptId) fail('CHILD_ENVELOPE_INVALID');
         record.execution = { reserved: true, returned: true, child: returned.child, containment: returned.containment, result: returned.result,
-          codexUsage: normalizeCodexUsage(returned.codexUsage) };
+          codexUsage: normalizeCodexUsage(returned.codexUsage), runtimeLifecycle: returned.runtimeLifecycle,
+          executionWarnings: returned.executionWarnings ?? [] };
       } catch (error) {
         record.execution = { ...record.execution, returned: true, child: error.details?.childState ?? 'unknown',
           containment: error.details?.containment ?? 'unknown', errorCode: error.code ?? 'EXECUTION_FAILED',
@@ -97,8 +98,10 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     lastSuccessfulBoundary = 'contained-execution';
     stage = 'progress';
     const progress = await collect(e);
-    if (typeof progress.clean !== 'boolean') fail('WORKTREE_STATE_UNKNOWN');
-    record.collection = { head: progress.head, clean: progress.clean === true, preserved: true };
+    if (typeof progress.clean !== 'boolean' && !(progress.clean === null && progress.worktreeObservation?.status === 'unknown')) fail('WORKTREE_STATE_UNKNOWN');
+    const executionWarnings = [...(record.execution.executionWarnings ?? []),
+      ...(progress.clean === null ? ['WORKTREE_OBSERVATION_INCOMPLETE'] : progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'])];
+    record.collection = { head: progress.head, clean: progress.clean, preserved: true, ...(progress.worktreeObservation ? { worktreeObservation: progress.worktreeObservation } : {}) };
     lastSuccessfulBoundary = 'collection';
     // Collection observes the complete retained checkout after containment.
     // Persist that physical-resource proof before any external publication;
@@ -120,8 +123,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       throw Object.assign(new Error(code), { code, details: { childState: record.execution.child,
         causal: record.execution.diagnostic, primaryCause: record.execution.diagnostic?.primaryCause ?? null } });
     }
-    if (!record.progress && ['task-request', 'admission'].includes(e.request?.kind) && e.target === 'issue' && progress.clean && progress.head === e.startHead) {
-      record.outcome = await invoke('finish-no-change', { head: progress.head,
+    if (!record.progress && ['task-request', 'admission'].includes(e.request?.kind) && progress.clean !== false && progress.head === e.startHead) {
+      record.outcome = await invoke('finish-no-change', { head: progress.head, executionWarnings,
         taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
       record.diagnostic = null; await journal.put(e.runId, record);
       return record.outcome;
@@ -130,7 +133,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (record.progress.head !== progress.head) fail('PUBLISHED_HEAD_REQUIRED');
     record.outcome = await invoke('finish', { head: record.progress.head,
       codexUsage: normalizeCodexUsage(record.execution.codexUsage),
-      executionWarnings: progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'],
+      executionWarnings,
       taskResult: { summary: record.execution.result.summary, validation: record.execution.result.validation } });
     record.diagnostic = null; await journal.put(e.runId, record);
     return record.outcome;
@@ -154,8 +157,11 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     // Presentation sanitizes these bounded worker claims; they are never
     // authority for execution, publication, validation or a completion verdict.
     if (record.execution?.result) {
-      record.diagnostic.taskSummary = boundedDiagnosticText(record.execution.result.summary ?? '', 512).text;
-      record.diagnostic.blockerSummary = boundedDiagnosticText(record.execution.result.blockedReason ?? '', 512).text;
+      const summary = boundedDiagnosticText(record.execution.result.summary ?? '', 16 * 1024);
+      record.diagnostic.taskSummary = summary.text + (summary.truncated ? ' [TRUNCATED]' : '');
+      record.diagnostic.validation = record.execution.result.validation;
+      const blocker = boundedDiagnosticText(record.execution.result.blockedReason ?? '', 16 * 1024);
+      record.diagnostic.blockerSummary = blocker.text + (blocker.truncated ? ' [TRUNCATED]' : '');
     }
     await journal.put(e.runId, record);
     if (e.route === 'auto' && !record.outcome) {

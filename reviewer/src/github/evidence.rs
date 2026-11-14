@@ -67,12 +67,12 @@ pub fn output_schema() -> Value {
                 "binding_verified": {"type": "boolean"}, "head_sha": sha, "initial_binding_verified": {"type": "boolean"}, "final_binding": binding}},
             "limits": {"type": "object", "additionalProperties": false, "required": ["response_bytes", "total_bytes", "requests", "pages_per_surface", "items_per_surface", "annotations_total", "timeout_seconds"],
                 "properties": {"response_bytes": {"const": RESPONSE_BYTES}, "total_bytes": {"const": TOTAL_BYTES}, "requests": {"const": REQUESTS},
-                    "pages_per_surface": {"const": PAGES}, "items_per_surface": {"const": ITEMS}, "annotations_total": {"const": ANNOTATIONS}, "timeout_seconds": {"const": TIMEOUT.as_secs()}}},
+                    "pages_per_surface": {"const": REQUESTS}, "items_per_surface": {"const": ITEMS}, "annotations_total": {"const": ANNOTATIONS}, "timeout_seconds": {"const": TIMEOUT.as_secs()}}},
             "surfaces": {"type": "array", "maxItems": 6, "items": {"type": "object", "additionalProperties": false,
                 "required": ["source", "availability", "items"], "properties": {
                     "source": {"enum": ["github_check_suites", "github_actions_workflow_runs", "github_check_runs", "github_workflow_run_platform_annotations", "github_relay_execution_outcomes", "github_relay_execution_workflow_runs"]},
                     "api_path": {"type": "string", "maxLength": 512}, "availability": availability, "reason": nullable_text(100),
-                    "pages_observed": {"type": "integer", "minimum": 0, "maximum": PAGES},
+                    "pages_observed": {"type": "integer", "minimum": 0, "maximum": REQUESTS},
                     "items": {"type": "array", "maxItems": ITEMS, "items": {"anyOf": [suite, run, check, outcome]}},
                     "native_urls": {"type": "array", "maxItems": ITEMS * 2, "items": {"type": "string", "maxLength": 256}},
                     "additional_api_paths": {"type": "array", "maxItems": ITEMS, "items": {"type": "string", "maxLength": 512}},
@@ -193,6 +193,63 @@ impl ReadSession<'_> {
         let value = serde_json::from_slice(&body)
             .map_err(|_| Failure::unavailable("GITHUB_RESPONSE_INVALID"))?;
         Ok((value, next))
+    }
+
+    // Scan history within the shared request/byte/deadline budget, retaining
+    // only Writer records that can describe this candidate. Unrelated chatter
+    // must not consume the result-evidence item budget.
+    async fn outcome_history(
+        &mut self,
+        path: &str,
+        writer: &str,
+        sha: &str,
+        max_items: usize,
+    ) -> Listing {
+        let mut listing = Listing::new(path);
+        for page in 1..=REQUESTS {
+            let page_path = format!("{path}?per_page={PAGE_SIZE}&page={page}");
+            let (payload, next) = match self.get(&page_path, false).await {
+                Ok(response) => response,
+                Err(failure) => {
+                    listing.fail(failure);
+                    return listing;
+                }
+            };
+            listing.pages += 1;
+            let Some(items) = payload.as_array() else {
+                listing.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
+                return listing;
+            };
+            if items.len() > PAGE_SIZE {
+                listing.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
+                return listing;
+            }
+            for item in items {
+                if item["user"]["login"] == writer
+                    && item["body"].as_str().is_some_and(|body| body.contains(sha))
+                {
+                    if listing.items.len() == max_items {
+                        listing.fail(Failure::truncated("GITHUB_ITEM_LIMIT"));
+                        return listing;
+                    }
+                    listing.items.push(item.clone());
+                }
+            }
+            if !next && items.len() < PAGE_SIZE {
+                listing.availability = if listing.items.is_empty() {
+                    "absent"
+                } else {
+                    "available"
+                };
+                return listing;
+            }
+            if items.is_empty() {
+                listing.fail(Failure::unavailable("GITHUB_PAGINATION_INCONSISTENT"));
+                return listing;
+            }
+        }
+        listing.fail(Failure::truncated("GITHUB_REQUEST_LIMIT"));
+        listing
     }
 
     async fn list(&mut self, path: &str, key: Option<&str>, max_items: usize) -> Listing {
@@ -686,7 +743,7 @@ impl Github {
         let mut evidence = json!({"repository": repository, "pr_number": pr_number, "expected_head_sha": sha,
             "required_surfaces_complete": false, "warning_observation": "unknown", "surfaces": [],
             "limits": {"response_bytes": RESPONSE_BYTES, "total_bytes": TOTAL_BYTES, "requests": REQUESTS,
-                "pages_per_surface": PAGES, "items_per_surface": ITEMS, "annotations_total": ANNOTATIONS, "timeout_seconds": TIMEOUT.as_secs()}});
+                "pages_per_surface": REQUESTS, "items_per_surface": ITEMS, "annotations_total": ANNOTATIONS, "timeout_seconds": TIMEOUT.as_secs()}});
         let mut session = match self.evidence_session(repository).await {
             Ok(session) => session,
             Err(failure) => {
@@ -725,11 +782,8 @@ impl Github {
             if index > 0 {
                 additional_outcome_paths.push(path.clone());
             }
-            // Reserve a page for every remaining collection. The combined
-            // source retains its three-page / 75-comment input/output bound.
-            let pages = PAGES.saturating_sub(outcomes.pages + targets.len() - index - 1);
             let current = session
-                .list_pages(&path, None, ITEMS - comments_observed, pages)
+                .outcome_history(&path, writer_actor, sha, ITEMS - comments_observed)
                 .await;
             outcomes.pages += current.pages;
             comments_observed += current.items.len();

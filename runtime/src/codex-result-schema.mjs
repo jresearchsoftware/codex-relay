@@ -20,20 +20,21 @@ export const CODEX_RESULT_SCHEMA = Object.freeze({
 });
 
 const RESULT_KEYS = Object.freeze(["status", "summary", "validation", "blockedReason"]);
-const MAX_SUMMARY_BYTES = 16 * 1024;
-const MAX_BLOCKED_REASON_BYTES = 2 * 1024;
-const MAX_VALIDATION_CLAIM_BYTES = 512;
+// JSON Schema maxLength counts Unicode codepoints, not UTF-8 bytes or UTF-16 units.
+const MAX_SUMMARY_CHARACTERS = 16 * 1024;
+const MAX_BLOCKED_REASON_CHARACTERS = 2 * 1024;
+const MAX_VALIDATION_CLAIM_CHARACTERS = 512;
 const CODEX_RUNTIME_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 
 export function isBoundedCodexRuntimeIdentifier(value) {
   return typeof value === "string" && value !== "UNAVAILABLE" && CODEX_RUNTIME_IDENTIFIER_PATTERN.test(value);
 }
 
-function boundedString(value, field, maximumBytes, { allowEmpty = true } = {}) {
+function boundedString(value, field, maximumCharacters, { allowEmpty = true } = {}) {
   if (typeof value !== "string" || (!allowEmpty && value.trim() === "")) {
     throw new Error(`CODEX_RESULT_${field.toUpperCase()}_INVALID`);
   }
-  if (Buffer.byteLength(value, "utf8") > maximumBytes || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
+  if ([...value].length > maximumCharacters || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
     throw new Error(`CODEX_RESULT_${field.toUpperCase()}_INVALID`);
   }
   return value;
@@ -47,11 +48,11 @@ export function normalizeCodexSemanticResult(value) {
   const keys = Object.keys(value).sort().join("\0");
   if (keys !== [...RESULT_KEYS].sort().join("\0")) throw new Error("CODEX_RESULT_FIELDS_INVALID");
   if (value.status !== "success" && value.status !== "blocked") throw new Error("CODEX_RESULT_STATUS_INVALID");
-  const summary = boundedString(value.summary, "summary", MAX_SUMMARY_BYTES, { allowEmpty: value.status === "blocked" });
-  if (!Array.isArray(value.validation) || value.validation.length > 64 || value.validation.some(item => typeof item !== "string" || Buffer.byteLength(item, "utf8") > MAX_VALIDATION_CLAIM_BYTES || /[\u0000-\u001f\u007f]/.test(item))) {
+  const summary = boundedString(value.summary, "summary", MAX_SUMMARY_CHARACTERS, { allowEmpty: value.status === "blocked" });
+  if (!Array.isArray(value.validation) || value.validation.length > 64 || value.validation.some(item => typeof item !== "string" || [...item].length > MAX_VALIDATION_CLAIM_CHARACTERS || /[\u0000-\u001f\u007f]/.test(item))) {
     throw new Error("CODEX_RESULT_VALIDATION_INVALID");
   }
-  const blockedReason = boundedString(value.blockedReason, "blockedReason", MAX_BLOCKED_REASON_BYTES);
+  const blockedReason = boundedString(value.blockedReason, "blockedReason", MAX_BLOCKED_REASON_CHARACTERS);
   if (value.status === "success" && blockedReason.trim() !== "") throw new Error("CODEX_RESULT_BLOCKED_REASON_INVALID");
   if (value.status === "blocked" && blockedReason.trim() === "") throw new Error("CODEX_RESULT_BLOCKED_REASON_INVALID");
   return { status: value.status, summary, validation: [...value.validation], blockedReason };

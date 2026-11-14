@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { runAttempt } from '../src/attempt.mjs';
 import { persistAttemptFailureDiagnostic } from '../src/attempt-diagnostic.mjs';
-import { openRuntimeDiagnostic } from '../src/diagnostic-fallback.mjs';
+import { openRuntimeDiagnostic, reserveRuntimeDiagnostic } from '../src/diagnostic-fallback.mjs';
 import { createOnDemandDispatchAdapter } from '../src/github.mjs';
 import { VERSION } from '../src/execution-contract.mjs';
-import { fixture, memoryStore } from './fixture.mjs';
+import { fixture, memoryStore, currentEnvelope } from './fixture.mjs';
 
 function unavailablePrimary(f) {
   const root = join(f.root, 'fallback');
@@ -101,4 +103,127 @@ test('fallback reservation failure stays known-not-executed rather than becoming
   assert.equal(f.comments.length, 1); assert.equal(f.pushes(), 0);
   assert.match(f.comments[0].body, /DIAGNOSTIC_RETENTION_LIMIT/);
   assert.doesNotMatch(f.comments[0].body, /CONTAINMENT_NOT_PROVEN/);
+});
+
+async function durableFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'relay-controller-retirement-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fallbackRoot = join(root, 'fallback'); const primaryRoot = join(root, 'primary');
+  const { writeDiagnosticBundle } = await import('../src/diagnostic-store.mjs');
+  const store = value => writeDiagnosticBundle(value, { root: primaryRoot });
+  const persist = value => persistAttemptFailureDiagnostic({ ...value, root: fallbackRoot,
+    diagnosticStore: store, readConfig: async () => ({ mode: 'normal' }) });
+  return { root, fallbackRoot, primaryRoot, store, persist };
+}
+
+test('more than eight known controller checkout failures archive and retire shared diagnostic capacity', async t => {
+  const f = await durableFixture(t);
+  for (let index = 0; index < 12; index++) {
+    const envelope = currentEnvelope({ runId: 100 + index });
+    const journal = memoryStore();
+    const broker = { invoke: async request => request.operation === 'preflight' ? {} : {
+      status: 'BLOCKED', head: null, prNumber: null, outcomeId: 1 } };
+    await assert.rejects(runAttempt({ envelope, journal, broker, persistFailure: f.persist,
+      prepare: async () => { throw Object.assign(new Error('checkout unavailable'), { code: 'EACCES', syscall: 'mkdir' }); },
+      execute: () => assert.fail('no child may start'), collect: () => assert.fail('no checkout exists') }), error => {
+      assert.equal(error.code, 'EACCES'); assert.equal(error.details.fallbackReference.status, 'released');
+      assert.equal(error.details.diagnosticStore.executionId, `${envelope.attemptId}-finalization`); return true;
+    });
+    assert.equal(await openRuntimeDiagnostic({ executionId: envelope.attemptId, root: f.fallbackRoot }), null);
+    const archive = JSON.parse(await readFile(join(f.primaryRoot, `${envelope.attemptId}-finalization.json`), 'utf8'));
+    assert.equal(archive.lifecycle.controllerFailure.code, 'EACCES');
+    assert.equal(archive.lifecycle.childState, 'not_started'); assert.equal(archive.lifecycle.containment, 'not_required');
+    assert.equal(archive.lifecycle.cleanup, 'retained'); assert.equal(archive.lifecycle.retention, 'unknown');
+    assert.equal(archive.lifecycle.diagnosticStore.executionId, envelope.attemptId);
+  }
+});
+
+async function releasedRuntime(f, executionId, { primary = true } = {}) {
+  const handle = await reserveRuntimeDiagnostic({ executionId, root: f.fallbackRoot });
+  if (primary) await f.store({ schemaVersion: '1.0', executionId, mode: 'normal', originalRuntimeEvidence: 'preserved' });
+  await handle.write({ childState: 'started', containment: 'reaped', cleanupContainment: 'reaped', cleanup: 'complete', retention: 'none',
+    persistence: primary ? 'stored' : 'not_required', sandboxCreated: true, sandboxIdentity: { device: '123', inode: '456' },
+    ...(primary ? { primaryCause: 'CODEX_NONZERO_EXIT', diagnosticStore: { status: 'stored', executionId, mode: 'normal' } } : {}) });
+  await handle.release();
+  return handle;
+}
+const controllerFailure = () => Object.assign(new Error('controller collection failed'), { code: 'EIO', syscall: 'read',
+  details: { childState: 'started', containment: 'reaped' } });
+
+test('a retired runtime failure refreshes final archive with controller facts and preserves original primary evidence', async t => {
+  const f = await durableFixture(t); const handle = await releasedRuntime(f, 'run-39');
+  const original = await readFile(join(f.primaryRoot, 'run-39.json'), 'utf8');
+  const result = await f.persist({ executionId: 'run-39', error: controllerFailure(), stage: 'progress' });
+  assert.equal(result.fallbackReference.status, 'released');
+  assert.equal(result.diagnosticStore.executionId, 'run-39-finalization');
+  assert.equal(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }), null);
+  const capsule = await handle.read();
+  assert.equal(capsule.released, true); assert.equal(capsule.controllerFailure.code, 'EIO');
+  assert.equal(capsule.diagnosticStore.executionId, 'run-39');
+  assert.equal(capsule.primaryCause, 'CODEX_NONZERO_EXIT');
+  const archive = JSON.parse(await readFile(join(f.primaryRoot, 'run-39-finalization.json'), 'utf8'));
+  assert.equal(archive.lifecycle.controllerFailure.code, 'EIO');
+  assert.equal(archive.lifecycle.diagnosticStore.executionId, 'run-39');
+  assert.deepEqual(archive.lifecycle.sandboxIdentity, { device: '123', inode: '456' });
+  assert.equal(await readFile(join(f.primaryRoot, 'run-39.json'), 'utf8'), original);
+});
+
+test('a retired successful runtime persists controller primary evidence before archiving and retiring again', async t => {
+  const f = await durableFixture(t); const handle = await releasedRuntime(f, 'run-40', { primary: false });
+  const result = await f.persist({ executionId: 'run-40', error: controllerFailure(), stage: 'progress' });
+  assert.equal(result.fallbackReference.status, 'released');
+  assert.equal(result.diagnosticStore.executionId, 'run-40-finalization');
+  assert.equal((await handle.read()).diagnosticStore.executionId, 'run-40');
+  const primary = JSON.parse(await readFile(join(f.primaryRoot, 'run-40.json'), 'utf8'));
+  assert.equal(primary.runtimeFailure.code, 'EIO');
+});
+
+test('failed archive refresh retains the latest controller facts without claiming an old archive contains them', async t => {
+  const f = await durableFixture(t); const handle = await releasedRuntime(f, 'run-41');
+  await f.store({ schemaVersion: '1.0', executionId: 'run-41-finalization', mode: 'normal', oldArchiveOnly: true });
+  const result = await persistAttemptFailureDiagnostic({ executionId: 'run-41', error: controllerFailure(), stage: 'progress', root: f.fallbackRoot,
+    readConfig: async () => ({ mode: 'normal' }), diagnosticStore: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); } });
+  assert.equal(result.persistence, 'failed'); assert.equal(result.diagnosticStore.status, 'unavailable');
+  assert.equal(result.diagnosticStore.executionId, 'run-41-finalization');
+  assert.equal(result.fallbackReference.status, 'stored');
+  const active = await openRuntimeDiagnostic({ executionId: 'run-41', root: f.fallbackRoot }); assert.ok(active);
+  const capsule = await active.read(); assert.equal(capsule.released, undefined);
+  assert.equal(capsule.controllerFailure.code, 'EIO'); assert.equal(capsule.diagnosticStore.executionId, 'run-41');
+  assert.equal(capsule.terminalDiagnostic.status, 'unavailable');
+  assert.equal(JSON.parse(await readFile(join(f.primaryRoot, 'run-41-finalization.json'), 'utf8')).oldArchiveOnly, true);
+  await assert.rejects(handle.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
+});
+
+for (const protectedState of ['unknown-child', 'unknown-cleanup', 'pending-runtime', 'failed-runtime']) test(`${protectedState} remains protected after a controller report`, async t => {
+  const f = await durableFixture(t);
+  const handle = await reserveRuntimeDiagnostic({ executionId: 'run-50', root: f.fallbackRoot });
+  const primaryStored = ['unknown-child', 'unknown-cleanup'].includes(protectedState);
+  if (primaryStored) await f.store({ schemaVersion: '1.0', executionId: 'run-50', mode: 'normal', originalRuntimeEvidence: 'preserved' });
+  await handle.write({ childState: protectedState === 'unknown-child' ? 'unknown' : 'started',
+    containment: protectedState === 'unknown-child' ? 'unknown' : 'reaped',
+    cleanupContainment: protectedState === 'unknown-cleanup' ? 'unknown' : 'reaped',
+    cleanup: 'retained', retention: 'retained', sandboxCreated: true, sandboxIdentity: { device: '123', inode: '456' },
+    persistence: primaryStored ? 'stored' : protectedState === 'failed-runtime' ? 'failed' : 'pending',
+    ...(primaryStored ? { diagnosticStore: { status: 'stored', executionId: 'run-50', mode: 'normal' } } : {}) });
+  const result = await f.persist({ executionId: 'run-50', error: controllerFailure(), stage: 'progress' });
+  assert.notEqual(result.fallbackReference.status, 'released');
+  if (protectedState === 'unknown-child') { assert.equal(result.childState, 'unknown'); assert.equal(result.containment, 'unknown'); }
+  assert.ok(await openRuntimeDiagnostic({ executionId: 'run-50', root: f.fallbackRoot }));
+  const state = await handle.read();
+  assert.equal(state.persistence, primaryStored ? 'stored' : protectedState === 'failed-runtime' ? 'failed' : 'pending');
+  await assert.rejects(handle.release(), { code: 'DIAGNOSTIC_FALLBACK_NOT_RELEASABLE' });
+});
+
+test('slot retirement failure preserves a successfully stored current archive reference', async t => {
+  const f = await durableFixture(t); const handle = await releasedRuntime(f, 'run-60');
+  const result = await persistAttemptFailureDiagnostic({ executionId: 'run-60', error: controllerFailure(), stage: 'progress', root: f.fallbackRoot,
+    readConfig: async () => ({ mode: 'normal' }), diagnosticStore: f.store,
+    fallbackOpen: async () => ({ ...handle, release: async () => { throw Object.assign(new Error('retirement denied'), { code: 'EACCES' }); } }) });
+  assert.equal(result.persistence, 'stored'); assert.equal(result.diagnosticStore.status, 'stored');
+  assert.equal(result.diagnosticStore.executionId, 'run-60-finalization');
+  assert.equal(result.fallbackReference.status, 'unavailable'); assert.equal(result.fallbackReference.code, 'EACCES');
+  const capsule = await handle.read(); assert.notEqual(capsule.released, true);
+  assert.equal(capsule.terminalDiagnostic.status, 'stored');
+  const archived = JSON.parse(await readFile(join(f.primaryRoot, 'run-60-finalization.json'), 'utf8'));
+  assert.equal(archived.lifecycle.controllerFailure.code, 'EIO');
 });

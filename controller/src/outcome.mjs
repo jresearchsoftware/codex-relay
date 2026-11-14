@@ -14,7 +14,7 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
   if (!e.request || !e.requestReference) return body;
   const warningSources = [...(e.admission?.warnings ?? []).map(warning => warning.code), ...executionWarnings];
   const warnings = [...new Set(warningSources)].map(source => ({ source: `Attempt ${e.attemptId}: ${source}`,
-    impact: source === 'UNCOMMITTED_WORK_REMAINS' ? 'Uncommitted checkout work requires reconciliation before acceptance.' : 'Admission selected a safe default; inspect the canonical authority before acceptance.',
+    impact: executionWarningSummary([source]) || 'Admission selected a safe default; inspect the canonical authority before acceptance.',
     resolution: 'Unresolved at execution handoff.', next_action: 'Owner and independent reviewer must inspect and disposition this warning.', evidence_gaps: [] }));
   const record = { schema_version: '4.0', kind: 'outcome', repository: e.repository, task: e.issueNumber,
     parent: { kind: pr ? 'pull_request' : 'issue', number: pr?.number ?? e.issueNumber },
@@ -35,9 +35,14 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
 // These are controller observations, separate from worker validation claims and
 // admission defaults. Never infer that uncommitted bytes are disposable.
 export function executionWarningSummary(warnings) {
-  return Array.isArray(warnings) && warnings.includes('UNCOMMITTED_WORK_REMAINS')
-    ? 'UNCOMMITTED_WORK_REMAINS: Uncommitted/non-ignored checkout residue was retained. The owner and independent reviewer must reconcile it with the worker claims and published diff before acceptance or another attempt; no cleanup, commit, publication or retry of that residue was performed.'
-    : '';
+  const descriptions = {
+    PRESENTATION_REPAIR_UNAVAILABLE: 'The native result binding is verified, but derived PR title/Step presentation could not be repaired. Inspect and correct the display without changing admitted identity.',
+    UNCOMMITTED_WORK_REMAINS: 'Uncommitted checkout work requires reconciliation before acceptance. Uncommitted/non-ignored checkout residue was retained; the owner and independent reviewer must reconcile it before acceptance or another attempt.',
+    WORKTREE_OBSERVATION_INCOMPLETE: 'The committed candidate was safely collected, but checkout residue could not be completely observed. Retain local work and inspect the collection diagnostic; no clean-checkout claim is made.',
+    RUNTIME_CLEANUP_FAILED: 'The contained execution returned its result, but sandbox cleanup failed. Artifacts and durable diagnostics remain retained; inspect the affected resource before reuse.'
+  };
+  return (Array.isArray(warnings) ? warnings : []).filter(code => descriptions[code])
+    .map(code => `${code}: ${descriptions[code]}`).join(' ');
 }
 
 function safeCode(value) {
@@ -166,8 +171,8 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
     ...(store ? [`Primary diagnostics: ${store.status}; reference: ${store.executionId ?? 'UNAVAILABLE'}${store.storeCode ? `; store cause: ${store.storeCode}` : ''}`] : []),
     ...(fallback ? [`Fallback diagnostics: ${fallback.status}; reference: ${fallback.executionId ?? 'UNAVAILABLE'}${Number.isInteger(fallback.slot) ? `; slot: ${fallback.slot}` : ''}${fallback.code ? `; cause: ${fallback.code}` : ''}`] : []),
-    ...(d.taskSummary ? [`Worker summary (claim): ${safeText(d.taskSummary)}`] : []),
-    ...(d.blockerSummary ? [`Worker blocker (claim): ${safeText(d.blockerSummary)}`] : []),
+    ...(d.taskSummary || d.validation ? [workerOutcomeClaims({ summary: d.taskSummary, validation: d.validation })] : []),
+    ...(d.blockerSummary ? [`Worker blocker (claim): ${safePublicationText(boundedDiagnosticText(d.blockerSummary, 16 * 1024).text)}`] : []),
     `Result class: ${d.orchestration === 'COMPLETED' ? 'DOMAIN_BLOCKED (task remains incomplete)' : 'ORCHESTRATION_FAILURE_OR_UNCONFIRMED'}`,
     `Next action: ${next}`,
     `Admission status: ${admissionStatus}`,

@@ -264,17 +264,15 @@ test('a trusted new profile-only Decision can resolve the owner blocker without 
   assert.deepEqual(f.review, f.originalReview);
 });
 
-for (const mode of ['missing', 'stale', 'untrusted', 'PR-scoped']) {
-  test(`${mode} Decision cannot promote a BLOCKED CR to a new Step`, async t => {
-    const f = await blockedContinuation(t, { resolvingDecision: false });
-    if (mode === 'stale') f.decisions.push(taskDecision(direction, { id: f.originalComment.id }));
-    if (mode === 'untrusted') f.amend(direction).user.id = 999;
-    if (mode === 'PR-scoped') f.decisions.push(taskDecision(direction, { parent: { kind: 'pull_request', number: 43 } }));
-    await assertRefused(f, f.nextReady(), ['AUTHORITY_CONTINUATION_INVALID']);
-    assert.deepEqual(await f.store.get(99), f.prior);
-    assert.deepEqual(f.review, f.originalReview);
-  });
-}
+test('a contained technical continuation needs an owner ready event but no redundant Decision', async t => {
+  const f = await blockedContinuation(t, { resolvingDecision: false });
+  const admitted = await f.broker.invoke(f.nextReady());
+  assert.notEqual(admitted.status, 'BLOCKED', JSON.stringify(admitted.envelope));
+  assert.equal(admitted.envelope.startHead, f.publishedHead);
+  assert.equal(admitted.envelope.step, f.prior.envelope.step + 1);
+  assert.deepEqual(admitted.envelope.request.authority.decisions, f.prior.envelope.request.authority.decisions);
+  assert.deepEqual(await f.store.get(99), f.prior);
+});
 
 for (const mode of ['body', 'identity', 'parent', 'missing', 'marker', 'typed-result']) {
   test(`${mode === 'missing' ? 'a missing native Writer Outcome' : `${mode} tampering of the native Writer Outcome`} cannot authorize CR continuation`, async t => {
@@ -323,7 +321,7 @@ test('unknown prior physical containment cannot be hidden by its public BLOCKED 
   assert.equal(await f.store.get(100), null);
 });
 
-const changedBindingCodes = { 'arbitrary-head': ['STARTING_STATE_MISMATCH'], base: ['AUTHORITY_CONTINUATION_INVALID'],
+const changedBindingCodes = { 'arbitrary-head': ['STARTING_STATE_MISMATCH'], base: ['STARTING_STATE_MISMATCH'],
   branch: ['AUTHORITY_CONTINUATION_INVALID'], 'foreign-repository': ['OWNER_RUN_NOT_ADMITTED'],
   Task: ['AUTHORITY_TARGET_MISMATCH'], CR: ['AUTHORITY_CONTINUATION_INVALID'] };
 for (const mode of Object.keys(changedBindingCodes)) {

@@ -29,7 +29,7 @@ function fixture({ prState, resultKind = 'qualification', status = 'implemented'
   const result = { schema_version: '4.0', kind: 'outcome', repository: REPOSITORY, task: 42,
     parent: pr ? { kind: 'pull_request', number: 55 } : copy(parent), charter_sha256: sha256Body(charter),
     step: 2, authority, admission: admissionBinding(snapshot),
-    attempt: 'run-123', status, result: { kind: resultKind, revision: resultKind === 'git' ? head : 'qualification-123',
+    attempt: 'run-123', status, result: { kind: resultKind, revision: ['git', 'no-change'].includes(resultKind) ? head : 'qualification-123',
       identities: [{ kind: 'github-actions-run', id: '123' }] }, summary: 'Manual evidence reported; independent acceptance remains required.',
     warnings: [{ source: 'qualification:123', impact: 'Native root proof is unavailable.', resolution: 'Unresolved.',
       next_action: 'Independent reviewer must inspect this limitation.', evidence_gaps: ['No root host mutation was performed.'] }],
@@ -156,7 +156,7 @@ test('a late historical manual result reports its original hosted commit without
 });
 
 test('an implemented non-Git result on an open PR is rejected before irreversible publication', async () => {
-  for (const resultKind of ['qualification', 'evidence', 'no-change']) {
+  for (const resultKind of ['qualification', 'evidence']) {
     const f = fixture({ prState: 'open', resultKind });
     await assert.rejects(f.invoke(), { code: 'PUBLISHED_HEAD_REQUIRED' });
     assert.equal(f.posted(), 0);
@@ -235,4 +235,15 @@ test('submission envelope is narrow and bounded rather than a generic Writer com
   for (const delta of [{ operation: 'merge' }, { capability: 'owner' }, { repository: 'foreign/repository' },
     { run_id: 0 }, { task: -1 }, { result: null }, { result: { summary: 'x'.repeat(110 * 1024) } }])
     assert.throws(() => validateManualSubmission({ ...valid, ...delta }), { code: 'MANUAL_SUBMISSION_INVALID' });
+});
+
+test('manual no-change remediation binds the exact PR head without a cosmetic commit', async () => {
+  const f = fixture({ prState: 'open', resultKind: 'no-change' });
+  const outcome = await f.invoke();
+  assert.equal(outcome.head, head);
+  assert.equal(outcome.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.deepEqual(f.transitions, [{ number: 55, draft: false, outcomeAlreadyDurable: true, status: 'implemented' }]);
+  f.pr.head.sha = 'c'.repeat(40);
+  await assert.rejects(f.invoke(), { code: 'MANUAL_PR_HEAD_MISMATCH' });
+  assert.equal(f.posted(), 1);
 });

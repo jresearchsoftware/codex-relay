@@ -1,12 +1,12 @@
-# Codex Relay 6.0.0 guidance package
+# Codex Relay 6.1.0 guidance package
 
-Generated source candidate for `org.jresearch.ai/codex-relay`. It describes accepted
-Relay contract `61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4` with native shared requirement
+Generated source candidate for `org.jresearch.ai/codex-relay`. It describes the immutable pinned
+Relay contract with accepted baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` and native shared requirement
 `>=2.5.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 
 Acquire this package by an explicitly selected immutable revision through the
-supported VibeVM 1.0.7 package interface. The generated sibling
+supported VibeVM package interface identified by `skill/references/product/vibevm.json`. The generated sibling
 `vpm-consumer.toml.in` shows both required immutable Git source roots; the native
 package declares the semantic lower-bound edge, while 1.0.7 ignores transitive Git
 source tables. Then explicitly project its Skill with

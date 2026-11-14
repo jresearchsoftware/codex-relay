@@ -155,6 +155,7 @@ async function main() {
     PATH: "{{ relay_rust_toolchain_root }}/bin:/usr/bin:/bin",
     // Dependency downloads belong to this task, never the protected build cache.
     CARGO_HOME: join(cache, "cargo"),
+    OPENSSL_CONF: join(config, "openssl.cnf"),
     HOME: home,
     USERPROFILE: home,
     CODEX_HOME: home,
@@ -234,11 +235,43 @@ async function main() {
     childStarted = process.env.RELAY_ISOLATED_SLOT === '1' ? null : true;
     observedChildStarted = childStarted;
   });
-  const stdoutRedactor = createStatefulSecretRedactor(token);
-  const stdoutChunks = [];
-  let stdoutBytes = 0;
-  const maxStdoutBytes = 16 * 1024 * 1024;
-  let stdoutOverflow = false;
+  // Buffer one record for redaction/secret scanning before forwarding it.
+  // Total tool/event output has no lifetime capture cap.
+  let stdoutBuffer = Buffer.alloc(4096), stdoutRecordBytes = 0;
+  const maxStdoutRecordBytes = 16 * 1024 * 1024;
+  let stdoutFailure, stdoutPaused = false;
+  const forwardRecord = () => {
+    if (stdoutFailure || !stdoutRecordBytes) return;
+    const raw = decodeUtf8(stdoutBuffer.subarray(0, stdoutRecordBytes));
+    stdoutRecordBytes = 0;
+    const redact = text => {
+      const redactor = createStatefulSecretRedactor(token);
+      return redactor.push(text) + redactor.flush();
+    };
+    let safe;
+    try {
+      // Redact decoded string values, then serialize, so secret replacement
+      // cannot consume JSON punctuation or corrupt a valid semantic result.
+      const event = JSON.parse(raw);
+      if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('Invalid JSONL event');
+      safe = JSON.stringify(event, (key, value) => {
+        if (typeof value === 'string') return /^(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)$/i.test(key)
+          ? '[REDACTED_SECRET]' : redact(value);
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return Object.fromEntries(Object.entries(value).map(([name, item]) => [redact(name), item]));
+        }
+        return value;
+      })
+        + (raw.endsWith('\n') ? '\n' : '');
+    } catch { stdoutFailure = 'CODEX_LAUNCHER_JSON_INVALID'; stop(); return; }
+    try {
+      if (!process.stdout.write(assertSecretFreePublication(safe, token)) && !stdoutPaused) {
+        stdoutPaused = true; child.stdout.pause();
+        process.stdout.once('drain', () => { stdoutPaused = false; child.stdout.resume(); });
+      }
+    }
+    catch { stdoutFailure = 'SECRET_PUBLICATION_SCAN_FAILED'; stop(); }
+  };
   let stderrBytes = 0;
   const stderrChunks = [];
   let stderrCapturedBytes = 0;
@@ -248,12 +281,26 @@ async function main() {
   // cannot enter the detached diagnostic bundle.
   child.stdout.on("data", chunk => {
     childStarted = true; observedChildStarted = true;
+    if (stdoutFailure) return;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-    stdoutBytes += bytes.length;
-    const previousBytes = stdoutBytes - bytes.length;
-    const remaining = maxStdoutBytes - previousBytes;
-    if (remaining > 0) stdoutChunks.push(bytes.subarray(0, remaining));
-    if (stdoutBytes > maxStdoutBytes) stdoutOverflow = true;
+    let offset = 0;
+    while (offset < bytes.length) {
+      const newline = bytes.indexOf(10, offset);
+      const end = newline < 0 ? bytes.length : newline + 1;
+      const fragment = bytes.subarray(offset, end);
+      const required = stdoutRecordBytes + fragment.length;
+      if (required > maxStdoutRecordBytes + (newline >= 0 ? 1 : 0)) {
+        stdoutFailure = 'CODEX_LAUNCHER_OUTPUT_TOO_LARGE'; stdoutBuffer = Buffer.alloc(0); stop(); return;
+      }
+      if (required > stdoutBuffer.length) {
+        const grown = Buffer.alloc(Math.min(maxStdoutRecordBytes + 1, Math.max(required, stdoutBuffer.length * 2)));
+        stdoutBuffer.copy(grown, 0, 0, stdoutRecordBytes); stdoutBuffer = grown;
+      }
+      fragment.copy(stdoutBuffer, stdoutRecordBytes); stdoutRecordBytes = required;
+      if (newline >= 0) forwardRecord();
+      if (stdoutFailure) return;
+      offset = end;
+    }
   });
   child.stderr.on("data", chunk => {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
@@ -294,15 +341,12 @@ async function main() {
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
     process.stdin.destroy();
     const containment = contained ? 'reaped' : 'unknown';
-    if (stdoutOverflow) {
-      writeChildDiagnostic({ code: "CODEX_LAUNCHER_OUTPUT_TOO_LARGE", stderr: "Codex functional stdout exceeded the bounded byte limit", stderrBytes: 0, token, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
+    forwardRecord();
+    if (stdoutFailure) {
+      writeChildDiagnostic({ code: stdoutFailure, stderr: 'Codex JSONL record failed bounded forwarding', stderrBytes: 0, token, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });
       process.exitCode = 64;
       return;
     }
-    const rawStdout = decodeUtf8(Buffer.concat(stdoutChunks));
-    const safeStdout = stdoutRedactor.push(rawStdout) + stdoutRedactor.flush();
-    try { process.stdout.write(assertSecretFreePublication(safeStdout, token)); }
-    catch { writeChildDiagnostic({ code: "SECRET_PUBLICATION_SCAN_FAILED", childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr }); process.exitCode = 1; return; }
     if (!processError) {
       const stderr = decodeUtf8(Buffer.concat(stderrChunks));
       writeChildDiagnostic({ code: !contained ? 'CONTAINMENT_NOT_PROVEN' : cancelled ? 'EXECUTION_CANCELLED' : inputError ? "CODEX_INPUT_WRITE_FAILED" : code === 0 && !signal ? "CODEX_EXIT_OK" : classifyChildStderr(stderr), stderr, stderrBytes, token, exitCode: code, signal, childStarted, containment, debug: diagnosticMode === "debug", pid: child.pid, stream: process.stderr });

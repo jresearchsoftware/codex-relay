@@ -70,6 +70,41 @@ that execution check. Execution and cleanup share one fixed sudo argument builde
 This changes process credentials only, without changing account settings or
 repairing source metadata. Explicit private modes remain private.
 
+## Task capabilities and bounded output
+
+The automatic worker chooses ordinary local task-owned commits, accepted-upstream
+integration and conflict resolution. It can organize its own unpublished work
+with amend, squash, cherry-pick, rebase or reset while preserving the admitted
+published frontier and other work. Existing authorship is retained as provenance;
+the supplied bot identity is a default for newly authored commits. Trusted Writer
+owns authenticated non-force publication and scans every newly introduced
+reachable object, including intermediate content absent from the final tree.
+Manual and standalone execution retain their actual owner-authorized publication
+routes; automatic worker instructions do not grant those credentials or rights.
+
+The launcher forwards JSONL one complete record at a time, redacting the access
+token before forwarding. Each record is bounded to 16 MiB; a long stream of valid
+bounded tool events does not exhaust a lifetime output cap. Runtime parsing keeps
+bounded semantic, usage and event state separately from the diagnostic capture.
+Summary, blocked-reason and validation string limits use Unicode codepoints, as
+JSON Schema `maxLength` does. A malformed or oversized record remains a failure,
+even after an earlier valid result. Diagnostic capture clipping is reported and
+does not invalidate an otherwise complete independently parsed result or usage.
+
+The prompt discloses the resolved execution budget: 90 minutes by default,
+with supported consumer overrides from one second through two hours. The outer
+dispatcher reserves the same execution budget plus ten minutes for containment
+and terminal routing; the default remains 100 minutes. This does not increase a
+consumer's native workflow or other external deadline.
+
+On Debian, the namespace reconstructs only the fixed public `cc`, `c++` and
+`awk` alternative aliases when their resolved targets are under the already
+read-only `/usr` mount. It does not mount `/etc/alternatives`. OpenSSL receives a
+task-local neutral request configuration through `OPENSSL_CONF`, so ordinary
+key/CSR fixtures work without exposing host configuration includes, private keys
+or custom providers. A task may use its own configuration inside the checkout.
+Task dependency caches and downloads remain local to the attempt.
+
 ## Durable diagnostics and sandbox finalization
 
 The dispatcher reserves a protected, bounded diagnostic capsule before launching
@@ -81,14 +116,14 @@ path. Bounded, redacted OS fields and path context can be stored in the primary
 protected diagnostic bundle; Writer receives only safe codes, lifecycle states
 and references.
 
-Normal primary diagnostics also retain the last four observed top-level Codex
+Normal primary diagnostics also retain, independently of diagnostic capture clipping, the last four observed top-level Codex
 JSONL `error` and `turn.failed` messages, each redacted and bounded to 4096 UTF-8
 bytes, with message clipping, omitted-event count and stdout-capture truncation
 explicit. Agent/tool output and other event fields are excluded. These private
 observations survive sandbox cleanup without enabling general stdout capture;
 they do not establish that an incidental stderr message caused the child exit,
 or that every observed `error` was fatal. Public Outcomes and diagnostic
-snapshots omit this text. A truncated capture cannot establish the final event.
+snapshots omit this text. A truncated diagnostic capture alone cannot establish the final event; the streaming parser separately observes the complete bounded event stream.
 
 The capsule lives under the configured runner-owned `attemptRoot`, outside the
 mutable checkout and Codex sandbox. File and directory fsync establish a durable
@@ -139,7 +174,12 @@ attempt artifacts in place. Cleanup failure may have removed some entries; its
 retained pointer means inspect the remaining artifacts, not that every original
 byte survived. The pre-cleanup capsule is already durable, and cleanup errors
 record operation, syscall, bounded path context and store status independently.
-A successful ordinary run removes the sandbox and releases its fallback slot.
+An ordinary successful run removes the sandbox and releases its fallback slot.
+A contained failed or resource-retaining run first archives its complete safe final
+capsule through the existing diagnostic store, then releases diagnostic capacity
+without deleting the retained resource. Unknown execution/cleanup or missing
+archive proof retains the active capsule. The returned archive and released
+fallback references identify these separate facts.
 See the [controller retention contract](../controller/README.md#runtime-diagnostic-retention)
 for the bounded inspection and disposal policy. These local contracts do not
 claim production qualification or authorize a deployment.

@@ -1,3 +1,4 @@
+import { executionWarningSummary } from './outcome.mjs';
 import { REPOSITORY, WRITER, BASE_BRANCH, positive, exactSha, fail } from './execution-contract.mjs';
 import { canonicalAuthorityJson, validateAuthorityRecord, extractAuthorityRecord, sha256Body, renderAuthorityRecord, admissionBinding } from '../../contracts/src/github-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
@@ -52,17 +53,17 @@ export async function publishManualOutcome({ api, store, record: r, submission,
   if (result.parent.kind === 'pull_request') {
     pr = await api.get(`/pulls/${result.parent.number}`);
     if (pr.number !== result.parent.number || (r.prNumber && r.prNumber !== pr.number)) fail('MANUAL_PR_TARGET_MISMATCH');
-    if (result.result.kind === 'git' && result.result.revision !== pr.head.sha && !historicalResult)
+    if (['git', 'no-change'].includes(result.result.kind) && result.result.revision !== pr.head.sha && !historicalResult)
       fail('MANUAL_PR_HEAD_MISMATCH');
     await assertManualPullRequestBinding(api, e, pr);
-    if (historicalResult && result.result.kind === 'git' && result.result.revision !== pr.head.sha) {
+    if (historicalResult && ['git', 'no-change'].includes(result.result.kind) && result.result.revision !== pr.head.sha) {
       const commit = await api.get(`/git/commits/${result.result.revision}`);
       if (commit.sha !== result.result.revision) fail('PUBLISHED_HEAD_REQUIRED');
     }
     // An open implementation PR can become Ready only at an exact Git head.
     // Reject this existing lifecycle incompatibility before reserving claims or
     // posting a successful Outcome that no replay could finish.
-    if (result.status === 'implemented' && pr.state === 'open' && result.result.kind !== 'git') fail('PUBLISHED_HEAD_REQUIRED');
+    if (result.status === 'implemented' && pr.state === 'open' && !['git', 'no-change'].includes(result.result.kind)) fail('PUBLISHED_HEAD_REQUIRED');
   } else if (result.parent.number !== e.issueNumber || r.prNumber || r.prIntent
     || (e.branch || historicalResult) && await existingPullRequest(r, { attemptOnly: historicalResult })) fail('PR_AUTHORITY_CHANGED');
   // Do not freeze a correctable target/head mistake or post before discovering
@@ -103,7 +104,12 @@ export async function publishManualOutcome({ api, store, record: r, submission,
     r.manualSubmission.publishedResult = publishedResult; await store.put(e.runId, r);
   }
   if (result.status !== 'implemented' && !historicalResult) await transitionManual(r, pr, result, true);
-  const comment = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, renderAuthorityRecord(publishedResult));
+  let rendered = renderAuthorityRecord(publishedResult);
+  const presentationWarning = executionWarningSummary(r.presentationWarnings);
+  if (presentationWarning) rendered = rendered.replace('\n\n<details>', `\n\n**Publication warning:** ${presentationWarning}\n\n<details>`);
+  // Preserve the exact already-reserved body across publication recovery.
+  if (r.commentIntent?.key === 'outcome' && r.commentIntent.body) rendered = r.commentIntent.body;
+  const comment = await commentOnce(r, 'outcome', pr?.number ?? e.issueNumber, rendered);
   const durable = await api.get(`/issues/comments/${comment.id}`);
   if (durable.body !== comment.body || durable.user?.login !== WRITER || durable.user?.type !== 'Bot'
     || durable.user?.id !== writer.id) fail('COMMENT_CONTENT_CHANGED');

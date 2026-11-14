@@ -17,7 +17,7 @@ function nativeApi(mutate = () => {}) {
   mutate(detail);
   return {
     list: async () => [structuredClone(summary)],
-    get: async path => { assert.equal(path, '/pulls/43'); return structuredClone(detail); }
+    get: async path => { if (path.startsWith('/compare/')) return { status: 'diverged' }; assert.equal(path, '/pulls/43'); return structuredClone(detail); }
   };
 }
 
@@ -39,9 +39,8 @@ test('only a verified Writer transition permits known predecessor/candidate prop
 
 for (const [name, mutate, code] of [
   ['foreign head', pr => { pr.head.sha = 'd'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
-  ['base movement', pr => { pr.head.sha = 'c'.repeat(40); pr.base.sha = 'd'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
-  ['foreign linkage', pr => { pr.head.sha = 'c'.repeat(40); pr.body = 'Related to #99'; }, 'PR_AUTHORITY_CHANGED'],
-  ['Step movement', pr => { pr.head.sha = 'c'.repeat(40); pr.labels = [{ name: 'step-2' }]; }, 'STEP_LABEL_MISMATCH']
+    ['foreign linkage', pr => { pr.head.sha = 'c'.repeat(40); pr.body = 'Related to #99'; }, 'PR_AUTHORITY_CHANGED'],
+  ['base rewrite', pr => { pr.base.sha = 'd'.repeat(40); }, 'STARTING_STATE_MISMATCH']
 ]) test(`Writer transition still rejects ${name}`, async () => {
   await assert.rejects(findCurrentIssuePullRequest(nativeApi(mutate), envelope, 43,
     { previous: 'a'.repeat(40), head: 'c'.repeat(40) }), { code });
@@ -50,14 +49,12 @@ for (const [name, mutate, code] of [
 for (const [name, mutate, code] of [
   ['head', pr => { pr.head.sha = 'c'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
   ['branch', pr => { pr.head.ref = `${CONSUMER.taskBranchPrefix}other`; }, 'PR_AUTHORITY_CHANGED'],
-  ['base head', pr => { pr.base.sha = 'c'.repeat(40); }, 'PR_AUTHORITY_CHANGED'],
+  ['base head', pr => { pr.base.sha = 'c'.repeat(40); }, 'STARTING_STATE_MISMATCH'],
   ['base branch', pr => { pr.base.ref = 'other-base'; }, 'PR_NOT_ADMITTED'],
   ['head repository', pr => { pr.head.repo.full_name = 'other/repository'; }, 'PR_NOT_ADMITTED'],
   ['base repository', pr => { pr.base.repo.full_name = 'other/repository'; }, 'PR_NOT_ADMITTED'],
   ['Issue linkage', pr => { pr.body = 'Related to #44'; }, 'PR_AUTHORITY_CHANGED'],
   ['PR number', pr => { pr.number = 44; }, 'PR_NOT_ADMITTED'],
-  ['Step', pr => { pr.labels = [{ name: 'step-2' }]; }, 'STEP_LABEL_MISMATCH'],
-  ['title', pr => { pr.title = 'Task 42 · Step 2 · implementation'; }, 'STEP_DISPLAY_MISMATCH'],
   ['open state', pr => { pr.state = 'closed'; }, 'PR_NOT_ADMITTED'],
   ['merge state', pr => { pr.merged = true; }, 'PR_NOT_ADMITTED']
 ]) {
@@ -65,3 +62,23 @@ for (const [name, mutate, code] of [
     await assert.rejects(findCurrentIssuePullRequest(nativeApi(mutate), envelope, 43), { code });
   });
 }
+
+
+test('list/detail descendant main movement preserves PR identity and independent mergeability', async () => {
+  const api = nativeApi(pr => { pr.base.sha = 'c'.repeat(40); pr.mergeable = false; });
+  const get = api.get;
+  api.get = async path => path.startsWith('/compare/') ? {
+    status: 'ahead', base_commit: { sha: 'b'.repeat(40) }, merge_base_commit: { sha: 'b'.repeat(40) }
+  } : get(path);
+  const pr = await findCurrentIssuePullRequest(api, envelope, 43);
+  assert.equal(pr.base.sha, 'c'.repeat(40));
+  assert.equal(pr.mergeable, false);
+});
+
+test('derived title and Step label drift between list/detail reads is not a Task identity change', async () => {
+  const pr = await findCurrentIssuePullRequest(nativeApi(pr => {
+    pr.title = 'Owner-edited presentation'; pr.labels = [{ name: 'step-2' }];
+  }), envelope, 43);
+  assert.equal(pr.title, 'Owner-edited presentation');
+  assert.deepEqual(pr.labels, [{ name: 'step-2' }]);
+});

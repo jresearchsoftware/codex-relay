@@ -77,7 +77,8 @@ test('failures before child, child nonzero, parsing and runtime finalization per
     const propagated = causalEvidence({ code: example.code, details: { ...failure.details, ...result,
       failureDiagnostic: failure.details.failureDiagnostic } }, { child: record.childState, containment: 'reaped' });
     assert.equal(propagated.runtime.cleanup, result.cleanup);
-    assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }));
+    assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot, includeReleased: true }));
+    if (result.cleanup === 'complete') assert.equal(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }), null);
   });
 });
 
@@ -164,4 +165,109 @@ test('fallback update failure during finalization leaves the preceding durable o
   await assert.rejects(f.finalize(), { code: 'RUNTIME_DIAGNOSTICS_FAILED' });
   assert.equal(f.cleanupCalls(), 0);
   assert.ok((await stat(join(f.cwd, '.codex-sandbox'))).isDirectory());
+});
+
+test('more than eight contained preflight failures retire diagnostic capacity without deleting retained resources', async t => {
+  const f = await fixture(t);
+  // Release the fixture's unused reservation; each real failure below shares
+  // this same bounded root rather than getting a fresh capacity pool.
+  await f.capsule.write({ cleanup: 'complete', persistence: 'not_required', retention: 'none' });
+  await f.capsule.release();
+  for (let index = 0; index < 12; index++) {
+    const executionId = `run-${100 + index}`;
+    const capsule = await reserveRuntimeDiagnostic({ executionId, root: f.fallbackRoot });
+    const cwd = join(f.root, 'work', executionId); await mkdir(cwd, { recursive: true });
+    await assert.rejects(runGovernedCodexTask({ ...f.options, attemptId: executionId, cwd,
+      openFallback: async () => capsule,
+      readDiagnosticConfig: async () => { throw Object.assign(new Error('config unavailable'), { code: 'EIO' }); } }), { code: 'EIO' });
+    const result = await finalizeRuntimeArtifacts({ executionId, containment: 'not_required', fallbackStore: capsule,
+      diagnosticStore: f.options.diagnosticStore,
+      failure: { code: 'EIO' }, cleanupSandbox: () => assert.fail('unknown resource identity must not be cleaned') });
+    assert.equal(result.cleanup, 'retained'); assert.equal(result.retention, 'unknown');
+    assert.equal(result.fallbackReference.status, 'released');
+    assert.equal(result.diagnosticStore.executionId, `${executionId}-finalization`);
+    assert.equal(await openRuntimeDiagnostic({ executionId, root: f.fallbackRoot }), null);
+    const archived = JSON.parse(await readFile(join(f.primaryRoot, `${executionId}-finalization.json`), 'utf8'));
+    assert.equal(archived.lifecycle.failureDiagnostic.code, 'EIO');
+    assert.equal(archived.lifecycle.cleanup, 'retained');
+    assert.equal(archived.lifecycle.sandboxCreated, false);
+    assert.equal(archived.lifecycle.diagnosticStore.executionId, executionId);
+  }
+});
+
+test('contained cleanup failures preserve resources and final inode evidence while reclaiming diagnostic capacity', async t => {
+  const f = await fixture(t);
+  await f.capsule.write({ cleanup: 'complete', persistence: 'not_required', retention: 'none' }); await f.capsule.release();
+  for (let index = 0; index < 10; index++) {
+    const executionId = `run-${200 + index}`;
+    const capsule = await reserveRuntimeDiagnostic({ executionId, root: f.fallbackRoot });
+    const cwd = join(f.root, 'work', executionId); await mkdir(cwd, { recursive: true });
+    await runGovernedCodexTask({ ...f.options, attemptId: executionId, cwd, openFallback: async () => capsule });
+    const before = await capsule.read();
+    let failure;
+    await assert.rejects(finalizeRuntimeArtifacts({ executionId, containment: 'reaped', fallbackStore: capsule,
+      diagnosticStore: f.options.diagnosticStore,
+      cleanupSandbox: async () => { throw Object.assign(new Error('denied'), { code: 'EACCES', syscall: 'unlink', cleanupContainment: 'reaped' }); } }),
+    error => { failure = error; return error.code === 'SANDBOX_CLEANUP_FAILED'; });
+    assert.equal(failure.details.cleanup, 'failed'); assert.equal(failure.details.retention, 'retained');
+    assert.equal(failure.details.fallbackReference.status, 'released');
+    assert.equal((await stat(join(cwd, '.codex-sandbox'))).isDirectory(), true);
+    const archived = JSON.parse(await readFile(join(f.primaryRoot, `${executionId}-finalization.json`), 'utf8'));
+    assert.deepEqual(archived.lifecycle.sandboxIdentity, before.sandboxIdentity);
+    assert.equal(archived.lifecycle.cleanupContainment, 'reaped');
+    assert.equal(archived.lifecycle.cleanup, 'failed');
+    assert.equal(await openRuntimeDiagnostic({ executionId, root: f.fallbackRoot }), null);
+  }
+});
+
+test('unknown cleanup processes and unproven final diagnostic persistence keep their active capsules', async t => {
+  for (const mode of ['unknown-cleanup', 'archive-store-failed', 'archive-store-unproven']) await t.test(mode, async t => {
+    const f = await fixture(t); await runGovernedCodexTask(f.options);
+    const overrides = mode === 'unknown-cleanup'
+      ? { cleanupSandbox: async () => { throw Object.assign(new Error('unknown process'), { code: 'EIO', cleanupContainment: 'unknown' }); } }
+      : { failure: { code: 'CODEX_NONZERO_EXIT' }, diagnosticStore: async () => {
+        if (mode === 'archive-store-failed') throw Object.assign(new Error('disk unavailable'), { code: 'ENOSPC' });
+        return undefined;
+      } };
+    await assert.rejects(f.finalize(overrides), { code: mode === 'unknown-cleanup' ? 'SANDBOX_CLEANUP_FAILED' : 'RUNTIME_DIAGNOSTICS_FAILED' });
+    assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }));
+    const capsule = await f.capsule.read();
+    assert.notEqual(capsule.released, true);
+    if (mode === 'unknown-cleanup') assert.equal(capsule.cleanupContainment, 'unknown');
+    else assert.equal(capsule.terminalDiagnostic.status, 'unavailable');
+  });
+});
+
+test('final diagnostic retirement preserves the configured debug store mode', async t => {
+  const f = await fixture(t);
+  await runGovernedCodexTask({ ...f.options, readDiagnosticConfig: async () => ({ mode: 'debug' }) });
+  const receipt = await f.finalize({ failure: { code: 'FIXTURE_CONTAINED_FAILURE' } });
+  assert.equal(receipt.fallbackReference.status, 'released');
+  assert.equal(receipt.diagnosticStore.mode, 'debug');
+  const archived = JSON.parse(await readFile(join(f.primaryRoot, 'run-39-finalization.json'), 'utf8'));
+  assert.equal(archived.mode, 'debug');
+  assert.equal(archived.lifecycle.diagnosticStore.mode, 'debug');
+});
+
+test('no-child dispatch retirement never replaces unknown or pending actual runtime evidence', async t => {
+  for (const mode of ['unknown-child', 'unknown-containment', 'sandbox-created', 'input-created', 'runtime-stage', 'runtime-child', 'persistence-failed']) await t.test(mode, async t => {
+    const f = await fixture(t);
+    const initial = { stage: 'dispatcher', operation: 'dispatch', childState: 'unknown', containment: 'unknown',
+      persistence: 'pending', cleanup: 'pending', retention: 'unknown', sandboxCreated: false, inputSchemaCreated: false };
+    const failure = { code: 'DISPATCH_NOT_STARTED', operation: 'dispatch', childState: 'not_started', containment: 'not_required' };
+    if (mode === 'unknown-child') failure.childState = 'unknown';
+    if (mode === 'unknown-containment') failure.containment = 'unknown';
+    if (mode === 'sandbox-created') initial.sandboxCreated = true;
+    if (mode === 'input-created') initial.inputSchemaCreated = true;
+    if (mode === 'runtime-stage') initial.stage = 'preflight';
+    if (mode === 'runtime-child') initial.childState = 'started';
+    if (mode === 'persistence-failed') initial.persistence = 'failed';
+    await f.capsule.write(initial);
+    await assert.rejects(f.finalize({ containment: mode === 'unknown-containment' ? 'unknown' : 'not_required', failure }),
+      { code: mode === 'unknown-containment' ? 'CONTAINMENT_NOT_PROVEN' : 'RUNTIME_DIAGNOSTICS_FAILED' });
+    const retained = await f.capsule.read();
+    assert.equal(retained.childState, initial.childState);
+    assert.equal(retained.persistence, initial.persistence);
+    assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }));
+  });
 });

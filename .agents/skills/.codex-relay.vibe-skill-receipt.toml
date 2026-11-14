@@ -7,11 +7,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "03f56d05b8b5c73d0e0d0f7943ddb00b3a6e9358f7bea818c82a6d79dc06e4f0"
+sha256 = "ddda9093a04c57a579c1400541bb813c8a1c296039ba5335f10e8e1b606274bb"
 
 [[file]]
 path = "SKILL.md"
-sha256 = "7ed4a568dbe295c3976ca481a56f4b996656ec0093e140caa20842244c9b93a7"
+sha256 = "2059902a406f7200507a28f8121fdf22b7bf875a88391028e68e7d2d0e766350"
 
 [[file]]
 path = "references/compatibility.md"
@@ -27,7 +27,7 @@ sha256 = "8c5c27458a804a233cb1a2d5c5c83db1013d81e9154f6648ed93460f0fa48158"
 
 [[file]]
 path = "references/installation.md"
-sha256 = "283135f9f71e5c34a698af43763ee44e1692b69bb7f6354a7786c022a1fc3763"
+sha256 = "de031e6cb2924380ccb6314d45d2467632e1c8994b6e9c6039b4efc5f9f2f58c"
 
 [[file]]
 path = "references/product/contract.json"
@@ -39,11 +39,11 @@ sha256 = "b4a7c7561ca8697e3b00df21c8c624d59d6cb5f3f2f56bde35d7ed6bdd161874"
 
 [[file]]
 path = "references/product/github-authority-v4.json"
-sha256 = "90ba19712e64138c605c9efee74d9dd8d60779bb6741bfbb3149424a585037a5"
+sha256 = "e0fee822dc38e42dcc352c8bb511ea2b1af31bf9e97f558017f1b224b200fafd"
 
 [[file]]
 path = "references/product/vibevm.json"
-sha256 = "e94f71443661ce06fcdef0167900a6ed5efc38d97eca48423b8eb73fda18417a"
+sha256 = "234120b2b2529620b1800dd34eb84545db11ab74f2d54fb69285f00e03186d82"
 
 [[file]]
 path = "references/shared-protocols.md"
@@ -51,4 +51,4 @@ sha256 = "dec359121862cdfed0f9f348e11c50765928ce83e8df4549d95420527ca1930f"
 
 [[file]]
 path = "references/workflow.md"
-sha256 = "7bbeb00299e8440a4cb5af6527394f81bb6324617cec71e72fb93ca20923eaa9"
+sha256 = "0b7b5c6a9eb6402b1ef94f472ef8293e13ee71d67226fd9a7cf3919e143591ae"

@@ -214,9 +214,10 @@ must attest that exact result. Automatic attempts require the journal's verified
 original admission/claim digest and the canonical Writer Outcome. A worker claim,
 an arbitrary current PR head or a local unpublished commit cannot establish B.
 
-A trusted, active Task-scoped Decision newer than that Outcome must resolve the
-blocker. A genuine new owner ready event then admits the next Step at B; the
-Decision alone neither allocates Step nor launches work. Writer verifies the
+A new Decision is needed only when resolving the blocker changes effective
+authority or an explicit hold. Unchanged authority needs no repeated technical
+continuation Decision. A genuine new owner ready event admits the next Step at B;
+a Decision alone neither allocates Step nor launches work. Writer verifies the
 original admission, attempt, Task/PR/CR, branch/base, source digests, configured
 native Reviewer/Writer Bot identities, exact native Outcome/body bindings and
 Git ancestry/ref observations. The live CR must remain current and executable
@@ -295,16 +296,15 @@ projects its newly admitted Step/title. Closure, disappearance or replacement
 cannot authorize another target or a replacement PR.
 
 Apply `codex-ready-auto` to the canonical Issue; `codex-ready-manual` produces the
-copyable manual handoff. This keeps Issue implementation and Writer commit
-identity, needs no Reviewer CR and grants no CR integration-merge permission.
-The worker receives this history restriction explicitly: ordinary single-parent
-commits from the admitted starting head, including when an existing PR is bound.
-Reconcile needed accepted base changes as source-file edits; do not merge, rebase,
-amend, reset or rewrite the Task history. A Task instruction to reconcile source
-does not grant the remediation-only local integration-merge exception. Preserve
-useful work and report a concrete conflict or authority boundary if safe source
-reconciliation is unavailable. The collector's existing ownership and ancestry
-checks remain unchanged.
+copyable manual handoff. This keeps the authenticated Writer publication identity and needs no Reviewer
+CR merely to continue authorized implementation. The executor chooses ordinary
+local Git methods, including task-owned commits, accepted-upstream integration,
+conflict resolution and organization of its own unpublished work. Preserve the
+published frontier and other people's work. Original authorship is preserved as
+data; it is not authentication. Writer imports bounded object bytes into a fresh
+trusted repository, scans every introduced reachable commit/tree/blob including
+intermediate deleted content, and publishes only by a non-force push after live
+ref and authority checks. No local Git method grants PR integration authority.
 Each genuinely new admitted execution receives the next Step through the current
 numbering procedure. Local corrections and exact replay/recovery keep the same
 admission and Step. Exact already-admitted legacy/v3 operations keep their original
@@ -669,27 +669,32 @@ admission; rollback still requires installed verification before resume.
 ## Reviewed base reconciliation
 
 A dirty reviewed PR may enter remediation through the owner's ready label or optional dispatch.
-Its current Change Request, linked Issue, branch and exact reviewed starting head
-remain mandatory. The Writer observes the configured base once at admission and checks
-that observation at preflight; trusted checkout fetches that exact base and proves
-shared Git ancestry before the Codex child. A moved base, unrelated history or
-changed authority blocks. Fresh Issue admission is unchanged.
+Its current Change Request, linked Issue, branch and exact task head remain
+mandatory. The admitted base is an immutable input identity. Verified descendant
+advancement of the configured base is ordinary integration context; replaced or
+unrelated base history and movement of the task's own remote head stop the
+specific publication. Checkout and publication verify ancestry, while current
+merge compatibility is evaluated separately. Conflict resolution stays within
+the authorized development cycle.
 
-When the admitted remediation requires integration, the worker may add one local
-two-parent merge commit to its task branch. The first parent must be the previous
-task head and the second exactly the admitted current base. Other task commits
-remain linear. Every task commit, including the integration commit, must carry
-the expected remediation bot identity. Already-published base ancestors retain
-their original authors. No other merge parents, repeated integration, rebase,
-amend, reset, history rewrite or force publication is admitted.
+Implementation and remediation support ordinary local Git graphs and preserve
+original author/committer data. Task head ancestry must preserve the admitted
+published frontier. Newly introduced reachable content is scanned across the
+complete graph, including intermediate changes absent from the final tree.
+Candidate acquisition reads only the reachable missing closure from loose or
+indexed packed objects; unrelated unreachable objects and test residue are not
+new publication content. Packed refs are supported. Unsafe metadata and candidate
+paths remain rejected, and trusted Git never runs against worker metadata.
 
-Writer validates each task commit against its first parent, including all paths,
-file modes and blobs introduced by the merge resolution. Transient secrets in
-task commits remain rejected. It reobserves admitted base before integration
-publication or owner-authorized recovery and retains the ordinary fast-forward
-push and exact remote-head checks. PR mergeability, native exact-head validation
-and independent review remain separate completion gates; admission of a dirty
-input never means its unresolved output is approved.
+A safely imported committed candidate may survive incomplete residue observation
+with `WORKTREE_OBSERVATION_INCOMPLETE`. The worktree state is unknown, not clean;
+retain the checkout and disclose the inspection gap. This does not permit reading
+unsafe links, discarding useful local work, or skipping candidate scans.
+
+A contained successful remediation may return no source change when a finding is
+rebutted, already satisfied or not reproducible. Writer publishes the bound
+no-change result on the existing PR without an artificial commit. Independent
+exact-head review still decides the finding and acceptance.
 
 ### Publication, execution handoff and integration readiness
 
@@ -1269,20 +1274,24 @@ execution through replay/recovery. Their
 [native session-total semantics and limitations](../docs/codex/cli-integration.md#safe-automatic-evidence)
 are independent of worker semantic claims and billing.
 
-There are eight atomically reserved slots. A capsule and at most one interrupted
-temporary write occupy each slot; unknown, failed or retained attempts are never
-automatically evicted. A full store blocks admission before child launch. A
-successful contained run marks its capsule released only after cleanup succeeds;
-the tiny completion trace remains until a new reservation replaces it under an
-exclusive reclamation claim. Interrupted reclamation also blocks slot reuse and
-preserves both bounded records. Released capsules never imply retained sandbox
-artifacts. A
-failed diagnostic capture/store or cleanup retains the protected attempt artifacts
-and its reference for owner inspection. Inspection and later disposal use the
-execution ID and slot to correlate with the attempt journal and configured work
-root; a separate owner-authorized operation must establish that useful evidence
-has been preserved before removing retained artifacts and freeing that slot.
-This retention policy grants no new arbitrary-delete or diagnostic-read authority.
+There are eight atomically reserved active capsules. Unknown execution, failed
+persistence are never evicted to make room. A contained terminal run releases
+active diagnostic capacity independently of semantic success or failure. A
+retained resource or failed result first archives the complete safe final capsule,
+including its inode and primary diagnostic pointer, in the existing protected
+diagnostic store. Its actual cleanup/retention state remains visible; only launch
+capacity becomes reclaimable under the existing exclusive claim. Ordinary clean
+success needs no extra archive. Missing or invalid final archive proof retains
+the active capsule. Interrupted writes and reclamation remain fail-closed.
+
+A bounded cleanup failure after a proven semantic result preserves that result
+with `RUNTIME_CLEANUP_FAILED` only when the cleanup process is also reaped and
+diagnostics remain durable. The affected resource stays retained and must be inspected before reuse. Its
+active diagnostic slot may retire only after independently stored final evidence
+and proof that execution and any cleanup process are contained. Unknown cleanup containment or failed diagnostic
+persistence remains an execution failure. Completion, resource status and retained
+diagnostics are separate facts; no warning authorizes a duplicate invocation or
+arbitrary deletion.
 
 Physical failures during checkout preparation, attempt journaling, collection and
 terminal publication also use this independent evidence path. An existing runtime

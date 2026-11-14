@@ -83,16 +83,26 @@ test('root Writer collects worker-private atomic replacements without changing m
   await symlink(outside, join(f.cwd, 'outside-link'));
   assert.equal((await f.collect(e)).clean, false);
   await link(outside, join(f.cwd, 'outside-hardlink'));
-  await assert.rejects(f.collect(e), { code: 'UNTRUSTED_GIT_FILE_INVALID' });
+  const hardlinkFacts = await lstat(join(f.cwd, 'outside-hardlink'));
+  const hardlinkProgress = await f.collect(e);
+  assert.equal(hardlinkProgress.head, head); assert.ok(hardlinkProgress.bundle);
+  assert.equal(hardlinkProgress.clean, null);
+  assert.equal(hardlinkProgress.worktreeObservation.status, 'unknown');
+  assert.equal(hardlinkProgress.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+  assert.equal(hardlinkProgress.worktreeObservation.diagnostic.code, 'UNTRUSTED_GIT_FILE_INVALID');
+  const retainedHardlinkFacts = await lstat(join(f.cwd, 'outside-hardlink'));
+  for (const key of ['uid', 'gid', 'mode', 'ino', 'dev', 'size', 'ctimeMs', 'mtimeMs']) assert.equal(retainedHardlinkFacts[key], hardlinkFacts[key]);
   assert.equal(await readFile(outside, 'utf8'), 'outside sentinel');
   await unlink(join(f.cwd, 'outside-hardlink'));
   let deep = join(f.cwd, 'depth-limit');
   for (let i = 0; i < 129; i++) { await mkdir(deep, { mode: 0o700 }); deep = join(deep, 'd'); }
-  await assert.rejects(f.collect(e), error => {
-    assert.equal(error.code, 'TRUSTED_GIT_FAILED');
-    assert.match(error.details.failureDiagnostic.preview, /WORKTREE_OBSERVATION_TOO_DEEP/);
-    return true;
-  });
+  const deepProgress = await f.collect(e);
+  assert.equal(deepProgress.head, head); assert.ok(deepProgress.bundle);
+  assert.equal(deepProgress.clean, null);
+  assert.equal(deepProgress.worktreeObservation.status, 'unknown');
+  assert.equal(deepProgress.worktreeObservation.code, 'WORKTREE_OBSERVATION_INCOMPLETE');
+  assert.equal(deepProgress.worktreeObservation.diagnostic.code, 'TRUSTED_GIT_FAILED');
+  assert.match(deepProgress.worktreeObservation.diagnostic.preview, /WORKTREE_OBSERVATION_TOO_DEEP/);
 });
 
 test('private-mode source survives failed publication and explicit same-attempt recovery without worker replay', {

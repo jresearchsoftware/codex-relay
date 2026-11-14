@@ -171,8 +171,13 @@ def test_current_input_movement_during_long_scan_is_refused(component, monkeypat
             elif change == 'distribution': (root / 'bin/native-input').write_bytes(b'changed library')
             elif change == 'root-file': (root / 'run-helper.sh').write_bytes(b'changed interpreted code')
             elif change == 'create-delete-setting':
+                # This fixture restores the directory entry set, so allow the
+                # coarse filesystem metadata clock to advance before mutation.
+                before = root.stat()
+                time.sleep(0.02)
                 (root / '.runner_migrated').write_bytes(b'transient optional setting')
                 (root / '.runner_migrated').unlink()
+                assert adoption.identity(root.stat()) != adoption.identity(before)
         return {'trustVersion': calls[0] if change == 'trust' else 1}
     monkeypatch.setattr(general, '_trust', trust)
     with pytest.raises(ValueError):
@@ -228,6 +233,11 @@ def test_changed_identity_never_refreshes_previously_verified_bytes(tmp_path, ch
     verified = {}
     first = general._file(path, os.getuid(), verified=verified)
     before = path.stat()
+    # The overwritten/recreated file deliberately restores size and mtime.
+    # On ext3 the inode can be reused and ctime can share a coarse clock tick;
+    # establish an actual metadata change before testing the guard's reaction.
+    if change in ['overwrite-restored-mtime', 'recreate']:
+        time.sleep(0.02)
     if change == 'chmod': path.chmod(0o400)
     elif change == 'overwrite-restored-mtime':
         path.write_bytes(b'changed bytes')
@@ -238,6 +248,7 @@ def test_changed_identity_never_refreshes_previously_verified_bytes(tmp_path, ch
     else:
         target = tmp_path / 'other-library'; target.write_bytes(b'initial bytes')
         path.unlink(); path.symlink_to(target)
+    assert adoption.identity(path.lstat()) != adoption.identity(before)
     with pytest.raises((ValueError, OSError)):
         general._file(path, os.getuid(), verified=verified)
     assert verified[str(path)] == first
@@ -308,7 +319,11 @@ def test_current_trust_absence_changes_when_store_is_created(tmp_path):
 def test_current_absence_parent_detects_store_create_then_delete(tmp_path):
     target = tmp_path / 'x509stores'
     before = general._trust_tree(target, os.getuid(), boundary=tmp_path)
+    # Creating then deleting restores the entry set; its metadata movement must
+    # occur in another filesystem tick for the identity comparison to observe it.
+    time.sleep(0.02)
     target.mkdir(); target.rmdir()
+    assert adoption.identity(tmp_path.stat()) != before['parent']
     assert general._trust_tree(target, os.getuid(), boundary=tmp_path) != before
 
 
@@ -319,5 +334,8 @@ def test_current_trust_records_every_intermediate_leaf_alias(tmp_path):
     selected.symlink_to(indirect)
     indirect.symlink_to(certificate)
     before = general._trust_tree(selected, os.getuid(), boundary=tmp_path)
+    original_link = indirect.lstat()
+    time.sleep(0.02)  # Recreating a symlink may reuse its inode on ext3.
     indirect.unlink(); indirect.symlink_to(certificate)
+    assert adoption.identity(indirect.lstat()) != adoption.identity(original_link)
     assert general._trust_tree(selected, os.getuid(), boundary=tmp_path) != before
