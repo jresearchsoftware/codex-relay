@@ -14,6 +14,41 @@ security remain mandatory; equivalent current-input/drift proof can replace a
 full Ansible traversal. This purpose amendment changes neither the original
 Step/admission binding nor protected operational boundaries.
 
+## Qualified native local milestone
+
+The complete public TEST code-only Apply from `cb0e30a2...` to
+`a0e03ab721e65d301c58398844b9b3f325c5bbb5` passed in **95.960380 s**, including
+argument preparation, a new official pinned reference, all required checks and
+final readback. All six observed TEST/pool/PROD service PID/start identities
+were preserved, all 32 actual routes passed, and the exact installed Git pair
+was verified. This is one actual result below 100 seconds, without extrapolating
+a latency guarantee or PROD improvement. The accepted-source baseline below
+was 643.395 s on the same TEST target/capacity with all 32 routes; these are
+different exact source pairs with unchanged effective inputs in each operation.
+The observed reduction is **85.1%**. See
+[native Apply evidence](task-253-native-apply-a0.json) and
+[non-overlapping timeline](task-253-native-timeline-a0.json).
+
+| Corrected installed case on `a0e03ab7...` | Complete E2E | Result |
+| --- | ---: | --- |
+| Same-pair no-op | 31.583764 s | Native verify; receipt and all seven managed bindings unchanged |
+| README-only config commit | 27.340949 s | Native provenance; exact same JSON bytes, only manifest/receipt promoted |
+
+Both cases acquired their own fresh required reference, retained all six active
+process identities and avoided full-site traversal. The task-only early fallback
+guard did not trigger and forced no proof. README commit
+`bb76ead22b44e5866b395592561e33d84872abbd` retains exact JSON blob
+`66933276a48270f2845a6d28ac88bcc84b395c9d` from the measured Apply's configuration.
+See [no-op evidence](task-253-final-noop.json) and
+[README-only evidence](task-253-final-readme.json).
+
+The public installer frontend runs on the remote Debian TEST host; the separate
+WSL validation checkout has a different kernel instance, CPU model and native
+filesystem. WSL provides Git setup and SSH transport for the installed cases.
+See [execution-resource facts](task-253-execution-resources.json). Remaining
+policy/fault/original-operation recovery and full candidate checks are pending;
+no final Outcome or independent acceptance is claimed at this milestone.
+
 ## Implemented behavior and retained limits
 
 - First-install credential and CA preparation precede ACME dry-run/issuance;
@@ -448,10 +483,10 @@ that foreign bytes changed. No reload, fresh reset or cleanup was performed.
 See [bounded shared-host evidence](task-253-fresh-boundary.json). Existing TEST
 credential sources and registrations remain in place.
 
-The native fast source-promotion implementation and targeted host proof are
-complete at this snapshot. End-to-end Apply timing, final
-policy/fault/original-operation recovery and corrected provenance cases
-remain in progress. This snapshot asserts no final installed qualification,
+The native fast source-promotion implementation, end-to-end code-only timing,
+same-pair no-op and README-only provenance are qualified above. Final
+policy/fault/original-operation recovery and full candidate checks remain in
+progress. This snapshot asserts no complete installed qualification,
 independent acceptance or PROD improvement. Requested profile is Sol/xhigh with Subagents On;
 implementation helpers were used. Actual runtime model/effort telemetry is
 unavailable. The native chat rename succeeded but readback exposed a truncated
