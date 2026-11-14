@@ -1231,18 +1231,29 @@ mod pagination {
     async fn oversized_record_and_aggregate_budget_have_distinct_errors() {
         for (count, bytes, error) in [
             (1, 262144, "AUTHORITY_SOURCE_TOO_LARGE"),
-            (1000, 15700, "AUTHORITY_COLLECTION_BUDGET_EXCEEDED"),
+            (1000, 16400, "AUTHORITY_COLLECTION_BUDGET_EXCEEDED"),
         ] {
             let state = Pages::new(admitted());
             let source = records(count, bytes);
             if count == 1000 {
-                // The source itself fits the aggregate bound. Failed oversized
-                // attempts also consume transferred bytes and exhaust it.
-                assert!(serde_json::to_vec(&source).unwrap().len() < 16 * 1024 * 1024);
+                // The source itself fits. The 100/50/25-record pages all
+                // exceed SOURCE_BYTES, so each failed attempt must consume at
+                // least SOURCE_BYTES + 1 before reduction. Keep a proven lower
+                // bound above the collection limit, independent of TCP chunks.
+                let source_bytes = serde_json::to_vec(&source).unwrap().len();
+                let minimum_failed_reads = 3 * (256 * 1024 + 1);
+                for page_size in [100, 50, 25] {
+                    assert!(serde_json::to_vec(&source[..page_size]).unwrap().len() > 256 * 1024);
+                }
+                assert!(source_bytes < 16 * 1024 * 1024);
+                assert!(source_bytes + minimum_failed_reads > 16 * 1024 * 1024);
             }
             state.source("issues/24/comments", source);
             let github = paged_api(state.clone()).await;
-            assert_eq!(collect(&github, "comments", 24).await, Err(error));
+            match collect(&github, "comments", 24).await {
+                Err(actual) => assert_eq!(actual, error),
+                Ok(records) => panic!("expected {error}, received {} records", records.len()),
+            }
             assert!(state.reads.lock().unwrap().len() <= 1005);
             if count == 1 {
                 assert_eq!(state.reads.lock().unwrap().last().unwrap().size, 1);
