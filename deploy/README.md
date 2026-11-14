@@ -1378,6 +1378,18 @@ current boot-clock evidence, with integer nanosecond comparisons. Unknown/coarse
 timestamps, changed generators/templates or absent consuming-process evidence
 retain restart. Other scripts and dependencies keep their ordinary pre-start
 history checks; see the pinned [Runner launch recipe](https://github.com/actions/runner/blob/v2.338.2/src/Misc/layoutroot/run.sh).
+When the generated copy and consuming shell birth share a `/proc` clock tick,
+an optional read-only kernel TASKSTATS live-PID query can supply a finer lower
+bound. Its elapsed microseconds are rounded down by Linux; the proof subtracts
+one full microsecond from the pre-request monotonic sample and retains both
+current and original systemd clock guards (including timestamp truncation).
+Kernel peer, response shape, PID, UID and retained process generation are checked.
+The derived query time is never persisted or compared as an input identity.
+Unavailable privileges, unsupported accounting or uncertain replies keep the
+original strict tick bound and ordinary restart. No accounting listener, new
+service or launcher is installed; the public Runner launch behavior is unchanged.
+See Linux's [live-PID accounting](https://github.com/torvalds/linux/blob/v6.1/kernel/taskstats.c)
+and [elapsed-time calculation](https://github.com/torvalds/linux/blob/v6.1/kernel/tsacct.c).
 Native distribution leaf aliases such as `npm` are bounded to the proved
 `bin`/`externals` trees. Their link chain, protected directory topology and
 regular single-link target must remain unchanged since retained startup;

@@ -93,7 +93,9 @@ comparisons. Besides the six host-preflight fixtures below, remaining fixtures
 contained noncanonical pool inputs, retired SERIAL receipt expectations,
 incomplete historical import graphs or an implicit writable-temporary-parent
 assumption. Corrections preserve the negative and real transition assertions;
-the final complete rerun remains required. This is not a full deployment PASS.
+the corrected complete root rerun on `78796955c0350bbdc5b0f8ac9487064cbd1e0002`
+passed 2923 tests, with 13 skipped and one existing passlib/crypt deprecation
+warning. A later full candidate run still must cover subsequent source changes.
 
 Native Linux validation has passed Node (1169 passed, seven skipped), Rust
 (163 passed), the three-consumer production-binary qualifier, candidate scanning,
@@ -167,6 +169,16 @@ the earlier disk/post-check result alone does not qualify that corrected path.
 Both read-only cases emitted one existing nonfatal temporary-directory fallback
 warning. Generated consumer workflow publication remains separate; the observed
 integration compatibility warning is not live Actions-dispatch qualification.
+
+An actual `environment.reviewCheckName` policy change selected managed reconcile
+on `284e3f1f...`, passing in 569.536 s (366.338 s site). Reviewer and Production
+Runner correctly restarted. Restoring the exact original JSON passed in
+559.724 s (354.394 s site), again requiring restart. Both operations executed
+all 32 namespace probes, one Bubblewrap task and 31 additional package skips;
+both pool and both observed PROD processes remained active with unchanged
+PID/start. Each emitted two existing temporary-directory fallback warnings.
+See [policy-change evidence](task-253-policy.json) and
+[exact restoration evidence](task-253-restore.json).
 
 ## Remaining installed evidence at this snapshot
 

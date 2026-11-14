@@ -373,7 +373,76 @@ def service_environment_files(state):
     return list(dict.fromkeys(paths))
 
 
-def consumer_start_lower_bound(state, start_ticks):
+def netlink_attributes(raw):
+    result = {}
+    while raw:
+        require(len(raw) >= 4)
+        length, kind = struct.unpack_from('=HH', raw)
+        require(4 <= length <= len(raw) and (kind & 0x3fff) not in result)
+        result[kind & 0x3fff] = raw[4:length]
+        padded = (length + 3) & ~3
+        require(padded <= len(raw))
+        raw = raw[padded:]
+    return result
+
+
+def taskstats_elapsed(pid, uid):
+    """Optional live PID GET, never a listener or persisted accounting record."""
+    def attribute(kind, value):
+        raw = struct.pack('=HH', len(value) + 4, kind) + value
+        return raw + b'\0' * (-len(raw) % 4)
+
+    with socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 16) as channel:
+        channel.settimeout(1)
+        channel.bind((0, 0))
+
+        def query(family, command, attrs, sequence, reply_command, reply_version):
+            body = struct.pack('=BBH', command, 1, 0) + attrs
+            request = struct.pack('=IHHII', len(body) + 16, family, 1, sequence, 0) + body
+            before = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+            channel.sendto(request, (0, 0))
+            raw, source = channel.recvfrom(65536)
+            require(source == (0, 0) and len(raw) >= 20)
+            length, kind, flags, returned_sequence, recipient = struct.unpack_from('=IHHII', raw)
+            require(length == len(raw) and returned_sequence == sequence and not flags & 2
+                    and recipient == channel.getsockname()[0])
+            if kind == 2:
+                raise ValueError('PROCESS_ADOPTION_UNPROVEN')
+            require(kind == family and raw[16] == reply_command and raw[17] == reply_version
+                    and raw[18:20] == b'\0\0')
+            return netlink_attributes(raw[20:]), before
+
+        control, _ = query(16, 3, attribute(2, b'TASKSTATS\0'), 1, 1, 2)
+        require(len(control.get(1, b'')) == 2)
+        family = struct.unpack('=H', control[1])[0]
+        require(family >= 16)
+        response, before = query(family, 1, attribute(1, struct.pack('=I', int(pid))), 2, 2, 1)
+        aggregate = netlink_attributes(response.get(4, b''))
+        require(aggregate.get(1) == struct.pack('=I', int(pid)))
+        stats = aggregate.get(3, b'')
+        require(len(stats) >= 152 and struct.unpack_from('=H', stats)[0] >= 1)
+        require(struct.unpack_from('=I', stats, 120)[0] == uid
+                and struct.unpack_from('=I', stats, 128)[0] == int(pid))
+        elapsed = struct.unpack_from('=Q', stats, 144)[0]
+        # Linux bacct_add_tsk floors (ktime_get_ns - task.start_time) to us.
+        # The request begins before that sample: subtract a full us, never add
+        # a tick-sized acceptance margin. Transport delay only lowers this bound.
+        return before - (elapsed + 1) * 1000
+
+
+def precise_consumer_lower_bound(state, pid, proof, uid):
+    lower_monotonic = taskstats_elapsed(pid, uid)
+    # Bind the queried live PID to the already captured process generation.
+    require(Path('/proc', pid, 'stat').read_text().rsplit(')', 1)[1].split()[19] == proof['start'])
+    wall_before = time.time_ns()
+    monotonic_after = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+    current = wall_before - monotonic_after + lower_monotonic
+    original = (service_started_ns(state) + lower_monotonic
+                - (int(state['ExecMainStartTimestampMonotonic']) + 1) * 1000)
+    return min(current, original)
+
+
+def consumer_start_lower_bound(state, start_ticks, pid=None, proof=None, uid=None):
     # The public Runner generates its helper after the main wrapper starts.
     # Bind it to the consuming shell, using both present and original clocks;
     # a later forward wall-clock adjustment must not approve stale script code.
@@ -385,8 +454,14 @@ def consumer_start_lower_bound(state, start_ticks):
     monotonic_before = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     boot_after = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
     original = (service_started_ns(state) + ticks - (boot_after - monotonic_before)
-                - int(state['ExecMainStartTimestampMonotonic']) * 1000)
-    return min(current, original)
+                - (int(state['ExecMainStartTimestampMonotonic']) + 1) * 1000)
+    lower = min(current, original)
+    if pid is not None:
+        try:
+            lower = max(lower, precise_consumer_lower_bound(state, pid, proof, uid))
+        except (OSError, ValueError, KeyError, struct.error):
+            pass  # Unsupported kernel/capability/uncertain reply keeps strict tick proof.
+    return lower
 
 
 def runner_arguments(pid, proof):
@@ -413,7 +488,7 @@ def generated_runner_helper(root, state, processes, earliest, uid):
             consumers.append(pid)
     require(len(consumers) == 1)
     consumer = consumers[0]
-    lower = consumer_start_lower_bound(state, processes[consumer]['start'])
+    lower = consumer_start_lower_bound(state, processes[consumer]['start'], consumer, processes[consumer], uid)
     meta = helper.lstat()
     require(meta.st_ctime_ns < lower)
     helper_hash = digest(protected(helper, uid=uid))

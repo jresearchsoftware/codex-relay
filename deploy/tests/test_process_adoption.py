@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from pathlib import Path
 import sys
 import subprocess
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -228,12 +228,88 @@ def test_generated_helper_consumer_bound_keeps_original_and_current_clock_guards
     hz = os.sysconf('SC_CLK_TCK')
     with patch.object(adoption.time, 'time_ns', return_value=base + 100000000000), \
             patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
-        assert adoption.consumer_start_lower_bound(state, str(6 * hz)) == base + 1123456000
+        # The original monotonic anchor is truncated to microseconds: subtract
+        # its full quantum before taking max with any finer independent bound.
+        assert adoption.consumer_start_lower_bound(state, str(6 * hz)) == base + 1123455000
     with patch.object(adoption.time, 'time_ns', return_value=base - 100000000000), \
             patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
         assert adoption.consumer_start_lower_bound(state, str(6 * hz)) == base - 104000000000
     with pytest.raises(ValueError):
         adoption.consumer_start_lower_bound({**state, 'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00 UTC'}, str(6 * hz))
+
+
+@pytest.mark.parametrize('fault', [None, 'peer', 'sequence', 'family', 'version', 'uid', 'pid',
+                                  'truncated', 'attribute', 'recipient', 'command', 'denied', 'short-stats'])
+def test_live_taskstats_reply_is_kernel_bound_and_elapsed_rounding_is_conservative(fault):
+    pack = adoption.struct.pack
+    def attr(kind, value):
+        raw = pack('=HH', len(value) + 4, kind) + value
+        return raw + b'\0' * (-len(raw) % 4)
+    def reply(family, command, version, sequence, attrs):
+        body = pack('=BBH', command, version, 0) + attrs
+        return pack('=IHHII', len(body) + 16, family, 0, sequence, 123) + body
+    stats = bytearray(152)
+    adoption.struct.pack_into('=H', stats, 0, 13)
+    adoption.struct.pack_into('=I', stats, 120, 99 if fault == 'uid' else 12)
+    adoption.struct.pack_into('=I', stats, 128, 99 if fault == 'pid' else 42)
+    adoption.struct.pack_into('=Q', stats, 144, 123456)
+    aggregate = attr(1, pack('=I', 42)) + attr(3, stats[:120] if fault == 'short-stats' else stats)
+    attrs = attr(4, aggregate)
+    if fault == 'attribute':
+        attrs = pack('=HH', 65535, 4)
+    raw = reply(99 if fault == 'family' else 35, 2, 99 if fault == 'version' else 1,
+                99 if fault == 'sequence' else 2, attrs)
+    if fault == 'recipient':
+        raw = raw[:12] + pack('=I', 99) + raw[16:]
+    elif fault == 'command':
+        raw = raw[:16] + b'\x01' + raw[17:]
+    elif fault == 'denied':
+        raw = reply(2, 2, 1, 2, pack('=i', -1))
+    if fault == 'truncated':
+        raw = raw[:-1]
+    channel = MagicMock()
+    channel.__enter__.return_value = channel
+    channel.getsockname.return_value = (123, 0)
+    channel.recvfrom.side_effect = [(reply(16, 1, 2, 1, attr(1, pack('=H', 35))), (0, 0)),
+                                    (raw, (7, 0) if fault == 'peer' else (0, 0))]
+    with patch.object(adoption.socket, 'socket', return_value=channel), \
+            patch.object(adoption.time, 'clock_gettime_ns', return_value=1000000000):
+        if fault is None:
+            assert adoption.taskstats_elapsed('42', 12) == 1000000000 - 123457000
+        else:
+            with pytest.raises(ValueError):
+                adoption.taskstats_elapsed('42', 12)
+
+
+def test_precise_consumer_clock_bound_does_not_relax_history_when_provider_unavailable():
+    state = {'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00.123456 UTC',
+             'ExecMainStartTimestampMonotonic': '5000000'}
+    with patch.object(adoption.time, 'time_ns', return_value=1794646900000000000), \
+            patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
+        strict = adoption.consumer_start_lower_bound(state, '600')
+        with patch.object(adoption, 'precise_consumer_lower_bound', side_effect=OSError('unsupported')):
+            assert adoption.consumer_start_lower_bound(state, '600', '42', {'start': '600'}, 12) == strict
+        with patch.object(adoption, 'precise_consumer_lower_bound', return_value=strict - 1000):
+            assert adoption.consumer_start_lower_bound(state, '600', '42', {'start': '600'}, 12) == strict
+        with patch.object(adoption, 'precise_consumer_lower_bound', return_value=strict + 5000000):
+            assert adoption.consumer_start_lower_bound(state, '600', '42', {'start': '600'}, 12) == strict + 5000000
+
+
+@pytest.mark.parametrize('moved', [False, True])
+def test_precise_consumer_original_clock_truncation_and_pid_generation(moved):
+    state = {'ExecMainStartTimestamp': 'Sat 2026-11-14 09:00:00.123456 UTC',
+             'ExecMainStartTimestampMonotonic': '5000000'}
+    original = adoption.service_started_ns(state)
+    proc_stat = '42 (shell)' + ' x' * 19 + (' 601' if moved else ' 600')
+    with patch.object(adoption, 'taskstats_elapsed', return_value=6000123456), \
+            patch.object(Path, 'read_text', return_value=proc_stat), \
+            patch.object(adoption.time, 'time_ns', return_value=original + 100000000000), \
+            patch.object(adoption.time, 'clock_gettime_ns', return_value=10000000000):
+        if moved:
+            with pytest.raises(ValueError):
+                adoption.precise_consumer_lower_bound(state, '42', {'start': '600'}, 12)
+        else:
+            assert adoption.precise_consumer_lower_bound(state, '42', {'start': '600'}, 12) == original + 1000122456
 
 
 @pytest.mark.parametrize('change', [None, 'bytes', 'consumer-time', 'template', 'generator', 'no-consumer'])
