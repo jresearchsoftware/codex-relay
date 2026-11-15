@@ -315,5 +315,70 @@ class RelayChatGPTProjectTests(unittest.TestCase):
         self.assertIn(b"Unknown live owner rule.", exported.read_bytes())
 
 
+class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
+    """Instruction coverage/tabletop fixtures, not an automated planner or model probe.
+
+    Each fixture pairs a planning situation with the clauses that determine its
+    disposition. Assert both authored and effective generated guidance so a
+    regeneration or edit cannot silently lose the exercised route.
+    """
+
+    def test_adoption_uses_accepted_project_route(self):
+        for name in ("custom.md", "instructions.md"):
+            text = (ROOT / "chatgpt" / name).read_text()
+            with self.subTest(surface=name):
+                self.assertNotIn("Optional Small Improvements is not adopted", text)
+                self.assertIn("root AGENTS and local Small Improvements binding for SI-001–SI-008", text)
+                self.assertIn("locked Shared 7.0.1, never the frozen standalone fallback", text)
+
+    def test_planning_tabletop_routes_and_authority(self):
+        fixtures = {
+            "new source Task; relevant bounded candidate on a later page -> propose": (
+                "suitable source-changing Task planning",
+                "repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement",
+                "Inspect all pages and read relevant candidate Issues",
+                "same-repository relevance, boundedness, dependencies, conflicts, ownership",
+                "propose candidate IDs, concise reasons and bounded receiving scope to the owner",
+            ),
+            "analysis becomes source work -> discover once": (
+                "the first source-changing Step after analysis",),
+            "relevant CR -> discover; preserve Task-wide authority": (
+                "or a relevant CR", "A CR cannot enlarge Task-wide scope"),
+            "analysis-only -> skip without tracker prerequisite": (
+                "Skip analysis-only work",),
+            "unchanged subsequent Step/inner correction -> skip": (
+                "routine inner/subsequent Steps with unchanged scope and no new relevant information",
+                "refresh on material changes",
+            ),
+            "empty results -> continue original work": (
+                "Empty/no suitable candidates: proceed normally",
+                "discovery never blocks unrelated work",
+            ),
+            "only unrelated, conflicting or unowned candidates -> no suitable inclusion": (
+                "same-repository relevance, boundedness, dependencies, conflicts, ownership",
+                "Empty/no suitable candidates: proceed normally",
+            ),
+            "owner suggestion/link/label only -> no execution authority": (
+                "Implementation requires explicit receiving Task/Decision/CR authority for selected IDs/corrections",
+                "labels, search results, Issue links and assistant suggestions grant none",
+            ),
+            "selected but not integrated/partially delivered -> retain discovery": (
+                "Link source Issues to Task/PR; preserve authorship/provenance/remainders",
+                "Keep unfinished source Issues open and discoverable with their label until accepted integration and explicit authorized disposition",
+                "scheduling/tests are not delivery",
+                "Record deferral, cancellation or partial delivery and exact remainder",
+            ),
+            "deferred correction with unavailable label capability -> disclose, not queued": (
+                "authorized Issue/label path", "report label gaps, never claim unlabelled work queued",
+            ),
+        }
+        for name in ("custom.md", "instructions.md"):
+            text = (ROOT / "chatgpt" / name).read_text()
+            for situation, clauses in fixtures.items():
+                with self.subTest(surface=name, situation=situation):
+                    for clause in clauses:
+                        self.assertIn(clause, text)
+
+
 if __name__ == "__main__":
     unittest.main()
