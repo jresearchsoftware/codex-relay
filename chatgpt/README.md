@@ -117,6 +117,31 @@ Relay inputs, deterministic regeneration, changed custom text, optional cache,
 accepted-source isolation, native routing failures and export comparison. They
 are local implementation evidence, not independent acceptance or live-client proof.
 
+Small Improvements planning follows accepted root AGENTS and the
+[Relay binding](../docs/relay-guidance-ownership.md#small-improvements-binding),
+through the locked Shared 7.0.1 protocol. The authored custom guidance supplies
+the ChatGPT planner route; the generator remains unchanged. The same suite
+checks authored/generated instruction coverage with these tabletop fixtures:
+
+| Planning situation | Expected disposition from the instructions |
+| --- | --- |
+| Suitable source Task; relevant bounded candidate on a later result page | Use `repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement`, inspect all pages, read relevant Issues, assess relevance/dependencies/conflicts/ownership, and propose IDs, reasons and receiving scope. |
+| First source-changing Step after analysis; relevant CR | Discover at preparation; a CR still cannot enlarge Task-wide authority. |
+| Analysis-only work | Skip discovery; no tracker prerequisite. |
+| Unchanged subsequent Step or inner correction | Skip ceremonial rescanning; refresh on materially changed scope/information. |
+| Empty results, or only irrelevant/conflicting/unowned candidates | Continue the original work without forced inclusion or a queue-empty gate. |
+| Suggested/linked/labelled candidate without receiving authority | Do not implement; selection needs explicit receiving Task/Decision/CR authority. |
+| Selected candidate pending integration, cancelled receiver or partial delivery | Preserve source Issue links, provenance, label and open state; record the exact remainder/disposition. |
+| Deferred correction without label capability | Report the gap; do not claim it queued. |
+
+These are instruction coverage and tabletop evidence, not an executable planner
+or proof of automatic model compliance. Keep actual discovery, owner selection,
+included/excluded candidate dispositions and receiving links in the existing
+Task/PR/Outcome records, rather than a second backlog here. Selection and local
+tests do not establish accepted integration or authorize source-Issue closure.
+After accepted merge, the full-text settings handoff above still applies; no
+new execution Step is needed solely to repeat an unchanged handoff.
+
 The following owner/client exercises remain explicit acceptance evidence:
 
 | Exercise | Required observation |
