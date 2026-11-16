@@ -21,7 +21,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py"
+GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py"
 SPEC = importlib.util.spec_from_file_location("shared_chatgpt_project", GENERATOR)
 PROJECTOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROJECTOR)
@@ -316,68 +316,32 @@ class RelayChatGPTProjectTests(unittest.TestCase):
 
 
 class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
-    """Instruction coverage/tabletop fixtures, not an automated planner or model probe.
+    """Compact bootstrap routes the full local policy rather than copying it."""
 
-    Each fixture pairs a planning situation with the clauses that determine its
-    disposition. Assert both authored and effective generated guidance so a
-    regeneration or edit cannot silently lose the exercised route.
-    """
-
-    def test_adoption_uses_accepted_project_route(self):
+    def test_adoption_routes_both_authored_and_generated_text_to_complete_policy(self):
         for name in ("custom.md", "instructions.md"):
             text = (ROOT / "chatgpt" / name).read_text()
             with self.subTest(surface=name):
-                self.assertNotIn("Optional Small Improvements is not adopted", text)
-                self.assertIn("root AGENTS and local Small Improvements binding for SI-001–SI-008", text)
-                self.assertIn("locked Shared 7.0.1, never the frozen standalone fallback", text)
+                self.assertIn("docs/relay-guidance-ownership.md", text)
+                self.assertIn("locked Shared10", text)
+                self.assertIn("repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement", text)
+                self.assertIn("receiving Task authority precedes inclusion", text)
+                self.assertIn("no suitable candidate permits work", text)
+        binding = (ROOT / "docs/relay-guidance-ownership.md").read_text()
+        self.assertIn("/10.0.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
+        for clause in ("following pagination", "receiving Task's trusted Decisions",
+                       "Analysis-only Task | Skip the SI scan", "Keep source Issues open and labelled",
+                       "Cancellation, partial delivery", "no cross-repository or periodic queue scan"):
+            self.assertIn(clause, binding)
 
-    def test_planning_tabletop_routes_and_authority(self):
-        fixtures = {
-            "new source Task; relevant bounded candidate on a later page -> propose": (
-                "suitable source-changing Task planning",
-                "repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement",
-                "Inspect all pages and read relevant candidate Issues",
-                "same-repository relevance, boundedness, dependencies, conflicts, ownership",
-                "propose candidate IDs, concise reasons and bounded receiving scope to the owner",
-            ),
-            "analysis becomes source work -> discover once": (
-                "the first source-changing Step after analysis",),
-            "relevant CR -> discover; preserve Task-wide authority": (
-                "or a relevant CR", "A CR cannot enlarge Task-wide scope"),
-            "analysis-only -> skip without tracker prerequisite": (
-                "Skip analysis-only work",),
-            "unchanged subsequent Step/inner correction -> skip": (
-                "routine inner/subsequent Steps with unchanged scope and no new relevant information",
-                "refresh on material changes",
-            ),
-            "empty results -> continue original work": (
-                "Empty/no suitable candidates: proceed normally",
-                "discovery never blocks unrelated work",
-            ),
-            "only unrelated, conflicting or unowned candidates -> no suitable inclusion": (
-                "same-repository relevance, boundedness, dependencies, conflicts, ownership",
-                "Empty/no suitable candidates: proceed normally",
-            ),
-            "owner suggestion/link/label only -> no execution authority": (
-                "Implementation requires explicit receiving Task/Decision/CR authority for selected IDs/corrections",
-                "labels, search results, Issue links and assistant suggestions grant none",
-            ),
-            "selected but not integrated/partially delivered -> retain discovery": (
-                "Link source Issues to Task/PR; preserve authorship/provenance/remainders",
-                "Keep unfinished source Issues open and discoverable with their label until accepted integration and explicit authorized disposition",
-                "scheduling/tests are not delivery",
-                "Record deferral, cancellation or partial delivery and exact remainder",
-            ),
-            "deferred correction with unavailable label capability -> disclose, not queued": (
-                "authorized Issue/label path", "report label gaps, never claim unlabelled work queued",
-            ),
-        }
-        for name in ("custom.md", "instructions.md"):
-            text = (ROOT / "chatgpt" / name).read_text()
-            for situation, clauses in fixtures.items():
-                with self.subTest(surface=name, situation=situation):
-                    for clause in clauses:
-                        self.assertIn(clause, text)
+    def test_current_bootstrap_preserves_closure_and_project_context_boundaries(self):
+        text = (ROOT / "chatgpt/instructions.md").read_text()
+        for clause in ("Even explicit requests cannot transfer context", "ordinary Issue proposals and contribution PRs",
+                       "A foreign Outcome/PR link is evidence", "Only genuinely completing close-authorized PRs",
+                       "keep-open stays neutral until its adjacent preauthorized condition is verified",
+                       "without policy conversion or renewed permission", "Preserve old admitted terms/holds"):
+            self.assertIn(clause, text)
+        self.assertLess(len(text), json.loads((ROOT / "chatgpt/binding.json").read_text())["character_budget"])
 
 
 if __name__ == "__main__":

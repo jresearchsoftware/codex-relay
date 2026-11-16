@@ -8,7 +8,7 @@ test inputs. `VERIFIED` means supported by the stated hypothetical observation;
 it never describes an inspection of a real external project by these examples.
 `READY` is a verdict for the explicitly chosen scope, not a sixth evidence state.
 
-Each walk starts with the same ordinary request: **“Onboard this project to
+Each onboarding walk starts with the same ordinary request: **“Onboard this project to
 Shared Governance.”** The operator reads the project's accepted authority,
 discovers the relevant paths, recommends choices, gets owner disposition and
 separates authorized file work from protected setup. A plan can be complete while
@@ -251,3 +251,131 @@ their accepted routes; newly available topics remain passive. Any ordinary updat
 checks follow Grove's existing update contract. “All files installed” establishes
 neither adoption nor readiness. Onboarding is NOT APPLICABLE to this event, and a
 future explicit request starts with current authority and decision-relevant facts.
+
+## 8. Package consumer compatibility and delivery choices
+
+**Discover and choose.** Hazel already adopts Package Versioning and its local
+independent review/release rules. Its adapter consumes a fictional guidance
+package, MapFlow. The owner authorizes a dependency compatibility correction;
+this is not a request to adopt more topics or change repository settings. These
+bounded source/behavior walks apply [PV-014](../protocols/package-versioning.md#PV-014)
+through [PV-018](../protocols/package-versioning.md#PV-018), with invented versions
+and observations rather than a universal compatibility matrix.
+
+| Observed contract and evidence | Deliberate action and release consequence |
+| --- | --- |
+| The adapter reads `protocols/context.md` and its documented section identifier. Accepted MapFlow history first provides both, with the needed behavior, in 1.4.0. Direct inspection of 1.3.0 shows the file absent. | Set the functional floor from 1.4.0 and explain this evidence in the existing change. A later prose edit or stricter unrelated policy does not move that floor. If newer identifiers are merely an avoidable implementation choice, assess supported older references before claiming a higher minimum. |
+| Hazel's manifest says `>=2.0.0`; a resolver rejects 1.4.0. Inspection and a focused walk establish that 1.4.0 supplies every interface and behavior actually needed. No separate accepted policy excludes it. | The resolver proves only the authored exclusion. Correct the needless constraint under Hazel's authority, with its compatibility rationale. A shipped adapter manifest change requires the adapter's normal classified release; no frozen version is rewritten. Retain a stricter constraint if an actual security or policy obligation justifies it. |
+| MapFlow 2.0.0 breaks an unused generator but preserves the adapter's paths, identifiers and used semantics. Relevant applicability, exceptions and Hazel's local binding remain compatible. The root consumer lock and slot sit outside the adapter artifact. | Review the consumer's selected dependency/lock/materialized-state update. Keep the adapter's unchanged version and shipped bytes. No adapter release or gate in MapFlow's producer is needed solely because a new major exists. No new topic is adopted, and the result says nothing about unknown MapFlow 3.0.0. |
+| MapFlow 2.1.0 actually removes the adapter's required path or changes a used return value's meaning. | Diagnose the real interface/behavior incompatibility, preserve the last supported selected state, and reconcile the requirement or adapter through the existing authorized change. Corrected adapter behavior, guidance or packaging needs its own appropriately classified release and independent assessment. A wider range or passing install cannot supply the missing contract. |
+| The native adapter consumes the root's resolved MapFlow 2.0.0. Its release also carries a nested frozen 1.4.0 snapshot solely as publisher closure evidence. | The root lock and matching selected slot govern native reads. The nested snapshot stays inert but still receives included-closure and redistribution checks. A missing selected slot requires supported restoration, never a silent fallback to 1.4.0 or a second boot route. |
+| A separate self-contained adapter artifact deliberately bundles and attributes MapFlow 1.4.0 for offline use. | Its documented bundled snapshot is the source for that form. A consumer's unrelated root lock does not silently replace it. Updating that bundle to compatible 2.0.0 changes shipped immutable bytes and requires a new classified adapter release; retaining the bundle does not require a release just because 2.0.0 is available. |
+| An accepted security boundary excludes a functional old dependency, or an exact pin preserves an approved reproducible artifact. | Preserve and explain that constraint. Compatibility does not waive security, license/redistribution, manifest validity, included frozen closure, first-source freeze or authorized publication requirements. Use existing evidence and review; add no cold installation ritual or per-dependency attestation. |
+
+**Handoff.** The range records permitted selections; the consumer lock records
+the exact resolution; explicit adoption records applicable policy and bindings;
+the delivery contract identifies any bundled source. Actual source/behavior
+evidence supports the chosen floor and assessed update. Native and self-contained
+forms may serve the same supported workflow with different inventories and
+provenance. Report changed consumer contract and operator work in Hazel's existing
+review, preserving stronger local authority. These examples establish no live
+consumer migration, release, native test result or independent acceptance.
+
+## 9. Single-field Task closure
+
+Iris has deliberately adopted Task Handoff and uses ordinary GitHub Issues and
+independent PR review, without Relay. These synthetic walks apply
+[TH-026](../protocols/task-handoff.md#TH-026); they grant no execution or merge
+authority and assert no live GitHub test result. The field selects closure
+timing, not whether to ask permission again. For example, a publication Task's
+charter contains one field followed by ordinary text:
+
+```text
+Issue closure policy: keep-open
+
+Keep this Issue open until the accepted package version is successfully
+published from its verified accepted revision. Once that is verified and
+no Task work remains, close through the ordinary authorized continuation.
+```
+
+| Actual Task/result boundary | Supported action and expected disposition |
+| --- | --- |
+| `close-authorized`; the designated final PR contains all work, exact-head acceptance and required checks are satisfied, and merge completes the Task. | Use `Closes #N` or the supported native closing link. The authorized default-branch merge closes the Issue. No second owner-choice prompt or separate closure ritual follows. |
+| That PR is closed without merging, including abandonment. | The Issue stays open. PR closure proves neither integration nor Task completion. Reconcile any cancellation or changed goal through actual owner authority. |
+| Two implementation PRs are needed; the first is accepted and merged but the second remains unfinished. | The first uses `Related to #N`. Only the PR that genuinely reaches the accepted completion boundary may carry the closing link. Each result keeps its own exact-head review/checks; an intermediate merge does not complete the Task. |
+| An accepted analytical result has no PR and no remaining work or protected hold. | Use the existing owner-authorized no-PR completion path and exact-result evidence. Invent no PR, commit or closing link. |
+| The publication charter above has an accepted, merged source PR, but the package publication is delayed, failed or unknown. | Use a non-closing PR reference and retain the open Issue. Verify the exact accepted revision/version's publication through normal release evidence; source merge alone is insufficient. Once all stated conditions pass, record that evidence and close without a new Decision merely releasing the condition. |
+| `keep-open` names a required Apply; it fails, targets the wrong revision/environment, or its result is unknown. | Keep the Issue open. A successful run at the intended revision/target and disposition of material warnings must satisfy the real condition. A genuine later change or cancellation needs an owner Decision, not an invented success claim. |
+| An old admitted Task used `close-authorized` for separate closure after a required Apply, or retained an explicit earlier hold. | Preserve its historical charter, admitted authority and qualified mechanism. Do not retrofit merge closure, rewrite the body, waive the hold or replay a terminal Step. Reconcile any actual authority change through its trusted Decision path. |
+| Closure metadata is absent or contradictory. | Prevent automatic closure and reconcile genuinely missing intent from current authority. Do not attribute an invented `keep-open` choice to the owner or turn the fail-safe into a permanent procedural hold. Clear existing permission needs no second confirmation. |
+
+Iris's package publication does not adopt the package in another consumer.
+Unrelated PRs and optional future usage are not remaining Task obligations.
+Consumer automation must separately implement and qualify changed timing; these
+walks do not create a compatibility exception for an older runtime.
+
+
+## 10. Continuation preserves the Task objective
+
+Iris has adopted Task Handoff and uses manual execution with independent review.
+These synthetic scenarios apply [TH-010](../protocols/task-handoff.md#TH-010),
+[TH-013](../protocols/task-handoff.md#TH-013) and
+[TH-026](../protocols/task-handoff.md#TH-026). They illustrate existing authority,
+not new dispatch permission, automatic resume or live runtime qualification.
+The next prompt remains a short Task/Step/purpose and canonical link; the
+architect and executor reconstruct current authority from the linked records.
+
+| Canonical authority and latest result | Supported continuation and completion assessment |
+| --- | --- |
+| The Task requires a parser repair, user documentation and qualification. A terminal BLOCKED reports a broken test fixture; the owner authorizes the next Step with purpose "repair the fixture" and no scope amendment. | Preserve the terminal result and allocate the newly authorized Step. Repair the fixture, then finish the parser, documentation and qualification within authority before the independent review handoff. The fixture passing alone does not satisfy the original criteria. No charter copy or second approval for those ordinary corrections is needed. |
+| The Task requires a migration and recovery instructions. Independent review finds a migration bug; the next authorized handoff says "fix the review finding". Recovery instructions and one agreed check remain unfinished. | Fix the finding and complete the remaining instructions/check within admitted scope. Hand off the changed exact result for fresh applicable independent assessment. Neither resolving that finding nor the prior review accepts or completes the broader Task. |
+| The owner explicitly authorizes a diagnostic/research Step to compare two options and return evidence before a policy choice; implementation remains outside that Step. | Complete and hand off that bounded report, preserving implementation as remaining Task work pending the actual owner Decision and next authorized execution. The Task objective does not authorize choosing the policy, implementing it or replaying a terminal Step. This supported boundary is not an agent-invented diagnosis-only restriction. |
+| The Task includes a package release; the executor may repair and qualify source but lacks protected publication authority. The source blocker is cleared. | Complete other permitted source work and hand off its evidence at the review/publication boundary. Report exact-version publication as remaining work, keep the Task open as required, and use the existing authorized continuation. Do not acquire credentials, bypass independent review or claim publication from a passing source check. |
+
+A failed check is evidence for the next necessary correction, not authority to
+remove that check or change completion criteria. An ordinary result or discussion
+also cannot authorize a new feature, protected operation or policy. Such material
+changes use the existing owner Decision mechanism. Conversely, no new Decision
+or repeated approval is needed solely to preserve and execute already-authorized
+remaining work. Optional consumer adoption or later use adds no completion gate.
+
+## 11. Bounded results, orchestration and real boundaries
+
+Iris has adopted Task Handoff and Independent Review; Oak uses the same shared
+rules with its own manual binding. These illustrative walks establish no live
+execution, review, product compatibility or permission. Both retain the original
+charter and applicable later Decisions, including explicit supersession.
+
+| Situation | Disposition |
+| --- | --- |
+| Iris inspects available original-run stores, establishes that the terminal record was cleaned or never retained, documents what remains unknown and completes all otherwise authorized investigation, patch and qualification. | Report the negative finding through the existing successful-with-limitations path. The Step does not prove the original cause or remedy; state remaining Task work. The absence alone is not BLOCKED. |
+| The essential record is known to exist but the required reader is denied access, and no meaningful independent authorized work remains. | Report BLOCKED with the denied access, required action affected and the next authority or access boundary. Do not try unsafe access or repeat futile attempts. |
+| A diagnostic correction passes source checks and has a verified exact-head PR; original consumer recovery remains unverified. | After the successful durable Outcome, follow the supported Ready handoff. Independent review assesses the patch and disclosed limits; the Task remains open for its real obligations. Ready is neither approval nor Task completion. |
+| A mandatory authorized operation cannot be performed or its required deliverable cannot safely be preserved. | Preserve available progress and report the actual obstruction and affected obligation. Do not call it successful research because some investigation was completed. |
+| The bounded report correctly says the cause is unknown and meets its criteria. A separate case omits a mandatory Step deliverable or claims a fix without required proof. | Assess the first on its merits and separately name open Task criteria; do not invent a patch defect from the closure gap. The second needs the appropriate negative or pending verdict tied to its binding obligation and affected boundary; never approve the unproven claim. |
+| A later owner-authorized Step follows a terminal result. | Preserve the earlier Outcome and identity, reconstruct the unchanged full goal plus applicable Decisions, and continue remaining authorized work without replaying the prior attempt or treating uncertainty as permission for protected operations. |
+| A new authorized branch has a clean admitted base but no remote branch yet. Another PR is described as currently Draft. | The existing-branch remote-head guard does not apply before new branch creation. Current Draft state alone is not a lasting hold: use the supported verified Ready handoff when its conditions are met. |
+| A revisable input mistake, ordinary failed test or agent assumption prevents one attempt, while useful correction remains authorized. | Correct and test in the current execution. A real inaccessible credential boundary stops only that affected operation; finish independent authorized work without acquiring credentials or inventing busywork. |
+| A procedure adds a repeat handoff that protects no additional invariant. | Reuse sufficient evidence and omit the redundant handoff within authority. A Writer-only self-approval restriction still allows an independent Reviewer to perform authorized review, and does not remove the owner's merge authority. |
+| Oak receives a problem report with authority to correct a known in-scope input. | Establish material facts, correct and verify the input, and state the disposition and next action. If authority is absent, recommend a specific path and identify the actual choice or permission needed. An explicitly discussion-only report receives analysis and recommendation, not implementation. |
+| The owner says “publish this CR” versus “publish this CR and continue” within the existing Task. | For the first, verify authorized publication and stop at that requested boundary. For the second, verify publication and applicable checks, then carry out the supported continuation without a ceremonial question. Preserve required preview and publication permission. |
+| A supported automatic dispatch is requested; its routing workflow is green. | Inspect native evidence of actual admission/start, not merely the workflow or label. A deterministic input rejection with known effects can be corrected within authority and resubmitted through the native route; reconcile ambiguous effects first to avoid duplicate launches. |
+| The requested continuation uses a manual executor, or a real capability/authority boundary prevents dispatch. | Return the complete startable manual handoff when that is the requested result. Otherwise report the exact stopped action, supporting evidence and next necessary disposition; do not fabricate a Step or expand permission. |
+
+These walks add no status, checklist, repeated approval, dispatch prerequisite,
+background monitor or runtime implementation. Other consumers adopt independently.
+
+
+## 12. Operational evidence and deferred defects
+
+These examples apply the separately adopted topics and existing project authority;
+they do not require a particular test architecture, tracker form or new approval.
+
+| Situation | Proportionate result |
+| --- | --- |
+| A test replaces an internal preflight with PASS. | It supports the scoped caller test, not a claim that the omitted product preflight works. Obtain or reuse appropriate evidence for the required operation, or disclose the gap. |
+| An isolated installation/recovery qualification exercises the real installer, transport and helper while modeling an external service. Separate checks cover relevant retries and ordering. | State the exercised components, modeled service and limitations; combine the sufficient evidence for the stated claim. No live service, production mutation or single full-system test follows. |
+| An inherited defect is unrelated to the required result; another inherited reader defect undermines its required installation path. | Leave unrelated debt outside the correction. Do not call the reader defect a new regression without evidence; assess a fix, demonstrated usable workaround or accepted adjustment of the remaining result/risk. |
+| A confirmed regression remains after a one-off workaround and is deferred. | Link a suitable existing Issue, an authorized new record or an explicit owner disposition of residual risk. The workaround does not establish a fix; normal delegated deferral needs no extra approval. |
+| A later independently accepted PR fixes the defect tracked in an earlier Issue. That Issue also requires an installed result. | Connect the accepted result and reuse its sufficient evidence. Reconcile the installed criterion before claiming that entire Issue complete; do not repeat implementation or invent past review. Closure follows the owning project's authority. |
+| A hypothesis is unconfirmed or a reviewer suggests an optional improvement. | Report the evidence or proposal accurately; neither alone mandates a ticket or completion gate. Separate local rules and an explicitly adopted Small Improvements topic still apply. |

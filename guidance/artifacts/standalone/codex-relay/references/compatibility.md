@@ -69,6 +69,29 @@ It is not a new-v4 prerequisite or workaround for missing
 `submit_manual_outcome`. Exact reserved old Decision/CR publication recovery
 is permitted; publishing a new old-schema governance chain is not.
 
+## Closure compatibility boundary
+
+Current guidance implements one closure-policy field: a genuinely completing
+`close-authorized` PR uses verified native closing linkage before protected
+merge; `keep-open` stays neutral until its adjacent preauthorized condition is
+verified, then closes through trusted owner continuation without policy conversion
+or another discretionary permission choice. A source update or Skill installation
+does not qualify an installed combination for these effects.
+
+Only actually qualified legacy runtime/Reviewer/consumer combinations retain
+their original neutral-reference, `closesTask: false`, separately authorized
+post-merge closure path. The Relay-only transition remains permitted pending
+the first compatible release implementing and qualifying current closure, then
+for 60 calendar days after its **verified publication**. No publication date or
+deadline is asserted here; record the exact release/source/event and derived
+deadline in existing release/Task chronology when verified. Shared publication
+starts no clock. Removal requires a separately accepted future Shared release
+no earlier than the window's end; expiry does not itself remove the fallback.
+This is no blanket compatibility promise for unknown combinations or other
+protocols. Preserve exact old admitted authority, explicit holds and immutable
+terminal history; reconcile actual authority changes through the trusted owner
+Decision path without rewriting old records or replaying terminal Steps.
+
 ## Preserve installation and local ownership
 
 Select an explicit supported artifact version. Inspect the deterministic diff

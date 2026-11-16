@@ -229,7 +229,7 @@ class GeneratedTests(unittest.TestCase):
         for relative in ("packages/codex-relay/skill", "guidance/dependency-closure", "guidance/artifacts"):
             files.update({str(Path(relative) / name): data
                           for name, data in builder.inventory(ROOT / relative).items()})
-        # A project selects Shared 7 while the frozen Relay delivery retains 5.
+        # A project policy graph differs from the frozen Relay delivery closure.
         # The old root slot is deliberately absent; native acquisition owns it.
         files["vibe.toml"] = b'[requires.packages]\n"org.jresearch.ai/development-governance" = "=7.0.0"\n'
         files["vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0/consumer.txt"] = b"Native Shared 7\n"
@@ -265,15 +265,15 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(builder.inventory(root / "vibevm/vibedeps"), native_before)
         self.assertFalse(old_slot.exists())
         provenance = json.loads(artifacts_before["standalone/codex-relay/PROVENANCE.json"])
-        self.assertEqual(provenance["shared_version"], "5.0.0")
-        self.assertEqual(provenance["shared_requirement"], ">=2.5.0")
+        self.assertEqual(provenance["shared_version"], "10.0.0")
+        self.assertEqual(provenance["shared_requirement"], ">=10.0.0")
         self.assertEqual(provenance["source_files"]["scripts/build-relay-guidance.py"],
                          hashlib.sha256((root / "scripts/build-relay-guidance.py").read_bytes()).hexdigest())
 
     def test_project_builder_rejects_changed_frozen_shared_input(self):
         root = self.build_fixture()
         snapshot = root / ("guidance/dependency-closure/vibevm/vibedeps/"
-                           "org.jresearch.ai.development-governance/5.0.0/README.md")
+                           "org.jresearch.ai.development-governance/10.0.0/README.md")
         before = builder.inventory(root / "guidance/artifacts")
         snapshot.write_bytes(snapshot.read_bytes() + b"\nChanged snapshot\n")
         with self.assertRaisesRegex(ValueError, "Shared distribution bytes differ"):
@@ -299,6 +299,29 @@ class GeneratedTests(unittest.TestCase):
         unknown.unlink()
         self.assertIn("standalone/codex-relay/SKILL.md", builder.build(root)["changed"])
         self.assertEqual(builder.build(root, check=True)["guidance"], "PASS")
+
+    def test_current_semantics_reconcile_frozen_legacy_bundle_without_rewriting_it(self):
+        # The retained artifact demonstrates the actual old obligation, rather than
+        # treating a modern resolver refusal as evidence of semantic incompatibility.
+        old = ROOT / "vibevm/vibepacks/org.jresearch.ai/codex-relay/v6.1.0"
+        old_info = json.loads((old / "skill/PROVENANCE.json").read_text())
+        old_workflow = " ".join((old / "skill/references/workflow.md").read_text().split())
+        self.assertEqual(old_info["shared_requirement"], ">=2.5.0")
+        self.assertEqual(old_info["shared_version"], "5.0.0")
+        self.assertIn("including a later expressly authorized Apply", old_workflow)
+        self.assertIn("Closure requires effective `close-authorized`", old_workflow)
+        shared = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0"
+        handoff = " ".join((shared / "vibevm/vibespecs/protocols/task-handoff.md").read_text().split())
+        self.assertIn("closure on successful merge of the designated completing PR", handoff)
+        self.assertIn("no new owner-choice prompt, policy-change Decision", handoff)
+        current = json.loads((ROOT / "guidance/source.json").read_text())
+        self.assertEqual((current["version"], current["shared_requirement"], current["shared_version"]),
+                         ("7.0.0", ">=10.0.0", "10.0.0"))
+        workflow = " ".join((ROOT / "packages/codex-relay/skill/references/workflow.md").read_text().split())
+        self.assertIn("required publication or owner-run Apply after merge uses this policy", workflow)
+        self.assertIn("No new owner-choice prompt, policy-change Decision or conversion", workflow)
+        self.assertNotIn("Closure requires effective `close-authorized`", workflow)
+        self.assertIn('<a id="RA-007"></a>', (shared / "vibevm/vibespecs/protocols/requirement-authority.md").read_text())
 
     def test_generated_forms_preserve_product_bytes_and_distinct_protocol_sources(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/build-relay-guidance.py"), "--check"],

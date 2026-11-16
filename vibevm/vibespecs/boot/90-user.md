@@ -1,7 +1,7 @@
 # Local routing conventions
 
 Apply human-owned root AGENTS once. It explicitly adopts all ten complete
-Shared Governance 7.0.1 protocols, each under its own conditional trigger.
+Shared Governance 10.0.0 protocols, each under its own conditional trigger.
 The immutable package boot pointer supplies full protocol routes; product
 mechanisms and supported exceptions are in docs/relay-guidance-ownership.md.
 Read the canonical Relay Skill for relevant product workflows, architecture or
@@ -17,7 +17,7 @@ through the package boot and the local binding in docs/relay-guidance-ownership.
 Repository policy and native
 consumer routing are distinct from the standalone Skill's frozen Shared snapshot;
 that snapshot is not a missing-slot fallback. The ownership mapping also binds
-the temporary legacy closure runtime pending Task #194.
+the current closure semantics and the bounded fallback for qualified legacy combinations.
 
 Root AGENTS explicitly adopts the installed landscape-subagents 1.0.2 flow for
 permitted useful delegation in Relay development. Follow its conditional boot
