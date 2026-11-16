@@ -19,7 +19,7 @@ Task N is this GitHub Issue #N. -->
 Authority model: github-native-v1
 
 <!-- Identify the repository, relevant Issue/CR/PR and any exact starting head.
-The qualified relay-workflows-v3 controller/Writer pair uses this stable charter
+The qualified relay-workflows-v4 controller/Writer pair uses this stable charter
 and applicable trusted schema-v4 Decisions. Before first execution, consolidate
 an actionable charter without hiding meaningful public history. After first
 admission, change substantive Task authority through trusted Task-scoped
@@ -54,23 +54,24 @@ any explicitly authorized installed Apply/deployment and original-operation
 verification, and unresolved owner choices. These are ordinary prose, not a new
 required field. Do not treat source acceptance as deployment evidence.
 
-For a finite owner-authorized Task, choose close-authorized now if the owner
-permits closure once those conditions pass, including a later authorized Apply.
-Keep the Issue open until all applicable conditions pass; then existing owner
-continuation needs no second closure permission. Choose keep-open only for
-concrete additional work, a closure hold or an unresolved owner decision outside
-that authorized completion path; name the condition and required disposition.
-Reassess at new authorized Steps/Decisions and meaningful completion transitions.
-After first execution, change Task-wide closure conditions/policy only through
-a trusted Task-scoped Decision; do not create redundant per-Step Decisions.
-Deferring, combining or cancelling a required deployment needs that owner
-Decision; never claim it occurred. A CR cannot change Task closure authority.
-
-Missing/malformed/conflicting policy falls back to keep-open with a visible
-warning. Migrated PR linkage is Related to #N for either policy. Closure remains
-an owner continuation action after completion, independent acceptance, no
-remaining work/hold and satisfied protected boundaries. Approval, merge or Step
-completion alone does not prove Task completion. See
+Choose close-authorized only when the final result PR's successful default-branch
+merge will complete the Task. After exact-head independent acceptance and checks,
+trusted owner continuation designates that final PR with Closes #N or a supported
+native closing link. Intermediate PRs remain non-closing; abandoning a PR does
+not close the Task.
+Choose keep-open for actual remaining post-merge work, including an authorized
+Apply, qualification or package publication. Use Related to #N and name the
+preauthorized condition and sufficient evidence beside the policy. Once verified,
+with required acceptance/integration and no remaining work/protected hold, trusted
+owner continuation closes the Issue without another choice prompt, conversion to
+close-authorized or Decision merely releasing the satisfied condition.
+Reassess at meaningful transitions. After execution, actual changes to scope,
+conditions or authority need a trusted Task-scoped Decision; verification of
+unchanged conditions does not. A CR cannot change Task closure authority.
+Missing/malformed/conflicting metadata prevents automatic closure with a visible
+warning; reconcile genuinely missing intent without inventing a permanent hold.
+Preserve historical/already-admitted Tasks and explicit holds. No-PR results use
+the existing trusted completion path. See
 contracts/README.md#closure-policy-authoring and shared Task Handoff TH-002/TH-026. -->
 
 ## Protected boundaries

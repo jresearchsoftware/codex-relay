@@ -233,13 +233,19 @@ native source integrity independently of current Task semantics. Valid later
 trusted Decisions are recorded as authority drift in the same Writer Outcome;
 they do not rewrite the execution or imply newly required work was performed.
 Added boundary prose and validation requirements do not terminate useful automatic source
-execution or collection/publication merely because their bytes changed. Explicit
+execution or collection/publication merely because their bytes changed. Existing
 structured holds, removed admitted scope, changed source pins and native
 identity/effect guards still stop active effects. Bounded contained collection
 can preserve source even when publication is held; it grants no new external
 effect. Writer reports drift for current exact-head review rather than attempting
 to classify arbitrary prose as a revocation. The immutable worker input/profile
-is not live-steered by Decision arrival.
+is not live-steered by Decision arrival. Task boundaries and acceptance
+requirements define work and assessment. Manual owner stop/control goes directly
+to the active Codex session; automatic execution control uses native Actions
+cancellation of the active run and its existing signal/containment path. A
+cancelled run alone does not prove child containment or resolve uncertain
+effects. Admission quiescence stops only new admissions. Structured holds remain
+internal safety guards, not the ordinary owner execution-control interface.
 Execution actions retain admitted/current permission boundaries. Independent
 PR or no-PR acceptance compares the delivered result with current authority,
 and later Task changes invalidate stale continuation acceptance. Historical
@@ -367,16 +373,23 @@ republish a retained result or change its native body hash. Direct manual-result
 delivery shares these immutable target/replay barriers and cannot authorize Git,
 execution, review, merge or deployment operations.
 
-Effective Task closure starts with the original charter and applies any trusted,
-explicitly owner-authorized Task Decision changing `keep-open` or
-`close-authorized`. A native PR CR cannot change it. Trusted owner continuation
-re-reads current authority/acceptance, exact head/checks and completion evidence;
-only verified Task completion with no remaining work, applicable qualification
-and no hold/protected boundary permits conditional authorized closure. It must
-surface a complete Task still held open without a genuine remaining condition
-for owner disposition. An already-authorized acceptance-dependent closure does
-not require another Decision, and an accepted Step is not itself Task completion.
-Neither Reviewer nor worker merges or closes Issues.
+Effective Task closure starts with the original charter and applies trusted,
+owner-authorized Task Decisions. A native PR CR cannot change it. Writer keeps
+execution PR linkage neutral; successful execution alone cannot designate Task
+completion. After independent exact-head acceptance/checks, trusted owner
+continuation verifies current authority, completion evidence, actual remaining
+work and holds. Only the genuinely completing `close-authorized` PR receives a
+native closing link; GitHub closes on its successful default-branch merge.
+Intermediate, unmerged and abandoned PRs do not complete the Task.
+
+For `keep-open`, neutral linkage preserves post-merge obligations. Once the
+adjacent preauthorized condition, acceptance/integration and absence of remaining
+work/protected holds verify, the owner channel closes and reads back the Issue
+through its existing connector. No redundant policy Decision or conversion is
+needed. Missing intent requires reconciliation, not unsafe closure or an invented
+permanent hold. No-PR and already-admitted historical results retain their
+qualified completion paths and immutable identities. Neither Reviewer nor worker
+merges or closes Issues; no duplicate closure engine is introduced.
 
 [Pre-dispatch finalization](../controller/README.md#pre-dispatch-admission-finalization)
 can retire a strictly proven first-run partial label admission through a fresh

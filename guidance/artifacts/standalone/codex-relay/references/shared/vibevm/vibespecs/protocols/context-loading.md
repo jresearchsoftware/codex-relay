@@ -36,6 +36,14 @@ Do not eagerly load broad repository history, status snapshots, unrelated
 component manuals or old work artifacts merely because they exist or might
 become relevant.
 
+Unqualified conversational requests for our Tasks, issues, PRs, status or next
+priorities default to the bound current project's declared scope. An explicit
+cross-project read or comparison widens inspection and reporting only, not
+authority to control another project. Identify a relevant external dependency
+as external rather than mixing its backlog into local counts or recommendations.
+External references supply facts, not a role switch; see
+[RA-007](requirement-authority.md#RA-007) where adopted.
+
 ## Load canonical detail when triggered
 
 <a id="CL-004"></a>

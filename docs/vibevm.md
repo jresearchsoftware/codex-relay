@@ -1,18 +1,20 @@
 # Pinned development guidance and first-party Skill consumption
 
-Relay selects Shared Governance **7.0.1** for its project-wide adoption under
-Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
-Candidate Relay **7.0.0** retains Shared 5.0.0 for its standalone
-snapshot and publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
-frozen Relay 4.1.1 and earlier packages retain their original bytes.
-Human-owned [AGENTS](../AGENTS.md) adopts
+Relay selects Shared Governance **10.0.0** for project-wide adoption under
+Task [#194](https://github.com/jresearchsoftware/codex-relay/issues/194), following
+the accepted 7.0.1 adoption in Task #199. Candidate Relay **8.0.0** retains its
+standalone snapshot and publisher closure evidence at exact Shared 10.0.0 and
+requires **`>=10.0.0`** for the current semantic contract. The
+[compatibility assessment](relay-skill-compatibility.md#task-194-current-migration-through-1000)
+reconciles Shared 7/8/9/10 closure, bounded-result, residual-defect, evidence and
+project-context behavior; the [release contract](relay-guidance.md#version-and-provenance)
+classifies Task #266's MAJOR from independently accepted Relay 7.0.0.
+Historical frozen releases retain their original bytes, floors and snapshots. Human-owned [AGENTS](../AGENTS.md) adopts
 all ten applicable complete shared topics, including the separately selected
-[Small Improvements binding](relay-guidance-ownership.md#small-improvements-binding)
-under Task #230. The
-[ownership mapping](relay-guidance-ownership.md)
-identifies their Relay bindings; package installation alone does not adopt
-topics for another consumer. Candidate guidance remains proposal data until
-independently accepted.
+[Small Improvements binding](relay-guidance-ownership.md#small-improvements-binding).
+The [ownership mapping](relay-guidance-ownership.md) retains native actors,
+trust boundaries and the qualified legacy transition. Candidate guidance remains
+proposal data until independently accepted; installation alone adopts no policy.
 
 ## Native route and conditional reading
 
@@ -122,13 +124,12 @@ not prove actual model-visible traversal, child profiles, access or usefulness.
 
 ### Deliverable, updates and rollback
 
-Under PV-015/018 this is a root development-consumer integration. The
-Landscape update and project-only Small Improvements adoption remain outside the
-frozen standalone Relay Skill 5.0.0 and its release-evidence closure; they do not
-change the product package requirement or payload. The separate manual handoff
-follow-up changes the product Skill and is prepared as Relay 6.0.0 in this Task.
-This source candidate does not publish Landscape or Relay, install a service or
-authorize an Apply.
+Under PV-015/018 the accepted Landscape and project-only Small Improvements
+integration stays outside the product's standalone snapshot and release-evidence
+closure. That historical integration changed no product requirement or payload.
+Task 194 separately changed the Relay product and prepared accepted 7.0.0;
+Task 266 prepares 8.0.0 from that baseline. Current source work publishes neither
+Landscape nor Relay and authorizes no installed Apply.
 
 During candidate development, freeze independently accepted source guidance via
 the admitted Task binding before reading candidate AGENTS/INDEX/package routes.
@@ -149,21 +150,20 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 
 ## Selected immutable identities
 
-The [manifest](../vibe.toml) pins Shared `=7.0.1` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=7.0.0`,
-whose supported Shared lower-bound edge resolves to that same explicit Git root.
-The root exact selection is project policy; it is not imposed on other consumers
-by Relay's lower bound. The schema-7
-[lock](../vibe.lock), complete versioned slots, distribution receipt, generated
-index and projected Skill belong to the same reviewable source change.
+The [manifest](../vibe.toml) pins Shared `=10.0.0` by anonymous public Git
+source and exact commit. The native local registry supplies Relay `=8.0.0`,
+whose `>=10.0.0` semantic edge resolves to that explicit root. The root exact
+selection is project policy, separate from other consumers' locks and topic
+adoption. The schema-7 [lock](../vibe.lock), complete versioned slots, receipt,
+generated index and projected Skill belong to the same reviewed source change.
 
 | Identity | Selected value |
 | --- | --- |
-| Shared accepted producer source | `jresearchsoftware/shared-governance` `1110f10b996c2f81fa842e6339ab6d7c13111cd7` |
-| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9` |
-| Shared annotated tag | `v7.0.1`, tag object `dddb250d5eb133347f0b1712740a96be7a1d823b`, peels to the distribution above |
-| Complete native distribution tree hash | `sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f` |
-| Relay guidance contract source | `source-tree`, with actual input hashes in provenance; accepted baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` |
+| Shared accepted producer source | `jresearchsoftware/shared-governance` `c207adca23cb3c022dac9ea953dd96364097fa85` |
+| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
+| Shared annotated tag | `v10.0.0`, tag object `a2ed1184aa249793a8a1981234c9686088a48c26`, peels to that distribution |
+| Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
+| Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1` |
 
 The producer source and distribution commit are distinct identities. The
 receipt's payload hashes and native tree hash use different recipes: the tree
@@ -173,29 +173,20 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 5.0.0 retired unused owner continuation engines and historical Task
-classification, and unified routed Step numbering/manual PR projection. Its
-MAJOR classification is independent of the Shared 7.0.1 patch. Guidance 6.0.0
-adds a mandatory owner wait and original-event reconciliation to the manual
-handoff route; it is MAJOR under PV-002. See
-[relay-guidance.md](relay-guidance.md#version-and-provenance).
-Guidance 6.1.0 adds compatible Task 57 engineering-autonomy and meaningful-result
-paths without new mandatory consumer work; accepted 6.0.0 bytes remain frozen.
-Guidance 4.1.1 was a PATCH clarification of existing automatic Writer Draft
-preparation before remediation, with no new owner operation or runtime route.
-Accepted 4.1.0 added compatible ordinary Git-pair installer guidance and retained
-expert/other-consumer paths; neither version establishes private PROD activation. Guidance 4.0.0 clarifies the existing manual Step-label procedure and updates
-the standalone snapshot; see its
-[whole-package classification](relay-guidance.md#version-and-provenance). Guidance 3.1.0
-added compatible explicit manual publication to accepted 3.0.0.
-The earlier 3.0.0 was a major release because it removes the native
-Skill's bundled Shared protocol paths and changes its packaging/routing
-contract, independently of Shared version arithmetic. Frozen first-party
-1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0 and 4.1.0 registry payloads remain intact for historical identity
-and rollback; they are not active requirements. The frozen product exporter uses its
-own Shared 5.0.0 release-evidence slot through the repository build adapter. Earlier Shared selections remain in Git history
-and frozen historical Relay packages. Project version `0.0.0`
-does not identify a Relay release.
+Guidance 8.0.0 is MAJOR from independently accepted 7.0.0 under PV-002/009:
+Task #266 removes implicit automatic source termination from arriving boundary
+prose or acceptance/validation requirements. Task #194's closure workflow,
+Shared 10.0.0 bytes and semantic floor remain the accepted baseline. Manual
+predispatch checks, truthful reporting and actual scope/permission/source/pin
+and protected-effect guards remain. Requirements govern work and acceptance;
+manual owner stop/control is direct to Codex, while automatic execution uses
+native Actions cancellation with containment reconciliation. Structured holds
+remain internal safety guards. No new stop command or live steering is added.
+Frozen first-party 1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0, 4.1.0, 4.1.1,
+5.0.0, 6.0.0, 6.1.0 and 7.0.0 registry payloads remain intact for history/rollback;
+they are not active requirements. Earlier floors and snapshots remain
+version-scoped historical facts in [the release contract](relay-guidance.md#version-and-provenance).
+Project `0.0.0` is not a Relay release identity.
 
 Another consumer can deliberately select a compatible Shared version
 with its own exact source root and reviewed lock. Assess changes to used
@@ -206,17 +197,11 @@ See the [compatibility assessment](relay-skill-compatibility.md). Native executi
 reads locked committed files without resolving `latest`; an open-ended lower
 bound does not guarantee arbitrary future compatibility.
 
-The [7.0.0-to-7.0.1 assessment](relay-skill-compatibility.md#project-update-from-700-to-701)
-records the actual TH-010/013/026 clarification and unchanged authority boundaries.
-The complete [5.0.0-through-7.0.0 semantic assessment](relay-skill-compatibility.md#project-migration-from-500-through-700)
-distinguishes that migration's project policy, conditional settings duties,
-then-unselected Small Improvements and the [bounded legacy runtime closure binding](relay-guidance-ownership.md#temporary-legacy-closure-binding).
-The later [project-only Small Improvements adoption](relay-skill-compatibility.md#project-only-small-improvements-adoption)
-uses the existing selected slot and ordinary exact-head acceptance/integration;
-it changes no frozen Skill payload, dependency floor or other consumer policy.
-The earlier 4.0.0-to-5.0.0 assessment remains historical product evidence.
-The root update does not change the standalone snapshot, release-evidence lock,
-Skill requirement, package bytes or installed runtime identity.
+The historical assessments in [compatibility](relay-skill-compatibility.md)
+retain earlier migration evidence. Task 194's current update changes the product
+snapshot, release-evidence lock, requirement and payload; it is not a project-only
+update. Accepted source, external publication and installed runtime qualification
+remain separate.
 
 The [tool pin](../toolchain/vibevm.json) selects exact VibeVM **1.0.11**, lightweight
 Git tag `v1.0.11`, source `5e470926ad0f34d61e37d387ce4b7c153356a804`.
@@ -272,23 +257,24 @@ line. Ignored `.vibe/` state and the persistent boot transaction lock are not
 runtime authority. Follow [self-adoption](self-adoption.md) for the first-party
 export and projection commands.
 
-The standalone exporter retains Shared 5.0.0 while the project lock selects 7.0.1.
+The standalone exporter and project lock now select exact Shared 10.0.0.
 The single `build-relay-guidance.py` builder reads the immutable release closure
-directly. The obsolete disposable-root adapter has been removed; the new Relay
-6.0.0 candidate records the changed builder provenance. No unselected root 5.0.0
-slot is needed; frozen accepted registry payloads remain unchanged.
+directly through the existing builder, preserving its source-tree input-hash
+provenance mechanism. No unselected root 5.0.0 slot is needed; frozen accepted
+registry payloads remain unchanged.
 The verifier separately checks both complete immutable dependencies
 and active consumer routing. Neither build input nor nested release evidence is
 a runtime/policy fallback. Report actual native warnings and their impact.
 
-Task #199 retains the exact accepted 7.0.0 slot at its original path as inactive
-history. It is absent from the root lock and generated boot; native readers must
-use selected 7.0.1. The verifier accepts only those exact historical bytes when
+Task #199 retains the exact accepted 7.0.0 slot, and Task #194 retains the
+previous 7.0.1 slot, at their original paths as inactive history. They are absent from the root lock and generated boot;
+native readers must
+use selected 10.0.0. The verifier accepts only those exact historical bytes when
 present and rejects a missing selected slot. Native `install` prunes inactive
 slots in disposable copies; preserving this source evidence does not require
 rewriting native output or making the historical slot a fallback. Preserve the
 committed historical slot when importing deliberate maintenance outputs. Native
-`check` may report this retained slot as orphaned; that warning describes inactive
+`check` may report these retained slots as orphaned; that warning describes inactive
 evidence, not a second selected dependency. Do not suppress unrelated warnings.
 
 Stage intended additions before structural qualification:

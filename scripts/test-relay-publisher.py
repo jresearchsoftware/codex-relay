@@ -185,6 +185,28 @@ class RelayPublisherTests(unittest.TestCase):
         self.assertEqual(receipt["source_revision"], SOURCE_SHA)
         self.assertEqual(receipt["payload_sha256"], copied_receipt["payload_sha256"])
         self.assertEqual(set(files), {*self.package["files"], "DISTRIBUTION.json"})
+        # The approved inventory must export the complete prepared candidate,
+        # including newly selected dependency files rather than a stale slot.
+        self.assertEqual(set(self.package["files"]), {
+            name.removeprefix(self.package["root"] + "/")
+            for name in SOURCE_FILES if name.startswith(self.package["root"] + "/")
+        })
+        metadata = json.loads(files["skill/PROVENANCE.json"])
+        licenses = json.loads(files["LICENSES.json"])
+        manifest = tomllib.loads(files["vibe.toml"].decode())
+        self.assertEqual(licenses["package"], self.package["coordinate"])
+        self.assertEqual(licenses["version"], manifest["package"]["version"])
+        self.assertEqual(licenses["version"], metadata["version"])
+        self.assertEqual(licenses["license"], manifest["package"]["license"])
+        self.assertEqual(licenses["components"][0]["contract_revision"], metadata["contract_revision"])
+        shared = licenses["components"][1]
+        slot = ("vibevm/vibedeps/" + metadata["shared_coordinate"].replace("/", ".")
+                + "/" + metadata["shared_version"])
+        self.assertEqual(shared["paths"], [slot + "/**"])
+        self.assertEqual(shared["license_files"], [slot + "/LICENSE"])
+        self.assertEqual(shared["source_revision"], metadata["shared_source_revision"])
+        self.assertEqual(shared["distribution_revision"], metadata["shared_distribution_revision"])
+        self.assertTrue(files[shared["license_files"][0]].strip())
         vendored = [name for name in self.package["files"] if name.startswith("vibevm/vibedeps/")]
         self.assertTrue(vendored, "the actual Relay export must include its approved vendored snapshot")
         for name in self.package["files"]:

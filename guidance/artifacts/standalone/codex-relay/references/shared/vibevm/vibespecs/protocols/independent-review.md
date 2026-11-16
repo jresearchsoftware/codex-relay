@@ -30,7 +30,10 @@ Do not invent a PR or SHA for a non-repository artifact. Refresh current canonic
 requirements, authorized Decisions and applicable change requests. Independently
 reconcile the result with the full goals, constraints and acceptance criteria,
 including material omissions; the candidate's manifest or summary cannot decide
-which requirements or source areas exist.
+which requirements or source areas exist. Assess the actual bounded Step artifact
+and its applicable criteria on their merits; separately identify the full Task
+goal and any outstanding Task completion conditions. A bounded Step does not
+replace or waive that goal.
 
 <a id="IR-004"></a>
 **IR-004 — Primary evidence and operational surface.**
@@ -76,6 +79,14 @@ Green but skipped, incomplete, stale or unrelated checks do not prove coverage.
 Existing sufficient proof need not be rerun solely to be independent: inspect
 its binding and substance. Required checks and human/owner confirmation remain
 required; a deterministic validator proves only its mechanically checked facts.
+A positive operational claim must match behavior actually exercised or otherwise
+adequately established. Internal substitutes can support scoped tests, but their
+passing results do not establish omitted product behavior needed by that claim.
+Use sufficient evidence from one or multiple appropriate checks; disclose material
+real versus modeled components, boundaries and remaining limitations in existing
+result/review evidence. Isolated TEST and modeled external services remain valid;
+this does not require live services, production mutation, a monolithic end-to-end
+test or repetition solely for reviewer independence.
 
 <a id="IR-008"></a>
 **IR-008 — Primary warning surfaces.**
@@ -99,7 +110,9 @@ material delta requires the owning project's decision before acceptance.
 For controls and operator-work changes, apply adopted
 [proportional-controls](proportional-controls.md), including the simplest
 authorized black-box path and unnecessary friction. Do not prescribe a protected
-live action outside authority merely to obtain review evidence.
+live action outside authority merely to obtain review evidence. Assess the operation
+actually required by effective Task authority, including relevant coupled paths
+and realistic event ordering and retry semantics when they affect the claim.
 
 <a id="IR-010"></a>
 **IR-010 — Cross-layer and active-reference closure.**
@@ -111,7 +124,8 @@ need bounded active-reference closure, preserving valid alternate forms and
 historical evidence. For cross-layer or lifecycle-sensitive behavior, trace
 process/ownership boundaries and terminal or durable effects; helper ordering
 alone is insufficient proof of the required end-to-end effect. Use appropriate
-observations or explicitly identify the missing proof. This is risk-directed
+observations or explicitly identify the missing proof, including material substituted
+internal behavior and modeled external boundaries. This is risk-directed
 analysis, not an unrelated cleanup or universal full-suite requirement.
 
 ## Findings and review after correction
@@ -139,7 +153,8 @@ or reviewed baseline and classify their provenance:
 
 For each blocking finding, explicitly identify the accepted Task requirement,
 existing supported contract or already binding protected invariant that is
-violated, its authoritative source, and concrete evidence of the violation.
+violated, its authoritative source, the precise Step-result or whole-Task
+acceptance boundary affected, and concrete evidence of the violation.
 Severity or a security label supplies no missing obligation. Keep the finding's
 origin separate from its authority: a newly discovered failure may violate an
 old obligation, while an imagined stronger guarantee may have no such binding.
@@ -194,6 +209,18 @@ protection. An evidence-based inability to justify acceptance may retain the
 project's pending/hold disposition under [IR-018](#IR-018), but must name the
 required evidence instead of asserting an unproved defect. Baseline debt is not
 automatically a blocker, and optional protection is not mandatory remediation.
+Independently assess defect origin against a supported comparison and current
+impact on an outcome required by effective Task authority. Inherited debt outside
+that outcome need not enter the correction; inheritance alone does not justify
+deferring a confirmed defect that prevents or materially undermines the required
+operation. Evaluate an adequate fix, a demonstrated usable workaround, or an
+explicitly accepted adjustment of the remaining result/risk under current authority.
+A workaround is not itself a fix; retain the residual disposition under
+[TH-018](task-handoff.md#TH-018) where adopted.
+A gap solely in whole-Task closure evidence is not automatically a defect in a
+correct bounded diagnostic result, or grounds to invent REQUEST_CHANGES against
+it. A missing mandatory Step deliverable or proof required for its positive
+assertion remains an actionable gap at that result boundary.
 
 A credible material new risk outside existing obligations warrants explicit
 owner discussion: explain severity, evidence and uncertainty, affected user
@@ -237,7 +264,9 @@ the original review as history. Preserve useful finding history in existing revi
 Changed artifacts stale affected tests and assessments. Reuse sufficient evidence
 for unchanged invariants with an explained applicability/binding; obtain fresh
 applicable evidence for changed ones. Old-head acceptance does not accept a new
-head. Do not regenerate unchanged history or add ceremonial review rounds.
+head. When a correction was accepted elsewhere, connect that result to the earlier
+record and reconcile its remaining criteria and distinct acceptance boundaries;
+reuse sufficient applicable evidence without inventing a retrospective review. Do not regenerate unchanged history or add ceremonial review rounds.
 
 ## Judgment, independence and publication
 
@@ -264,7 +293,11 @@ inconclusive or blocking disposition, with the next useful action. Distinguish
 an access/assessment gap from an established defect; do not manufacture findings
 or a Change Request merely to delay merge. Justified nonblocking gaps or exceptions
 need explicit rationale under applicable authority; required evidence cannot be
-silently waived. Absence of discovered defects alone does not justify PASS.
+silently waived. Assess the claim actually requested: an adequately supported
+negative or inconclusive finding may be accepted as such, but unknown cannot be
+promoted to fixed or an unproven positive outcome approved. State remaining Task
+obligations separately and preserve project review and integration gates.
+Absence of discovered defects alone does not justify PASS.
 
 <a id="IR-019"></a>
 **IR-019 — Lifecycle-compatible acceptance.**

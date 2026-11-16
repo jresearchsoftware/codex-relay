@@ -114,18 +114,31 @@ unsupported formats; this tool neither solves ranges/edges nor installs files.
 ## Owner-controlled settings and optional Sources
 
 Generated raw `instructions.md` is complete desired text, including its generated
-marker, not a UI installation receipt. When the Task includes
-application, compare the accepted desired text with supported live evidence, surface
-the **complete** replacement for manual application if different, and obtain
-supported confirmation/readback before claiming application or Task closure.
-Disclose unavailable live reads or uncertain confirmation; a supplied export alone
-proves comparison, not UI currentness. If effective text is unchanged and no known
-application gap remains, no manual settings action is needed. Generation-only
-Tasks acquire no settings-application obligation. The CLI's `application` field
-reports that conditional requirement for changed Instructions; NO_OP and cache-only
-changes report that unchanged Instructions need no new application, preserving any
-prior verification gap. The CLI cannot determine a Task's application scope or
-verify live Settings; `live_settings_verified` remains false. On demand:
+marker, not a UI installation receipt. For projects intentionally using generated
+Project Instructions and adopting TH-029, a task changing the complete effective
+text includes live reconciliation even without an explicit application clause.
+Generate/validate the desired text in the ordinary reviewable change. After
+acceptance/integration, compare accepted full text with supported live evidence.
+If different or unconfirmed current, present the **entire raw Markdown replacement**
+in one complete copyable `markdown` fence, without clipping, a patch or fragments.
+The owner manually reviews/applies it, preserving/reconciling unknown live rules.
+Obtain supported readback or sufficiently attributable owner-confirmed live content
+before claiming a match or closing the task. Inaccessible live Settings or uncertain
+confirmation remains an evidence gap and completion hold, including after merge.
+An owner export alone proves the comparison, not UI currentness.
+
+Unchanged effective text, cache-only, dependency/binding changes with identical
+output and SHA-only changes create no new application or receipt upkeep duty.
+Retain earlier unresolved mismatches/verification gaps; a later generation NO_OP
+does not discharge an earlier changed-text obligation. The CLI's `application`
+field explains these boundaries; it cannot identify whole-task change history,
+determine topic adoption, verify live Settings or judge closure. `live_settings_verified`
+remains false, including after an exact owner-export comparison. Once accepted
+integration, required reconciliation and other real obligations are verified,
+already-authorized closure needs no further discretionary owner prompt. No automatic
+Settings write, daemon, external verification service or new approval loop is added.
+Another project's release does not adopt or apply anything for this consumer.
+On demand:
 
 ```text
 compare --repository . --binding chatgpt/binding.json --live-export <owner-export.md> --live-format raw

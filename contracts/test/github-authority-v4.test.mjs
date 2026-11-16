@@ -368,3 +368,46 @@ test('typed malicious fence strings round trip while real conflicting authority 
   assert.deepEqual(extractAuthorityRecord(body(amendment)), amendment);
   reject(() => extractAuthorityRecord(body(amendment) + '\n```yaml\n{}\n```\n'), 'AUTHORITY_BLOCK_AMBIGUOUS');
 });
+
+test('closure condition prose stays in immutable authority without creating a second policy or completion signal', () => {
+  const condition = '\nCompletion condition: publish the independently accepted exact package version; then close without another owner choice.\n';
+  const bodyWithCondition = charter + condition;
+  const source = { ...charterNative, body: bodyWithCondition };
+  const input = { ...binding, charterBody: bodyWithCondition };
+  const resolved = resolveTaskAuthority([source], input);
+  const snapshot = admits(resolved);
+  assert.equal(snapshot.issue_closure_policy, 'keep-open');
+  assert.equal(snapshot.authority.charter.sha256, sha256Body(bodyWithCondition));
+  assert.deepEqual(snapshot.continuation, { hold: false, next: null });
+  assert.equal(Object.hasOwn(snapshot, 'task_complete'), false, 'no missing next direction can attest completion');
+  assert.deepEqual(admissionBinding(validateAdmissionSnapshot(structuredClone(snapshot))), admissionBinding(snapshot));
+  reject(() => resolveOutcomeAuthority(snapshot.authority,
+    [{ ...source, body: bodyWithCondition.replace('publish', 'skip publication and accept') }], input), 'AUTHORITY_SOURCE_MISMATCH');
+});
+
+test('closure policy changes and explicit holds stay visible at acceptance without rewriting an admitted result', () => {
+  const original = resolve([decision({ issue_closure_policy: 'close-authorized' }, 200)]);
+  const snapshot = admits(original);
+  const identity = admissionBinding(snapshot);
+  const oldDirection = decision({ issue_closure_policy: 'close-authorized' }, 200);
+  const hold = decision({ issue_closure_policy: 'keep-open', continuation: { hold: true, next: null },
+    boundaries: ['Verify accepted package publication before closure.'] }, 201);
+  const current = resolveOutcomeAuthority(snapshot.authority, [charterNative, oldDirection, hold], binding);
+  assert.equal(current.request.issue_closure_policy, 'keep-open');
+  assert.equal(current.request.continuation.hold, true);
+  assert.equal(current.authorityDrift.review_required, true);
+  assert.ok(current.authorityDrift.changed_fields.includes('issue_closure_policy'));
+  assert.ok(current.authorityDrift.changed_fields.includes('continuation'));
+  assert.equal(snapshot.issue_closure_policy, 'close-authorized');
+  assert.deepEqual(admissionBinding(snapshot), identity);
+});
+
+test('ambiguous closure metadata refuses implicit close authorization while retaining its diagnostic', () => {
+  for (const metadata of ['', 'Issue closure policy: unknown', 'Issue closure policy: close-authorized\nIssue closure policy: keep-open']) {
+    const uncertain = charter.replace('Issue closure policy: keep-open', metadata);
+    const resolved = resolveTaskAuthority([{ ...charterNative, body: uncertain }], { ...binding, charterBody: uncertain });
+    assert.equal(resolved.request.issue_closure_policy, 'keep-open');
+    assert.ok(resolved.warnings.includes('ISSUE_CLOSURE_POLICY_INVALID'));
+    assert.equal(resolved.request.continuation.hold, false, 'protective metadata fallback invents no permanent owner hold');
+  }
+});

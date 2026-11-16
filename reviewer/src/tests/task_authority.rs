@@ -2003,6 +2003,225 @@ async fn v4_exact_native_approve_returns_conditional_closure_authority_without_i
     );
 }
 
+#[tokio::test]
+async fn v4_closing_designation_preserves_exact_head_acceptance_and_replay() {
+    let state = admitted();
+    *state.pr.lock().unwrap() = Some(live_pr());
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let decision = publish_fresh(&http, &url, &decision_v4()).await;
+    assert_ne!(decision["isError"], true, "{decision}");
+    outcome_v4(
+        &state,
+        authority_v4(
+            vec![decision["structuredContent"]["reference"].clone()],
+            Value::Null,
+            Value::Null,
+        ),
+        json!({"kind":"issue","number":24}),
+        json!({"kind":"git","revision":HEAD,"identities":[]}),
+    );
+    let first = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+    assert_eq!(
+        first["result"]["content"][0]["text"], "PUBLISHED",
+        "{first}"
+    );
+    let binding = first["result"]["structuredContent"]["post_review_continuation"]
+        ["request_authority"]
+        .clone();
+    // The trusted owner may designate the completing PR after acceptance.
+    // Link-only changes neither change its head/authority nor repeat the review.
+    for body in [
+        "Closes #24".to_string(),
+        format!("Fixes {TEST_REPOSITORY}#24"),
+        format!("Resolves https://github.com/{TEST_REPOSITORY}/issues/24"),
+    ] {
+        state.pr.lock().unwrap().as_mut().unwrap()["body"] = json!(body);
+        let replay = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            replay["result"]["content"][0]["text"], "DUPLICATE_SUPPRESSED",
+            "{replay}"
+        );
+        let plan = &replay["result"]["structuredContent"]["post_review_continuation"];
+        assert_eq!(plan["request_authority"], binding);
+        assert_eq!(plan["issue_closure_policy"], "close-authorized");
+        assert!(plan.get("task_complete").is_none());
+        assert_eq!(plan["issue_closure_performed"], false);
+        assert_eq!(plan["merge_performed"], false);
+    }
+    assert_eq!(state.reviews.lock().unwrap().len(), 1);
+    assert_eq!(state.check_runs.lock().unwrap().len(), 1);
+    assert_eq!(
+        state.issue.lock().unwrap().as_ref().unwrap()["state"],
+        "open"
+    );
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.starts_with("PATCH ")
+            || path.starts_with("PUT ")
+            || path.contains("/merge")));
+}
+
+#[tokio::test]
+async fn v4_unsafe_closing_links_fail_before_approval_and_reservation() {
+    for defect in [
+        "keep-open",
+        "invalid-policy",
+        "hold",
+        "remaining-work",
+        "foreign",
+        "multiple",
+    ] {
+        let state = source_pr_state(false);
+        let mut charter = CHARTER.to_string();
+        if defect == "invalid-policy" {
+            charter = charter.replace(
+                "Issue closure policy: keep-open",
+                "Issue closure policy: invalid",
+            );
+            state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!(charter);
+        }
+        if !matches!(defect, "keep-open" | "invalid-policy") {
+            let mut decision = decision_v4();
+            if defect == "hold" {
+                decision["amendments"]["continuation"] = json!({"hold":true,"next":null});
+            } else if defect == "remaining-work" {
+                let mut direction = decision_v4();
+                direction["purpose"] = json!("Complete remaining qualification");
+                direction["amendments"] =
+                    json!({"purpose":"Verify the still-required qualification result"});
+                let reference = source_pr_record(&state, 999, &direction);
+                decision["amendments"]["continuation"] =
+                    json!({"hold":false,"next":{"task":24,"direction":reference}});
+            }
+            source_pr_record(&state, 1000, &decision);
+        }
+        state.pr.lock().unwrap().as_mut().unwrap()["body"] = json!(match defect {
+            "foreign" => "Related to #24\nCloses foreign/repository#24",
+            "multiple" => "Closes #24\nFixes #26",
+            _ => "Closes #24",
+        });
+        let expected = match defect {
+            "foreign" => "AUTHORITY_CLOSING_LINK_MISMATCH",
+            "multiple" => "CANONICAL_ISSUE_AMBIGUOUS",
+            _ => "AUTHORITY_CLOSING_LINK_FORBIDDEN",
+        };
+        let (http, url) = client_with_state(true, None, state.clone()).await;
+        let preview = source_pr_preview(&http, &url).await;
+        assert_eq!(
+            preview["result"]["structuredContent"]["task_acceptance"]["error_code"], expected,
+            "{defect}: {preview}"
+        );
+        let rejected = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+        assert_eq!(
+            rejected["result"]["content"][0]["text"], expected,
+            "{defect}: {rejected}"
+        );
+        assert!(state
+            .store
+            .lock()
+            .unwrap()
+            .known(&operation_id(&[], &base_args("APPROVE")))
+            .unwrap()
+            .is_none());
+        assert!(state.reviews.lock().unwrap().is_empty());
+        assert!(state.check_runs.lock().unwrap().is_empty());
+        assert!(!state
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|path| path.starts_with("POST /repos/")
+                || path.starts_with("PATCH ")
+                || path.starts_with("PUT ")));
+    }
+}
+
+#[tokio::test]
+async fn v4_keep_open_continuation_retains_condition_authority_without_policy_conversion() {
+    let state = source_pr_state(false);
+    let charter = format!("{CHARTER}\nClose after the accepted package is published; source merge alone is insufficient.");
+    state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!(charter);
+    let original = state.issue.lock().unwrap().clone();
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+    assert_ne!(approved["result"]["isError"], true, "{approved}");
+    let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+    assert_eq!(plan["issue_closure_policy"], "keep-open");
+    assert_eq!(
+        plan["completion_conditions"],
+        "trusted-owner-canonical-state-required"
+    );
+    assert!(plan.get("close_issue_authorized").is_none());
+    assert_eq!(
+        plan["request_authority"]["authority"]["charter"]["sha256"],
+        crate::task_authority::hash(&charter)
+    );
+    assert_eq!(plan["issue_closure_performed"], false);
+    assert!(state.authority_comments.lock().unwrap().is_empty());
+    assert_eq!(*state.issue.lock().unwrap(), original);
+    assert_eq!(
+        state.pr.lock().unwrap().as_ref().unwrap()["body"],
+        "Related to #24"
+    );
+}
+
+#[tokio::test]
+async fn v4_trusted_task_decision_can_reconcile_invalid_original_closure_intent() {
+    let state = source_pr_state(false);
+    let charter = CHARTER.replace(
+        "Issue closure policy: keep-open",
+        "Issue closure policy: invalid",
+    );
+    state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!(charter);
+    let mut decision = decision_v4();
+    decision["charter_sha256"] = json!(crate::task_authority::hash(&charter));
+    source_pr_record(&state, 1000, &decision);
+    state.pr.lock().unwrap().as_mut().unwrap()["body"] = json!("Closes #24");
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let approved = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+    assert_ne!(approved["result"]["isError"], true, "{approved}");
+    let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
+    assert_eq!(plan["issue_closure_policy"], "close-authorized");
+    assert_eq!(plan["warnings"], json!(["ISSUE_CLOSURE_POLICY_INVALID"]));
+    assert_eq!(
+        state.issue.lock().unwrap().as_ref().unwrap()["state"],
+        "open"
+    );
+}
+
+#[tokio::test]
+async fn v4_abandoned_closing_pr_has_no_approval_or_task_closure_effect() {
+    let state = source_pr_state(false);
+    source_pr_record(&state, 1000, &decision_v4());
+    {
+        let mut pr = state.pr.lock().unwrap();
+        let pr = pr.as_mut().unwrap();
+        pr["body"] = json!("Closes #24");
+        pr["state"] = json!("closed");
+        pr["merged"] = json!(false);
+    }
+    let (http, url) = client_with_state(true, None, state.clone()).await;
+    let rejected = source_pr_approve(&http, &url, &base_args("APPROVE")).await;
+    assert_eq!(rejected["result"]["isError"], true, "{rejected}");
+    assert_eq!(
+        state.issue.lock().unwrap().as_ref().unwrap()["state"],
+        "open"
+    );
+    assert!(state.reviews.lock().unwrap().is_empty());
+    assert!(state.check_runs.lock().unwrap().is_empty());
+    assert!(!state
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.starts_with("POST /repos/")
+            || path.starts_with("PATCH ")
+            || path.starts_with("PUT ")));
+}
+
 fn v4_cr() -> Value {
     json!({"schema_version":"4.0","kind":"change-request","repository":TEST_REPOSITORY,"task":24,"parent":{"kind":"pull_request","number":25},
         "charter_sha256":crate::task_authority::hash(CHARTER),"purpose":"Repair the exact reviewed defect","branch":"codex/task-24","base_sha":"b".repeat(40),"reviewed_head_sha":HEAD,

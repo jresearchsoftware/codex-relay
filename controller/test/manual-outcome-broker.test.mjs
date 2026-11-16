@@ -39,7 +39,7 @@ async function manualBroker(t, race) {
   const originalPut = f.store.put.bind(f.store);
   f.api.get = path => ['/pulls/43', '/issues/43'].includes(path) ? Promise.resolve(copy(pr)) : originalGet(path);
   f.api.patch = async (path, body) => {
-    if (path === '/pulls/43' && Object.keys(body).every(key => key === 'title')) { Object.assign(pr, body); return copy(pr); }
+    if (path === '/pulls/43' && Object.keys(body).every(key => ['title', 'body'].includes(key))) { Object.assign(pr, body); return copy(pr); }
     return originalPatch(path, body);
   };
   f.api.list = path => path.startsWith('/pulls?') ? assert.fail('An explicit new v4 PR must not scan unrelated PRs')
@@ -89,6 +89,20 @@ test('real broker publishes bound manual Git Outcome before a verified native Re
   assert.equal(f.posts(), 1); assert.equal(f.ready(), 1); assert.equal(f.pr.draft, false);
   assert.deepEqual(extractAuthorityRecord(f.comments[0].body), { ...f.result, authority_resolution: f.envelope.request.authority_resolution });
   assert.equal((await f.store.get(f.envelope.runId)).lifecycleIntent, null);
+});
+
+test('initial delayed manual result neutralizes its closing link while completed Outcome replay preserves a final owner designation', async t => {
+  const f = await manualBroker(t);
+  f.pr.body = 'Closes #42\nPreserved manual implementation details.';
+  const receipt = await f.invoke();
+  assert.equal(f.pr.body, 'Related to #42\nPreserved manual implementation details.');
+  const bodySha256 = (await f.store.get(f.envelope.runId)).outcome.bodySha256;
+  f.pr.body = 'Closes #42\nPreserved manual implementation details.';
+  assert.deepEqual(await f.invoke(), receipt);
+  assert.equal(f.pr.body, 'Closes #42\nPreserved manual implementation details.');
+  assert.equal((await f.store.get(f.envelope.runId)).outcome.bodySha256, bodySha256);
+  assert.equal(f.posts(), 1);
+  assert.equal(f.ready(), 1);
 });
 
 for (const creator of [{ login: 'authorized-human', type: 'User' }, { login: 'authorized-bot[bot]', type: 'Bot' }]) {

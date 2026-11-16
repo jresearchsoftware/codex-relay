@@ -10,26 +10,59 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **7.0.0** is a **MAJOR** candidate from independently accepted **6.1.0**
-at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It removes the implicit
-automatic stop caused solely by new trusted boundary prose or validation
-requirements during admitted automatic source work. Already-admitted manual
-handoffs retain their conservative predispatch boundary/validation checks,
-while manual reporting still records valid later Decision drift. Existing structured holds, scope
-removal, identity/pin and protected-effect checks remain; bounded collection
-can preserve contained source even when publication must stop. The original
-admission stays immutable and current requirements govern independent exact-head
-acceptance. This is a supported control change, not a compatibility-preserving
-wording repair: arbitrary prose is no longer treated as machine cancellation
-for automatic source progress.
-It adds no live steering, new protected permission or activation claim.
+Guidance **8.0.0** is a **MAJOR** candidate from independently accepted **7.0.0**
+at `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Task #266 changes supported
+automatic execution behavior: trusted boundary prose or acceptance/validation requirements
+no longer terminate admitted automatic source progress, contained collection or
+safe Writer publication merely by arriving. Admission remains immutable;
+current requirements govern independent exact-head acceptance. Already-admitted
+manual handoffs retain conservative predispatch boundary/validation checks,
+while their result reporting records valid later Decision drift.
 
-Task #194 independently proposes an unmerged 7.0.0 candidate from the same
-accepted baseline. Its Shared update and closure changes are not included here.
-The proposal number reserves no release identity: reconcile both changes and
-version classification against the then-current accepted baseline before
-integration, regenerate and obtain fresh exact-head review if the head changes.
-Frozen accepted 6.1.0 and earlier registry payloads remain unchanged.
+Task boundaries and acceptance requirements define the work and its evaluation.
+Manual owner stop/control goes directly to the active Codex session; automatic
+execution control uses native Actions cancellation and its existing containment
+path. Structured holds remain internal safety guards, alongside actual scope,
+permission, source/pin and protected-effect checks. Bounded contained collection
+may preserve useful progress when publication must stop. No live steering,
+new stop command, protected permission or installed activation is introduced.
+
+Task #194's independently accepted 7.0.0 supplies the closure workflow and
+Shared 10.0.0 baseline below. Its accepted registry bytes and all earlier frozen
+versions remain unchanged; the former parallel 7.0.0 proposals are reconciled
+sequentially under PV-009. The current candidate retains the `>=10.0.0` native
+floor, exact standalone snapshot and included publisher closure evidence.
+
+### Earlier version-scoped classification
+
+The following paragraphs retain historical release rationale; their then-current
+floors, snapshots and adoption facts do not replace the current 8.0.0 selection.
+
+Guidance **7.0.0** was a **MAJOR** change from independently accepted **6.1.0**
+at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It changes closure timing and
+owner continuation: only a verified genuinely completing PR uses native closing
+linkage under `close-authorized`; `keep-open` remains neutral until its adjacent
+preauthorized condition is verified and then closes without a policy-release
+Decision. Independent exact-head acceptance, protected merge/closure authority,
+explicit holds, missing-metadata safety and exact already-admitted old paths
+remain intact. Shared 8/9 bounded-result, residual-defect and operational-evidence
+duties and Shared 10's project-context boundary are adopted. These mandatory
+semantic and supported workflow changes require MAJOR, independently of Shared's
+version arithmetic. No second closure field, new engine or extra approval gate
+is introduced.
+
+The native Shared floor becomes **`>=10.0.0`** because current product guidance
+requires RA-007 and TH/CL project ownership semantics absent from 9.0.0, alongside
+new TH/IR duties. Layout remains compatible with earlier versions; the semantic
+minimum, not resolver refusal or upstream major numbering, justifies the floor.
+Standalone and publisher closure evidence update to exact Shared 10.0.0. The
+[compatibility assessment](relay-skill-compatibility.md#task-194-current-migration-through-1000)
+records the complete 7/8/9/10 reconciliation and version-specific evidence.
+Frozen 6.1.0 and all earlier registry payloads remain unchanged. The current
+source-tree artifact binds its actual inputs and independently accepted baseline;
+generation proves neither independent source acceptance, publication nor installed
+qualification. Legacy fallback remains bounded to previously qualified combinations
+and its separately recorded verified-publication window.
 
 Guidance **6.1.0** was a **MINOR** change from independently accepted **6.0.0**.
 It adds compatible engineering-autonomy methods, unchanged-authority technical
@@ -125,8 +158,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 7.0.0 uses `contract_source: source-tree` and records the accepted
-Task 266 baseline `4f0990c4b676a45f7e37d37ecb10fecc871b7a25` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 8.0.0 uses `contract_source: source-tree` and records the accepted
+Task 266 baseline `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -138,7 +171,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 7.0.0 is a candidate. Native source
+release. Before independent acceptance, 8.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -149,17 +182,17 @@ SemVer requirement from the standalone snapshot and its exact identities:
 
 | Identity | Selected value |
 | --- | --- |
-| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `5.0.0` |
-| Accepted producer source | `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9` |
-| Public distribution commit | `30a23f467c30c41fec918204cbbf2ecfffd7bef5` |
-| Complete native distribution tree hash | `sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9` |
+| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `10.0.0` |
+| Accepted producer source | `c207adca23cb3c022dac9ea953dd96364097fa85` |
+| Public distribution commit | `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
+| Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
 
-[AGENTS](../AGENTS.md) adopts all nine applicable complete topics;
+[AGENTS](../AGENTS.md) adopts all ten applicable complete topics;
 [ownership bindings](relay-guidance-ownership.md) retain product-specific
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -197,7 +230,7 @@ installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -228,8 +261,8 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's root policy selects Shared 7.0.1; the unchanged standalone snapshot
-and release-closure evidence retain Shared 5.0.0. Other consumers
+future releases. Relay's root policy selects Shared 10.0.0; current standalone snapshot
+and release-closure evidence use the same exact immutable 10.0.0 distribution. Other consumers
 retain their own deliberate selections.
 
 On an intentional Shared update, assess changes in actually used protocols,

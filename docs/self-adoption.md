@@ -2,54 +2,22 @@
 
 Relay authors and consumes its product Skill. Portable producer/candidate
 semantics belong to the complete adopted pinned
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md).
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md).
 This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **7.0.0** candidate uses the
-native export. Its registry, slot, lock, boot index and projected native Skill
-travel together. Its Shared dependency requirement is separate from the
-standalone Skill's fixed snapshot. Root [AGENTS](../AGENTS.md) deliberately
-adopts Shared **7.0.1**, with the exact Git identity in
-[the identity contract](vibevm.md#selected-immutable-identities). The Relay product retains its own Shared 5.0.0 snapshot for standalone
-and publisher closure evidence, retaining the native `>=2.5.0` floor and frozen
-historical releases. The earlier root Shared migration prepared no Skill release;
-Task #199 prepares the 5.0.0 architectural workflow retirement independently of the
-project-only Shared 7.0.1 selection.
-
-The accepted 3.0.0 major removed the native Skill's bundled Shared protocol paths and
-changed dependency routing. The compatible 3.1.0 minor simplifies explicit v4
-manual publication; 4.0.0 clarifies the existing manual Step-label procedure
-and updates the complete standalone snapshot under the
-[whole-package classification](relay-guidance.md#version-and-provenance).
-Native readers use this project's reviewed lock
-and selected Shared slot through `references/shared-protocols.md`. Standalone
-includes a self-contained immutable Shared 5.0.0 snapshot, so the complete
-Skill trees differ while retaining the same product contract. Frozen accepted
-1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0 and 4.0.0 registry payloads remain unchanged.
-Accepted 4.1.0 added compatible Task #63 installation guidance with retained
-expert paths. The 4.1.1 PATCH clarifies existing Writer Draft preparation for
-automatic remediation; it adds no owner action or runtime route. Neither version
-claims private PROD cutover. Source acceptance does not imply external publication
-or another consumer's adoption. Frozen 4.1.1, 5.0.0 and earlier registry bytes remain
-unchanged. Guidance 5.0.0 removed unused post-review engines and historical Task
-classification, and unified one-Step persistence guidance and effect-scoped
-lifecycle eligibility. Guidance 6.0.0 adds mandatory owner wait and original-event reconciliation
-for manual handoff. This is a MAJOR change under PV-002; see [the release
-classification](relay-guidance.md#version-and-provenance).
-
-Guidance 6.1.0 adds compatible Task 57 engineering-autonomy and meaningful-result
-paths without new mandatory operator work. Frozen 6.0.0 bytes remain unchanged.
-
-Guidance 7.0.0 changes the implicit prose-drift stop for automatic source
-progress under Task #266 while preserving conservative manual predispatch and
-retaining structured holds, source identity, exact pins and protected effects.
-Its MAJOR classification and parallel Task #194 candidate reconciliation are
-recorded in [the delivery contract](relay-guidance.md#version-and-provenance).
-The frozen accepted 6.1.0 registry remains unchanged. Task #266 freezes accepted
-execution source `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`; candidate
-ready files do not replace the guidance governing this execution.
+The first-party `org.jresearch.ai/codex-relay` **8.0.0** candidate uses the
+native export. Registry, slot, lock, boot index and projected native Skill travel
+together. Root [AGENTS](../AGENTS.md) adopts Shared **10.0.0**, independently
+pinned at the exact Git identity in [the identity contract](vibevm.md#selected-immutable-identities).
+The native product requires `>=10.0.0` for its actual RA-007/TH/CL and TH/IR
+semantics; standalone and publisher evidence use immutable Shared 10.0.0.
+[Release classification](relay-guidance.md#version-and-provenance) explains the
+MAJOR change from accepted 7.0.0 and [compatibility](relay-skill-compatibility.md)
+distinguishes that semantic floor from historical layout proof. Frozen accepted
+1.0.0 through 7.0.0 registry payloads remain unchanged. Source acceptance does not
+imply external publication, installed activation or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
 
@@ -63,12 +31,22 @@ Relay's execution binding identifies the independently accepted source commit,
 separately from candidate root/nested AGENTS, boot and Skills. Task #199's execution freezes independently accepted Relay source
 `512b2b5ea2867b92958580f17f6aee24c23b1fba` before candidate edits;
 its historical Skill product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Task 57 freezes accepted execution
-guidance at `cfeb633c86408327bf9941a5dfaaa41f98706ac1` while its 6.1.0
-artifact uses source-tree contract input hashes and the accepted baseline
-revision as provenance context. Candidate schema bytes do not replace the
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Task 57 froze its accepted execution guidance at
+`cfeb633c86408327bf9941a5dfaaa41f98706ac1`. Task 194 freezes accepted guidance
+at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`; its 7.0.0 artifact uses source-tree
+input hashes and that accepted baseline as provenance context. Candidate schema bytes do not replace the
 accepted guidance governing this execution. These are distinct identities, and the
-candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
+candidate cannot replace its own execution/review authority. Task #266's
+reconciled 8.0.0 candidate freezes independently accepted guidance at
+`c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. The accepted 7.0.0 registry is immutable;
+its Task #194 closure and Shared 10.0.0 behavior remains the baseline. Task #266
+changes automatic prose-drift stopping while keeping conservative manual
+predispatch, truthful reporting and actual permission/effect guards. Task and
+Decision requirements govern work and acceptance; manual stop/control is direct
+to Codex and automatic control uses native Actions cancellation/containment,
+with structured holds retained as internal safety guards.
+
+Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
 developer instructions and current admitted Task authority. File qualification
@@ -98,19 +76,19 @@ closure. Its installed boot/AGENTS routes remain candidate data until accepted;
 continue under the independently frozen admitted guidance. Native root install
 produces its lock, complete slots/receipts and INDEX together without requiring
 another Skill projection or startup command.
-The single `build-relay-guidance.py` builder reads the pinned Shared 5.0.0
+The single `build-relay-guidance.py` builder reads the pinned Shared 10.0.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
 disposable input adapter or unselected root slot. This retains the accepted
-builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph remains at Shared 7.0.1.
+builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph selects Shared 10.0.0.
 The verifier
 compares the complete standalone snapshot with its own accepted distribution
 and separately validates the root consumer lock/slot. Native install prunes the
 obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v7.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v8.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0` or `v6.1.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0`, `v6.1.0` or `v7.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the
@@ -152,7 +130,11 @@ python3 scripts/qualify-vibevm.py --vibe /absolute/path/to/pinned/vibe
 ```
 
 The optional native probe uses isolated disposable storage and preserves human
-text around managed blocks. `--project-root <complete-ready-copy>` qualifies a
+text around managed blocks. It sets `VIBE_NO_DEFAULT_REGISTRY=1` as well as
+`--no-default-registry`: pinned VibeVM 1.0.11 can otherwise seed its user-global
+GitHub/GitVerse registry during install. The probe verifies that no global
+registry was created while retaining the project-local producer registry,
+pinned Git sources, relocation repair and clean-install checks. `--project-root <complete-ready-copy>` qualifies a
 complete fixture when the actual destination is unavailable; it does not prove
 missing outputs exist in the governed checkout. The existing
 `qualify-relay-guidance-vpm.py` covers delivery-specific content and shared

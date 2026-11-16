@@ -1,7 +1,7 @@
 # Relay's ChatGPT Project Instructions
 
 This directory is Relay's consumer binding for the accepted Shared Governance
-7.0.1 generator. It is repository guidance, not a new Relay Skill release or
+10.0.0 generator. It is repository guidance, not a new Relay Skill release or
 runtime change. The [Task 101 Decision](https://github.com/jresearchsoftware/codex-relay/issues/101#issuecomment-6718773565)
 authorizes this integration. Candidate files do not govern their own execution
 or review. Source acceptance, live settings application and Task completion are
@@ -21,7 +21,7 @@ the generator nor duplicates the product bundle owned by Task 91.
 Use Python 3.11+ and Git only at maintenance time. Ordinary chats read accepted
 files through supported GitHub capabilities. No VibeVM binary, new registry,
 background service or per-message integrity check is required. Read the
-[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/README.md)
+[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/README.md)
 for input validation, exit codes, exact diffs and cache removal behavior.
 
 First establish the independently accepted exact source and authority through
@@ -30,7 +30,7 @@ the current Task/review and Git evidence. Freeze that source for the effort;
 from the repository root (replace both placeholders with verified values):
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py update \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py update \
   --repository . --binding chatgpt/binding.json \
   --accepted-sha <accepted-full-SHA> --authority-anchor <current-authority-URL>
 ```
@@ -41,7 +41,13 @@ repeating it with the same effective inputs returns `NO_OP` and leaves unchanged
 files untouched. Edit binding/custom, never generated policy. Commit and review
 inputs and outputs together in the ordinary PR. This is not a new global CI gate.
 
-The first projection uses accepted starting source
+Task 194 updates the immutable generator/base and local closure/project-context
+guidance as a source candidate. Its projection invocation freezes accepted Relay
+`4f0990c4b676a45f7e37d37ecb10fecc871b7a25` with Task 194 authority; candidate
+text is not independently accepted or live-applied by generation. Changed complete
+text retains TH-029 owner reconciliation after accepted integration.
+
+The first projection used accepted starting source
 `b9de15342525da0144edf18b457f7e640a9bf087` (Shared 7.0.0 adoption, PR 214),
 under the Task 101 Decision above. The native validator consumes its committed
 INDEX schema 1, lock schema 7 and slot receipts schema 1. Toolchain selection is
@@ -97,7 +103,7 @@ Instructions text or selected Sources need owner action.
 For an owner-provided export, exact comparison is available without UI writes:
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/tools/chatgpt/project.py compare \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py compare \
   --repository . --binding chatgpt/binding.json --live-export /path/to/owner-export.md --live-format raw
 ```
 
@@ -119,7 +125,7 @@ are local implementation evidence, not independent acceptance or live-client pro
 
 Small Improvements planning follows accepted root AGENTS and the
 [Relay binding](../docs/relay-guidance-ownership.md#small-improvements-binding),
-through the locked Shared 7.0.1 protocol. The authored custom guidance supplies
+through the locked Shared 10.0.0 protocol. The authored custom guidance supplies
 the ChatGPT planner route; the generator remains unchanged. The same suite
 checks authored/generated instruction coverage with these tabletop fixtures:
 

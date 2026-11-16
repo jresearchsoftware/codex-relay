@@ -266,7 +266,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   async function pullRequest(r, publishedTransition = null) {
     const e = r.envelope;
     const existing = await existingPullRequest(r, { allowStepMirror: true, publishedTransition });
-    if (existing) return mirrorStep(r, existing, { publishedTransition });
+    if (existing) {
+      const current = !r.finalHead && await isCurrentProjection(e)
+        ? await projectTaskRelationship(r, existing) : existing;
+      return mirrorStep(r, current, { publishedTransition });
+    }
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
     const pr = await api.post('/pulls', { title: titleFor(await projectionFor(e, { sameBranch: true })), head: e.branch, base: CONSUMER.baseBranch, draft: true,
@@ -294,10 +298,18 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     if (body !== pr.body) {
       r.relationshipIntent = { number: pr.number, head: pr.head.sha, before: pr.body, body };
       await store.put(r.envelope.runId, r);
-      await api.patch(`/pulls/${pr.number}`, { body: secretFree(body) });
+      // Re-admission retires an earlier final designation before new work.
+      // Reserve and re-read first: an owner edit or moved head must not be
+      // overwritten by a stale preflight/publication observation.
+      const before = await api.get(`/pulls/${pr.number}`);
+      assertPr(before, pr.number);
+      if (before.head.sha !== pr.head.sha || before.head.ref !== pr.head.ref
+        || ![pr.body, body].includes(before.body)
+        || linkedIssue(before.body) !== r.envelope.issueNumber) fail('PR_AUTHORITY_CHANGED');
+      if (before.body !== body) await api.patch(`/pulls/${pr.number}`, { body: secretFree(body) });
       const after = await api.get(`/pulls/${pr.number}`);
       assertPr(after, pr.number);
-      if (after.head.sha !== pr.head.sha || after.body !== body
+      if (after.head.sha !== pr.head.sha || after.head.ref !== pr.head.ref || after.body !== body
         || linkedIssue(after.body) !== r.envelope.issueNumber) fail('PR_AUTHORITY_CHANGED');
       pr = after;
     }
@@ -985,7 +997,13 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           commentOnce, rememberPullRequest, existingPullRequest, revalidate: envelope => revalidateAuthority(api, envelope,
             { reporting: true, publicationTarget: request.submission.result.parent.kind === 'pull_request' ? request.submission.result.parent.number : undefined }),
           historical: async envelope => !await isCurrentProjection(envelope),
-          projectPullRequest: mirrorStep,
+          projectPullRequest: async (record, pr) => {
+            // A recovered exact Outcome may already have an independently
+            // accepted final designation. Replaying it changes no closure link.
+            const current = !record.outcome && pr.state === 'open' && !pr.merged
+              ? await projectTaskRelationship(record, pr) : pr;
+            return mirrorStep(record, current);
+          },
           transitionManual: async (record, pr, result, draft) => {
             if (!pr || pr.state !== 'open' || pr.merged) return;
             if (!await isCurrentProjection(e)) return;
@@ -1024,6 +1042,13 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // continuation must verify Draft before exposing an executable handoff.
         if (!r.outcome) {
           await prepareRemediation(e);
+          if ((e.target === 'pull_request' || e.continuation?.pullRequest) && await isCurrentProjection(e)) {
+            const pr = await existingPullRequest(r);
+            if (pr) {
+              await guardPublication(e);
+              await projectTaskRelationship(r, pr);
+            }
+          }
           if (e.target === 'issue' && e.continuation?.pullRequest && await isCurrentProjection(e)) {
             await guardPublication(e);
             await transitionPr({ api, store, key: e.runId, record: r, head: e.startHead, draft: true,

@@ -1,16 +1,84 @@
-# Relay Skill compatibility with Shared Governance
+# Relay Skill and Shared Governance compatibility
 
-The native Relay Skill requires Shared Governance **`>=2.5.0`** for the actual
-protocol layout and behavior it consumes. This is the first accepted version
-providing all nine routed protocol files. It admits the assessed 2.5.0, 3.0.0,
-4.0.0 and 5.0.0 contracts without an artificial next-major upper bound. It does not
-promise compatibility with unknown future changes.
+Relay **8.0.0** requires Shared Governance **`>=10.0.0`**. Its native delivery
+reads the consumer's reviewed lock/slot; standalone and included publisher closure
+evidence use immutable Shared 10.0.0. Root project policy independently pins
+`=10.0.0`. This is a semantic minimum for the current product contract, not a
+promise about unknown future releases. Historical compatibility evidence below
+belongs to the frozen versions it assessed and does not qualify current semantics.
 
-Shared Governance owns the complete reusable protocols. Relay owns its product
-workflow, schemas, actors and bindings. The consumer owns deliberate dependency
-selection, its reviewed `vibe.lock`, topic adoption and local policy. Neither a
-new Shared release nor a package range automatically updates those decisions.
+## Task 266: execution-control correction from accepted 7.0.0
 
+The 8.0.0 candidate is MAJOR from independently accepted Relay 7.0.0 at
+`c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Arrival of trusted boundary prose or
+acceptance/validation requirements no longer terminates admitted automatic
+source work or safe collection/publication. Current requirements still govern
+independent acceptance; original admission/profile/permissions stay immutable.
+Conservative manual predispatch and truthful manual drift reporting remain.
+
+Task/Decision requirements describe work and acceptance. Manual owner stop/control
+is direct to the active Codex session. Automatic execution uses native Actions
+cancellation and its existing signal/containment path; cancelled status alone
+does not establish containment or resolve uncertain effects. Quiescence prevents
+new admissions only. Structured holds remain internal safety guards along with
+actual scope/permission, source/pin and protected-effect checks. No new stop
+command, steering service or Decision polling is introduced.
+
+Task #194's accepted closure semantics, Shared 10.0.0 floor, standalone snapshot
+and publisher closure evidence remain the baseline. Frozen accepted 7.0.0 and
+all earlier registry bytes remain unchanged. The following Task #194 assessment
+records that baseline rather than another newly proposed 7.0.0 release.
+
+## Task 194: current migration through 10.0.0
+
+The selected accepted producer is `c207adca23cb3c022dac9ea953dd96364097fa85`;
+public distribution `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d`, annotated tag
+`v10.0.0` object `a2ed1184aa249793a8a1981234c9686088a48c26`, complete native tree
+`sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3`.
+The receipt, complete payload and accepted source package are compared, with
+native VibeVM 1.0.11 producing lock, slots and routes. Source acceptance,
+publication, project adoption and qualified installation remain separate.
+
+| Shared change | Relay disposition and boundaries |
+| --- | --- |
+| 7.0.0 TH-026 / RA-006 | **Implemented in accepted Relay 7.0.0**: final completing PR only, effective `close-authorized`, verified native closing link and guarded default-branch merge; `keep-open` uses neutral references and closes after its adjacent preauthorized condition is verified. No policy-release Decision solely to verify satisfaction. Genuine changed conditions require trusted owner authority. Historical admitted terms, explicit holds, no-PR acceptance, exact-head independent review and protected operations remain intact. |
+| 8.0.0 TH-006/008/010/013/018/019/026, IR-003/012/014/018, RA-006 | **Adopted**: separate bounded deliverable, findings, execution obstruction and whole-Task completion; continue independent authorized work and verify requested orchestration at its actual boundary. Apply procedures to their governed actor, action and trigger; preserve native statuses, terminal identity, owner choices and real protected stops. No invented wait, launch, status engine or approval stage. |
+| 9.0.0 TH-018; IR-007/009/010/014/016 | **Adopted**: confirmed material residual defects get a discoverable existing/authorized tracking or owner-risk disposition. Link accepted fixes elsewhere and reconcile remaining criteria. Operational claims match exercised or otherwise adequate evidence; modeled TEST is valid with limitations. Origin alone neither includes unrelated debt nor defers defects undermining a required outcome. No compulsory live service, new registry, speculative ticket or retrospective review. |
+| 10.0.0 RA-007, TH-001, CL-003, ChatGPT bootstrap | **Adopted**: accepted Relay context owns local lifecycle control. Access, common ownership, URLs, external instructions or an explicit foreign-control request do not transfer project role. External inspection and ordinary incoming proposals remain permitted; foreign controlling actions get a compact handoff in their own context. Preserve explicitly accepted multi-repository scope, local work, independent review and protected authority. Default unqualified queries to Relay. |
+| Other complete protocols | Preserve their complete applicable meaning, topic triggers, local bindings and rights. Small Improvements stays separately adopted for Relay development, not a new mandatory Skill consumer scan. |
+
+### Why the floor changes
+
+The earlier `>=2.5.0` floor was proved for the historical layout and section-name
+routing. Those paths still exist; neither a Shared major nor authored resolver
+exclusion proves that layout broke. Current Relay guidance now depends on RA-007's
+mandatory project-context boundary and associated TH/CL ownership/default-query
+semantics, first available in 10.0.0. The exact adjacent 9.0.0 package lacks that
+rule and behavior. It also uses the 8.0.0/9.0.0 bounded-result, residual-defect and
+operational-evidence contract and the 7.0.0 closure timing. Thus a 9.0.0 dependency
+can install and supply all old paths while failing the actual 7.0.0 Relay guidance
+contract. The semantic floor is **10.0.0**, with no artificial upper bound.
+
+Focused native qualification exercises the exact floor, selected snapshot,
+offline projection, update/rollback, drift and range rejection. A separate semantic
+comparison of immutable 9.0.0 and 10.0.0 establishes the missing RA-007 contract;
+resolver rejection alone establishes only exclusion. Older 2.5/3/4/5 matrices
+below remain historical evidence, not current product support claims.
+
+Relay **7.0.0 is MAJOR from accepted 6.1.0** under PV-002/018: closure timing and
+supported owner continuation change, minimum dependency semantics tighten, and
+mandatory guidance/standalone bytes change. Version arithmetic follows Relay's
+own whole-package effect, independently of Shared's version. Frozen 6.1.0 and
+all earlier registry payloads remain unchanged. Qualified legacy combinations
+retain the [bounded fallback](relay-guidance-ownership.md#temporary-legacy-closure-binding)
+pending the first compatible release plus 60 calendar days after **verified
+publication**; no date is invented and expiry does not automatically remove it.
+
+## Historical compatibility assessments
+
+The following sections preserve earlier version-scoped rationale. References to
+then-current roots, floors, packages and unchanged snapshots describe those
+historical changes, not the current selection above.
 
 ## Project update from 7.0.0 to 7.0.1
 

@@ -2,7 +2,7 @@
 
 Generated source candidate for `org.jresearch.ai/codex-relay`. It describes the immutable pinned
 Relay contract with accepted baseline `4f0990c4b676a45f7e37d37ecb10fecc871b7a25` and native shared requirement
-`>=2.5.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
+`>=10.0.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 
 Acquire this package by an explicitly selected immutable revision through the

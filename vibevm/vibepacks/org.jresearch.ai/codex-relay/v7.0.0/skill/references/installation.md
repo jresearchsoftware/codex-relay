@@ -26,22 +26,14 @@ its included README before updating. These shipped interface changes determine
 Relay's major version. Relay's own `scripts/project.py` installer receipts,
 native Skill receipts and consumer-selected Shared requirement are unchanged.
 
-Version 6.1.0 adds compatible engineering-autonomy, technical-continuation and
-meaningful-result paths without new mandatory consumer work. Frozen 6.0.0 and
-earlier payloads remain unchanged. Source acceptance, external publication and
-installed activation remain separate.
-
-Version 7.0.0 is a MAJOR change from accepted 6.1.0: new trusted boundary
-prose or validation requirements no longer implicitly stop admitted automatic
-source work or safe Writer publication. Already-admitted manual handoffs retain
-their conservative predispatch boundary/validation checks; manual reporting
-still records valid later Decision drift. Existing structured holds, scope removal, exact
-identity/pin checks and protected-effect boundaries remain. Boundary prose is
-not interpreted as a machine cancellation command for automatic source progress;
-use the existing structured
-hold for a deterministic stop. Current authority still governs independent
-exact-head acceptance. This adds no automatic live steering or installed upgrade.
-Frozen 6.1.0 and earlier package bytes remain unchanged.
+Version 7.0.0 is MAJOR from accepted 6.1.0: completing-PR versus verified-
+condition closure timing changes, and Shared 8/9 result/evidence duties plus
+Shared 10 project-context authority become part of the guidance. Native requires
+`>=10.0.0` because RA-007 and its TH/CL semantics first appear there; historical
+layout alone is insufficient. Standalone and publisher closure evidence update
+to exact Shared 10.0.0. Frozen 6.1.0 and earlier payloads remain unchanged.
+Source acceptance, external publication and installed qualification/activation
+remain separate; preserve explicitly retained old admitted contracts.
 
 ## Choose a delivery form
 
@@ -51,7 +43,7 @@ Frozen 6.1.0 and earlier package bytes remain unchanged.
 | VibeVM flow `org.jresearch.ai/codex-relay` `7.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
-standalone form includes an immutable, attributed Shared Governance 5.0.0
+standalone form includes an immutable, attributed Shared Governance 10.0.0
 snapshot for offline use. The native Skill has a real Shared dependency and no
 second protocol bundle: its generated `references/shared-protocols.md` directs
 reading through the consumer's reviewed `vibe.lock` and selected Shared slot.
@@ -59,8 +51,9 @@ The complete trees and provenance therefore differ by delivery form.
 The native package retains a nested frozen lock/slot only as publisher release
 closure evidence. It is not the consumer's lock, an active boot route or a
 protocol fallback; read only the consumer-selected Shared slot.
-Relay source adopts all nine applicable complete topics through its accepted
-policy and product bindings. Another consumer selects its own adoption through
+Relay development adopts all ten complete topics; this product Skill adopts
+the nine listed topics through its product bindings. Small Improvements remains
+a separate local adoption. Another consumer selects its own adoption through
 accepted local guidance; installing files alone neither adopts topics nor
 installs services or changes settings.
 Live GitHub operations still require their ordinary authorized access.
@@ -112,7 +105,7 @@ Use the hash-checked VibeVM 1.0.11 binary identified in the assembled
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
 Select an explicit immutable Shared Governance Git source root and a compatible
-consumer requirement under local authority. The template's Shared 5.0.0 source
+consumer requirement under local authority. The template's Shared 10.0.0 source
 is a reproducible example; a consumer with another deliberately selected
 compatible Shared version keeps its own reviewed source and lock. Relay's supported SemVer lower bound is
 declared in the native manifest; it does not pin consumers to the standalone

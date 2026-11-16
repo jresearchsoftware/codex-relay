@@ -18,10 +18,10 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "7.0.1"
+VERSION = "10.0.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "7.0.0"
+SELF_VERSION = "8.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
 PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
@@ -48,12 +48,12 @@ SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/IND
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "f9fcfa03dec8fb9e00398fc7e0cc7de92da687b9"
+DISTRIBUTION_REVISION = "20c76b3629a62f0c7629f4a8eb1a67491eb6c37d"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "1110f10b996c2f81fa842e6339ab6d7c13111cd7"
-PAYLOAD_HASH = "af758c7c375f54741e46b8c0bfa1ea5311d315839aeae385b3d0ffd468473c36"
-RECEIPT_HASH = "f4a568278ba45cc6bd64280f4fae74a337de3d3c9384e0e72bd5912e74487c61"
-TREE_HASH = "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f"
+SOURCE_REVISION = "c207adca23cb3c022dac9ea953dd96364097fa85"
+PAYLOAD_HASH = "460eaa016fea59a74d6952e2a9898f4111cba92a1e4239715b0e88af9fdfb21c"
+RECEIPT_HASH = "926895f737911c5794a4b898bf3c25b3e0d2e7deda6728f9160f5d19d5c1d994"
+TREE_HASH = "sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "7ee75b41d178fd639d3bc97521cf950a96915ba0bfae29269b564e9ea515df3a"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -243,7 +243,7 @@ def check_small_improvements_adoption(root):
     _, human = managed(read_file(root, "AGENTS.md"))
     human = " ".join(human.decode().split())
     policy = (SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
-    require("Relay explicitly adopts all ten complete applicable Shared Governance **7.0.1** protocols" in human
+    require("Relay explicitly adopts all ten complete applicable Shared Governance **10.0.0** protocols" in human
             and "[Small improvements](" + policy + ")" in human,
             "Human-owned adoption must select the complete installed Small Improvements protocol")
     boot = " ".join(read_file(root, BOOT / "90-user.md").decode().split())
@@ -310,16 +310,13 @@ def check_landscape_adoption(root):
 
 
 HISTORICAL_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.0")
+PREVIOUS_SHARED_SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1")
 
 
 def check_package(directory, *, standalone=False, historical=False):
     # Build/release evidence is a separate frozen delivery, never a policy fallback.
     version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
-        ("5.0.0", "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9",
-         "f4ad03a0137bd0d4c8cab58fa7d42ccbe0bb3aba2315cb9c96f5f93c7ea86275",
-         "45f43dcdb48ff9dfcfc114284cd8c25bdeda3f870883633f08057504edf98bc9",
-         "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9")
-        if standalone else (VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH))
+        VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH)
     if historical:
         require(not standalone, "Historical project evidence is not standalone delivery")
         version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
@@ -327,8 +324,13 @@ def check_package(directory, *, standalone=False, historical=False):
             "3eff2ae300602e812b99539b18fe3d8232c92191ec1e5515c156a6754be51257",
             "bff287dbbdd7801b65d724eef0b0f34daed33157f1f90773cfd956471aecb47b",
             "sha256:fcb5afd9f08bad0a5115f1373ed215e91101407969ff0caf71ee856927510a07")
-    payload = PAYLOAD - {"vibevm/vibespecs/protocols/small-improvements.md",
-                         "vibevm/vibespecs/guides/small-improvements.md"} if standalone else PAYLOAD
+    if historical == "7.0.1":
+        version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
+            "7.0.1", "1110f10b996c2f81fa842e6339ab6d7c13111cd7",
+            "af758c7c375f54741e46b8c0bfa1ea5311d315839aeae385b3d0ffd468473c36",
+            "f4a568278ba45cc6bd64280f4fae74a337de3d3c9384e0e72bd5912e74487c61",
+            "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f")
+    payload = PAYLOAD
     files = files_in(directory)
     require(set(files) == payload | {RECEIPT, MARKER}, "Unexpected or missing passive slot files")
     hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(payload)}
@@ -414,25 +416,29 @@ def check_first_party_registry(root, expected):
     autonomy_files = files_in(root / autonomy)
     require(tree_hash(autonomy_files) == "sha256:d672628dc4b9eb9541bab65b7652def5ee4356d44b46e004bb19ed2c6e172d18",
             "Frozen accepted 6.1.0 registry changed")
+    closure = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v7.0.0")
+    closure_files = files_in(root / closure)
+    require(tree_hash(closure_files) == "sha256:e6431afbb5fa8416afb04fa26e703001e6eaca8eb84c49d8fa0788828427b784",
+            "Frozen accepted 7.0.0 registry changed")
     previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
     require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
             "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (closure, closure_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
 
 def check_standalone_snapshot(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
-    require(metadata["shared_version"] == "5.0.0"
-            and metadata["shared_source_revision"] == "d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9"
-            and metadata["shared_distribution_revision"] == "30a23f467c30c41fec918204cbbf2ecfffd7bef5"
+    require(metadata["shared_version"] == VERSION
+            and metadata["shared_source_revision"] == SOURCE_REVISION
+            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
             and metadata["shared_distribution_tree_hash"] ==
-                "sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9",
+                TREE_HASH,
             "Standalone selection differs from the accepted immutable Shared snapshot")
-    snapshot = Path("vibevm/vibedeps/org.jresearch.ai.development-governance/5.0.0")
+    snapshot = SLOT
     files = check_package(root / "guidance/artifacts/vpm" / snapshot, standalone=True)
     files.pop(MARKER)
     standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
@@ -575,10 +581,13 @@ def check_project(root):
     # Native maintenance may prune it; it never enters the selected graph or routes.
     historical_files = (check_package(root / HISTORICAL_SLOT, historical=True)
                         if (root / HISTORICAL_SLOT).exists() else {})
+    previous_shared = (check_package(root / PREVIOUS_SHARED_SLOT, historical="7.0.1")
+                       if (root / PREVIOUS_SHARED_SLOT).exists() else {})
     require(set(files_in(root / "vibevm/vibedeps")) == {
         (SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in files} | {
         (SELF_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in {*first_party, MARKER}} | {
         (HISTORICAL_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in historical_files} | {
+        (PREVIOUS_SHARED_SLOT.relative_to("vibevm/vibedeps") / name).as_posix() for name in previous_shared} | {
         (selection["slot"].relative_to("vibevm/vibedeps") / name).as_posix()
         for selection in LANDSCAPE for name in landscape_files[selection["coordinate"]]},
             "Unexpected materialized dependency graph")
@@ -590,7 +599,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "standalone_snapshot": "5.0.0",
+            "project_skill": "PASS", "standalone_snapshot": VERSION,
             "landscape": {selection["coordinate"]: {
                 "version": selection["version"], "distribution_revision": selection["revision"],
                 "tree_hash": selection["tree_hash"], "payload_files": len(selection["payload"]),
@@ -636,6 +645,11 @@ def probe(vibe, pin, project_root=ROOT):
             env[key] = str(root / relative)
             (root / relative).mkdir()
         env["VIBEVM_USER_CONFIG"] = str(root / "settings/config.toml")
+        # The install flag alone does not prevent 1.0.11 from seeding the
+        # user-global GitHub/GitVerse registries. Keep this probe isolated;
+        # the explicit project-local producer registry and pinned Git sources
+        # remain available for relocation and clean installation.
+        env["VIBE_NO_DEFAULT_REGISTRY"] = "1"
         reports = {}
 
         def run(project, label, *arguments, collision=False, incomplete=False, hash_mismatch=False, source_mismatch=False, offline=True):
@@ -816,7 +830,10 @@ def probe(vibe, pin, project_root=ROOT):
         (project / "AGENTS.md").write_bytes(original["AGENTS.md"])
         unchanged(original)
         check_project(project)
+        require(not (Path(env["VIBE_SETTINGS"]) / "registry.toml").exists(),
+                "Isolated probe unexpectedly seeded a user-global registry")
         print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
+                          "global_registry_isolation": "PASS",
                           "offline_file_reads": "PASS", "exact_regeneration": "PASS",
                           "overlays_and_collisions": "PASS",
                           "upstream_check_limitations": "accepts missing INDEX/payload; rejects divergent remote lock/slot hash",

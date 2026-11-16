@@ -90,8 +90,9 @@ metadata CLI or a fresh legacy admission route.
 
 Task producers preserve exactly one explicit `Issue closure policy` field in
 the canonical Issue: `keep-open`, or `close-authorized` with owner authority.
-Missing, malformed or conflicting closure metadata selects `keep-open` with a
-visible warning. Step completion, approval and CR outcome tokens do not authorize
+Missing, malformed or conflicting closure metadata uses a protective non-closing
+fallback with a visible warning; it does not establish owner-selected intent.
+Step completion, approval and CR outcome tokens do not authorize
 closure. Apply the [closure authoring guidance](#closure-policy-authoring) to
 trusted v4 Decisions. Implementation branch, commit and PR flow remains governed
 by [the Git handoff policy](../AGENTS.md#canonical-checkout-and-safe-git-handoff).
@@ -237,9 +238,12 @@ exercise newly granted protected operations.
 Trusted chronological Decisions may arrive during automatic source execution. Added
 boundary prose and acceptance checks are reported as drift rather than blocking
 safe source collection/publication. The admitted execution and its permissions
-are unchanged. Writer does not classify arbitrary prose as revocation: use the
-existing structured `continuation.hold` amendment to stop active effects
-immediately. Removed admitted scope, changed starting pins and native source or
+are unchanged. Task content and Decisions define requirements and acceptance,
+not live stop, pause, cancel or steering commands. Owners control manual Codex
+directly; automatic execution uses native Actions cancellation and the supported
+controller containment path. The structured `continuation.hold` remains an internal
+safety guard, not the ordinary execution-control interface. Removed admitted scope,
+changed starting pins and native source or
 identity failures retain their stops. Bounded contained collection can preserve
 source under reporting validation even when publication is held. See the
 [controller contract](../controller/README.md) for action-time checks and limits.
@@ -257,8 +261,12 @@ implementation PR acceptance remains the native exact-head PR review.
 Owner continuation uses effective Decision closure policy and verified canonical
 Task completion/remaining-work/hold/protected-boundary facts. Schema-v4
 continuation has only `hold` and an optional trusted next-direction reference;
-it has no competing `task_complete` or future Step field. A completed `keep-open`
-Task with no actual remaining condition requires owner disposition. An already
+it has no competing `task_complete` or future Step field. For `keep-open`, verified
+satisfaction of the adjacent preauthorized condition,
+required acceptance/integration and absence of remaining work or protected holds
+permits trusted owner closure without policy conversion or another Decision.
+Genuinely missing intent requires owner reconciliation; a protective metadata
+fallback does not invent a permanent hold. An already
 authorized next execution uses the existing owner ports without publishing a
 new Request or allocating its Step before Writer admission. Reviewer acceptance
 does not itself merge or close the Task.
@@ -420,44 +428,44 @@ contract creates no authority registry or parallel Task ledger.
 ### Closure policy authoring
 
 Portable charter, chronological amendment and completion semantics belong to
-pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/task-handoff.md).
-The following authoring procedure describes Relay's
-[bounded legacy closure binding](../docs/relay-guidance-ownership.md#temporary-legacy-closure-binding),
-not activation of the new Shared closure runtime. Relay binds one explicit
-`Issue closure policy` field to the current
+pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/task-handoff.md).
+Relay binds the one explicit `Issue closure policy` field to the current
 v4 charter/Task-scoped trusted Decision mechanism; a native CR cannot change
 Task-wide closure semantics. Preserve retained schema-v3/legacy charter,
-digest and successor-Request rules for already-admitted attempts.
+digest and successor-Request rules for already-admitted attempts through their
+frozen qualified runtime. The [legacy transition](../docs/relay-guidance-ownership.md#temporary-legacy-closure-binding)
+never extends support to unqualified combinations.
 
 For every new or materially revised Task, explain concrete human-readable Task
-completion and closure conditions next to that field. Distinguish development,
-independent exact-result acceptance, merge, any required explicitly authorized
-installed Apply/deployment, original-operation evidence and unresolved owner
-choices. Source acceptance does not establish installed or operational proof.
+completion and closure conditions adjacent to that field. Distinguish development,
+independent exact-result acceptance, merge, required authorized Apply/deployment,
+package publication, original-operation evidence and explicit holds.
 
-- Choose `close-authorized` at charter creation when the owner authorizes a
-  finite Task and closure upon meeting its stated conditions, even if a later
-  explicitly authorized Apply is required. Keep the Issue open until all those
-  conditions pass. Successful verification then permits closure through the
-  existing owner continuation without a second Decision or permission request.
-- Choose `keep-open` only for concrete additional work, a closure hold or an
-  unresolved owner decision outside the authorized completion path. Name that
-  condition and needed owner disposition. A finite required Apply alone is a
-  completion gate, not a reason to demand another closure permission.
-- At each new authorized Step/Decision and meaningful completion transition,
-  reassess the effective policy and remaining conditions. After first admitted
-  execution, amend Task-wide completion/closure semantics only through a trusted
-  Task-scoped Decision. No redundant per-Step Decision is needed when unchanged.
-- If the owner defers, combines or cancels a previously required deployment,
-  reconcile completion conditions and closure authorization through that trusted
-  Decision. Do not claim an Apply occurred. Close only when the revised accepted
-  Task has no remaining work/hold and all protected boundaries are satisfied.
+- Choose `close-authorized` when the designated final PR's successful default-branch
+  merge will genuinely complete all required Task work. After native exact-head
+  acceptance and checks, trusted owner continuation designates that PR with
+  `Closes #N` or a supported native closing link. Intermediate PRs use
+  `Related to #N`; unmerged or abandoned PRs cannot complete or close the Task.
+- Choose `keep-open` when work must remain after merge, including required Apply,
+  qualification or actual publication of the accepted package. Use a neutral PR
+  reference and state the remaining condition and sufficient evidence beside the
+  policy. After verified satisfaction, required acceptance/integration and no
+  remaining work/protected hold, trusted owner continuation closes the Issue and
+  records verification in its existing chronology. No policy conversion, redundant
+  owner-choice prompt or Decision merely releasing that satisfied condition is needed.
+- At meaningful transitions, reassess actual work and current authority. Changing
+  scope, conditions or authority after execution requires a trusted Task-scoped
+  Decision; verifying unchanged preauthorized conditions does not. Deferring or
+  cancelling a required Apply needs that Decision, never a claim it occurred.
+- Missing or conflicting metadata prevents automatic closure and requires
+  reconciliation of genuinely missing intent. It does not prove owner-selected
+  `keep-open` or create an indefinite procedural hold. Existing explicit holds
+  survive until their actual authorized disposition.
 
-`close-authorized` still requires trusted completion evidence and verified
-independent exact-result acceptance before the authorized owner continuation.
-Approval, merge or Step completion alone supplies no closure authority. This
-binding adds no `Close when:` field, parser/validator gate, daemon, ledger,
-separate workflow or retrospective rewrite of historical Issues.
+No-PR results retain native exact-result Task Approval and the existing trusted
+owner completion path; fabricate neither PR nor merge. Step completion, an Outcome
+and approval alone do not prove Task completion. This contract adds no closure
+field, completion-prose parser, registry, daemon or automatic closure engine.
 
 ### Continuation after changes requested
 
@@ -517,20 +525,28 @@ The owner uses this bounded sequence through the existing connector:
    the applicable exact-head/readiness policy. A required exact-base guarantee
    needs a supported atomic capability; `expected_head_sha` alone cannot provide
    it. Missing connector permissions or native evidence remain explicit gaps.
-3. Verify applicable closure restrictions before merging. The currently
-   supported migrated-Task closure binding still requires verified non-closing
-   PR linkage (`Related to #N`) and a neutral squash title/body. Neither helper
-   retirement nor Shared Governance adoption implements Task #194, changes the
-   Task's closure policy, or authorizes closing it. Resolve an implicit closing
-   link before integration under existing owner authority.
+3. Verify effective closure policy, completion conditions and remaining work.
+   Writer starts and re-enters execution with neutral `Related to #N` linkage;
+   a worker's successful Step cannot designate a completing PR. For a genuinely
+   final `close-authorized` PR, the trusted owner channel adds `Closes #N` or a
+   supported native closing link after acceptance and verifies the same PR,
+   exact head, canonical Issue target and default base branch. An intermediate PR,
+   `keep-open`, missing intent or protected hold requires non-closing linkage.
+   Verify native linkage and squash title/body together so incidental closing
+   keywords cannot close this Task or another Issue. A changed authority or result
+   requires applicable fresh acceptance; a relation edit grants no new authority.
 4. Call the connector's `merge_pull_request` with `merge_method: "squash"` and
    `expected_head_sha` equal to the full independently approved/current SHA.
-   Supply a neutral explicit `commit_title` and `commit_message` where required
-   by that closure binding. GitHub rejects a moved head; do not omit the guard,
-   enable unattended auto-merge or substitute another merge method.
+   Keep an explicit neutral squash title/body for non-closing results; for the
+   designated completing PR preserve its verified intended native closing link.
+   GitHub rejects a moved head; do not omit the guard, enable unattended
+   auto-merge or substitute another merge method.
 5. Read back the same native PR and merge commit. Verify merged state, the
    approved head, destination/base repository, returned merge SHA and squash
-   commit before any dependent action. If the response is lost or uncertain,
+   commit and the actual native Issue closure/linkage when applicable before any
+   dependent action. Only successful default-branch merge completes a closing PR;
+   a closed/unmerged PR or non-default merge does not. If the response is lost
+   or uncertain,
    inspect authoritative GitHub PR/commit records for that original operation.
    Do not blindly repeat a merge, declare failure/success from transport status
    alone, close the Task or launch follow-up while its effect is unresolved.
@@ -570,3 +586,13 @@ closure contract. Further work uses the existing authorized admission path;
 there is no automatic launch, prepared successor Request or preallocated Step
 from an approval. No extra owner-choice prompt is needed for an action already
 clearly authorized, and no action may infer new authority from approval alone.
+
+For `keep-open`, a delayed, failed or unknown publication/Apply keeps the Task
+open. Verify the exact accepted release/source and actual publication event, or
+the intended Apply revision/target and material warnings, rather than relying on
+source merge, a version label or the absence of a future Step. Once the adjacent
+preauthorized condition is verified and all work/holds are resolved, use the
+supported owner connector to close the same Issue and read back its native state.
+Record the evidence in the existing Task chronology. Lost/uncertain closure
+responses require readback of that original action before dependent operations;
+never replay a terminal execution or publish another Outcome to recover closure.
