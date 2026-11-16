@@ -19,7 +19,7 @@ Task N is this GitHub Issue #N. -->
 Authority model: github-native-v1
 
 <!-- Identify the repository, relevant Issue/CR/PR and any exact starting head.
-The qualified relay-workflows-v3 controller/Writer pair uses this stable charter
+The qualified relay-workflows-v4 controller/Writer pair uses this stable charter
 and applicable trusted schema-v4 Decisions. Before first execution, consolidate
 an actionable charter without hiding meaningful public history. After first
 admission, change substantive Task authority through trusted Task-scoped

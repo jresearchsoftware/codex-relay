@@ -63,6 +63,38 @@ for those source tests, preserving the real delivered source permissions. Use
 UTF-8 locale for Ansible. These are test transports, not production permission
 repairs or installation evidence.
 
+The initial native Skill projection copy reported a metadata-only permission
+failure while copying file/directory metadata. Ordinary byte writes preserved
+source permissions, and exact comparison verified the actual project Skill
+against native output. No privileged repair or permission widening was performed.
+The native VibeVM probes observed existing upstream omission behavior for missing
+INDEX/payload inputs; the local verifier rejected those counterexamples and
+native regeneration repaired the intentional fixture drift. These disclosed
+qualification warnings do not claim upstream tooling alone proves integrity.
+
+Local checks completed on the unchanged implementation source:
+
+| Check | Observed result |
+| --- | --- |
+| Full Node suite | 1,248 passed, 7 skipped, 0 failed, in a normal-mode private Git checkout of the exact candidate tree. |
+| Complete deployment pytest suites | 2,293 passed, 1,010 skipped, 35 failed under unprivileged UID 990. All 35 failing node IDs also failed at admitted starting source; no candidate-only failure and no deployment source changes. |
+| Cargo locked suite and formatting | 179 passed; formatting passed. The socket-path setup issue was isolated and resolved without source changes. |
+| Three-consumer qualification | `THREE_CONSUMER_PASS`: real handlers/modules, synthetic Git and loopback GitHub, actual production binary mTLS/disabled-publication checks. |
+| Governance/guidance/ChatGPT tests | 32 verifier + 19 guidance + 9 ChatGPT tests passed. |
+| Native package and root qualification | Exact accepted producer/distribution byte comparisons, native acquire/projection/offline/update/rollback/drift/removal passed; adjacent immutable 9.0.0 lacks required RA-007 semantics independently of range rejection. |
+| Artifact generation, immutable registry and candidate scan | Current outputs match authored source; no earlier frozen registry version changed; JSON/link/credential-marker scan and committed whitespace checks passed. |
+
+The complete baseline deployment comparison had 2,292 passed, 1,010 skipped and
+36 failures. Its additional configuration-loader failure came from the private
+baseline view's inherited synthetic fixture mode; correcting only that disposable
+fixture made its targeted test pass. No product fix is claimed for that setup
+issue. The 35 shared failures cover `consumer_drift`, `execution_topology`,
+`install_recovery`, `managed_pool` and `source_upgrade_general`: protected root
+ownership, default-ACL support and runtime-input ownership cannot be established
+by this UID/environment. They remain explicit native qualification gaps, not
+waived proof or regressions introduced here. No privilege escalation, original
+source permission repair or installed host mutation was attempted.
+
 The routine CLI maintenance check found official stable `rust-v0.169.0` still
 matches the selected version; no bump or installed mutation is needed.
 The six open `small-improvement` candidates (#248, #250, #251, #256, #257, #258)
