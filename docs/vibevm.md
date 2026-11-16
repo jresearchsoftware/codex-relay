@@ -124,13 +124,11 @@ not prove actual model-visible traversal, child profiles, access or usefulness.
 
 ### Deliverable, updates and rollback
 
-Under PV-015/018 this is a root development-consumer integration. The
-Landscape update and project-only Small Improvements adoption remain outside the
-frozen standalone Relay Skill 5.0.0 and its release-evidence closure; they do not
-change the product package requirement or payload. The separate manual handoff
-follow-up changes the product Skill and is prepared as Relay 6.0.0 in this Task.
-This source candidate does not publish Landscape or Relay, install a service or
-authorize an Apply.
+Under PV-015/018 the accepted Landscape and project-only Small Improvements
+integration stays outside the product's standalone snapshot and release-evidence
+closure. That historical integration changed no product requirement or payload.
+Task 194 separately changes the Relay product and prepares 7.0.0; current source
+work publishes neither Landscape nor Relay and authorizes no installed Apply.
 
 During candidate development, freeze independently accepted source guidance via
 the admitted Task binding before reading candidate AGENTS/INDEX/package routes.
@@ -255,15 +253,16 @@ export and projection commands.
 
 The standalone exporter and project lock now select exact Shared 10.0.0.
 The single `build-relay-guidance.py` builder reads the immutable release closure
-directly. The obsolete disposable-root adapter has been removed; the new Relay
-7.0.0 candidate records the changed builder provenance. No unselected root 5.0.0
-slot is needed; frozen accepted registry payloads remain unchanged.
+directly through the existing builder, preserving its source-tree input-hash
+provenance mechanism. No unselected root 5.0.0 slot is needed; frozen accepted
+registry payloads remain unchanged.
 The verifier separately checks both complete immutable dependencies
 and active consumer routing. Neither build input nor nested release evidence is
 a runtime/policy fallback. Report actual native warnings and their impact.
 
 Task #199 retains the exact accepted 7.0.0 slot, and Task #194 retains the
-previous 7.0.1 slot, at their original paths as inactive history. They are absent from the root lock and generated boot; native readers must
+previous 7.0.1 slot, at their original paths as inactive history. They are absent from the root lock and generated boot;
+native readers must
 use selected 10.0.0. The verifier accepts only those exact historical bytes when
 present and rejects a missing selected slot. Native `install` prunes inactive
 slots in disposable copies; preserving this source evidence does not require

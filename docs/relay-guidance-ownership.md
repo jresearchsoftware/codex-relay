@@ -207,8 +207,8 @@ automatically remove the fallback. This exception extends to no other protocol,
 consumer or unknown version. The product floor is not blanket compatibility proof.
 
 Shared TH-026/RA-006 owns the target single-field meaning, including completing
-versus intermediate results, condition verification and no-PR work. Current candidate implementation/qualification belongs to #194; installed
-behavior still requires separately qualified compatible release adoption. Protected
+versus intermediate results, condition verification and no-PR work. Current candidate implementation and
+qualification belong to #194; installed behavior still requires separately qualified compatible release adoption. Protected
 host/deployment/recovery permissions remain in the [deployment contract](../deploy/README.md).
 
 ## Package, producer and repository bindings
