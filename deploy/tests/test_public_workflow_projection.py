@@ -241,12 +241,18 @@ def test_public_result_classifies_intact_previous_baseline_before_writing(fixtur
     assert repeated['changed'] is False
 
 
-def test_noncanonical_manifest_requires_a_write_and_then_becomes_a_noop(fixture):
+def test_noncanonical_manifest_requires_a_write_and_then_becomes_a_noop(fixture, tmp_path):
     consumer = fixture.consumer()
     result(fixture.project(consumer))
     manifest_path = consumer / workflows.MANIFEST
     manifest_path.write_text(json.dumps(json.loads(manifest_path.read_bytes()), separators=(',', ':')))
     commit(consumer)
+    # Preserve the existing Apply result contract, whose compatibility tests
+    # parsed manifests. Public projection adds an exact canonical-byte no-op
+    # promise without changing installation integration's classification.
+    integrated = workflows.integration(fixture.config, fixture.product_revision,
+        fixture.product_root, consumer, tmp_path / 'integration')
+    assert integrated['compatibility'] == 'compatible'
     value = result(fixture.project(consumer))
     assert value['compatibility'] == 'stale-compatible'
     assert value['changed'] is True

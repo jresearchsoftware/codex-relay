@@ -208,17 +208,14 @@ def project_deployment(config, revision, source_root, output_root):
     return {'directory': str(destination), 'files': list(rendered), 'changed': True}
 
 
-def _compatibility(previous, observed, expected, rendered):
+def _compatibility(previous, expected):
     """Classify the original drift-checked baseline, before any write."""
     if previous is None:
         return 'missing'
     _binding(previous, expected)
     if previous.get('workflowContract') != expected['workflowContract']:
         return 'incompatible'
-    current = {**rendered, MANIFEST: _json(expected)}
-    return ('compatible' if previous == expected
-            and all(observed.get(path) == content for path, content in current.items())
-            else 'stale-compatible')
+    return 'compatible' if previous == expected else 'stale-compatible'
 
 
 def integration(config, revision, source_root, consumer_root, output_root):
@@ -232,7 +229,7 @@ def integration(config, revision, source_root, consumer_root, output_root):
     rendered = render(config, revision, source_root)
     expected = _manifest(config, source_root, rendered)
     previous, observed = _existing(root)
-    compatibility = _compatibility(previous, observed, expected, rendered)
+    compatibility = _compatibility(previous, expected)
     destination = Path(output_root).absolute()
     for checkout in [Path(source_root).resolve(), root.resolve()]:
         require(not destination.resolve().is_relative_to(checkout), 'projection-output-outside-checkouts')
@@ -366,7 +363,7 @@ def project_result(config, revision, source_root, consumer_root, repository=None
     rendered = render(config, revision, source_root, repository)
     expected = _manifest(config, source_root, rendered, repository)
     previous, observed = _existing(root)
-    compatibility = _compatibility(previous, observed, expected, rendered)
+    compatibility = _compatibility(previous, expected)
     if previous:
         require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
     else:
@@ -375,9 +372,15 @@ def project_result(config, revision, source_root, consumer_root, repository=None
             require(not destination.exists() and not destination.is_symlink(), 'workflow-unmanaged:' + path)
 
     changes = {**rendered, MANIFEST: _json(expected)}
+    changed = any(observed.get(path) != content for path, content in changes.items())
+    # The public no-op promise includes canonical manifest bytes. Preserve
+    # installation integration's established parsed-manifest classification,
+    # while exposing a formatting-only rewrite as a public reviewable update.
+    if changed and compatibility == 'compatible':
+        compatibility = 'stale-compatible'
     result = {'manifest': expected, 'compatibility': compatibility,
-              'files': list(changes), 'changed': compatibility != 'compatible'}
-    if all(observed.get(path) == content for path, content in changes.items()):
+              'files': list(changes), 'changed': changed}
+    if not changed:
         return result
     for path in changes:
         destination = _path(root, path)

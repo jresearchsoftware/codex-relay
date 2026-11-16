@@ -1119,8 +1119,8 @@ For example (identifiers shortened here only):
   "compatibility": "stale-compatible",
   "changed": true,
   "files": [
-    ".github/workflows/relay-control.yml",
-    ".github/workflows/relay-publication-recovery.yml",
+    ".github/workflows/codex-relay-routing.yml",
+    ".github/workflows/manual-writer-publication-recovery.yml",
     ".github/relay-workflows.json"
   ]
 }
@@ -1145,6 +1145,11 @@ reconciliation error behavior. A second invocation requires a clean receiving
 checkout as before: inspect and commit an authorized proposal before rerunning,
 or use a separate clean checkout for each comparison. `workflow-verify` remains
 the exact-current check for a committed projection and emits its existing markers.
+
+Installation integration retains its existing parsed-manifest compatibility
+classification. Public projection additionally reports a noncanonical manifest
+serialization as `stale-compatible` when it must rewrite that manifest to meet
+the exact-byte no-op promise.
 
 #### Standalone private deployment projection
 
