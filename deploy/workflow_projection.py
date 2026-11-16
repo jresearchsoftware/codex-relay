@@ -54,12 +54,19 @@ def _directory(path):
 
 def _read(path):
     # Do not follow a file swapped for a symlink between inspection and read.
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(descriptor, 'rb') as stream:
-        metadata = os.fstat(stream.fileno())
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        require(False, 'workflow-file-unavailable:' + str(path) + ';inspect-file-type-and-access')
+    try:
+        metadata = os.fstat(descriptor)
         require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
                 and metadata.st_size <= MAX_BYTES and not metadata.st_mode & 0o111,
                 'workflow-regular-file:' + str(path))
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with os.fdopen(descriptor, 'rb') as stream:
         content = stream.read(MAX_BYTES + 1)
         def stamp(info):
             return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,

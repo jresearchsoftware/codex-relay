@@ -268,6 +268,8 @@ def test_noncanonical_manifest_requires_a_write_and_then_becomes_a_noop(fixture,
     ('consumer-binding', 'workflow-consumer-binding'),
     ('source-binding', 'workflow-consumer-binding'),
     ('path-migration', 'workflow-path-migration-required'),
+    ('managed-symlink', 'workflow-file-unavailable'),
+    ('manifest-symlink', 'workflow-file-unavailable'),
 ])
 def test_rejected_existing_projection_preserves_every_consumer_file(fixture, damage, diagnostic):
     consumer = fixture.consumer()
@@ -291,7 +293,13 @@ def test_rejected_existing_projection_preserves_every_consumer_file(fixture, dam
         old_path = '.github/workflows/previous-routing.yml'
         (consumer / routing).rename(consumer / old_path)
         manifest['files'][old_path] = manifest['files'].pop(routing)
-    if damage not in ['malformed', 'partial-files', 'drift']:
+    elif damage in ['managed-symlink', 'manifest-symlink']:
+        unsafe = consumer / routing if damage == 'managed-symlink' else path
+        owner_file = consumer / 'owner-reference.txt'
+        owner_file.write_bytes(unsafe.read_bytes())
+        unsafe.unlink()
+        unsafe.symlink_to(owner_file)
+    if damage not in ['malformed', 'partial-files', 'drift', 'managed-symlink', 'manifest-symlink']:
         path.write_text(json.dumps(manifest))
     commit(consumer)
     before = snapshot(consumer)
@@ -340,7 +348,7 @@ def test_edited_deployment_artifact_is_never_overwritten(fixture, tmp_path):
     assert snapshot(output) == before
 
 
-@pytest.mark.parametrize('collision', ['output-symlink', 'workflow-symlink', 'directory-file'])
+@pytest.mark.parametrize('collision', ['output-symlink', 'workflow-symlink', 'workflow-directory', 'directory-file'])
 def test_deployment_artifact_path_collisions_preserve_owner_files(fixture, tmp_path, collision):
     output = tmp_path / 'deployment-artifact'
     outside = tmp_path / 'outside-artifact'
@@ -355,10 +363,18 @@ def test_deployment_artifact_path_collisions_preserve_owner_files(fixture, tmp_p
             (output / '.github/workflows').write_text('owner file at directory path\n')
         else:
             (output / '.github/workflows').mkdir()
-            (output / workflows.PRODUCTION).symlink_to(outside / 'owner.txt')
+            if collision == 'workflow-directory':
+                (output / workflows.PRODUCTION).mkdir()
+            else:
+                (output / workflows.PRODUCTION).symlink_to(outside / 'owner.txt')
     before, outside_before = snapshot(output), snapshot(outside)
     completed = fixture.invoke('workflow-deployment-project', '--projection-output', output)
     assert completed.returncode != 0
+    if collision == 'workflow-symlink':
+        assert 'workflow-file-unavailable:' in completed.stderr
+        assert 'inspect-file-type-and-access' in completed.stderr
+    elif collision == 'workflow-directory':
+        assert 'workflow-regular-file:' in completed.stderr
     assert RESULT not in completed.stdout
     assert snapshot(output) == before
     assert snapshot(outside) == outside_before
