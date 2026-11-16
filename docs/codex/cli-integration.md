@@ -72,7 +72,7 @@ every technical upgrade. Maintain these distinct facts in their existing owners:
 
 | Fact | Current evidence and owner |
 | --- | --- |
-| Selected/qualified CLI dependency | Exact **0.167.2**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
+| Selected/qualified CLI dependency | Exact **0.169.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
 | Capabilities reviewed through version X | **Unknown / not yet established.** The accepted integration evidence below establishes bounded compatibility and selected capability decisions, not a complete historical review interval. No evidenced reviewed-through version or review date is established here. |
 | Installed-host version | A separate observed fact from the specific host's installation/version evidence; neither source selection nor capability review proves it. |
 

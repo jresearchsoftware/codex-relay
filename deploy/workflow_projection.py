@@ -171,6 +171,56 @@ def render_deployment(config, revision, source_root):
     return render(config, revision, source_root, deployment=True)
 
 
+def project_deployment(config, revision, source_root, output_root):
+    """Render an immutable private lifecycle proposal without an installation.
+
+    An existing identical artifact is a no-op. A different artifact requires a
+    separate output directory, so this interface never adopts or overwrites an
+    unowned deployment workflow. The caller compares it with the receiving Git
+    tree and owns any reviewable update there.
+    """
+    rendered = render_deployment(config, revision, source_root)
+    destination = Path(output_root).absolute()
+    require(not destination.resolve().is_relative_to(Path(source_root).resolve()),
+            'projection-output-outside-checkouts')
+    for parent in [*reversed(destination.parents), destination]:
+        if parent.exists() or parent.is_symlink():
+            _directory(parent)
+        else:
+            parent.mkdir(mode=0o700)
+    target = _path(destination, PRODUCTION)
+    content = rendered[PRODUCTION]
+    if target.exists() or target.is_symlink():
+        require(_read(target) == content, 'deployment-artifact-changed;use-new-projection-output')
+        return {'directory': str(destination), 'files': list(rendered), 'changed': False}
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _path(destination, PRODUCTION)
+    lock = destination / '.github/.relay-deployment-workflow.lock'
+    require(not lock.exists() and not lock.is_symlink(), 'workflow-projection-in-progress')
+    lock.mkdir(mode=0o700)
+    try:
+        require(not target.exists() and not target.is_symlink(),
+                'workflow-concurrent-change:' + PRODUCTION)
+        _write(target, content)
+        require(_read(target) == content, 'deployment-artifact-changed')
+    finally:
+        lock.rmdir()
+    return {'directory': str(destination), 'files': list(rendered), 'changed': True}
+
+
+def _compatibility(previous, observed, expected, rendered):
+    """Classify the original drift-checked baseline, before any write."""
+    if previous is None:
+        return 'missing'
+    _binding(previous, expected)
+    if previous.get('workflowContract') != expected['workflowContract']:
+        return 'incompatible'
+    current = {**rendered, MANIFEST: _json(expected)}
+    return ('compatible' if previous == expected
+            and all(observed.get(path) == content for path, content in current.items())
+            else 'stale-compatible')
+
+
 def integration(config, revision, source_root, consumer_root, output_root):
     """Produce a complete integration tree without gating host installation.
 
@@ -182,12 +232,7 @@ def integration(config, revision, source_root, consumer_root, output_root):
     rendered = render(config, revision, source_root)
     expected = _manifest(config, source_root, rendered)
     previous, observed = _existing(root)
-    if previous is None:
-        compatibility = 'missing'
-    else:
-        _binding(previous, expected)
-        compatibility = ('incompatible' if previous.get('workflowContract') != expected['workflowContract'] else
-                         'compatible' if previous == expected else 'stale-compatible')
+    compatibility = _compatibility(previous, observed, expected, rendered)
     destination = Path(output_root).absolute()
     for checkout in [Path(source_root).resolve(), root.resolve()]:
         require(not destination.resolve().is_relative_to(checkout), 'projection-output-outside-checkouts')
@@ -310,7 +355,7 @@ def _write(path, content):
             os.unlink(name)
 
 
-def project(config, revision, source_root, consumer_root, repository=None):
+def project_result(config, revision, source_root, consumer_root, repository=None):
     """Write reviewable projection only after checking all previous managed bytes.
 
     Existing consumer files are never adopted implicitly. An interrupted write
@@ -321,8 +366,8 @@ def project(config, revision, source_root, consumer_root, repository=None):
     rendered = render(config, revision, source_root, repository)
     expected = _manifest(config, source_root, rendered, repository)
     previous, observed = _existing(root)
+    compatibility = _compatibility(previous, observed, expected, rendered)
     if previous:
-        _binding(previous, expected)
         require(set(previous['files']) == set(rendered), 'workflow-path-migration-required')
     else:
         for path in rendered:
@@ -330,8 +375,10 @@ def project(config, revision, source_root, consumer_root, repository=None):
             require(not destination.exists() and not destination.is_symlink(), 'workflow-unmanaged:' + path)
 
     changes = {**rendered, MANIFEST: _json(expected)}
+    result = {'manifest': expected, 'compatibility': compatibility,
+              'files': list(changes), 'changed': compatibility != 'compatible'}
     if all(observed.get(path) == content for path, content in changes.items()):
-        return expected
+        return result
     for path in changes:
         destination = _path(root, path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -360,7 +407,12 @@ def project(config, revision, source_root, consumer_root, repository=None):
     finally:
         lock.rmdir()
     verify(config, revision, source_root, root, repository)
-    return expected
+    return result
+
+
+def project(config, revision, source_root, consumer_root, repository=None):
+    """Retain the manifest-returning interface for installation preparation."""
+    return project_result(config, revision, source_root, consumer_root, repository)['manifest']
 
 
 def prepare(config, revision, source_root, consumer_root, output_root, repository=None):

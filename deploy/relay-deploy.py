@@ -26,7 +26,7 @@ from ansible_transport import connection_vars, backend_environment, hold_target,
 PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post-check': 'site.yml',
           'inventory': None, 'bootstrap': 'site.yml', 'reinstall': 'site.yml',
           'reinstall-recover': None,
-          'workflow-project': None, 'workflow-verify': None,
+          'workflow-project': None, 'workflow-verify': None, 'workflow-deployment-project': None,
           'runner-register': None,
           'diagnose': 'relay-production-diagnostic.yml', 'activate': 'relay-reviewer-activation.yml',
           'runner-enable': 'relay-production-runner-enable.yml',
@@ -231,7 +231,8 @@ def arguments():
     p.add_argument('--authorize-reinstall-recovery', action='store_true',
                    help='Safely archive a diagnosed failed reinstall without retargeting its journal')
     p.add_argument('--reinstall-recovery-target', help='Exact target of the retained failed reinstall')
-    p.add_argument('--projection-output', type=Path, help='optional directory for derived workflow review files')
+    p.add_argument('--projection-output', type=Path,
+                   help='review directory; required for workflow-deployment-project, optional for bootstrap/reinstall')
     p.add_argument('--authorize-runner-register', action='store_true')
     p.add_argument('--runner-registration-token', help='ephemeral bootstrap input for this registration only')
     p.add_argument('--log-root', type=Path, default=Path('/tmp/relay-deployment'))
@@ -320,14 +321,19 @@ def run(args):
     require(getattr(args, 'repository', None) is None or args.phase in ['workflow-project', 'workflow-verify'],
             'repository-projection-only')
     require(args.authorize_upgrade == (args.phase == 'upgrade'), 'explicit-upgrade')
-    require(args.authorize_workflow_projection == (args.phase == 'workflow-project'), 'explicit-workflow-projection')
+    require(args.authorize_workflow_projection == (args.phase in ['workflow-project', 'workflow-deployment-project']),
+            'explicit-workflow-projection')
     require(not args.authorize_bootstrap or args.phase == 'bootstrap', 'explicit-bootstrap')
     require(args.authorize_reinstall == (args.phase == 'reinstall'), 'explicit-reinstall')
     require(args.authorize_reinstall_recovery == (args.phase == 'reinstall-recover')
             and (bool(re.fullmatch('[0-9a-f]{40}', args.reinstall_recovery_target or ''))
                  if args.authorize_reinstall_recovery else args.reinstall_recovery_target is None)
             and not (args.authorize_reinstall_recovery and args.local_reconcile), 'explicit-reinstall-recovery')
-    require(args.projection_output is None or args.phase in ['bootstrap', 'reinstall'], 'projection-output-phase')
+    require(args.projection_output is None or args.phase in ['bootstrap', 'reinstall', 'workflow-deployment-project'],
+            'projection-output-phase')
+    require(args.phase != 'workflow-deployment-project'
+            or args.projection_output is not None and args.consumer_root is None,
+            'deployment-projection-output-required;omit-consumer-root')
     require(args.authorize_runner_register == (args.phase == 'runner-register'), 'explicit-runner-registration')
     require(args.runner_registration_token is None or args.phase == 'runner-register', 'runner-token-phase')
     require(not args.local_reconcile or args.consumer_root is None, 'local-consumer-root-forbidden')
@@ -358,7 +364,14 @@ def run(args):
             require(hashlib.sha256(raw).hexdigest() == args.git_intent['config_sha256'], 'frozen-git-config-changed')
             config = loads(raw.decode('utf-8'), ROOT)
         else:
-            config = load(config_path, ROOT)
+            if args.phase in ['workflow-project', 'workflow-deployment-project']:
+                # Hash precisely the bytes validated and used, not a later read
+                # or a normalized serialization. Callers correlate this with
+                # their successful Apply's immutable desired-config snapshot.
+                projection_config_raw = config_path.read_bytes()
+                config = loads(projection_config_raw.decode('utf-8'), ROOT)
+            else:
+                config = load(config_path, ROOT)
     if 'generalRunnerPool' in config['consumer']:
         # Bind new managed target policy in the same order that the protected
         # canonical snapshot and installed reader produce, including derived slots.
@@ -412,7 +425,7 @@ def run(args):
         require(args.consumer_revision is None, 'consumer-revision-from-git-only')
         identity = source_identity(ROOT)
         requested = args.requested_revision or identity['revision']
-        if args.phase == 'inventory':
+        if args.phase in ['inventory', 'workflow-deployment-project']:
             consumer_revision = None
         else:
             consumer_root = (args.consumer_root.absolute() if args.consumer_root else
@@ -420,9 +433,11 @@ def run(args):
             consumer_revision = clean_git(consumer_root)
     require(selector(requested), 'requested-revision')
     require(args.resolved_revision is None or args.resolved_revision == identity['revision'], 'resolved-revision-mismatch')
-    require(args.phase == 'inventory' or re.fullmatch('[0-9a-f]{40}', consumer_revision or ''), 'consumer-revision')
+    require(args.phase in ['inventory', 'workflow-deployment-project']
+            or re.fullmatch('[0-9a-f]{40}', consumer_revision or ''), 'consumer-revision')
     revision = identity['revision']
-    if args.phase in ['upgrade', 'workflow-project', 'workflow-verify', 'inventory', 'bootstrap', 'reinstall', 'reinstall-recover']:
+    if args.phase in ['upgrade', 'workflow-project', 'workflow-verify', 'workflow-deployment-project',
+                      'inventory', 'bootstrap', 'reinstall', 'reinstall-recover']:
         require(args.resolved_revision == revision and not args.local_reconcile, 'explicit-exact-product-target')
     require(not re.fullmatch('[0-9a-f]{40}', requested) or requested == revision, 'selected-commit-mismatch')
     require(args.authorize_reviewer_activation == (args.phase == 'activate'), 'explicit-activation')
@@ -465,10 +480,27 @@ def run(args):
                   and values['relay_local_apply_source'] == 'git')
     git_readonly = (intent_install and args.phase == 'post-check'
                     and values['relay_local_apply_source'] == 'git')
+    if args.phase == 'workflow-deployment-project':
+        from workflow_projection import project_deployment
+        result = project_deployment(config, revision, ROOT, args.projection_output)
+        result.update(schemaVersion=1, kind='deployment',
+                      repository=config['environment']['localApply']['repository'],
+                      productRevision=revision, sourceRepository=config['source']['repository'],
+                      configSha256=hashlib.sha256(projection_config_raw).hexdigest())
+        print('RELAY_WORKFLOW_PROJECTION_RESULT=' + json.dumps(result, sort_keys=True), flush=True)
+        print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase}')
+        return
     if not intent_install and not git_resume and (args.phase in ['workflow-project', 'workflow-verify', 'upgrade'] or args.local_lifecycle or (args.phase == 'apply' and not args.local_reconcile)):
-        from workflow_projection import project, verify
+        from workflow_projection import project_result, verify
         if args.phase == 'workflow-project':
-            project(config, revision, ROOT, consumer_root, getattr(args, 'repository', None))
+            result = project_result(config, revision, ROOT, consumer_root, getattr(args, 'repository', None))
+            result.pop('manifest')
+            result.update(schemaVersion=1, kind='consumer',
+                          repository=deployment_repository(config, getattr(args, 'repository', None)),
+                          productRevision=revision, sourceRepository=config['source']['repository'],
+                          configSha256=hashlib.sha256(projection_config_raw).hexdigest(),
+                          consumerRevision=consumer_revision)
+            print('RELAY_WORKFLOW_PROJECTION_RESULT=' + json.dumps(result, sort_keys=True), flush=True)
         else:
             committed_projection(config, revision, ROOT, consumer_root, consumer_revision,
                                  getattr(args, 'repository', None))
