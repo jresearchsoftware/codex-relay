@@ -118,6 +118,7 @@ for (const merged of [false, true]) {
     supplyExistingCurrentPull(f);
     const { progress, request } = await candidate(f);
     assert.equal((await f.broker.invoke(request)).prNumber, 43);
+    assert.equal((await f.api.get('/pulls/43')).body, 'Related to #42');
     assert.ok(!(await f.store.get(f.envelope.runId)).prIntent);
     const before = surface.mutations.length;
     surface.current = pr => ({ ...pr, state: 'closed', merged });
