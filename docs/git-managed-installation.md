@@ -622,6 +622,14 @@ outdated-integration diagnostic until the generated integration is published.
 The installer does not silently rewrite or publish consumer-owned workflows.
 Publication and external prerequisites remain separate from host installation.
 
+The supported [public projection interfaces](../deploy/README.md#machine-readable-consumer-projection-result)
+can regenerate these artifacts later from the successful Apply's exact product
+commit and config bytes. `workflow-project` reports the receiving consumer's
+pre-write compatibility; `workflow-deployment-project` renders the separate
+private lifecycle workflow into a proposal directory without host access or
+another Apply. Installation and retained recovery still generate their existing
+integration output and retain managed-drift/binding validation.
+
 ## Reviewed PROD cutover
 
 This source interface does not establish that PROD has adopted it. Until a
