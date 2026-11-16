@@ -63,8 +63,8 @@ The canonical Task is Issue #N. For current schema v4, the Issue has exactly one
 standalone `Authority model: github-native-v1` line and remains the stable
 charter. It states problem, goal, scope, protected boundaries and one initial
 `Issue closure policy: keep-open` or `Issue closure policy: close-authorized`.
-Missing, malformed or conflicting closure metadata means `keep-open` with a
-visible warning. Next to that field state concrete human-readable completion
+Missing, malformed or conflicting closure metadata prevents automatic closure
+with a visible warning; it does not establish an owner-selected hold. Next to that field state concrete human-readable completion
 and closure conditions, separating development, independent acceptance, merge,
 any required authorized Apply/deployment and original-operation proof, and
 unresolved owner choices. Use the closure binding below; no additional field
@@ -437,17 +437,22 @@ without another ceremonial merge prompt:
    allowed only where current exact-head checks and readiness remain safe.
    Preserve an explicit exact-base requirement: the connector's atomic head
    comparison does not supply an atomic base comparison.
-2. Verify closure restrictions. Under the current migrated-Task compatibility
-   binding, use `Related to #N`, establish that the PR does not implicitly close
-   the Task, and supply a neutral squash title/body. Removing the old helper
-   does not implement Task #194 or authorize Issue closure.
+2. Verify the effective closure policy and actual completion boundary. Writer
+   creates neutral `Related to #N` references. Only when merge will genuinely
+   complete the whole Task, effective `close-authorized` permits it and no hold,
+   next work or protected obligation remains, designate that completing PR through
+   the authorized connector with `Closes #N` or its supported native closing link.
+   Read back the same PR, exact head, default-branch base and native closing link.
+   Intermediate PRs and `keep-open` results retain non-closing references. A missing
+   designation/readback capability stops that affected closure action.
 3. Use the connector's `merge_pull_request` with `merge_method: "squash"`, the
    canonical repository/PR and `expected_head_sha` equal to the full approved
-   SHA. Supply explicit neutral `commit_title`/`commit_message` where required
-   by the closure binding. Do not omit the head guard or replace squash with
+   SHA. Supply explicit neutral `commit_title`/`commit_message`; the verified PR
+   linkage controls closure. Do not omit the head guard or replace squash with
    another merge method or unattended auto-merge.
 4. Read back the same PR and merge commit; verify merged state, approved head,
-   destination and squash SHA before dependent work. A lost or uncertain merge
+   destination and squash SHA, plus the Task closure state where designated, before
+   dependent work. A lost or uncertain merge
    response requires authoritative GitHub reconciliation of that original
    effect. Never blindly repeat it, switch verdict or launch/close while its
    effect is unknown. Report a missing permission or readback capability as the
@@ -480,35 +485,48 @@ holds after verified integration under the supported closure contract.
 Task Handoff's "Stable charter and chronological authority" and "Authorized continuation and completion"
 sections own completion and continuation semantics; Relay implements them
 through its closure-policy field, native Task Decisions and owner continuation.
-For an owner-authorized finite Task, choose `close-authorized` at charter
-creation when closure is already authorized upon meeting its stated conditions,
-including a later expressly authorized Apply. Keep the Issue open through
-development, independent acceptance and merge until all required deployment
-and verification conditions pass; a finite required Apply is a completion gate,
-not itself a reason to request closure permission again.
+`close-authorized` means closure on successful default-branch merge of the
+one designated genuinely completing PR. All Task work must be complete apart
+from that integration, including required acceptance, checks and protected
+conditions. Other result PRs use non-closing references. Closing an unmerged or
+abandoned PR does not close the Task; acceptance or a terminal Step alone does
+not establish whole-Task completion.
 
-Use `keep-open` when concrete additional work, an explicit hold or an unresolved
-owner choice remains outside the authorized completion path. Name that condition
-and its needed disposition. Reassess effective policy at new authorized
-Steps/Decisions and meaningful completion transitions. After first admission,
-change Task-wide closure conditions or authorization only through a trusted
-Task-scoped v4 Decision; a CR cannot change them. Do not publish redundant
-per-Step Decisions when nothing changed. If required deployment is deferred,
-combined or cancelled by the owner, reconcile conditions and closure authority
-through that Decision without claiming the original Apply occurred.
+`keep-open` means no closure on merge and later closure once its adjacent
+human-readable condition is verified. State the actual obligation and sufficient
+evidence beside the single field in the charter or applicable trusted Decision.
+A required publication or owner-run Apply after merge uses this policy: source
+acceptance does not prove publication of the exact accepted revision/version,
+nor a successful Apply to the intended revision/target with warning disposition.
+After that preauthorized condition, acceptance/integration and every actual
+obligation are verified and no protected hold remains, the supported trusted
+owner continuation closes the Issue and records verification in its chronology.
+No new owner-choice prompt, policy-change Decision or conversion to
+`close-authorized` is needed merely to release a satisfied condition.
 
-Closure requires effective `close-authorized`, trusted completion evidence,
-independent exact-result acceptance, no remaining work/hold and satisfied
-protected boundaries. The owner continuation can then close without another
-permission request. If no work remains but `keep-open` persists, surface the
-mismatch for canonical owner disposition. For retained v3/legacy work preserve
-the original charter and successor-Request rules in [compatibility](compatibility.md).
+Change actual scope, conditions or authority only through the existing trusted
+Task-scoped Decision mechanism. CRs, executors and reviewers cannot waive them.
+Preserve explicit earlier holds and old admitted charter/Request, Step, Outcome
+and recovery terms through [compatibility](compatibility.md); new guidance does
+not silently reinterpret or replay them. The bounded qualified legacy fallback
+remains separately version-specific, not permission to apply old timing to new work.
 
-Genuine no-PR acceptance remains typed independent Task Approval bound to its
-exact Writer Outcome and immutable result. It does not authorize merging an
-artifact PR. A known next phase or remaining qualification keeps the Task open.
-Already-authorized conditional closure needs no repeated Decision, but still
-requires current completion/acceptance and no remaining work or hold.
+Missing, invalid or conflicting metadata prevents unsafe automatic closure.
+Reconcile genuinely missing intent through existing owner authority; a fail-safe
+refusal is not an owner-selected perpetual hold or permission to invent one.
+No-PR results retain independent typed Task Approval bound to their exact Writer
+Outcome and immutable result, then the supported owner completion path; fabricate
+neither a PR nor a merge. A known next phase or remaining qualification keeps the
+Task open. Report missing trusted capability or evidence at the affected action.
+
+For a confirmed material defect left after a workaround, deferral or completion,
+keep a discoverable disposition in an existing Issue/PR/Outcome, an authorized
+tracking record or explicit owner risk disposition. A workaround is not a fix.
+When another Task/PR delivers the correction, link its accepted result and
+reconcile remaining source/installed-result criteria before claiming completion.
+Reuse adequate acceptance evidence; add no retrospective review or automatic
+closure. Unconfirmed hypotheses and optional improvements acquire no ticket or
+completion duty from this rule.
 
 ## Consumer policy boundary
 

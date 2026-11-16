@@ -5,11 +5,19 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **6.1.0** as a source
+This Skill supplies Relay product guidance version **7.0.0** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source, delivery form and shared protocol source. Guidance
 availability does not prove an installed service, workflow or connected App is
 compatible, qualified or enabled. Normal use reads these local files offline.
+
+Resolve the acting project from the client's accepted binding before routing
+results or controlling a lifecycle. Shared RA-007 preserves cross-project reads
+and incoming contribution proposals, while foreign Task admission, review,
+closure, release and deployment belong to that project's own context. A link or
+explicit foreign-control request does not switch projects; provide a compact
+handoff with the canonical Issue/PR and relevant evidence. Explicitly accepted
+multi-repository scope remains valid.
 
 For Task work, use the live canonical authority and admitted handoff through
 the Relay binding below. Shared Context Loading owns minimal startup and JIT

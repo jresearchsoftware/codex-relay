@@ -1046,13 +1046,31 @@ recorded previous head blocks a new recovery push.
 
 ## Readiness and diagnostics
 
-Migrated PRs use `Related to #Task` even when closure is authorized. Writer
-projects a legacy canonical closing reference to this nonclosing relationship
-during preflight, preserving other PR text and verifying the exact readback.
-Native manually linked closing relationships are inspected by the trusted owner
-continuation adapter before merge. Issue closure happens explicitly after
-independent acceptance, Task completion and remaining-work checks; repository
-auto-closing settings are not changed by this worker or Writer.
+Writer creates PRs with `Related to #Task` because execution success alone does
+not establish whole-Task completion. Before fresh automatic work or a manual
+handoff on an existing PR, Writer replaces its canonical closing reference with
+that neutral relationship, preserving other PR text. It also neutralizes a
+newly discovered or delayed manual PR before publishing its initial result.
+The existing relationship intent reserves the exact PR/head/body before a
+fresh read and mutation; readback verifies the same branch, head and body.
+Uncertain writes reconcile through that intent without inventing an execution
+or changing admitted authority. Replaying a completed result preserves a later
+trusted owner closing designation and the original Outcome body hash.
+
+After independent native exact-head acceptance, the trusted owner continuation
+may designate only the genuinely completing `close-authorized` PR with native
+`Closes #Task` linkage immediately before a protected default-branch merge.
+Intermediate and abandoned result PRs remain non-closing; an unmerged PR never
+establishes Task completion or Issue closure. The owner verifies effective Task
+authority, completion evidence, no remaining work and
+no explicit hold, then reads back the native link, exact head and merge result.
+`keep-open` retains a neutral relationship; a preauthorized later human condition
+may be verified through the existing trusted continuation without converting
+the policy or adding a redundant Decision. The canonical
+[owner continuation contract](../contracts/README.md#authorized-continuation-after-independent-acceptance)
+owns that verification and conditional closure. Neither Writer nor workers
+merge, close Issues, infer completion from a keyword or alter repository
+auto-closing settings.
 
 Successful recovery can continue the existing `finish` path without replaying
 the original routing workflow. It retains the original execution receipt, checks

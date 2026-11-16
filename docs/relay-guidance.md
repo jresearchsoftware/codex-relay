@@ -10,6 +10,37 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
+Guidance **7.0.0** is a **MAJOR** candidate from independently accepted **6.1.0**
+at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It changes closure timing and
+owner continuation: only a verified genuinely completing PR uses native closing
+linkage under `close-authorized`; `keep-open` remains neutral until its adjacent
+preauthorized condition is verified and then closes without a policy-release
+Decision. Independent exact-head acceptance, protected merge/closure authority,
+explicit holds, missing-metadata safety and exact already-admitted old paths
+remain intact. Shared 8/9 bounded-result, residual-defect and operational-evidence
+duties and Shared 10's project-context boundary are adopted. These mandatory
+semantic and supported workflow changes require MAJOR, independently of Shared's
+version arithmetic. No second closure field, new engine or extra approval gate
+is introduced.
+
+The native Shared floor becomes **`>=10.0.0`** because current product guidance
+requires RA-007 and TH/CL project ownership semantics absent from 9.0.0, alongside
+new TH/IR duties. Layout remains compatible with earlier versions; the semantic
+minimum, not resolver refusal or upstream major numbering, justifies the floor.
+Standalone and publisher closure evidence update to exact Shared 10.0.0. The
+[compatibility assessment](relay-skill-compatibility.md#task-194-current-migration-through-1000)
+records the complete 7/8/9/10 reconciliation and version-specific evidence.
+Frozen 6.1.0 and all earlier registry payloads remain unchanged. The current
+source-tree artifact binds its actual inputs and independently accepted baseline;
+generation proves neither independent source acceptance, publication nor installed
+qualification. Legacy fallback remains bounded to previously qualified combinations
+and its separately recorded verified-publication window.
+
+### Earlier version-scoped classification
+
+The following paragraphs retain historical release rationale; their then-current
+floors, snapshots and adoption facts do not replace the current 7.0.0 selection.
+
 Guidance **6.1.0** is a **MINOR** candidate from independently accepted **6.0.0**.
 It adds compatible engineering-autonomy methods, unchanged-authority technical
 continuation, meaningful evidence-only/no-change results and findings on stopped
@@ -117,7 +148,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 6.1.0 is a candidate. Native source
+release. Before independent acceptance, 7.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -128,17 +159,17 @@ SemVer requirement from the standalone snapshot and its exact identities:
 
 | Identity | Selected value |
 | --- | --- |
-| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `5.0.0` |
-| Accepted producer source | `d0b3d67ef94a5537ebd4a2bbf4a38e3a6629c0c9` |
-| Public distribution commit | `30a23f467c30c41fec918204cbbf2ecfffd7bef5` |
-| Complete native distribution tree hash | `sha256:e686314f26c82f32f55958a242481d792e9fcd0d755a6eebf933431f3e0875d9` |
+| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `10.0.0` |
+| Accepted producer source | `c207adca23cb3c022dac9ea953dd96364097fa85` |
+| Public distribution commit | `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
+| Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
 
-[AGENTS](../AGENTS.md) adopts all nine applicable complete topics;
+[AGENTS](../AGENTS.md) adopts all ten applicable complete topics;
 [ownership bindings](relay-guidance-ownership.md) retain product-specific
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -176,7 +207,7 @@ installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -207,8 +238,8 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's root policy selects Shared 7.0.1; the unchanged standalone snapshot
-and release-closure evidence retain Shared 5.0.0. Other consumers
+future releases. Relay's root policy selects Shared 10.0.0; current standalone snapshot
+and release-closure evidence use the same exact immutable 10.0.0 distribution. Other consumers
 retain their own deliberate selections.
 
 On an intentional Shared update, assess changes in actually used protocols,

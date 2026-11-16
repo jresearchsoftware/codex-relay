@@ -98,8 +98,9 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
     issueNumber, branch: q.branch, historicalBase: q.base_sha, startHead: q.starting_head,
     profile: { cliModelId: q.model, effort: q.effort }, subagentsAllowed: q.subagents,
     thread, title: `Task ${issueNumber} · Step ${q.step}${semantic.kind === 'change-request' ? ` · ${semantic.change_request_id}` : ''} · ${q.purpose}`,
-    // Typed acceptance closes the Issue explicitly after task_complete and
-    // remaining-work checks. A PR closing keyword would bypass those checks.
+    // Execution cannot prove whole-Task completion. The trusted owner may
+    // designate a final closing link only after independent acceptance and
+    // verifying the effective policy and remaining completion conditions.
     closure: `Related to #${issueNumber}`,
     input: priorContext.input, validation: q.validation, request: q, requestReference: typed.reference,
     authorityDigest: typed.authorityDigest,

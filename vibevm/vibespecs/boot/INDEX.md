@@ -16,11 +16,11 @@ path = "vibevm/vibespecs/boot/00-core.md"
 kind = "static"
 
 [[entry]]
-path = "vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/boot/development-governance.md"
+path = "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/boot/development-governance.md"
 kind = "static"
 
 [[entry]]
-path = "vibevm/vibedeps/org.jresearch.ai.codex-relay/6.1.0/vibevm/vibespecs/boot/codex-relay.md"
+path = "vibevm/vibedeps/org.jresearch.ai.codex-relay/7.0.0/vibevm/vibespecs/boot/codex-relay.md"
 kind = "static"
 
 [[entry]]

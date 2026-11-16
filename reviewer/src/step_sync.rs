@@ -32,7 +32,10 @@ pub(crate) fn current_step(subject: &Value) -> Result<u64, &'static str> {
     Ok(step)
 }
 
-pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static str> {
+// Keep relationship discovery separate from closure permission. In particular,
+// a foreign closing reference must not disappear while resolving the canonical
+// same-repository Task.
+fn issue_references(pr: &Value) -> Result<Vec<(Option<String>, u64, bool)>, &'static str> {
     // Same recognized link vocabulary as controller/src/live-authority.mjs.
     let body = pr["body"].as_str().ok_or("CANONICAL_ISSUE_AMBIGUOUS")?;
     let lower = body.to_ascii_lowercase();
@@ -66,7 +69,7 @@ pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static s
             .sum();
         (count > 0).then_some(count)
     };
-    let mut ids = Vec::new();
+    let mut references = Vec::new();
     for (at, _) in body.char_indices() {
         if at > 0 && body[..at].chars().next_back().is_some_and(word) {
             continue;
@@ -97,23 +100,31 @@ pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static s
             continue;
         };
         rest = &rest[count..];
-        // Qualified references must name this PR's repository. Bare links
-        // without a relationship keyword remain informational.
-        let value = if let Some(value) = rest.strip_prefix('#') {
-            value
-        } else if let Some(repository) = pr["base"]["repo"]["full_name"].as_str() {
-            let repository = repository.to_ascii_lowercase();
-            let url = format!("https://github.com/{repository}/issues/");
-            let qualified = format!("{repository}#");
-            let Some(value) = rest
-                .strip_prefix(&url)
-                .or_else(|| rest.strip_prefix(&qualified))
-            else {
+        // Bare informational links still supply no relationship. Retain a
+        // qualified target's repository for the current-protocol closure gate.
+        let (repository, value) = if let Some(value) = rest.strip_prefix('#') {
+            (None, value)
+        } else {
+            let parts = if let Some(url) = rest.strip_prefix("https://github.com/") {
+                url.split_once("/issues/")
+            } else {
+                rest.split_once('#')
+            };
+            let Some((repository, value)) = parts else {
                 continue;
             };
-            value
-        } else {
-            continue;
+            let names: Vec<_> = repository.split('/').collect();
+            if names.len() != 2
+                || names.iter().any(|name| {
+                    name.is_empty()
+                        || !name
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                })
+            {
+                continue;
+            }
+            (Some(repository.to_string()), value)
         };
         let count = value.bytes().take_while(u8::is_ascii_digit).count();
         if count == 0 || value.starts_with('0') || value[count..].chars().next().is_some_and(word) {
@@ -124,12 +135,42 @@ pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static s
             .ok()
             .filter(|n| *n > 0 && *n <= MAX_STEP)
         {
-            ids.push(id);
+            references.push((repository, id, keyword != "related"));
         }
     }
+    Ok(references)
+}
+
+pub(crate) fn linked_issue_candidates(pr: &Value) -> Result<Vec<u64>, &'static str> {
+    let canonical = pr["base"]["repo"]["full_name"].as_str();
+    let mut ids: Vec<_> = issue_references(pr)?
+        .into_iter()
+        .filter(|(repository, _, _)| {
+            repository.as_ref().is_none_or(|repository| {
+                canonical.is_some_and(|name| repository.eq_ignore_ascii_case(name))
+            })
+        })
+        .map(|(_, id, _)| id)
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
+}
+
+pub(crate) fn closing_issue_references(pr: &Value) -> Result<Vec<(String, u64)>, &'static str> {
+    let canonical = pr["base"]["repo"]["full_name"]
+        .as_str()
+        .ok_or("CANONICAL_ISSUE_AMBIGUOUS")?;
+    Ok(issue_references(pr)?
+        .into_iter()
+        .filter(|(_, _, closing)| *closing)
+        .map(|(repository, id, _)| {
+            (
+                repository.unwrap_or_else(|| canonical.to_ascii_lowercase()),
+                id,
+            )
+        })
+        .collect())
 }
 
 pub(crate) fn linked_issue(pr: &Value) -> Result<u64, &'static str> {

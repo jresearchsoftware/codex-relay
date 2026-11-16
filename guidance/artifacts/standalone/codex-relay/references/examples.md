@@ -18,8 +18,8 @@ Goal: A repeated export preserves exactly one completed record.
 Scope: Correct retry bookkeeping and test the affected export behavior.
 Boundaries: No deployment, credentials, settings or consumer repository changes.
 
-Issue closure policy: close-authorized
-Completion and closure require development, independent exact-head source
+Issue closure policy: keep-open
+After source merge, close after verified development, independent exact-head source
 acceptance, merge and explicitly authorized read-only representative consumer
 qualification, with no remaining work or hold. No consumer mutation is authorized.
 ```
@@ -109,7 +109,7 @@ exact-head `APPROVE`, binding the verified owner-created source PR and current
 authority. An owner-account review or copied assessment does not replace that
 native proof. The trusted owner channel verifies explicit standalone permission,
 absence of an admitted attempt for this result, warnings, passing required
-checks, mergeability, holds and `closesTask: false`, then can perform the
+checks, mergeability, holds and a non-closing reference, then can perform the
 already-authorized squash without another confirmation. It uses neutral merge
 text and verifies the native merged result. No ordinary owner result becomes a
 Writer Outcome or Task Approval.
@@ -136,15 +136,22 @@ Issue #42's remaining-work condition. Keep it open.
 
 After the specified qualification and all other completion conditions pass,
 the existing owner continuation verifies acceptance, no remaining work/hold
-and protected boundaries, then closes under the charter's `close-authorized`.
+and protected boundaries, then closes under the charter's preauthorized `keep-open` condition.
 No second closure permission or redundant Decision is needed. A CR, Outcome,
 Step completion or merge alone cannot establish Task completion.
 
-Use `keep-open` instead when a concrete qualification choice, extra work or
-closure hold remains outside the authorized path; state that condition. If the
-owner later defers, combines or cancels a required qualification/Apply, amend
-completion conditions and closure authority through a trusted Task-scoped
-Decision without rewriting the admitted charter or claiming it happened.
+For a Task completed by source integration alone, choose `close-authorized`.
+After native exact-head approval and completion verification, the owner path
+designates only its final completing PR with `Closes #42`, reads back the native
+closing link/head/default base, performs the guarded squash and verifies native
+merge and Issue closure. Earlier PRs use `Related to #42`. If publication or
+Apply remains after merge, use `keep-open` with that actual condition instead.
+
+Verification of an already authorized condition needs no policy-release Decision
+or conversion to `close-authorized`. A genuine later deferral, cancellation or
+changed qualification/Apply still needs a trusted Task-scoped Decision; preserve
+the original charter and never claim an omitted action occurred. Missing metadata
+prevents automatic closure but does not establish an indefinite owner hold.
 
 ## Capability mismatch and retained history
 
@@ -166,7 +173,7 @@ admission, obtain independent TEST REQUEST_CHANGES, preserve a truthful blocked
 result, complete a later admitted correction, obtain exact-head TEST APPROVE
 and perform the already authorized expected-head squash/readback. No additional
 per-action owner prompt is needed for these TEST-only operations. Keep the
-Issue open when its closure policy says `keep-open`, preserve original native
+Issue open until any stated `keep-open` condition is verified, preserve original native
 records and reconcile uncertain publication before dependent action. A separately
 required preview for negative findings on the actual product PR still applies
 to that product assessment; it does not govern this dedicated TEST fixture.
