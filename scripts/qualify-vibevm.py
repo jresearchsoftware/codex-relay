@@ -641,6 +641,11 @@ def probe(vibe, pin, project_root=ROOT):
             env[key] = str(root / relative)
             (root / relative).mkdir()
         env["VIBEVM_USER_CONFIG"] = str(root / "settings/config.toml")
+        # The install flag alone does not prevent 1.0.11 from seeding the
+        # user-global GitHub/GitVerse registries. Keep this probe isolated;
+        # the explicit project-local producer registry and pinned Git sources
+        # remain available for relocation and clean installation.
+        env["VIBE_NO_DEFAULT_REGISTRY"] = "1"
         reports = {}
 
         def run(project, label, *arguments, collision=False, incomplete=False, hash_mismatch=False, source_mismatch=False, offline=True):
@@ -821,7 +826,10 @@ def probe(vibe, pin, project_root=ROOT):
         (project / "AGENTS.md").write_bytes(original["AGENTS.md"])
         unchanged(original)
         check_project(project)
+        require(not (Path(env["VIBE_SETTINGS"]) / "registry.toml").exists(),
+                "Isolated probe unexpectedly seeded a user-global registry")
         print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
+                          "global_registry_isolation": "PASS",
                           "offline_file_reads": "PASS", "exact_regeneration": "PASS",
                           "overlays_and_collisions": "PASS",
                           "upstream_check_limitations": "accepts missing INDEX/payload; rejects divergent remote lock/slot hash",

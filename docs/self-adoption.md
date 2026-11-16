@@ -120,7 +120,11 @@ python3 scripts/qualify-vibevm.py --vibe /absolute/path/to/pinned/vibe
 ```
 
 The optional native probe uses isolated disposable storage and preserves human
-text around managed blocks. `--project-root <complete-ready-copy>` qualifies a
+text around managed blocks. It sets `VIBE_NO_DEFAULT_REGISTRY=1` as well as
+`--no-default-registry`: pinned VibeVM 1.0.11 can otherwise seed its user-global
+GitHub/GitVerse registry during install. The probe verifies that no global
+registry was created while retaining the project-local producer registry,
+pinned Git sources, relocation repair and clean-install checks. `--project-root <complete-ready-copy>` qualifies a
 complete fixture when the actual destination is unavailable; it does not prove
 missing outputs exist in the governed checkout. The existing
 `qualify-relay-guidance-vpm.py` covers delivery-specific content and shared

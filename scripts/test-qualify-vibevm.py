@@ -3,16 +3,49 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("qualification", Path(__file__).with_name("qualify-vibevm.py"))
 QUALIFICATION = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(QUALIFICATION)
+
+
+class ProbeIsolationTests(unittest.TestCase):
+    def test_probe_disables_global_registry_seeding_in_every_child(self):
+        # Stop at the first child boundary, after observing the real probe env.
+        # No network or external Vibe configuration is needed by this check.
+        class ObservedChild(Exception):
+            pass
+
+        with tempfile.TemporaryDirectory(prefix="relay-probe-env-") as temporary:
+            binary = Path(temporary) / "vibe"
+            binary.write_bytes(b"synthetic pinned binary")
+            pin = {"linux_x86_64_musl_binary": {
+                "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}}
+
+            def inspect_child(*args, **kwargs):
+                env = kwargs["env"]
+                self.assertEqual(env["VIBE_NO_DEFAULT_REGISTRY"], "1")
+                self.assertNotIn("VIBE_REGISTRY", env)
+                self.assertNotEqual(env["VIBE_SETTINGS"], "/foreign/settings")
+                self.assertTrue(Path(env["VIBE_SETTINGS"]).is_dir())
+                self.assertEqual(Path(env["VIBEVM_USER_CONFIG"]).parent,
+                                 Path(env["VIBE_SETTINGS"]))
+                raise ObservedChild
+
+            with patch.dict(os.environ, {"VIBE_NO_DEFAULT_REGISTRY": "0",
+                                         "VIBE_REGISTRY": "https://foreign.invalid",
+                                         "VIBE_SETTINGS": "/foreign/settings"}), \
+                    patch.object(QUALIFICATION.subprocess, "check_output", side_effect=inspect_child):
+                with self.assertRaises(ObservedChild):
+                    QUALIFICATION.probe(binary, pin)
 
 
 class CommittedFlowTests(unittest.TestCase):
