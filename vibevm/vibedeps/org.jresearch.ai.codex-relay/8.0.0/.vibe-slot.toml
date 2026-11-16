@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:a9b49cf7dbcdd41f6d1092fee543e0994b677743b007951536835f1405ac387e"
+source_hash = "sha256:639b1c9dfcb7f29f2855efcead2d981ea18d445a978a4ff0ac88b81c7ba83298"
 spec_format = "mixed"
 
 [[file]]
@@ -8,7 +8,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "LICENSES.json"
-sha256 = "ffb447efdadf9bbaabc8badd5ee92c74c2178de64ca68f7834f3ee914542bf51"
+sha256 = "02236e1a4d052338e1bd9139ff8abbe5b697ec4128583a4fb4b32a396855e422"
 
 [[file]]
 path = "README.md"
